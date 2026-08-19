@@ -1,4 +1,4 @@
-// Adds a per-model GLB handedness toggle to the Attack Animation Editor.
+// Adds a pair-wide horizontal hand mirror toggle to the Attack Animation Editor.
 (function (global) {
   'use strict';
 
@@ -15,9 +15,9 @@
   field.innerHTML = `
     <label class="fieldRow" style="cursor:pointer">
       <input type="checkbox" id="handMirrorGlbX" style="width:auto;margin-right:6px">
-      Mirror GLB horizontally
+      Mirror hands horizontally
     </label>
-    <div class="help">Flips the imported hand source across local X before left/right side mirroring. Use this if the GLB was authored with the opposite handedness.</div>
+    <div class="help">Flips both generated hands across their own local X axis. This is separate from the model's source-handedness convention, so left and right always change together.</div>
   `;
   scaleGroup.appendChild(field);
 
@@ -28,15 +28,16 @@
   }
 
   function sync() {
-    checkbox.checked = currentModel()?.mirrorX === true;
+    checkbox.checked = currentModel()?.horizontalMirrorX === true;
   }
 
   checkbox.addEventListener('change', () => {
     const key = profileSelect.value;
     profiles.mutate(data => {
       const model = data.models?.[key];
-      if (model) model.mirrorX = checkbox.checked;
+      if (model) model.horizontalMirrorX = checkbox.checked;
     });
+    global.ProceduralHandPairMirror?.refreshAll?.();
   });
 
   profileSelect.addEventListener('change', sync);
