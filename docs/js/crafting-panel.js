@@ -1,18 +1,39 @@
 // CampfireSystem must install before game.js initializes DevSpawner/CalendarSystem
 // so it can capture the live map/player/calendar dependencies without adding new
-// wiring to the large game closure.
+// wiring to the large game closure. Load the normalized furniture database first
+// so CampfireSystem renders Hobunji normalized furniture#campfire verbatim.
 (() => {
   if (window.CampfireSystem || document.querySelector('script[data-hobunji-campfire-system]')) return;
-  const src = 'js/campfire-system.js?v=20260819a';
+  const databaseSrc = 'js/normalized-furniture-database.js?v=20260819a';
+  const campfireSrc = 'js/campfire-system.js?v=20260819b';
   if (document.readyState === 'loading') {
-    document.write(`<script src="${src}" data-hobunji-campfire-system="1"><\/script>`);
+    if (!window.HobunjiNormalizedFurnitureDatabase && !document.querySelector('script[data-hobunji-normalized-furniture]')) {
+      document.write(`<script src="${databaseSrc}" data-hobunji-normalized-furniture="1"><\/script>`);
+    }
+    document.write(`<script src="${campfireSrc}" data-hobunji-campfire-system="1"><\/script>`);
     return;
   }
-  const script = document.createElement('script');
-  script.src = src;
-  script.async = false;
-  script.dataset.hobunjiCampfireSystem = '1';
-  document.head.appendChild(script);
+  const installCampfire = () => {
+    if (window.CampfireSystem || document.querySelector('script[data-hobunji-campfire-system]')) return;
+    const script = document.createElement('script');
+    script.src = campfireSrc;
+    script.async = false;
+    script.dataset.hobunjiCampfireSystem = '1';
+    document.head.appendChild(script);
+  };
+  if (window.HobunjiNormalizedFurnitureDatabase) {
+    installCampfire();
+    return;
+  }
+  let databaseScript = document.querySelector('script[data-hobunji-normalized-furniture]');
+  if (!databaseScript) {
+    databaseScript = document.createElement('script');
+    databaseScript.src = databaseSrc;
+    databaseScript.async = false;
+    databaseScript.dataset.hobunjiNormalizedFurniture = '1';
+    document.head.appendChild(databaseScript);
+  }
+  databaseScript.addEventListener('load', installCampfire, { once: true });
 })();
 
 (() => {
