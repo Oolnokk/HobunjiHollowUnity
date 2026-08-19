@@ -4,6 +4,7 @@
 
   const profiles = global.HobunjiHandModelProfiles;
   const hands = global.ProceduralHandAttachments;
+  const basisApi = global.HobunjiHandToolSemanticBasis;
   const settings = global.HobunjiHandExperimentalRigSettings;
   const defaults = global.ProceduralHandTwoBoneSkin?.defaults || {
     jointYPercent: 0.62,
@@ -69,8 +70,8 @@
   group.id = 'handForearmRigGroup';
   group.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>GLB hand / forearm skin</div>
-    <div class="help" style="margin-bottom:7px">Source GLB basis: <b>+Y wrist</b> · <b>+Z palm</b> · <b>+X thumb</b>. Joint and weights update live without reloading the GLB.</div>
-    <div class="field"><label>Forearm joint local Y <span id="handForearmJointVal"></span></label><div class="fieldRow">
+    <div class="help" style="margin-bottom:7px">The wrist direction now comes from the model's <b>semantic Fingers axis</b> (wrist = opposite Fingers), rather than assuming raw +Y. Joint and weights update live without reloading the GLB.</div>
+    <div class="field"><label>Forearm joint toward wrist <span id="handForearmJointVal"></span></label><div class="fieldRow">
       <input id="handForearmJoint" type="range" min="5" max="95" step="0.5">
       <input id="handForearmJointNumber" type="number" min="5" max="95" step="0.5" style="width:78px;flex:0 0 78px">
     </div></div>
@@ -100,6 +101,8 @@
   function currentModel() { return profiles.data.models?.[profileSelect.value] || null; }
   function ensureConfig(model) {
     if (!model.forearmRig || typeof model.forearmRig !== 'object') model.forearmRig = {};
+    // jointYPercent is retained as the persisted compatibility key; runtime now
+    // interprets it as percent along the semantic wrist axis.
     if (!Number.isFinite(Number(model.forearmRig.jointYPercent))) model.forearmRig.jointYPercent = Number(defaults.jointYPercent) || 0.62;
     if (!Number.isFinite(Number(model.forearmRig.blendWidthPercent))) model.forearmRig.blendWidthPercent = Number(defaults.blendWidthPercent) || 0.62;
     if (!Number.isFinite(Number(model.forearmRig.crossBoneWeight))) model.forearmRig.crossBoneWeight = Number(defaults.crossBoneWeight) || 0.04;
@@ -208,11 +211,12 @@
     const hand = currentDebug()?.hand || null;
     const debug = hand?.twoBoneSkin?.sides?.right || null;
     if (!debug?.rigged) {
-      status.textContent = 'Two-bone skin pending GLB load.';
+      const audit = basisApi?.handTransformAuditForModel?.(profileSelect.value) || null;
+      status.textContent = `Two-bone skin pending GLB load · semantic wrist ${audit?.wristVector ? JSON.stringify(audit.wristVector) : '+Y legacy'}.`;
       return;
     }
     const weights = debug.axisWeights || {};
-    status.textContent = `Right: joint ${(Number(debug.jointYPercent) * 100).toFixed(1)}% · blend ${(Number(debug.blendWidthPercent) * 100).toFixed(0)}% · cross ${(Number(debug.crossBoneWeight) * 100).toFixed(1)}% · shoulder axes P/Y/R ${(Number(weights.pitch) * 100).toFixed(0)}/${(Number(weights.yaw) * 100).toFixed(0)}/${(Number(weights.roll) * 100).toFixed(0)}% · residual ${Number(debug.residualDeg || 0).toFixed(2)}°.`;
+    status.textContent = `Right: wrist ${debug.wristAxisLabel || '+Y'} · joint ${(Number(debug.jointYPercent) * 100).toFixed(1)}% · blend ${(Number(debug.blendWidthPercent) * 100).toFixed(0)}% · cross ${(Number(debug.crossBoneWeight) * 100).toFixed(1)}% · shoulder axes P/Y/R ${(Number(weights.pitch) * 100).toFixed(0)}/${(Number(weights.yaw) * 100).toFixed(0)}/${(Number(weights.roll) * 100).toFixed(0)}% · residual ${Number(debug.residualDeg || 0).toFixed(2)}°.`;
   }
 
   profileSelect.addEventListener('change', syncFields);
