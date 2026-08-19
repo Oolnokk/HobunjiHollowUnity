@@ -1,18 +1,16 @@
-// Impact blend-clip library — loads the two authored 4-directional ragdoll
-// blend spaces exported by docs/tools/procedural-animation-editor/index.html
+// Impact blend-clip library — loads authored 4-directional ragdoll blend
+// spaces exported by docs/tools/procedural-animation-editor/index.html
 // (schema hobunji-impact-ragdoll-blend-space.v1) and hands clips to
 // impact-ragdoll-playback.js by bank + hit direction. Shaped like
 // docs/js/portrait-breathing.js's own load()/getAnimData() (fetch-once,
 // cache, synchronous reads afterward) since that's this repo's existing
-// precedent for a fetched animation-data asset.
+// precedent for fetched animation data.
 //
 // 'impact' bank = docs/config/animations/impact-blend-v3.json (ordinary
 // staggering hit reaction — see game.js's damagePlayer/damageCreature).
-// 'breakThrow' bank = docs/config/animations/spinthrow-blend-v1.json (the
-// zero-Footing full-knockdown throw; its authored tail is already a settled
-// prone pose, which impact-ragdoll-playback.js's update() holds on
-// (playback.holding) as the 'stun' phase instead of needing a fifth
-// authored clip).
+// 'knockdown' bank = the authored zero-Footing knockdown supplied from the
+// Procedural Animation editor. The historical 'breakThrow' bank remains an
+// alias so existing game.js call sites automatically use the new default.
 //
 // Usage:
 //   await ImpactBlendLibrary.load()
@@ -23,8 +21,11 @@
   // Relative to the config/ directory (see resolveConfigBase) — mirrors
   // portrait-breathing.js's own 'animations/breathing-default.json' path.
   const BANK_ASSETS = {
-    impact: "animations/impact-blend-v3.json",
-    breakThrow: "animations/spinthrow-blend-v1.json",
+    impact: { path: "animations/impact-blend-v3.json", gzip: false },
+    knockdown: { path: "animations/knockdown-blend-v1.json.gz", gzip: true },
+  };
+  const BANK_ALIASES = {
+    breakThrow: 'knockdown',
   };
 
   const banks = {}; // bankId -> { front, back, left, right } clip data
@@ -34,13 +35,22 @@
     return window.SCRATCHBONES_CONFIG?.game?.assets?.portrait?.configBase || "./config/";
   }
 
-  async function loadBank(bankId, relativePath) {
+  async function readJsonResponse(resp, gzip) {
+    if (!gzip) return resp.json();
+    if (typeof DecompressionStream !== 'function' || !resp.body) {
+      throw new Error('This browser cannot decompress the authored knockdown asset.');
+    }
+    const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).json();
+  }
+
+  async function loadBank(bankId, asset) {
     const base = String(resolveConfigBase()).replace(/\/?$/, "/");
-    const url = new URL(base + relativePath, window.location.href).toString();
+    const url = new URL(base + asset.path, window.location.href).toString();
     try {
       const resp = await fetch(url);
       if (!resp.ok) { console.warn(`[ImpactBlendLibrary] ${bankId} not found:`, url); return; }
-      const data = await resp.json();
+      const data = await readJsonResponse(resp, asset.gzip);
       const clips = {};
       for (const direction of ["front", "back", "left", "right"]) {
         const clip = data?.clips?.[direction]?.clip;
@@ -56,20 +66,25 @@
 
   function load() {
     if (!loadPromise) {
-      loadPromise = Promise.all(Object.entries(BANK_ASSETS).map(([bankId, path]) => loadBank(bankId, path)));
+      loadPromise = Promise.all(Object.entries(BANK_ASSETS).map(([bankId, asset]) => loadBank(bankId, asset)));
     }
     return loadPromise;
   }
 
-  function getClip(bankId, direction) {
-    return banks[bankId]?.[direction] || null;
+  function canonicalBank(bankId) {
+    return BANK_ALIASES[bankId] || bankId;
   }
 
-  function isLoaded() {
+  function getClip(bankId, direction) {
+    return banks[canonicalBank(bankId)]?.[direction] || null;
+  }
+
+  function isLoaded(bankId = null) {
+    if (bankId) return !!banks[canonicalBank(bankId)];
     return Object.keys(banks).length > 0;
   }
 
-  window.ImpactBlendLibrary = { load, getClip, isLoaded };
+  window.ImpactBlendLibrary = { load, getClip, isLoaded, canonicalBank };
 
   // Auto-load on script evaluation, same convention as portrait-breathing.js's
   // own _autoInitBreathingComposer — callers (impact-ragdoll-playback.js) just
