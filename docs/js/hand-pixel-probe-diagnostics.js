@@ -34,7 +34,8 @@
     if (skinnedOutline) {
       lines.push(
         `Skinned outline: mode=${skinnedOutline.mode || '-'} rigs=${skinnedOutline.activeRigs ?? '-'} `
-        + `shells=${skinnedOutline.installedShells ?? '-'} rigidPassDisabled=${skinnedOutline.disabledGlobalShellMeshes ?? '-'}`
+        + `shells=${skinnedOutline.installedShells ?? '-'} rigidPassDisabled=${skinnedOutline.disabledGlobalShellMeshes ?? '-'} `
+        + `heldShells=${skinnedOutline.heldShellsRegistered ?? '-'}`
       );
     } else {
       lines.push('Skinned outline: module missing');
