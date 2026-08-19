@@ -19,6 +19,10 @@
   let mirrored = false; // Tracks the core editor's private toolMirrored flag from every user/programmatic Flip click.
   let mirrorNormalizations = 0; // Used by the visible status to expose order-dependent state repairs on mobile.
   let staleAvatarDiscards = 0; // Used by the visible status to expose prevented async species/gender races on mobile.
+  let reorderedToolLoads = 0; // Used by the visible status to expose tool texture completions that arrived out of request order.
+  let toolTextureGeneration = 0; // Assigns request order to editor tool textures before module-private setToolSprite() awaits them.
+  let nextToolTextureDelivery = 1; // Identifies the oldest tool texture callback that may safely resume setToolSprite().
+  const toolTextureCompletions = new Map(); // Buffers finished tool textures until all older requests have delivered first.
   let lastReason = 'ready'; // Used by the visible status to summarize the most recent automatic state repair.
 
   const status = document.createElement('div');
@@ -29,7 +33,7 @@
   if (debug?.parentElement) debug.parentElement.insertBefore(status, debug);
 
   function renderStatus() {
-    status.textContent = `Animation state guard · mirror ${mirrored ? 'ON' : 'off'} · normalized ${mirrorNormalizations} · stale avatar rebuilds blocked ${staleAvatarDiscards} · ${lastReason}`;
+    status.textContent = `Animation state guard · mirror ${mirrored ? 'ON' : 'off'} · normalized ${mirrorNormalizations} · stale avatar rebuilds blocked ${staleAvatarDiscards} · reordered tool loads ${reorderedToolLoads} · ${lastReason}`;
   }
 
   // This capture listener runs before the core button's onclick handler. It mirrors
@@ -116,10 +120,59 @@
     preview.renderProfileToCanvas = wrappedRender;
   }
 
+  function isEditorToolSpriteUrl(url) {
+    const src = String(url || '');
+    return /\/assets\/toolsprites\//.test(src) || /\/assets\/objectsprites\/bottle_wine\.png(?:[?#].*)?$/.test(src);
+  }
+
+  function flushToolTextureCompletions() {
+    while (toolTextureCompletions.has(nextToolTextureDelivery)) {
+      const completion = toolTextureCompletions.get(nextToolTextureDelivery);
+      toolTextureCompletions.delete(nextToolTextureDelivery);
+      nextToolTextureDelivery += 1;
+      if (completion.ok) completion.onLoad?.(completion.texture);
+      else completion.onError?.(completion.error);
+    }
+  }
+
+  // setToolSprite() is module-private and awaits TextureLoader completion. If an
+  // older texture finishes after a newer request, the old await used to resume last
+  // and replace the current tool. Deliver tool callbacks in request order instead:
+  // when an old load is slow, all already-finished newer callbacks flush immediately
+  // after it, so the newest requested tool is always the final installed sprite.
+  const textureLoaderProto = global.THREE?.TextureLoader?.prototype;
+  if (textureLoaderProto?.load && !textureLoaderProto.load.__hobunjiToolOrderGuard) {
+    const originalTextureLoad = textureLoaderProto.load;
+    const wrappedTextureLoad = function guardedTextureLoad(url, onLoad, onProgress, onError) {
+      if (!isEditorToolSpriteUrl(url)) return originalTextureLoad.call(this, url, onLoad, onProgress, onError);
+      const requestId = ++toolTextureGeneration; // Used below to serialize only editor held-tool texture callbacks.
+      return originalTextureLoad.call(this, url, texture => {
+        if (requestId !== nextToolTextureDelivery) {
+          reorderedToolLoads += 1;
+          lastReason = 'serialized out-of-order tool texture completion';
+          renderStatus();
+        }
+        toolTextureCompletions.set(requestId, { ok: true, texture, onLoad, onError });
+        flushToolTextureCompletions();
+      }, onProgress, error => {
+        if (requestId !== nextToolTextureDelivery) {
+          reorderedToolLoads += 1;
+          lastReason = 'serialized out-of-order tool texture error';
+          renderStatus();
+        }
+        toolTextureCompletions.set(requestId, { ok: false, error, onLoad, onError });
+        flushToolTextureCompletions();
+      });
+    };
+    wrappedTextureLoad.__hobunjiToolOrderGuard = true;
+    textureLoaderProto.load = wrappedTextureLoad;
+  }
+
   renderStatus();
   global.HobunjiAttackEditorAnimationStateGuard = Object.freeze({
     get mirrored() { return mirrored; },
     get staleAvatarDiscards() { return staleAvatarDiscards; },
+    get reorderedToolLoads() { return reorderedToolLoads; },
     normalizeMirror,
     updateStatus: renderStatus,
   });
