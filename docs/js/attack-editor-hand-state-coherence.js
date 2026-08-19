@@ -1,14 +1,12 @@
-// Keeps the Attack Animation Editor's hand authoring context coherent.
-//
-// Several older adapters intentionally own separate pieces of the UI. This bridge
-// only synchronizes their public controls/events so changing species, model mapping,
-// or a preset cannot leave a hidden previous model/tool/grip mode active.
+// Keeps the Attack Animation Editor's hand authoring context coherent and exposes
+// a mobile-readable summary of the separated hand / forearm / bicep authorities.
 (function (global) {
   'use strict';
 
   const profiles = global.HobunjiHandModelProfiles;
   const gripModes = global.HobunjiHandGripModes;
   const frameDriver = global.ProceduralHandFrameDriver;
+  const settings = global.HobunjiHandExperimentalRigSettings;
   const speciesSelect = document.getElementById('avatarSpecies');
   const genderSelect = document.getElementById('avatarGender');
   const profileSelect = document.getElementById('handProfileSelect');
@@ -41,17 +39,9 @@
     if (input) input.disabled = true;
   }
 
-  function mappedModelKey() {
-    return String(profiles.modelKeyForSpecies?.(speciesSelect.value) || '');
-  }
-
-  function optionExists(select, value) {
-    return !!value && [...select.options].some(option => option.value === value);
-  }
-
-  function dispatchProfileRefresh() {
-    profileSelect.dispatchEvent(new Event('change', { bubbles: true }));
-  }
+  function mappedModelKey() { return String(profiles.modelKeyForSpecies?.(speciesSelect.value) || ''); }
+  function optionExists(select, value) { return !!value && [...select.options].some(option => option.value === value); }
+  function dispatchProfileRefresh() { profileSelect.dispatchEvent(new Event('change', { bubbles: true })); }
 
   function syncSpeciesModelContext(reason) {
     const mapped = mappedModelKey();
@@ -73,7 +63,6 @@
       || rows[0]
       || null;
   }
-
   function fmt(value, digits = 1) {
     const number = Number(value);
     return Number.isFinite(number) ? number.toFixed(digits) : '-';
@@ -86,64 +75,60 @@
     const selected = String(profileSelect.value || '-');
     const tool = String(toolSelect.value || '-');
     const mode = gripModes?.currentModeKey?.() || '-';
-    const debug = currentRigDebug();
-    const handDebug = debug?.hand || null;
-    const shoulder = handDebug?.shoulderCompass?.sides?.right || null;
-    const skin = handDebug?.twoBoneSkin?.sides?.right || null;
+    const hand = currentRigDebug()?.hand || null;
+    const compass = hand?.shoulderCompass || null;
+    const target = compass?.sides?.right || null;
+    const skin = hand?.twoBoneSkin?.sides?.right || null;
     const mismatch = mapped !== '-' && selected !== mapped;
-    const shoulderText = skin?.rigged
-      ? `forearm joint ${fmt((skin.jointYPercent || 0) * 100, 1)}% · blend ${fmt((skin.blendWidthPercent || 0) * 100, 0)}% · cross ${fmt((skin.crossBoneWeight || 0) * 100, 1)}% · shoulder residual ${fmt(shoulder?.residualDeg ?? skin.residualDeg, 2)}°`
-      : `forearm ${shoulder?.reason || handDebug?.shoulderCompass?.scanState || 'pending'}`;
-    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → model ${mapped}${mismatch ? ` [editing ${selected}]` : ''} · tool ${tool} · grip ${mode} · ${shoulderText}`;
+    const axis = skin?.axisWeights || target?.axisWeights || null;
+    const axisText = axis
+      ? `P/Y/R ${fmt((axis.pitch || 0) * 100, 0)}/${fmt((axis.yaw || 0) * 100, 0)}/${fmt((axis.roll || 0) * 100, 0)}%`
+      : 'P/Y/R -';
+    const rigText = skin?.rigged
+      ? `hand=grip · forearm→${target?.targetKind || skin.targetKind || 'shoulder'} ${axisText} residual ${fmt(target?.residualDeg ?? skin.residualDeg, 2)}°${target?.bicepResidualDeg != null ? ` · bicep→elbow ${fmt(target.bicepResidualDeg, 2)}°` : ''}`
+      : `forearm ${target?.reason || compass?.scanState || 'pending'}`;
+    const experiments = `axisExp=${settings?.forearmAxisTracking !== false ? 'ON' : 'OFF'} · bicepExp=${settings?.bicepElbowTracking === true ? 'ON' : 'OFF'}`;
+    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → ${mapped}${mismatch ? ` [editing ${selected}]` : ''} · tool ${tool} · grip ${mode} · ${experiments} · ${rigText}`;
     status.style.color = mismatch ? '#fbbf24' : '';
   }
 
   function syncHandToolContext(reason) {
     global.HobunjiAttackEditorHandGripMode?.syncForTool?.();
     global.HobunjiAttackEditorDirectHandAttachments?.syncFields?.();
+    global.ProceduralHandTwoBoneSkin?.refreshAll?.();
     frameDriver?.syncNow?.();
     syncSerial += 1;
     lastReason = reason || 'tool context';
     updateStatus();
   }
 
-  speciesSelect.addEventListener('change', () => {
-    setTimeout(() => syncSpeciesModelContext('species changed'), 0);
-  });
+  speciesSelect.addEventListener('change', () => setTimeout(() => syncSpeciesModelContext('species changed'), 0));
+  genderSelect?.addEventListener('change', () => setTimeout(() => {
+    frameDriver?.syncNow?.();
+    lastReason = 'gender changed';
+    updateStatus();
+  }, 0));
 
-  genderSelect?.addEventListener('change', () => {
-    setTimeout(() => {
-      frameDriver?.syncNow?.();
-      lastReason = 'gender changed';
-      updateStatus();
-    }, 0);
-  });
-
-  speciesModelSelect.addEventListener('change', () => {
-    setTimeout(() => {
-      const mapped = String(speciesModelSelect.value || mappedModelKey());
-      if (mapped && optionExists(profileSelect, mapped)) profileSelect.value = mapped;
-      dispatchProfileRefresh();
-      frameDriver?.syncNow?.();
-      syncSerial += 1;
-      lastReason = 'species model remapped';
-      updateStatus();
-    }, 0);
-  });
+  speciesModelSelect.addEventListener('change', () => setTimeout(() => {
+    const mapped = String(speciesModelSelect.value || mappedModelKey());
+    if (mapped && optionExists(profileSelect, mapped)) profileSelect.value = mapped;
+    dispatchProfileRefresh();
+    frameDriver?.syncNow?.();
+    syncSerial += 1;
+    lastReason = 'species model remapped';
+    updateStatus();
+  }, 0));
 
   profileSelect.addEventListener('change', () => {
     lastReason = 'model profile selected';
     updateStatus();
   });
-
-  toolSelect.addEventListener('change', () => {
-    setTimeout(() => {
-      frameDriver?.syncNow?.();
-      syncSerial += 1;
-      lastReason = 'tool changed';
-      updateStatus();
-    }, 0);
-  });
+  toolSelect.addEventListener('change', () => setTimeout(() => {
+    frameDriver?.syncNow?.();
+    syncSerial += 1;
+    lastReason = 'tool changed';
+    updateStatus();
+  }, 0));
 
   if (presetButton) {
     presetButton.addEventListener('click', () => {
@@ -151,6 +136,7 @@
       setTimeout(() => {
         if (toolSelect.value !== presetToolBeforeClick) syncHandToolContext('preset changed tool');
         else {
+          global.ProceduralHandTwoBoneSkin?.refreshAll?.();
           frameDriver?.syncNow?.();
           lastReason = 'preset same tool';
           updateStatus();
@@ -160,7 +146,12 @@
   }
 
   profiles.subscribe?.(() => setTimeout(updateStatus, 0));
-  setInterval(updateStatus, 400);
+  settings?.subscribe?.(() => setTimeout(() => {
+    syncSerial += 1;
+    lastReason = 'experimental toggle';
+    updateStatus();
+  }, 0));
+  setInterval(updateStatus, 350);
   setTimeout(() => syncSpeciesModelContext('initial species context'), 0);
 
   global.HobunjiAttackEditorHandStateCoherence = Object.freeze({
