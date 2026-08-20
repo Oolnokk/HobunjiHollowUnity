@@ -75,6 +75,7 @@
       rig: null,
       syncSentinel: null,
       lastToolKey: null,
+      lastVisualGripBasis: null,
       secondaryActive: false,
     });
     return avatarRoot;
@@ -111,8 +112,12 @@
     return null;
   }
 
+  function inAttackEditor() {
+    return /\/tools\/attack-animation-editor\//.test(location.pathname);
+  }
+
   function currentToolKey() {
-    if (/\/tools\/attack-animation-editor\//.test(location.pathname)) {
+    if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
     const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -120,17 +125,19 @@
   }
 
   function currentToolHolder(record) {
-    if (/\/tools\/attack-animation-editor\//.test(location.pathname)) return findEditorToolHolder(record);
+    if (inAttackEditor()) return findEditorToolHolder(record);
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
     return null;
   }
 
   function handTransformForRecord(record) {
-    const raw = profiles.handTransformForSpecies?.(record.speciesId)
+    const raw = global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
+      || profiles.handTransformForSpecies?.(record.speciesId)
       || profiles.modelForSpecies?.(record.speciesId)?.handFromTool
       || {};
     const p = raw.position || {};
     const r = raw.rotationDeg || {};
+    const q = raw.rotationQuaternion || null;
     const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
     const effectiveScale = Number(profiles.effectiveScaleFor?.(record.speciesId, record.gender)) || 1;
     const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * effectiveScale;
@@ -145,6 +152,9 @@
         yaw: Number(r.yaw) || 0,
         roll: Number(r.roll) || 0,
       },
+      rotationQuaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
+        ? { x: Number(q.x), y: Number(q.y), z: Number(q.z), w: Number(q.w) }
+        : null,
     };
   }
 
@@ -157,22 +167,96 @@
     ));
   }
 
+  function quaternionFromAuthored(record, authored = {}) {
+    const q = authored.rotationQuaternion;
+    if (q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))) {
+      return new record.THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize();
+    }
+    return quaternionFromDeg(record, authored.rotationDeg || {});
+  }
+
+  function hierarchyWorldQuaternion(record, node, target = new record.THREE.Quaternion()) {
+    const chain = []; // Used below to compose node-local rotations without decomposing mirrored matrixWorld values.
+    for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
+    target.identity();
+    for (let i = chain.length - 1; i >= 0; i -= 1) target.multiply(chain[i].quaternion);
+    return target.normalize();
+  }
+
+  function findToolVisualPlane(toolHolder) {
+    let plane = null;
+    toolHolder?.traverse?.(node => {
+      if (!plane && node?.userData?.toolPlane?.isObject3D) plane = node.userData.toolPlane;
+    });
+    return plane;
+  }
+
+  // The visible weapon plane has a sweep-only child rotation that fades from the
+  // neutral sprite basis into the -90° attack basis. Hands used to follow only
+  // toolHolder, so that child-only visual correction made the apparent grip rotate
+  // between Neutral/Windup/Strike even with shoulder aiming disabled. Preserve the
+  // existing Neutral calibration and apply only the plane's delta-from-Neutral to
+  // the hand socket frame.
+  function visualGripBasisDelta(record, toolHolder) {
+    const Quaternion = toolHolder.quaternion.constructor;
+    const identity = new Quaternion();
+    const plane = findToolVisualPlane(toolHolder);
+    if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0 };
+
+    const currentEuler = plane.rotation.clone();
+    const neutralEuler = plane.rotation.clone();
+    let source = 'none';
+
+    if (inAttackEditor()) {
+      const style = String(document.getElementById('animStyle')?.value || '').toLowerCase();
+      if (style !== 'sweep') return { quaternion: identity, source, angleDeg: 0 };
+      // In the editor Neutral is z=0; applyPoseToRig writes the animated sweep
+      // basis directly onto this child plane as z=-90°..0°.
+      neutralEuler.z = 0;
+      source = 'editor-sweep-plane';
+    } else {
+      const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+      const isSweep = snapshot?.activeSlot === 'weapon'
+        && (snapshot?.combatAnim === 'sweep' || (!snapshot?.combatAnim && snapshot?.sourceAnimStyle === 'sweep'));
+      if (!isSweep) return { quaternion: identity, source, angleDeg: 0 };
+
+      // weapon-tool-stances temporarily adds this compensation during
+      // updateMatrixWorld and then restores plane.rotation.z. Reconstruct the
+      // rendered current basis here; Neutral is always the +90° compensation.
+      const currentCompDeg = Number(snapshot?.sweepPlaneNeutralCompensationDeg);
+      currentEuler.z += record.THREE.MathUtils.degToRad(Number.isFinite(currentCompDeg) ? currentCompDeg : 0);
+      neutralEuler.z += Math.PI / 2;
+      source = 'runtime-sweep-plane';
+    }
+
+    const currentQ = new Quaternion().setFromEuler(currentEuler);
+    const neutralQ = new Quaternion().setFromEuler(neutralEuler);
+    const delta = currentQ.multiply(neutralQ.invert()).normalize();
+    const angleDeg = record.THREE.MathUtils.radToDeg(2 * Math.acos(Math.min(1, Math.abs(delta.w))));
+    return { quaternion: delta, source, angleDeg };
+  }
+
   function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
     toolHolder.updateWorldMatrix?.(true, true);
 
+    const visualBasis = visualGripBasisDelta(record, toolHolder);
     let position;
-    let quaternion = toolHolder.getWorldQuaternion(new Quaternion());
+    // Used as the scale-free world orientation of the tool socket. Do not use
+    // getWorldQuaternion(): the game player hierarchy can contain negative scale.
+    let quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
+    quaternion.multiply(visualBasis.quaternion);
     if (secondaryGrip) {
       const p = secondaryGrip.position || {};
-      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
+        .applyQuaternion(visualBasis.quaternion);
       toolHolder.localToWorld(position);
       quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
     } else {
       position = toolHolder.getWorldPosition(new Vector3());
     }
-    return { position, quaternion };
+    return { position, quaternion, visualBasis };
   }
 
   function handWorldFromSocket(record, socketFrame) {
@@ -182,8 +266,9 @@
       .applyQuaternion(socketFrame.quaternion);
     return {
       position: socketFrame.position.clone().add(offset),
-      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromDeg(record, authored.rotationDeg)),
+      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromAuthored(record, authored)),
       authored,
+      visualBasis: socketFrame.visualBasis || null,
     };
   }
 
@@ -193,6 +278,7 @@
       record.rig.useIdlePose?.();
       record.secondaryActive = false;
       record.lastToolKey = null;
+      record.lastVisualGripBasis = null;
       return { direct: true, toolVisible: false, secondaryActive: false };
     }
 
@@ -212,16 +298,20 @@
         record.secondaryActive = false;
       }
       record.lastToolKey = toolKey || null;
+      record.lastVisualGripBasis = primary.visualBasis || null;
 
       return {
         direct: true,
         clamped: false,
         noArmIK: true,
+        quaternionNativeGripComposition: !!primary.authored.rotationQuaternion,
+        scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         secondaryActive: record.secondaryActive,
         secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
         authoredHandTransform: primary.authored,
+        visualGripBasis: primary.visualBasis,
       };
     } finally {
       syncing = false;
@@ -316,7 +406,11 @@
         noArmIK: true,
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
-        handFromTool: profiles.handTransformForSpecies?.(record.speciesId) || null,
+        scaleFreeWorldQuaternion: true,
+        visualGripBasis: record.lastVisualGripBasis,
+        handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
+          || profiles.handTransformForSpecies?.(record.speciesId)
+          || null,
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
         hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,

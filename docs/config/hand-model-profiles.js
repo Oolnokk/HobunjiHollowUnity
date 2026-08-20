@@ -129,6 +129,92 @@
     };
   }
 
+  function multiplyQuat(a, b) {
+    return {
+      x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    };
+  }
+
+  function normalizeQuat(raw) {
+    const x = numberOrZero(raw?.x);
+    const y = numberOrZero(raw?.y);
+    const z = numberOrZero(raw?.z);
+    const w = Number.isFinite(Number(raw?.w)) ? Number(raw.w) : 1;
+    const length = Math.hypot(x, y, z, w) || 1;
+    return { x: x / length, y: y / length, z: z / length, w: w / length };
+  }
+
+  // Matches THREE.Euler(..., 'YXZ'): qYaw * qPitch * qRoll. Keep profile
+  // migration independent of a global THREE because this config loads before the
+  // editor's ESM/import-map Three instance exists.
+  function quatFromYXZ(rotation = {}) {
+    const pitch = numberOrZero(rotation.pitch) * Math.PI / 180;
+    const yaw = numberOrZero(rotation.yaw) * Math.PI / 180;
+    const roll = numberOrZero(rotation.roll) * Math.PI / 180;
+    const qYaw = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+    const qPitch = { x: Math.sin(pitch / 2), y: 0, z: 0, w: Math.cos(pitch / 2) };
+    const qRoll = { x: 0, y: 0, z: Math.sin(roll / 2), w: Math.cos(roll / 2) };
+    return normalizeQuat(multiplyQuat(multiplyQuat(qYaw, qPitch), qRoll));
+  }
+
+  function rotateVectorByQuat(vector = {}, rawQuat = {}) {
+    const q = normalizeQuat(rawQuat);
+    const vx = numberOrZero(vector.x);
+    const vy = numberOrZero(vector.y);
+    const vz = numberOrZero(vector.z);
+    const tx = 2 * (q.y * vz - q.z * vy);
+    const ty = 2 * (q.z * vx - q.x * vz);
+    const tz = 2 * (q.x * vy - q.y * vx);
+    return {
+      x: vx + q.w * tx + (q.y * tz - q.z * ty),
+      y: vy + q.w * ty + (q.z * tx - q.x * tz),
+      z: vz + q.w * tz + (q.x * ty - q.y * tx),
+    };
+  }
+
+  function eulerYXZFromQuat(rawQuat) {
+    const q = normalizeQuat(rawQuat);
+    const { x, y, z, w } = q;
+    const m11 = 1 - 2 * (y * y + z * z);
+    const m13 = 2 * (x * z + y * w);
+    const m21 = 2 * (x * y + z * w);
+    const m22 = 1 - 2 * (x * x + z * z);
+    const m23 = 2 * (y * z - x * w);
+    const m31 = 2 * (x * z - y * w);
+    const m33 = 1 - 2 * (x * x + y * y);
+    const clamp = value => Math.max(-1, Math.min(1, value));
+    const pitch = Math.asin(-clamp(m23));
+    let yaw;
+    let roll;
+    if (Math.abs(m23) < 0.9999999) {
+      yaw = Math.atan2(m13, m33);
+      roll = Math.atan2(m21, m22);
+    } else {
+      yaw = Math.atan2(-m31, m11);
+      roll = 0;
+    }
+    const toDeg = radians => radians * 180 / Math.PI;
+    return { pitch: toDeg(pitch), yaw: toDeg(yaw), roll: toDeg(roll) };
+  }
+
+  function invertTransform(raw) {
+    const transform = normalizeTransform(raw);
+    const q = quatFromYXZ(transform.rotationDeg); // Represents the legacy hand→tool rotation being inverted below.
+    const inverseQ = { x: -q.x, y: -q.y, z: -q.z, w: q.w }; // Unit-quaternion conjugate gives the exact reverse rotation.
+    const inversePosition = rotateVectorByQuat({
+      x: -transform.position.x,
+      y: -transform.position.y,
+      z: -transform.position.z,
+    }, inverseQ); // A rigid inverse must rotate -translation by R^-1; plain sign negation is only correct when R is identity.
+    return {
+      position: inversePosition,
+      rotationDeg: eulerYXZFromQuat(inverseQ),
+    };
+  }
+
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const migrateToSharedAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
@@ -172,19 +258,7 @@
       // Older drafts authored a tool socket on the hand. Migrate that into the
       // direct hand-from-tool convention only when no explicit direct transform exists.
       if (!model.handFromTool) {
-        const legacy = normalizeTransform(model.toolGrip);
-        model.handFromTool = {
-          position: {
-            x: -legacy.position.x,
-            y: -legacy.position.y,
-            z: -legacy.position.z,
-          },
-          rotationDeg: {
-            pitch: -legacy.rotationDeg.pitch,
-            yaw: -legacy.rotationDeg.yaw,
-            roll: -legacy.rotationDeg.roll,
-          },
-        };
+        model.handFromTool = invertTransform(model.toolGrip);
       } else {
         model.handFromTool = normalizeTransform(model.handFromTool);
       }

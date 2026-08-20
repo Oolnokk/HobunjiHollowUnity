@@ -84,11 +84,13 @@
     applyMode(key, false);
   }
 
-  select.addEventListener('change', () => applyMode(select.value, true));
-  toolSelect?.addEventListener('change', () => {
+  function syncForTool() {
     manualChoice = false;
     chooseDefaultForTool();
-  });
+  }
+
+  select.addEventListener('change', () => applyMode(select.value, true));
+  toolSelect?.addEventListener('change', syncForTool);
 
   gripModes.subscribe?.(key => {
     if (!manualChoice && gripModes.modes[key]) select.value = key;
@@ -124,6 +126,12 @@
         setTimeout(() => applyMode(parsed.gripMode, true), 0);
       }
     } catch (_) {}
+  });
+
+  global.HobunjiAttackEditorHandGripMode = Object.freeze({
+    syncForTool,
+    applyMode,
+    get selectedMode() { return select.value || gripModes.currentModeKey(); },
   });
 
   chooseDefaultForTool();

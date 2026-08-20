@@ -32,19 +32,21 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260818f', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260819a', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
-    new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
+    new URL('js/hand-grip-modes.js?v=20260818c', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260818c', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260818c', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20260818e', docsBase).href,
+    new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
+    new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260819a', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260819a', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -54,13 +56,18 @@
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818c', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819b', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
+    handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20260818a', docsBase).href);
   }
 
   function loadSequentially(urls) {

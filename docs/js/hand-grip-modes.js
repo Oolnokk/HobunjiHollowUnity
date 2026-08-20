@@ -85,8 +85,38 @@
     return multiplyQuat(multiplyQuat(qYaw, qPitch), qRoll);
   }
 
-  function eulerYXZFromQuat(q) {
-    const x = Number(q?.x) || 0, y = Number(q?.y) || 0, z = Number(q?.z) || 0, w = Number(q?.w) || 1;
+  function normalizeQuat(q) {
+    const x = Number(q?.x) || 0;
+    const y = Number(q?.y) || 0;
+    const z = Number(q?.z) || 0;
+    const w = Number.isFinite(Number(q?.w)) ? Number(q.w) : 1;
+    const length = Math.hypot(x, y, z, w) || 1;
+    return { x: x / length, y: y / length, z: z / length, w: w / length };
+  }
+
+  function inverseQuat(rawQuat) {
+    const q = normalizeQuat(rawQuat); // Used to derive the actual spatial delta between the calibrated and mode-adjusted authored frames.
+    return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
+  }
+
+  function rotateVectorByQuat(vector = {}, rawQuat = {}) {
+    const q = normalizeQuat(rawQuat);
+    const vx = Number(vector.x) || 0;
+    const vy = Number(vector.y) || 0;
+    const vz = Number(vector.z) || 0;
+    const tx = 2 * (q.y * vz - q.z * vy);
+    const ty = 2 * (q.z * vx - q.x * vz);
+    const tz = 2 * (q.x * vy - q.y * vx);
+    return {
+      x: vx + q.w * tx + (q.y * tz - q.z * ty),
+      y: vy + q.w * ty + (q.z * tx - q.x * tz),
+      z: vz + q.w * tz + (q.x * ty - q.y * tx),
+    };
+  }
+
+  function eulerYXZFromQuat(rawQuat) {
+    const q = normalizeQuat(rawQuat);
+    const { x, y, z, w } = q;
     const m11 = 1 - 2 * (y * y + z * z);
     const m13 = 2 * (x * z + y * w);
     const m21 = 2 * (x * y + z * w);
@@ -111,26 +141,42 @@
 
   function combine(base, mode) {
     const bp = base?.position || {};
+    const br = base?.rotationDeg || {};
     const mp = mode?.position || {};
-    // Position sliders are intentionally tool-local XYZ as labeled in the editor.
-    // Rotations are different: the selected grip is the baseline orientation and
-    // handFromTool is a fine rotation FROM that baseline, so compose quaternions
-    // instead of adding Euler components (which breaks 90deg grip + yaw/roll cases).
-    const modeQ = quatFromYXZ(mode?.rotationDeg || {});
-    const fineQ = quatFromYXZ(base?.rotationDeg || {});
-    const rotationDeg = eulerYXZFromQuat(multiplyQuat(modeQ, fineQ));
+    const mr = mode?.rotationDeg || {};
+    const fineQ = quatFromYXZ(br);
+
+    // Grip-mode axes are authoring axes, not pre-calibration/world axes. Applying
+    // +90° pitch before the shared -90° yaw calibration turned Palm Perpendicular
+    // into an apparent roll. Build the target authored Euler first so the preset
+    // changes exactly the named axis, then derive the rigid spatial delta from it.
+    const targetRotation = {
+      pitch: (Number(br.pitch) || 0) + (Number(mr.pitch) || 0),
+      yaw: (Number(br.yaw) || 0) + (Number(mr.yaw) || 0),
+      roll: (Number(br.roll) || 0) + (Number(mr.roll) || 0),
+    };
+    const rotationQuaternion = normalizeQuat(quatFromYXZ(targetRotation));
+    const modeDeltaQ = normalizeQuat(multiplyQuat(rotationQuaternion, inverseQuat(fineQ)));
+
+    // Keep translation a true rigid transform under the same effective mode delta.
+    const rotatedFinePosition = rotateVectorByQuat(bp, modeDeltaQ);
     return {
       position: {
-        x: (Number(bp.x) || 0) + (Number(mp.x) || 0),
-        y: (Number(bp.y) || 0) + (Number(mp.y) || 0),
-        z: (Number(bp.z) || 0) + (Number(mp.z) || 0),
+        x: (Number(mp.x) || 0) + rotatedFinePosition.x,
+        y: (Number(mp.y) || 0) + rotatedFinePosition.y,
+        z: (Number(mp.z) || 0) + rotatedFinePosition.z,
       },
-      rotationDeg,
+      rotationDeg: targetRotation,
+      rotationQuaternion,
     };
   }
 
-  function handTransformForSpecies(speciesId) {
+  function effectiveFrameForSpecies(speciesId) {
     return combine(originalHandTransformForSpecies(speciesId), currentMode());
+  }
+
+  function handTransformForSpecies(speciesId) {
+    return effectiveFrameForSpecies(speciesId);
   }
 
   function notify() {
@@ -160,6 +206,8 @@
     defaultForTool,
     currentModeKey,
     currentMode,
+    effectiveFrameForSpecies,
+    quaternionForRotation: quatFromYXZ,
     setEditorMode,
     setRuntimeMode,
     clearRuntimeMode() { runtimeOverride = null; notify(); },
