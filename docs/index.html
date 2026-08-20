@@ -1344,7 +1344,12 @@
       <!-- ── Debug log pane ────────────────────────────────── -->
       <div class="mp-pane" id="mpDebug">
         <div style="display:flex;flex-direction:column;position:absolute;inset:0">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
+          <!-- padding-right reserves the same corner #menuBtn floats in (it's
+               position:fixed, z-index:60, above this panel's own z-index:56,
+               so it stays clickable to close the menu) — without it, this
+               row's right-hand button group (Probe a pixel/Copy/Clear) sits
+               directly underneath menuBtn and is physically unclickable. -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px;padding-right:calc(4 * var(--col) + 16px)">
             <div style="display:flex;gap:6px">
               <button id="debugViewLogBtn"   class="debug-view-tab active" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:6px;color:#6aa7ff;cursor:pointer">Log</button>
               <button id="debugViewProbeBtn" class="debug-view-tab"        style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">🎯 Pixel Probe</button>

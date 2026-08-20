@@ -45,7 +45,15 @@
       const keyboardActivation = event.detail === 0 && document.activeElement === button; // Enter/Space activation remains available when the probe button itself is focused.
       pointerIntent = false;
       if (pointerActivation || keyboardActivation) {
-        event.stopPropagation(); // PixelProbe's existing target listener is allowed to arm only after this explicit button intent.
+        // Let the event finish normally. A capture-phase listener runs before
+        // a same-node bubble-phase listener regardless of registration order,
+        // and calling stopPropagation() here — even though this is already
+        // the target — stops the browser from ever reaching that later
+        // bubble-phase phase on this same node, so PixelProbe's own
+        // (bubble-phase, unconditional) click listener that calls
+        // armPixelProbe() would never run, on every click, guard or not.
+        // Confirmed empirically: only an explicit `return` with no
+        // stopPropagation() call here lets that listener fire afterward.
         return;
       }
       event.preventDefault();
