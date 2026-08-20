@@ -186,16 +186,44 @@
   // directly diffable field-for-field.
   function _pixelProbeTransformDumpLines(hits) {
     const dumpApi = window.HobunjiTransformDump;
-    if (!dumpApi) return null;
+    if (!dumpApi) return Promise.resolve(null);
     const owner = hits.map(h => _pixelProbeOwnerInfo(h.object)).find(o => o?.root);
-    if (!owner) return null;
-    const lines = ['', `=== Local transform dump: ${owner.kind} "${owner.label}" (compare against the same dump taken in the Attack Animation Editor) ===`];
-    lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(owner.root), { title: `${owner.kind} rig` }));
-    if (owner.kind === 'player' && deps.toolHolder) {
-      lines.push('');
-      lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(deps.toolHolder), { title: 'player tool holder (parented as a sibling of playerMesh, not a child)' }));
+    if (!owner) return Promise.resolve(null);
+
+    function buildLines() {
+      const lines = ['', `=== Local transform dump: ${owner.kind} "${owner.label}" (compare against the same dump taken in the Attack Animation Editor) ===`];
+      lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(owner.root), { title: `${owner.kind} rig` }));
+      if (owner.kind === 'player' && deps.toolHolder) {
+        lines.push('');
+        lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(deps.toolHolder), { title: 'player tool holder (parented as a sibling of playerMesh, not a child)' }));
+      }
+      return lines;
     }
-    return lines;
+
+    const composer = window.PlayerBodyTransformComposer;
+    if (owner.kind !== 'player' || !composer?.captureNextRenderTransforms) return Promise.resolve(buildLines());
+
+    // PlayerBodyTransformComposer applies body-tilt channels (e.g. the idle
+    // weapon-drawn bodyYaw) as a TEMPORARY delta to playerMesh/toolHolder only
+    // during the actual WebGLRenderer.render() call, then undoes it immediately
+    // after. Dumping between frames (the plain buildLines() path above) would
+    // read playerMesh/toolHolder back in their resting, untilted state while
+    // the hand sockets — synced during that same render, against the
+    // momentarily-tilted toolHolder — are left in their tilted state, an
+    // internally inconsistent snapshot that looks like a bogus editor/game
+    // desync. Wait for one real frame and dump from inside it instead, so
+    // every part of the report reflects the exact same as-rendered state.
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve(buildLines());
+      };
+      const scheduled = composer.captureNextRenderTransforms(finish);
+      if (!scheduled) { finish(); return; }
+      setTimeout(finish, 500); // Fallback if the game loop is paused/stalled — a resting-state report beats none.
+    });
   }
 
   // bodyColors slots are almost never stored as absolute color — they're
@@ -636,7 +664,7 @@
     const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
     if (npcSchedulingLines) lines.push(...npcSchedulingLines);
 
-    const transformDumpLines = _pixelProbeTransformDumpLines(hits);
+    const transformDumpLines = await _pixelProbeTransformDumpLines(hits);
     if (transformDumpLines) lines.push(...transformDumpLines);
 
     if (blendCheck) {

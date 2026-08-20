@@ -25,6 +25,7 @@
   let playerPosteriorY = 0;
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
+  let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -376,7 +377,21 @@
 
       lastRenderDebug = renderDebug;
 
-      try { return originalRender.call(this, scene, camera); }
+      try {
+        const result = originalRender.call(this, scene, camera);
+        // Fires after the real render (so anything that re-syncs itself off
+        // playerMesh/toolHolder inside that render, e.g. the procedural hand
+        // sockets' onBeforeRender sentinel, has already used THIS frame's
+        // composed transform) but before the delta below is undone — the one
+        // point where playerMesh, toolHolder, and the hand sockets are all
+        // simultaneously in the exact state actually shown on screen.
+        if (pendingCapture) {
+          const callback = pendingCapture;
+          pendingCapture = null;
+          try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
+        }
+        return result;
+      }
       finally {
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
@@ -384,11 +399,26 @@
     proto.__playerBodyTransformComposerRenderHook = true;
   }
 
+  // One-shot: fires `callback` synchronously mid-render on the next real
+  // frame, at the single point where every composer-owned root (playerMesh,
+  // toolHolder, shoulder-pet roots, ...) reflects its true as-rendered
+  // transform rather than the resting state a caller would see between
+  // frames. Intended for diagnostics (e.g. a transform dump) that need a
+  // self-consistent snapshot instead of comparing some objects mid-tilt
+  // against others already restored. Returns false if a capture is already
+  // pending (last-writer-wins would silently drop the earlier caller).
+  function captureNextRenderTransforms(callback) {
+    if (typeof callback !== 'function' || pendingCapture) return false;
+    pendingCapture = callback;
+    return true;
+  }
+
   window.PlayerBodyTransformComposer = {
     setChannel,
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
+    captureNextRenderTransforms,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
