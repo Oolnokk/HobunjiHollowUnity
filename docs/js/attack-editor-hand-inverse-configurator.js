@@ -15,11 +15,6 @@
   const card = profileSelect.closest('.card');
   if (!card) return;
 
-  // Hide the superseded model-local tool socket controls. hand-model-profiles.js
-  // normalizes legacy toolGrip to identity so only handFromTool affects placement.
-  $('handGripPositionFields')?.closest('.poseGroup')?.style.setProperty('display', 'none');
-  $('handGripRotationFields')?.closest('.poseGroup')?.style.setProperty('display', 'none');
-
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
     topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Grip mode + the values below are the complete transform from the tool grip socket to the hand. The tool is never moved by the hand system.';

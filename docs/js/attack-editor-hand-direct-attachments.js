@@ -15,9 +15,6 @@
   if (!card) return;
   const $ = id => document.getElementById(id);
 
-  // Remove all arm/IK authoring affordances. Hands are now attachment points only.
-  $('handShowArmBones')?.closest('.field')?.remove();
-  $('handInverseReachHelp')?.remove();
   const tag = card.querySelector('.sectionTag');
   if (tag) tag.textContent = 'direct tool sockets + species scale';
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;

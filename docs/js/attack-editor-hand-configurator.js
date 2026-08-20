@@ -42,20 +42,7 @@
       <div class="help" id="handSpeciesScaleSource"></div>
     </div>
 
-    <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Tool grip point</div>
-      <div class="help" style="margin-bottom:6px">Position is stored in normalized hand-height units, so it scales with the model. The colored axes in the palm mark this socket.</div>
-      <div id="handGripPositionFields"></div>
-    </div>
-
-    <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Tool grip direction</div>
-      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll define the orientation the held tool should have at the grip point.</div>
-      <div id="handGripRotationFields"></div>
-    </div>
-
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handShowGripGuide" checked style="width:auto;margin-right:6px">Show tool-grip axes</label></div>
-    <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handShowArmBones" style="width:auto;margin-right:6px">Show invisible arm bones</label></div>
 
     <div class="help" id="handEffectiveStatus" style="padding:7px;border:1px solid rgba(255,255,255,.1);border-radius:8px;margin-bottom:8px"></div>
     <div class="row">
@@ -81,26 +68,6 @@
   const speciesScaleNumber = $('handSpeciesScaleNumber'); // Allows precise species-scale entry beside the slider.
   const saveStatus = $('handSaveStatus'); // Surfaces save/import errors directly in the editor for mobile users.
 
-  const positionFields = [
-    { key: 'x', label: 'X side', min: -1.5, max: 1.5, step: 0.01 },
-    { key: 'y', label: 'Y height', min: -1.5, max: 1.5, step: 0.01 },
-    { key: 'z', label: 'Z forward', min: -1.5, max: 1.5, step: 0.01 },
-  ]; // Defines normalized socket-position controls shared across every model.
-  const rotationFields = [
-    { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1 },
-    { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1 },
-    { key: 'roll', label: 'Roll°', min: -180, max: 180, step: 1 },
-  ]; // Defines the local grip-frame orientation controls.
-
-  function fieldMarkup(prefix, field) {
-    return `<div class="field"><label>${field.label}</label><div class="fieldRow">
-      <input id="${prefix}_${field.key}" type="range" min="${field.min}" max="${field.max}" step="${field.step}">
-      <input id="${prefix}_${field.key}_n" type="number" min="${field.min}" max="${field.max}" step="${field.step}" style="width:78px;flex:0 0 78px">
-    </div></div>`;
-  }
-  $('handGripPositionFields').innerHTML = positionFields.map(field => fieldMarkup('handGripPos', field)).join('');
-  $('handGripRotationFields').innerHTML = rotationFields.map(field => fieldMarkup('handGripRot', field)).join('');
-
   function currentSpecies() { return String($('avatarSpecies')?.value || '').trim(); }
   function currentGender() { return String($('avatarGender')?.value || 'male').trim(); }
   function modelKeys() { return Object.keys(profiles.data.models || {}); }
@@ -110,12 +77,6 @@
   function setStatus(message, isError) {
     saveStatus.textContent = message;
     saveStatus.style.color = isError ? '#fb7185' : '';
-  }
-
-  function ensureProfileShape(model) {
-    if (!model.toolGrip) model.toolGrip = {};
-    if (!model.toolGrip.position) model.toolGrip.position = { x: 0, y: 0, z: 0 };
-    if (!model.toolGrip.rotationDeg) model.toolGrip.rotationDeg = { pitch: 0, yaw: 0, roll: 0 };
   }
 
   function fillModelSelects(preferredProfile) {
@@ -137,20 +98,9 @@
   function syncModelFields() {
     const model = currentModel();
     if (!model) return;
-    ensureProfileShape(model);
     const modelScale = Number(model.scale) > 0 ? Number(model.scale) : 1;
     modelScaleRange.value = Math.min(Number(modelScaleRange.max), modelScale);
     modelScaleNumber.value = modelScale;
-    for (const field of positionFields) {
-      const value = Number(model.toolGrip.position[field.key]) || 0;
-      $(`handGripPos_${field.key}`).value = value;
-      $(`handGripPos_${field.key}_n`).value = value;
-    }
-    for (const field of rotationFields) {
-      const value = Number(model.toolGrip.rotationDeg[field.key]) || 0;
-      $(`handGripRot_${field.key}`).value = value;
-      $(`handGripRot_${field.key}_n`).value = value;
-    }
   }
 
   function syncSpeciesFields() {
@@ -176,12 +126,11 @@
     const modelScale = Number(profiles.data.models?.[mappedKey]?.scale) || 1;
     const speciesScale = profiles.speciesScaleFor(species, gender);
     const effective = modelScale * speciesScale;
-    const debug = hands.getActiveDebug?.().find(entry => entry?.speciesId === species && entry?.gender === gender) || null; // Adds live rig/scan/load information without requiring the browser console.
-    const scanText = debug
-      ? `${debug.scanSucceeded ? 'raw-arm scan ✓' : 'scan fallback'} · reach ${Number(debug.armLength || 0).toFixed(3)}`
+    const debug = hands.getActiveDebug?.().find(entry => entry?.speciesId === species && entry?.gender === gender) || null; // Adds live rig/load information without requiring the browser console.
+    const loadText = debug
+      ? (debug.loadError ? 'MODEL ERROR: ' + debug.loadError : (debug.glb ? 'GLB model loaded' : 'fallback capsule'))
       : 'preview rig pending';
-    const loadText = debug?.loadError ? ` · MODEL ERROR: ${debug.loadError}` : '';
-    $('handEffectiveStatus').textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${effective.toFixed(3)} · ${scanText}${loadText}`;
+    $('handEffectiveStatus').textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${effective.toFixed(3)} · ${loadText}`;
     $('handEffectiveStatus').style.color = debug?.loadError ? '#fb7185' : '';
   }
 
@@ -197,7 +146,6 @@
     profiles.mutate(data => {
       const model = data.models?.[key];
       if (!model) return;
-      ensureProfileShape(model);
       mutator(model);
     });
     syncModelFields();
@@ -242,17 +190,6 @@
     refreshEffectiveStatus();
   });
 
-  for (const field of positionFields) {
-    bindRangeAndNumber($(`handGripPos_${field.key}`), $(`handGripPos_${field.key}_n`), value => {
-      mutateModel(model => { model.toolGrip.position[field.key] = value; });
-    });
-  }
-  for (const field of rotationFields) {
-    bindRangeAndNumber($(`handGripRot_${field.key}`), $(`handGripRot_${field.key}_n`), value => {
-      mutateModel(model => { model.toolGrip.rotationDeg[field.key] = value; });
-    });
-  }
-
   $('handClearSpeciesScale').addEventListener('click', () => {
     const species = currentSpecies();
     const gender = currentGender();
@@ -266,7 +203,6 @@
   });
 
   $('handShowGripGuide').addEventListener('change', () => hands.setShowGripGuides($('handShowGripGuide').checked));
-  $('handShowArmBones').addEventListener('change', () => hands.setShowBones($('handShowArmBones').checked));
   hands.setShowGripGuides(true);
 
   function configJson() { return JSON.stringify(profiles.clone(), null, 2); }
@@ -325,7 +261,7 @@
   document.getElementById('avatarSpecies')?.addEventListener('change', () => setTimeout(() => syncAll(), 0));
   document.getElementById('avatarGender')?.addEventListener('change', () => setTimeout(() => { syncSpeciesFields(); refreshEffectiveStatus(); }, 0));
   profiles.subscribe(() => refreshEffectiveStatus());
-  setInterval(refreshEffectiveStatus, 500); // Keeps mobile-visible scan/load/reach diagnostics current as async GLBs and avatar rebuilds settle.
+  setInterval(refreshEffectiveStatus, 500); // Keeps mobile-visible load diagnostics current as async GLBs and avatar rebuilds settle.
 
   syncAll();
 })(window);
