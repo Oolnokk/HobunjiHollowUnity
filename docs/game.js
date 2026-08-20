@@ -11806,8 +11806,17 @@
       // (applyGearClothingToPlayerData/clothingSpriteForCosmetic/etc) now
       // live in js/equipment-panel.js — call via window.EquipmentPanel.*.
 
+      // Routes through the shared PNGPlaneAvatar.disposeAvatarModel() rather than
+      // disposing geometry/materials locally. Sibling systems attached under
+      // playerMesh alongside the avatar sprite (procedural-hand-frame-driver.js's
+      // hand rig, portrait-arm-cloud-mask.js's alpha texture) only tear down their
+      // per-avatar state when that shared entry point is called on the outgoing
+      // avatarRoot — bypassing it orphans them on every refresh instead of
+      // replacing them, e.g. a gear change leaving a stale extra pair of hands
+      // attached next to the new one.
       function disposeAvatarGroup(group) {
-        group?.traverse?.(node => {
+        if (window.PNGPlaneAvatar?.disposeAvatarModel) window.PNGPlaneAvatar.disposeAvatarModel(group);
+        else group?.traverse?.(node => {
           node.geometry?.dispose?.();
           if (node.material) {
             const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -22504,6 +22513,7 @@
         renderer,
         camera,
         playerMesh,
+        toolHolder,
         companionObjects,
         npcWalkers,
         player,

@@ -1682,6 +1682,11 @@
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
   <script src="js/music-system.js?v=20260814a"></script>
+  <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
+       also loaded by the Attack Animation Editor, so a probed character's
+       node-by-node local transforms use the exact same code/format as the
+       editor's own preview dump. Must load before pixel-probe.js below. -->
+  <script src="js/transform-dump-utils.js?v=20260820a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
