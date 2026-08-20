@@ -182,7 +182,13 @@
     const dyeCatalog = window.ScratchbonesAccount.getDyeCatalog();
     for (const [tintKey, dyeId] of Object.entries(dyes)) {
       const dye = dyeCatalog.find(d => d.id === dyeId);
-      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) } };
+      if (dye) {
+        const nextBodyColors = Object.assign({}, profile.bodyColors || {});
+        const nextTint = Object.assign({}, dye.color || {});
+        if (dye.hex) { nextTint.hex = dye.hex; nextTint.tintMode = 'hexShadeFill'; }
+        nextBodyColors[tintKey] = nextTint;
+        profile.bodyColors = nextBodyColors;
+      }
     }
     return profile;
   }
@@ -205,4 +211,13 @@
     normalizeNpcImport,
     seededRng,
   };
+
+  // Animation Author is the only consumer of the manual shoulder-coordinate panel.
+  if (/\/tools\/animation-author\//.test(location.pathname) && !window.__hobunjiShoulderPointAuthorLoader) {
+    window.__hobunjiShoulderPointAuthorLoader = true;
+    const script = document.createElement('script');
+    script.src = new URL('../../js/animation-author-hand-shoulder-points.js?v=20260818b', location.href).href;
+    script.onerror = () => console.warn('[animation-author] shoulder point author failed to load');
+    document.head.appendChild(script);
+  }
 })();
