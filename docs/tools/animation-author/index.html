@@ -12354,12 +12354,13 @@ log('V15.30 patch installed: Shoulder Rig profiles author and export portrait Y,
 // -----------------------------------------------------------------------------
 let rigReferenceBuildGenerationV1531 = 0; // Invalidates an older randomized reference build when another is requested first.
 let rigBodyScaleRebuildGenerationV1531 = 0; // Prevents overlapping body-scale releases from restoring stale NPC previews.
+let rigReferencePreserveDuringActorSwapV1532 = false; // Used by rig-mode NPC replacement so its comparison NPC survives the shared clear path.
 
 function rememberRigActorBodyScaleV1531(actor) {
   if (actor?.source?.type !== 'npc' || !actor.model) return;
   const anatomy = ensureCharacterAnatomyV1530(attachmentRigProfileForActor(actor));
   actor.rigBuiltPortraitScaleV1531 = anatomy.portraitScale; // Used by the lightweight body-only input preview before the full anatomy rebuild.
-  actor.rigBodyModelBaseScaleV1531 = actor.model.scale.clone();
+  actor.rigBodyPresentationBaseScaleV1532 = actor.avatarPresentation?.scale?.clone?.() || null; // Used to scale the stable presentation carrier instead of the runtime-managed portrait model.
   actor.rigBodyPresentationBaseYV1531 = Number(actor.avatarPresentation?.position?.y) || 0;
   actor.rigBodyBoxBasePositionYV1531 = Number(actor.rigPreviewBox?.position?.y) || 0;
   actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
@@ -12368,15 +12369,16 @@ function rememberRigActorBodyScaleV1531(actor) {
 function previewRigActorBodyScaleV1531(actor, portraitScale) {
   const builtScale = Number(actor?.rigBuiltPortraitScaleV1531);
   const desiredScale = Number(portraitScale);
-  if (!actor?.model || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(desiredScale) || desiredScale <= 0) return false;
+  const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
+  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(desiredScale) || desiredScale <= 0) return false;
   const ratio = desiredScale / builtScale;
-  actor.model.scale.copy(actor.rigBodyModelBaseScaleV1531).multiplyScalar(ratio);
-  if (actor.avatarPresentation) actor.avatarPresentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
+  presentation.scale.copy(actor.rigBodyPresentationBaseScaleV1532).multiplyScalar(ratio);
+  presentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
   if (actor.rigPreviewBox) {
     if (actor.rigBodyBoxBaseScaleV1531) actor.rigPreviewBox.scale.copy(actor.rigBodyBoxBaseScaleV1531).multiplyScalar(ratio);
     actor.rigPreviewBox.position.y = actor.rigBodyBoxBasePositionYV1531 * ratio;
   }
-  actor.model.updateMatrixWorld?.(true);
+  presentation.updateMatrixWorld?.(true);
   updateAnimationSelectionBox();
   return true;
 }
@@ -12407,6 +12409,17 @@ function randomRigReferenceNpcV1531(actor = selectedAnimationActor()) {
   const different = candidates.filter(npc => String(npc.id || npc.name || '') !== priorId);
   const pool = different.length ? different : candidates;
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
+
+function positionRigReferenceNpcV1532(actor = selectedAnimationActor()) {
+  const reference = animationAuthor.rig.referenceNpcV1531; // Repositions the preserved comparison after the editable NPC changes species or scale.
+  if (!reference?.group || !actor?.root || !actor?.model) return false;
+  const actorWidth = Number(actor.model.userData?.portraitModelWidth) || 1;
+  const referenceWidth = Number(reference.model?.userData?.portraitModelWidth) || 1;
+  reference.group.position.x = actor.root.position.x + actorWidth / 2 + referenceWidth / 2 + .35;
+  reference.group.position.z = actor.root.position.z;
+  reference.group.updateMatrixWorld?.(true);
+  return true;
 }
 
 async function showRigReferenceNpcV1531(npcId = null) {
@@ -12442,9 +12455,6 @@ async function showRigReferenceNpcV1531(npcId = null) {
     const modelHeight = Number(model.userData.portraitModelHeight) || 1;
     const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
     model.position.y = modelHeight / 2;
-    const actorWidth = Number(actor.model?.userData?.portraitModelWidth) || 1;
-    group.position.x = actor.root.position.x + actorWidth / 2 + modelWidth / 2 + .35;
-    group.position.z = actor.root.position.z;
     animationAuthor.modeRoots.rig.add(group);
     const profile = avatar.profile || null;
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
@@ -12468,6 +12478,7 @@ async function showRigReferenceNpcV1531(npcId = null) {
       model,
       feet,
     }; // Read by the inspector and the framing override, never by actor interaction code.
+    positionRigReferenceNpcV1532(actor);
     frameAllAnimationActors('angle');
     renderAnimationInspector();
     setStatus(`Reference NPC · ${npc.name || npc.id}`, 'good');
@@ -12498,8 +12509,21 @@ async function rebuildRigNpcForBodyScaleV1531(actor) {
 
 const baseAddNpcAnimationActorV1531 = addNpcAnimationActor;
 addNpcAnimationActor = async function(npcId, options = {}) {
-  const actor = await baseAddNpcAnimationActorV1531(npcId, options);
+  const preservedReference = animationAuthor.mode === 'rig' ? animationAuthor.rig.referenceNpcV1531 : null; // Survives only the automatic clear performed while replacing the rig's editable NPC.
+  rigReferencePreserveDuringActorSwapV1532 = !!preservedReference;
+  let actor;
+  try {
+    actor = await baseAddNpcAnimationActorV1531(npcId, options);
+  } finally {
+    rigReferencePreserveDuringActorSwapV1532 = false;
+  }
   rememberRigActorBodyScaleV1531(actor);
+  if (preservedReference && animationAuthor.rig.referenceNpcV1531 === preservedReference) {
+    positionRigReferenceNpcV1532(actor);
+    frameAllAnimationActors('angle');
+    renderAnimationInspector();
+    setStatus(`Reference NPC preserved · ${preservedReference.label}`, 'good');
+  }
   return actor;
 };
 
@@ -12511,7 +12535,7 @@ removeAnimationActor = function(id) {
 
 const baseClearAnimationActorsV1531 = clearAnimationActors;
 clearAnimationActors = function() {
-  disposeRigReferenceNpcV1531();
+  if (!rigReferencePreserveDuringActorSwapV1532) disposeRigReferenceNpcV1531();
   return baseClearAnimationActorsV1531();
 };
 
@@ -12600,14 +12624,14 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.31';
+  document.title = 'Hobunji Animation Author V15.32';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.31 installs the ten newly authored anatomy profiles, adds species+gender body scale, and provides a randomized non-interactive NPC for side-by-side proportion checks.';
+animationAuthor.recentChange = 'V15.32 keeps live body-scale previews stable and preserves the randomized reference NPC when the editable Shoulder Rig character changes.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.31 patch installed: exact supplied profiles, gender-specific body scale, and randomized non-interactive reference NPC preview.');
+log('V15.32 patch installed: stable presentation-carrier body scaling and reference-NPC preservation across rig character swaps.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
