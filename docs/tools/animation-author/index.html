@@ -1214,6 +1214,8 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821j', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821e', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1225,6 +1227,8 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/leg-bones.js',
+  'js/procedural-leg-animation.js',
   'js/held-action-animations.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -1450,6 +1454,10 @@ function prepareRepositoryScript(code, relativePath, settings) {
     const docsBase = new URL('../../', location.href).href; // Resolves hand scripts and GLBs beside the author page that implements their preview contract.
     return `window.__HobunjiHandBootstrapDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiHandBootstrapDocsBase;`;
   }
+  if (relativePath === 'js/procedural-leg-animation.js') {
+    const docsBase = new URL('../../', location.href).href; // Resolves foot textures and GLBs beside the author page while its runtime executes from a blob.
+    return `window.__HobunjiProceduralFeetDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiProceduralFeetDocsBase;`;
+  }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
   const docsBase = cdnUrl(settings.docsRoot);
   let prepared = code
@@ -1487,9 +1495,11 @@ async function loadRepositoryRuntime(settings) {
 
   for (const relativePath of REQUIRED_SCRIPTS) {
     const path = settings.docsRoot + relativePath;
-    const isAuthorHandRuntime = relativePath === 'js/held-action-animations.js'; // Selects the author-paired hand bootstrap while other runtime files still follow the requested repository ref.
-    const sourceUrl = isAuthorHandRuntime ? AUTHOR_HAND_RUNTIME_SCRIPT : rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
-    const sourceCode = isAuthorHandRuntime
+    const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
+      : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
+        : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT : null; // Hands and feet must match the author page that implements their preview contract.
+    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
+    const sourceCode = authorPairedRuntimeUrl
       ? await (await fetchWithTimeout(sourceUrl)).text()
       : await fetchRepoText(path);
     const code = prepareRepositoryScript(sourceCode, relativePath, settings);
@@ -1504,6 +1514,7 @@ async function loadRepositoryRuntime(settings) {
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
+  if (!window.LegBones || !window.ProceduralLegAnimation) throw new Error('The shoulder-rig feet preview runtime did not initialize.');
   if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
   $('creatureModeBtn').disabled = false;
@@ -8235,6 +8246,7 @@ addNpcAnimationActor = async function(npcId, options = {}) {
     const avatar = await buildAvatarRender(npc);
     actor.model.userData.rigSourceFrontCanvas = avatar.front;
     actor.model.userData.rigSourceBackCanvas = avatar.back;
+    actor.model.userData.rigAvatarProfile = avatar.profile; // Reused by the shoulder-rig feet preview for its real torso-width stance scan.
     installCharacterRuntimePreviewLift(actor);
     const armCanvas = await renderRightArmOnlyCanvas(avatar, actor);
     actor.model.userData.rigRightArmCanvas = armCanvas;
@@ -12030,17 +12042,75 @@ serializeAttachmentRigLibrary = function() {
 const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1525();
-  document.title = 'Hobunji Animation Author V15.28';
+  document.title = 'Hobunji Animation Author V15.29';
   return result;
 };
 
 animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
 COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
 animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
-animationAuthor.recentChange = 'V15.28 shares the authored Rakako’an male rig with Kenkari male and the authored Kenkari female rig with Rakako’an female, including posterior and hand-shoulder coordinates.';
+function installShoulderRigFeetPreviewV1529(actor) {
+  if (!actor) return null;
+  actor.rigFeetPreview?.dispose?.();
+  actor.rigFeetPreview = null;
+  if (actor.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !window.ProceduralLegAnimation?.attach) return null;
+  const metrics = portraitModelMetrics(actor); // Supplies the child/species-scaled dimensions already used by the portrait and idle hands.
+  const profile = actor.model?.userData?.rigAvatarProfile || null; // Enables the gameplay feet runtime's normal torso-width stance scan.
+  actor.rigFeetPreview = window.ProceduralLegAnimation.attach(state.three.THREE, actor.visualOffset, {
+    speciesId: actor.source.species,
+    gender: actor.source.gender,
+    bodyColors: profile?.bodyColors || actor.source.appearance?.bodyColors,
+    modelWidth: metrics.modelWidth,
+    modelHeight: metrics.modelHeight,
+    handAttachY: actor.model?.userData?.handAttachY,
+    name: `${actor.id}_shoulder_rig`,
+    profile,
+    portraitSize: metrics.pixelWidth,
+  });
+  actor.rigFeetPreview?.update?.(0, 0, false, null);
+  return actor.rigFeetPreview;
+}
+
+const baseAddNpcAnimationActorV1529 = addNpcAnimationActor;
+addNpcAnimationActor = async function(npcId, options = {}) {
+  const actor = await baseAddNpcAnimationActorV1529(npcId, options);
+  installShoulderRigFeetPreviewV1529(actor);
+  updateRigAnchorVisibility(actor);
+  return actor;
+};
+
+const baseUpdateRigAnchorVisibilityV1529 = updateRigAnchorVisibility;
+updateRigAnchorVisibility = function(actor) {
+  const result = baseUpdateRigAnchorVisibilityV1529(actor);
+  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = animationAuthor.mode === 'rig';
+  return result;
+};
+
+const baseRemoveAnimationActorV1529 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  actorById(id)?.rigFeetPreview?.dispose?.();
+  return baseRemoveAnimationActorV1529(id);
+};
+
+const baseClearAnimationActorsV1529 = clearAnimationActors;
+clearAnimationActors = function() {
+  for (const actor of animationAuthor.actors) actor.rigFeetPreview?.dispose?.();
+  return baseClearAnimationActorsV1529();
+};
+
+const baseRenderAttachmentRigInspectorV1529 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1529();
+  const actor = selectedAnimationActor();
+  if (actor?.source?.type === 'npc' && actor.rigFeetPreview && $('maaInspector')) {
+    $('maaInspector').insertAdjacentHTML('afterbegin', '<div class="maaRigStatus" style="margin:8px"><b>Proportion preview</b><br>Gameplay procedural feet are visible at the character’s real species, gender, and child-scaled dimensions.</div>');
+  }
+};
+
+animationAuthor.recentChange = 'V15.29 marks Garanki as a child so his full procedural anatomy uses child scale, and shows gameplay feet in the shoulder-rig viewport for proportion reference.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.28 patch installed: twelve authored posterior/hand-shoulder profiles loaded, including two gender-matched Kenkari/Rakako’an aliases.');
+log('V15.29 patch installed: Garanki uses child proportions and shoulder-rig character previews include gameplay feet.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

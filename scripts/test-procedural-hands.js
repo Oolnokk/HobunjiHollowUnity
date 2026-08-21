@@ -32,6 +32,9 @@ const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
 const attachmentRigProfileSource = read('docs/config/attachment-rig-profiles.js'); // Executed below against the Animation Author's config-late loading order.
+const proceduralFeetSource = read('docs/js/procedural-leg-animation.js'); // Validates the shared gameplay/shoulder-rig foot runtime and nested-tool asset resolution.
+const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Confirms child anatomy is driven by authored NPC metadata rather than a name-only runtime exception.
+const pngAvatarSource = read('docs/js/png-plane-avatar.js'); // Executes the real child-scale classifier against Garanki's authored record below.
 
 function readGlbJson(relativePath) {
   const buffer = fs.readFileSync(path.join(root, relativePath)); // Used to validate the actual bundled parrot primitive/material layout below.
@@ -124,6 +127,14 @@ assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand mus
 assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profile must be retained for post-build shoulder scanning');
 assert.match(driverSource, /profile: record\.profile/, 'hand attachment must receive the original avatar profile');
 assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver must never perform arm reach correction');
+const garanki = npcDatabase.npcs.find(npc => npc.id === 'garanki_gabu');
+assert(garanki?.tags?.includes('child'), 'Garanki must use the shared child avatar/anatomy scale marker');
+assert.strictEqual(garanki.ageBand, 'child', 'Garanki child classification must remain visible in authoring tools');
+const pngAvatarSandbox = { window: { SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, assets: { pngPlaneAvatar: { portraitScaleBySpecies: { 'mao-ao': 1 }, childScaleMultiplier: 0.5, childMarkers: { roles: ['child'], tags: ['child'] } } } } } } }; // Mirrors the production child-scale configuration without constructing Three.js meshes.
+vm.runInNewContext(pngAvatarSource, pngAvatarSandbox, { filename: 'png-plane-avatar.js' });
+assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ npcRecord: garanki }), 0.5, 'Garanki must resolve to the configured child anatomy multiplier');
+assert.match(proceduralFeetSource, /__HobunjiProceduralFeetDocsBase/, 'nested author tools must provide an explicit docs root to the gameplay feet runtime');
+assert.match(proceduralFeetSource, /function loaderForThree/, 'shoulder-rig feet must load their actual GLBs with the author preview’s Three.js version');
 
 const gripSandbox = { window: {}, localStorage: sandbox.localStorage };
 gripSandbox.window.localStorage = sandbox.localStorage;
@@ -220,7 +231,11 @@ assert.doesNotMatch(npcPreviewSource, /animation-author-hand-shoulder-points\.js
 assert.match(animationAuthorSource, /'js\/held-action-animations\.js'/, 'Animation Author must load the shared idle-hand runtime');
 assert.match(animationAuthorSource, /await window\.HobunjiHandRuntimeReady/, 'Animation Author must wait for the hand frame driver before building avatars');
 assert.match(animationAuthorSource, /AUTHOR_HAND_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\/held-action-animations\.js/, 'Animation Author hand preview must use the runtime paired with the author page rather than a stale selected ref');
-assert.match(animationAuthorSource, /isAuthorHandRuntime \? AUTHOR_HAND_RUNTIME_SCRIPT : rawUrl\(path\)/, 'only the hand preview bootstrap should bypass the selected repository runtime ref');
+assert.match(animationAuthorSource, /AUTHOR_FEET_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\/procedural-leg-animation\.js/, 'Animation Author feet preview must use the runtime paired with the author page rather than a stale selected ref');
+assert.match(animationAuthorSource, /authorPairedRuntimeUrl \|\| rawUrl\(path\)/, 'only paired hand/feet preview runtimes should bypass the selected repository runtime ref');
+assert.match(animationAuthorSource, /installShoulderRigFeetPreviewV1529/, 'shoulder rig must attach the gameplay feet preview to character actors');
+assert.match(animationAuthorSource, /ProceduralLegAnimation\.attach\(state\.three\.THREE, actor\.visualOffset/, 'feet must share the floor-relative parent used by hands and rig anchors');
+assert.match(animationAuthorSource, /rigFeetPreview\?\.dispose/, 'actor removal must dispose shoulder-rig foot resources');
 assert.match(animationAuthorSource, /attachmentProfileReady = window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'Animation Author must apply deferred attachment-profile corrections after its repository config loads');
 assert.match(animationAuthorSource, /Attachment rig profile corrections could not find/, 'deferred config failures must appear in the author\'s built-in Diagnostics panel');
 assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
