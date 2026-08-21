@@ -136,6 +136,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     candidate?.avatarRef?.group?.removeFromParent?.();
     candidate?.avatarRef?.dispose?.();
     candidate?._banditToolHolder?.removeFromParent?.();
+    candidate?._banditRangedToolHolder?.removeFromParent?.();
     candidate?.groundShadow?.removeFromParent?.();
   }
 

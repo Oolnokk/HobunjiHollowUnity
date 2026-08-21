@@ -157,24 +157,73 @@
     while (node) {
       if (node === deps.playerMesh) {
         const appearance = deps.getPlayerData()?.appearance || {};
-        return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors };
+        return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors, root: deps.playerMesh };
       }
       for (const w of deps.npcWalkers) {
         if (node === w.root) {
           const appearance = w.rec?.appearance || {};
-          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w };
+          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, root: w.root };
         }
       }
       for (const c of deps.companionObjects) {
         if (node === c.avatarRef?.group) {
           const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
           const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.
-          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} ${scaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
+          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} ${scaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, root: c.avatarRef.group };
         }
       }
       node = node.parent;
     }
     return null;
+  }
+
+  // Node-by-node local position/rotation for every part of the hit character's
+  // rig (avatar body, head/neck bone, hand sockets, and — for the player only,
+  // since that's the one live tool-tracking case — the tool holder, which the
+  // combat/weapon system parents as a SIBLING of playerMesh rather than a
+  // child of it). Shares window.HobunjiTransformDump with the Attack Animation
+  // Editor's own "Dump preview transforms" button so the two reports are
+  // directly diffable field-for-field.
+  function _pixelProbeTransformDumpLines(hits) {
+    const dumpApi = window.HobunjiTransformDump;
+    if (!dumpApi) return Promise.resolve(null);
+    const owner = hits.map(h => _pixelProbeOwnerInfo(h.object)).find(o => o?.root);
+    if (!owner) return Promise.resolve(null);
+
+    function buildLines() {
+      const lines = ['', `=== Local transform dump: ${owner.kind} "${owner.label}" (compare against the same dump taken in the Attack Animation Editor) ===`];
+      lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(owner.root), { title: `${owner.kind} rig` }));
+      if (owner.kind === 'player' && deps.toolHolder) {
+        lines.push('');
+        lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(deps.toolHolder), { title: 'player tool holder (parented as a sibling of playerMesh, not a child)' }));
+      }
+      return lines;
+    }
+
+    const composer = window.PlayerBodyTransformComposer;
+    if (owner.kind !== 'player' || !composer?.captureNextRenderTransforms) return Promise.resolve(buildLines());
+
+    // PlayerBodyTransformComposer applies body-tilt channels (e.g. the idle
+    // weapon-drawn bodyYaw) as a TEMPORARY delta to playerMesh/toolHolder only
+    // during the actual WebGLRenderer.render() call, then undoes it immediately
+    // after. Dumping between frames (the plain buildLines() path above) would
+    // read playerMesh/toolHolder back in their resting, untilted state while
+    // the hand sockets — synced during that same render, against the
+    // momentarily-tilted toolHolder — are left in their tilted state, an
+    // internally inconsistent snapshot that looks like a bogus editor/game
+    // desync. Wait for one real frame and dump from inside it instead, so
+    // every part of the report reflects the exact same as-rendered state.
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve(buildLines());
+      };
+      const scheduled = composer.captureNextRenderTransforms(finish);
+      if (!scheduled) { finish(); return; }
+      setTimeout(finish, 500); // Fallback if the game loop is paused/stalled — a resting-state report beats none.
+    });
   }
 
   // bodyColors slots are almost never stored as absolute color — they're
@@ -216,9 +265,12 @@
     const appearance = deps.getPlayerData()?.appearance || {};
     const sitInteraction = deps.getSitInteraction();
     const lines = [];
+    const localSeatY = Number(sitInteraction?.seatWorldY) || 0; // Used to distinguish authored floor-relative height in mobile diagnostics.
+    const surfaceSeatY = Number(sitInteraction?.seatSurfaceY) || 0; // Used to show the plateau/ramp contribution under the seat.
+    const absoluteSeatY = Number(sitInteraction?.seatAbsoluteWorldY) || localSeatY + surfaceSeatY; // Used to verify the camera's world-space target height.
     lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
     lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
-    lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
+    lines.push(`Seat anchor: localHeight=${localSeatY.toFixed(5)} surfaceY=${surfaceSeatY.toFixed(5)} absoluteY=${absoluteSeatY.toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
     for (const side of ['left', 'right']) {
       const leg = debug[side];
       if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
@@ -526,6 +578,14 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
+    if (mountSync?.active) {
+      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
+    }
+    const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
+    if (climbSafety) {
+      lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
+    }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.actionArch?.length) {
@@ -592,7 +652,7 @@
       if (cameraSolve) {
         const hit = cameraSolve.directHitDistance == null ? 'none' : cameraSolve.directHitDistance.toFixed(3);
         lines.push('');
-        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg`);
+        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg targetY=${Number(cameraSolve.targetY || 0).toFixed(3)} floorY=${Number(cameraSolve.floorY || 0).toFixed(3)}`);
       }
       const seatedLines = _pixelProbeSeatedLegReadoutLines();
       if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
@@ -603,6 +663,9 @@
 
     const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
     if (npcSchedulingLines) lines.push(...npcSchedulingLines);
+
+    const transformDumpLines = await _pixelProbeTransformDumpLines(hits);
+    if (transformDumpLines) lines.push(...transformDumpLines);
 
     if (blendCheck) {
       lines.push('');

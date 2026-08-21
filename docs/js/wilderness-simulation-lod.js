@@ -68,6 +68,7 @@
     if (c.avatarRef?.group) c.avatarRef.group.visible = visible;
     if (c.groundShadow) c.groundShadow.visible = visible;
     if (c._banditToolHolder) c._banditToolHolder.visible = visible;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = visible && !!c._rangedMode;
     // A sleeper is only eligible from true idle, so an active trail should
     // never normally exist here. Hiding a stale one defensively avoids a
     // detached effect hanging at a camp while its owner is asleep.

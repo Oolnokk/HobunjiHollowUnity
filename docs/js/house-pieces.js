@@ -20,8 +20,8 @@
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
-    ['HousePieces', 'house-pieces-core.js?v=20260811a'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260811c'],
+    ['HousePieces', 'house-pieces-core.js?v=20260815b'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260815d'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }

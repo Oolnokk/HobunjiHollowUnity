@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260811b"></script>
+  <script src="config/scratchbones-config.js?v=20260817e"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
   <link rel="stylesheet" href="style.css?v=20260815a">
@@ -29,10 +29,15 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260728c"></script>
+  <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260712d"></script>
+  <script src="js/png-plane-avatar.js?v=20260817e"></script>
+  <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
+       occlude 3D held items/tools) on the same matrix as its visible draw when
+       PlayerBodyTransformComposer is composing a render-time body delta (mirrors
+       procedural-hand-outline-parity.js's fix for the same class of bug). -->
+  <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260811b"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
@@ -44,9 +49,13 @@
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
-  <script src="js/leg-bones.js?v=20260801a"></script>
+  <script src="js/leg-bones.js?v=20260816a"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/procedural-leg-animation.js?v=20260801c"></script>
+  <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
+       draw when PlayerBodyTransformComposer is composing a render-time body delta
+       (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
+  <script src="js/procedural-feet-outline-parity.js?v=20260821a"></script>
   <!-- Livestock genetics & breeding (fur-color math, pattern layers, Size
        inheritance, sell-value scoring). Must load before game.js, which
        calls window.CreatureGenetics.init(...) during its own setup. Loads
@@ -66,7 +75,9 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
-  <script src="js/wilderness-map-generator.js?v=20260712d"></script>
+  <script src="js/wilderness-map-generator.js?v=20260816a"></script>
+  <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
+  <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
@@ -110,7 +121,10 @@
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260712d"></script>
   <script src="js/combat/combat-flurry.js?v=20260712d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
+  <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
+       projectiles. Loads before bandits so their dual loadouts can call it. -->
+  <script src="js/combat/ranged-weapons.js?v=20260817e"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -256,7 +270,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260807a"></script>
+  <script src="js/climb-system.js?v=20260816a"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -1344,7 +1358,12 @@
       <!-- ── Debug log pane ────────────────────────────────── -->
       <div class="mp-pane" id="mpDebug">
         <div style="display:flex;flex-direction:column;position:absolute;inset:0">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
+          <!-- padding-right reserves the same corner #menuBtn floats in (it's
+               position:fixed, z-index:60, above this panel's own z-index:56,
+               so it stays clickable to close the menu) — without it, this
+               row's right-hand button group (Probe a pixel/Copy/Clear) sits
+               directly underneath menuBtn and is physically unclickable. -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px;padding-right:calc(4 * var(--col) + 16px)">
             <div style="display:flex;gap:6px">
               <button id="debugViewLogBtn"   class="debug-view-tab active" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:6px;color:#6aa7ff;cursor:pointer">Log</button>
               <button id="debugViewProbeBtn" class="debug-view-tab"        style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">🎯 Pixel Probe</button>
@@ -1538,11 +1557,9 @@
     </div>
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
-      <!-- Weapon quick-switch: tap once to drop everything and go straight to
-           the weapon; tap again to return to whatever tool/item was active
-           before. This is the only way into the weapon tool slot now — it's
-           no longer one of the regular tool-select options. -->
-      <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
+      <!-- Combat quick-switch: enters melee from a normal tool, then swaps
+           directly between the dedicated melee and ranged slots. -->
+      <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
       </button>
       <!-- Call/dismiss mount: same outer ring as tool/item dials and the
@@ -1670,24 +1687,29 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20260712d"></script>
-  <script src="js/sprite-recolor.js?v=20260811c"></script>
+  <script src="js/sprite-recolor.js?v=20260815a"></script>
   <script src="js/tool-metal-recolor.js?v=20260719a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260806a"></script>
+  <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260806a"></script>
+  <script src="js/audio-system.js?v=20260817b"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
   <script src="js/music-system.js?v=20260814a"></script>
+  <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
+       also loaded by the Attack Animation Editor, so a probed character's
+       node-by-node local transforms use the exact same code/format as the
+       editor's own preview dump. Must load before pixel-probe.js below. -->
+  <script src="js/transform-dump-utils.js?v=20260820a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260811f"></script>
+  <script src="js/pixel-probe.js?v=20260816c"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1722,7 +1744,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20260815a"></script>
+  <script src="js/npc-pathfinding.js?v=20260816a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -1760,7 +1782,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260815c"></script>
+  <script src="game.js?v=20260817d"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

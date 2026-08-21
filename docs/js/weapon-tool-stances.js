@@ -15,8 +15,18 @@
   let stanceApplied = false;
   let stanceConfigLoadStarted = false;
   let stanceConfigSource = 'built-in-defaults';
+  // toolHolder.matrixWorld as actually baked by the most recent
+  // updateMatrixWorld() call below (idle stance included, when one applied).
+  // Local position/quaternion are reverted again immediately after that same
+  // call (see installHolderMatrixHook), so any consumer that calls Three.js's
+  // own world-space accessors (updateWorldMatrix/getWorldPosition/
+  // localToWorld) on toolHolder afterward recomputes matrixWorld from the
+  // reverted, un-stanced local transform instead. Cached here so a consumer
+  // that needs the pose actually rendered this frame (e.g. the procedural
+  // hand socket sync) can read it without triggering that recompute.
+  let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260814b';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260817a';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
   const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
@@ -35,8 +45,8 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-    heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
-    lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: 0, roll: -65 }),
+    heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: -15, roll: -82 }),
+    lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: -40, roll: -65 }),
   });
 
   // Keep these objects stable so external debug/editor references do not go stale
@@ -497,6 +507,7 @@
       let result;
       try {
         result = originalUpdateMatrixWorld.call(this, force);
+        lastBakedHolderMatrixWorld = this.matrixWorld.clone();
       } finally {
         if (savedPlaneRotationZ != null && toolPlane) {
           toolPlane.rotation.z = savedPlaneRotationZ;
@@ -571,6 +582,7 @@
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
     debugSnapshot,
+    lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
     poses: idleStances,
   };
 })();

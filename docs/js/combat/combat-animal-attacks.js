@@ -22,10 +22,16 @@
   function start(c, id, ctx) {
     const def = ATTACKS[id];
     if (!def) return false;
+    const deps = window.Combat.deps;
+    // game.js pays each species' generic attackStaminaCost immediately before
+    // calling start(). Named attacks can top that payment up here without
+    // making the generic bite/Guard Charge share their larger specialty cost.
+    const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
+    if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
     const state = {};
-    def.start(c, state, ctx, window.Combat.deps);
-    c._animalAttack = { def, state };
-    window.Combat.deps?.playCreatureBark?.(c);
+    def.start(c, state, ctx, deps);
+    c._animalAttack = { id, def, state };
+    deps?.playCreatureBark?.(c);
     return true;
   }
 
@@ -42,6 +48,14 @@
 
   function isBusy(c) { return !!c._animalAttack; }
 
+  // Quick Attack condition checks use this instead of guessing at private
+  // named-attack stage strings. Each attack can declare exactly which part
+  // is its committed/strike window; Pounce's is the whole leap.
+  function isStriking(c) {
+    const aa = c?._animalAttack;
+    return !!(aa?.def?.isStriking?.(aa.state, c));
+  }
+
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
@@ -50,7 +64,7 @@
     c.scaleY = 1;
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, cancel };
+  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, cancel };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
@@ -72,8 +86,17 @@
   let POUNCE_CROUCH_SCALE_Y = 0.55;
   let POUNCE_LEAP_SPEED_PX_S = 480;
   let POUNCE_KNOCKBACK_PX_S = 640;
+  let POUNCE_STAMINA_COST_MAX_FRACTION = 0.4; // Pounce total cost scales with the creature's own stamina pool.
+  let POUNCE_STAMINA_COST_MIN = 18; // Keeps ordinary 30–40 Stamina animals meaningfully above their old 12–14 generic attack cost.
 
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function pounceAdditionalStaminaCost(c) {
+    const maxStamina = Math.max(0, Number(c?.maxStamina) || 0);
+    const genericCost = Math.max(0, Number(c?.def?.attackStaminaCost) || 0); // Already paid by game.js before animalAttacks.start().
+    const totalPounceCost = Math.max(POUNCE_STAMINA_COST_MIN, maxStamina * POUNCE_STAMINA_COST_MAX_FRACTION);
+    return Math.max(0, totalPounceCost - genericCost);
+  }
 
   // Every other living thing the leap's cone could plausibly catch: the
   // creature's intended target plus anyone on the "other side" who might
@@ -135,17 +158,6 @@
         state.t = 0;
         // Lock the sprite onto a single non-idle (mid-stride) frame for the
         // whole leap instead of letting the default run-cycle keep ticking.
-        // Must still pass genotype info through — this bypasses game.js's
-        // normal updateCreatureAnimFrame retry loop entirely for the whole
-        // leap (isBusy() suppresses it), so a plain 2-arg setCreatureFrame
-        // call here would silently stomp a gar-wolf/dabinggi-hound's
-        // composited base-color/pattern texture back to the un-recolored
-        // fallback sprite for the leap's full duration (which, if it never
-        // connects with a target, can run until it hits terrain or the map
-        // edge — i.e. a long time).
-        // Portrait-avatar combatants (bandits — see game.js's buildBanditAvatar)
-        // have no sprite sheet to lock a frame from; the leap's movement,
-        // scaling and damage all still apply, there's just no frame to swap.
         if (c.def.sprites) {
           const frameUrl = c.def.sprites.run[0];
           const genotypeKind = deps.genotypeKindFor ? deps.genotypeKindFor(c) : null;
@@ -164,21 +176,8 @@
 
     c.x = nx;
     c.y = ny;
-    // The leap covers real ground at a real speed (POUNCE_LEAP_SPEED_PX_S) —
-    // same footstep hook as ordinary movement, so a pouncing creature is
-    // still audible instead of silently gliding in for the hit.
     deps.tickCreatureFootsteps?.(c, stepPx);
 
-    // Species-specific — see CREATURE_DB's attackTag (gar-wolves 'sharp',
-    // dabinggi-hounds 'poison', Uumkao'ii 'blunt') — so every one of a
-    // creature's slottable attacks (this leap, the plain bite telegraph,
-    // guardCharge) afflicts consistently with its species instead of
-    // Pounce hardcoding 'sharp'. afflictionBonusesForTag turns that tag
-    // into the actual bleed/bruise/poison application (resource-system.js).
-    // Computed once per leap frame (not per target below) since it's the
-    // same value regardless of who gets hit — also feeds the leap's own
-    // onion-ring ground trail, same treatment the player's attack lunges
-    // get (see game.js's beginCombatLunge/spawnLungeTrailStamp).
     const dmgTag = c.def.attackTag || 'sharp';
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
     deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
@@ -200,18 +199,16 @@
     c.scaleY = 1;
   }
 
-  register('pounce', { start: pounceStart, update: pounceUpdate, cancel: pounceCancel });
+  register('pounce', {
+    label: 'Pounce',
+    start: pounceStart,
+    update: pounceUpdate,
+    cancel: pounceCancel,
+    additionalStaminaCost: pounceAdditionalStaminaCost,
+    isStriking: state => state?.stage === 'leap',
+  });
 
   // ── Guard Charge ────────────────────────────────────────────────────
-  //
-  // Companions' common (3-of-4) attack action: an instant, zero-damage
-  // shove rather than a real bite. Travels only ~1/3rd of pounce's reach
-  // and lands in a blink (no windup/uncrouch stages to read), but carries
-  // high knockback — it's a positioning tool, not a damage source. Aimed
-  // off a blend of "straight at the target" and "away from the
-  // companion's own master" so the shove also tends to put daylight
-  // between the companion and the player it's guarding, rather than
-  // charging in along the same line the player might be standing on.
   let GUARD_CHARGE_DURATION_S = 0.12;
   let GUARD_CHARGE_KNOCKBACK_PX_S = 900;
   let GUARD_CHARGE_TARGET_ANGLE_WEIGHT = 0.55;
@@ -220,20 +217,12 @@
   function guardChargeStart(c, state, ctx, deps) {
     state.t = 0;
     const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
-    // guardCharge only ever fires from a companion's own behavior loop (see
-    // updateCompanions in game.js), so c.master is normally already set to
-    // whoever it's guarding — the deps.player fallback only covers a
-    // companion caught mid-save-migration without the field yet.
     const master = c.master || deps.player;
     const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
     state.angle = Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
-    // Same aim-collider-reach formula as the AI's pounce-range check
-    // (game.js's creatureAimColliderReachPx) — duplicated here since that
-    // helper isn't exposed via deps — divided down to a third of pounce's
-    // own travel distance.
     const halfSize = (c.visualModelWidth || c.def.modelWidth || 2) * deps.TILE / 2;
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
@@ -253,7 +242,7 @@
     const stepPx = Math.min(state.speedPxS * dt, state.distancePx - state.traveledPx);
     if (stepPx > 0) {
       const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-      if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false; // collided; stop in place
+      if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false;
       c.x = nx;
       c.y = ny;
       state.traveledPx += stepPx;
@@ -264,26 +253,18 @@
       const ref = target.ref;
       if (ref.health <= 0) continue;
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      // 0 damage today (a pure knockback tackle), so the affliction is
-      // currently inert too (finalDamage * mul === 0) — kept consistent
-      // with Pounce/bite anyway (see CREATURE_DB's attackTag) in case that
-      // ever changes.
       const dmgTag = c.def.attackTag || 'blunt';
       const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
       if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
-      return false; // hit landed; stop in place
+      return false;
     }
     return state.traveledPx < state.distancePx;
   }
 
   register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
 
-  // Applies docs/config/combat/attack-values.json's `creatureAttacks` section
-  // — see combat-combo.js's applyComboConfig for the general pattern. The
-  // windup/uncrouch/leap state machine itself stays code (not data); only
-  // its timing/speed/scale constants are overridable.
   window.Combat.animalAttacks.applyConfig = function (cfg) {
     if (!cfg) return;
     const p = cfg.pounce;
@@ -293,6 +274,8 @@
       if (p.CROUCH_SCALE_Y != null) POUNCE_CROUCH_SCALE_Y = p.CROUCH_SCALE_Y;
       if (p.LEAP_SPEED_PX_S != null) POUNCE_LEAP_SPEED_PX_S = p.LEAP_SPEED_PX_S;
       if (p.KNOCKBACK_PX_S != null) POUNCE_KNOCKBACK_PX_S = p.KNOCKBACK_PX_S;
+      if (p.STAMINA_COST_MAX_FRACTION != null) POUNCE_STAMINA_COST_MAX_FRACTION = Math.max(0, Number(p.STAMINA_COST_MAX_FRACTION) || 0);
+      if (p.STAMINA_COST_MIN != null) POUNCE_STAMINA_COST_MIN = Math.max(0, Number(p.STAMINA_COST_MIN) || 0);
     }
     const g = cfg.guardCharge;
     if (g) {

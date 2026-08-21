@@ -15,6 +15,7 @@
     window.Combat?.applyFlurryConfig?.(config.flurry);
     window.Combat?.applyCounterShieldConfig?.(config.counterShield);
     window.Combat?.animalAttacks?.applyConfig?.(config.creatureAttacks);
+    window.RangedWeapons?.applyConfig?.(config.rangedWeapons);
     window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: config }));
     return config;
   }).catch(() => null);
@@ -81,14 +82,22 @@
     ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
     ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20260814a', () => !!window.HobunjiCropBillboardPresentation],
-    ['js/crop-ready-presentation.js?v=20260815a', () => !!window.HobunjiCropReadyPresentation],
+    ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
+    ['js/combat/technique-scrolls.js?v=20260818a', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
+    ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
+    ['js/combat/combat-drenkirra-pellet.js?v=20260817a', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260817a', () => !!window.HobunjiGrehlrDrenkirraFollowup],
+    ['js/wildlife-territorial.js?v=20260817a', () => !!window.HobunjiTerritorialWildlife],
+    ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
   ];
 
   function loadModule(src, alreadyLoaded) {

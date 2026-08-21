@@ -25,6 +25,7 @@
   let playerPosteriorY = 0;
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
+  let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -376,12 +377,63 @@
 
       lastRenderDebug = renderDebug;
 
-      try { return originalRender.call(this, scene, camera); }
+      try {
+        const result = originalRender.call(this, scene, camera);
+        // Fires after the real render (so anything that re-syncs itself off
+        // playerMesh/toolHolder inside that render, e.g. the procedural hand
+        // sockets' onBeforeRender sentinel, has already used THIS frame's
+        // composed transform) but before the delta below is undone — the one
+        // point where playerMesh, toolHolder, and the hand sockets are all
+        // simultaneously in the exact state actually shown on screen.
+        if (pendingCapture) {
+          const callback = pendingCapture;
+          pendingCapture = null;
+          try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
+        }
+        return result;
+      }
       finally {
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
+    // held-object-render-order.js's internal depth-replay passes need the
+    // TRUE, undecorated render() — no visual-delta wrapper applied — and
+    // find it by walking a chain of __hobunji*Original markers left by each
+    // wrapper (see its unwrapRendererRender). Without this marker on this
+    // wrap specifically, that unwrap stopped one link too early and those
+    // replay passes still ran this wrap's full apply-delta/render/undo cycle
+    // (with scene.autoUpdate forced false around them, so the freshly-applied
+    // delta never propagated into matrixWorld for that one call) instead of
+    // the plain pass-through the depth-replay design intends.
+    proto.render.__hobunjiPlayerBodyComposerOriginal = originalRender;
     proto.__playerBodyTransformComposerRenderHook = true;
+  }
+
+  // One-shot: fires `callback` synchronously mid-render on the next real
+  // frame, at the single point where every composer-owned root (playerMesh,
+  // toolHolder, shoulder-pet roots, ...) reflects its true as-rendered
+  // transform rather than the resting state a caller would see between
+  // frames. Intended for diagnostics (e.g. a transform dump) that need a
+  // self-consistent snapshot instead of comparing some objects mid-tilt
+  // against others already restored. Returns false if a capture is already
+  // pending (last-writer-wins would silently drop the earlier caller).
+  function captureNextRenderTransforms(callback) {
+    if (typeof callback !== 'function' || pendingCapture) return false;
+    pendingCapture = callback;
+    return true;
+  }
+
+  // The extra yaw (radians) the active channels will add to playerMesh at the
+  // next render, without waiting for one. Channels like weapon-idle-stance-
+  // body-yaw only ever reach playerMesh through this composer's render-time
+  // world delta (see the module comment above) — anything that needs to
+  // reason about the body's yaw ahead of render (e.g. game.js's
+  // updatePlayerHeadAim, which counter-rotates the neck so the head keeps
+  // its own world yaw locked to the aim direction) must add this in, or it
+  // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
+  // and the head renders off-target by whatever yaw a channel contributes.
+  function resolvedYawDeltaRad() {
+    return new THREE.Euler().setFromQuaternion(resolveDelta().rotation, 'YXZ').y;
   }
 
   window.PlayerBodyTransformComposer = {
@@ -389,6 +441,8 @@
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
+    captureNextRenderTransforms,
+    resolvedYawDeltaRad,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),

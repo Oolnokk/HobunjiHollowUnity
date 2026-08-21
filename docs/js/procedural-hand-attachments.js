@@ -1,0 +1,394 @@
+// Direct 3D hand attachments for PNG-plane characters.
+//
+// There is deliberately NO arm skeleton, IK, shoulder tracking, elbow, reach clamp,
+// forearm solve, or portrait arm weighting here. Each GLB keeps its authored origin.
+// The right hand is placed directly from the held tool's primary grip frame; the
+// left hand either rests at the avatar hand attachment or follows an optional
+// tool-authored secondary grip frame supplied by hand-tool-grips.js.
+(function (global) {
+  'use strict';
+
+  const profiles = global.HobunjiHandModelProfiles;
+  if (!profiles) return;
+
+  const activeRigs = new Set();
+  const glbCache = new Map();
+  const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
+  const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
+  const IDLE_MEDIAL_YAW_DEG = 90;
+  let showGripGuides = false;
+  let gameDeps = null;
+
+  function normalizeKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function normalizeGender(value) {
+    const gender = String(value || '').trim().toLowerCase();
+    return gender === 'female' || gender === 'f' ? 'female' : 'male';
+  }
+
+  function resolveAssetPath(path) {
+    const raw = String(path || '');
+    if (!raw) return raw;
+    if (/^(?:https?:|data:|blob:|file:)/i.test(raw)) return raw;
+    if (raw.startsWith('/')) return raw;
+    if (raw.startsWith('assets/')) return new URL(raw, docsBase).href;
+    return new URL(`assets/${raw.replace(/^\.\//, '')}`, docsBase).href;
+  }
+
+  function bodyColorHex(speciesId, bodyColors) {
+    const reference = typeof global._dyeReferenceHexForSlot === 'function'
+      ? global._dyeReferenceHexForSlot('A', speciesId)
+      : '#7dc89a';
+    const descriptor = bodyColors?.A;
+    if (descriptor?.hex) return descriptor.hex;
+    if (typeof global._resolveTargetRgbColor === 'function') {
+      const rgb = global._resolveTargetRgbColor(descriptor, reference);
+      if (Array.isArray(rgb)) {
+        return '#' + rgb.slice(0, 3).map(value => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')).join('');
+      }
+    }
+    return reference;
+  }
+
+  function roleColor(role, speciesId, bodyColors) {
+    const colors = profiles.data?.colors || {};
+    if (role === 'bone') return colors.bone || '#D8C7A3';
+    if (role === 'keratin') return colors.keratin || '#44484D';
+    return bodyColorHex(speciesId, bodyColors);
+  }
+
+  function markOutline(root) {
+    root?.traverse?.(child => {
+      if (!child.isMesh) return;
+      child.layers.enable(1);
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (!material) continue;
+        material.side = child.material?.constructor?.DoubleSide || material.side;
+      }
+    });
+    global.HobunjiOutlines?.markMaterialSeamId?.(root);
+  }
+
+  function disposeObjectResources(root) {
+    root?.traverse?.(child => {
+      child.geometry?.dispose?.();
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const material of materials) material?.dispose?.();
+    });
+  }
+
+  function loaderForThree(THREE) {
+    if (typeof THREE?.GLTFLoader === 'function') return Promise.resolve(new THREE.GLTFLoader());
+    return import('three/addons/loaders/GLTFLoader.js').then(module => new module.GLTFLoader());
+  }
+
+  function loadGlbScene(THREE, path) {
+    const resolved = resolveAssetPath(path);
+    if (glbCache.has(resolved)) return glbCache.get(resolved);
+    const promise = loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
+      loader.load(resolved, gltf => resolve(gltf?.scene || gltf), undefined, reject);
+    })).catch(error => {
+      glbCache.delete(resolved);
+      throw error;
+    });
+    glbCache.set(resolved, promise);
+    return promise;
+  }
+
+  function cloneSceneWithOwnedResources(THREE, source, model, speciesId, bodyColors) {
+    const clone = source.clone(true);
+    const remapped = new Map();
+    clone.traverse(child => {
+      if (!child.isMesh) return;
+      if (child.geometry) child.geometry = child.geometry.clone();
+      const replaceMaterial = material => {
+        if (remapped.has(material)) return remapped.get(material);
+        const role = model?.materialRoles?.[material?.name] || 'body';
+        const next = new THREE.MeshBasicMaterial({
+          color: roleColor(role, speciesId, bodyColors),
+          side: THREE.DoubleSide,
+        });
+        next.name = material?.name || `${role}_hand_material`;
+        remapped.set(material, next);
+        return next;
+      };
+      child.material = Array.isArray(child.material) ? child.material.map(replaceMaterial) : replaceMaterial(child.material);
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.layers.enable(1);
+    });
+    global.HobunjiOutlines?.markMaterialSeamId?.(clone);
+    return clone;
+  }
+
+  async function buildGlbHand(THREE, modelKey, model, options, side) {
+    const source = await loadGlbScene(THREE, model.glb);
+    if (!source) throw new Error(`Hand GLB had no scene: ${model.glb}`);
+    const clone = cloneSceneWithOwnedResources(THREE, source, model, options.speciesId, options.bodyColors);
+
+    // Measure only to preserve the existing hand-height normalization. Do NOT
+    // recenter the clone: the GLB's own 0,0,0 is the authored grip/origin and is
+    // therefore the point that must land on the tool socket.
+    clone.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(clone);
+    const size = bounds.getSize(new THREE.Vector3());
+    const rawHeight = Math.max(0.000001, size.y);
+    const modelScale = Number(model.scale) > 0 ? Number(model.scale) : 1;
+    const speciesScale = Number(options.speciesScale) > 0 ? Number(options.speciesScale) : 1;
+    const canonicalFit = options.baseTargetHeight / rawHeight;
+    const finalScale = canonicalFit * modelScale * speciesScale;
+
+    // mirrorX=true means the source is the authored LEFT hand: left keeps the
+    // source geometry and right mirrors it across local X. false reverses that.
+    const sourceIsLeft = model.mirrorX !== false;
+    const mirrorSign = side === 'right'
+      ? (sourceIsLeft ? -1 : 1)
+      : (sourceIsLeft ? 1 : -1);
+    clone.scale.set(finalScale * mirrorSign, finalScale, finalScale);
+
+    const group = new THREE.Group();
+    group.name = `${side}_hand_visual`;
+    group.add(clone);
+    group.userData.handModelKey = modelKey;
+    group.userData.modelScale = modelScale;
+    group.userData.speciesScale = speciesScale;
+    group.userData.canonicalFit = canonicalFit;
+    group.userData.authoredOriginPreserved = true;
+    markOutline(group);
+    return group;
+  }
+
+  function buildFallbackHand(THREE, size, color, side, sourceIsLeft) {
+    const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
+    geometry.scale(0.72, 1, 0.55);
+    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    const sign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1);
+    mesh.scale.x = sign;
+    const group = new THREE.Group();
+    group.add(mesh);
+    markOutline(group);
+    return group;
+  }
+
+  function attach(THREE, parent, options = {}) {
+    if (!THREE || !parent) return null;
+    const speciesId = normalizeKey(options.speciesId);
+    if (!speciesId || !profiles.modelKeyForSpecies?.(speciesId)) return null;
+    const gender = normalizeGender(options.gender);
+    const modelHeight = Number(options.modelHeight) || 0.9;
+    const handAttachX = Number.isFinite(Number(options.handAttachX)) ? Number(options.handAttachX) : -modelHeight * 0.28;
+    const handAttachY = Number.isFinite(Number(options.handAttachY)) ? Number(options.handAttachY) : modelHeight * 0.45;
+
+    const root = new THREE.Group();
+    root.name = `${options.name || 'avatar'}_procedural_hands`;
+    parent.add(root);
+
+    const sockets = {};
+    for (const side of ['left', 'right']) {
+      const socket = new THREE.Group();
+      socket.name = `${side}_hand_socket`;
+      const guide = new THREE.AxesHelper(Math.max(0.035, modelHeight * 0.09));
+      guide.name = `${side}_hand_grip_axes`;
+      guide.visible = showGripGuides;
+      guide.renderOrder = 60;
+      guide.traverse?.(child => {
+        if (child.material) {
+          child.material.depthTest = false;
+          child.material.depthWrite = false;
+        }
+      });
+      socket.add(guide);
+      root.add(socket);
+      sockets[side] = { socket, guide, visual: null };
+    }
+
+    const state = {
+      disposed: false,
+      loadGeneration: 0,
+      modelKey: null,
+      modelScale: 1,
+      speciesScale: 1,
+      effectiveScale: 1,
+      glb: null,
+      loadError: null,
+    };
+
+    function idleLocalPosition(side) {
+      return new THREE.Vector3(side === 'right' ? handAttachX : -handAttachX, handAttachY, 0);
+    }
+
+    function idleLocalQuaternion() {
+      return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, THREE.MathUtils.degToRad(IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'));
+    }
+
+    function setSideIdle(side) {
+      const rec = sockets[side];
+      rec.socket.position.copy(idleLocalPosition(side));
+      rec.socket.quaternion.copy(idleLocalQuaternion());
+      rec.socket.visible = true;
+      rec.socket.updateMatrix?.();
+      rec.socket.updateMatrixWorld?.(true);
+    }
+
+    function useIdlePose() {
+      setSideIdle('left');
+      setSideIdle('right');
+    }
+
+    function installVisual(side, visual) {
+      const rec = sockets[side];
+      if (rec.visual) {
+        rec.socket.remove(rec.visual);
+        disposeObjectResources(rec.visual);
+      }
+      rec.visual = visual;
+      rec.socket.add(visual);
+      rec.guide.visible = showGripGuides;
+    }
+
+    function profileValues() {
+      const modelKey = profiles.modelKeyForSpecies(speciesId);
+      const model = modelKey ? profiles.data?.models?.[modelKey] || null : null;
+      const modelScale = Number(model?.scale) > 0 ? Number(model.scale) : 1;
+      const speciesScale = Number(profiles.speciesScaleFor?.(speciesId, gender)) || 1;
+      return { modelKey, model, modelScale, speciesScale, effectiveScale: modelScale * speciesScale };
+    }
+
+    function installFallback(values) {
+      const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
+      const sourceIsLeft = values.model?.mirrorX !== false;
+      const color = bodyColorHex(speciesId, options.bodyColors);
+      for (const side of ['left', 'right']) {
+        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft));
+      }
+    }
+
+    async function refreshModelProfile() {
+      const generation = ++state.loadGeneration;
+      const values = profileValues();
+      state.modelKey = values.modelKey;
+      state.modelScale = values.modelScale;
+      state.speciesScale = values.speciesScale;
+      state.effectiveScale = values.effectiveScale;
+      state.glb = values.model?.glb || null;
+      state.loadError = null;
+      installFallback(values);
+      if (!values.model?.glb) return;
+
+      const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
+      try {
+        const built = await Promise.all(['left', 'right'].map(async side => [
+          side,
+          await buildGlbHand(THREE, values.modelKey, values.model, {
+            speciesId,
+            bodyColors: options.bodyColors,
+            baseTargetHeight,
+            speciesScale: values.speciesScale,
+          }, side),
+        ]));
+        if (state.disposed || generation !== state.loadGeneration) {
+          for (const [, visual] of built) disposeObjectResources(visual);
+          return;
+        }
+        for (const [side, visual] of built) installVisual(side, visual);
+      } catch (error) {
+        if (state.disposed || generation !== state.loadGeneration) return;
+        state.loadError = error?.message || String(error);
+        console.warn(`[ProceduralHandAttachments] model load failed for ${speciesId}:`, error);
+      }
+    }
+
+    const tempParentQuaternion = new THREE.Quaternion();
+    function placeHandWorld(side, worldPosition, worldQuaternion) {
+      const rec = sockets[side];
+      if (!rec || !worldPosition || !worldQuaternion) return false;
+      parent.updateWorldMatrix?.(true, false);
+      const localPosition = worldPosition.clone();
+      parent.worldToLocal(localPosition);
+      parent.getWorldQuaternion(tempParentQuaternion);
+      const localQuaternion = tempParentQuaternion.clone().invert().multiply(worldQuaternion);
+      rec.socket.position.copy(localPosition);
+      rec.socket.quaternion.copy(localQuaternion);
+      rec.socket.visible = true;
+      rec.socket.updateMatrix?.();
+      rec.socket.updateMatrixWorld?.(true);
+      return true;
+    }
+
+    function setSideVisible(side, visible) {
+      if (sockets[side]) sockets[side].socket.visible = !!visible;
+    }
+
+    useIdlePose();
+    installFallback(profileValues());
+    refreshModelProfile();
+
+    const unsubscribe = profiles.subscribe?.(() => refreshModelProfile());
+
+    const api = {
+      group: root,
+      parent,
+      avatarRoot: options.avatarRoot || null,
+      speciesId,
+      gender,
+      placeHandWorld,
+      setSideIdle,
+      setSideVisible,
+      useIdlePose,
+      refreshModelProfile,
+      dispose() {
+        if (state.disposed) return;
+        state.disposed = true;
+        state.loadGeneration++;
+        unsubscribe?.();
+        activeRigs.delete(api);
+        parent.remove(root);
+        disposeObjectResources(root);
+      },
+      getDebug() {
+        return {
+          speciesId,
+          gender,
+          mode: 'direct-tool-attachments',
+          noArmIK: true,
+          authoredGlbOriginPreserved: true,
+          modelKey: state.modelKey,
+          modelScale: state.modelScale,
+          speciesScale: state.speciesScale,
+          effectiveScale: state.effectiveScale,
+          glb: state.glb,
+          loadError: state.loadError,
+        };
+      },
+    };
+    activeRigs.add(api);
+    return api;
+  }
+
+  const publicApi = {
+    attach,
+    installGameRuntime(injectedDeps) { gameDeps = injectedDeps || null; },
+    get gameDeps() { return gameDeps; },
+    setShowGripGuides(value) {
+      showGripGuides = !!value;
+      for (const rig of activeRigs) {
+        for (const side of ['left', 'right']) {
+          const guide = rig.group?.getObjectByName?.(`${side}_hand_grip_axes`);
+          if (guide) guide.visible = showGripGuides;
+        }
+      }
+    },
+    getActiveDebug() { return [...activeRigs].map(rig => rig.getDebug()); },
+    refreshAllProfiles() { for (const rig of activeRigs) rig.refreshModelProfile?.(); },
+    idleMedialYawDeg: IDLE_MEDIAL_YAW_DEG,
+  };
+
+  global.ProceduralHandAttachments = publicApi;
+  // Temporary name bridge for the existing hand authoring adapters. It aliases
+  // the direct hand system only; no arm implementation is loaded or retained.
+  global.ProceduralArmAnimation = publicApi;
+})(window);

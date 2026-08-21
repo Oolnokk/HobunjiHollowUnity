@@ -611,7 +611,7 @@
 
     const toolRow = document.createElement('div');
     toolRow.className = 'inv-equip-row';
-    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon'];
+    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged'];
     for (const slot of TOOL_SLOTS) {
       const itemKey = deps.equipmentSlots[slot];
       const def = itemKey ? deps.TOOL_ITEM_DEFS[itemKey] : null;
