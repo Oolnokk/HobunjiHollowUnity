@@ -9764,9 +9764,21 @@
         let loadSource = 'missing';
         if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
-          // (see synthesizeCavernMapData).
+          // (see synthesizeCavernMapData) — but that generation is one
+          // unbroken synchronous SDF carve (~25-40s), during which the
+          // browser can't repaint at all, so the black scene-transition
+          // fade (see startSceneTransition/updateSceneTransition, which
+          // already holds it until _buildingScenes resolves) would
+          // otherwise sit there with no indication anything is happening.
+          // Two rAFs guarantee this label actually paints before the
+          // blocking call starts — a single rAF can still land in the
+          // same paint as this DOM write, showing nothing at all.
+          const denLoadingLabel = document.getElementById('denLoadingLabel');
+          if (denLoadingLabel) denLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
           mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
           loadSource = 'cavern';
+          if (denLoadingLabel) denLoadingLabel.style.display = 'none';
         } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
