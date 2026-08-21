@@ -217,26 +217,43 @@
       loadError: null,
     };
 
-    function idleLocalPosition(side) {
-      return new THREE.Vector3(side === 'right' ? handAttachX : -handAttachX, handAttachY, 0);
-    }
+    const idlePositions = { // Reused authored attachment points copied into free-hand sockets every fallback frame.
+      left: new THREE.Vector3(-handAttachX, handAttachY, 0),
+      right: new THREE.Vector3(handAttachX, handAttachY, 0),
+    };
+    const idleQuaternion = new THREE.Quaternion().setFromEuler( // Reused authored medial frame composed with each fallback rotation below.
+      new THREE.Euler(0, THREE.MathUtils.degToRad(IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'),
+    );
+    const fallbackOffset = new THREE.Vector3(); // Reused local position offset keeps free-hand animation allocation-free.
+    const fallbackEuler = new THREE.Euler(0, 0, 0, 'YXZ'); // Reused temporary Euler converts procedural degrees to a quaternion.
+    const fallbackQuaternion = new THREE.Quaternion(); // Reused locomotion rotation composed after idleQuaternion.
 
-    function idleLocalQuaternion() {
-      return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, THREE.MathUtils.degToRad(IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'));
-    }
-
-    function setSideIdle(side) {
+    function setSideIdle(side, fallbackPose = null) {
       const rec = sockets[side];
-      rec.socket.position.copy(idleLocalPosition(side));
-      rec.socket.quaternion.copy(idleLocalQuaternion());
+      const position = fallbackPose?.position || {}; // Optional local locomotion offset applied only while this side has no attachment owner.
+      const rotation = fallbackPose?.rotationDeg || {}; // Optional idle/walk rotation composed after the authored medial hand frame.
+      fallbackOffset.set(
+        Number(position.x) || 0,
+        Number(position.y) || 0,
+        Number(position.z) || 0,
+      );
+      fallbackEuler.set(
+        THREE.MathUtils.degToRad(Number(rotation.pitch) || 0),
+        THREE.MathUtils.degToRad(Number(rotation.yaw) || 0),
+        THREE.MathUtils.degToRad(Number(rotation.roll) || 0),
+        'YXZ',
+      );
+      fallbackQuaternion.setFromEuler(fallbackEuler);
+      rec.socket.position.copy(idlePositions[side]).add(fallbackOffset);
+      rec.socket.quaternion.copy(idleQuaternion).multiply(fallbackQuaternion);
       rec.socket.visible = true;
       rec.socket.updateMatrix?.();
       rec.socket.updateMatrixWorld?.(true);
     }
 
-    function useIdlePose() {
-      setSideIdle('left');
-      setSideIdle('right');
+    function useIdlePose(fallbackPoses = null) {
+      setSideIdle('left', fallbackPoses?.left || null);
+      setSideIdle('right', fallbackPoses?.right || null);
     }
 
     function installVisual(side, visual) {
@@ -362,6 +379,7 @@
           effectiveScale: state.effectiveScale,
           glb: state.glb,
           loadError: state.loadError,
+          fallbackPoseInput: 'per-side-local-offset',
         };
       },
     };

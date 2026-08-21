@@ -318,8 +318,8 @@
 
     const originalSetSideIdle = rig.setSideIdle?.bind(rig);
     if (originalSetSideIdle) {
-      rig.setSideIdle = function shoulderAimSetSideIdle(side) {
-        const result = originalSetSideIdle(side);
+      rig.setSideIdle = function shoulderAimSetSideIdle(side, fallbackPose = null) {
+        const result = originalSetSideIdle(side, fallbackPose);
         captureAuthoredBase(side);
         aimSide(side);
         return result;
@@ -328,8 +328,8 @@
 
     const originalUseIdlePose = rig.useIdlePose?.bind(rig);
     if (originalUseIdlePose) {
-      rig.useIdlePose = function shoulderAimUseIdlePose() {
-        const result = originalUseIdlePose();
+      rig.useIdlePose = function shoulderAimUseIdlePose(fallbackPoses = null) {
+        const result = originalUseIdlePose(fallbackPoses);
         captureAuthoredBase('left');
         captureAuthoredBase('right');
         aimAll();

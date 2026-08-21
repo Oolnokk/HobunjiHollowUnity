@@ -39,8 +39,11 @@
     if (Array.isArray(frame) && frame.length) {
       for (const rec of frame) {
         const hand = rec?.hand || {};
+        const fallback = rec?.fallback || {};
         lines.push(
           `Hand ${rec.speciesId || '?'} ${rec.gender || '-'} tool=${rec.toolKey || '-'} secondary=${rec.secondaryActive ? 'yes' : 'no'} `
+          + `fallback=${fallback.mode || '-'} speed=${fallback.speed ?? '-'} strength=${fallback.gaitStrength ?? '-'} `
+          + `owners=L:${fallback.owners?.left || '-'},R:${fallback.owners?.right || '-'} `
           + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
           + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
           + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
