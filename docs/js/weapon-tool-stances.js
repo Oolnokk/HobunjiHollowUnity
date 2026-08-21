@@ -15,6 +15,16 @@
   let stanceApplied = false;
   let stanceConfigLoadStarted = false;
   let stanceConfigSource = 'built-in-defaults';
+  // toolHolder.matrixWorld as actually baked by the most recent
+  // updateMatrixWorld() call below (idle stance included, when one applied).
+  // Local position/quaternion are reverted again immediately after that same
+  // call (see installHolderMatrixHook), so any consumer that calls Three.js's
+  // own world-space accessors (updateWorldMatrix/getWorldPosition/
+  // localToWorld) on toolHolder afterward recomputes matrixWorld from the
+  // reverted, un-stanced local transform instead. Cached here so a consumer
+  // that needs the pose actually rendered this frame (e.g. the procedural
+  // hand socket sync) can read it without triggering that recompute.
+  let lastBakedHolderMatrixWorld = null;
 
   const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260817a';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
@@ -497,6 +507,7 @@
       let result;
       try {
         result = originalUpdateMatrixWorld.call(this, force);
+        lastBakedHolderMatrixWorld = this.matrixWorld.clone();
       } finally {
         if (savedPlaneRotationZ != null && toolPlane) {
           toolPlane.rotation.z = savedPlaneRotationZ;
@@ -571,6 +582,7 @@
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
     debugSnapshot,
+    lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
     poses: idleStances,
   };
 })();
