@@ -805,8 +805,9 @@
     #arcContainer.arc-hidden { display: none; }
 
     /* ── Outer arch (tool dial + item dial) ─────────────────── */
-    /* R = 10 col (pushed out from 7.8 to clear the action arch). toolBtn at
-       150° (clock ~9:50), itemBtn at 120° (clock ~10:30). */
+    /* R = 10 col (pushed out from 7.8 to clear the action arch). Five evenly
+       spaced controls run clockwise from 9:00 to 12:00: put away, weapon,
+       tool, item, mount. */
     #toolSelect {
       --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
@@ -816,8 +817,8 @@
     #itemSelect { display: none !important; }
     #toolBtn {
       position: absolute;
-      right:  calc(-1*cos(150deg)*var(--ar2));
-      bottom: calc(   sin(150deg)*var(--ar2));
+      right:  calc(-1*cos(135deg)*var(--ar2));
+      bottom: calc(   sin(135deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -834,8 +835,8 @@
     .ts-lbl  { display: none; }
     #itemBtn {
       position: absolute;
-      right:  calc(-1*cos(120deg)*var(--ar2));
-      bottom: calc(   sin(120deg)*var(--ar2));
+      right:  calc(-1*cos(112.5deg)*var(--ar2));
+      bottom: calc(   sin(112.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -848,16 +849,13 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
-    /* ── Weapon quick-switch: same outer ring as tool/item dials, one step
-       further out (165°) so it doesn't disturb their existing angles. Tap
-       once to jump to the weapon tool slot; tap again (button turns
-       .active while weapon is engaged) to restore whatever was active
-       before. Always visible — desktop keyboard/gamepad share the same
+    /* ── Put-away + weapon controls: first two positions on the outer ring.
+       Put-away preserves assignments/selections; weapon swaps melee/ranged.
+       Always visible — desktop keyboard/gamepad share the same
        toggleQuickWeaponSwitch() via the "weaponSwitch" input action. ── */
+    #btnUnequipHeld,
     #btnWeaponSwitch {
       position: absolute;
-      right:  calc(-1*cos(165deg)*var(--ar2));
-      bottom: calc(   sin(165deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -869,15 +867,27 @@
       transition: transform 0.08s; overflow: hidden;
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
+    #btnUnequipHeld {
+      right:  calc(-1*cos(180deg)*var(--ar2));
+      bottom: calc(   sin(180deg)*var(--ar2));
+      background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.34);
+    }
+    #btnWeaponSwitch {
+      right:  calc(-1*cos(157.5deg)*var(--ar2));
+      bottom: calc(   sin(157.5deg)*var(--ar2));
+      background: rgba(255,120,120,0.09); border-color: rgba(255,120,120,0.46);
+    }
+    #btnUnequipHeld:active,
     #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
+    #btnUnequipHeld .abt-icon,
     #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
+    #btnUnequipHeld.active { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.72); }
     #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
-    /* ── Call/dismiss mount: same outer ring, one step further out (135°) —
-       evenly spaces the whole ring (165/150/135/120) at 15° apart. ── */
+    /* ── Call/dismiss mount: final outer-ring position at 12:00. ── */
     #btnCallMount {
       position: absolute;
-      right:  calc(-1*cos(135deg)*var(--ar2));
-      bottom: calc(   sin(135deg)*var(--ar2));
+      right:  calc(-1*cos(90deg)*var(--ar2));
+      bottom: calc(   sin(90deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;

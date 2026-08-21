@@ -18,6 +18,7 @@
       const joystickKnob = document.getElementById('joystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
+      const btnUnequipHeld = document.getElementById('btnUnequipHeld');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
@@ -4211,8 +4212,8 @@
       // selected AND actually has a weapon equipped in it — every caller
       // gets this for free instead of some checking activeTool alone.
       function findAutoTarget() {
-        const meleeActive = activeTool === 'weapon' && !!equipmentSlots.weapon;
-        const rangedActive = activeTool === 'ranged' && !!equipmentSlots.ranged;
+        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (!meleeActive && !rangedActive) {
           manualAutoTarget = null;
           return null;
@@ -4259,8 +4260,8 @@
       // weapon tool slot selected.
       const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        const meleeActive = activeTool === 'weapon' && !!equipmentSlots.weapon;
-        const rangedActive = activeTool === 'ranged' && !!equipmentSlots.ranged;
+        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (!meleeActive && !rangedActive) return false;
         const current = findAutoTarget();
         const maxDist = rangedActive
@@ -5173,18 +5174,19 @@
         if (!anchor) return null;
         // 'posterior' is special: docs/tools/animation-author/index.html's own
         // export always writes position.y = 0 for it and stores the real
-        // per-species height as posteriorRule.heightPercentOffset instead (the
+        // per-species height as posteriorRule.heightPercentFromFloor instead (the
         // tool's own live preview recomputes from that rule — see
         // resolvedCharacterPosteriorSnapshot in that file) — reading
         // position.y directly here was always wrong (flat 0 for every
         // species), which is why mounting used to seat the player too high.
-        // Recompute the same way: handAttachY + portraitModelHeight *
-        // heightPercentOffset / 100, both terms already in this same
-        // floor-anchored space (see playerToolBaseY's own usage elsewhere).
+        // Resolve the shared floor-relative height percentage. Legacy imports
+        // still fall back to their old handAttachY + height-offset rule.
         if (anchorName === 'posterior' && rec.posteriorRule) {
-          const offset = Number(rec.posteriorRule.heightPercentOffset);
           const modelHeight = Number(playerAvatarModelHeight) || 0.9;
-          const y = (Number(playerToolBaseY) || modelHeight / 2) + modelHeight * (Number.isFinite(offset) ? offset : -18) / 100;
+          const legacyOffset = Number(rec.posteriorRule.heightPercentOffset);
+          const y = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rec.posteriorRule, modelHeight, playerToolBaseY)
+            ?? ((Number.isFinite(Number(playerToolBaseY)) ? Number(playerToolBaseY) : modelHeight / 2)
+              + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
           return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
@@ -6861,7 +6863,7 @@
           dirX = player.inputX;
           dirY = player.inputY;
         } else {
-          const weaponEngaged = (activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged);
+          const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
           const target = weaponEngaged ? findAutoTarget() : null;
           const aimAngle = target
             ? Math.atan2(target.y - player.y, target.x - player.x)
@@ -12405,7 +12407,7 @@
 
       let activeTool = 'shovel';
       let activeAction = 'dig';
-      let heldMode = 'tool'; // 'tool' | 'item'
+      let heldMode = 'tool'; // 'tool' | 'item' | 'none' (hands free without clearing gear assignments)
       let lastTime = performance.now();
       let simAccumulator = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
@@ -12812,10 +12814,11 @@
         // ── Facing ────────────────────────────────────────────
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
-        const weaponEngaged = (activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged);
+        const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
         const autoTarget = weaponEngaged ? findAutoTarget() : null;
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon' || activeTool === 'ranged');
+        btnUnequipHeld?.classList.toggle('active', heldMode === 'none');
+        btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
 
         // Auto-aim lock takes absolute priority over mouse-look/right-stick
         // look while it's engaged, so neither can interrupt or steal facing
@@ -13967,6 +13970,7 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
           refreshActionBar();
@@ -17785,6 +17789,11 @@
           heldItemHolder.visible = false;
           return;
         }
+        if (heldMode === 'none') {
+          toolHolder.visible = false;
+          heldItemHolder.visible = false;
+          return;
+        }
         // While a bag item is selected (heldMode === 'item' — the arch shows
         // its use actions), show the held-item chest plane instead of
         // whatever tool/weapon is equipped; the tool mesh comes back the
@@ -20180,6 +20189,7 @@
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
+        heldMode = 'tool';
         activeTool = tool;
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
@@ -20225,6 +20235,27 @@
         if (activeTool === 'weapon') setActiveTool('ranged');
         else if (activeTool === 'ranged') setActiveTool('weapon');
         else setActiveTool('weapon');
+      }
+
+      // Holsters the visible tool/weapon or bag item without unassigning any
+      // gear slots. The remembered activeTool/activeItemIndex are restored by
+      // the next tool, item, or weapon selection.
+      function putAwayHeldEquipment() {
+        if (heldMode === 'none') return;
+        heldMode = 'none';
+        activeAction = 'none';
+        actionHeldDown = false;
+        window.Combat?.input?.cancelPress?.(1);
+        window.Combat?.input?.cancelPress?.(2);
+        window.Combat?.cancelAllStaged?.();
+        window.RangedWeapons?.cancelPlayerAction?.();
+        cancelPlayerToolAnimationForInteraction();
+        toolHolder.visible = false;
+        heldItemHolder.visible = false;
+        window._desktopSelectionArc?.close?.();
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+        showToast('Put away held equipment.', true);
       }
 
       function setActiveAction(action) {
@@ -20586,9 +20617,8 @@
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld && !_tMoved && heldMode === 'item') {
-            // Tap while in item mode → return to last held tool
-            heldMode = 'tool';
+          else if (!_tHeld && !_tMoved && heldMode !== 'tool') {
+            // Tap while holding an item or hands-free → restore the last tool.
             setActiveTool(_lastHeldTool); // calls refreshActionBar internally
           }
           _tHeld = false; _tMoved = false;
@@ -20621,9 +20651,9 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved && heldMode === 'tool') {
-              // Tap while in tool mode → switch to item mode
-              _lastHeldTool = activeTool;
+            else if (!_iHeld && !_iMoved && heldMode !== 'item') {
+              // Tap while holding a tool or hands-free → switch to item mode.
+              if (heldMode === 'tool') _lastHeldTool = activeTool;
               heldMode = 'item';
               refreshItemScroll(); refreshActionBar();
             }
@@ -21334,7 +21364,7 @@
           const dayText = window.CalendarSystem.formatCalendarDate();
           if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
         }
-        const toolText = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
         if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
 
         // Reticle tile info
@@ -21676,6 +21706,12 @@
         toggleQuickWeaponSwitch();
       });
 
+      // First outer-arch button, mirrored by the desktop Z shortcut.
+      btnUnequipHeld?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        putAwayHeldEquipment();
+      });
+
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
@@ -21959,12 +21995,12 @@
       // instant-fire behavior unchanged.
       function weaponActionSlot(actionId) {
         if (!(actionId === 'action1' || actionId === 'action2')) return 0;
-        if (activeTool !== 'weapon' || !window.Combat?.input) return 0;
+        if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the inner ammo arch.
       function runInputAction(actionId, phase = 'press') {
-        if (actionId === 'action2' && activeTool === 'ranged') {
+        if (actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged') {
           if (phase === 'release') {
             if (!rangedAmmoAction2Press.down) return;
             rangedAmmoAction2Press.down = false;
@@ -22146,6 +22182,11 @@
           return;
         }
         if (menuOpen) return;
+        if (key === 'z') {
+          event.preventDefault();
+          if (!event.repeat) putAwayHeldEquipment();
+          return;
+        }
         const boundDesktopAction = getActionForButton('desktop', event.code);
         if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
           event.preventDefault();
@@ -22405,12 +22446,12 @@
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
-          if (activeTool === 'weapon' && window.Combat?.input) {
+          if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
             return;
           }
-          if (activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
+          if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -22423,12 +22464,12 @@
       }
       window.addEventListener('pointerup', (e) => {
         if (e.pointerType !== 'mouse') return;
-        if (activeTool === 'weapon' && window.Combat?.input) {
+        if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
           else if (e.button === 2) { window.Combat.input.pressEnd(2); }
           return;
         }
-        if (activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
+        if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
       });
 
@@ -22691,6 +22732,7 @@
         getActiveScene,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
+        getPlayerGroundY: _playerGroundY,
         getPlayerLegs: () => playerLegs,
         getPetLayeringPet: () => _petLayeringPet,
         getPetLayeringActive: () => _petLayeringActive,

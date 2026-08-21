@@ -704,6 +704,8 @@
     if (itemBtnEl) itemBtnEl.style.display = display;
     const btnWeaponSwitchEl = document.getElementById('btnWeaponSwitch');
     if (btnWeaponSwitchEl) btnWeaponSwitchEl.style.display = display;
+    const btnUnequipHeldEl = document.getElementById('btnUnequipHeld');
+    if (btnUnequipHeldEl) btnUnequipHeldEl.style.display = display;
     const dodgeBtnEl = document.getElementById('dodgeBtn');
     if (dodgeBtnEl) dodgeBtnEl.style.display = display;
   }

@@ -96,26 +96,20 @@
     return defaultMultiplier;
   }
 
-  // Per-species/gender authored posterior height rule (posteriorRule.
-  // heightPercentOffset in attachment-rig-profiles.js — the same rig data
-  // docs/tools/animation-author/index.html authors and the game's own
-  // mount-seat placement references), mirroring that tool's own live-preview
-  // formula: hip height = handAttachY + modelHeight * heightPercentOffset/100,
-  // both terms already in the avatar's floor-anchored root space (handAttachY
-  // is png-plane-avatar.js's own scanned hand-height, passed in via
-  // options.handAttachY). Falls back to -18 (this rig data's own default,
-  // see DEFAULT_POSTERIOR_HEIGHT_PERCENT in animation-author/index.html) for
-  // any species/gender without an authored rule.
-  function heightPercentOffsetForSpecies(speciesId, gender) {
+  // Reads the same floor-relative posterior rule used by mounts and Shoulder
+  // Rig. The shared resolver keeps old handAttachY-relative imports readable.
+  function posteriorRuleForSpecies(speciesId, gender) {
     const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
-    const rec = lib[`${speciesId}::${gender}`];
-    const value = Number(rec?.posteriorRule?.heightPercentOffset);
-    return Number.isFinite(value) ? value : -18;
+    return lib[`${speciesId}::${gender}`]?.posteriorRule || null;
   }
 
   function posteriorYForSpecies(speciesId, gender, modelHeight, handAttachY) {
+    const rule = posteriorRuleForSpecies(speciesId, gender);
+    const sharedY = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rule, modelHeight, handAttachY);
+    if (Number.isFinite(sharedY)) return sharedY;
+    const legacyOffset = Number(rule?.heightPercentOffset);
     const baseY = Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2;
-    return baseY + modelHeight * heightPercentOffsetForSpecies(speciesId, gender) / 100;
+    return baseY + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
   }
 
   // Per-species/gender authored posterior anchor X (attachment-rig-profiles.js
@@ -1115,6 +1109,33 @@
       disposeObjectResources(root);
     }
 
+    function footBoundsInRoot(foot) {
+      if (!foot) return null;
+      root.updateMatrixWorld(true);
+      const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert(); // Converts rendered mesh bounds back into the floor-relative feet-root space used by both game and rigger.
+      const bounds = new THREE.Box3().makeEmpty();
+      foot.traverse(child => {
+        if (!child?.isMesh || !child.geometry) return;
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+        if (!child.geometry.boundingBox) return;
+        const meshToRoot = new THREE.Matrix4().multiplyMatrices(inverseRoot, child.matrixWorld);
+        bounds.union(child.geometry.boundingBox.clone().applyMatrix4(meshToRoot));
+      });
+      return bounds.isEmpty() ? null : bounds;
+    }
+
+    function getStandingPoseDebug() {
+      const leftBounds = footBoundsInRoot(state.left);
+      const rightBounds = footBoundsInRoot(state.right);
+      return {
+        coordinateSpace: 'avatar-floor-relative',
+        floorY: 0,
+        posteriorY,
+        left: { targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
+        right: { targetY: state.rightTarget.y, contactY: state.rightContactY, bottomY: rightBounds?.min.y ?? null },
+      }; // Gives mobile-facing author diagnostics the rendered geometry bottoms instead of asking the user to infer the floor from camera perspective.
+    }
+
     // Writes an already-solved leg pose straight onto this side's thigh/calf
     // chain and foot mesh, bypassing solveTwoBoneLeg entirely — for
     // docs/js/combat/impact-ragdoll-playback.js, which samples pre-recorded
@@ -1142,7 +1163,7 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };

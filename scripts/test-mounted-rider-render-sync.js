@@ -9,6 +9,9 @@ const mountSource = fs.readFileSync('docs/js/mount-system.js', 'utf8'); // Guard
 const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards mobile-visible rider drift diagnostics.
 
 assert.match(gameSource,
+  /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY\(rec\.posteriorRule, modelHeight, playerToolBaseY\)/,
+  'mounted riders must resolve posterior Y with the same floor-relative math as Shoulder Rig and procedural limbs');
+assert.match(gameSource,
   /playerMesh\.position\.y \+= \(targetY - playerMesh\.position\.y\) \* 0\.18;[\s\S]{0,700}Mounts\?\.pinMountedRiderMesh\(playerMesh, mountSeatLift\);/,
   'the rider is pinned after its ordinary independent render lerp');
 assert.match(mountSource,
