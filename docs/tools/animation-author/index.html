@@ -12677,6 +12677,69 @@ animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.36 patch installed: game-width avatar previews plus 0.9-calibrated character attachment positions; uniform rotations remain unchanged.');
 
+
+// -----------------------------------------------------------------------------
+// V15.37 restores the canonical shared character profiles after older embedded
+// defaults have finished installing. V15.24 deliberately replaced the complete
+// internal library, which left its pre-calibration attachment coordinates active in
+// the rigger even though gameplay read the corrected shared configuration.
+// -----------------------------------------------------------------------------
+function canonicalCharacterRigProfilesV1537() {
+  const sharedCharacters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Supplies the same calibrated character profiles consumed directly by game.js.
+  return normalizedRigProfileLibrary({ characters: structuredCloneSafe(sharedCharacters), creatures: {} }).characters;
+}
+
+function installCanonicalCharacterRigProfilesV1537(target = animationAuthor.attachmentRigProfiles) {
+  if (!target) return 0;
+  const characters = canonicalCharacterRigProfilesV1537(); // Runs the shared profiles through every current schema migration before replacing stale embedded snapshots.
+  target.characters = characters;
+  const maximumPositionDelta = { x: 0, y: 0, z: 0 }; // Reports whether the rigger's final attachment positions differ from the gameplay configuration on any axis.
+  let maximumPosteriorPercentDelta = 0; // Reports divergence in the derived posterior Y rule that cannot be represented by the stored zero-position anchor.
+  for (const [key, profile] of Object.entries(characters)) {
+    const runtimeProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key];
+    for (const anchorName of ['leftHandShoulder', 'rightHandShoulder', 'shoulderPerch']) {
+      for (const axis of ['x', 'y', 'z']) {
+        const authorPosition = Number(profile?.anchors?.[anchorName]?.position?.[axis]);
+        const runtimePosition = Number(runtimeProfile?.anchors?.[anchorName]?.position?.[axis]);
+        if (Number.isFinite(authorPosition) && Number.isFinite(runtimePosition)) maximumPositionDelta[axis] = Math.max(maximumPositionDelta[axis], Math.abs(authorPosition - runtimePosition));
+      }
+    }
+    const authorPosteriorPercent = Number(profile?.posteriorRule?.heightPercentOffset);
+    const runtimePosteriorPercent = Number(runtimeProfile?.posteriorRule?.heightPercentOffset);
+    if (Number.isFinite(authorPosteriorPercent) && Number.isFinite(runtimePosteriorPercent)) maximumPosteriorPercentDelta = Math.max(maximumPosteriorPercentDelta, Math.abs(authorPosteriorPercent - runtimePosteriorPercent));
+  }
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCanonicalCharacters = Object.keys(characters).length;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorAnchorPositionMaxDelta = maximumPositionDelta;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorPosteriorPercentMaxDelta = maximumPosteriorPercentDelta;
+  return Object.keys(characters).length;
+}
+
+installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles);
+installCanonicalCharacterRigProfilesV1537(DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516);
+
+const baseImportAnimationProjectDataV1537 = importAnimationProjectData;
+importAnimationProjectData = async function(data, options = {}) {
+  const result = await baseImportAnimationProjectDataV1537(data, options);
+  if (options.fromAutosave) {
+    installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles); // Prevents old autosaves from reintroducing embedded pre-calibration character coordinates.
+    for (const actor of animationAuthor.actors) if (actor.source?.type === 'npc') applyAttachmentRigProfileToActor(actor);
+  }
+  return result;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1537 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1537();
+  document.title = 'Hobunji Animation Author V15.37';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.37 keeps the rigger on the same calibrated character anchor library as gameplay, including shoulder X/Y/Z positions and derived posterior height rules.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.37 patch installed: canonical gameplay character anchors now replace stale embedded rigger snapshots after every bootstrap and autosave restore.');
+
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
 buildTransformEditor('attachmentTransformFields', 'attachment');
