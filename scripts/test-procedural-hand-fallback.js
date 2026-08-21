@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/procedural-hand-frame-driver.js'), 'utf8');
+const shoulderSource = fs.readFileSync(path.join(root, 'docs/js/procedural-hand-shoulder-aim.js'), 'utf8'); // Verifies free-hand shoulder-X alignment stays below attachment ownership.
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
@@ -117,5 +118,9 @@ assert(Math.sign(left.position.z) === -Math.sign(right.position.z), 'left and ri
 assert.match(source, /owners\.right = 'primary-grip'/, 'primary grip ownership must override right-hand fallback');
 assert.match(source, /owners\.left = 'secondary-grip'/, 'secondary grip ownership must override left-hand fallback');
 assert.match(source, /applyFallbackSide\(record, 'left'\)/, 'a one-handed grip must leave the other hand on fallback motion');
+assert.match(shoulderSource, /socket\.position\.x = shoulder\.x/, 'a free hand must hang at the resolved shoulder X');
+assert.match(shoulderSource, /shoulderAimSetSideIdle[\s\S]*alignFreeHandXToShoulder\(side\)/, 'single-side fallback must align X before shoulder aiming');
+assert.match(shoulderSource, /shoulderAimUseIdlePose[\s\S]*alignFreeHandXToShoulder\('left'\)[\s\S]*alignFreeHandXToShoulder\('right'\)/, 'two-hand fallback must align both sides');
+assert.doesNotMatch(shoulderSource, /shoulderAimPlaceHandWorld[\s\S]{0,300}alignFreeHandXToShoulder/, 'tool-attached hands must retain their authored world positions');
 
-console.log('procedural hand fallback: idle + walk + per-side ownership PASS');
+console.log('procedural hand fallback: idle + walk + shoulder-X hang + per-side ownership PASS');

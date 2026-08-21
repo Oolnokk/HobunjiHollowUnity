@@ -340,7 +340,7 @@
     const gait = state.gaitStrength;
     return {
       position: {
-        x: (side === 'right' ? -1 : 1) * h * 0.004 * gait * Math.abs(swing),
+        x: 0, // Shoulder-aim wrapper replaces the authored T-pose X with this side's resolved shoulder X.
         y: h * (0.0045 * idleBreath * (1 - gait) + 0.018 * liftWave * gait),
         z: h * 0.085 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
       },

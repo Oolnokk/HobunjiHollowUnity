@@ -116,6 +116,16 @@
       return shoulderParent;
     }
 
+    function alignFreeHandXToShoulder(side) {
+      const socket = socketFor(side); // Free-hand socket whose lateral position is corrected before shoulder aiming.
+      const shoulder = shoulderInParent(side); // Resolved manual/scanned shoulder point in the socket parent's local space.
+      if (!socket || !shoulder) return false;
+      socket.position.x = shoulder.x;
+      socket.updateMatrix?.();
+      socket.updateMatrixWorld?.(true);
+      return true;
+    }
+
     function quaternionDebug(q) {
       return {
         x: Number(q.x.toFixed(5)),
@@ -320,6 +330,7 @@
     if (originalSetSideIdle) {
       rig.setSideIdle = function shoulderAimSetSideIdle(side, fallbackPose = null) {
         const result = originalSetSideIdle(side, fallbackPose);
+        alignFreeHandXToShoulder(side);
         captureAuthoredBase(side);
         aimSide(side);
         return result;
@@ -330,6 +341,8 @@
     if (originalUseIdlePose) {
       rig.useIdlePose = function shoulderAimUseIdlePose(fallbackPoses = null) {
         const result = originalUseIdlePose(fallbackPoses);
+        alignFreeHandXToShoulder('left');
+        alignFreeHandXToShoulder('right');
         captureAuthoredBase('left');
         captureAuthoredBase('right');
         aimAll();
