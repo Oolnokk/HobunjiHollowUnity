@@ -96,6 +96,18 @@
   function _renderDebugPanel() {
     const panel = document.getElementById('debugLog');
     if (!panel) return;
+    // debugLog() fires continuously during normal play (audio waits, NPC
+    // schedule fallbacks, etc.), not just while a developer has the Debug
+    // tab open. Rebuilding this innerHTML from up to 200 entries on every
+    // one of those calls — and the DOM mutation that rebuild causes — was
+    // showing up as a steady background cost even with the menu fully
+    // closed. Skip the rebuild while the tab isn't visible; switchMenuPanel
+    // already calls this explicitly the moment the Debug tab becomes
+    // active, so nothing is lost, just deferred until it's actually shown.
+    const debugPane = document.getElementById('mpDebug');
+    if (!document.getElementById('menuPanel')?.classList.contains('open') || !debugPane?.classList.contains('active')) {
+      return;
+    }
     const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc', bgm: '#4ade80', cue: '#4ade80', bgs: '#fada5e', wildlife: '#22d3ee' };
     const stuckToBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 16;
     const prevScrollTop = panel.scrollTop;
