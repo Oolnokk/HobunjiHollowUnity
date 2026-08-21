@@ -1213,6 +1213,9 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821k', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821e', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1224,6 +1227,9 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/leg-bones.js',
+  'js/procedural-leg-animation.js',
+  'js/held-action-animations.js',
   CREATURE_RENDER_SCRIPT,
 ];
 
@@ -1444,6 +1450,14 @@ function prepareRepositoryScript(code, relativePath, settings) {
   if (relativePath === 'js/portrait-breathing.js') {
     return `${code}\n;window.HobunjiPortraitEmoteAnimations = JSON.parse(JSON.stringify(EMOTE_ANIMATIONS));`;
   }
+  if (relativePath === 'js/held-action-animations.js') {
+    const docsBase = new URL('../../', location.href).href; // Resolves hand scripts and GLBs beside the author page that implements their preview contract.
+    return `window.__HobunjiHandBootstrapDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiHandBootstrapDocsBase;`;
+  }
+  if (relativePath === 'js/procedural-leg-animation.js') {
+    const docsBase = new URL('../../', location.href).href; // Resolves foot textures and GLBs beside the author page while its runtime executes from a blob.
+    return `window.__HobunjiProceduralFeetDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiProceduralFeetDocsBase;`;
+  }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
   const docsBase = cdnUrl(settings.docsRoot);
   let prepared = code
@@ -1481,13 +1495,27 @@ async function loadRepositoryRuntime(settings) {
 
   for (const relativePath of REQUIRED_SCRIPTS) {
     const path = settings.docsRoot + relativePath;
-    const code = prepareRepositoryScript(await fetchRepoText(path), relativePath, settings);
-    await executeClassicScript(code, rawUrl(path));
+    const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
+      : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
+        : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT : null; // Hands and feet must match the author page that implements their preview contract.
+    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
+    const sourceCode = authorPairedRuntimeUrl
+      ? await (await fetchWithTimeout(sourceUrl)).text()
+      : await fetchRepoText(path);
+    const code = prepareRepositoryScript(sourceCode, relativePath, settings);
+    await executeClassicScript(code, sourceUrl);
     log(`Loaded runtime script ${path}`);
+  }
+  if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
+  const attachmentProfileReady = window.applyHobunjiAttachmentRigProfileCorrections?.(); // Feeds config-order failures into the author's built-in mobile-accessible Diagnostics panel.
+  if (window.applyHobunjiAttachmentRigProfileCorrections && !attachmentProfileReady) {
+    log('Attachment rig profile corrections could not find the loaded PNG-avatar configuration.', 'warn');
   }
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
+  if (!window.LegBones || !window.ProceduralLegAnimation) throw new Error('The shoulder-rig feet preview runtime did not initialize.');
+  if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
   $('creatureModeBtn').disabled = false;
   if (!window.renderProfile || !window.loadPortraitCosmetics) throw new Error('portrait-utils.js did not expose the expected renderer functions.');
@@ -7338,7 +7366,7 @@ function renderAttachmentRigInspector() {
   inspector.innerHTML = `
     <section class="maaSection">
       <div class="maaSectionTitle"><b>${character ? 'Character species + gender rig' : 'Creature species rig'}</b><span class="maaBatchBadge">${escapeHtml(profileLabel)}</span></div>
-      <div class="maaSmall maaMuted">This profile is shared by every matching ${character ? 'character species/gender combination' : 'creature species'}. ${character ? 'Posterior X is centered and its Y derives from tool-grip height plus the editable height-percent offset.' : 'The points are fixed rig pivots.'} These are not animation keys.</div>
+      <div class="maaSmall maaMuted">This profile is shared by every matching ${character ? 'character species/gender combination' : 'creature species'}. ${character ? 'Posterior Y controls the resting hand height; each hand uses its matching shoulder target X and aims back toward that target.' : 'The points are fixed rig pivots.'} These are not animation keys.</div>
       <div class="maaRigConnectionDiagram">
         <div>${character ? 'Posterior' : 'Shoulder grip'}<br><span class="maaMuted">rider alignment</span></div>
         <b>→</b>
@@ -7347,7 +7375,7 @@ function renderAttachmentRigInspector() {
     </section>
     <section class="maaSection">
       <div class="maaSectionTitle"><b>Coordinate to edit</b><span class="maaSmall maaMuted">Move or rotate</span></div>
-      <div class="maaField"><label for="maaRigAnchorSelect">Rig coordinate</label><select id="maaRigAnchorSelect">${names.map(name => `<option value="${name}"${name === selected ? ' selected' : ''}>${name === 'shoulderPerch' ? 'Shoulder perch' : name === 'shoulderGrip' ? 'Shoulder grip' : name[0].toUpperCase()+name.slice(1)}</option>`).join('')}</select></div>
+      <div class="maaField"><label for="maaRigAnchorSelect">Rig coordinate</label><select id="maaRigAnchorSelect">${names.map(name => `<option value="${name}"${name === selected ? ' selected' : ''}>${name === 'shoulderPerch' ? 'Shoulder perch' : name === 'shoulderGrip' ? 'Shoulder grip' : name === 'leftHandShoulder' ? 'Left-hand shoulder target' : name === 'rightHandShoulder' ? 'Right-hand shoulder target' : name[0].toUpperCase()+name.slice(1)}</option>`).join('')}</select></div>
       <div class="maaRow" style="margin-top:7px">
         <button class="secondary${animationAuthor.transformMode === 'translate' ? ' active' : ''}" data-maa-rig-gizmo="translate">Move gizmo</button>
         <button class="secondary${animationAuthor.transformMode === 'rotate' ? ' active' : ''}" data-maa-rig-gizmo="rotate">Rotate gizmo</button>
@@ -7361,7 +7389,7 @@ function renderAttachmentRigInspector() {
     </section>
     <section class="maaSection">
       <div class="maaSectionTitle"><b>Runtime meaning</b></div>
-      <div class="maaSmall maaMuted">A mount animation keys an invisible parent attached to the creature saddle. The character visual is placed beneath it with the posterior at parent origin. A shoulder-pet animation does the same with shoulder perch and shoulder grip. Selecting the rider in multi-avatar mode selects and keys that intermediate parent.</div>
+      <div class="maaSmall maaMuted">A mount animation keys an invisible parent attached to the creature saddle. The character visual is placed beneath it with the posterior at parent origin. A shoulder-pet animation does the same with shoulder perch and shoulder grip. Left/right hand shoulder targets are edited with this same gizmo; idle hands render at matching shoulder X and derived posterior Y.</div>
     </section>`;
   $('maaRigAnchorSelect').addEventListener('change', event => {
     animationAuthor.rig.selectedAnchor = event.target.value;
@@ -8218,6 +8246,7 @@ addNpcAnimationActor = async function(npcId, options = {}) {
     const avatar = await buildAvatarRender(npc);
     actor.model.userData.rigSourceFrontCanvas = avatar.front;
     actor.model.userData.rigSourceBackCanvas = avatar.back;
+    actor.model.userData.rigAvatarProfile = avatar.profile; // Reused by the shoulder-rig feet preview for its real torso-width stance scan.
     installCharacterRuntimePreviewLift(actor);
     const armCanvas = await renderRightArmOnlyCanvas(avatar, actor);
     actor.model.userData.rigRightArmCanvas = armCanvas;
@@ -11867,6 +11896,775 @@ animationAuthor.recentChange = 'V15.24 makes the latest uploaded rig-profile lib
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.24 patch installed: latest rig JSON and stink-oil animation are now exact built-in defaults; all authored attachment anchors are protected from automatic recalculation.');
+
+
+// -----------------------------------------------------------------------------
+// V15.25 hand shoulder rig anchors and posterior-height idle-hand placement.
+// -----------------------------------------------------------------------------
+const HAND_SHOULDER_ANCHORS_V1525 = Object.freeze(['leftHandShoulder', 'rightHandShoulder']); // Defines the character-only shoulder targets exposed through the ordinary rig gizmo workflow.
+
+function defaultHandShoulderSnapshotV1525(profile, side) {
+  const shoulderPerch = normalizeTransformSnapshot(profile?.anchors?.shoulderPerch, 1); // Provides a repository-derived shoulder-height fallback for older rig libraries.
+  const lateral = Math.max(.04, Math.abs(Number(shoulderPerch.position.x)) || .16);
+  return {
+    position: {
+      x: side === 'left' ? lateral : -lateral,
+      y: Number(shoulderPerch.position.y) || .45,
+      z: 0,
+    },
+    rotationDeg: { x: 0, y: 0, z: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+}
+
+function ensureCharacterHandShoulderAnchorsV1525(profile) {
+  if (!profile) return profile;
+  profile.anchors ||= {};
+  for (const side of ['left', 'right']) {
+    const anchorName = `${side}HandShoulder`; // Maps the side identity to its persistent rig-profile anchor.
+    profile.anchors[anchorName] = profile.anchors[anchorName]
+      ? normalizeTransformSnapshot(profile.anchors[anchorName], 1)
+      : defaultHandShoulderSnapshotV1525(profile, side);
+  }
+  profile.handShoulderRule ||= { source: 'shoulder-perch-derived-default', coordinateSpace: 'character-visual-local', version: 1 };
+  return profile;
+}
+
+const baseNormalizedRigProfileLibraryV1525 = normalizedRigProfileLibrary;
+normalizedRigProfileLibrary = function(value = {}) {
+  const output = baseNormalizedRigProfileLibraryV1525(value); // Preserves every prior attachment-profile migration before adding hand targets.
+  for (const [key, profile] of Object.entries(output.characters)) {
+    const source = value.characters?.[key] || {};
+    if (source.anchors?.leftHandShoulder) profile.anchors.leftHandShoulder = normalizeTransformSnapshot(source.anchors.leftHandShoulder, 1);
+    if (source.anchors?.rightHandShoulder) profile.anchors.rightHandShoulder = normalizeTransformSnapshot(source.anchors.rightHandShoulder, 1);
+    if (source.handShoulderRule) profile.handShoulderRule = structuredCloneSafe(source.handShoulderRule);
+    ensureCharacterHandShoulderAnchorsV1525(profile);
+  }
+  return output;
+};
+
+const baseRigAnchorNamesForActorV1525 = rigAnchorNamesForActor;
+rigAnchorNamesForActor = function(actor) {
+  if (actor?.source?.type === 'npc') return ['posterior', ...HAND_SHOULDER_ANCHORS_V1525, 'shoulderPerch'];
+  return baseRigAnchorNamesForActorV1525(actor);
+};
+
+const baseAttachmentRigProfileForActorV1525 = attachmentRigProfileForActor;
+attachmentRigProfileForActor = function(actor, options = {}) {
+  const profile = baseAttachmentRigProfileForActorV1525(actor, options); // Retrieves the existing species/gender profile before ensuring its hand anchors.
+  return actor?.source?.type === 'npc' ? ensureCharacterHandShoulderAnchorsV1525(profile) : profile;
+};
+
+const baseCreateAnimationActorShellV1525 = createAnimationActorShell;
+createAnimationActorShell = function(args) {
+  const actor = baseCreateAnimationActorShellV1525(args);
+  if (actor.source?.type !== 'npc') return actor;
+  actor.model.userData.proceduralHandParent = actor.visualOffset; // Keeps preview hand sockets in the exact floor-relative space used by posterior and shoulder rig anchors.
+  const THREE = state.three.THREE; // Creates the same axes-helper carriers used by all existing attachment coordinates.
+  for (const name of HAND_SHOULDER_ANCHORS_V1525) {
+    if (actor.rigAnchors?.[name]) continue;
+    const anchor = new THREE.Group(); // Carries the editable shoulder transform and the TransformControls gizmo target.
+    anchor.name = `RigAnchor_${name}_${safeFilename(actor.id)}`;
+    const axes = new THREE.AxesHelper(.22);
+    axes.name = `RigAnchorAxes_${name}`;
+    axes.visible = false;
+    anchor.add(axes);
+    actor.visualOffset.add(anchor);
+    actor.rigAnchors[name] = anchor;
+  }
+  return actor;
+};
+
+function publishCharacterHandShouldersV1525(actor, profile) {
+  if (actor?.source?.type !== 'npc' || !profile) return;
+  const library = window.HOBUNJI_ATTACHMENT_RIG_PROFILES ||= { characters: {}, creatures: {} }; // Keeps the live hand renderer on the same in-memory data the gizmo edits.
+  library.characters ||= {};
+  const key = characterRigProfileKey(actor.source);
+  const runtimeProfile = library.characters[key] ||= { species: profile.species, gender: profile.gender, anchors: {} };
+  runtimeProfile.anchors ||= {};
+  runtimeProfile.posteriorRule = structuredCloneSafe(profile.posteriorRule || {});
+  runtimeProfile.resolvedPosteriorPosition = structuredCloneSafe(transformSnapshot(actor.rigAnchors.posterior).position); // Publishes the actual displayed gizmo coordinate instead of duplicating its derivation in the hand runtime.
+  for (const name of HAND_SHOULDER_ANCHORS_V1525) runtimeProfile.anchors[name] = structuredCloneSafe(profile.anchors[name]);
+  window.ProceduralHandFrameDriver?.syncNow?.();
+}
+
+const baseApplyAttachmentRigProfileToActorV1525 = applyAttachmentRigProfileToActor;
+applyAttachmentRigProfileToActor = function(actor) {
+  const result = baseApplyAttachmentRigProfileToActorV1525(actor);
+  if (actor?.source?.type === 'npc') publishCharacterHandShouldersV1525(actor, attachmentRigProfileForActor(actor));
+  return result;
+};
+
+const baseHandleAnimationTransformChangedV1525 = handleAnimationTransformChanged;
+handleAnimationTransformChanged = function(source, changedTarget = animationAuthor.editTarget) {
+  const actor = selectedAnimationActor();
+  const anchorName = actor ? selectedRigAnchorName(actor) : null;
+  const result = baseHandleAnimationTransformChangedV1525(source, changedTarget);
+  if (actor?.source?.type === 'npc' && (anchorName === 'posterior' || HAND_SHOULDER_ANCHORS_V1525.includes(anchorName))) {
+    const profile = attachmentRigProfileForActor(actor); // Marks and publishes the exact shoulder transform after gizmo/numeric edits are committed.
+    if (HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) profile.handShoulderRule = { source: 'rig-anchor-gizmo', coordinateSpace: 'character-visual-local', version: 1 };
+    publishCharacterHandShouldersV1525(actor, profile);
+  }
+  return result;
+};
+
+const baseResetAttachmentRigAnchorToRepositoryDefaultV1525 = resetAttachmentRigAnchorToRepositoryDefault;
+resetAttachmentRigAnchorToRepositoryDefault = function(actor, anchorName) {
+  if (actor?.source?.type === 'npc' && HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) {
+    const profile = attachmentRigProfileForActor(actor); // Restores the side-specific target without leaving the normal rig workflow.
+    profile.anchors[anchorName] = defaultHandShoulderSnapshotV1525(profile, anchorName.startsWith('left') ? 'left' : 'right');
+    profile.handShoulderRule = { source: 'shoulder-perch-derived-default', coordinateSpace: 'character-visual-local', version: 1 };
+    return true;
+  }
+  return baseResetAttachmentRigAnchorToRepositoryDefaultV1525(actor, anchorName);
+};
+
+const baseRigAnchorFieldMarkupV1525 = rigAnchorFieldMarkup;
+rigAnchorFieldMarkup = function(actor, anchorName) {
+  const fields = baseRigAnchorFieldMarkupV1525(actor, anchorName);
+  if (!HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) return fields;
+  const side = anchorName.startsWith('left') ? 'left' : 'right';
+  return `${fields}<div class="maaRigStatus" style="margin-top:9px"><b>${side[0].toUpperCase()+side.slice(1)} idle hand</b><br>The rendered hand uses this target's X, the posterior's derived Y, and this full target position for shoulder aiming. Move or rotate it with the same viewport gizmo as every attachment point.</div>`;
+};
+
+const baseSerializeAttachmentRigLibraryV1525 = serializeAttachmentRigLibrary;
+serializeAttachmentRigLibrary = function() {
+  const data = baseSerializeAttachmentRigLibraryV1525();
+  data.derivedCoordinates ||= {};
+  data.derivedCoordinates.idleHands = {
+    x: 'matching leftHandShoulder/rightHandShoulder anchor X',
+    y: 'derived character posterior Y plus procedural idle/walk Y offset',
+    aimTarget: 'matching full hand-shoulder anchor transform',
+  };
+  return data;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1525();
+  document.title = 'Hobunji Animation Author V15.29';
+  return result;
+};
+
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
+animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
+function installShoulderRigFeetPreviewV1529(actor) {
+  if (!actor) return null;
+  actor.rigFeetPreview?.dispose?.();
+  actor.rigFeetPreview = null;
+  if (actor.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !window.ProceduralLegAnimation?.attach) return null;
+  const metrics = portraitModelMetrics(actor); // Supplies the child/species-scaled dimensions already used by the portrait and idle hands.
+  const profile = actor.model?.userData?.rigAvatarProfile || null; // Enables the gameplay feet runtime's normal torso-width stance scan.
+  actor.rigFeetPreview = window.ProceduralLegAnimation.attach(state.three.THREE, actor.visualOffset, {
+    speciesId: actor.source.species,
+    gender: actor.source.gender,
+    bodyColors: profile?.bodyColors || actor.source.appearance?.bodyColors,
+    modelWidth: metrics.modelWidth,
+    modelHeight: metrics.modelHeight,
+    handAttachY: actor.model?.userData?.handAttachY,
+    name: `${actor.id}_shoulder_rig`,
+    profile,
+    portraitSize: metrics.pixelWidth,
+  });
+  actor.rigFeetPreview?.update?.(0, 0, false, null);
+  return actor.rigFeetPreview;
+}
+
+const baseAddNpcAnimationActorV1529 = addNpcAnimationActor;
+addNpcAnimationActor = async function(npcId, options = {}) {
+  const actor = await baseAddNpcAnimationActorV1529(npcId, options);
+  installShoulderRigFeetPreviewV1529(actor);
+  updateRigAnchorVisibility(actor);
+  return actor;
+};
+
+const baseUpdateRigAnchorVisibilityV1529 = updateRigAnchorVisibility;
+updateRigAnchorVisibility = function(actor) {
+  const result = baseUpdateRigAnchorVisibilityV1529(actor);
+  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = animationAuthor.mode === 'rig';
+  return result;
+};
+
+const baseRemoveAnimationActorV1529 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  actorById(id)?.rigFeetPreview?.dispose?.();
+  return baseRemoveAnimationActorV1529(id);
+};
+
+const baseClearAnimationActorsV1529 = clearAnimationActors;
+clearAnimationActors = function() {
+  for (const actor of animationAuthor.actors) actor.rigFeetPreview?.dispose?.();
+  return baseClearAnimationActorsV1529();
+};
+
+const baseRenderAttachmentRigInspectorV1529 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1529();
+  const actor = selectedAnimationActor();
+  if (actor?.source?.type === 'npc' && actor.rigFeetPreview && $('maaInspector')) {
+    $('maaInspector').insertAdjacentHTML('afterbegin', '<div class="maaRigStatus" style="margin:8px"><b>Proportion preview</b><br>Gameplay procedural feet are visible at the character’s real species, gender, and child-scaled dimensions.</div>');
+  }
+};
+
+animationAuthor.recentChange = 'V15.29 marks Garanki as a child so his full procedural anatomy uses child scale, and shows gameplay feet in the shoulder-rig viewport for proportion reference.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.29 patch installed: Garanki uses child proportions and shoulder-rig character previews include gameplay feet.');
+
+
+// -----------------------------------------------------------------------------
+// V15.30 species/gender anatomy controls in the attachment-rig profile workflow.
+// -----------------------------------------------------------------------------
+const CHARACTER_ANATOMY_VERSION_V1530 = 1;
+
+function clampCharacterAnatomyV1530(value, min, max, fallback) {
+  const number = Number(value);
+  return Math.max(min, Math.min(max, Number.isFinite(number) ? number : fallback));
+}
+
+function configuredCharacterAnatomyV1530(species, gender, source = {}) {
+  const key = `${species}::${gender}`;
+  const staticAnatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]?.anatomy || {}; // Restores built-in anatomy after older normalizers have stripped unknown fields.
+  const pngConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+  const sourceAnatomy = source.anatomy || {};
+  const configuredPlacement = Number(pngConfig.portraitVerticalPlacement?.[species]?.[gender]);
+  const configuredScaleEntry = pngConfig.portraitScaleBySpecies?.[species]; // Resolves legacy species-only numbers and new per-gender scale maps.
+  const configuredPortraitScale = Number(configuredScaleEntry && typeof configuredScaleEntry === 'object'
+    ? configuredScaleEntry[gender] ?? configuredScaleEntry.default
+    : configuredScaleEntry);
+  const legacyPlacement = Number(source.shoulderPerchRule?.portraitVerticalPlacementRatio);
+  const resolvedHandScale = Number(window.HobunjiHandModelProfiles?.speciesScaleFor?.(species, gender));
+  const resolvedFootScale = Number(window.HobunjiHandModelProfiles?.footScaleFor?.(species, gender));
+  return {
+    portraitVerticalPlacementRatio: clampCharacterAnatomyV1530(
+      sourceAnatomy.portraitVerticalPlacementRatio,
+      -.5,
+      1.5,
+      Number.isFinite(legacyPlacement) ? legacyPlacement : Number.isFinite(Number(staticAnatomy.portraitVerticalPlacementRatio)) ? Number(staticAnatomy.portraitVerticalPlacementRatio) : Number.isFinite(configuredPlacement) ? configuredPlacement : .5,
+    ),
+    portraitScale: clampCharacterAnatomyV1530(sourceAnatomy.portraitScale, .1, 4, Number.isFinite(Number(staticAnatomy.portraitScale)) ? Number(staticAnatomy.portraitScale) : Number.isFinite(configuredPortraitScale) ? configuredPortraitScale : 1),
+    handScale: clampCharacterAnatomyV1530(sourceAnatomy.handScale, .1, 4, Number.isFinite(Number(staticAnatomy.handScale)) ? Number(staticAnatomy.handScale) : Number.isFinite(resolvedHandScale) ? resolvedHandScale : 1),
+    footScale: clampCharacterAnatomyV1530(sourceAnatomy.footScale, .1, 4, Number.isFinite(Number(staticAnatomy.footScale)) ? Number(staticAnatomy.footScale) : Number.isFinite(resolvedFootScale) ? resolvedFootScale : 1),
+    armLengthHeightPercentOffset: clampCharacterAnatomyV1530(sourceAnatomy.armLengthHeightPercentOffset, -100, 100, Number(staticAnatomy.armLengthHeightPercentOffset) || 0),
+    version: CHARACTER_ANATOMY_VERSION_V1530,
+  };
+}
+
+const baseNormalizedRigProfileLibraryV1530 = normalizedRigProfileLibrary;
+normalizedRigProfileLibrary = function(value = {}) {
+  const output = baseNormalizedRigProfileLibraryV1530(value); // Runs every existing anchor migration before preserving the new anatomy payload.
+  for (const [key, profile] of Object.entries(output.characters || {})) {
+    const source = value.characters?.[key] || {};
+    profile.anatomy = configuredCharacterAnatomyV1530(profile.species, profile.gender, source);
+  }
+  return output;
+};
+
+function ensureCharacterAnatomyV1530(profile) {
+  if (!profile) return null;
+  profile.anatomy = configuredCharacterAnatomyV1530(profile.species, profile.gender, profile);
+  profile.shoulderPerchRule ||= {};
+  profile.shoulderPerchRule.portraitVerticalPlacementRatio = profile.anatomy.portraitVerticalPlacementRatio; // Keeps the legacy placement metadata consistent with the canonical exported anatomy field.
+  return profile.anatomy;
+}
+
+const baseAttachmentRigProfileForActorV1530 = attachmentRigProfileForActor;
+attachmentRigProfileForActor = function(actor, options = {}) {
+  const profile = baseAttachmentRigProfileForActorV1530(actor, options);
+  if (actor?.source?.type === 'npc' && profile) ensureCharacterAnatomyV1530(profile);
+  return profile;
+};
+
+function applyCharacterAnatomyConfigV1530(profile) {
+  const anatomy = ensureCharacterAnatomyV1530(profile);
+  const pngConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
+  if (!anatomy || !pngConfig) return false;
+  const species = String(profile.species || '').trim().toLowerCase();
+  const gender = String(profile.gender || '').trim().toLowerCase();
+  if (!species || !gender) return false;
+  pngConfig.portraitVerticalPlacement ||= { default: .5 };
+  pngConfig.portraitVerticalPlacement[species] ||= {};
+  pngConfig.portraitVerticalPlacement[species][gender] = anatomy.portraitVerticalPlacementRatio;
+  pngConfig.portraitScaleBySpecies ||= {};
+  const legacyPortraitScale = Number(pngConfig.portraitScaleBySpecies[species]);
+  const portraitScaleProfile = typeof pngConfig.portraitScaleBySpecies[species] === 'object'
+    ? pngConfig.portraitScaleBySpecies[species]
+    : { default: Number.isFinite(legacyPortraitScale) && legacyPortraitScale > 0 ? legacyPortraitScale : 1 };
+  portraitScaleProfile[gender] = anatomy.portraitScale;
+  pngConfig.portraitScaleBySpecies[species] = portraitScaleProfile;
+  pngConfig.proceduralFeet ||= {};
+  pngConfig.proceduralFeet.footScale ||= { default: 1 };
+  pngConfig.proceduralFeet.footScale[species] ||= {};
+  pngConfig.proceduralFeet.footScale[species][gender] = anatomy.footScale;
+  const handProfiles = window.HobunjiHandModelProfiles;
+  const currentHandScale = Number(handProfiles?.data?.speciesScaleOverrides?.[species]?.[gender]);
+  if (handProfiles?.mutate && (!Number.isFinite(currentHandScale) || Math.abs(currentHandScale - anatomy.handScale) > 1e-9)) {
+    handProfiles.mutate(data => {
+      data.speciesScaleOverrides ||= {};
+      data.speciesScaleOverrides[species] ||= {};
+      data.speciesScaleOverrides[species][gender] = anatomy.handScale;
+    });
+  }
+  return true;
+}
+
+function applyCharacterPortraitPlacementV1530(actor, ratio) {
+  const model = actor?.model;
+  if (!model) return false;
+  const oldRatio = Number(model.userData?.portraitVerticalPlacementRatio);
+  const modelHeight = Number(model.userData?.portraitModelHeight);
+  if (!Number.isFinite(oldRatio) || !Number.isFinite(modelHeight) || Math.abs(oldRatio - ratio) <= 1e-9) return false;
+  const assemblyY = (ratio - .5) * modelHeight;
+  for (const child of model.children || []) {
+    if (String(child.name || '').includes('single_plane_assembly')) child.position.y = assemblyY;
+  }
+  if (model.userData?.neckRig?.skinnedPlane) model.userData.neckRig.skinnedPlane.position.y = assemblyY;
+  model.userData.portraitVerticalPlacementRatio = ratio;
+  model.userData.handAttachY = Number(model.userData.handAttachY || 0) + (ratio - oldRatio) * modelHeight;
+  installCharacterRuntimePreviewLift(actor);
+  return true;
+}
+
+function applyCharacterAnatomyToActorV1530(actor, profile) {
+  const anatomy = ensureCharacterAnatomyV1530(profile);
+  if (!anatomy || actor?.source?.type !== 'npc') return { placementChanged: false, footScaleChanged: false };
+  applyCharacterAnatomyConfigV1530(profile);
+  const placementChanged = applyCharacterPortraitPlacementV1530(actor, anatomy.portraitVerticalPlacementRatio);
+  const footScaleChanged = Number(actor.rigAnatomyFootScaleV1530) !== anatomy.footScale;
+  actor.rigAnatomyFootScaleV1530 = anatomy.footScale; // Prevents ordinary inspector renders from needlessly rebuilding the GLB feet.
+  return { placementChanged, footScaleChanged };
+}
+
+const basePublishCharacterHandShouldersV1530 = publishCharacterHandShouldersV1525;
+publishCharacterHandShouldersV1525 = function(actor, profile) {
+  basePublishCharacterHandShouldersV1530(actor, profile);
+  const key = characterRigProfileKey(actor?.source);
+  const runtimeProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key];
+  if (runtimeProfile && profile?.anatomy) runtimeProfile.anatomy = structuredCloneSafe(profile.anatomy); // Makes arm reach update on the next free-hand fallback frame.
+};
+
+const baseApplyAttachmentRigProfileToActorV1530 = applyAttachmentRigProfileToActor;
+applyAttachmentRigProfileToActor = function(actor) {
+  const profile = actor?.source?.type === 'npc' ? attachmentRigProfileForActor(actor) : null;
+  const anatomyResult = profile ? applyCharacterAnatomyToActorV1530(actor, profile) : null;
+  const result = baseApplyAttachmentRigProfileToActorV1530(actor);
+  if (actor?.rigFeetPreview && anatomyResult?.footScaleChanged) installShoulderRigFeetPreviewV1529(actor);
+  return result;
+};
+
+function applyAttachmentRigAnatomyLibraryV1530() {
+  let count = 0;
+  for (const profile of Object.values(animationAuthor.attachmentRigProfiles?.characters || {})) {
+    if (applyCharacterAnatomyConfigV1530(profile)) count++;
+  }
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorAnatomyProfiles = count; // Visible in the existing Diagnostics panel on mobile browsers.
+  return count;
+}
+
+function characterAnatomyMarkupV1530(actor) {
+  const anatomy = ensureCharacterAnatomyV1530(attachmentRigProfileForActor(actor));
+  const yOffsetPercent = (anatomy.portraitVerticalPlacementRatio - .5) * 100;
+  return `<section class="maaSection" id="maaCharacterAnatomySection">
+    <div class="maaSectionTitle"><b>Species proportions</b><span class="maaSmall maaMuted">Live preview</span></div>
+    <div class="maaSmall maaMuted">These values are shared by this exact species/gender and exported with its attachment-rig profile. Positive arm length pushes free idle/walk hands below the posterior; held animations keep ownership of their hands.</div>
+    <div class="maaGrid2" style="margin-top:8px">
+      <div class="maaField"><label for="maaSpeciesYOffset">Portrait Y offset (%)</label><input id="maaSpeciesYOffset" type="number" min="-100" max="100" step="0.5" value="${yOffsetPercent.toFixed(2)}"></div>
+      <div class="maaField"><label for="maaSpeciesPortraitScale">Body scale (%)</label><input id="maaSpeciesPortraitScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.portraitScale * 100).toFixed(1)}"></div>
+      <div class="maaField"><label for="maaArmLengthOffset">Arm length offset (%)</label><input id="maaArmLengthOffset" type="number" min="-100" max="100" step="0.5" value="${anatomy.armLengthHeightPercentOffset.toFixed(2)}"></div>
+      <div class="maaField"><label for="maaSpeciesHandScale">Hand scale (%)</label><input id="maaSpeciesHandScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.handScale * 100).toFixed(1)}"></div>
+      <div class="maaField"><label for="maaSpeciesFootScale">Foot scale (%)</label><input id="maaSpeciesFootScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.footScale * 100).toFixed(1)}"></div>
+    </div>
+    <div class="maaRigStatus" style="margin-top:8px">Profile fields: <b>portraitVerticalPlacementRatio</b>, <b>portraitScale</b>, <b>handScale</b>, <b>footScale</b>, and <b>armLengthHeightPercentOffset</b>. Body scale previews immediately and rebuilds the full anatomy when released.<br><span id="maaBodyScaleDiagnostic">${escapeHtml(actor.rigBodyScaleDiagnosticV1533 || 'Scale diagnostic initializes with the preview.')}</span></div>
+  </section>`;
+}
+
+function bindCharacterAnatomyControlsV1530(actor) {
+  const bindings = [
+    ['maaSpeciesYOffset', 'portraitVerticalPlacementRatio', value => .5 + value / 100, -100, 100],
+    ['maaArmLengthOffset', 'armLengthHeightPercentOffset', value => value, -100, 100],
+    ['maaSpeciesHandScale', 'handScale', value => value / 100, 10, 400],
+    ['maaSpeciesFootScale', 'footScale', value => value / 100, 10, 400],
+  ];
+  for (const [id, field, convert, min, max] of bindings) $(id)?.addEventListener('input', event => {
+    const entered = clampCharacterAnatomyV1530(event.currentTarget.value, min, max, min);
+    const profile = attachmentRigProfileForActor(actor);
+    profile.anatomy[field] = convert(entered);
+    applyAttachmentRigProfileToActor(actor);
+    syncAnimationTransformFields();
+    scheduleAnimationProjectSave();
+    const label = event.currentTarget.previousElementSibling?.textContent || field;
+    setAnimationRecentChange(`Set ${characterRigProfileKey(actor.source)} ${label.toLowerCase()} to ${entered.toFixed(1)}%.`);
+  });
+}
+
+const baseRenderAttachmentRigInspectorV1530 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1530();
+  const actor = selectedAnimationActor();
+  if (actor?.source?.type !== 'npc' || !$('maaInspector') || $('maaCharacterAnatomySection')) return;
+  const firstSection = $('maaInspector').querySelector('.maaSection');
+  if (firstSection) firstSection.insertAdjacentHTML('afterend', characterAnatomyMarkupV1530(actor));
+  else $('maaInspector').insertAdjacentHTML('beforeend', characterAnatomyMarkupV1530(actor));
+  bindCharacterAnatomyControlsV1530(actor);
+};
+
+const baseSerializeAttachmentRigLibraryV1530 = serializeAttachmentRigLibrary;
+serializeAttachmentRigLibrary = function() {
+  const data = baseSerializeAttachmentRigLibraryV1530();
+  data.anatomySemantics = {
+    profileField: 'character.anatomy',
+    portraitYOffsetFormula: '(portraitVerticalPlacementRatio - 0.5) * 100',
+    portraitScale: 'portraitScale is an independent species/gender multiplier; legacy species-only numbers remain supported',
+    scales: 'handScale and footScale are independent species/gender multipliers',
+    armLength: 'positive armLengthHeightPercentOffset moves unowned fallback hands downward by portraitModelHeight * percent / 100',
+  };
+  return data;
+};
+
+const baseImportAttachmentRigLibraryV1530 = importAttachmentRigLibrary;
+importAttachmentRigLibrary = function(data) {
+  const result = baseImportAttachmentRigLibraryV1530(data);
+  applyAttachmentRigAnatomyLibraryV1530();
+  for (const actor of animationAuthor.actors) applyAttachmentRigProfileToActor(actor);
+  return serializeAttachmentRigLibrary();
+};
+
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v7';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v7');
+animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
+applyAttachmentRigAnatomyLibraryV1530();
+
+const basePrepareMultiAvatarAnimationAuthorV1530 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1530();
+  document.title = 'Hobunji Animation Author V15.30';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.30 adds live species/gender portrait Y, independent hand/foot scale, and free-hand arm-length controls to Shoulder Rig profiles and their JSON export/import.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.30 patch installed: Shoulder Rig profiles author and export portrait Y, hand scale, foot scale, and free-hand arm length.');
+
+
+// -----------------------------------------------------------------------------
+// V15.31 gender-specific body scale and a non-interactive reference NPC.
+// -----------------------------------------------------------------------------
+let rigReferenceBuildGenerationV1531 = 0; // Invalidates an older randomized reference build when another is requested first.
+let rigBodyScaleRebuildGenerationV1531 = 0; // Prevents overlapping body-scale releases from restoring stale NPC previews.
+let rigReferencePreserveDuringActorSwapV1532 = false; // Used by rig-mode NPC replacement so its comparison NPC survives the shared clear path.
+
+function rememberRigActorBodyScaleV1531(actor) {
+  if (actor?.source?.type !== 'npc' || !actor.model) return;
+  const baseModelWidth = Math.max(.001, Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.modelWidth) || 1); // Converts the rendered model width back into its actual total avatar multiplier.
+  const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
+  actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
+  actor.rigBodyPresentationBaseScaleV1532 = actor.avatarPresentation?.scale?.clone?.() || null; // Used to scale the stable presentation carrier instead of the runtime-managed portrait model.
+  actor.rigBodyPresentationBaseYV1531 = Number(actor.avatarPresentation?.position?.y) || 0;
+  actor.rigBodyBoxBasePositionYV1531 = Number(actor.rigPreviewBox?.position?.y) || 0;
+  actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
+}
+
+function resolvedRigActorAvatarScaleV1533(actor, fallbackScale = 1) {
+  const npcRecord = actor?.source?.type === 'npc'
+    ? state.npcs.find(npc => String(npc.id || npc.name || '') === String(actor.source.id || ''))
+    : null; // Supplies child markers and strict appearance data to the same scale resolver used by PNGPlaneAvatar construction.
+  const resolved = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+    speciesId: actor?.source?.species,
+    gender: actor?.source?.gender,
+    appearance: actor?.source?.appearance,
+    npcRecord,
+  }));
+  return Number.isFinite(resolved) && resolved > 0 ? resolved : fallbackScale;
+}
+
+function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio) {
+  const message = `Built ${builtScale.toFixed(3)} · target ${targetScale.toFixed(3)} · carrier ×${ratio.toFixed(3)}`; // Appears in the mobile-friendly Shoulder Rig inspector and shared diagnostics state.
+  actor.rigBodyScaleDiagnosticV1533 = message;
+  if ($('maaBodyScaleDiagnostic')) $('maaBodyScaleDiagnostic').textContent = message;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.bodyScalePreview = {
+    profile: characterRigProfileKey(actor.source),
+    builtScale,
+    targetScale,
+    carrierRatio: ratio,
+  };
+}
+
+function previewRigActorBodyScaleV1531(actor, portraitScale) {
+  const builtScale = Number(actor?.rigBuiltAvatarScaleV1533);
+  const desiredScale = Number(portraitScale); // Remains the fallback if the shared PNG-avatar resolver is unavailable.
+  const targetScale = resolvedRigActorAvatarScaleV1533(actor, desiredScale);
+  const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
+  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
+  const ratio = targetScale / builtScale;
+  presentation.scale.copy(actor.rigBodyPresentationBaseScaleV1532).multiplyScalar(ratio);
+  presentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
+  if (actor.rigPreviewBox) {
+    if (actor.rigBodyBoxBaseScaleV1531) actor.rigPreviewBox.scale.copy(actor.rigBodyBoxBaseScaleV1531).multiplyScalar(ratio);
+    actor.rigPreviewBox.position.y = actor.rigBodyBoxBasePositionYV1531 * ratio;
+  }
+  presentation.updateMatrixWorld?.(true);
+  updateAnimationSelectionBox();
+  updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio);
+  return true;
+}
+
+function disposeRigReferenceNpcV1531({ render = false } = {}) {
+  const reference = animationAuthor.rig.referenceNpcV1531; // Holds the comparison-only model outside animationAuthor.actors.
+  if (!reference) return false;
+  reference.feet?.dispose?.();
+  reference.group?.removeFromParent?.();
+  window.PNGPlaneAvatar?.disposeAvatarModel?.(reference.model);
+  animationAuthor.rig.referenceNpcV1531 = null;
+  if (render && animationAuthor.mode === 'rig') renderAnimationInspector();
+  return true;
+}
+
+function rigReferenceCandidatesV1531(actor = selectedAnimationActor()) {
+  const currentNpcId = String(actor?.source?.id || '');
+  return state.npcs.filter(npc => {
+    if (!npc || String(npc.id || npc.name || '') === currentNpcId) return false;
+    const appearance = portraitExportFor(npc).appearance; // Filters placeholder records that cannot provide a meaningful scale comparison.
+    return !!appearance?.speciesId && !String(appearance.speciesId).includes('unknown') && !!appearance?.gender;
+  });
+}
+
+function randomRigReferenceNpcV1531(actor = selectedAnimationActor()) {
+  const priorId = String(animationAuthor.rig.referenceNpcV1531?.npcId || '');
+  const candidates = rigReferenceCandidatesV1531(actor);
+  const different = candidates.filter(npc => String(npc.id || npc.name || '') !== priorId);
+  const pool = different.length ? different : candidates;
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
+
+function positionRigReferenceNpcV1532(actor = selectedAnimationActor()) {
+  const reference = animationAuthor.rig.referenceNpcV1531; // Repositions the preserved comparison after the editable NPC changes species or scale.
+  if (!reference?.group || !actor?.root || !actor?.model) return false;
+  const actorWidth = Number(actor.model.userData?.portraitModelWidth) || 1;
+  const referenceWidth = Number(reference.model?.userData?.portraitModelWidth) || 1;
+  reference.group.position.x = actor.root.position.x + actorWidth / 2 + referenceWidth / 2 + .35;
+  reference.group.position.z = actor.root.position.z;
+  reference.group.updateMatrixWorld?.(true);
+  return true;
+}
+
+async function showRigReferenceNpcV1531(npcId = null) {
+  const actor = selectedAnimationActor();
+  if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'npc') return null;
+  const generation = ++rigReferenceBuildGenerationV1531;
+  const npc = npcId
+    ? state.npcs.find(candidate => String(candidate.id || candidate.name || '') === String(npcId))
+    : randomRigReferenceNpcV1531(actor);
+  if (!npc) {
+    setStatus('No other repository NPC is available for scale comparison.', 'warn');
+    return null;
+  }
+  disposeRigReferenceNpcV1531();
+  setStatus(`Building reference NPC · ${npc.name || npc.id}`, 'good');
+  try {
+    const avatar = await buildAvatarRender(npc);
+    if (generation !== rigReferenceBuildGenerationV1531) return null;
+    const THREE = state.three.THREE;
+    const group = new THREE.Group(); // Comparison carrier is deliberately absent from animationAuthor.actors, selection, gizmos, and exports.
+    group.name = `RigReferenceNPC_${safeFilename(npc.id || npc.name)}`;
+    group.userData.rigReferenceOnly = true;
+    const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
+      backCanvas: avatar.back,
+      profile: avatar.profile,
+      appearance: avatar.exportNpc.appearance,
+      npcRecord: npc,
+      name: `${group.name}_portrait`,
+      userData: { source: 'shoulder-rig-reference-npc', nonInteractive: true, npcId: npc.id || null },
+    });
+    model.userData.proceduralHandParent = group; // Lets the comparison NPC show its normal free hands without becoming an editable actor.
+    group.add(model);
+    const modelHeight = Number(model.userData.portraitModelHeight) || 1;
+    const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
+    model.position.y = modelHeight / 2;
+    animationAuthor.modeRoots.rig.add(group);
+    const profile = avatar.profile || null;
+    const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
+      speciesId: avatar.exportNpc.appearance.speciesId,
+      gender: avatar.exportNpc.appearance.gender,
+      bodyColors: profile?.bodyColors,
+      modelWidth,
+      modelHeight,
+      handAttachY: model.userData.handAttachY,
+      name: `${group.name}_reference`,
+      profile,
+      portraitSize: avatar.front.width || 200,
+    }) || null;
+    feet?.update?.(0, 0, false, null);
+    animationAuthor.rig.referenceNpcV1531 = {
+      npcId: npc.id || npc.name,
+      label: npc.name || npc.id || 'Reference NPC',
+      species: avatar.exportNpc.appearance.speciesId,
+      gender: avatar.exportNpc.appearance.gender,
+      group,
+      model,
+      feet,
+    }; // Read by the inspector and the framing override, never by actor interaction code.
+    positionRigReferenceNpcV1532(actor);
+    frameAllAnimationActors('angle');
+    renderAnimationInspector();
+    setStatus(`Reference NPC · ${npc.name || npc.id}`, 'good');
+    setAnimationRecentChange(`Showing non-interactive scale reference “${npc.name || npc.id}” beside ${actor.label}.`);
+    return animationAuthor.rig.referenceNpcV1531;
+  } catch (error) {
+    if (generation === rigReferenceBuildGenerationV1531) {
+      disposeRigReferenceNpcV1531({ render: true });
+      log(`Reference NPC build failed: ${error.stack || error.message}`, 'warn');
+      setStatus(`Reference NPC failed: ${error.message}`, 'bad');
+    }
+    return null;
+  }
+}
+
+async function rebuildRigNpcForBodyScaleV1531(actor) {
+  if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'npc') return null;
+  const generation = ++rigBodyScaleRebuildGenerationV1531;
+  const npcId = actor.source.id;
+  const referenceNpcId = animationAuthor.rig.referenceNpcV1531?.npcId || null;
+  disposeRigReferenceNpcV1531();
+  const rebuilt = await addNpcAnimationActor(npcId, { label: actor.label });
+  if (generation !== rigBodyScaleRebuildGenerationV1531) return rebuilt;
+  if (referenceNpcId) await showRigReferenceNpcV1531(referenceNpcId);
+  setAnimationRecentChange(`Rebuilt ${characterRigProfileKey(rebuilt.source)} at its authored species/gender body scale with matching hand and foot dimensions.`);
+  return rebuilt;
+}
+
+const baseAddNpcAnimationActorV1531 = addNpcAnimationActor;
+addNpcAnimationActor = async function(npcId, options = {}) {
+  const preservedReference = animationAuthor.mode === 'rig' ? animationAuthor.rig.referenceNpcV1531 : null; // Survives only the automatic clear performed while replacing the rig's editable NPC.
+  rigReferencePreserveDuringActorSwapV1532 = !!preservedReference;
+  let actor;
+  try {
+    actor = await baseAddNpcAnimationActorV1531(npcId, options);
+  } finally {
+    rigReferencePreserveDuringActorSwapV1532 = false;
+  }
+  rememberRigActorBodyScaleV1531(actor);
+  if (animationAuthor.mode === 'rig') {
+    const anatomy = ensureCharacterAnatomyV1530(attachmentRigProfileForActor(actor)); // Reconciles every newly built rig actor with its measured and resolved total scale.
+    previewRigActorBodyScaleV1531(actor, anatomy.portraitScale);
+  }
+  if (preservedReference && animationAuthor.rig.referenceNpcV1531 === preservedReference) {
+    positionRigReferenceNpcV1532(actor);
+    frameAllAnimationActors('angle');
+    renderAnimationInspector();
+    setStatus(`Reference NPC preserved · ${preservedReference.label}`, 'good');
+  }
+  return actor;
+};
+
+const baseRemoveAnimationActorV1531 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  if (actorById(id)?.source?.type === 'npc') disposeRigReferenceNpcV1531();
+  return baseRemoveAnimationActorV1531(id);
+};
+
+const baseClearAnimationActorsV1531 = clearAnimationActors;
+clearAnimationActors = function() {
+  if (!rigReferencePreserveDuringActorSwapV1532) disposeRigReferenceNpcV1531();
+  return baseClearAnimationActorsV1531();
+};
+
+const baseFrameAllAnimationActorsV1531 = frameAllAnimationActors;
+frameAllAnimationActors = function(view = 'angle') {
+  const reference = animationAuthor.mode === 'rig' ? animationAuthor.rig.referenceNpcV1531 : null;
+  if (!reference?.group || !state.three.ready) return baseFrameAllAnimationActorsV1531(view);
+  const THREE = state.three.THREE;
+  const box = new THREE.Box3(); // Includes the comparison model without registering it as an editable animation actor.
+  for (const actor of animationAuthor.actors) box.expandByObject(actor.model);
+  box.expandByObject(reference.group);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(1.2, size.length() * .58);
+  const offsets = {
+    front: [0, radius * .18, radius * 2.1],
+    angle: [radius * 1.35, radius * .8, radius * 1.75],
+    side: [radius * 2.1, radius * .18, 0],
+    top: [0, radius * 2.35, .001],
+  };
+  const offset = offsets[view] || offsets.angle;
+  state.three.camera.position.set(center.x + offset[0], center.y + offset[1], center.z + offset[2]);
+  state.three.camera.lookAt(center);
+  state.three.controls?.target.copy(center);
+  state.three.controls?.update();
+};
+
+function referenceNpcMarkupV1531() {
+  const reference = animationAuthor.rig.referenceNpcV1531;
+  const label = reference
+    ? `${reference.label} · ${reference.species} · ${reference.gender}`
+    : 'No reference NPC shown.';
+  return `<div id="maaRigReferenceNpc" class="maaRigStatus" style="margin-top:10px">
+    <b>Scale reference NPC</b><br><span class="maaSmall">${escapeHtml(label)} This preview cannot be selected, moved, attached, or exported.</span>
+    <div class="maaRow" style="margin-top:7px">
+      <button id="maaToggleReferenceNpc" class="secondary grow">${reference ? 'Hide reference' : 'Show reference'}</button>
+      <button id="maaRandomizeReferenceNpc" class="secondary grow">Randomize NPC</button>
+    </div>
+  </div>`;
+}
+
+function bindRigScaleAndReferenceControlsV1531(actor) {
+  const bodyScaleInput = $('maaSpeciesPortraitScale');
+  bodyScaleInput?.addEventListener('input', event => {
+    const percent = clampCharacterAnatomyV1530(event.currentTarget.value, 10, 400, 100);
+    const profile = attachmentRigProfileForActor(actor);
+    profile.anatomy.portraitScale = percent / 100;
+    applyCharacterAnatomyConfigV1530(profile);
+    publishCharacterHandShouldersV1525(actor, profile);
+    previewRigActorBodyScaleV1531(actor, profile.anatomy.portraitScale);
+    scheduleAnimationProjectSave();
+    setAnimationRecentChange(`Previewing ${characterRigProfileKey(actor.source)} body scale at ${percent.toFixed(1)}%; release the field to rebuild its complete anatomy.`);
+  });
+  bodyScaleInput?.addEventListener('change', () => rebuildRigNpcForBodyScaleV1531(actor));
+  $('maaToggleReferenceNpc')?.addEventListener('click', () => {
+    if (animationAuthor.rig.referenceNpcV1531) {
+      disposeRigReferenceNpcV1531({ render: true });
+      frameAllAnimationActors('angle');
+      setAnimationRecentChange('Hid the non-interactive scale reference NPC.');
+    } else showRigReferenceNpcV1531();
+  });
+  $('maaRandomizeReferenceNpc')?.addEventListener('click', () => showRigReferenceNpcV1531());
+}
+
+const baseRenderAttachmentRigInspectorV1531 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1531();
+  const actor = selectedAnimationActor();
+  const section = $('maaCharacterAnatomySection');
+  if (actor?.source?.type !== 'npc' || !section || $('maaRigReferenceNpc')) return;
+  section.insertAdjacentHTML('beforeend', referenceNpcMarkupV1531());
+  bindRigScaleAndReferenceControlsV1531(actor);
+};
+
+const baseImportAttachmentRigLibraryV1531 = importAttachmentRigLibrary;
+importAttachmentRigLibrary = function(data) {
+  const actor = selectedAnimationActor();
+  const result = baseImportAttachmentRigLibraryV1531(data);
+  if (animationAuthor.mode === 'rig' && actor?.source?.type === 'npc') queueMicrotask(() => rebuildRigNpcForBodyScaleV1531(actor));
+  return result;
+};
+
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v8';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
+
+const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1531();
+  document.title = 'Hobunji Animation Author V15.33';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.33 measures rebuilt avatar geometry, reapplies the resolved body-scale ratio after replacement, and shows built/target/carrier scale diagnostics in Shoulder Rig.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.33 patch installed: measured rebuilt body-scale reconciliation, visible scale diagnostics, and preserved reference NPCs.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

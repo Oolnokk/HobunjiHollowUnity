@@ -56,7 +56,8 @@
 
     // Kenkari-family feet are procedural rather than GLB-backed, so there is no
     // foot GLB table to inherit. Their two parrot-hand slots are intentionally
-    // flipped here: slot 1/None uses keratin, slot 2/EyeSurface uses body.
+    // flipped here: slot 1/None uses keratin, while slot 2/EyeSurface is the
+    // body-colored wing continuation that the portrait clothing layer occludes.
     const parrot = data.models?.parrot;
     if (parrot) {
       parrot.materialRoles = {

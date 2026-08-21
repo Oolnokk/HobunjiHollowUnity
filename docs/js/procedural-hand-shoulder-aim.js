@@ -1,7 +1,7 @@
 // Hand-only shoulder compass. Painted arm sprites remain untouched.
 //
-// Shoulder targets come from manually authored 200x200 portrait points when present;
-// a side at 0,0 falls back to portrait-hand-shoulder-scan.js. The hand's local +Y
+// Shoulder targets come from attachment-rig profiles when present. Legacy manually
+// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks. The hand's local +Y
 // is treated as the wrist/top direction. Pitch/yaw/roll use independent 0..1 weights
 // supplied by hand-shoulder-pose-runtime.js, so checkbox changes between animation
 // poses blend smoothly instead of snapping.
@@ -51,6 +51,7 @@
       right: new THREE.Quaternion(),
     }; // Stores the un-aimed frame so async scans/control changes can never re-aim an already corrected hand.
     const authoredBaseValid = { left: false, right: false }; // Tracks whether each side has received a raw tool/idle frame yet.
+    const freeSide = { left: true, right: true }; // Prevents shoulder-coordinate edits from translating a hand currently owned by a tool animation.
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
     let disposed = false;
@@ -72,9 +73,23 @@
       );
     }
 
+    function attachmentRigProfile() {
+      const characters = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Supplies the same species/gender shoulder anchors edited by Animation Author's rig gizmo.
+      return characters[`${rig.speciesId}::${rig.gender}`] || null;
+    }
+
+    function profileShoulderInParent(side) {
+      const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
+      const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
+      if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
+      shoulderSource[side] = 'attachment-rig-profile';
+      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z));
+    }
+
     function installManualPoints() {
       let needsFallback = false;
       for (const side of ['left', 'right']) {
+        if (profileShoulderInParent(side)) continue;
         const point = points?.pointFor?.(rig.speciesId, rig.gender, side) || { x: 0, y: 0 };
         if (points?.isAuthored?.(point)) {
           shoulderAvatar[side] = portraitPixelToAvatar(point.x, point.y, 200, 200);
@@ -105,6 +120,8 @@
     }
 
     function shoulderInParent(side) {
+      const profileShoulder = profileShoulderInParent(side); // Attachment-rig coordinates already share the floor-relative hand-parent space.
+      if (profileShoulder) return shoulderParent.copy(profileShoulder);
       const source = shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
@@ -114,6 +131,31 @@
       parent.updateWorldMatrix?.(true, false);
       parent.worldToLocal(shoulderParent);
       return shoulderParent;
+    }
+
+    function posteriorYInParent() {
+      const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
+      if (Number.isFinite(resolvedY)) return resolvedY;
+      const profileOffset = Number(attachmentRigProfile()?.posteriorRule?.heightPercentOffset); // Uses the same derived posterior rule as mounts and the rig-coordinate preview.
+      const heightPercentOffset = Number.isFinite(profileOffset) ? profileOffset : -18;
+      const handAttachY = Number(avatarRoot.userData?.handAttachY ?? options.handAttachY);
+      return (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100;
+    }
+
+    function armLengthOffsetY() {
+      const authored = Number(attachmentRigProfile()?.anatomy?.armLengthHeightPercentOffset); // Positive profile values lengthen a free arm by pushing its hand below the posterior.
+      return Number.isFinite(authored) ? -modelHeight * authored / 100 : 0;
+    }
+
+    function alignFreeHandToFallbackAnchor(side, fallbackPose = null) {
+      const socket = socketFor(side); // Free-hand socket whose idle position follows shoulder X and posterior Y.
+      const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
+      if (!socket || !shoulder) return false;
+      socket.position.x = shoulder.x;
+      socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
+      socket.updateMatrix?.();
+      socket.updateMatrixWorld?.(true);
+      return true;
     }
 
     function quaternionDebug(q) {
@@ -299,7 +341,11 @@
       if (disposed) return;
       const fallback = installManualPoints();
       scanState = fallback ? 'pending' : 'manual';
-      if (!fallback) aimAll();
+      if (!fallback) {
+        for (const side of ['left', 'right']) if (freeSide[side]) alignFreeHandToFallbackAnchor(side);
+        aimAll();
+        global.ProceduralHandFrameDriver?.syncNow?.();
+      }
       // A newly reset 0,0 point is resolved on the next avatar rebuild; this avoids
       // repeating expensive alpha-component scans while dragging numeric fields.
     });
@@ -309,6 +355,7 @@
       rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion) {
         const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
         if (result) {
+          freeSide[side] = false;
           captureAuthoredBase(side);
           aimSide(side);
         }
@@ -318,8 +365,10 @@
 
     const originalSetSideIdle = rig.setSideIdle?.bind(rig);
     if (originalSetSideIdle) {
-      rig.setSideIdle = function shoulderAimSetSideIdle(side) {
-        const result = originalSetSideIdle(side);
+      rig.setSideIdle = function shoulderAimSetSideIdle(side, fallbackPose = null) {
+        const result = originalSetSideIdle(side, fallbackPose);
+        freeSide[side] = true;
+        alignFreeHandToFallbackAnchor(side, fallbackPose);
         captureAuthoredBase(side);
         aimSide(side);
         return result;
@@ -328,8 +377,12 @@
 
     const originalUseIdlePose = rig.useIdlePose?.bind(rig);
     if (originalUseIdlePose) {
-      rig.useIdlePose = function shoulderAimUseIdlePose() {
-        const result = originalUseIdlePose();
+      rig.useIdlePose = function shoulderAimUseIdlePose(fallbackPoses = null) {
+        const result = originalUseIdlePose(fallbackPoses);
+        freeSide.left = true;
+        freeSide.right = true;
+        alignFreeHandToFallbackAnchor('left', fallbackPoses?.left || null);
+        alignFreeHandToFallbackAnchor('right', fallbackPoses?.right || null);
         captureAuthoredBase('left');
         captureAuthoredBase('right');
         aimAll();
@@ -355,6 +408,8 @@
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
+          idlePositionRule: 'shoulder-x + posterior-y + fallback-y-offset',
+          resolvedPosteriorY: posteriorYInParent(),
           sides: debugBySide,
         },
       };

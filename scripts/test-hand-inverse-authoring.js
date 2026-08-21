@@ -30,18 +30,18 @@ assert(!attachments.includes('solveTwoBoneArm'), 'direct attachment runtime must
 assert(driver.includes("placeHandWorld?.('right'"), 'right hand must attach directly to the primary tool socket');
 assert(driver.includes('secondaryGripForTool(toolKey)'), 'driver must resolve optional secondary tool grip');
 assert(driver.includes("placeHandWorld?.('left'"), 'enabled secondary grip must drive the left hand');
-assert(driver.includes("setSideIdle?.('left')"), 'left hand must return to idle when no secondary grip is enabled');
+assert(driver.includes("applyFallbackSide(record, 'left')"), 'left hand must return to locomotion fallback when no secondary grip is enabled');
 assert(driver.includes('noArmIK: true'), 'driver debug must visibly report no arm IK');
 assert(!driver.includes('clampDeltaWorld'), 'hands must never move the tool through a reach clamp');
 assert(!driver.includes('adjustedTool'), 'hands must never author an adjusted tool pose');
 
 assert(toolGrips.includes('hatchet:'), 'hatchet must have a secondary-grip definition');
 assert(toolGrips.includes('hoe:'), 'hoe must have a secondary-grip definition');
-assert((toolGrips.match(/enabled: true/g) || []).length >= 2, 'hatchet and hoe secondary grips must default enabled');
+assert((toolGrips.match(/enabled: false/g) || []).length >= 2, 'hatchet and hoe secondary grips must default disabled pending reauthoring');
 assert(toolGrips.includes('secondaryGripForTool'), 'tool grip config must expose a reusable secondary socket lookup');
 
 assert(directEditor.includes('Optional second hand grip'), 'Attack Editor must expose secondary grip authoring');
-assert(directEditor.includes("$('handShowArmBones')?.closest('.field')?.remove()"), 'Attack Editor must strip the old arm-bone toggle');
+assert(!directEditor.includes('handShowArmBones'), 'Attack Editor must not restore the old arm-bone toggle');
 assert(directEditor.includes('handSecondaryGripEnabled'), 'Attack Editor must provide a secondary grip enable toggle');
 assert(directEditor.includes('NO ARM IK'), 'Attack Editor must visibly report the simplified attachment model');
 assert(editor.includes('Hand position relative to tool grip'), 'fine hand-from-tool authoring must remain available as a direct grip transform');
@@ -49,7 +49,7 @@ assert(editor.includes('The tool is never moved by the hand system'), 'editor mu
 
 assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
 assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
-assert(gripModes.includes('multiplyQuat(modeQ, fineQ)'), 'grip mode and fine transform must compose as quaternions');
+assert(gripModes.includes('multiplyQuat(rotationQuaternion, inverseQuat(fineQ))'), 'grip mode must derive a rigid quaternion delta from the fine transform');
 
 assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hand materials must inherit foot slot roles');
 assert(materialRoles.includes("sloth: 'tletingan'"), 'sloth hand materials must inherit foot slot roles');

@@ -16,6 +16,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
+  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
   let showGripGuides = false;
   let gameDeps = null;
 
@@ -62,14 +63,15 @@
   function markOutline(root) {
     root?.traverse?.(child => {
       if (!child.isMesh) return;
+      if (child.userData?.noOutline === true) return;
       child.layers.enable(1);
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       for (const material of materials) {
         if (!material) continue;
         material.side = child.material?.constructor?.DoubleSide || material.side;
       }
+      global.HobunjiOutlines?.markMaterialSeamId?.(child);
     });
-    global.HobunjiOutlines?.markMaterialSeamId?.(root);
   }
 
   function disposeObjectResources(root) {
@@ -82,6 +84,12 @@
 
   function loaderForThree(THREE) {
     if (typeof THREE?.GLTFLoader === 'function') return Promise.resolve(new THREE.GLTFLoader());
+    if (/\/tools\/animation-author\//.test(location.pathname)) {
+      const configuredThreeUrl = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0'; // Keeps the author's GLTF loader on the exact Three.js module version used by its preview scene.
+      const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
+      return import(`https://esm.sh/three@${version}/examples/jsm/loaders/GLTFLoader.js?deps=three@${version}`)
+        .then(module => new module.GLTFLoader());
+    }
     return import('three/addons/loaders/GLTFLoader.js').then(module => new module.GLTFLoader());
   }
 
@@ -98,7 +106,7 @@
     return promise;
   }
 
-  function cloneSceneWithOwnedResources(THREE, source, model, speciesId, bodyColors) {
+  function cloneSceneWithOwnedResources(THREE, source, modelKey, model, speciesId, bodyColors) {
     const clone = source.clone(true);
     const remapped = new Map();
     clone.traverse(child => {
@@ -107,27 +115,37 @@
       const replaceMaterial = material => {
         if (remapped.has(material)) return remapped.get(material);
         const role = model?.materialRoles?.[material?.name] || 'body';
+        const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
         const next = new THREE.MeshBasicMaterial({
           color: roleColor(role, speciesId, bodyColors),
           side: THREE.DoubleSide,
+          depthWrite: !isParrotWingLayer,
         });
         next.name = material?.name || `${role}_hand_material`;
+        next.userData.hobunjiHandRole = role;
+        next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;
       };
       child.material = Array.isArray(child.material) ? child.material.map(replaceMaterial) : replaceMaterial(child.material);
+      const ownedMaterials = Array.isArray(child.material) ? child.material : [child.material]; // Used here to tag the already-split GLTFLoader primitive for render-pass routing.
+      const isParrotWingMesh = modelKey === 'parrot'
+        && ownedMaterials.length > 0
+        && ownedMaterials.every(material => material?.userData?.hobunjiHandRole === 'body');
+      if (isParrotWingMesh) {
+        child.userData = { ...child.userData, hobunjiHandRole: 'body-wing', hobunjiPortraitOccludedWingLayer: true, noOutline: true };
+      }
       child.castShadow = true;
       child.receiveShadow = true;
-      child.layers.enable(1);
+      if (child.userData?.noOutline !== true) child.layers.enable(1);
     });
-    global.HobunjiOutlines?.markMaterialSeamId?.(clone);
     return clone;
   }
 
   async function buildGlbHand(THREE, modelKey, model, options, side) {
     const source = await loadGlbScene(THREE, model.glb);
     if (!source) throw new Error(`Hand GLB had no scene: ${model.glb}`);
-    const clone = cloneSceneWithOwnedResources(THREE, source, model, options.speciesId, options.bodyColors);
+    const clone = cloneSceneWithOwnedResources(THREE, source, modelKey, model, options.speciesId, options.bodyColors);
 
     // Measure only to preserve the existing hand-height normalization. Do NOT
     // recenter the clone: the GLB's own 0,0,0 is the authored grip/origin and is
@@ -152,11 +170,13 @@
     const group = new THREE.Group();
     group.name = `${side}_hand_visual`;
     group.add(clone);
+    if (side === 'right') group.rotation.y = THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG);
     group.userData.handModelKey = modelKey;
     group.userData.modelScale = modelScale;
     group.userData.speciesScale = speciesScale;
     group.userData.canonicalFit = canonicalFit;
     group.userData.authoredOriginPreserved = true;
+    group.userData.shoulderAxisTwistDeg = side === 'right' ? RIGHT_SHOULDER_AXIS_TWIST_DEG : 0;
     markOutline(group);
     return group;
   }
@@ -217,26 +237,43 @@
       loadError: null,
     };
 
-    function idleLocalPosition(side) {
-      return new THREE.Vector3(side === 'right' ? handAttachX : -handAttachX, handAttachY, 0);
-    }
+    const idlePositions = { // Reused authored attachment points copied into free-hand sockets every fallback frame.
+      left: new THREE.Vector3(-handAttachX, handAttachY, 0),
+      right: new THREE.Vector3(handAttachX, handAttachY, 0),
+    };
+    const idleQuaternion = new THREE.Quaternion().setFromEuler( // Reused authored medial frame composed with each fallback rotation below.
+      new THREE.Euler(0, THREE.MathUtils.degToRad(IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'),
+    );
+    const fallbackOffset = new THREE.Vector3(); // Reused local position offset keeps free-hand animation allocation-free.
+    const fallbackEuler = new THREE.Euler(0, 0, 0, 'YXZ'); // Reused temporary Euler converts procedural degrees to a quaternion.
+    const fallbackQuaternion = new THREE.Quaternion(); // Reused locomotion rotation composed after idleQuaternion.
 
-    function idleLocalQuaternion() {
-      return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, THREE.MathUtils.degToRad(IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'));
-    }
-
-    function setSideIdle(side) {
+    function setSideIdle(side, fallbackPose = null) {
       const rec = sockets[side];
-      rec.socket.position.copy(idleLocalPosition(side));
-      rec.socket.quaternion.copy(idleLocalQuaternion());
+      const position = fallbackPose?.position || {}; // Optional local locomotion offset applied only while this side has no attachment owner.
+      const rotation = fallbackPose?.rotationDeg || {}; // Optional idle/walk rotation composed after the authored medial hand frame.
+      fallbackOffset.set(
+        Number(position.x) || 0,
+        Number(position.y) || 0,
+        Number(position.z) || 0,
+      );
+      fallbackEuler.set(
+        THREE.MathUtils.degToRad(Number(rotation.pitch) || 0),
+        THREE.MathUtils.degToRad(Number(rotation.yaw) || 0),
+        THREE.MathUtils.degToRad(Number(rotation.roll) || 0),
+        'YXZ',
+      );
+      fallbackQuaternion.setFromEuler(fallbackEuler);
+      rec.socket.position.copy(idlePositions[side]).add(fallbackOffset);
+      rec.socket.quaternion.copy(idleQuaternion).multiply(fallbackQuaternion);
       rec.socket.visible = true;
       rec.socket.updateMatrix?.();
       rec.socket.updateMatrixWorld?.(true);
     }
 
-    function useIdlePose() {
-      setSideIdle('left');
-      setSideIdle('right');
+    function useIdlePose(fallbackPoses = null) {
+      setSideIdle('left', fallbackPoses?.left || null);
+      setSideIdle('right', fallbackPoses?.right || null);
     }
 
     function installVisual(side, visual) {
@@ -362,6 +399,9 @@
           effectiveScale: state.effectiveScale,
           glb: state.glb,
           loadError: state.loadError,
+          fallbackPoseInput: 'per-side-local-offset',
+          rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
+          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
         };
       },
     };
@@ -385,6 +425,7 @@
     getActiveDebug() { return [...activeRigs].map(rig => rig.getDebug()); },
     refreshAllProfiles() { for (const rig of activeRigs) rig.refreshModelProfile?.(); },
     idleMedialYawDeg: IDLE_MEDIAL_YAW_DEG,
+    rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
   };
 
   global.ProceduralHandAttachments = publicApi;

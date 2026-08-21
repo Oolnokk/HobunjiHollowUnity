@@ -53,6 +53,7 @@
 
   function markHeldXray(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
+    if (mesh.userData?.hobunjiPortraitOccludedWingLayer === true) return false;
     mesh.userData = mesh.userData || {};
     mesh.userData.hobunjiProceduralHand = true;
     mesh.userData.hobunjiProceduralHandSide = side || mesh.userData.hobunjiProceduralHandSide || null;

@@ -212,12 +212,4 @@
     seededRng,
   };
 
-  // Animation Author is the only consumer of the manual shoulder-coordinate panel.
-  if (/\/tools\/animation-author\//.test(location.pathname) && !window.__hobunjiShoulderPointAuthorLoader) {
-    window.__hobunjiShoulderPointAuthorLoader = true;
-    const script = document.createElement('script');
-    script.src = new URL('../../js/animation-author-hand-shoulder-points.js?v=20260818b', location.href).href;
-    script.onerror = () => console.warn('[animation-author] shoulder point author failed to load');
-    document.head.appendChild(script);
-  }
 })();

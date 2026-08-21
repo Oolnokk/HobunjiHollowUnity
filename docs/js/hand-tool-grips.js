@@ -6,6 +6,7 @@
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
+  const SECONDARY_GRIP_PRESET = 'all-disabled-v1'; // One-time migration marker that clears every currently authored second-hand toggle.
 
   function identityTransform() {
     return {
@@ -16,19 +17,20 @@
 
   const DEFAULT_DATA = {
     schema: SCHEMA,
+    secondaryGripPreset: SECONDARY_GRIP_PRESET,
     tools: {
-      // Initial two-handed tools requested. These offsets are conservative
-      // starting points and are intentionally editable in the Attack Editor.
+      // Retain the old draft coordinates for later reauthoring, but no existing
+      // tool/animation starts with its secondary hand attached.
       hatchet: {
         secondaryGrip: {
-          enabled: true,
+          enabled: false,
           position: { x: 0, y: -0.28, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
       },
       hoe: {
         secondaryGrip: {
-          enabled: true,
+          enabled: false,
           position: { x: 0, y: -0.32, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
@@ -80,13 +82,15 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    const disableExistingSecondaryGrips = next.secondaryGripPreset !== SECONDARY_GRIP_PRESET; // True only for pre-change saved/editor data.
     next.schema = SCHEMA;
+    next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     if (!next.tools || typeof next.tools !== 'object') next.tools = {};
     for (const entry of Object.values(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
       const secondary = entry.secondaryGrip || {};
       entry.secondaryGrip = {
-        enabled: secondary.enabled === true,
+        enabled: disableExistingSecondaryGrips ? false : secondary.enabled === true,
         ...normalizeTransform(secondary),
       };
       entry.gripMode = normalizeGripMode(entry.gripMode);

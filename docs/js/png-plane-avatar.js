@@ -134,12 +134,15 @@
   }
 
   function avatarScaleMultiplierFor(options = {}) {
-    const { species } = avatarSpeciesAndGender(options);
+    const { species, gender } = avatarSpeciesAndGender(options);
     const scaleBySpecies = cfg().portraitScaleBySpecies || {};
     let scale = 1;
     for (const speciesKey of placementSpeciesChain(species)) {
       if (Object.prototype.hasOwnProperty.call(scaleBySpecies, speciesKey)) {
-        const speciesScale = Number(scaleBySpecies[speciesKey]);
+        const configuredScale = scaleBySpecies[speciesKey]; // Supports legacy species numbers and new species/gender profile maps.
+        const speciesScale = Number(configuredScale && typeof configuredScale === 'object'
+          ? configuredScale[gender] ?? configuredScale.default
+          : configuredScale);
         if (Number.isFinite(speciesScale) && speciesScale > 0) {
           scale = speciesScale;
           break;

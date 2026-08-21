@@ -2,8 +2,10 @@
 //
 // No arm solver participates. The right hand follows the toolHolder's authored
 // primary grip frame directly. If the active tool has an enabled secondary grip
-// in hand-tool-grips.js, the left hand follows that frame; otherwise it remains
-// at its avatar idle attachment. The tool is never translated or rotated by hands.
+// in hand-tool-grips.js, the left hand follows that frame; otherwise it receives
+// the procedural locomotion fallback. Free hands breathe subtly at idle and swing
+// while walking. Attachment ownership always wins per side, so fallback motion
+// never modifies a gripped hand. Hands never translate or rotate the tool.
 (function (global) {
   'use strict';
 
@@ -16,6 +18,8 @@
 
   const pending = new Set();
   const managed = new Set();
+  const FALLBACK_REFERENCE_SPEED = 3.2; // Scene units/second that produce a full ordinary walking arm swing below.
+  const FALLBACK_TELEPORT_SPEED = 24; // Scene units/second above which movement is treated as a snap, not a gait sample.
   let gameDeps = hands.gameDeps || null;
   let syncing = false;
 
@@ -39,7 +43,8 @@
   function attachPending(record) {
     const avatarRoot = record.avatarRoot;
     if (!avatarRoot?.parent || avatarRoot.userData?.proceduralHandRig) return !!avatarRoot?.userData?.proceduralHandRig;
-    const rig = hands.attach(record.THREE, avatarRoot.parent, {
+    const handParent = avatarRoot.userData?.proceduralHandParent || avatarRoot.parent; // Lets authoring previews attach hands to their floor-relative visual root instead of the lifted portrait group.
+    const rig = hands.attach(record.THREE, handParent, {
       speciesId: record.speciesId,
       gender: record.gender,
       bodyColors: record.bodyColors,
@@ -77,6 +82,7 @@
       lastToolKey: null,
       lastVisualGripBasis: null,
       secondaryActive: false,
+      fallback: null,
     });
     return avatarRoot;
   };
@@ -302,10 +308,97 @@
     };
   }
 
+  function ensureFallbackState(record) {
+    if (record.fallback) return record.fallback;
+    const modelHeight = Math.max(0.1, Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9); // Scales fallback travel consistently across avatar sizes.
+    record.fallback = {
+      worldPosition: new record.THREE.Vector3(), // Previous parent-world sample used to infer locomotion without game-specific velocity hooks.
+      samplePosition: new record.THREE.Vector3(), // Reused current parent-world sample to keep the per-frame fallback path allocation-free.
+      hasWorldPosition: false,
+      lastSampleMs: null,
+      speed: 0,
+      phase: 0,
+      gaitStrength: 0,
+      modelHeight,
+      mode: 'idle',
+      poses: { left: null, right: null },
+      owners: { left: 'fallback-idle', right: 'fallback-idle' },
+    };
+    return record.fallback;
+  }
+
+  function damp(current, target, rate, dt) {
+    return current + (target - current) * (1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt)));
+  }
+
+  function fallbackPose(state, side, nowMs) {
+    const sidePhase = state.phase + (side === 'right' ? Math.PI : 0); // Opposes left/right swings for a natural alternating gait.
+    const swing = Math.sin(sidePhase);
+    const liftWave = Math.max(0, Math.cos(sidePhase));
+    const idlePhase = nowMs * 0.0017 + (side === 'right' ? 0.28 : 0); // Slight phase split keeps idle hands from moving as a rigid pair.
+    const idleBreath = Math.sin(idlePhase);
+    const h = state.modelHeight;
+    const gait = state.gaitStrength;
+    return {
+      position: {
+        x: 0, // Shoulder-aim wrapper replaces the authored T-pose X with this side's resolved shoulder X.
+        y: h * (0.0045 * idleBreath * (1 - gait) + 0.018 * liftWave * gait),
+        z: h * 0.085 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
+      },
+      rotationDeg: {
+        pitch: 22 * swing * gait + 2.5 * idleBreath * (1 - gait),
+        yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
+        roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
+      },
+    };
+  }
+
+  function updateFallbackMotion(record, nowMs = performance.now()) {
+    const state = ensureFallbackState(record);
+    const sample = record.rig?.parent?.getWorldPosition?.(state.samplePosition) || null; // Includes NPC ancestor movement even when the hand parent itself stays local.
+    const elapsed = state.lastSampleMs == null ? 0 : Math.max(0, Math.min(0.1, (nowMs - state.lastSampleMs) / 1000));
+    if (sample && state.hasWorldPosition && elapsed > 0.0001) {
+      const rawSpeed = Math.hypot(sample.x - state.worldPosition.x, sample.z - state.worldPosition.z) / elapsed;
+      const sampledSpeed = rawSpeed <= FALLBACK_TELEPORT_SPEED ? rawSpeed : 0; // Area transfers and spawn snaps must not create one-frame flailing.
+      state.speed = damp(state.speed, sampledSpeed, sampledSpeed > state.speed ? 11 : 15, elapsed);
+    } else if (elapsed > 0.0001) {
+      state.speed = damp(state.speed, 0, 15, elapsed);
+    }
+    if (sample) {
+      state.worldPosition.copy(sample);
+      state.hasWorldPosition = true;
+    }
+    state.lastSampleMs = nowMs;
+
+    const speedRatio = Math.max(0, Math.min(1.25, state.speed / FALLBACK_REFERENCE_SPEED));
+    const targetStrength = state.speed > 0.035 ? Math.sqrt(speedRatio) : 0;
+    state.gaitStrength = damp(state.gaitStrength, targetStrength, targetStrength > state.gaitStrength ? 9 : 13, elapsed);
+    const strideWorld = Math.max(state.modelHeight * 0.48, 0.12); // Approximate full step length used only to derive arm cadence.
+    const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.1, state.speed / strideWorld)) : 0;
+    if (cadenceHz > 0 && elapsed > 0) state.phase = (state.phase + elapsed * cadenceHz * Math.PI * 2) % (Math.PI * 2);
+    state.mode = state.gaitStrength > 0.04 ? 'walk' : 'idle';
+    state.poses.left = fallbackPose(state, 'left', nowMs);
+    state.poses.right = fallbackPose(state, 'right', nowMs);
+    return state;
+  }
+
+  function applyFallbackSide(record, side) {
+    const state = ensureFallbackState(record);
+    record.rig?.setSideIdle?.(side, state.poses[side]);
+    state.owners[side] = `fallback-${state.mode}`;
+  }
+
+  function applyFallbackBoth(record) {
+    const state = ensureFallbackState(record);
+    record.rig?.useIdlePose?.(state.poses);
+    state.owners.left = `fallback-${state.mode}`;
+    state.owners.right = `fallback-${state.mode}`;
+  }
+
   function syncRigToTool(record, toolHolder) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
-      record.rig.useIdlePose?.();
+      applyFallbackBoth(record);
       record.secondaryActive = false;
       record.lastToolKey = null;
       record.lastVisualGripBasis = null;
@@ -317,14 +410,16 @@
       const toolKey = currentToolKey();
       const primary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder));
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion);
+      ensureFallbackState(record).owners.right = 'primary-grip';
 
       const secondaryGrip = toolGrips.secondaryGripForTool(toolKey);
       if (secondaryGrip) {
         const secondary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder, secondaryGrip));
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion);
         record.secondaryActive = true;
+        ensureFallbackState(record).owners.left = 'secondary-grip';
       } else {
-        record.rig.setSideIdle?.('left');
+        applyFallbackSide(record, 'left');
         record.secondaryActive = false;
       }
       record.lastToolKey = toolKey || null;
@@ -383,7 +478,7 @@
     sentinel.onBeforeRender = () => {
       const holder = currentToolHolder(record);
       if (holder) syncRigToTool(record, holder);
-      else record.rig?.useIdlePose?.();
+      else applyFallbackBoth(record);
     };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
@@ -397,9 +492,10 @@
         continue;
       }
       ensureSyncSentinel(record);
+      updateFallbackMotion(record);
       const holder = currentToolHolder(record);
       if (holder) syncRigToTool(record, holder);
-      else record.rig?.useIdlePose?.();
+      else applyFallbackBoth(record);
     }
   }
 
@@ -419,10 +515,11 @@
     syncNow() {
       const results = [];
       for (const record of managed) {
+        updateFallbackMotion(record);
         const holder = currentToolHolder(record);
         if (holder) results.push(syncRigToTool(record, holder));
         else {
-          record.rig?.useIdlePose?.();
+          applyFallbackBoth(record);
           results.push({ direct: true, toolVisible: false, secondaryActive: false });
         }
       }
@@ -438,6 +535,13 @@
         secondaryActive: record.secondaryActive,
         scaleFreeWorldQuaternion: true,
         visualGripBasis: record.lastVisualGripBasis,
+        fallback: record.fallback ? {
+          mode: record.fallback.mode,
+          speed: Number(record.fallback.speed.toFixed(3)),
+          gaitStrength: Number(record.fallback.gaitStrength.toFixed(3)),
+          phase: Number(record.fallback.phase.toFixed(3)),
+          owners: { ...record.fallback.owners },
+        } : null,
         handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
           || profiles.handTransformForSpecies?.(record.speciesId)
           || null,

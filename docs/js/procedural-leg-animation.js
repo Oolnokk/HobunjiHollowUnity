@@ -25,6 +25,16 @@
 (function () {
   'use strict';
 
+  const configuredDocsBase = window.__HobunjiProceduralFeetDocsBase || ''; // Animation Author supplies its repository-paired docs root while executing this file from a blob URL.
+  const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null; // Direct gameplay loads resolve assets relative to docs/js/.
+  const docsBase = configuredDocsBase || (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl).href : new URL('./', location.href).href); // Used by every foot texture and GLB request below.
+
+  function resolveAssetPath(path) {
+    const raw = String(path || '');
+    if (!raw || /^(?:https?:|data:|blob:|file:)/i.test(raw) || raw.startsWith('/')) return raw;
+    return new URL(raw.startsWith('assets/') ? raw : `assets/${raw.replace(/^\.\//, '')}`, docsBase).href;
+  }
+
   function cfg() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
   }
@@ -244,14 +254,15 @@
 
   const _imageCache = new Map(); // asset path -> Promise<HTMLImageElement>
   function loadSurfaceImage(path) {
-    if (_imageCache.has(path)) return _imageCache.get(path);
+    const resolvedPath = resolveAssetPath(path); // Prevents nested repository tools from requesting tools/.../assets by mistake.
+    if (_imageCache.has(resolvedPath)) return _imageCache.get(resolvedPath);
     const promise = new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`Failed to load ${path}`));
-      img.src = path;
+      img.onerror = () => reject(new Error(`Failed to load ${resolvedPath}`));
+      img.src = resolvedPath;
     });
-    _imageCache.set(path, promise);
+    _imageCache.set(resolvedPath, promise);
     return promise;
   }
 
@@ -545,13 +556,24 @@
 
   const _glbSceneCache = new Map(); // glb path -> Promise<THREE.Object3D>
 
+  function loaderForThree(THREE) {
+    if (typeof THREE?.GLTFLoader === 'function') return Promise.resolve(new THREE.GLTFLoader());
+    if (/\/tools\/animation-author\//.test(location.pathname)) {
+      const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0'; // Keeps the author foot loader on its preview scene's exact Three.js version.
+      const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
+      return import(`https://esm.sh/three@${version}/examples/jsm/loaders/GLTFLoader.js?deps=three@${version}`)
+        .then(module => new module.GLTFLoader());
+    }
+    return Promise.reject(new Error('THREE.GLTFLoader is not available.'));
+  }
+
   function loadGlbScene(THREE, path) {
-    if (_glbSceneCache.has(path)) return _glbSceneCache.get(path);
-    const promise = new Promise((resolve, reject) => {
-      if (!THREE.GLTFLoader) { reject(new Error('THREE.GLTFLoader is not available.')); return; }
-      new THREE.GLTFLoader().load(path, gltf => resolve(gltf.scene), undefined, reject);
-    });
-    _glbSceneCache.set(path, promise);
+    const resolvedPath = resolveAssetPath(path); // Shares one correctly-rooted model request between both feet.
+    if (_glbSceneCache.has(resolvedPath)) return _glbSceneCache.get(resolvedPath);
+    const promise = loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
+      loader.load(resolvedPath, gltf => resolve(gltf.scene), undefined, reject);
+    }));
+    _glbSceneCache.set(resolvedPath, promise);
     return promise;
   }
 
@@ -674,11 +696,12 @@
     const modelHeight = Number(options.modelHeight) || modelWidth;
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
+    const sizeBalanceMultiplier = Number(c.sizeBalanceMultiplier) > 0 ? Number(c.sizeBalanceMultiplier) : 1; // Enlarges every fallback/imported foot toward the shared hand/foot midpoint.
     // footScale is an authored per-species/gender multiplier
     // (proceduralFeet.footScale) on top of this base formula — defaults to
     // 1 (formula unchanged) for any species/gender without an authored
     // entry.
-    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender);
+    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender) * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;
