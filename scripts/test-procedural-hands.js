@@ -249,12 +249,16 @@ for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpe
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
 assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.32'/, 'the published author title must identify the stable reference-NPC build');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.33'/, 'the published author title must identify the measured-scale reconciliation build');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');
 assert.match(animationAuthorSource, /absent from animationAuthor\.actors, selection, gizmos, and exports/, 'reference NPC must remain outside every interactive/exported actor path');
 assert.match(animationAuthorSource, /id="maaRandomizeReferenceNpc"/, 'Shoulder Rig must offer one-button reference NPC randomization');
 assert.match(animationAuthorSource, /presentation\.scale\.copy\(actor\.rigBodyPresentationBaseScaleV1532\)\.multiplyScalar\(ratio\)/, 'body-scale input must preview on the stable presentation carrier');
 assert.doesNotMatch(animationAuthorSource, /actor\.model\.scale\.copy\(actor\.rigBodyModelBaseScaleV1531\)/, 'body-scale input must not mutate the runtime-managed portrait model');
+assert.match(animationAuthorSource, /actor\.rigBuiltAvatarScaleV1533 = builtModelWidth \/ baseModelWidth/, 'body-scale reconciliation must measure the scale actually built into the replacement model');
+assert.match(animationAuthorSource, /const targetScale = resolvedRigActorAvatarScaleV1533\(actor, desiredScale\)/, 'body-scale reconciliation must compare built geometry against the live PNG-avatar resolver');
+assert.match(animationAuthorSource, /previewRigActorBodyScaleV1531\(actor, anatomy\.portraitScale\)/, 'every newly rebuilt rig actor must reapply its measured carrier correction');
+assert.match(animationAuthorSource, /id="maaBodyScaleDiagnostic"/, 'Shoulder Rig must expose built, target, and carrier scale diagnostics without DevTools');
 assert.match(animationAuthorSource, /rigReferencePreserveDuringActorSwapV1532 = !!preservedReference/, 'rig NPC replacement must guard its reference from the shared actor clear');
 assert.match(animationAuthorSource, /if \(!rigReferencePreserveDuringActorSwapV1532\) disposeRigReferenceNpcV1531\(\)/, 'ordinary project clears must still dispose the reference NPC');
 assert.match(animationAuthorSource, /positionRigReferenceNpcV1532\(actor\)/, 'a preserved reference NPC must be repositioned beside the newly selected rig actor');

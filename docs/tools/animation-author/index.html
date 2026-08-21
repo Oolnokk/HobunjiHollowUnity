@@ -12276,7 +12276,7 @@ function characterAnatomyMarkupV1530(actor) {
       <div class="maaField"><label for="maaSpeciesHandScale">Hand scale (%)</label><input id="maaSpeciesHandScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.handScale * 100).toFixed(1)}"></div>
       <div class="maaField"><label for="maaSpeciesFootScale">Foot scale (%)</label><input id="maaSpeciesFootScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.footScale * 100).toFixed(1)}"></div>
     </div>
-    <div class="maaRigStatus" style="margin-top:8px">Profile fields: <b>portraitVerticalPlacementRatio</b>, <b>portraitScale</b>, <b>handScale</b>, <b>footScale</b>, and <b>armLengthHeightPercentOffset</b>. Body scale previews immediately and rebuilds the full anatomy when released.</div>
+    <div class="maaRigStatus" style="margin-top:8px">Profile fields: <b>portraitVerticalPlacementRatio</b>, <b>portraitScale</b>, <b>handScale</b>, <b>footScale</b>, and <b>armLengthHeightPercentOffset</b>. Body scale previews immediately and rebuilds the full anatomy when released.<br><span id="maaBodyScaleDiagnostic">${escapeHtml(actor.rigBodyScaleDiagnosticV1533 || 'Scale diagnostic initializes with the preview.')}</span></div>
   </section>`;
 }
 
@@ -12358,20 +12358,48 @@ let rigReferencePreserveDuringActorSwapV1532 = false; // Used by rig-mode NPC re
 
 function rememberRigActorBodyScaleV1531(actor) {
   if (actor?.source?.type !== 'npc' || !actor.model) return;
-  const anatomy = ensureCharacterAnatomyV1530(attachmentRigProfileForActor(actor));
-  actor.rigBuiltPortraitScaleV1531 = anatomy.portraitScale; // Used by the lightweight body-only input preview before the full anatomy rebuild.
+  const baseModelWidth = Math.max(.001, Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.modelWidth) || 1); // Converts the rendered model width back into its actual total avatar multiplier.
+  const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
+  actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
   actor.rigBodyPresentationBaseScaleV1532 = actor.avatarPresentation?.scale?.clone?.() || null; // Used to scale the stable presentation carrier instead of the runtime-managed portrait model.
   actor.rigBodyPresentationBaseYV1531 = Number(actor.avatarPresentation?.position?.y) || 0;
   actor.rigBodyBoxBasePositionYV1531 = Number(actor.rigPreviewBox?.position?.y) || 0;
   actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
 }
 
+function resolvedRigActorAvatarScaleV1533(actor, fallbackScale = 1) {
+  const npcRecord = actor?.source?.type === 'npc'
+    ? state.npcs.find(npc => String(npc.id || npc.name || '') === String(actor.source.id || ''))
+    : null; // Supplies child markers and strict appearance data to the same scale resolver used by PNGPlaneAvatar construction.
+  const resolved = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+    speciesId: actor?.source?.species,
+    gender: actor?.source?.gender,
+    appearance: actor?.source?.appearance,
+    npcRecord,
+  }));
+  return Number.isFinite(resolved) && resolved > 0 ? resolved : fallbackScale;
+}
+
+function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio) {
+  const message = `Built ${builtScale.toFixed(3)} · target ${targetScale.toFixed(3)} · carrier ×${ratio.toFixed(3)}`; // Appears in the mobile-friendly Shoulder Rig inspector and shared diagnostics state.
+  actor.rigBodyScaleDiagnosticV1533 = message;
+  if ($('maaBodyScaleDiagnostic')) $('maaBodyScaleDiagnostic').textContent = message;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.bodyScalePreview = {
+    profile: characterRigProfileKey(actor.source),
+    builtScale,
+    targetScale,
+    carrierRatio: ratio,
+  };
+}
+
 function previewRigActorBodyScaleV1531(actor, portraitScale) {
-  const builtScale = Number(actor?.rigBuiltPortraitScaleV1531);
-  const desiredScale = Number(portraitScale);
+  const builtScale = Number(actor?.rigBuiltAvatarScaleV1533);
+  const desiredScale = Number(portraitScale); // Remains the fallback if the shared PNG-avatar resolver is unavailable.
+  const targetScale = resolvedRigActorAvatarScaleV1533(actor, desiredScale);
   const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
-  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(desiredScale) || desiredScale <= 0) return false;
-  const ratio = desiredScale / builtScale;
+  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
+  const ratio = targetScale / builtScale;
   presentation.scale.copy(actor.rigBodyPresentationBaseScaleV1532).multiplyScalar(ratio);
   presentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
   if (actor.rigPreviewBox) {
@@ -12380,6 +12408,7 @@ function previewRigActorBodyScaleV1531(actor, portraitScale) {
   }
   presentation.updateMatrixWorld?.(true);
   updateAnimationSelectionBox();
+  updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio);
   return true;
 }
 
@@ -12518,6 +12547,10 @@ addNpcAnimationActor = async function(npcId, options = {}) {
     rigReferencePreserveDuringActorSwapV1532 = false;
   }
   rememberRigActorBodyScaleV1531(actor);
+  if (animationAuthor.mode === 'rig') {
+    const anatomy = ensureCharacterAnatomyV1530(attachmentRigProfileForActor(actor)); // Reconciles every newly built rig actor with its measured and resolved total scale.
+    previewRigActorBodyScaleV1531(actor, anatomy.portraitScale);
+  }
   if (preservedReference && animationAuthor.rig.referenceNpcV1531 === preservedReference) {
     positionRigReferenceNpcV1532(actor);
     frameAllAnimationActors('angle');
@@ -12624,14 +12657,14 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.32';
+  document.title = 'Hobunji Animation Author V15.33';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.32 keeps live body-scale previews stable and preserves the randomized reference NPC when the editable Shoulder Rig character changes.';
+animationAuthor.recentChange = 'V15.33 measures rebuilt avatar geometry, reapplies the resolved body-scale ratio after replacement, and shows built/target/carrier scale diagnostics in Shoulder Rig.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.32 patch installed: stable presentation-carrier body scaling and reference-NPC preservation across rig character swaps.');
+log('V15.33 patch installed: measured rebuilt body-scale reconciliation, visible scale diagnostics, and preserved reference NPCs.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
