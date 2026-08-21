@@ -6610,6 +6610,11 @@
         getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
+        // Runtime grass toggle (see the Settings-tab checkbox and ?hideGrass=1
+        // for the other two ways in) — for visually inspecting anything
+        // world grass tends to bury, without a reload.
+        setGrassVisible: (visible) => applyGrassVisible(visible),
+        getGrassVisible: () => s_grass,
         addLivestockFromItem: (itemKey) => window.FarmAnimals.addFromItem(itemKey),
         addToStable: (itemKey) => window.FarmAnimals.addToStable(itemKey),
         getWorldLivestock: () => _loadWorldLivestock(),
@@ -19173,12 +19178,22 @@
         const sensitivity = Number(e.target.value);
         s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
       });
-      document.getElementById('settingGrass').addEventListener('change', e => {
-        s_grass = e.target.checked;
+      // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
+      // so a headless/console toggle doesn't need to click through Settings —
+      // visually verifying hands/feet/outlines against dense world grass
+      // otherwise means hunting for open ground first.
+      function applyGrassVisible(visible) {
+        s_grass = !!visible;
+        const settingCheckbox = document.getElementById('settingGrass');
+        if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
         window.BorderTerrain.setGrassVisible(s_grass);
-      });
+      }
+      document.getElementById('settingGrass').addEventListener('change', e => applyGrassVisible(e.target.checked));
+      // ?hideGrass=1 starts a session with grass already off, same convention
+      // as the 'tothal' force param above.
+      if (new URLSearchParams(location.search).get('hideGrass') === '1') applyGrassVisible(false);
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
       });
