@@ -31,19 +31,6 @@
   if (insertionPoint?.parentElement === handCard) insertionPoint.insertAdjacentElement('afterend', status);
   else handCard?.appendChild(status);
 
-  // Legacy toolGrip controls are kept in the older configurator only as bootstrap
-  // scaffolding. The runtime source of truth is handFromTool; disabling the hidden
-  // inputs prevents synthetic/autofill input from ever mutating the dead identity frame.
-  for (const id of [
-    'handGripPos_x', 'handGripPos_y', 'handGripPos_z',
-    'handGripPos_x_n', 'handGripPos_y_n', 'handGripPos_z_n',
-    'handGripRot_pitch', 'handGripRot_yaw', 'handGripRot_roll',
-    'handGripRot_pitch_n', 'handGripRot_yaw_n', 'handGripRot_roll_n',
-  ]) {
-    const input = document.getElementById(id); // Marks each superseded control as inert even though its group is already hidden.
-    if (input) input.disabled = true;
-  }
-
   function mappedModelKey() {
     return String(profiles.modelKeyForSpecies?.(speciesSelect.value) || '');
   }

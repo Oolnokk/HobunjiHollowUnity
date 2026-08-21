@@ -236,24 +236,54 @@
     return { quaternion: delta, source, angleDeg };
   }
 
+  // In-game, WeaponToolStances applies the active idle/attack stance to
+  // toolHolder only for the duration of its own updateMatrixWorld() call —
+  // it bakes the stance into toolHolder.matrixWorld, then reverts toolHolder's
+  // own LOCAL position/quaternion back to the plain aiming pose in a
+  // `finally` (needed so a second updateMatrixWorld() call later the same
+  // frame doesn't compound the stance delta onto itself). That means any of
+  // Three.js's own world-space accessors (updateWorldMatrix/getWorldPosition/
+  // localToWorld) called on toolHolder afterward recompute matrixWorld from
+  // the already-reverted local values, silently discarding the stance: the
+  // tool mesh itself still renders with the stance (its own matrixWorld was
+  // baked earlier, during the same traversal, and nothing recomputes it
+  // afterward), but hands following toolHolder through one of those
+  // accessors would land on the neutral, un-stanced pose instead.
+  // WeaponToolStances.lastHolderMatrixWorld() hands back the matrixWorld
+  // actually baked this frame so hands read the same transform the tool
+  // rendered with, without calling a recomputing accessor on toolHolder.
   function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
-    toolHolder.updateWorldMatrix?.(true, true);
+    const bakedWorldMatrix = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
 
     const visualBasis = visualGripBasisDelta(record, toolHolder);
     let position;
     // Used as the scale-free world orientation of the tool socket. Do not use
-    // getWorldQuaternion(): the game player hierarchy can contain negative scale.
-    let quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
+    // getWorldQuaternion() on toolHolder's own local quaternion/position chain
+    // in general (the game player hierarchy can contain negative scale) — but
+    // toolHolder itself lives directly under the scene root and never carries
+    // non-uniform or negative scale (see toolHolder.scale.setScalar calls in
+    // game.js), so decomposing its already-baked matrixWorld is safe.
+    let quaternion;
+    if (bakedWorldMatrix) {
+      quaternion = new Quaternion();
+      position = new Vector3();
+      bakedWorldMatrix.decompose(position, quaternion, new Vector3());
+    } else {
+      toolHolder.updateWorldMatrix?.(true, true);
+      quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
+    }
     quaternion.multiply(visualBasis.quaternion);
     if (secondaryGrip) {
       const p = secondaryGrip.position || {};
-      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
+      const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
         .applyQuaternion(visualBasis.quaternion);
-      toolHolder.localToWorld(position);
+      if (bakedWorldMatrix) localOffset.applyMatrix4(bakedWorldMatrix);
+      else toolHolder.localToWorld(localOffset);
+      position = localOffset;
       quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
-    } else {
+    } else if (!bakedWorldMatrix) {
       position = toolHolder.getWorldPosition(new Vector3());
     }
     return { position, quaternion, visualBasis };

@@ -382,8 +382,6 @@
         }
       }
     },
-    // Compatibility no-op for the old editor adapter. There are no arm bones.
-    setShowArmBoneGuides() { return false; },
     getActiveDebug() { return [...activeRigs].map(rig => rig.getDebug()); },
     refreshAllProfiles() { for (const rig of activeRigs) rig.refreshModelProfile?.(); },
     idleMedialYawDeg: IDLE_MEDIAL_YAW_DEG,

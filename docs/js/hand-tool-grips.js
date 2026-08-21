@@ -73,6 +73,11 @@
     };
   }
 
+  function normalizeGripMode(raw) {
+    const key = String(raw || '').trim();
+    return key || null;
+  }
+
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     next.schema = SCHEMA;
@@ -84,6 +89,7 @@
         enabled: secondary.enabled === true,
         ...normalizeTransform(secondary),
       };
+      entry.gripMode = normalizeGripMode(entry.gripMode);
     }
     return next;
   }
@@ -126,6 +132,24 @@
     return { enabled: true, ...normalizeTransform(raw) };
   }
 
+  // Explicit per-tool grip-mode override authored in the Attack Animation Editor.
+  // Absent/null means callers should fall back to their own tool-name heuristic;
+  // this keeps every tool's default unchanged until an artist deliberately commits
+  // a choice here, and shares that choice between the editor and the live game.
+  function gripModeForTool(value) {
+    const key = toolKeyFor(value);
+    return data.tools?.[key]?.gripMode || null;
+  }
+
+  function setGripMode(value, modeKey) {
+    const key = toolKeyFor(value);
+    if (!key) return null;
+    if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, ...identityTransform() } };
+    data.tools[key].gripMode = normalizeGripMode(modeKey);
+    notify();
+    return data.tools[key].gripMode;
+  }
+
   function saveLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(data)); }
   function loadLocal() {
     const raw = localStorage.getItem(LOCAL_KEY);
@@ -147,6 +171,8 @@
     toolKeyFor,
     ensureTool,
     secondaryGripForTool,
+    gripModeForTool,
+    setGripMode,
     replace,
     mutate,
     saveLocal,

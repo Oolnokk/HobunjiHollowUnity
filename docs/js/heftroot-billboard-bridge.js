@@ -120,6 +120,11 @@
       faceBillboards(scene, camera);
       return previousRender.call(this, scene, camera, ...rest);
     };
+    // held-object-render-order.js's internal depth-replay passes look for the
+    // TRUE, undecorated render() by walking a chain of __hobunji*Original
+    // markers (see its unwrapRendererRender) — without this marker those
+    // replay passes stop unwrapping here instead of reaching the real render.
+    prototype.render.__hobunjiHeftrootBillboardOriginal = previousRender;
     prototype.__hobunjiHeftrootBillboardHooked = true;
   }
 

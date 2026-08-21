@@ -252,6 +252,12 @@ canvas{display:block;width:100%;height:100%}
     <label>Current animation JSON</label>
     <textarea id="jsonView" readonly></textarea>
     <div class="row" style="margin-top:6px"><button id="copyJsonBtn" class="secondary">Copy JSON</button></div>
+    <div class="hr"></div>
+    <label>Preview transforms</label>
+    <div class="help" style="margin-bottom:6px">Literal local position/rotation of every node in the live preview rig — avatar body, head/neck bone, tool holder, hand sockets — for diffing against the same dump taken in-game with the Pixel Probe.</div>
+    <div class="row"><button id="dumpTransformsBtn" class="secondary">📐 Dump preview transforms</button></div>
+    <textarea id="transformDumpView" readonly style="margin-top:6px"></textarea>
+    <div class="row" style="margin-top:6px"><button id="copyTransformDumpBtn" class="secondary">Copy transforms</button></div>
   </div>
 </aside>
 <div id="viewport">
@@ -273,6 +279,10 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20260817e"></script>
+<!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
+     loaded by the game's Pixel Probe, so this editor's preview dump and an
+     in-game character dump use the exact same code/format. -->
+<script src="../../js/transform-dump-utils.js?v=20260820a"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -1394,6 +1404,17 @@ $('exportBtn').onclick = () => {
 };
 $('copyJsonBtn').onclick = async () => {
   try { await navigator.clipboard.writeText($('jsonView').value); logDebug('Copied animation JSON'); }
+  catch { logDebug('Clipboard copy failed'); }
+};
+$('dumpTransformsBtn').onclick = () => {
+  const api = window.HobunjiTransformDump;
+  if (!api) { logDebug('Transform dump unavailable (HobunjiTransformDump not loaded)'); return; }
+  const entries = api.dumpSubtree(rig);
+  $('transformDumpView').value = api.formatReport(entries, { title: `Editor preview — ${$('avatarSpecies').value}/${$('avatarGender').value}, tool=${$('toolSpriteSelect').value}` });
+  logDebug(`Dumped local transforms for ${entries.length} preview node(s)`);
+};
+$('copyTransformDumpBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('transformDumpView').value); logDebug('Copied preview transform dump'); }
   catch { logDebug('Clipboard copy failed'); }
 };
 $('loadBtn').onclick = () => $('loadFile').click();

@@ -395,6 +395,14 @@
       const next = current.__hobunjiTerrainChunkOriginal
         || current.__hobunjiOutlineRenderPerfOriginal
         || current.__hobunjiHeldRenderOrderOriginal
+        || current.__hobunjiPlayerBodyComposerOriginal
+        || current.__hobunjiDrunkProneCompositionOriginal
+        || current.__hobunjiHeftrootBillboardOriginal
+        || current.__hobunjiCropReadyPresentationOriginal
+        || current.__hobunjiCropBillboardPresentationOriginal
+        || current.__hobunjiCropSpriteArtOriginal
+        || current.__hobunjiHeldSeedActionOriginal
+        || current.__hobunjiPerfDebugOriginal
         || null;
       if (typeof next !== 'function' || next === current) break;
       current = next;

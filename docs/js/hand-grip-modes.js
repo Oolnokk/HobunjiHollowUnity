@@ -35,7 +35,19 @@
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  // An artist-committed per-tool choice (authored via the Attack Editor's grip-mode
+  // dropdown and stored in HobunjiHandToolGrips, the same shared object the game
+  // reads) always wins. This is what makes the editor's grip-mode picker actually
+  // change gameplay instead of only the editor preview. Tools without a committed
+  // choice keep falling back to the tool-name heuristic below.
+  function storedModeForTool(value) {
+    const stored = global.HobunjiHandToolGrips?.gripModeForTool?.(value);
+    return modes[stored] ? stored : null;
+  }
+
   function defaultForTool(value) {
+    const stored = storedModeForTool(value);
+    if (stored) return stored;
     const key = normalizeKey(value);
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'palm-perpendicular';
     if (key.includes('hoe')) return 'palm-parallel';

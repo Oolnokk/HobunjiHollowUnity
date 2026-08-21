@@ -3541,7 +3541,15 @@
         const targetWorldYaw = sitInteraction?.phase === 'active'
           ? activeCameraAzimuthRad()
           : -player.angle + Math.PI / 2;
-        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y);
+        // playerMesh.rotation.y is this function's only body-yaw signal, but
+        // channels like weapon-idle-stance-body-yaw (see
+        // weapon-idle-body-yaw-runtime.js) never touch it directly — they
+        // only reach playerMesh through PlayerBodyTransformComposer's
+        // render-time world delta. Left out, the neck counters only the
+        // pre-delta resting yaw and the head renders off-target by whatever
+        // yaw the active channels are about to add.
+        const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0;
+        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y + composerYawDelta);
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -6602,6 +6610,11 @@
         getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
+        // Runtime grass toggle (see the Settings-tab checkbox and ?hideGrass=1
+        // for the other two ways in) — for visually inspecting anything
+        // world grass tends to bury, without a reload.
+        setGrassVisible: (visible) => applyGrassVisible(visible),
+        getGrassVisible: () => s_grass,
         addLivestockFromItem: (itemKey) => window.FarmAnimals.addFromItem(itemKey),
         addToStable: (itemKey) => window.FarmAnimals.addToStable(itemKey),
         getWorldLivestock: () => _loadWorldLivestock(),
@@ -11806,8 +11819,17 @@
       // (applyGearClothingToPlayerData/clothingSpriteForCosmetic/etc) now
       // live in js/equipment-panel.js — call via window.EquipmentPanel.*.
 
+      // Routes through the shared PNGPlaneAvatar.disposeAvatarModel() rather than
+      // disposing geometry/materials locally. Sibling systems attached under
+      // playerMesh alongside the avatar sprite (procedural-hand-frame-driver.js's
+      // hand rig, portrait-arm-cloud-mask.js's alpha texture) only tear down their
+      // per-avatar state when that shared entry point is called on the outgoing
+      // avatarRoot — bypassing it orphans them on every refresh instead of
+      // replacing them, e.g. a gear change leaving a stale extra pair of hands
+      // attached next to the new one.
       function disposeAvatarGroup(group) {
-        group?.traverse?.(node => {
+        if (window.PNGPlaneAvatar?.disposeAvatarModel) window.PNGPlaneAvatar.disposeAvatarModel(group);
+        else group?.traverse?.(node => {
           node.geometry?.dispose?.();
           if (node.material) {
             const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -19156,12 +19178,22 @@
         const sensitivity = Number(e.target.value);
         s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
       });
-      document.getElementById('settingGrass').addEventListener('change', e => {
-        s_grass = e.target.checked;
+      // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
+      // so a headless/console toggle doesn't need to click through Settings —
+      // visually verifying hands/feet/outlines against dense world grass
+      // otherwise means hunting for open ground first.
+      function applyGrassVisible(visible) {
+        s_grass = !!visible;
+        const settingCheckbox = document.getElementById('settingGrass');
+        if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
         window.BorderTerrain.setGrassVisible(s_grass);
-      });
+      }
+      document.getElementById('settingGrass').addEventListener('change', e => applyGrassVisible(e.target.checked));
+      // ?hideGrass=1 starts a session with grass already off, same convention
+      // as the 'tothal' force param above.
+      if (new URLSearchParams(location.search).get('hideGrass') === '1') applyGrassVisible(false);
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
       });
@@ -22504,6 +22536,7 @@
         renderer,
         camera,
         playerMesh,
+        toolHolder,
         companionObjects,
         npcWalkers,
         player,

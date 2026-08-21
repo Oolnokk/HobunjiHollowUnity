@@ -73,6 +73,10 @@
     manualChoice = !!manual;
     select.value = key;
     gripModes.setEditorMode(key);
+    // A deliberate manual pick is committed to the tool's shared grip-mode entry so
+    // gameplay (which reads the same HobunjiHandToolGrips data) uses it too, instead
+    // of this choice only ever affecting the editor preview.
+    if (manual) global.HobunjiHandToolGrips?.setGripMode?.(toolSelect?.value || '', key);
     const mode = gripModes.modes[key];
     if (help) help.textContent = `${mode.description} Palm clearance: ${gripModes.palmClearance.toFixed(2)} hand-height units.`;
     refreshJsonGripMode();
@@ -91,6 +95,13 @@
 
   select.addEventListener('change', () => applyMode(select.value, true));
   toolSelect?.addEventListener('change', syncForTool);
+
+  // HobunjiHandToolGrips loads its local draft slightly after this script runs
+  // (attack-editor-hand-direct-attachments.js does that later in the bootstrap
+  // order). Re-derive the default once that draft lands, and after any later
+  // commit/reset, so a previously-saved per-tool override actually shows up
+  // instead of being masked by the heuristic pick this script made at boot.
+  global.HobunjiHandToolGrips?.subscribe?.(() => { if (!manualChoice) chooseDefaultForTool(); });
 
   gripModes.subscribe?.(key => {
     if (!manualChoice && gripModes.modes[key]) select.value = key;
