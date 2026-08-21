@@ -32,18 +32,18 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
 // field that was deliberately reauthored in the supplied character profiles.
 (() => {
   const updates = { // Applied below to gameplay and every repository-backed authoring preview.
-    'engh-sho::male': { posterior: -12.038418352603554, perch: [-0.2823783104116402, 0.5175336815283819, 0], left: [0.23239172023200738, 0.5175336815283819, 0], right: [-0.2857975507773615, 0.5175336815283819, 0], pixel: [53.60656565656566, 128.5], height: 0.95, placement: 0.88 },
-    'mao-ao::female': { posterior: -4.463363665727293, perch: [-0.22083596137467643, 0.6289206407533765, 0], left: [0.1696868027743484, 0.6289206407533765, 0], right: [-0.22083596137467643, 0.6289206407533765, 0], pixel: [76.5545073375262, 114.5], height: 1, placement: 0.9, yCorrection: 'left matched right; supplied 0.1641 model-height mismatch' },
-    'rakakoan::male': { posterior: 10.400973996570313, perch: [-0.1653843922303157, 0.4130876873583539, 0], left: [0.17963798780078866, 0.4130876873583539, 0], right: [-0.18092749415903436, 0.4313452907519111, 0], pixel: [79.65683229813665, 77.5], height: 0.75, placement: 0.618 },
-    'mao-ao::male': { posterior: -8.020479181046285, perch: [-0.29650716367602115, 0.6947557240731601, 0], left: [0.18870577470681477, 0.6947557240731601, 0], right: [-0.28087406205430004, 0.6455541403639915, 0], pixel: [62.551070840197696, 125.5], placement: 0.95 },
-    'mashtzarr::male': { posterior: -6.271067638241565, perch: [-0.3080816783597182, 0.8820611278141346, 0], left: [0.2938287377558306, 0.471474644548211, 0], right: [-0.3481292844745114, 0.5072329547240978, 0], pixel: [63.960809102402024, 87.5], height: 1, placement: 0.6864406779661016 },
-    'tletingan::female': { posterior: 0.8364390597132664, perch: [-0.18362271672504038, 0.30917820531717677, 0], left: [0.19339659287777322, 0.38426858848533485, 0], right: [-0.19326419458235525, 0.38220450093854685, 0], pixel: [67.36241610738254, 99.5], height: 0.85, placement: 0.6 },
-    'tletingan::male': { posterior: 3.824088863116206, perch: [-0.17173123931623935, 0.5355, 0], left: [0.22770354382724423, 0.42663710735156957, 0], right: [-0.2448354156580218, 0.4465232083661127, 0], pixel: [59.09264957264957, 108.5], height: 0.85, placement: 0.675 },
-    'kenkari::female': { posterior: 13.825129117684007, perch: [-0.13819980616286182, 0.29929878500014695, 0], left: [0.14082517743613882, 0.29929878500014695, 0], right: [-0.15160576743172532, 0.25011972083640993, 0], pixel: [87.90841750841751, 82.5], height: 0.75, placement: 0.51 },
-    'mashtzarr::female': { posterior: -4.607416097678491, perch: [-0.21765356423931137, 0.29498687183448, 0], left: [0.30553153725919435, 0.39823082948935073, 0], right: [-0.2938000697183753, 0.37168801102709437, 0], pixel: [72.13592233009709, 97.5], height: 1, placement: 0.6440677966101696 },
-    'engh-sho::female': { posterior: -7.976049663721662, perch: [-0.13091066725197542, 0.69825, 0], left: [0.20505349784094706, 0.4967497459859368, 0], right: [-0.24815066240089945, 0.46042886220274515, 0], pixel: [71.9398595258999, 112.5], height: 0.95, placement: 0.8 },
+    'mashtzarr::male': { posterior: 0.6880202107561688, perch: [-0.3080816783597182, 0.8820611278141346, 0], left: [0.2938287377558306, 0.471474644548211, 0], right: [-0.3481292844745114, 0.5072329547240978, 0], pixel: [63.960809102402024, 87.5], height: 1, placement: 0.755, bodyScale: 1.18, handScale: 0.925, footScale: 1.175, armLength: 0 },
+    'tletingan::male': { posterior: 8.329594593937665, perch: [-0.17173123931623935, 0.5355, 0], left: [0.22770354382724423, 0.42663710735156957, 0], right: [-0.2448354156580218, 0.4465232083661127, 0], pixel: [59.09264957264957, 108.5], height: 0.85, placement: 0.645, bodyScale: 0.85, handScale: 0.9, footScale: 1, armLength: 6 },
+    'kenkari::male': { posterior: 7.633738099540614, perch: [-0.18055321970300925, 0.37969897363327487, 0], left: [0.17819817802695415, 0.27810760526210354, 0], right: [-0.18055321970300925, 0.37969897363327487, 0], pixel: [79.65683229813665, 77.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 1, footScale: 1, armLength: 0 },
+    'mao-ao::male': { posterior: -9.686481272760854, perch: [-0.29650716367602115, 0.6947557240731601, 0], left: [0.19067248465844266, 0.6947557240731601, 0], right: [-0.28087406205430004, 0.6455541403639915, 0], pixel: [62.551070840197696, 125.5], placement: 0.95, bodyScale: 1, handScale: 1.1, footScale: 1.05, armLength: 0 },
+    'engh-sho::male': { posterior: -12.036557901087457, perch: [-0.2823783104116402, 0.5175336815283819, 0], left: [0.2721813782445264, 0.6838406837818225, 0], right: [-0.28930388062923146, 0.7000103424366998, 0], pixel: [53.60656565656566, 128.5], height: 0.95, placement: 1.005, bodyScale: 0.95, handScale: 1.15, footScale: 1.275, armLength: 0 },
+    'mao-ao::female': { posterior: -4.30199269420537, perch: [-0.22083596137467643, 0.6289206407533765, 0], left: [0.1771042396564939, 0.6511546407522855, 0], right: [-0.23898599170593354, 0.646996571654354, 0], pixel: [76.5545073375262, 114.5], height: 1, placement: 0.925, bodyScale: 1, handScale: 1, footScale: 1.025, armLength: 0 },
+    'engh-sho::female': { posterior: -8.338179933841042, perch: [-0.13091066725197542, 0.69825, 0], left: [0.20505349784094706, 0.4967497459859368, 0], right: [-0.24815066240089945, 0.46042886220274515, 0], pixel: [71.9398595258999, 112.5], height: 0.95, placement: 0.975, bodyScale: 0.95, handScale: 1.225, footScale: 1.325, armLength: 0 },
+    'mashtzarr::female': { posterior: -1.540326776219386, perch: [-0.21765356423931137, 0.29498687183448, 0], left: [0.30553153725919435, 0.39823082948935073, 0], right: [-0.2938000697183753, 0.37168801102709437, 0], pixel: [72.13592233009709, 97.5], height: 1, placement: 0.79, bodyScale: 1.18, handScale: 0.9, footScale: 1.125, armLength: 0 },
+    'kenkari::female': { posterior: 14.996754350465022, perch: [-0.13819980616286182, 0.29929878500014695, 0], left: [0.1629792650553279, 0.29929878500014695, 0], right: [-0.16564616738866406, 0.25011972083640993, 0], pixel: [87.90841750841751, 82.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 0.925, footScale: 1, armLength: 0 },
+    'tletingan::female': { posterior: -1.3735593215106594, perch: [-0.18362271672504038, 0.30917820531717677, 0], left: [0.19339659287777322, 0.38426858848533485, 0], right: [-0.19326419458235525, 0.38220450093854685, 0], pixel: [67.36241610738254, 99.5], height: 0.85, placement: 0.62, bodyScale: 0.85, handScale: 0.925, footScale: 1.025, armLength: 5 },
   };
-  const sharedProfileAliases = { 'kenkari::male': 'rakakoan::male', 'rakakoan::female': 'kenkari::female' }; // Reuses the confirmed gender-matched parrot rig geometry below.
+  const sharedProfileAliases = { 'rakakoan::male': 'kenkari::male', 'rakakoan::female': 'kenkari::female' }; // Reuses the confirmed gender-matched parrot rig geometry below.
   for (const [aliasKey, sourceKey] of Object.entries(sharedProfileAliases)) updates[aliasKey] = { ...updates[sourceKey], sharedFrom: sourceKey };
   const identityAnchor = ([x, y, z]) => ({ position: { x, y, z }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }); // Builds the exact transform shape consumed by rig profiles.
   for (const [key, authored] of Object.entries(updates)) {
@@ -72,30 +72,29 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
       source: 'rig-anchor-gizmo',
       coordinateSpace: 'character-visual-local',
       version: 1,
-      ...(authored.yCorrection ? { yAlignmentCorrection: authored.yCorrection } : {}),
       ...(authored.sharedFrom ? { sharedFrom: authored.sharedFrom } : {}),
     };
     profile.anatomy = {
       portraitVerticalPlacementRatio: authored.placement,
-      handScale: 1,
-      footScale: 1,
-      armLengthHeightPercentOffset: 0,
+      portraitScale: authored.bodyScale,
+      handScale: authored.handScale,
+      footScale: authored.footScale,
+      armLengthHeightPercentOffset: authored.armLength,
       version: 1,
     }; // Keeps species/gender proportions and free-hand reach beside the anchors they visually depend on.
     profile.characterAttachZDefaultVersion = 1;
   }
-  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, maoAoFemaleShoulderYCorrected: true, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
+  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, exactSuppliedProfiles: 10, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
 })();
 
-// Apply profile-backed portrait/limb proportions, including the static Mashtzarr
-// portrait-scale correction. Animation Author loads shared configs after this
-// file, so expose an idempotent hook instead of interrupting its bootstrap.
-window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, maoAoFemaleShoulderYCorrected: true, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
+// Apply profile-backed portrait/limb proportions, including per-gender body
+// scale. Animation Author loads shared configs after this file, so expose an
+// idempotent hook instead of interrupting its bootstrap.
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, exactSuppliedProfiles: 10, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
 (() => {
   const applyAttachmentRigProfileCorrections = () => {
-    const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives the literal Mashtzarr values once the shared repository config exists.
+    const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives the authored anatomy values once the shared repository config exists.
     if (!pngAvatarConfig?.portraitScaleBySpecies || !pngAvatarConfig?.portraitVerticalPlacement) return false;
-    pngAvatarConfig.portraitScaleBySpecies.mashtzarr = 1.18;
     pngAvatarConfig.proceduralFeet ||= {};
     pngAvatarConfig.proceduralFeet.footScale ||= { default: 1 };
     const handScaleUpdates = []; // Defers hand-profile mutation until that later-loaded runtime exists.
@@ -105,11 +104,20 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'p
       const anatomy = profile?.anatomy || {};
       if (!species || !gender) continue;
       const placement = Number(anatomy.portraitVerticalPlacementRatio);
+      const portraitScale = Number(anatomy.portraitScale);
       const handScale = Number(anatomy.handScale);
       const footScale = Number(anatomy.footScale);
       if (Number.isFinite(placement)) {
         pngAvatarConfig.portraitVerticalPlacement[species] ||= {};
         pngAvatarConfig.portraitVerticalPlacement[species][gender] = placement;
+      }
+      if (Number.isFinite(portraitScale) && portraitScale > 0) {
+        const legacyScale = Number(pngAvatarConfig.portraitScaleBySpecies[species]); // Preserves old species-only configs as the fallback for unspecified genders.
+        const scaleProfile = typeof pngAvatarConfig.portraitScaleBySpecies[species] === 'object'
+          ? pngAvatarConfig.portraitScaleBySpecies[species]
+          : { default: Number.isFinite(legacyScale) && legacyScale > 0 ? legacyScale : 1 };
+        scaleProfile[gender] = portraitScale;
+        pngAvatarConfig.portraitScaleBySpecies[species] = scaleProfile;
       }
       if (Number.isFinite(footScale) && footScale > 0) {
         pngAvatarConfig.proceduralFeet.footScale[species] ||= {};

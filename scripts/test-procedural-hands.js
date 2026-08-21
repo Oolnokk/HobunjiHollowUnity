@@ -33,6 +33,7 @@ const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
 const attachmentRigProfileSource = read('docs/config/attachment-rig-profiles.js'); // Executed below against the Animation Author's config-late loading order.
 const proceduralFeetSource = read('docs/js/procedural-leg-animation.js'); // Validates the shared gameplay/shoulder-rig foot runtime and nested-tool asset resolution.
+const furnitureAuthorSource = read('docs/tools/furniture-avatar-author/index.html'); // Guards the legacy seated-avatar fallback after body scales become gender maps.
 const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Confirms child anatomy is driven by authored NPC metadata rather than a name-only runtime exception.
 const pngAvatarSource = read('docs/js/png-plane-avatar.js'); // Executes the real child-scale classifier against Garanki's authored record below.
 
@@ -130,9 +131,13 @@ assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver mus
 const garanki = npcDatabase.npcs.find(npc => npc.id === 'garanki_gabu');
 assert(garanki?.tags?.includes('child'), 'Garanki must use the shared child avatar/anatomy scale marker');
 assert.strictEqual(garanki.ageBand, 'child', 'Garanki child classification must remain visible in authoring tools');
-const pngAvatarSandbox = { window: { SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, assets: { pngPlaneAvatar: { portraitScaleBySpecies: { 'mao-ao': 1 }, childScaleMultiplier: 0.5, childMarkers: { roles: ['child'], tags: ['child'] } } } } } } }; // Mirrors the production child-scale configuration without constructing Three.js meshes.
+const pngAvatarSandbox = { window: { SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, assets: { pngPlaneAvatar: { portraitScaleBySpecies: { 'mao-ao': 1, 'engh-sho': { default: 0.95, male: 1.1, female: 0.9 } }, childScaleMultiplier: 0.5, childMarkers: { roles: ['child'], tags: ['child'] } } } } } } }; // Mirrors legacy and gender-specific production scales without constructing Three.js meshes.
 vm.runInNewContext(pngAvatarSource, pngAvatarSandbox, { filename: 'png-plane-avatar.js' });
 assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ npcRecord: garanki }), 0.5, 'Garanki must resolve to the configured child anatomy multiplier');
+assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ speciesId: 'engh-sho', gender: 'male' }), 1.1, 'male portrait scale must resolve independently');
+assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ speciesId: 'engh-sho', gender: 'female' }), 0.9, 'female portrait scale must resolve independently');
+assert.match(furnitureAuthorSource, /seatedPortraitScaleMultiplier\(species,gender\)/, 'furniture avatar fallback must accept gender-specific portrait scales');
+assert.match(furnitureAuthorSource, /entry\[String\(gender\|\|''\).*\?\?entry\.default/, 'furniture avatar fallback must preserve the species default when a gender override is absent');
 assert.match(proceduralFeetSource, /__HobunjiProceduralFeetDocsBase/, 'nested author tools must provide an explicit docs root to the gameplay feet runtime');
 assert.match(proceduralFeetSource, /function loaderForThree/, 'shoulder-rig feet must load their actual GLBs with the author preview’s Three.js version');
 
@@ -238,13 +243,16 @@ assert.match(animationAuthorSource, /authorPairedRuntimeUrl \|\| rawUrl\(path\)/
 assert.match(animationAuthorSource, /installShoulderRigFeetPreviewV1529/, 'shoulder rig must attach the gameplay feet preview to character actors');
 assert.match(animationAuthorSource, /ProceduralLegAnimation\.attach\(state\.three\.THREE, actor\.visualOffset/, 'feet must share the floor-relative parent used by hands and rig anchors');
 assert.match(animationAuthorSource, /rigFeetPreview\?\.dispose/, 'actor removal must dispose shoulder-rig foot resources');
-for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesHandScale', 'maaSpeciesFootScale', 'maaArmLengthOffset']) {
+for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpeciesHandScale', 'maaSpeciesFootScale', 'maaArmLengthOffset']) {
   assert(animationAuthorSource.includes(`id="${controlId}"`), `Shoulder Rig must expose ${controlId} as a live species/gender anatomy control`);
 }
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
-assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v7/, 'anatomy-bearing rig profiles must use the v7 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.30'/, 'the published author title must identify the anatomy-control build');
+assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.31'/, 'the published author title must identify the reference-NPC build');
+assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');
+assert.match(animationAuthorSource, /absent from animationAuthor\.actors, selection, gizmos, and exports/, 'reference NPC must remain outside every interactive/exported actor path');
+assert.match(animationAuthorSource, /id="maaRandomizeReferenceNpc"/, 'Shoulder Rig must offer one-button reference NPC randomization');
 assert.match(animationAuthorSource, /attachmentProfileReady = window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'Animation Author must apply deferred attachment-profile corrections after its repository config loads');
 assert.match(animationAuthorSource, /Attachment rig profile corrections could not find/, 'deferred config failures must appear in the author\'s built-in Diagnostics panel');
 assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
@@ -262,37 +270,39 @@ vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filen
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'pending');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'pending');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.count, 12);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.exactSuppliedProfiles, 10);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 12);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
 const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
 const expectedAuthoredRigs = {
-  'engh-sho::male': [-12.038418352603554, 0.23239172023200738, 0.5175336815283819, -0.2857975507773615, 0.5175336815283819],
-  'mao-ao::female': [-4.463363665727293, 0.1696868027743484, 0.6289206407533765, -0.22083596137467643, 0.6289206407533765],
-  'rakakoan::male': [10.400973996570313, 0.17963798780078866, 0.4130876873583539, -0.18092749415903436, 0.4313452907519111],
-  'kenkari::male': [10.400973996570313, 0.17963798780078866, 0.4130876873583539, -0.18092749415903436, 0.4313452907519111],
-  'mao-ao::male': [-8.020479181046285, 0.18870577470681477, 0.6947557240731601, -0.28087406205430004, 0.6455541403639915],
-  'mashtzarr::male': [-6.271067638241565, 0.2938287377558306, 0.471474644548211, -0.3481292844745114, 0.5072329547240978],
-  'tletingan::female': [0.8364390597132664, 0.19339659287777322, 0.38426858848533485, -0.19326419458235525, 0.38220450093854685],
-  'tletingan::male': [3.824088863116206, 0.22770354382724423, 0.42663710735156957, -0.2448354156580218, 0.4465232083661127],
-  'kenkari::female': [13.825129117684007, 0.14082517743613882, 0.29929878500014695, -0.15160576743172532, 0.25011972083640993],
-  'rakakoan::female': [13.825129117684007, 0.14082517743613882, 0.29929878500014695, -0.15160576743172532, 0.25011972083640993],
-  'mashtzarr::female': [-4.607416097678491, 0.30553153725919435, 0.39823082948935073, -0.2938000697183753, 0.37168801102709437],
-  'engh-sho::female': [-7.976049663721662, 0.20505349784094706, 0.4967497459859368, -0.24815066240089945, 0.46042886220274515],
+  'mashtzarr::male': [0.6880202107561688, 0.2938287377558306, 0.471474644548211, -0.3481292844745114, 0.5072329547240978, 0.755, 1.18, 0.925, 1.175, 0],
+  'tletingan::male': [8.329594593937665, 0.22770354382724423, 0.42663710735156957, -0.2448354156580218, 0.4465232083661127, 0.645, 0.85, 0.9, 1, 6],
+  'kenkari::male': [7.633738099540614, 0.17819817802695415, 0.27810760526210354, -0.18055321970300925, 0.37969897363327487, 0.51, 0.75, 1, 1, 0],
+  'rakakoan::male': [7.633738099540614, 0.17819817802695415, 0.27810760526210354, -0.18055321970300925, 0.37969897363327487, 0.51, 0.75, 1, 1, 0],
+  'mao-ao::male': [-9.686481272760854, 0.19067248465844266, 0.6947557240731601, -0.28087406205430004, 0.6455541403639915, 0.95, 1, 1.1, 1.05, 0],
+  'engh-sho::male': [-12.036557901087457, 0.2721813782445264, 0.6838406837818225, -0.28930388062923146, 0.7000103424366998, 1.005, 0.95, 1.15, 1.275, 0],
+  'mao-ao::female': [-4.30199269420537, 0.1771042396564939, 0.6511546407522855, -0.23898599170593354, 0.646996571654354, 0.925, 1, 1, 1.025, 0],
+  'engh-sho::female': [-8.338179933841042, 0.20505349784094706, 0.4967497459859368, -0.24815066240089945, 0.46042886220274515, 0.975, 0.95, 1.225, 1.325, 0],
+  'mashtzarr::female': [-1.540326776219386, 0.30553153725919435, 0.39823082948935073, -0.2938000697183753, 0.37168801102709437, 0.79, 1.18, 0.9, 1.125, 0],
+  'kenkari::female': [14.996754350465022, 0.1629792650553279, 0.29929878500014695, -0.16564616738866406, 0.25011972083640993, 0.51, 0.75, 0.925, 1, 0],
+  'rakakoan::female': [14.996754350465022, 0.1629792650553279, 0.29929878500014695, -0.16564616738866406, 0.25011972083640993, 0.51, 0.75, 0.925, 1, 0],
+  'tletingan::female': [-1.3735593215106594, 0.19339659287777322, 0.38426858848533485, -0.19326419458235525, 0.38220450093854685, 0.62, 0.85, 0.925, 1.025, 5],
 };
-for (const [key, [posterior, leftX, leftY, rightX, rightY]] of Object.entries(expectedAuthoredRigs)) {
+for (const [key, [posterior, leftX, leftY, rightX, rightY, placement, bodyScale, handScale, footScale, armLength]] of Object.entries(expectedAuthoredRigs)) {
   const profile = authoredCharacterProfiles[key];
   assert.strictEqual(profile.posteriorRule.heightPercentOffset, posterior, `${key} must retain its authored posterior offset`);
   assert.strictEqual(profile.anchors.leftHandShoulder.position.x, leftX, `${key} must retain its authored left shoulder X`);
   assert.strictEqual(profile.anchors.leftHandShoulder.position.y, leftY, `${key} must retain its reviewed left shoulder Y`);
   assert.strictEqual(profile.anchors.rightHandShoulder.position.x, rightX, `${key} must retain its authored right shoulder X`);
   assert.strictEqual(profile.anchors.rightHandShoulder.position.y, rightY, `${key} must retain its reviewed right shoulder Y`);
-  assert.strictEqual(profile.anatomy.portraitVerticalPlacementRatio, profile.shoulderPerchRule.portraitVerticalPlacementRatio, `${key} must export its portrait Y placement as anatomy`);
-  assert.strictEqual(profile.anatomy.handScale, 1, `${key} must export an independent hand scale`);
-  assert.strictEqual(profile.anatomy.footScale, 1, `${key} must export an independent foot scale`);
-  assert.strictEqual(profile.anatomy.armLengthHeightPercentOffset, 0, `${key} must export a free-hand arm-length offset`);
+  assert.strictEqual(profile.anatomy.portraitVerticalPlacementRatio, placement, `${key} must export its supplied gender-specific portrait Y placement`);
+  assert.strictEqual(profile.shoulderPerchRule.portraitVerticalPlacementRatio, placement, `${key} legacy Y metadata must match anatomy`);
+  assert.strictEqual(profile.anatomy.portraitScale, bodyScale, `${key} must export an independent body scale`);
+  assert.strictEqual(profile.anatomy.handScale, handScale, `${key} must export its supplied hand scale`);
+  assert.strictEqual(profile.anatomy.footScale, footScale, `${key} must export its supplied foot scale`);
+  assert.strictEqual(profile.anatomy.armLengthHeightPercentOffset, armLength, `${key} must export its supplied free-hand arm length`);
 }
-assert.match(authoredCharacterProfiles['mao-ao::female'].handShoulderRule.yAlignmentCorrection, /left matched right/, 'the Mao’ao female shoulder-Y correction must remain documented');
-assert.strictEqual(authoredCharacterProfiles['kenkari::male'].handShoulderRule.sharedFrom, 'rakakoan::male');
+assert.strictEqual(authoredCharacterProfiles['rakakoan::male'].handShoulderRule.sharedFrom, 'kenkari::male');
 assert.strictEqual(authoredCharacterProfiles['rakakoan::female'].handShoulderRule.sharedFrom, 'kenkari::female');
 attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
   portraitScaleBySpecies: {}, portraitVerticalPlacement: {}, proceduralFeet: { footScale: { default: 1 } },
@@ -303,16 +313,18 @@ attachmentProfileWindow.HobunjiHandModelProfiles = {
   mutate(mutator) { mutator(this.data); },
 };
 attachmentProfileWindow.applyHobunjiAttachmentRigProfileCorrections();
-assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr, 1.18);
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr.male, 1.18);
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr.female, 1.18);
 assert.deepStrictEqual(
   { ...attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement.mashtzarr },
-  { male: 0.6864406779661016, female: 0.6440677966101696 },
+  { male: 0.755, female: 0.79 },
 );
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'applied');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'applied');
-assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement['engh-sho'].male, 0.88, 'profile correction must apply exported portrait Y placement');
-assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['engh-sho'].male, 1, 'profile correction must apply exported foot scale');
-assert.strictEqual(appliedHandScales['engh-sho'].male, 1, 'profile correction must apply exported hand scale after that runtime loads');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement['engh-sho'].male, 1.005, 'profile correction must apply exported portrait Y placement');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies['engh-sho'].male, 0.95, 'profile correction must apply exported gender-specific body scale');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['engh-sho'].male, 1.275, 'profile correction must apply exported foot scale');
+assert.strictEqual(appliedHandScales['engh-sho'].male, 1.15, 'profile correction must apply exported hand scale after that runtime loads');
 
 const authorPreviewUrl = new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/example/docs/tools/animation-author/index.html'); // Mirrors the immutable per-commit test URL used for this author.
 const authorDocsBase = new URL('../../', authorPreviewUrl);
