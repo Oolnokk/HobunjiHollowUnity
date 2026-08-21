@@ -102,8 +102,8 @@
     for (let i = 0; i < positions.length; i += 3) { positions[i] += shiftX; positions[i + 2] += shiftY; }
 
     // exitCol/exitRow used to be hardcoded to local (0,0)+shift — a leftover
-    // from before buildClusterChain moved the entrance off the origin (see
-    // carveMazeCavern's own entranceZ). That silently broke the "exact
+    // from before the entrance moved off the origin (see carveMazeCavern's
+    // own entranceZ). That silently broke the "exact
     // guaranteed-walkable spawn tile" path game.js's loadBuildingScene uses
     // for cavern dens specifically (its _pendingEntrySpawnFromExit comment:
     // the generic buildingSpawnFromExit heuristic "can land outside the

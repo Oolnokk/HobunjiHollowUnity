@@ -75,7 +75,6 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
       <div class="checkRow"><input id="tileOverlayChk" type="checkbox"><label for="tileOverlayChk">Walkable tile overlay (green = floor)</label></div>
       <div class="checkRow"><input id="collisionOverlayChk" type="checkbox"><label for="collisionOverlayChk">Colliding tile overlay (red = solid)</label></div>
       <div class="checkRow"><input id="gridLinesChk" type="checkbox"><label for="gridLinesChk">Tile grid lines</label></div>
-      <div class="checkRow"><input id="wallClipOverlayChk" type="checkbox"><label for="wallClipOverlayChk">Wall-clip overlay (yellow = auto-fixed, orange = flagged)</label></div>
       <div class="checkRow"><input id="probeVizChk" type="checkbox"><label for="probeVizChk">Probe shape visualizer (follows camera target)</label></div>
     </div>
     <div id="sidebarScroll">
@@ -181,10 +180,9 @@ const FIELD_GROUPS = [
     ['wallGridClaim', 'Wall claim threshold', .05, .9, .01, .35],
     ['entranceLength', 'Entrance length (unused by engine)', 1, 20, 1, 8],
   ] },
-  { title: 'Connector tunnels', fields: [
-    ['connectorProbeScale', 'Rail probe width ×', .2, 1, .01, .6],
-    ['connectorBrushScale', 'Rail brush width ×', .2, 1, .01, .65],
-    ['connectorRailGap', 'Rail spacing (× rail probe radius)', 0, 1, .01, .55],
+  { title: 'Boundary collision', fields: [
+    ['deformedFloorMinCoverage', 'Deformed-tile min floor coverage (0 = off)', 0, 1, .01, 0],
+    ['cullTouchTolerance', 'Cull touch tolerance', 0, .2, .002, .01],
   ] },
 ];
 
@@ -365,60 +363,22 @@ function rebuildGridLines(result) {
 }
 $('gridLinesChk').addEventListener('change', () => { if (gridLinesMesh) gridLinesMesh.visible = $('gridLinesChk').checked; });
 
-// ── Wall-clip diagnostic overlay — visualizes exactly what
-// detectWallClipTiles (cavern-sculptor.js) found: tiles whose rendered
-// mesh had wall geometry clipped into their own floor rect. Yellow =
-// auto-corrected (the engine already pushed that wall out a ring, so
-// this is just showing where it acted); orange = flagged but left alone
-// (>=50% of the tile's own area was wall — likely a mis-claimed tile,
-// not a simple bump, so the engine didn't guess a fix). ─────────────────
-let wallClipOverlayMesh = null;
-function rebuildWallClipOverlay(result) {
-  if (wallClipOverlayMesh) { scene.remove(wallClipOverlayMesh); wallClipOverlayMesh.geometry.dispose(); wallClipOverlayMesh.material.dispose(); wallClipOverlayMesh = null; }
-  const positions = [], colors = [], indices = [];
-  let vi = 0;
-  const y = 0.08;
-  const addTile = (c, r, color) => {
-    positions.push(c, y, r, c + 1, y, r, c + 1, y, r + 1, c, y, r + 1);
-    for (let i = 0; i < 4; i++) colors.push(color[0], color[1], color[2]);
-    indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
-    vi += 4;
-  };
-  for (const [c, r] of (result.wallClipMinorTiles || [])) addTile(c, r, [0.95, 0.85, 0.2]);
-  for (const [c, r] of (result.wallClipMajorTiles || [])) addTile(c, r, [0.95, 0.55, 0.15]);
-  if (!positions.length) return;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geo.setIndex(indices);
-  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
-  wallClipOverlayMesh = new THREE.Mesh(geo, mat);
-  wallClipOverlayMesh.renderOrder = 998;
-  wallClipOverlayMesh.visible = $('wallClipOverlayChk').checked;
-  scene.add(wallClipOverlayMesh);
-}
-$('wallClipOverlayChk').addEventListener('change', () => { if (wallClipOverlayMesh) wallClipOverlayMesh.visible = $('wallClipOverlayChk').checked; });
 
-// ── Probe shape visualizer — two wireframe ellipsoids (unit sphere scaled
-// per-axis) showing the actual detection-probe shape at its actual size:
-// the normal cluster probe (probeRadius xz, the engine's real computed
-// probeYRadius for y) and the narrower connector probe next to it, both
+// ── Probe shape visualizer — a wireframe ellipsoid (unit sphere scaled
+// per-axis) showing the actual detection-probe shape at its actual size
+// (probeRadius xz, the engine's real computed probeYRadius for y),
 // tracking the current camera target so "orbit to a spot, toggle this on"
 // compares the probe directly against whatever corridor is in view. ─────
 const probeGeo = new THREE.SphereGeometry(1, 20, 14);
 const clusterProbeMesh = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: 0x6aa7ff, wireframe: true, transparent: true, opacity: 0.55 }));
-const connectorProbeMesh = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: 0xfb7185, wireframe: true, transparent: true, opacity: 0.55 }));
-clusterProbeMesh.visible = connectorProbeMesh.visible = false;
-scene.add(clusterProbeMesh, connectorProbeMesh);
+clusterProbeMesh.visible = false;
+scene.add(clusterProbeMesh);
 $('probeVizChk').addEventListener('change', () => {
-  const on = $('probeVizChk').checked;
-  clusterProbeMesh.visible = connectorProbeMesh.visible = on;
+  clusterProbeMesh.visible = $('probeVizChk').checked;
 });
 function updateProbeVizScale(opts, result) {
   const pr = opts.probeRadius, pyr = result.probeYRadius;
   clusterProbeMesh.scale.set(pr, pyr, pr);
-  const cpr = pr * (opts.connectorProbeScale ?? .6);
-  connectorProbeMesh.scale.set(cpr, pyr, cpr);
 }
 // Live preview — probeYRadius is a cheap pure formula (matches
 // carveMazeCavern's own `probeRadius * probeYStretch` exactly), so the
@@ -577,13 +537,12 @@ function renderStats(result, genMs, wallCheck, seedText) {
   const ceilOk = ceilingMargin > 0.05;
   $('statsPanel').innerHTML = `
     <div>Seed: <b>${escapeHtml(seedText)}</b> &nbsp; Gen time: <b>${Math.round(genMs)} ms</b></div>
-    <div>Floor tiles: <b>${result.claimed.size}</b> &nbsp; Triangles: <b>${Math.round(result.mesh.indices.length / 3)}</b></div>
+    <div>Floor tiles: <b>${result.claimed.size}</b> &nbsp; Triangles: <b>${Math.round(result.mesh.indices.length / 3)}</b> &nbsp; Deformed tiles dropped: <b>${result.deformedTilesDropped}</b></div>
     <div>Wall coverage: <b style="color:${wallOk ? 'var(--ok)' : 'var(--bad)'}">${wallCheck.edgesMissingWall}/${wallCheck.totalBoundaryEdges} missing (${wallCheck.pct}%)</b></div>
     <div>Sweep levels (floor=0): <b>${levels.map(l => l.toFixed(2)).join(', ')}</b></div>
     <div>Probe Y radius: <b>${result.probeYRadius.toFixed(3)}</b> &nbsp; Domain top Y: <b>${result.domainTopY.toFixed(2)}</b></div>
     <div>Ceiling margin: <b style="color:${ceilOk ? 'var(--ok)' : 'var(--bad)'}">${ceilingMargin.toFixed(2)}</b> ${ceilOk ? '(open)' : '(risk of a capped ceiling)'}</div>
     <div>Sculpt volume dims: <b>${result.dims.x.toFixed(1)} × ${result.dims.y.toFixed(1)} × ${result.dims.z.toFixed(1)}</b></div>
-    <div>Wall-clip tiles: <b style="color:var(--warn)">${(result.wallClipMinorTiles || []).length} auto-fixed</b>, <b style="color:${(result.wallClipMajorTiles || []).length ? 'var(--bad)' : 'var(--ok)'}">${(result.wallClipMajorTiles || []).length} flagged</b></div>
   `;
 }
 
@@ -618,7 +577,6 @@ function runGenerate() {
     rebuildTileOverlay(result);
     rebuildCollisionOverlay(result);
     rebuildGridLines(result);
-    rebuildWallClipOverlay(result);
     updateProbeVizScale(opts, result);
 
     let ex = 0, ez = 0;
@@ -670,9 +628,6 @@ $('copyOptsBtn').addEventListener('click', async () => {
 function tick() {
   if (clusterProbeMesh.visible) {
     clusterProbeMesh.position.set(camTarget.x, camTarget.y, camTarget.z);
-    // Offset in world X so the two ellipsoids sit side by side instead of
-    // fully overlapping — orbit the camera around either to inspect it.
-    connectorProbeMesh.position.set(camTarget.x + Math.max(clusterProbeMesh.scale.x, connectorProbeMesh.scale.x) * 2.2, camTarget.y, camTarget.z);
   }
   renderer.render(scene, camera);
   requestAnimationFrame(tick);

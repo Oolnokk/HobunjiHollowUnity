@@ -266,21 +266,6 @@
       z: p0.z * b0 + p1.z * b1 + p2.z * b2 + p3.z * b3,
     };
   }
-  // Offsets a dense point list sideways in the XZ plane by `distance`,
-  // using each point's own local tangent (from its neighbors) rather than
-  // one fixed direction — needed for a bent/curved path, where "sideways"
-  // rotates along with the curve. Used to carve a connector as two
-  // parallel rails instead of inflating a single centerline probe (see
-  // buildClusterChain's docblock).
-  function offsetPathPerp(points, distance) {
-    return points.map((p, i) => {
-      const prev = points[Math.max(0, i - 1)], next = points[Math.min(points.length - 1, i + 1)];
-      const tx = next.x - prev.x, tz = next.z - prev.z;
-      const len = Math.hypot(tx, tz) || 1;
-      return { x: p.x + (-tz / len) * distance, y: p.y, z: p.z + (tx / len) * distance };
-    });
-  }
-
   function sampleSpline(points, samplesPerSeg) {
     if (points.length < 2) return points.slice();
     const pad = [points[0], ...points, points[points.length - 1]];
@@ -332,131 +317,6 @@
       paths.push(path);
     }
     return paths;
-  }
-
-  // Neuron-shaped topology: chaotic branchy "cluster" zones (each one its
-  // own small buildMazePaths network, clamped to a compact radius so it
-  // reads as one dense pocket instead of sprawling) chained together by
-  // long, thin, bent single-corridor connectors — soma/dendrite clusters
-  // linked by curved axon-like segments, the way a real neuron's shape
-  // (just far more chaotic/random about it) suggested a maze could hide a
-  // cluster's own contents (animals, ore, the nest) behind a narrow
-  // approach instead of exposing the whole network from any one corridor.
-  // Detection/sight-blocking rides on real facts about this codebase, not
-  // extra machinery: creature aggro (updateHostiles) is pure straight-line
-  // distance, no line-of-sight raycast at all — so a connector only needs
-  // to keep consecutive cluster centers farther apart than any species'
-  // aggroRangePx (a handful of tiles) for the next cluster's inhabitants to
-  // stay oblivious until the player is actually close; and the taller
-  // walls (see carveMazeCavern's multi-level opts.levels sweep) plus a
-  // narrower probe/brush radius
-  // on connector-only carves (see the caller) block the isometric camera's
-  // sightline around each bend, hiding the next cluster's mesh/contents
-  // until the player rounds it. Returns a flat list of
-  // {points, narrow} path descriptors — narrow ones get a tighter probe/
-  // brush radius when carved (see carveMazeCavern), everything else uses
-  // the normal cluster-interior radius.
-  function buildClusterChain(opts, rng, boundX, boundZ, entranceZ) {
-    // /4.5 (was /6) and the 1.35x spacing bump below both track the
-    // starter volume's doubled XZ area (see carveMazeCavern's refArea) —
-    // domain size and this chain's own reach used to be totally
-    // decoupled, so doubling the domain alone left dens generating the
-    // same footprint with more unused margin around them, not bigger dens
-    // (confirmed: floor tile counts didn't move at all headlessly). More
-    // clusters plus a longer reach between them is what actually spends
-    // that extra room on real content.
-    const clusterCount = Math.max(2, Math.round(opts.branchCount / 4.5));
-    const branchesPerCluster = Math.max(3, Math.round(opts.branchCount / clusterCount));
-    // Half-length splines within a cluster (per the halved tile size —
-    // see cavern-generator.js) keep each cluster's own chaotic tangle
-    // covering roughly the same tile footprint it did before the grid got
-    // twice as fine, rather than ballooning along with it.
-    const clusterBranchLength = opts.branchLength * .5;
-    const clusterRadius = clusterBranchLength * 2.4 * 1.35;
-    const connectorLength = Math.max(opts.branchLength * 1.2, clusterRadius * .9) * 1.35;
-
-    const out = [];
-    let anchor = { x: 0, z: entranceZ };
-    let incomingDir = { x: 0, z: -1 }; // heading away from the entrance into the den
-
-    for (let ci = 0; ci < clusterCount; ci++) {
-      // A short local root spanning perpendicular to the direction this
-      // cluster was approached from — same "root spans width, branches
-      // explore depth" logic carveMazeCavern's own whole-network root used
-      // to use, just scoped down to one cluster instead of the whole den.
-      const perp = { x: -incomingDir.z, z: incomingDir.x };
-      const localRootCount = Math.max(3, Math.round((opts.pathPointCount || 7) * .5));
-      const localRootHalf = Math.max(.6, clusterRadius * .45);
-      const localRoot = Array.from({ length: localRootCount }, (_, i) => {
-        const t = localRootCount > 1 ? i / (localRootCount - 1) : .5;
-        const off = lerp(-localRootHalf, localRootHalf, t);
-        return { x: anchor.x + perp.x * off, y: 0, z: anchor.z + perp.z * off };
-      });
-      const clusterOpts = Object.assign({}, opts, { branchCount: branchesPerCluster, branchLength: clusterBranchLength });
-      const clusterPaths = buildMazePaths(localRoot, clusterOpts, rng);
-      const clampToCluster = p => {
-        const dx = p.x - anchor.x, dz = p.z - anchor.z;
-        const d = Math.hypot(dx, dz);
-        if (d <= clusterRadius || d < 1e-6) return p;
-        const s = clusterRadius / d;
-        return { x: anchor.x + dx * s, y: p.y, z: anchor.z + dz * s };
-      };
-      for (const path of clusterPaths) out.push({ points: sampleSpline(path, 10).map(clampToCluster), narrow: false });
-
-      if (ci === clusterCount - 1) break; // the last cluster has no outgoing connector — it's the deepest pocket, where the nest lands
-
-      // Next cluster's direction: mostly forward but genuinely chaotic (up
-      // to ~108° off the incoming heading either way) so the chain
-      // wanders in curves and random turns rather than marching in a
-      // straight line — "the shape of a neuron, except more chaotic".
-      const turnAngle = (rng() * 2 - 1) * Math.PI * .6;
-      const dir = rotateXZ(incomingDir, turnAngle);
-      const rawNext = { x: anchor.x + dir.x * connectorLength, z: anchor.z + dir.z * connectorLength };
-      // Clamped to the safe carve region on every side, and never allowed
-      // to wander back south past the entrance — matches the vestibule's
-      // own "maze room stays north of the entrance" convention.
-      const nextAnchor = {
-        x: clampNum(rawNext.x, -boundX + clusterRadius, boundX - clusterRadius),
-        z: clampNum(rawNext.z, -boundZ + clusterRadius, entranceZ - clusterRadius),
-      };
-
-      // The connector is a single bent path (not straight) from this
-      // cluster's own edge to the next cluster's anchor — a random
-      // sideways bend partway along, so it reads as a real curved passage
-      // rather than a ruler-straight corridor.
-      const bendPerp = rotateXZ(dir, (rng() < .5 ? 1 : -1) * Math.PI * .5);
-      const bendMag = connectorLength * (.15 + rng() * .25);
-      const midT = .35 + rng() * .3;
-      const mid = {
-        x: lerp(anchor.x, nextAnchor.x, midT) + bendPerp.x * bendMag,
-        y: 0,
-        z: lerp(anchor.z, nextAnchor.z, midT) + bendPerp.z * bendMag,
-      };
-      const connectorPts = [
-        { x: anchor.x + dir.x * clusterRadius * .6, y: 0, z: anchor.z + dir.z * clusterRadius * .6 },
-        mid,
-        { x: nextAnchor.x, y: 0, z: nextAnchor.z },
-      ];
-      // Carved as two parallel "rails" offset sideways from the centerline
-      // (each still narrow) rather than one centerline probe inflated
-      // wider — direct feedback + suggested approach: overlapping twin
-      // tubes read as a real corridor with a flatter, more consistent
-      // width across the middle, instead of one big circle that tapers
-      // toward the sides at the same rate it does toward the ceiling.
-      // railGap is kept well under the narrow probe's own radius so the
-      // two tubes' footprints overlap at the centerline — a gap at or
-      // past that radius would leave an un-carved solid rib splitting the
-      // passage into two disconnected tunnels instead of one wide one.
-      const connectorDense = sampleSpline(connectorPts, 14);
-      const narrowProbeR = opts.probeRadius * (opts.connectorProbeScale ?? .6);
-      const railGap = narrowProbeR * (opts.connectorRailGap ?? .55);
-      out.push({ points: offsetPathPerp(connectorDense, railGap), narrow: true });
-      out.push({ points: offsetPathPerp(connectorDense, -railGap), narrow: true });
-
-      anchor = nextAnchor;
-      incomingDir = dir;
-    }
-    return out;
   }
 
   // ── Wall-detection-sphere carve along a spline ─────────────────────────
@@ -700,6 +560,135 @@
     return claimed;
   }
 
+  // Which tiles any carve stamp actually reached, as opposed to which
+  // tiles are walkable (claimed) — a much broader set, since a corridor's
+  // own wall/ceiling curve genuinely occupies plenty of tiles never dense
+  // enough underfoot to be claimed. Mirrors the reference tool's own
+  // buildUntouchedCullMask exactly: scan every finest-grid column, compare
+  // its field against pristineAt (the field's own pre-carve, uncarved
+  // value — see solidifyBoundaryWalls), and mark every tile a changed
+  // sample could have influenced (the `influence` padding — a changed
+  // sample can move the zero-crossing surface roughly one lattice spacing
+  // in either direction, so a ragged wall whose controlling sample sits
+  // right on a tile line must not silently fall on the wrong side of it).
+  // extractMesh's cull is keyed off this set (not `claimed`) so the final
+  // mesh keeps every genuinely-carved surface — the tunnel's real wall and
+  // ceiling — right up to where carving actually stopped, only discarding
+  // rock nothing ever touched.
+  function computeTouchedTiles(st, tileSize, tolerance) {
+    const ts = tileSize || 1;
+    const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
+    const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
+    const tol = tolerance ?? .01;
+    const dx = 2 * st.domainHalf.x / st.N, dz = 2 * st.domainHalf.z / st.N;
+    const influenceX = dx * .8, influenceZ = dz * .8;
+    const touched = new Set();
+    for (let k = 0; k <= st.N; k++) {
+      const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
+      for (let i = 0; i <= st.N; i++) {
+        const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+        let columnTouched = false;
+        for (let j = 0; j <= st.N; j++) {
+          const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
+          if (st.field[idxP(st, i, j, k)] < pristineAt(x, y, z) - tol) { columnTouched = true; break; }
+        }
+        if (!columnTouched) continue;
+        const ix0 = Math.floor((x - influenceX) / ts), ix1 = Math.floor((x + influenceX) / ts);
+        const iz0 = Math.floor((z - influenceZ) / ts), iz1 = Math.floor((z + influenceZ) / ts);
+        for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) touched.add(`${ix},${iz}`);
+      }
+    }
+    return touched;
+  }
+
+  // A near-spherical probe swept along a path carves a continuously
+  // rounded tube by construction — floor curves into wall curves into
+  // ceiling with no flat plane anywhere. carveTileColumn guarantees every
+  // claimed tile's own column is genuinely open (so there's never a real
+  // collision mismatch), but the mesh clip still clips ANY triangle —
+  // including a neighboring wall/ceiling curve's — into any tile rect its
+  // XZ footprint overlaps, so a claimed tile right at the maze's outer
+  // edge can end up visually cluttered with spillover wall geometry
+  // layered over its own floor. Rather than chase that geometry around
+  // (tried: an expensive boundary-refine buffer; tried: filtering
+  // fragments by height, which just as easily deletes the tile's own
+  // genuine ceiling) — measure it directly from the raw, unclipped mesh:
+  // for each claimed tile that borders unclaimed rock, clip only that
+  // tile's own rect and compare how much of the result actually sits near
+  // the real floor (`floorY`) against how much doesn't. A tile dominated
+  // by non-floor clutter gets handed back for removal from `claimed` — see
+  // carveMazeCavern's connectivity-safe removal loop, which actually drops
+  // it (same effect as "make it collide": bGrid defaults every non-floor
+  // tile to solid rock already).
+  function classifyDeformedBoundaryTiles(rawMesh, claimed, floorY, probeYRadius, tileSize, minFloorCoverage) {
+    const ts = tileSize || 1;
+    const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const boundary = new Set();
+    for (const key of claimed) {
+      const [c, r] = key.split(',').map(Number);
+      if (DIRS4.some(([dx, dy]) => !claimed.has(`${c + dx},${r + dy}`))) boundary.add(key);
+    }
+    if (!boundary.size) return new Set();
+    const floorArea = new Map(), totalArea = new Map();
+    for (const key of boundary) { floorArea.set(key, 0); totalArea.set(key, 0); }
+    const floorBand = probeYRadius * .35;
+    const pos = rawMesh.positions, idx = rawMesh.indices;
+    for (let q = 0; q < idx.length; q += 3) {
+      const ia = idx[q] * 3, ib = idx[q + 1] * 3, ic = idx[q + 2] * 3;
+      const tri = [
+        { x: pos[ia], y: pos[ia + 1], z: pos[ia + 2] },
+        { x: pos[ib], y: pos[ib + 1], z: pos[ib + 2] },
+        { x: pos[ic], y: pos[ic + 1], z: pos[ic + 2] },
+      ];
+      const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
+      const minZ = Math.min(tri[0].z, tri[1].z, tri[2].z), maxZ = Math.max(tri[0].z, tri[1].z, tri[2].z);
+      const ix0 = Math.floor(minX / ts), ix1 = Math.floor((maxX - 1e-7) / ts);
+      const iz0 = Math.floor(minZ / ts), iz1 = Math.floor((maxZ - 1e-7) / ts);
+      const avgY = (tri[0].y + tri[1].y + tri[2].y) / 3;
+      const isFloor = Math.abs(avgY - floorY) <= floorBand;
+      for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+        const key = `${ix},${iz}`;
+        if (!boundary.has(key)) continue;
+        const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
+        if (poly.length < 3) continue;
+        let area = 0;
+        for (let p = 1; p < poly.length - 1; p++) {
+          const a = poly[0], b = poly[p], c2 = poly[p + 1];
+          area += Math.abs((b.x - a.x) * (c2.z - a.z) - (c2.x - a.x) * (b.z - a.z)) * .5;
+        }
+        totalArea.set(key, totalArea.get(key) + area);
+        if (isFloor) floorArea.set(key, floorArea.get(key) + area);
+      }
+    }
+    const deformed = new Set();
+    for (const key of boundary) {
+      const total = totalArea.get(key);
+      if (total <= 1e-9) continue; // nothing rendered here at all — not this pass's concern
+      if (floorArea.get(key) / total < minFloorCoverage) deformed.add(key);
+    }
+    return deformed;
+  }
+
+  // True iff every tile in claimedSet is reachable from startKey through
+  // orthogonal claimed neighbors — used to veto a deformed-tile removal
+  // that would sever the maze into disconnected pockets (see
+  // carveMazeCavern's removal loop).
+  function isClaimedSetConnected(claimedSet, startKey) {
+    if (!claimedSet.has(startKey)) return false;
+    const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const seen = new Set([startKey]);
+    const queue = [startKey];
+    while (queue.length) {
+      const key = queue.shift();
+      const [x, y] = key.split(',').map(Number);
+      for (const [dx, dy] of DIRS4) {
+        const nk = `${x + dx},${y + dy}`;
+        if (claimedSet.has(nk) && !seen.has(nk)) { seen.add(nk); queue.push(nk); }
+      }
+    }
+    return seen.size === claimedSet.size;
+  }
+
   // ── Dual-contour mesh extraction ────────────────────────────────────
   function leafForCell(st, i, j, k) {
     if (i < 0 || j < 0 || k < 0 || i >= st.N || j >= st.N || k >= st.N) return -1;
@@ -801,6 +790,24 @@
     }
   }
 
+  // keepTiles is the set of tile keys ("c,r") whose XZ rect the final mesh
+  // is allowed to occupy — every triangle gets clipped exactly to which
+  // rect(s) it overlaps, and any edge where a kept tile borders a
+  // non-kept one gets sealed with a stitched cap (see stitchBoundaryCaps).
+  // carveMazeCavern passes the *touched* tile set here (every tile any
+  // carve stamp actually reached), not just the walkable/claimed set — so
+  // organic wall/ceiling geometry stays fully visible right up to the
+  // edge of what was actually carved, the same way the reference tool's
+  // own "Snap Walls to Grid" + auto-cull only removes genuinely untouched
+  // slab, not merely-unwalkable-but-carved rock. An earlier version keyed
+  // this off the walkable set alone, which meant a wall/ceiling triangle
+  // from just outside a walkable tile could still get clipped INTO that
+  // tile's own rect whenever its XZ footprint happened to overlap —
+  // reading as a solid bump poking into the floor even though the tile
+  // was always genuinely open underneath (carveTileColumn guarantees
+  // that). Keying the clip off "touched" instead of "claimed" sidesteps
+  // the whole problem: geometry belonging to a neighboring wall just
+  // renders in that wall's own tiles, not layered onto the floor.
   function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
@@ -828,7 +835,8 @@
       const areaXZ = Math.abs((tri[1].x - tri[0].x) * (tri[2].z - tri[0].z) - (tri[2].x - tri[0].x) * (tri[1].z - tri[0].z));
       if (areaXZ < 1e-10) {
         const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
-        if (keepTiles.has(`${Math.floor(cx / ts)},${Math.floor(cz / ts)}`)) addTri(tri[0], tri[1], tri[2]);
+        const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
+        if (keepTiles.has(key)) addTri(tri[0], tri[1], tri[2]);
         continue;
       }
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
@@ -836,7 +844,8 @@
       const ix0 = Math.floor(minX / ts), ix1 = Math.floor((maxX - 1e-7) / ts);
       const iz0 = Math.floor(minZ / ts), iz1 = Math.floor((maxZ - 1e-7) / ts);
       for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
-        if (!keepTiles.has(`${ix},${iz}`)) continue;
+        const key = `${ix},${iz}`;
+        if (!keepTiles.has(key)) continue;
         const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
         for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
@@ -896,45 +905,6 @@
     return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize);
   }
 
-  // ── Wall-clipping detection ─────────────────────────────────────────
-  // clipAndStitch clips every triangle strictly by which tile rectangle(s)
-  // it geometrically overlaps in XZ — it has no notion of "this is a wall
-  // surface, not a floor" at all. A near-vertical wall triangle whose real
-  // 3D shape mostly belongs to a neighboring (unclaimed) tile can still
-  // have a sliver of its XZ footprint dip into a claimed tile's own
-  // rectangle — that sliver gets clipped and rendered as if it were part
-  // of that floor tile, i.e. visible rock poking into a tile the player
-  // can walk anywhere on (bGrid marks the whole tile ROCK or GRASS, never
-  // partial) — confirmed report: it reads as an enterable-looking bump
-  // that's actually in the way, since collision is tile-flat but the mesh
-  // isn't. Buckets every "wall-like" triangle (tall Y-range — the same
-  // >0.15 threshold this file's own wall-coverage regression check uses)
-  // in the mesh by which claimed tile's rect its centroid falls in, and
-  // accumulates both its XZ area and its area-weighted offset from that
-  // tile's own center — the offset's dominant axis/sign is which
-  // neighbor direction the intrusion is actually coming from.
-  function detectWallClipTiles(mesh, claimed, ts) {
-    const buckets = new Map();
-    const pos = mesh.positions, idx = mesh.indices;
-    for (let t = 0; t < idx.length; t += 3) {
-      const ia = idx[t] * 3, ib = idx[t + 1] * 3, ic = idx[t + 2] * 3;
-      const ay = pos[ia + 1], by = pos[ib + 1], cy = pos[ic + 1];
-      if (Math.max(ay, by, cy) - Math.min(ay, by, cy) <= 0.15) continue; // not wall-like
-      const ax = pos[ia], az = pos[ia + 2], bx = pos[ib], bz = pos[ib + 2], cx = pos[ic], cz = pos[ic + 2];
-      const centX = (ax + bx + cx) / 3, centZ = (az + bz + cz) / 3;
-      const key = `${Math.floor(centX / ts)},${Math.floor(centZ / ts)}`;
-      if (!claimed.has(key)) continue; // only floor tiles matter here — wall poking into wall is fine
-      const area = Math.abs((bx - ax) * (cz - az) - (cx - ax) * (bz - az)) * .5;
-      const [c, r] = key.split(',').map(Number);
-      let b = buckets.get(key);
-      if (!b) { b = { area: 0, wDx: 0, wDz: 0 }; buckets.set(key, b); }
-      b.area += area;
-      b.wDx += (centX - (c + .5) * ts) * area;
-      b.wDz += (centZ - (r + .5) * ts) * area;
-    }
-    return buckets;
-  }
-
   // ── Top-level orchestration ─────────────────────────────────────────
   // The thin-slab top-down setup itself matches (HA)TunnelSculptorV1.html's
   // own V5-baseline (see its applyModeDefaults). An early attempt at a tall
@@ -991,18 +961,25 @@
     // sizeY — direct requests to move the path higher in the volume,
     // .2 then another .1 on top.
     pathYShiftFrac: .3,
-    // How much narrower each individual connector rail (the thin twin
-    // passages between chaotic clusters, see buildClusterChain) carves
-    // versus a cluster's own branches. Brought back down from an earlier
-    // .75/.8 (a single wide centerline probe) now that width instead
-    // comes from two overlapping narrower rails spaced connectorRailGap
-    // apart — see buildClusterChain's own comment.
-    connectorProbeScale: .6, connectorBrushScale: .65,
-    // Sideways offset of each connector rail from the centerline, as a
-    // multiple of the connector probe's own (already narrow) radius. Kept
-    // well under 1 so the two rails' footprints overlap at the
-    // centerline instead of leaving an un-carved rib between them.
-    connectorRailGap: .55,
+    // Fraction of a boundary claimed tile's own footprint that must read as
+    // genuine floor (see classifyDeformedBoundaryTiles) before that tile is
+    // trusted as walkable — anything under this gets dropped from the
+    // returned claimed set (and therefore collides, same as any other rock
+    // tile) rather than trying to carve it clean. Defaults to 0 (never
+    // triggers): headless calibration showed floorArea/totalArea reads low
+    // for the *majority* of ordinary boundary tiles too, not just visibly
+    // bad ones — a boundary tile sits exactly where the tube's own wall
+    // curves down toward the floor, so a lot of genuinely-belongs-there
+    // wall/ceiling area is normal, not a defect, and the metric doesn't
+    // yet separate the two. Left wired up (see the tuner) so a real
+    // threshold can be picked by eye against live results instead of
+    // guessed blind.
+    deformedFloorMinCoverage: 0,
+    // How far a column's field has to drift from its pristine (never
+    // carved) value before computeTouchedTiles counts it as touched — see
+    // that function's own docblock. Matches the reference tool's own
+    // default.
+    cullTouchTolerance: .01,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -1043,27 +1020,19 @@
     // The 1.5x factor compensates for the area boundsRect/rootLen actually
     // get to use once they're kept clear of the domain's open-air padding
     // margin below, so cavern-generator.js's target tile counts still land
-    // where intended — confirmed against headless generation runs. Square
-    // aspect (not the tool's own 18:12) since the neuron-cluster chain
-    // below (see buildClusterChain) wanders in both X and Z rather than
-    // favoring one axis the way a single width-spanning root did; spreadPad
-    // adds real bounding-box room for that chain's reach — clusters
-    // themselves only need refArea's density, but connectors carry them
-    // apart from each other by design (see buildClusterChain's docblock on
-    // why that separation matters for detection/sight-blocking).
+    // where intended — confirmed against headless generation runs. Aspect
+    // matches the tool's own 18:12 board — the root spans the domain's
+    // full width (X) the same way the tool's own maze root does (see the
+    // root-point construction below), so a wider-than-deep board gives it
+    // real room to spread before branches take over exploring depth (Z).
     // 2x on top of the 1.5x compensation — doubles the starter volume's own
     // XZ area (dens read noticeably bigger), still sized off branchCount
     // the same tool-density-matching way.
-    const refArea = 18 * 12 * 1.5 * 2, refBranchCount = 16;
+    const refArea = 18 * 12 * 1.5 * 2, refAspect = 18 / 12, refBranchCount = 16;
     const area = refArea * (Math.max(1, opts.branchCount) / refBranchCount);
     const domPad = opts.probeRadius * 3 + opts.brushRadius * 3 + 4;
-    // Must track buildClusterChain's own clusterCount/connectorLength
-    // formulas (/4.5 and the 1.35x spacing bump) — an under-estimate here
-    // leaves the chain's real reach clamped against the domain edge.
-    const clusterCountEstimate = Math.max(2, Math.round(opts.branchCount / 4.5));
-    const spreadPad = clusterCountEstimate * (opts.branchLength * 1.2 * 1.35) * .6;
-    const baseSide = Math.sqrt(area) + spreadPad;
-    const dims = { x: baseSide + domPad, y: opts.sizeY, z: baseSide + domPad };
+    const baseZ = Math.sqrt(area / refAspect), baseX = refAspect * baseZ;
+    const dims = { x: baseX + domPad, y: opts.sizeY, z: baseZ + domPad };
 
     const st = createSculptState(dims, opts.gridN, opts.baseCell);
 
@@ -1084,22 +1053,51 @@
     const clipMargin = Math.max(2.5, domPad * .5);
     const boundX = dims.x / 2 - clipMargin, boundZ = dims.z / 2 - clipMargin;
 
-    // The cluster chain is generated directly in this final local
+    // The root and its branches are generated directly in this final local
     // (domain-centered) space — dims no longer depends on where the path
     // ends up, so there's no separate raw-space-then-reproject step needed.
     // The entrance sits a fixed margin in from the domain's south edge
     // (matching the vestibule/doorway logic below — open room south of the
-    // entrance, maze room north of it); buildClusterChain grows the actual
-    // network (chaotic clusters + thin connectors, see its own docblock)
-    // north from there. Every point still gets clamped safely inside
-    // dims/2 regardless — buildClusterChain keeps its own anchors in
-    // bounds, but an individual cluster's own chaotic branches can still
-    // reach past clusterRadius same as the old root/branch network could.
+    // entrance, maze room north of it).
+    //
+    // The root itself spans the domain's full WIDTH (X), not depth (Z) —
+    // matching the tool's own buildMazePaths exactly ((HA)TunnelSculptorV1.
+    // html lines 736-745: rootCount points lerp from -hx-margin to hx+margin,
+    // i.e. corner-to-corner across the board's width, with only a small
+    // sine-enveloped Z wiggle). A root built that way is self-bounded by
+    // construction — it's automatically exactly as long as the domain is
+    // wide, for any domain size, with no length to separately derive or fit.
+    // Branches (not the root) carry exploration into the other axis via
+    // their own wide (50-104°) attachment angles off the root's tangent —
+    // since the root runs along X here, that tangent is +X, so branches
+    // naturally shoot off roughly north/south (Z) into the den's depth,
+    // exactly the exploration this needs, for free, the same way the tool
+    // gets it on its own free-floating board. (Reverted from an interim
+    // "neuron-shaped" chaotic-cluster-chain topology — its own narrower
+    // twin-rail connectors and per-cluster clamping added real geometric
+    // complexity right at tile boundaries without a matching payoff: side
+    // by side with the reference tool's own plain defaults + Snap Walls to
+    // Grid, the plain maze reads just as good and is both simpler and
+    // cheaper to carve.)
     const entranceMarginZ = Math.max(5, domPad * .6);
     const entranceZ = dims.z / 2 - entranceMarginZ;
-    const chainPaths = buildClusterChain(opts, rng, boundX, boundZ, entranceZ);
+    const rootCount = Math.max(4, opts.pathPointCount || 7);
+    const rootMargin = Math.max(opts.probeRadius * 1.35, .35);
+    const rootHalfX = Math.max(1, boundX - rootMargin);
+    const rootPts = [];
+    for (let i = 0; i < rootCount; i++) {
+      const t = i / (rootCount - 1);
+      const x = lerp(-rootHalfX, rootHalfX, t);
+      const envelope = Math.sin(Math.PI * t);
+      // Wiggles north only (never back toward the entrance's south-facing
+      // vestibule) — the tool's own root wiggles both ways since its board
+      // has no fixed entrance side to respect.
+      const z = (i === 0 || i === rootCount - 1) ? entranceZ : entranceZ - rng() * (opts.pathWiggle ?? .62) * envelope * opts.branchLength * 1.2;
+      rootPts.push({ x, y: 0, z });
+    }
+    const paths = buildMazePaths(rootPts, opts, rng);
     const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
-    const denseLocal = chainPaths.map(({ points, narrow }) => ({ points: points.map(clampPt), narrow }));
+    const denseLocal = paths.map(path => sampleSpline(path, 10).map(clampPt));
 
     // No ceilingY at all — see this function's docblock for why that's
     // deliberate, not an oversight. Earlier versions reached this by
@@ -1147,22 +1145,7 @@
       floorY, ceilingY: null, probeYRadius,
       levels,
     });
-    // Each connector rail carves narrower than a cluster's own chaotic
-    // branches — see buildClusterChain's docblock: a tighter passage is
-    // what hides the next cluster's contents around each bend (blocking
-    // the isometric camera's sightline — aggro range itself is handled by
-    // connector length, not narrowness, since creature aggro is pure
-    // straight-line distance). Overall connector width now mainly comes
-    // from buildClusterChain's twin-rail spacing (connectorRailGap)
-    // rather than from these scales alone — see its own comment — so
-    // connectorProbeScale/connectorBrushScale sit lower than they would
-    // for a single centerline probe.
-    const narrowCarveOpts = Object.assign({}, carveOpts, {
-      probeRadius: carveOpts.probeRadius * (opts.connectorProbeScale ?? .6),
-      brushRadius: carveOpts.brushRadius * (opts.connectorBrushScale ?? .65),
-    });
-
-    for (const { points, narrow } of denseLocal) carveAlongSpline2D(st, points, narrow ? narrowCarveOpts : carveOpts, rng);
+    for (const points of denseLocal) carveAlongSpline2D(st, points, carveOpts, rng);
 
     // Constrained to boundX/boundZ (dims/2 minus clipMargin), NOT out to
     // dims/2 itself — the old "+1 past dims/2" version reached straight into
@@ -1278,84 +1261,36 @@
     // a claimed tile's edge into an unclaimed neighbor (see this
     // function's docblock) — run once, after every carve/claim/force step
     // above has finished, right before meshing.
-    //   Direct design correction: a near-spherical probe swept along a
-    // path carves a continuously rounded tube by construction — floor
-    // curves into wall curves into ceiling with no flat plane anywhere,
-    // exactly like a real worm-carved tunnel. That's not a bug in the
-    // carve itself, but it means there's no reliable, human-legible
-    // "this is the wall" boundary for bGrid's tile-flat collision to line
-    // up against unless something explicitly draws one — the old heal
-    // depth (probe/brush-radius-derived, usually under 1.5 tiles) wasn't
-    // reliably deeper than the probe's own max reach (radiusChaos alone
-    // can push it past 1.2 tiles), so wide stretches of "wall" were
-    // really just wherever the tube's own gradual taper happened to
-    // finish. wallBufferTiles is a flat, guaranteed depth instead — 3
-    // tiles of definitely-pristine rock around the whole claimed shape,
-    // comfortably past anything the probe could have reached — so
-    // there's always a real, findable boundary for the next step
-    // (sharpenBoundaryFaces) to carve a deliberate face against.
-    const wallBufferTiles = 3;
-    const wallBufferDepth = Math.max(wallBufferTiles * ts, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin);
-    solidifyBoundaryWalls(st, claimed, wallBufferDepth, skipCapEdges, ts, carveOpts);
+    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts, carveOpts);
 
-    // Direct design: even with a reliably solid buffer beyond it, the
-    // actual floor-to-wall transition at a tile edge is still just
-    // "wherever carveTileColumn's own tight margin cut meets the healed
-    // pristine rock" — a real boundary now, but a bare, mechanically flat
-    // one with none of the rest of the tunnel's organic carved character.
-    // For every claimed tile that borders at least one unclaimed
-    // neighbor (the innermost ring against the buffer), place a narrow
-    // "rail" probe (same narrow scale as a connector rail — see
-    // narrowCarveOpts above) dead center on that tile and clear it
-    // exactly the way any other probe position gets cleared, at every
-    // height the maze's own sweep already uses (carveOpts.levels, not
-    // some new offset) — so the carved face reads as genuinely part of
-    // the same hand-carved tunnel instead of a seam where two different
-    // carving styles happen to meet. One pass per tile regardless of how
-    // many of its sides border the buffer (a corner tile doesn't need
-    // carving twice).
-    function sharpenBoundaryFaces(st, claimed, carveOpts, narrowCarveOpts, ts, rng) {
-      const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-      for (const key of claimed) {
-        const [c, r] = key.split(',').map(Number);
-        if (!DIRS4.some(([dx, dy]) => !claimed.has(`${c + dx},${r + dy}`))) continue;
-        const cx = (c + .5) * ts, cz = (r + .5) * ts;
-        for (const y of carveOpts.levels) clearProbeAt(st, { x: cx, y, z: cz }, { x: 1, y: 0, z: 0 }, narrowCarveOpts, rng);
+    // Drop any boundary claimed tile whose own footprint reads as mostly
+    // non-floor clutter (see classifyDeformedBoundaryTiles) instead of
+    // trying to carve it clean — same effect as marking it collide, since
+    // bGrid already defaults every non-floor tile to solid rock. Only
+    // entrance/nest tiles are exempt (forced elsewhere, never optional),
+    // and a candidate is only actually dropped if doing so doesn't cut the
+    // maze into disconnected pockets.
+    const minFloorCoverage = opts.deformedFloorMinCoverage ?? 0;
+    let deformedTilesDropped = 0;
+    if (minFloorCoverage > 0) {
+      const protectedTiles = new Set([...entranceTiles, ...nestTiles].map(([c, r]) => `${c},${r}`));
+      const rawMesh = extractMesh(st, null);
+      const deformedCandidates = classifyDeformedBoundaryTiles(rawMesh, claimed, floorY, probeYRadius, ts, minFloorCoverage);
+      for (const key of deformedCandidates) {
+        if (protectedTiles.has(key)) continue;
+        claimed.delete(key);
+        if (isClaimedSetConnected(claimed, startKey)) deformedTilesDropped++;
+        else claimed.add(key); // would have split the maze — keep it walkable instead
       }
     }
-    sharpenBoundaryFaces(st, claimed, carveOpts, narrowCarveOpts, ts, rng);
 
-    let mesh = extractMesh(st, claimed, skipCapEdges, ts);
-
-    // Detect wall geometry clipped into a floor tile's own rect (see
-    // detectWallClipTiles' docblock) and correct the common case: for any
-    // tile where the intrusion is a genuine minority of its own XZ area
-    // (<50% — past that it's not "a bump poking in", the tile itself is
-    // mostly wall and was probably mis-claimed, a different problem this
-    // pass shouldn't guess at fixing), render one extra ring of tile
-    // outward on the intrusion's own dominant side. That tile was never
-    // added to `claimed` — bGrid still marks it solid, nothing about
-    // collision changes — only the mesh's own render/clip boundary grows
-    // there, so the wall surface (and stitchBoundaryCaps' seal) moves out
-    // to its far edge instead of sitting right against the floor tile
-    // it was bleeding into.
-    const tileArea = ts * ts;
-    const clipBuckets = detectWallClipTiles(mesh, claimed, ts);
-    const wallClipMinorTiles = [], wallClipMajorTiles = [];
-    const renderTiles = new Set(claimed);
-    for (const [key, b] of clipBuckets) {
-      const frac = b.area / tileArea;
-      if (frac < .02) continue; // negligible sliver, not worth acting on
-      const [c, r] = key.split(',').map(Number);
-      if (frac >= .5) { wallClipMajorTiles.push([c, r]); continue; }
-      wallClipMinorTiles.push([c, r]);
-      const dir = Math.abs(b.wDx) >= Math.abs(b.wDz)
-        ? [b.wDx > 0 ? 1 : -1, 0]
-        : [0, b.wDz > 0 ? 1 : -1];
-      const nk = `${c + dir[0]},${r + dir[1]}`;
-      if (!claimed.has(nk)) renderTiles.add(nk);
-    }
-    if (renderTiles.size > claimed.size) mesh = extractMesh(st, renderTiles, skipCapEdges, ts);
+    // The final mesh keeps every genuinely-carved tile (see
+    // computeTouchedTiles), not just the walkable ones, so the organic
+    // wall/ceiling detail immediately outside the floor stays visible
+    // instead of being clipped down to a flat stitched cap.
+    const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
+    for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
+    const mesh = extractMesh(st, touched, skipCapEdges, ts);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1386,19 +1321,14 @@
       claimed, entranceTiles, nestTile: [nfx, nfy], mesh,
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
-      // wallClipMinorTiles were auto-corrected (see the extraction above);
-      // wallClipMajorTiles were only flagged, since a >=50% intrusion
-      // usually means the tile itself was mis-claimed rather than having
-      // a mere bump poking into it — not something this pass should guess
-      // how to fix. Both in the same local tile-index space as
-      // entranceTiles/nestTile.
-      wallClipMinorTiles, wallClipMajorTiles,
+      deformedTilesDropped,
     };
   }
 
   window.CavernSculptor = {
     createSculptState, carveHook, carveSphere, buildMazePaths, sampleSpline,
     carveAlongSpline2D, snapClaimTiles, carveTileColumn, solidifyBoundaryWalls,
+    computeTouchedTiles, classifyDeformedBoundaryTiles,
     extractMesh, carveMazeCavern,
   };
 })();
