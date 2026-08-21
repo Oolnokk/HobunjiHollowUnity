@@ -426,9 +426,15 @@
   // via headless verification: ~35-65% of a maze's boundary edges were
   // missing their wall entirely before this ran. Restores a guaranteed-
   // solid strip just inside every unclaimed tile that borders a claimed
-  // one — skipCapEdges (the entrance's doorway/vestibule) is excluded, or
-  // this would silently re-seal the one opening that's supposed to exist.
-  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges, tileSize, refineOpts) {
+  // one — protectedUnclaimed (the entrance's doorway/vestibule tiles) is
+  // excluded by TARGET tile identity, checked the same way regardless of
+  // which claimed tile is doing the healing, or this would silently
+  // re-seal the one opening that's supposed to exist from whichever side
+  // of it a claimed tile happens to approach from — confirmed directly:
+  // an ordinary maze tile with no special role, sitting beside a
+  // vestibule tile from the side, re-solidified it even after the
+  // entrance tile's own straight-ahead edge was correctly left alone.
+  function solidifyBoundaryWalls(st, claimed, depth, protectedUnclaimed, tileSize, refineOpts) {
     const ts = tileSize || 1;
     const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
     const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
@@ -518,14 +524,27 @@
       // tile edges themselves convert through tileSize, not depth.
       const wx0 = c * ts, wx1 = (c + 1) * ts, wz0 = r * ts, wz1 = (r + 1) * ts;
       const edges = [
-        { dir: 'W', nc: c - 1, nr: r, x0: wx0 - healDepth, x1: wx0, z0: wz0, z1: wz1 },
-        { dir: 'E', nc: c + 1, nr: r, x0: wx1, x1: wx1 + healDepth, z0: wz0, z1: wz1 },
-        { dir: 'N', nc: c, nr: r - 1, x0: wx0, x1: wx1, z0: wz0 - healDepth, z1: wz0 },
-        { dir: 'S', nc: c, nr: r + 1, x0: wx0, x1: wx1, z0: wz1, z1: wz1 + healDepth },
+        { nc: c - 1, nr: r, x0: wx0 - healDepth, x1: wx0, z0: wz0, z1: wz1 },
+        { nc: c + 1, nr: r, x0: wx1, x1: wx1 + healDepth, z0: wz0, z1: wz1 },
+        { nc: c, nr: r - 1, x0: wx0, x1: wx1, z0: wz0 - healDepth, z1: wz0 },
+        { nc: c, nr: r + 1, x0: wx0, x1: wx1, z0: wz1, z1: wz1 + healDepth },
       ];
       for (const e of edges) {
-        if (claimed.has(`${e.nc},${e.nr}`)) continue; // shared wall between two claimed tiles stays open
-        if (skipCapEdges?.has(`${c},${r},${e.dir}`)) continue; // the doorway/vestibule — never re-seal it
+        const nKey = `${e.nc},${e.nr}`;
+        if (claimed.has(nKey)) continue; // shared wall between two claimed tiles stays open
+        // protectedUnclaimed (the doorway/vestibule) is checked by the
+        // TARGET tile's own identity, not by which claimed tile happens
+        // to be doing the healing — a vestibule tile can legitimately
+        // border several different claimed tiles (the entrance tile
+        // directly north of it, but also whatever the maze's own network
+        // grew next to it on another side), and every one of those
+        // borders needs the same protection, not just the one edge the
+        // entrance tile itself owns. Confirmed directly: an ordinary
+        // claimed maze tile with no special role at all, sitting beside a
+        // vestibule tile, was silently re-solidifying it from the side
+        // even after the doorway's own straight-ahead edge was correctly
+        // protected.
+        if (protectedUnclaimed?.has(nKey)) continue;
         healRect(e.x0, e.x1, e.z0, e.z1);
       }
       // The 4 orthogonal edges above only ever heal a strip directly
@@ -547,7 +566,9 @@
         { nc: c + 1, nr: r + 1, x0: wx1, x1: wx1 + healDepth, z0: wz1, z1: wz1 + healDepth },
       ];
       for (const d of diagonals) {
-        if (claimed.has(`${d.nc},${d.nr}`)) continue; // a claimed diagonal tile is real floor — never heal it
+        const nKey = `${d.nc},${d.nr}`;
+        if (claimed.has(nKey)) continue; // a claimed diagonal tile is real floor — never heal it
+        if (protectedUnclaimed?.has(nKey)) continue; // same doorway/vestibule protection as the edges above
         healRect(d.x0, d.x1, d.z0, d.z1);
       }
     }
@@ -1333,8 +1354,9 @@
     // region, so the doorway reads as a genuine opening. 2 physical units
     // deep at ts=1, scaled like the entrance/nest above.
     const VESTIBULE_DEPTH = Math.max(2, Math.round(2 / ts));
+    const vestibuleTiles = new Set();
     for (const [c, r] of entranceTiles) {
-      for (let dr = 1; dr <= VESTIBULE_DEPTH; dr++) carveTileColumn(st, c, r + dr, carveOpts);
+      for (let dr = 1; dr <= VESTIBULE_DEPTH; dr++) { carveTileColumn(st, c, r + dr, carveOpts); vestibuleTiles.add(`${c},${r + dr}`); }
     }
 
     // The entrance tiles border unclaimed (exterior/vestibule) tiles on
@@ -1346,8 +1368,12 @@
     // Heal any wall the organic carve thinned or erased where it bled past
     // a claimed tile's edge into an unclaimed neighbor (see this
     // function's docblock) — run once, after every carve/claim/force step
-    // above has finished, right before meshing.
-    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts, carveOpts);
+    // above has finished, right before meshing. vestibuleTiles (not
+    // skipCapEdges — that's a per-tile-per-direction set the MESH capping
+    // pass below needs, a different shape of exclusion) protects every
+    // vestibule tile from every direction a claimed tile might approach
+    // it from, not just the entrance tile's own straight-ahead edge.
+    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, vestibuleTiles, ts, carveOpts);
 
     // Drop any boundary claimed tile whose own footprint reads as mostly
     // non-floor clutter (see classifyDeformedBoundaryTiles) instead of
