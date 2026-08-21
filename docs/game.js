@@ -10094,7 +10094,14 @@
             worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
             rebuildRouteGraphs();
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
+          // Meshes tall enough to get between the fixed follow camera and the
+          // player (cavern rock walls, house/shop wall panels — see their
+          // own `.userData.cameraObstacle` tags) — collected once here, same
+          // as buildZoneScene's occlusionMeshes, rather than walking the
+          // whole scene graph every frame in occlusionSafeCameraPosition.
+          const occlusionMeshes = [];
+          bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -10173,7 +10180,9 @@
           _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
+        const occlusionMeshes = [];
+        bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId, occlusionMeshes };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -13020,7 +13029,24 @@
       }
 
       function canPlayerOccupy(wx, wy) {
-        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+        if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
+        // Universal "unstuck" escape: if the player's own true position is
+        // itself embedded in solid geometry (spawned/teleported into a wall
+        // sliver, a boundary tile a mesh fix didn't quite seal, etc.), the
+        // full-radius box check above can never pass for ANY nearby
+        // candidate whose box still grazes that same solid region — every
+        // direction reads as blocked and the player is permanently welded
+        // in place. While that's true, fall back to a bare center-point
+        // sample (ignores the radius) so movement keeps working and the
+        // player can walk free of the solid patch under their own input
+        // instead of needing a teleport/reload to recover. Normal strict
+        // box collision resumes automatically the instant their real
+        // position is valid again, so this never opens a lasting way to
+        // squeeze through walls.
+        if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          return tileSpeedAt(wx, wy) !== null;
+        }
+        return false;
       }
 
       // A fast forced move (combat lunge, knockback, dodge) recomputes its
@@ -15137,6 +15163,15 @@
           return meshes;
         }
         const meshes = [];
+        // Generic building interiors (map_i_* — dens, shops, workshops...):
+        // same tagged-mesh snapshot as zones, collected once when the
+        // building's scene is built (see loadBuildingScene). Without this,
+        // a den's carved cavern rock (or any other building's walls) never
+        // pulled the camera in when it got between the camera and the
+        // player, unlike the outdoor case just above.
+        if (_isBuildingArea(currentArea)) {
+          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) meshes.push(m);
+        }
         if (currentArea === 'farm') {
           for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
