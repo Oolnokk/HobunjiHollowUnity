@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.39</title>
+<title>Hobunji Animation Author V15.40</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1203,6 +1203,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
 <script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../js/transform-dump-utils.js?v=20260821a"></script>
 
 <script>
 (() => {
@@ -12888,6 +12889,75 @@ animationAuthor.recentChange = 'V15.39 makes every character posterior a fixed f
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.39 patch installed: posterior Y now uses one shared floor-relative formula in the rigger, gameplay, idle hands, and procedural legs.');
+
+
+// -----------------------------------------------------------------------------
+// V15.40 exposes the exact rendered portrait/floor/attachment transforms so a
+// rigger snapshot can be diffed field-for-field against the runtime Debug dump.
+// -----------------------------------------------------------------------------
+function animationAuthorRigTransformReportV1540(actor = selectedAnimationActor()) {
+  const dumpApi = window.HobunjiTransformDump;
+  if (!dumpApi?.snapshotObject || !actor || actor.source?.type !== 'npc') return '';
+  const entries = [
+    dumpApi.snapshotObject('portrait', actor.avatarPresentation || actor.model, { source: 'RepositoryAvatarBox Object3D' }),
+    dumpApi.snapshotObject('ground', state.three.grid, { source: 'rigger GridHelper' }),
+    dumpApi.snapshotObject('posterior', actor.rigAnchors?.posterior, { source: 'RigAnchor_posterior Object3D' }),
+    dumpApi.snapshotObject('left hand shoulder', actor.rigAnchors?.leftHandShoulder, { source: 'RigAnchor_leftHandShoulder Object3D' }),
+    dumpApi.snapshotObject('right hand shoulder', actor.rigAnchors?.rightHandShoulder, { source: 'RigAnchor_rightHandShoulder Object3D' }),
+    dumpApi.snapshotObject('shoulder perch', actor.rigAnchors?.shoulderPerch, { source: 'RigAnchor_shoulderPerch Object3D' }),
+  ];
+  return dumpApi.formatNamedTransformReport(entries, {
+    title: 'Rigger preview transforms',
+    actor: actor.label,
+    species: actor.source.species || actor.source.appearance?.speciesId || '-',
+    gender: actor.source.gender || actor.source.appearance?.gender || '-',
+    coordinateSpace: 'character visual-local + editor world',
+  });
+}
+
+async function dumpAnimationAuthorRigTransformsV1540(actor = selectedAnimationActor()) {
+  const report = animationAuthorRigTransformReportV1540(actor);
+  if (!report) return;
+  const output = $('maaRigTransformDumpOutput');
+  if (output) {
+    output.textContent = report;
+    output.hidden = false;
+  }
+  try {
+    await navigator.clipboard.writeText(report);
+    setStatus('Rigger transforms dumped and copied.', 'good');
+  } catch (_) {
+    setStatus('Rigger transforms dumped below; clipboard access was blocked.', 'warn');
+  }
+}
+
+const baseRenderAttachmentRigInspectorV1540 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1540();
+  const actor = selectedAnimationActor();
+  const section = $('maaCharacterAnatomySection');
+  if (actor?.source?.type !== 'npc' || !section || $('maaRigTransformDumpTool')) return;
+  section.insertAdjacentHTML('beforeend', `<div id="maaRigTransformDumpTool" class="maaRigStatus" style="margin-top:10px">
+    <b>Editor/runtime parity dump</b><br>
+    <span class="maaSmall maaMuted">Reports the actual composed portrait, floor, posterior, both hand shoulders, and shoulder-perch transforms currently visible in this preview.</span>
+    <button id="maaDumpRigTransformsBtn" type="button" class="secondary" style="width:100%;margin-top:8px">Dump preview transforms</button>
+    <pre id="maaRigTransformDumpOutput" hidden style="max-height:280px;overflow:auto;margin:8px 0 0;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.22);font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word;user-select:text"></pre>
+  </div>`);
+  $('maaDumpRigTransformsBtn')?.addEventListener('click', () => dumpAnimationAuthorRigTransformsV1540(actor));
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1540 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1540();
+  document.title = 'Hobunji Animation Author V15.40';
+  return result;
+};
+
+window.dumpAnimationAuthorRigTransforms = dumpAnimationAuthorRigTransformsV1540;
+animationAuthor.recentChange = 'V15.40 adds matching editor/runtime transform dumps for the portrait, ground, posterior, hand shoulders, and shoulder perch.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.40 patch installed: Shoulder Rig now dumps its exact visible transforms in the same format as runtime Debug.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

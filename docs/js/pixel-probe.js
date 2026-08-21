@@ -226,6 +226,95 @@
     });
   }
 
+  function _runtimeVirtualRigTransform(label, transform, parent, source) {
+    const position = transform?.position || transform || {};
+    const rotation = transform?.rotationDeg || {};
+    const scale = transform?.scale || { x: 1, y: 1, z: 1 };
+    const localPosition = new THREE.Vector3(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
+    const localQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(Number(rotation.x) || 0),
+      THREE.MathUtils.degToRad(Number(rotation.y) || 0),
+      THREE.MathUtils.degToRad(Number(rotation.z) || 0),
+      'YXZ',
+    ));
+    parent?.updateWorldMatrix?.(true, false);
+    const worldPosition = parent?.localToWorld ? parent.localToWorld(localPosition.clone()) : localPosition.clone();
+    const parentQuaternion = parent?.getWorldQuaternion
+      ? parent.getWorldQuaternion(new THREE.Quaternion())
+      : new THREE.Quaternion();
+    const worldQuaternion = parentQuaternion.multiply(localQuaternion);
+    const parentScale = parent?.getWorldScale
+      ? parent.getWorldScale(new THREE.Vector3())
+      : new THREE.Vector3(1, 1, 1);
+    return {
+      label,
+      source,
+      localPosition: { x: localPosition.x, y: localPosition.y, z: localPosition.z },
+      localRotationDeg: { pitch: Number(rotation.x) || 0, yaw: Number(rotation.y) || 0, roll: Number(rotation.z) || 0 },
+      localScale: { x: Number(scale.x) || 1, y: Number(scale.y) || 1, z: Number(scale.z) || 1 },
+      worldPosition: { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z },
+      worldRotationDeg: window.HobunjiTransformDump.eulerYXZFromQuat(worldQuaternion),
+      worldScale: { x: parentScale.x * (Number(scale.x) || 1), y: parentScale.y * (Number(scale.y) || 1), z: parentScale.z * (Number(scale.z) || 1) },
+    };
+  }
+
+  // Direct runtime counterpart to MultiAvatarAnimationAuthor's rigger dump.
+  // The game resolves attachment anchors as data rather than scene objects,
+  // so their virtual transforms are composed through the live player root
+  // here using the same values playerAttachmentAnchor() supplies to gameplay.
+  function dumpRuntimeRigTransforms() {
+    const dumpApi = window.HobunjiTransformDump;
+    if (!dumpApi?.formatNamedTransformReport || !deps?.playerMesh) return null;
+    let portrait = null;
+    deps.playerMesh.traverse?.(object => {
+      if (!portrait && object.name === 'player_avatar') portrait = object;
+    });
+    const playerData = deps.getPlayerData?.() || {};
+    const appearance = playerData.appearance || {};
+    const groundY = Number(deps.getPlayerGroundY?.());
+    const playerWorld = deps.playerMesh.getWorldPosition(new THREE.Vector3());
+    const ground = {
+      label: 'ground',
+      source: 'activeSurfaceYAtWorld(player)',
+      localPosition: { x: 0, y: 0, z: 0 },
+      localRotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      localScale: { x: 1, y: 1, z: 1 },
+      worldPosition: { x: playerWorld.x, y: Number.isFinite(groundY) ? groundY : playerWorld.y, z: playerWorld.z },
+      worldRotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      worldScale: { x: 1, y: 1, z: 1 },
+    };
+    const anchor = (label, name) => {
+      const resolved = deps.playerAttachmentAnchor?.(name);
+      return resolved ? _runtimeVirtualRigTransform(label, {
+        position: resolved,
+        rotationDeg: resolved.rotationDeg,
+        scale: { x: 1, y: 1, z: 1 },
+      }, deps.playerMesh, `playerAttachmentAnchor('${name}')`) : null;
+    };
+    const entries = [
+      dumpApi.snapshotObject('portrait', portrait, { source: 'player_avatar Object3D' }),
+      ground,
+      anchor('posterior', 'posterior'),
+      anchor('left hand shoulder', 'leftHandShoulder'),
+      anchor('right hand shoulder', 'rightHandShoulder'),
+      anchor('shoulder perch', 'shoulderPerch'),
+    ];
+    const report = dumpApi.formatNamedTransformReport(entries, {
+      title: 'Runtime rig transforms',
+      actor: playerData.name || playerData.displayName || 'player',
+      species: appearance.speciesId || appearance.species || '-',
+      gender: appearance.gender || '-',
+      coordinateSpace: 'player-root local + live world',
+    });
+    const resultEl = document.getElementById('debugProbeResult');
+    if (resultEl) resultEl.textContent = report;
+    const screenshotEl = document.getElementById('debugProbeScreenshot');
+    if (screenshotEl) screenshotEl.style.display = 'none';
+    _setDebugView('probe');
+    deps.showToast?.('Runtime rig transforms dumped — Copy exports this report.', true);
+    return report;
+  }
+
   // bodyColors slots are almost never stored as absolute color — they're
   // a {h,s,v} CSS-filter delta (hue-rotate deg / saturate & brightness
   // multiplier offsets) applied on top of a per-species reference
@@ -786,6 +875,7 @@
   }
 
   document.getElementById('debugProbeArmBtn')?.addEventListener('click', () => armPixelProbe());
+  document.getElementById('debugRigTransformDumpBtn')?.addEventListener('click', () => dumpRuntimeRigTransforms());
   document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', () => disarmPixelProbe());
   document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
   document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));
@@ -793,6 +883,7 @@
   window.PixelProbe = {
     init,
     copyPixelProbeResult,
+    dumpRuntimeRigTransforms,
     get armed() { return _pixelProbeArmed; },
   };
 })();
