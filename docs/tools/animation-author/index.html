@@ -1213,7 +1213,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821i', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821j', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -11947,6 +11947,7 @@ const baseCreateAnimationActorShellV1525 = createAnimationActorShell;
 createAnimationActorShell = function(args) {
   const actor = baseCreateAnimationActorShellV1525(args);
   if (actor.source?.type !== 'npc') return actor;
+  actor.model.userData.proceduralHandParent = actor.visualOffset; // Keeps preview hand sockets in the exact floor-relative space used by posterior and shoulder rig anchors.
   const THREE = state.three.THREE; // Creates the same axes-helper carriers used by all existing attachment coordinates.
   for (const name of HAND_SHOULDER_ANCHORS_V1525) {
     if (actor.rigAnchors?.[name]) continue;
@@ -11970,6 +11971,7 @@ function publishCharacterHandShouldersV1525(actor, profile) {
   const runtimeProfile = library.characters[key] ||= { species: profile.species, gender: profile.gender, anchors: {} };
   runtimeProfile.anchors ||= {};
   runtimeProfile.posteriorRule = structuredCloneSafe(profile.posteriorRule || {});
+  runtimeProfile.resolvedPosteriorPosition = structuredCloneSafe(transformSnapshot(actor.rigAnchors.posterior).position); // Publishes the actual displayed gizmo coordinate instead of duplicating its derivation in the hand runtime.
   for (const name of HAND_SHOULDER_ANCHORS_V1525) runtimeProfile.anchors[name] = structuredCloneSafe(profile.anchors[name]);
   window.ProceduralHandFrameDriver?.syncNow?.();
 }
@@ -11986,9 +11988,9 @@ handleAnimationTransformChanged = function(source, changedTarget = animationAuth
   const actor = selectedAnimationActor();
   const anchorName = actor ? selectedRigAnchorName(actor) : null;
   const result = baseHandleAnimationTransformChangedV1525(source, changedTarget);
-  if (actor?.source?.type === 'npc' && HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) {
+  if (actor?.source?.type === 'npc' && (anchorName === 'posterior' || HAND_SHOULDER_ANCHORS_V1525.includes(anchorName))) {
     const profile = attachmentRigProfileForActor(actor); // Marks and publishes the exact shoulder transform after gizmo/numeric edits are committed.
-    profile.handShoulderRule = { source: 'rig-anchor-gizmo', coordinateSpace: 'character-visual-local', version: 1 };
+    if (HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) profile.handShoulderRule = { source: 'rig-anchor-gizmo', coordinateSpace: 'character-visual-local', version: 1 };
     publishCharacterHandShouldersV1525(actor, profile);
   }
   return result;
@@ -12028,17 +12030,17 @@ serializeAttachmentRigLibrary = function() {
 const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1525();
-  document.title = 'Hobunji Animation Author V15.25';
+  document.title = 'Hobunji Animation Author V15.26';
   return result;
 };
 
 animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
 COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
 animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
-animationAuthor.recentChange = 'V15.25 moves left/right hand shoulder authoring into the normal rig-coordinate gizmo and renders fallback hands at matching shoulder X plus derived posterior Y.';
+animationAuthor.recentChange = 'V15.26 fixes idle-hand Y by consuming the exact floor-relative posterior gizmo coordinate, and restores hand size halfway from the prior 85% reduction to the original.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.25 patch installed: idle-hand shoulder targets are standard rig anchors with live gizmo preview.');
+log('V15.26 patch installed: rigger hands now use the exact floor-relative posterior coordinate without adding avatar half-height.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

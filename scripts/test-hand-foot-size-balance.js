@@ -28,27 +28,35 @@ const windowObject = {
   },
 };
 const sandbox = { window: windowObject, localStorage };
+const almostEqual = (actual, expected) => assert(Math.abs(actual - expected) < 1e-12, `expected ${actual} to equal ${expected}`); // Handles decimal scale products without brittle IEEE-754 equality.
 
 vm.runInNewContext(profileSource, sandbox, { filename: 'hand-model-profiles.js' });
 const profiles = windowObject.HobunjiHandModelProfiles;
-assert.strictEqual(profiles.data.modelScalePreset, 'hands-85-feet-120-v1');
-assert.strictEqual(profiles.data.models.feline.scale, 1.7, 'ordinary hands should shrink from 2x to 1.7x');
-assert.strictEqual(profiles.data.models.parrot.scale, 2.55, 'parrot hands should retain their relative 3x basis at 85% size');
+assert.strictEqual(profiles.data.modelScalePreset, 'hands-92_5-feet-120-v2');
+assert.strictEqual(profiles.data.models.feline.scale, 1.85, 'ordinary hands should sit halfway between the original 2x and prior 1.7x size');
+almostEqual(profiles.data.models.parrot.scale, 2.775);
 
 const oldProfiles = profiles.clone(); // Simulates a currently saved pre-midpoint profile to verify one-time migration.
 oldProfiles.modelScalePreset = 'parrot-3x-v1';
 oldProfiles.models.feline.scale = 2;
 oldProfiles.models.parrot.scale = 3;
 profiles.replace(oldProfiles);
-assert.strictEqual(profiles.data.models.feline.scale, 1.7);
-assert.strictEqual(profiles.data.models.parrot.scale, 2.55);
+assert.strictEqual(profiles.data.models.feline.scale, 1.85);
+almostEqual(profiles.data.models.parrot.scale, 2.775);
 profiles.replace(profiles.clone());
-assert.strictEqual(profiles.data.models.feline.scale, 1.7, 'migration marker must prevent repeated shrinking');
+assert.strictEqual(profiles.data.models.feline.scale, 1.85, 'migration marker must prevent repeated resizing');
+const priorBalancedProfiles = profiles.clone(); // Simulates the immediately previous 85% saved profile that should grow halfway back.
+priorBalancedProfiles.modelScalePreset = 'hands-85-feet-120-v1';
+priorBalancedProfiles.models.feline.scale = 1.7;
+priorBalancedProfiles.models.parrot.scale = 2.55;
+profiles.replace(priorBalancedProfiles);
+assert.strictEqual(profiles.data.models.feline.scale, 1.85);
+almostEqual(profiles.data.models.parrot.scale, 2.775);
 const incompleteOldProfiles = profiles.clone();
 delete incompleteOldProfiles.modelScalePreset;
 delete incompleteOldProfiles.models.feline.scale;
 profiles.replace(incompleteOldProfiles);
-assert.strictEqual(profiles.data.models.feline.scale, 1.7, 'missing old scales must receive the balanced default exactly once');
+assert.strictEqual(profiles.data.models.feline.scale, 1.85, 'missing old scales must receive the balanced default exactly once');
 
 vm.runInNewContext(gripSource, sandbox, { filename: 'hand-tool-grips.js' });
 const grips = windowObject.HobunjiHandToolGrips;

@@ -43,7 +43,8 @@
   function attachPending(record) {
     const avatarRoot = record.avatarRoot;
     if (!avatarRoot?.parent || avatarRoot.userData?.proceduralHandRig) return !!avatarRoot?.userData?.proceduralHandRig;
-    const rig = hands.attach(record.THREE, avatarRoot.parent, {
+    const handParent = avatarRoot.userData?.proceduralHandParent || avatarRoot.parent; // Lets authoring previews attach hands to their floor-relative visual root instead of the lifted portrait group.
+    const rig = hands.attach(record.THREE, handParent, {
       speciesId: record.speciesId,
       gender: record.gender,
       bodyColors: record.bodyColors,

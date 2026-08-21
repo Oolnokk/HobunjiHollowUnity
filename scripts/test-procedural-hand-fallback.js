@@ -120,6 +120,8 @@ assert.match(source, /owners\.left = 'secondary-grip'/, 'secondary grip ownershi
 assert.match(source, /applyFallbackSide\(record, 'left'\)/, 'a one-handed grip must leave the other hand on fallback motion');
 assert.match(shoulderSource, /socket\.position\.x = shoulder\.x/, 'a free hand must hang at the resolved shoulder X');
 assert.match(shoulderSource, /socket\.position\.y = posteriorYInParent\(\)/, 'a free hand must hang at the derived posterior Y');
+assert.match(shoulderSource, /resolvedPosteriorPosition\?\.y/, 'Animation Author fallback hands must consume the exact live posterior gizmo Y');
+assert.doesNotMatch(shoulderSource, /posteriorYInParent[\s\S]{0,900}avatarRoot\.localToWorld/, 'floor-relative posterior Y must not add the avatar half-height again');
 assert.match(shoulderSource, /heightPercentOffset = Number\.isFinite\(profileOffset\) \? profileOffset : -18/, 'posterior Y must use the shared attachment-rig rule and repository fallback');
 assert.match(shoulderSource, /leftHandShoulder.*rightHandShoulder/s, 'shoulder aiming must consume the standard attachment-rig hand targets');
 assert.match(shoulderSource, /shoulderAimSetSideIdle[\s\S]*alignFreeHandToFallbackAnchor\(side, fallbackPose\)/, 'single-side fallback must align to shoulder X and posterior Y before aiming');

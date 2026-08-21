@@ -10,11 +10,12 @@
 (function (global) {
   'use strict';
 
-  const HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Reduces every hand model toward the shared hand/foot visual midpoint.
+  const HAND_SIZE_BALANCE_MULTIPLIER = 0.925; // Places every hand halfway between its original size and the over-small 85% balance pass.
+  const PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Migrates profiles saved by the immediately preceding balance preset.
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
   const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
-  const MODEL_SCALE_PRESET = 'hands-85-feet-120-v1';
+  const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
@@ -243,7 +244,10 @@
         model.scale = defaultScaleForModel(modelKey);
       } else if (migrateSizeBalance) {
         if (modelKey === 'parrot' && previousScalePreset !== 'parrot-3x-v1' && Number(model.scale) === 2) model.scale = 3;
-        model.scale *= HAND_SIZE_BALANCE_MULTIPLIER;
+        const migrationMultiplier = previousScalePreset === 'hands-85-feet-120-v1'
+          ? HAND_SIZE_BALANCE_MULTIPLIER / PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER
+          : HAND_SIZE_BALANCE_MULTIPLIER; // Raises the prior 85% profiles to 92.5%; older full-size profiles receive the new balance once.
+        model.scale *= migrationMultiplier;
       }
       // Existing local/exported drafts from before this shared direction migrate once.
       // After the marker is present, editor changes remain freely editable.

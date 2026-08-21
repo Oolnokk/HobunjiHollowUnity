@@ -78,7 +78,7 @@
       return characters[`${rig.speciesId}::${rig.gender}`] || null;
     }
 
-    function profileShoulderInAvatar(side) {
+    function profileShoulderInParent(side) {
       const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
@@ -89,7 +89,7 @@
     function installManualPoints() {
       let needsFallback = false;
       for (const side of ['left', 'right']) {
-        if (profileShoulderInAvatar(side)) continue;
+        if (profileShoulderInParent(side)) continue;
         const point = points?.pointFor?.(rig.speciesId, rig.gender, side) || { x: 0, y: 0 };
         if (points?.isAuthored?.(point)) {
           shoulderAvatar[side] = portraitPixelToAvatar(point.x, point.y, 200, 200);
@@ -120,7 +120,9 @@
     }
 
     function shoulderInParent(side) {
-      const source = profileShoulderInAvatar(side) || shoulderAvatar[side];
+      const profileShoulder = profileShoulderInParent(side); // Attachment-rig coordinates already share the floor-relative hand-parent space.
+      if (profileShoulder) return shoulderParent.copy(profileShoulder);
+      const source = shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
       avatarRoot.updateWorldMatrix?.(true, false);
@@ -132,16 +134,12 @@
     }
 
     function posteriorYInParent() {
+      const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
+      if (Number.isFinite(resolvedY)) return resolvedY;
       const profileOffset = Number(attachmentRigProfile()?.posteriorRule?.heightPercentOffset); // Uses the same derived posterior rule as mounts and the rig-coordinate preview.
       const heightPercentOffset = Number.isFinite(profileOffset) ? profileOffset : -18;
       const handAttachY = Number(avatarRoot.userData?.handAttachY ?? options.handAttachY);
-      shoulderWorld.set(0, (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100, 0);
-      avatarRoot.updateWorldMatrix?.(true, false);
-      avatarRoot.localToWorld(shoulderWorld);
-      shoulderParent.copy(shoulderWorld);
-      parent.updateWorldMatrix?.(true, false);
-      parent.worldToLocal(shoulderParent);
-      return shoulderParent.y;
+      return (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100;
     }
 
     function alignFreeHandToFallbackAnchor(side, fallbackPose = null) {
@@ -406,6 +404,7 @@
           scanError,
           shoulderSource: { ...shoulderSource },
           idlePositionRule: 'shoulder-x + posterior-y + fallback-y-offset',
+          resolvedPosteriorY: posteriorYInParent(),
           sides: debugBySide,
         },
       };

@@ -73,8 +73,8 @@ assert.strictEqual(profiles.modelKeyForSpecies('kenkari'), 'parrot');
 assert.strictEqual(profiles.modelKeyForSpecies('rakakoan'), 'parrot');
 assert.strictEqual(profiles.data.models.parrot.glb, 'assets/models/hands/hand_parrot.glb');
 assert.strictEqual(profiles.speciesScaleFor('mao-ao', 'male'), 0.7, 'hand size should still inherit foot scale by default');
-assert.strictEqual(profiles.modelScaleFor('mao-ao'), 1.7, 'ordinary hand GLBs use the 85%-balanced model default');
-assert.strictEqual(profiles.modelScaleFor('kenkari'), 2.55, 'parrot hand GLBs retain their relative larger basis at 85% size');
+assert.strictEqual(profiles.modelScaleFor('mao-ao'), 1.85, 'ordinary hand GLBs sit halfway between their original and over-small balanced size');
+assert(Math.abs(profiles.modelScaleFor('kenkari') - 2.775) < 1e-12, 'parrot hand GLBs retain their relative larger basis at 92.5% size');
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the normal source-X mirror');
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
@@ -213,6 +213,8 @@ assert.match(animationAuthorSource, /new THREE\.AxesHelper\(\.22\)/, 'hand shoul
 assert.match(animationAuthorSource, /actor\.rigAnchors\[name\] = anchor/, 'hand shoulder targets must be normal actor rig anchors for gizmo attachment');
 assert.match(animationAuthorSource, /profile\.anchors\[anchorName\] = defaultHandShoulderSnapshotV1525/, 'standard reset must restore a shoulder target default');
 assert.match(animationAuthorSource, /publishCharacterHandShouldersV1525/, 'gizmo edits must feed the live idle-hand renderer');
+assert.match(animationAuthorSource, /proceduralHandParent = actor\.visualOffset/, 'rigger hands must share the floor-relative parent used by posterior and shoulder anchors');
+assert.match(animationAuthorSource, /resolvedPosteriorPosition = structuredCloneSafe\(transformSnapshot\(actor\.rigAnchors\.posterior\)\.position\)/, 'rigger must publish the exact displayed posterior coordinate to the hand runtime');
 assert.match(animationAuthorSource, /idle hands render at matching shoulder X and derived posterior Y/, 'rig inspector must explain live hand placement');
 assert.doesNotMatch(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author must not load the retired portrait-click companion workflow');
 assert.match(animationAuthorSource, /'js\/held-action-animations\.js'/, 'Animation Author must load the shared idle-hand runtime');
