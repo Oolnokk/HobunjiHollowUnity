@@ -51,6 +51,7 @@
       right: new THREE.Quaternion(),
     }; // Stores the un-aimed frame so async scans/control changes can never re-aim an already corrected hand.
     const authoredBaseValid = { left: false, right: false }; // Tracks whether each side has received a raw tool/idle frame yet.
+    const freeSide = { left: true, right: true }; // Prevents shoulder-coordinate edits from translating a hand currently owned by a tool animation.
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
     let disposed = false;
@@ -309,7 +310,11 @@
       if (disposed) return;
       const fallback = installManualPoints();
       scanState = fallback ? 'pending' : 'manual';
-      if (!fallback) aimAll();
+      if (!fallback) {
+        for (const side of ['left', 'right']) if (freeSide[side]) alignFreeHandXToShoulder(side);
+        aimAll();
+        global.ProceduralHandFrameDriver?.syncNow?.();
+      }
       // A newly reset 0,0 point is resolved on the next avatar rebuild; this avoids
       // repeating expensive alpha-component scans while dragging numeric fields.
     });
@@ -319,6 +324,7 @@
       rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion) {
         const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
         if (result) {
+          freeSide[side] = false;
           captureAuthoredBase(side);
           aimSide(side);
         }
@@ -330,6 +336,7 @@
     if (originalSetSideIdle) {
       rig.setSideIdle = function shoulderAimSetSideIdle(side, fallbackPose = null) {
         const result = originalSetSideIdle(side, fallbackPose);
+        freeSide[side] = true;
         alignFreeHandXToShoulder(side);
         captureAuthoredBase(side);
         aimSide(side);
@@ -341,6 +348,8 @@
     if (originalUseIdlePose) {
       rig.useIdlePose = function shoulderAimUseIdlePose(fallbackPoses = null) {
         const result = originalUseIdlePose(fallbackPoses);
+        freeSide.left = true;
+        freeSide.right = true;
         alignFreeHandXToShoulder('left');
         alignFreeHandXToShoulder('right');
         captureAuthoredBase('left');

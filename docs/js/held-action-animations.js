@@ -28,9 +28,13 @@
   // rotating arm sprites. Shoulder coordinates are either manually authored in
   // Animation Author or resolved by the raw-arm main-mass fallback. Per-pose axis
   // weights then blend smoothly with the same pose timeline as the held item.
+  const configuredDocsBase = window.__HobunjiHandBootstrapDocsBase || null; // Lets repository-backed authoring tools keep every hand dependency on the selected commit.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
-  const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
+  const docsBase = configuredDocsBase
+    ? new URL(configuredDocsBase, location.href)
+    : (selfUrl?.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
+  const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260821d', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
@@ -42,10 +46,10 @@
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20260821f', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20260821g', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260821c', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260821g', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260821c', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -62,7 +66,7 @@
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819b', docsBase).href);
-  } else {
+  } else if (!isAnimationAuthor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
@@ -80,9 +84,13 @@
     })), Promise.resolve());
   }
 
+  let ready;
   if (document.readyState === 'loading' && document.currentScript) {
     for (const src of handScripts) document.write(`<script src="${src}"><\/script>`);
+    ready = Promise.resolve();
   } else {
-    loadSequentially(handScripts).catch(error => console.warn('[hands] bootstrap failed:', error));
+    ready = loadSequentially(handScripts);
   }
+  window.HobunjiHandRuntimeReady = ready; // Repository tools await this before constructing avatars that the frame driver must wrap.
+  ready.catch(error => console.warn('[hands] bootstrap failed:', error));
 })();

@@ -91,7 +91,7 @@
     ui.leftBtn.classList.toggle('active', selectedSide === 'left');
     ui.rightBtn.classList.toggle('active', selectedSide === 'right');
     ui.status.textContent = identity
-      ? `Click the front portrait to place the ${selectedSide} shoulder, or type 200×200 portrait coordinates. 0,0 invokes automatic main-mass detection.`
+      ? `Click the front portrait or type coordinates. The 3D idle hands update live so you can judge the ${selectedSide} shoulder; 0,0 invokes automatic main-mass detection.`
       : 'Select a character NPC first.';
     updateMarkers();
   }
@@ -167,6 +167,7 @@
     const bindPair = side => {
       const x = ui[`${side}X`], y = ui[`${side}Y`];
       const apply = () => setPoint(side, Number(x.value) || 0, Number(y.value) || 0);
+      x.addEventListener('input', apply); y.addEventListener('input', apply);
       x.addEventListener('change', apply); y.addEventListener('change', apply);
     };
     bindPair('left'); bindPair('right');

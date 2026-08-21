@@ -26,6 +26,7 @@ const shoulderPoseRuntimeSource = read('docs/js/hand-shoulder-pose-runtime.js');
 const shoulderAimSource = read('docs/js/procedural-hand-shoulder-aim.js');
 const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-controls.js');
 const animationAuthorShoulderSource = read('docs/js/animation-author-hand-shoulder-points.js');
+const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
 const heldSource = read('docs/js/held-action-animations.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
@@ -109,6 +110,7 @@ for (const species of ['mao-ao','engh-sho','tletingan','mashtzarr','kenkari','ra
 assert.match(handSource, /authored origin/i, 'direct hand runtime must preserve the GLB authored origin');
 assert.doesNotMatch(handSource, /solveTwoBoneArm|shoulderNode|upper_arm/, 'direct hand runtime must contain no arm-chain implementation');
 assert.match(handSource, /THREE\.DoubleSide/, 'direct runtime must keep hand backface culling disabled');
+assert.match(handSource, /animation-author.*esm\.sh\/three@\$\{version\}\/examples\/jsm\/loaders\/GLTFLoader\.js/s, 'Animation Author must use an absolute version-matched GLTFLoader module URL');
 assert.match(handSource, /RIGHT_SHOULDER_AXIS_TWIST_DEG = 180/, 'right hand must twist 180 degrees around its shoulder-pointing local axis');
 assert.match(handSource, /side === 'right'.*group\.rotation\.y = THREE\.MathUtils\.degToRad\(RIGHT_SHOULDER_AXIS_TWIST_DEG\)/, 'right-hand twist must be applied around visual local +Y without changing shoulder aim');
 assert.match(handSource, /modelKey === 'parrot' && role === 'body'/, 'Kenkari-family modeled wing continuation must be identified independently of its talons');
@@ -190,6 +192,8 @@ assert.match(shoulderAimSource, /rotationVector\.x \* weights\.pitch/, 'Pitch sh
 assert.match(shoulderAimSource, /rotationVector\.y \* weights\.yaw/, 'Yaw shoulder influence must blend smoothly');
 assert.match(shoulderAimSource, /rotationVector\.z \* weights\.roll/, 'Roll shoulder influence must blend smoothly');
 assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
+assert.match(shoulderAimSource, /freeSide = \{ left: true, right: true \}/, 'shoulder edits must track which hands are available for idle-position feedback');
+assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandXToShoulder\(side\)/s, 'manual shoulder edits must move free idle hands laterally in the live preview');
 assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
@@ -206,9 +210,14 @@ assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|g
 assert.match(animationAuthorShoulderSource, /maaRigLibrarySection/, 'shoulder author UI must mount inside Attachment Rig Coordinates');
 assert.match(animationAuthorShoulderSource, /frontCanvas/, 'manual shoulder placement must use the existing front portrait');
 assert.match(animationAuthorShoulderSource, /Set 0,0 fallback/, 'each side must have an explicit automatic-fallback reset');
-assert.match(animationAuthorShoulderSource, /200×200 portrait coordinates/, 'author UI must explain the coordinate basis');
+assert.match(animationAuthorShoulderSource, /canonical 200×200 pixel space/, 'author UI must explain the coordinate basis');
 assert.match(animationAuthorShoulderSource, /panel\.offsetParent == null/, 'portrait clicks must only place shoulders while Attachment Rig Coordinates is visible');
+assert.match(animationAuthorShoulderSource, /addEventListener\('input', apply\)/, 'typed shoulder coordinates must update the idle-hand preview before field blur');
 assert.match(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author runtime must load the shoulder companion panel');
+assert.match(animationAuthorSource, /'js\/held-action-animations\.js'/, 'Animation Author must load the shared idle-hand runtime');
+assert.match(animationAuthorSource, /await window\.HobunjiHandRuntimeReady/, 'Animation Author must wait for the hand frame driver before building avatars');
+assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
+assert.match(heldSource, /window\.HobunjiHandRuntimeReady = ready/, 'dynamic repository tools need an explicit hand-runtime readiness signal');
 
 assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
 assert.match(materialRoleSource, /MAT_EyeSurface_0c0c0c: 'body'/, 'parrot second export material must be flipped to body');

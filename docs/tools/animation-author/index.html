@@ -1224,6 +1224,7 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/held-action-animations.js',
   CREATURE_RENDER_SCRIPT,
 ];
 
@@ -1444,6 +1445,10 @@ function prepareRepositoryScript(code, relativePath, settings) {
   if (relativePath === 'js/portrait-breathing.js') {
     return `${code}\n;window.HobunjiPortraitEmoteAnimations = JSON.parse(JSON.stringify(EMOTE_ANIMATIONS));`;
   }
+  if (relativePath === 'js/held-action-animations.js') {
+    const docsBase = cdnUrl(settings.docsRoot); // Pins dynamically loaded hand scripts and GLBs to this author session's selected repository revision.
+    return `window.__HobunjiHandBootstrapDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiHandBootstrapDocsBase;`;
+  }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
   const docsBase = cdnUrl(settings.docsRoot);
   let prepared = code
@@ -1485,9 +1490,11 @@ async function loadRepositoryRuntime(settings) {
     await executeClassicScript(code, rawUrl(path));
     log(`Loaded runtime script ${path}`);
   }
+  if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
+  if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
   $('creatureModeBtn').disabled = false;
   if (!window.renderProfile || !window.loadPortraitCosmetics) throw new Error('portrait-utils.js did not expose the expected renderer functions.');
