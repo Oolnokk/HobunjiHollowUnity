@@ -249,7 +249,7 @@ for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpe
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
 assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.35'/, 'the published author title must identify the whole-character live-scale build');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.36'/, 'the published author title must identify the game-width anchor-calibration build');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');
 assert.match(animationAuthorSource, /absent from animationAuthor\.actors, selection, gizmos, and exports/, 'reference NPC must remain outside every interactive/exported actor path');
 assert.match(animationAuthorSource, /id="maaRandomizeReferenceNpc"/, 'Shoulder Rig must offer one-button reference NPC randomization');
@@ -259,6 +259,10 @@ assert.doesNotMatch(animationAuthorSource, /presentation\.scale\.copy\(actor\.ri
 assert.doesNotMatch(animationAuthorSource, /rigBodyBoxBaseScaleV1531/, 'whole-root scaling must not double-scale the child rig preview box');
 assert.doesNotMatch(animationAuthorSource, /actor\.model\.scale\.copy\(actor\.rigBodyModelBaseScaleV1531\)/, 'body-scale input must not mutate the runtime-managed portrait model');
 assert.match(animationAuthorSource, /actor\.rigBuiltAvatarScaleV1533 = builtModelWidth \/ baseModelWidth/, 'body-scale reconciliation must measure the scale actually built into the replacement model');
+assert.match(animationAuthorSource, /function animationAuthorAvatarBaseWidthV1536\(\)/, 'Animation Author must share one gameplay-width resolver across portrait builds and scale diagnostics');
+assert.match(animationAuthorSource, /pngPlaneAvatar\?\.worldModelWidth/, 'Animation Author must use the same configured base avatar width as gameplay');
+assert.strictEqual((animationAuthorSource.match(/modelWidth: previewBaseWidth/g) || []).length, 3, 'repository viewer, editable actor, and reference NPC must all build at gameplay width');
+assert.strictEqual((animationAuthorSource.match(/modelHeight: previewBaseWidth/g) || []).length, 3, 'all three character preview paths must preserve square base dimensions like game.js');
 assert.match(animationAuthorSource, /const targetScale = requestedRigActorAvatarScaleV1534\(actor, portraitScale\)/, 'live body-scale preview must use the entered species\/gender scale instead of re-reading the prior resolver value');
 assert.match(animationAuthorSource, /return desiredScale \* childScale/, 'live body-scale preview must retain the real avatar builder\'s child multiplier');
 assert.doesNotMatch(animationAuthorSource, /const targetScale = resolvedRigActorAvatarScaleV1533/, 'live body-scale preview must not discard the entered value for a configured resolver result');
@@ -300,6 +304,9 @@ assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'pending');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.count, 12);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.exactSuppliedProfiles, 10);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.authoredPreviewBaseWidth, 1);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.gameAvatarBaseWidth, 0.9);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.anchorPositionScale, 0.9);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 12);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
 const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
@@ -320,10 +327,12 @@ const expectedAuthoredRigs = {
 for (const [key, [posterior, leftX, leftY, rightX, rightY, placement, bodyScale, handScale, footScale, armLength]] of Object.entries(expectedAuthoredRigs)) {
   const profile = authoredCharacterProfiles[key];
   assert.strictEqual(profile.posteriorRule.heightPercentOffset, posterior, `${key} must retain its authored posterior offset`);
-  assert.strictEqual(profile.anchors.leftHandShoulder.position.x, leftX, `${key} must retain its authored left shoulder X`);
-  assert.strictEqual(profile.anchors.leftHandShoulder.position.y, leftY, `${key} must retain its reviewed left shoulder Y`);
-  assert.strictEqual(profile.anchors.rightHandShoulder.position.x, rightX, `${key} must retain its authored right shoulder X`);
-  assert.strictEqual(profile.anchors.rightHandShoulder.position.y, rightY, `${key} must retain its reviewed right shoulder Y`);
+  assert.strictEqual(profile.anchors.leftHandShoulder.position.x, leftX * 0.9, `${key} must calibrate its authored left shoulder X to gameplay width`);
+  assert.strictEqual(profile.anchors.leftHandShoulder.position.y, leftY * 0.9, `${key} must calibrate its reviewed left shoulder Y to gameplay width`);
+  assert.strictEqual(profile.anchors.rightHandShoulder.position.x, rightX * 0.9, `${key} must calibrate its authored right shoulder X to gameplay width`);
+  assert.strictEqual(profile.anchors.rightHandShoulder.position.y, rightY * 0.9, `${key} must calibrate its reviewed right shoulder Y to gameplay width`);
+  assert.strictEqual(profile.anchorPositionCalibration.positionScale, 0.9, `${key} must document its one-time avatar-local position calibration`);
+  assert.strictEqual(profile.anchorPositionCalibration.rotationDeg, 'unchanged-uniform-scale', `${key} rotations must remain unchanged under uniform scaling`);
   assert.strictEqual(profile.anatomy.portraitVerticalPlacementRatio, placement, `${key} must export its supplied gender-specific portrait Y placement`);
   assert.strictEqual(profile.shoulderPerchRule.portraitVerticalPlacementRatio, placement, `${key} legacy Y metadata must match anatomy`);
   assert.strictEqual(profile.anatomy.portraitScale, bodyScale, `${key} must export an independent body scale`);
@@ -333,6 +342,8 @@ for (const [key, [posterior, leftX, leftY, rightX, rightY, placement, bodyScale,
 }
 assert.strictEqual(authoredCharacterProfiles['rakakoan::male'].handShoulderRule.sharedFrom, 'kenkari::male');
 assert.strictEqual(authoredCharacterProfiles['rakakoan::female'].handShoulderRule.sharedFrom, 'kenkari::female');
+assert.strictEqual(authoredCharacterProfiles['mashtzarr::male'].anchors.shoulderPerch.position.x, -0.3080816783597182 * 0.9, 'shoulder-perch positions must receive the same gameplay-width calibration as hand shoulders');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionCalibration, 'applied:1.000->0.900');
 attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
   portraitScaleBySpecies: {}, portraitVerticalPlacement: {}, proceduralFeet: { footScale: { default: 1 } },
 } } } };

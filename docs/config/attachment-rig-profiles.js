@@ -21,6 +21,11 @@
 // authored offset (e.g. every creature's shoulderGrip carries -61° yaw) —
 // apply it, don't discard it.
 //
+// The V15.28 character anchors were authored while Animation Author built its
+// portrait plane at width 1.0, although game.js builds the same plane at width
+// 0.9. The concise character overrides below convert those absolute X/Y/Z
+// positions by 0.9. Uniform scaling does not change rotationDeg or percentages.
+//
 // characters are keyed "<speciesId>::<gender>"; creatures are keyed by their
 // CREATURE_DB kind. Missing entries should fall back to a hardcoded estimate
 // rather than throwing — re-export from the tool and refresh this file
@@ -31,6 +36,9 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
 // overrides keep the canonical one-line library intact while replacing every
 // field that was deliberately reauthored in the supplied character profiles.
 (() => {
+  const authoredPreviewBaseWidth = 1; // Records the accidentally oversized Animation Author portrait used while these character anchors were positioned.
+  const gameAvatarBaseWidth = 0.9; // Matches pngPlaneAvatar.worldModelWidth and the explicit modelWidth used by game.js.
+  const authoredPreviewToGameScale = gameAvatarBaseWidth / authoredPreviewBaseWidth; // Converts absolute avatar-local attachment positions into runtime coordinates.
   const updates = { // Applied below to gameplay and every repository-backed authoring preview.
     'mashtzarr::male': { posterior: 0.6880202107561688, perch: [-0.3080816783597182, 0.8820611278141346, 0], left: [0.2938287377558306, 0.471474644548211, 0], right: [-0.3481292844745114, 0.5072329547240978, 0], pixel: [63.960809102402024, 87.5], height: 1, placement: 0.755, bodyScale: 1.18, handScale: 0.925, footScale: 1.175, armLength: 0 },
     'tletingan::male': { posterior: 8.329594593937665, perch: [-0.17173123931623935, 0.5355, 0], left: [0.22770354382724423, 0.42663710735156957, 0], right: [-0.2448354156580218, 0.4465232083661127, 0], pixel: [59.09264957264957, 108.5], height: 0.85, placement: 0.645, bodyScale: 0.85, handScale: 0.9, footScale: 1, armLength: 6 },
@@ -45,14 +53,18 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
   };
   const sharedProfileAliases = { 'rakakoan::male': 'kenkari::male', 'rakakoan::female': 'kenkari::female' }; // Reuses the confirmed gender-matched parrot rig geometry below.
   for (const [aliasKey, sourceKey] of Object.entries(sharedProfileAliases)) updates[aliasKey] = { ...updates[sourceKey], sharedFrom: sourceKey };
-  const identityAnchor = ([x, y, z]) => ({ position: { x, y, z }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }); // Builds the exact transform shape consumed by rig profiles.
+  const calibratedIdentityAnchor = ([x, y, z]) => ({
+    position: { x: x * authoredPreviewToGameScale, y: y * authoredPreviewToGameScale, z: z * authoredPreviewToGameScale },
+    rotationDeg: { x: 0, y: 0, z: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+  }); // Preserves each authored direction while moving its absolute position onto the game's 0.9-wide avatar.
   for (const [key, authored] of Object.entries(updates)) {
     const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[key]; // Existing species/gender record whose authored fields are replaced in place.
     if (!profile) continue;
     profile.posteriorRule = { ...profile.posteriorRule, heightPercentOffset: authored.posterior, defaultRuleVersion: 3 };
-    profile.anchors.shoulderPerch = identityAnchor(authored.perch);
-    profile.anchors.leftHandShoulder = identityAnchor(authored.left);
-    profile.anchors.rightHandShoulder = identityAnchor(authored.right);
+    profile.anchors.shoulderPerch = calibratedIdentityAnchor(authored.perch);
+    profile.anchors.leftHandShoulder = calibratedIdentityAnchor(authored.left);
+    profile.anchors.rightHandShoulder = calibratedIdentityAnchor(authored.right);
     profile.shoulderPerchRule = {
       ...profile.shoulderPerchRule,
       source: 'imported-authored-rig-json',
@@ -70,10 +82,18 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
     };
     profile.handShoulderRule = {
       source: 'rig-anchor-gizmo',
-      coordinateSpace: 'character-visual-local',
-      version: 1,
+      coordinateSpace: 'game-avatar-local-0.9-base-width',
+      version: 2,
       ...(authored.sharedFrom ? { sharedFrom: authored.sharedFrom } : {}),
     };
+    profile.anchorPositionCalibration = {
+      sourceBaseWidth: authoredPreviewBaseWidth,
+      targetBaseWidth: gameAvatarBaseWidth,
+      positionScale: authoredPreviewToGameScale,
+      axes: 'x-y-z',
+      rotationDeg: 'unchanged-uniform-scale',
+      version: 1,
+    }; // Makes the one-time repair inspectable in exported/static configuration diagnostics.
     profile.anatomy = {
       portraitVerticalPlacementRatio: authored.placement,
       portraitScale: authored.bodyScale,
@@ -84,13 +104,13 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
     }; // Keeps species/gender proportions and free-hand reach beside the anchors they visually depend on.
     profile.characterAttachZDefaultVersion = 1;
   }
-  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, exactSuppliedProfiles: 10, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
+  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, exactSuppliedProfiles: 10, authoredPreviewBaseWidth, gameAvatarBaseWidth, anchorPositionScale: authoredPreviewToGameScale, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
 })();
 
 // Apply profile-backed portrait/limb proportions, including per-gender body
 // scale. Animation Author loads shared configs after this file, so expose an
 // idempotent hook instead of interrupting its bootstrap.
-window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, exactSuppliedProfiles: 10, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, exactSuppliedProfiles: 10, parrotSharedProfiles: 2, anchorPositionCalibration: 'applied:1.000->0.900', anchorPositionScale: 0.9 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
 (() => {
   const applyAttachmentRigProfileCorrections = () => {
     const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives the authored anatomy values once the shared repository config exists.

@@ -2558,11 +2558,14 @@ async function placeThreeModel(npc, avatar) {
   await initThree();
   const t = state.three;
   disposeCurrentThreeModel();
+  const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Keeps the repository portrait viewer in the same base-width coordinate space as game.js.
   t.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(t.THREE, avatar.front, {
     backCanvas: avatar.back,
     profile: avatar.profile,
     appearance: avatar.exportNpc.appearance,
     npcRecord: npc,
+    modelWidth: previewBaseWidth,
+    modelHeight: previewBaseWidth,
     name: `NPC_${safeFilename(npc.id || npc.name, 'avatar')}`,
     userData: { source: 'local-repo-viewer', npcId: npc.id || null, repositoryCommit: state.resolvedSha },
   });
@@ -4810,11 +4813,14 @@ async function addNpcAnimationActor(npcId, options = {}) {
   showOverlay(`Adding ${npc.name || npc.id}`, 'Building a repository-backed two-sided skinned portrait plane.', true);
   try {
     const avatar = await buildAvatarRender(npc);
+    const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Prevents rig coordinates from being authored against the builder's wider 1.0 default while gameplay uses 0.9.
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(state.three.THREE, avatar.front, {
       backCanvas: avatar.back,
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: npc,
+      modelWidth: previewBaseWidth,
+      modelHeight: previewBaseWidth,
       name: `AnimationNPC_${safeFilename(npc.id || npc.name, 'avatar')}`,
       userData: { source: 'multi-avatar-animation-author', npcId: npc.id || null, repositoryCommit: state.resolvedSha },
     });
@@ -12356,9 +12362,14 @@ let rigReferenceBuildGenerationV1531 = 0; // Invalidates an older randomized ref
 let rigBodyScaleRebuildGenerationV1531 = 0; // Prevents overlapping body-scale releases from restoring stale NPC previews.
 let rigReferencePreserveDuringActorSwapV1532 = false; // Used by rig-mode NPC replacement so its comparison NPC survives the shared clear path.
 
+function animationAuthorAvatarBaseWidthV1536() {
+  const configuredWidth = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth); // Reads the exact base portrait width passed by both game.js avatar construction paths.
+  return Number.isFinite(configuredWidth) && configuredWidth > 0 ? configuredWidth : 0.9;
+}
+
 function rememberRigActorBodyScaleV1531(actor) {
   if (actor?.source?.type !== 'npc' || !actor.model) return;
-  const baseModelWidth = Math.max(.001, Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.modelWidth) || 1); // Converts the rendered model width back into its actual total avatar multiplier.
+  const baseModelWidth = animationAuthorAvatarBaseWidthV1536(); // Converts the rendered model width back into its actual species/gender multiplier using gameplay's base width.
   const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
   actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
   actor.rigBodyVisualOffsetBaseScaleV1535 = actor.visualOffset?.scale?.clone?.() || null; // Used to scale the common portrait, hand, foot, anchor, and rig-box parent without touching runtime-managed children.
@@ -12468,11 +12479,14 @@ async function showRigReferenceNpcV1531(npcId = null) {
     const group = new THREE.Group(); // Comparison carrier is deliberately absent from animationAuthor.actors, selection, gizmos, and exports.
     group.name = `RigReferenceNPC_${safeFilename(npc.id || npc.name)}`;
     group.userData.rigReferenceOnly = true;
+    const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Gives the comparison NPC the same game-space base width as the editable NPC.
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
       backCanvas: avatar.back,
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: npc,
+      modelWidth: previewBaseWidth,
+      modelHeight: previewBaseWidth,
       name: `${group.name}_portrait`,
       userData: { source: 'shoulder-rig-reference-npc', nonInteractive: true, npcId: npc.id || null },
     });
@@ -12654,14 +12668,14 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.35';
+  document.title = 'Hobunji Animation Author V15.36';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.35 applies live body scale to the complete character presentation root, keeping the portrait, hands, feet, anchors, and rig box together.';
+animationAuthor.recentChange = 'V15.36 matches the rigger portrait base width to gameplay and calibrates V15.28 character attachment positions from the accidental 1.0 preview width to the intended 0.9 runtime width.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.35 patch installed: whole-character live scale, child-scale parity, measured rebuild reconciliation, and preserved reference NPCs.');
+log('V15.36 patch installed: game-width avatar previews plus 0.9-calibrated character attachment positions; uniform rotations remain unchanged.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
