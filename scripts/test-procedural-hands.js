@@ -249,12 +249,17 @@ for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpe
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
 assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.37'/, 'the published author title must identify the canonical gameplay-anchor parity build');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.38'/, 'the published author title must identify the floor-measured gameplay-parity build');
 assert.match(animationAuthorSource, /function canonicalCharacterRigProfilesV1537\(\)/, 'Animation Author must normalize its final character library from the shared gameplay profiles');
 assert.match(animationAuthorSource, /installCanonicalCharacterRigProfilesV1537\(animationAuthor\.attachmentRigProfiles\)/, 'canonical gameplay character profiles must replace stale embedded rigger snapshots during bootstrap');
 assert.match(animationAuthorSource, /installCanonicalCharacterRigProfilesV1537\(DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516\)/, 'rig-library reset must restore canonical calibrated character profiles instead of older embedded defaults');
 assert.match(animationAuthorSource, /animationAuthorAnchorPositionMaxDelta = maximumPositionDelta/, 'mobile diagnostics must report any remaining rigger-to-runtime anchor position divergence on every axis');
 assert.match(animationAuthorSource, /animationAuthorPosteriorPercentMaxDelta = maximumPosteriorPercentDelta/, 'mobile diagnostics must report any remaining derived posterior-Y divergence');
+assert.match(animationAuthorSource, /grid\.position\.y = animationAuthor\.mode === 'rig' \? 0 : ANIMATION_AUTHOR_LEGACY_GRID_Y_V1538/, 'Shoulder Rig must show gameplay floor Y=0 instead of the legacy portrait-viewer grid at -0.55');
+assert.match(animationAuthorSource, /id="maaRigVerticalParity"/, 'Shoulder Rig must expose mobile-readable portrait, shoulder, foot, and floor Y measurements');
+assert.match(animationAuthorSource, /getStandingPoseDebug/, 'Shoulder Rig diagnostics must consume rendered procedural-foot bounds instead of assuming their visual bottom');
+assert.match(proceduralFeetSource, /function footBoundsInRoot\(foot\)/, 'the shared foot runtime must measure rendered geometry in avatar floor space');
+assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug/, 'game and rigger feet handles must expose the same standing-pose diagnostic');
 assert(animationAuthorSource.lastIndexOf('installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles)') > animationAuthorSource.indexOf('installApprovedRigLibraryV1524(animationAuthor.attachmentRigProfiles'), 'canonical character profiles must install after the V15.24 full-library replacement');
 assert.match(animationAuthorSource, /if \(options\.fromAutosave\)[\s\S]*installCanonicalCharacterRigProfilesV1537\(animationAuthor\.attachmentRigProfiles\)/, 'autosave restoration must not reintroduce pre-calibration embedded character coordinates');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');

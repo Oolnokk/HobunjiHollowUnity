@@ -1115,6 +1115,33 @@
       disposeObjectResources(root);
     }
 
+    function footBoundsInRoot(foot) {
+      if (!foot) return null;
+      root.updateMatrixWorld(true);
+      const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert(); // Converts rendered mesh bounds back into the floor-relative feet-root space used by both game and rigger.
+      const bounds = new THREE.Box3().makeEmpty();
+      foot.traverse(child => {
+        if (!child?.isMesh || !child.geometry) return;
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+        if (!child.geometry.boundingBox) return;
+        const meshToRoot = new THREE.Matrix4().multiplyMatrices(inverseRoot, child.matrixWorld);
+        bounds.union(child.geometry.boundingBox.clone().applyMatrix4(meshToRoot));
+      });
+      return bounds.isEmpty() ? null : bounds;
+    }
+
+    function getStandingPoseDebug() {
+      const leftBounds = footBoundsInRoot(state.left);
+      const rightBounds = footBoundsInRoot(state.right);
+      return {
+        coordinateSpace: 'avatar-floor-relative',
+        floorY: 0,
+        posteriorY,
+        left: { targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
+        right: { targetY: state.rightTarget.y, contactY: state.rightContactY, bottomY: rightBounds?.min.y ?? null },
+      }; // Gives mobile-facing author diagnostics the rendered geometry bottoms instead of asking the user to infer the floor from camera perspective.
+    }
+
     // Writes an already-solved leg pose straight onto this side's thigh/calf
     // chain and foot mesh, bypassing solveTwoBoneLeg entirely — for
     // docs/js/combat/impact-ragdoll-playback.js, which samples pre-recorded
@@ -1142,7 +1169,7 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };

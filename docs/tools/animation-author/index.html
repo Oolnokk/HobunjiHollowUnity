@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.24</title>
+<title>Hobunji Animation Author V15.38</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1215,7 +1215,7 @@ const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821k', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821e', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -12739,6 +12739,98 @@ animationAuthor.recentChange = 'V15.37 keeps the rigger on the same calibrated c
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.37 patch installed: canonical gameplay character anchors now replace stale embedded rigger snapshots after every bootstrap and autosave restore.');
+
+
+// -----------------------------------------------------------------------------
+// V15.38 gives Shoulder Rig the same visible floor used by gameplay. The shared
+// scene grid predates floor-relative avatars and remains at Y=-0.55 for the
+// portrait/creature viewers; procedural feet and gameplay both stand at Y=0.
+// -----------------------------------------------------------------------------
+const ANIMATION_AUTHOR_LEGACY_GRID_Y_V1538 = -.55;
+
+function syncAnimationAuthorFloorGridV1538() {
+  const grid = state.three.grid;
+  if (!grid) return null;
+  grid.position.y = animationAuthor.mode === 'rig' ? 0 : ANIMATION_AUTHOR_LEGACY_GRID_Y_V1538;
+  grid.updateMatrixWorld?.(true);
+  return grid.position.y;
+}
+
+function rigVerticalParityV1538(actor = selectedAnimationActor()) {
+  if (actor?.source?.type !== 'npc') return null;
+  const metrics = portraitModelMetrics(actor);
+  const profile = attachmentRigProfileForActor(actor);
+  const feet = actor.rigFeetPreview?.getStandingPoseDebug?.() || null;
+  const shoulderSurface = characterRightArmTopMetrics(actor)?.point?.y;
+  const shoulderY = {};
+  for (const name of ['leftHandShoulder', 'rightHandShoulder', 'shoulderPerch']) {
+    const value = Number(profile?.anchors?.[name]?.position?.y);
+    shoulderY[name] = Number.isFinite(value) ? value : null;
+  }
+  const expectedLiftY = metrics.modelHeight / 2;
+  const actualLiftY = Number(actor.avatarPresentation?.position?.y);
+  const footBottoms = [feet?.left?.bottomY, feet?.right?.bottomY].filter(Number.isFinite);
+  const maximumFootFloorDelta = footBottoms.length ? Math.max(...footBottoms.map(value => Math.abs(value))) : null;
+  const diagnostic = {
+    coordinateSpace: 'game-avatar-floor-relative',
+    visibleGridY: Number(state.three.grid?.position?.y),
+    gameFloorY: 0,
+    portraitExpectedLiftY: expectedLiftY,
+    portraitActualLiftY: Number.isFinite(actualLiftY) ? actualLiftY : null,
+    portraitLiftDelta: Number.isFinite(actualLiftY) ? actualLiftY - expectedLiftY : null,
+    portraitOpaqueBottomY: Number(actor.model?.userData?.handAttachY),
+    rightArmTopY: Number.isFinite(shoulderSurface) ? shoulderSurface : null,
+    shoulderY,
+    feet,
+    maximumFootFloorDelta,
+  }; // One mobile-readable snapshot distinguishes a bad viewport floor from a portrait, anchor, or rendered-foot offset.
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorVerticalParity = diagnostic;
+  return diagnostic;
+}
+
+function rigVerticalParityMarkupV1538(actor) {
+  const diagnostic = rigVerticalParityV1538(actor);
+  if (!diagnostic) return '';
+  const display = value => Number.isFinite(value) ? Number(value).toFixed(3) : 'loading';
+  const leftFoot = diagnostic.feet?.left?.bottomY;
+  const rightFoot = diagnostic.feet?.right?.bottomY;
+  return `<div id="maaRigVerticalParity" class="maaRigStatus" style="margin-top:10px">
+    <b>Game-parity vertical references</b><br>
+    <span class="maaSmall">The cyan grid is Y <b>${display(diagnostic.visibleGridY)}</b>; gameplay floor is Y <b>${display(diagnostic.gameFloorY)}</b>. Rendered foot bottoms: L <b>${display(leftFoot)}</b>, R <b>${display(rightFoot)}</b>. Portrait lift: actual <b>${display(diagnostic.portraitActualLiftY)}</b>, game formula <b>${display(diagnostic.portraitExpectedLiftY)}</b>.</span><br>
+    <span class="maaSmall">Portrait opaque bottom <b>${display(diagnostic.portraitOpaqueBottomY)}</b>; arm-R top <b>${display(diagnostic.rightArmTopY)}</b>; shoulder Y: L <b>${display(diagnostic.shoulderY.leftHandShoulder)}</b>, R <b>${display(diagnostic.shoulderY.rightHandShoulder)}</b>, perch <b>${display(diagnostic.shoulderY.shoulderPerch)}</b>.</span>
+  </div>`;
+}
+
+const baseSetAnimationAuthorModeV1538 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode) {
+  const result = await baseSetAnimationAuthorModeV1538(mode);
+  syncAnimationAuthorFloorGridV1538();
+  if (animationAuthor.mode === 'rig') renderAnimationInspector();
+  return result;
+};
+
+const baseRenderAttachmentRigInspectorV1538 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  syncAnimationAuthorFloorGridV1538();
+  baseRenderAttachmentRigInspectorV1538();
+  const actor = selectedAnimationActor();
+  const section = $('maaCharacterAnatomySection');
+  if (actor?.source?.type !== 'npc' || !section || $('maaRigVerticalParity')) return;
+  section.insertAdjacentHTML('beforeend', rigVerticalParityMarkupV1538(actor));
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1538 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1538();
+  document.title = 'Hobunji Animation Author V15.38';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.38 moves the Shoulder Rig grid from the obsolete Y=-0.55 portrait-viewer baseline to gameplay floor Y=0 and reports rendered feet, portrait lift, opaque-body, and shoulder Y references in the inspector.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.38 patch installed: Shoulder Rig now shows the real gameplay floor and measured vertical-parity diagnostics.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
