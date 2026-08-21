@@ -12030,17 +12030,17 @@ serializeAttachmentRigLibrary = function() {
 const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1525();
-  document.title = 'Hobunji Animation Author V15.27';
+  document.title = 'Hobunji Animation Author V15.28';
   return result;
 };
 
 animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
 COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
 animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
-animationAuthor.recentChange = 'V15.27 imports ten reauthored character posterior offsets and hand-shoulder anchors; Mao’ao female’s mismatched left shoulder Y is aligned to the right shoulder.';
+animationAuthor.recentChange = 'V15.28 shares the authored Rakako’an male rig with Kenkari male and the authored Kenkari female rig with Rakako’an female, including posterior and hand-shoulder coordinates.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.27 patch installed: ten authored posterior/hand-shoulder profiles loaded; Mao’ao female shoulder Y aligned.');
+log('V15.28 patch installed: twelve authored posterior/hand-shoulder profiles loaded, including two gender-matched Kenkari/Rakako’an aliases.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

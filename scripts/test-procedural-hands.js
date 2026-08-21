@@ -235,18 +235,21 @@ const attachmentProfileSandbox = {
 };
 vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filename: 'attachment-rig-profiles.js' });
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'pending');
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.count, 10);
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 10);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.count, 12);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 12);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
 const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
 const expectedAuthoredRigs = {
   'engh-sho::male': [-12.038418352603554, 0.23239172023200738, 0.5175336815283819, -0.2857975507773615, 0.5175336815283819],
   'mao-ao::female': [-4.463363665727293, 0.1696868027743484, 0.6289206407533765, -0.22083596137467643, 0.6289206407533765],
   'rakakoan::male': [10.400973996570313, 0.17963798780078866, 0.4130876873583539, -0.18092749415903436, 0.4313452907519111],
+  'kenkari::male': [10.400973996570313, 0.17963798780078866, 0.4130876873583539, -0.18092749415903436, 0.4313452907519111],
   'mao-ao::male': [-8.020479181046285, 0.18870577470681477, 0.6947557240731601, -0.28087406205430004, 0.6455541403639915],
   'mashtzarr::male': [-6.271067638241565, 0.2938287377558306, 0.471474644548211, -0.3481292844745114, 0.5072329547240978],
   'tletingan::female': [0.8364390597132664, 0.19339659287777322, 0.38426858848533485, -0.19326419458235525, 0.38220450093854685],
   'tletingan::male': [3.824088863116206, 0.22770354382724423, 0.42663710735156957, -0.2448354156580218, 0.4465232083661127],
   'kenkari::female': [13.825129117684007, 0.14082517743613882, 0.29929878500014695, -0.15160576743172532, 0.25011972083640993],
+  'rakakoan::female': [13.825129117684007, 0.14082517743613882, 0.29929878500014695, -0.15160576743172532, 0.25011972083640993],
   'mashtzarr::female': [-4.607416097678491, 0.30553153725919435, 0.39823082948935073, -0.2938000697183753, 0.37168801102709437],
   'engh-sho::female': [-7.976049663721662, 0.20505349784094706, 0.4967497459859368, -0.24815066240089945, 0.46042886220274515],
 };
@@ -259,6 +262,8 @@ for (const [key, [posterior, leftX, leftY, rightX, rightY]] of Object.entries(ex
   assert.strictEqual(profile.anchors.rightHandShoulder.position.y, rightY, `${key} must retain its reviewed right shoulder Y`);
 }
 assert.match(authoredCharacterProfiles['mao-ao::female'].handShoulderRule.yAlignmentCorrection, /left matched right/, 'the Mao’ao female shoulder-Y correction must remain documented');
+assert.strictEqual(authoredCharacterProfiles['kenkari::male'].handShoulderRule.sharedFrom, 'rakakoan::male');
+assert.strictEqual(authoredCharacterProfiles['rakakoan::female'].handShoulderRule.sharedFrom, 'kenkari::female');
 attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
   portraitScaleBySpecies: {}, portraitVerticalPlacement: {},
 } } } };
