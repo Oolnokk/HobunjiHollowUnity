@@ -119,8 +119,11 @@ assert.match(source, /owners\.right = 'primary-grip'/, 'primary grip ownership m
 assert.match(source, /owners\.left = 'secondary-grip'/, 'secondary grip ownership must override left-hand fallback');
 assert.match(source, /applyFallbackSide\(record, 'left'\)/, 'a one-handed grip must leave the other hand on fallback motion');
 assert.match(shoulderSource, /socket\.position\.x = shoulder\.x/, 'a free hand must hang at the resolved shoulder X');
-assert.match(shoulderSource, /shoulderAimSetSideIdle[\s\S]*alignFreeHandXToShoulder\(side\)/, 'single-side fallback must align X before shoulder aiming');
-assert.match(shoulderSource, /shoulderAimUseIdlePose[\s\S]*alignFreeHandXToShoulder\('left'\)[\s\S]*alignFreeHandXToShoulder\('right'\)/, 'two-hand fallback must align both sides');
-assert.doesNotMatch(shoulderSource, /shoulderAimPlaceHandWorld[\s\S]{0,300}alignFreeHandXToShoulder/, 'tool-attached hands must retain their authored world positions');
+assert.match(shoulderSource, /socket\.position\.y = posteriorYInParent\(\)/, 'a free hand must hang at the derived posterior Y');
+assert.match(shoulderSource, /heightPercentOffset = Number\.isFinite\(profileOffset\) \? profileOffset : -18/, 'posterior Y must use the shared attachment-rig rule and repository fallback');
+assert.match(shoulderSource, /leftHandShoulder.*rightHandShoulder/s, 'shoulder aiming must consume the standard attachment-rig hand targets');
+assert.match(shoulderSource, /shoulderAimSetSideIdle[\s\S]*alignFreeHandToFallbackAnchor\(side, fallbackPose\)/, 'single-side fallback must align to shoulder X and posterior Y before aiming');
+assert.match(shoulderSource, /shoulderAimUseIdlePose[\s\S]*alignFreeHandToFallbackAnchor\('left'[\s\S]*alignFreeHandToFallbackAnchor\('right'/, 'two-hand fallback must align both sides');
+assert.doesNotMatch(shoulderSource, /shoulderAimPlaceHandWorld[\s\S]{0,300}alignFreeHandToFallbackAnchor/, 'tool-attached hands must retain their authored world positions');
 
-console.log('procedural hand fallback: idle + walk + shoulder-X hang + per-side ownership PASS');
+console.log('procedural hand fallback: idle + walk + shoulder-X/posterior-Y hang + per-side ownership PASS');

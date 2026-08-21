@@ -1,7 +1,7 @@
 // Hand-only shoulder compass. Painted arm sprites remain untouched.
 //
-// Shoulder targets come from manually authored 200x200 portrait points when present;
-// a side at 0,0 falls back to portrait-hand-shoulder-scan.js. The hand's local +Y
+// Shoulder targets come from attachment-rig profiles when present. Legacy manually
+// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks. The hand's local +Y
 // is treated as the wrist/top direction. Pitch/yaw/roll use independent 0..1 weights
 // supplied by hand-shoulder-pose-runtime.js, so checkbox changes between animation
 // poses blend smoothly instead of snapping.
@@ -73,9 +73,23 @@
       );
     }
 
+    function attachmentRigProfile() {
+      const characters = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Supplies the same species/gender shoulder anchors edited by Animation Author's rig gizmo.
+      return characters[`${rig.speciesId}::${rig.gender}`] || null;
+    }
+
+    function profileShoulderInAvatar(side) {
+      const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
+      const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
+      if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
+      shoulderSource[side] = 'attachment-rig-profile';
+      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z));
+    }
+
     function installManualPoints() {
       let needsFallback = false;
       for (const side of ['left', 'right']) {
+        if (profileShoulderInAvatar(side)) continue;
         const point = points?.pointFor?.(rig.speciesId, rig.gender, side) || { x: 0, y: 0 };
         if (points?.isAuthored?.(point)) {
           shoulderAvatar[side] = portraitPixelToAvatar(point.x, point.y, 200, 200);
@@ -106,7 +120,7 @@
     }
 
     function shoulderInParent(side) {
-      const source = shoulderAvatar[side];
+      const source = profileShoulderInAvatar(side) || shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
       avatarRoot.updateWorldMatrix?.(true, false);
@@ -117,11 +131,25 @@
       return shoulderParent;
     }
 
-    function alignFreeHandXToShoulder(side) {
-      const socket = socketFor(side); // Free-hand socket whose lateral position is corrected before shoulder aiming.
-      const shoulder = shoulderInParent(side); // Resolved manual/scanned shoulder point in the socket parent's local space.
+    function posteriorYInParent() {
+      const profileOffset = Number(attachmentRigProfile()?.posteriorRule?.heightPercentOffset); // Uses the same derived posterior rule as mounts and the rig-coordinate preview.
+      const heightPercentOffset = Number.isFinite(profileOffset) ? profileOffset : -18;
+      const handAttachY = Number(avatarRoot.userData?.handAttachY ?? options.handAttachY);
+      shoulderWorld.set(0, (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100, 0);
+      avatarRoot.updateWorldMatrix?.(true, false);
+      avatarRoot.localToWorld(shoulderWorld);
+      shoulderParent.copy(shoulderWorld);
+      parent.updateWorldMatrix?.(true, false);
+      parent.worldToLocal(shoulderParent);
+      return shoulderParent.y;
+    }
+
+    function alignFreeHandToFallbackAnchor(side, fallbackPose = null) {
+      const socket = socketFor(side); // Free-hand socket whose idle position follows shoulder X and posterior Y.
+      const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
       if (!socket || !shoulder) return false;
       socket.position.x = shoulder.x;
+      socket.position.y = posteriorYInParent() + (Number(fallbackPose?.position?.y) || 0);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;
@@ -311,7 +339,7 @@
       const fallback = installManualPoints();
       scanState = fallback ? 'pending' : 'manual';
       if (!fallback) {
-        for (const side of ['left', 'right']) if (freeSide[side]) alignFreeHandXToShoulder(side);
+        for (const side of ['left', 'right']) if (freeSide[side]) alignFreeHandToFallbackAnchor(side);
         aimAll();
         global.ProceduralHandFrameDriver?.syncNow?.();
       }
@@ -337,7 +365,7 @@
       rig.setSideIdle = function shoulderAimSetSideIdle(side, fallbackPose = null) {
         const result = originalSetSideIdle(side, fallbackPose);
         freeSide[side] = true;
-        alignFreeHandXToShoulder(side);
+        alignFreeHandToFallbackAnchor(side, fallbackPose);
         captureAuthoredBase(side);
         aimSide(side);
         return result;
@@ -350,8 +378,8 @@
         const result = originalUseIdlePose(fallbackPoses);
         freeSide.left = true;
         freeSide.right = true;
-        alignFreeHandXToShoulder('left');
-        alignFreeHandXToShoulder('right');
+        alignFreeHandToFallbackAnchor('left', fallbackPoses?.left || null);
+        alignFreeHandToFallbackAnchor('right', fallbackPoses?.right || null);
         captureAuthoredBase('left');
         captureAuthoredBase('right');
         aimAll();
@@ -377,6 +405,7 @@
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
+          idlePositionRule: 'shoulder-x + posterior-y + fallback-y-offset',
           sides: debugBySide,
         },
       };

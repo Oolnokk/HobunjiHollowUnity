@@ -1213,7 +1213,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821h', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821i', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -7355,7 +7355,7 @@ function renderAttachmentRigInspector() {
   inspector.innerHTML = `
     <section class="maaSection">
       <div class="maaSectionTitle"><b>${character ? 'Character species + gender rig' : 'Creature species rig'}</b><span class="maaBatchBadge">${escapeHtml(profileLabel)}</span></div>
-      <div class="maaSmall maaMuted">This profile is shared by every matching ${character ? 'character species/gender combination' : 'creature species'}. ${character ? 'Posterior X is centered and its Y derives from tool-grip height plus the editable height-percent offset.' : 'The points are fixed rig pivots.'} These are not animation keys.</div>
+      <div class="maaSmall maaMuted">This profile is shared by every matching ${character ? 'character species/gender combination' : 'creature species'}. ${character ? 'Posterior Y controls the resting hand height; each hand uses its matching shoulder target X and aims back toward that target.' : 'The points are fixed rig pivots.'} These are not animation keys.</div>
       <div class="maaRigConnectionDiagram">
         <div>${character ? 'Posterior' : 'Shoulder grip'}<br><span class="maaMuted">rider alignment</span></div>
         <b>→</b>
@@ -7364,7 +7364,7 @@ function renderAttachmentRigInspector() {
     </section>
     <section class="maaSection">
       <div class="maaSectionTitle"><b>Coordinate to edit</b><span class="maaSmall maaMuted">Move or rotate</span></div>
-      <div class="maaField"><label for="maaRigAnchorSelect">Rig coordinate</label><select id="maaRigAnchorSelect">${names.map(name => `<option value="${name}"${name === selected ? ' selected' : ''}>${name === 'shoulderPerch' ? 'Shoulder perch' : name === 'shoulderGrip' ? 'Shoulder grip' : name[0].toUpperCase()+name.slice(1)}</option>`).join('')}</select></div>
+      <div class="maaField"><label for="maaRigAnchorSelect">Rig coordinate</label><select id="maaRigAnchorSelect">${names.map(name => `<option value="${name}"${name === selected ? ' selected' : ''}>${name === 'shoulderPerch' ? 'Shoulder perch' : name === 'shoulderGrip' ? 'Shoulder grip' : name === 'leftHandShoulder' ? 'Left-hand shoulder target' : name === 'rightHandShoulder' ? 'Right-hand shoulder target' : name[0].toUpperCase()+name.slice(1)}</option>`).join('')}</select></div>
       <div class="maaRow" style="margin-top:7px">
         <button class="secondary${animationAuthor.transformMode === 'translate' ? ' active' : ''}" data-maa-rig-gizmo="translate">Move gizmo</button>
         <button class="secondary${animationAuthor.transformMode === 'rotate' ? ' active' : ''}" data-maa-rig-gizmo="rotate">Rotate gizmo</button>
@@ -7378,7 +7378,7 @@ function renderAttachmentRigInspector() {
     </section>
     <section class="maaSection">
       <div class="maaSectionTitle"><b>Runtime meaning</b></div>
-      <div class="maaSmall maaMuted">A mount animation keys an invisible parent attached to the creature saddle. The character visual is placed beneath it with the posterior at parent origin. A shoulder-pet animation does the same with shoulder perch and shoulder grip. Selecting the rider in multi-avatar mode selects and keys that intermediate parent.</div>
+      <div class="maaSmall maaMuted">A mount animation keys an invisible parent attached to the creature saddle. The character visual is placed beneath it with the posterior at parent origin. A shoulder-pet animation does the same with shoulder perch and shoulder grip. Left/right hand shoulder targets are edited with this same gizmo; idle hands render at matching shoulder X and derived posterior Y.</div>
     </section>`;
   $('maaRigAnchorSelect').addEventListener('change', event => {
     animationAuthor.rig.selectedAnchor = event.target.value;
@@ -11884,6 +11884,161 @@ animationAuthor.recentChange = 'V15.24 makes the latest uploaded rig-profile lib
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.24 patch installed: latest rig JSON and stink-oil animation are now exact built-in defaults; all authored attachment anchors are protected from automatic recalculation.');
+
+
+// -----------------------------------------------------------------------------
+// V15.25 hand shoulder rig anchors and posterior-height idle-hand placement.
+// -----------------------------------------------------------------------------
+const HAND_SHOULDER_ANCHORS_V1525 = Object.freeze(['leftHandShoulder', 'rightHandShoulder']); // Defines the character-only shoulder targets exposed through the ordinary rig gizmo workflow.
+
+function defaultHandShoulderSnapshotV1525(profile, side) {
+  const shoulderPerch = normalizeTransformSnapshot(profile?.anchors?.shoulderPerch, 1); // Provides a repository-derived shoulder-height fallback for older rig libraries.
+  const lateral = Math.max(.04, Math.abs(Number(shoulderPerch.position.x)) || .16);
+  return {
+    position: {
+      x: side === 'left' ? lateral : -lateral,
+      y: Number(shoulderPerch.position.y) || .45,
+      z: 0,
+    },
+    rotationDeg: { x: 0, y: 0, z: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+}
+
+function ensureCharacterHandShoulderAnchorsV1525(profile) {
+  if (!profile) return profile;
+  profile.anchors ||= {};
+  for (const side of ['left', 'right']) {
+    const anchorName = `${side}HandShoulder`; // Maps the side identity to its persistent rig-profile anchor.
+    profile.anchors[anchorName] = profile.anchors[anchorName]
+      ? normalizeTransformSnapshot(profile.anchors[anchorName], 1)
+      : defaultHandShoulderSnapshotV1525(profile, side);
+  }
+  profile.handShoulderRule ||= { source: 'shoulder-perch-derived-default', coordinateSpace: 'character-visual-local', version: 1 };
+  return profile;
+}
+
+const baseNormalizedRigProfileLibraryV1525 = normalizedRigProfileLibrary;
+normalizedRigProfileLibrary = function(value = {}) {
+  const output = baseNormalizedRigProfileLibraryV1525(value); // Preserves every prior attachment-profile migration before adding hand targets.
+  for (const [key, profile] of Object.entries(output.characters)) {
+    const source = value.characters?.[key] || {};
+    if (source.anchors?.leftHandShoulder) profile.anchors.leftHandShoulder = normalizeTransformSnapshot(source.anchors.leftHandShoulder, 1);
+    if (source.anchors?.rightHandShoulder) profile.anchors.rightHandShoulder = normalizeTransformSnapshot(source.anchors.rightHandShoulder, 1);
+    if (source.handShoulderRule) profile.handShoulderRule = structuredCloneSafe(source.handShoulderRule);
+    ensureCharacterHandShoulderAnchorsV1525(profile);
+  }
+  return output;
+};
+
+const baseRigAnchorNamesForActorV1525 = rigAnchorNamesForActor;
+rigAnchorNamesForActor = function(actor) {
+  if (actor?.source?.type === 'npc') return ['posterior', ...HAND_SHOULDER_ANCHORS_V1525, 'shoulderPerch'];
+  return baseRigAnchorNamesForActorV1525(actor);
+};
+
+const baseAttachmentRigProfileForActorV1525 = attachmentRigProfileForActor;
+attachmentRigProfileForActor = function(actor, options = {}) {
+  const profile = baseAttachmentRigProfileForActorV1525(actor, options); // Retrieves the existing species/gender profile before ensuring its hand anchors.
+  return actor?.source?.type === 'npc' ? ensureCharacterHandShoulderAnchorsV1525(profile) : profile;
+};
+
+const baseCreateAnimationActorShellV1525 = createAnimationActorShell;
+createAnimationActorShell = function(args) {
+  const actor = baseCreateAnimationActorShellV1525(args);
+  if (actor.source?.type !== 'npc') return actor;
+  const THREE = state.three.THREE; // Creates the same axes-helper carriers used by all existing attachment coordinates.
+  for (const name of HAND_SHOULDER_ANCHORS_V1525) {
+    if (actor.rigAnchors?.[name]) continue;
+    const anchor = new THREE.Group(); // Carries the editable shoulder transform and the TransformControls gizmo target.
+    anchor.name = `RigAnchor_${name}_${safeFilename(actor.id)}`;
+    const axes = new THREE.AxesHelper(.22);
+    axes.name = `RigAnchorAxes_${name}`;
+    axes.visible = false;
+    anchor.add(axes);
+    actor.visualOffset.add(anchor);
+    actor.rigAnchors[name] = anchor;
+  }
+  return actor;
+};
+
+function publishCharacterHandShouldersV1525(actor, profile) {
+  if (actor?.source?.type !== 'npc' || !profile) return;
+  const library = window.HOBUNJI_ATTACHMENT_RIG_PROFILES ||= { characters: {}, creatures: {} }; // Keeps the live hand renderer on the same in-memory data the gizmo edits.
+  library.characters ||= {};
+  const key = characterRigProfileKey(actor.source);
+  const runtimeProfile = library.characters[key] ||= { species: profile.species, gender: profile.gender, anchors: {} };
+  runtimeProfile.anchors ||= {};
+  runtimeProfile.posteriorRule = structuredCloneSafe(profile.posteriorRule || {});
+  for (const name of HAND_SHOULDER_ANCHORS_V1525) runtimeProfile.anchors[name] = structuredCloneSafe(profile.anchors[name]);
+  window.ProceduralHandFrameDriver?.syncNow?.();
+}
+
+const baseApplyAttachmentRigProfileToActorV1525 = applyAttachmentRigProfileToActor;
+applyAttachmentRigProfileToActor = function(actor) {
+  const result = baseApplyAttachmentRigProfileToActorV1525(actor);
+  if (actor?.source?.type === 'npc') publishCharacterHandShouldersV1525(actor, attachmentRigProfileForActor(actor));
+  return result;
+};
+
+const baseHandleAnimationTransformChangedV1525 = handleAnimationTransformChanged;
+handleAnimationTransformChanged = function(source, changedTarget = animationAuthor.editTarget) {
+  const actor = selectedAnimationActor();
+  const anchorName = actor ? selectedRigAnchorName(actor) : null;
+  const result = baseHandleAnimationTransformChangedV1525(source, changedTarget);
+  if (actor?.source?.type === 'npc' && HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) {
+    const profile = attachmentRigProfileForActor(actor); // Marks and publishes the exact shoulder transform after gizmo/numeric edits are committed.
+    profile.handShoulderRule = { source: 'rig-anchor-gizmo', coordinateSpace: 'character-visual-local', version: 1 };
+    publishCharacterHandShouldersV1525(actor, profile);
+  }
+  return result;
+};
+
+const baseResetAttachmentRigAnchorToRepositoryDefaultV1525 = resetAttachmentRigAnchorToRepositoryDefault;
+resetAttachmentRigAnchorToRepositoryDefault = function(actor, anchorName) {
+  if (actor?.source?.type === 'npc' && HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) {
+    const profile = attachmentRigProfileForActor(actor); // Restores the side-specific target without leaving the normal rig workflow.
+    profile.anchors[anchorName] = defaultHandShoulderSnapshotV1525(profile, anchorName.startsWith('left') ? 'left' : 'right');
+    profile.handShoulderRule = { source: 'shoulder-perch-derived-default', coordinateSpace: 'character-visual-local', version: 1 };
+    return true;
+  }
+  return baseResetAttachmentRigAnchorToRepositoryDefaultV1525(actor, anchorName);
+};
+
+const baseRigAnchorFieldMarkupV1525 = rigAnchorFieldMarkup;
+rigAnchorFieldMarkup = function(actor, anchorName) {
+  const fields = baseRigAnchorFieldMarkupV1525(actor, anchorName);
+  if (!HAND_SHOULDER_ANCHORS_V1525.includes(anchorName)) return fields;
+  const side = anchorName.startsWith('left') ? 'left' : 'right';
+  return `${fields}<div class="maaRigStatus" style="margin-top:9px"><b>${side[0].toUpperCase()+side.slice(1)} idle hand</b><br>The rendered hand uses this target's X, the posterior's derived Y, and this full target position for shoulder aiming. Move or rotate it with the same viewport gizmo as every attachment point.</div>`;
+};
+
+const baseSerializeAttachmentRigLibraryV1525 = serializeAttachmentRigLibrary;
+serializeAttachmentRigLibrary = function() {
+  const data = baseSerializeAttachmentRigLibraryV1525();
+  data.derivedCoordinates ||= {};
+  data.derivedCoordinates.idleHands = {
+    x: 'matching leftHandShoulder/rightHandShoulder anchor X',
+    y: 'derived character posterior Y plus procedural idle/walk Y offset',
+    aimTarget: 'matching full hand-shoulder anchor transform',
+  };
+  return data;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1525();
+  document.title = 'Hobunji Animation Author V15.25';
+  return result;
+};
+
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
+animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
+animationAuthor.recentChange = 'V15.25 moves left/right hand shoulder authoring into the normal rig-coordinate gizmo and renders fallback hands at matching shoulder X plus derived posterior Y.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.25 patch installed: idle-hand shoulder targets are standard rig anchors with live gizmo preview.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

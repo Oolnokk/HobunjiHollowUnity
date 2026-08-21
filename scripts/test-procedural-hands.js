@@ -25,7 +25,6 @@ const shoulderScanSpeciesSource = read('docs/js/portrait-hand-shoulder-scan-spec
 const shoulderPoseRuntimeSource = read('docs/js/hand-shoulder-pose-runtime.js');
 const shoulderAimSource = read('docs/js/procedural-hand-shoulder-aim.js');
 const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-controls.js');
-const animationAuthorShoulderSource = read('docs/js/animation-author-hand-shoulder-points.js');
 const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
 const heldSource = read('docs/js/held-action-animations.js');
@@ -194,7 +193,7 @@ assert.match(shoulderAimSource, /rotationVector\.y \* weights\.yaw/, 'Yaw should
 assert.match(shoulderAimSource, /rotationVector\.z \* weights\.roll/, 'Roll shoulder influence must blend smoothly');
 assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
 assert.match(shoulderAimSource, /freeSide = \{ left: true, right: true \}/, 'shoulder edits must track which hands are available for idle-position feedback');
-assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandXToShoulder\(side\)/s, 'manual shoulder edits must move free idle hands laterally in the live preview');
+assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandToFallbackAnchor\(side\)/s, 'manual shoulder edits must move free idle hands to shoulder X and posterior Y in the live preview');
 assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
@@ -206,15 +205,16 @@ assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor
 assert.match(shoulderControlsSource, /previewApi\.renderProfileToCanvas/, 'arm hiding should be scoped to the Attack Editor preview adapter');
 assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|global\.renderProfile\s*=/, 'preview arm hiding must not monkeypatch global portrait renderers');
 
-// Animation Author companion lives in the existing attachment-rig section and lets
-// each side be placed directly on the canonical 200x200 front portrait.
-assert.match(animationAuthorShoulderSource, /maaRigLibrarySection/, 'shoulder author UI must mount inside Attachment Rig Coordinates');
-assert.match(animationAuthorShoulderSource, /frontCanvas/, 'manual shoulder placement must use the existing front portrait');
-assert.match(animationAuthorShoulderSource, /Set 0,0 fallback/, 'each side must have an explicit automatic-fallback reset');
-assert.match(animationAuthorShoulderSource, /canonical 200×200 pixel space/, 'author UI must explain the coordinate basis');
-assert.match(animationAuthorShoulderSource, /panel\.offsetParent == null/, 'portrait clicks must only place shoulders while Attachment Rig Coordinates is visible');
-assert.match(animationAuthorShoulderSource, /addEventListener\('input', apply\)/, 'typed shoulder coordinates must update the idle-hand preview before field blur');
-assert.match(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author runtime must load the shoulder companion panel');
+// Hand shoulder targets are ordinary attachment-rig coordinates and therefore use
+// the same actor anchors, axes helpers, TransformControls, numeric fields, and reset flow.
+assert.match(animationAuthorSource, /HAND_SHOULDER_ANCHORS_V1525 = Object\.freeze\(\['leftHandShoulder', 'rightHandShoulder'\]\)/, 'rig profiles must expose one shoulder target for each hand');
+assert.match(animationAuthorSource, /return \['posterior', \.\.\.HAND_SHOULDER_ANCHORS_V1525, 'shoulderPerch'\]/, 'character rig dropdown must include both shoulder targets');
+assert.match(animationAuthorSource, /new THREE\.AxesHelper\(\.22\)/, 'hand shoulder targets must use the standard rig axes helper');
+assert.match(animationAuthorSource, /actor\.rigAnchors\[name\] = anchor/, 'hand shoulder targets must be normal actor rig anchors for gizmo attachment');
+assert.match(animationAuthorSource, /profile\.anchors\[anchorName\] = defaultHandShoulderSnapshotV1525/, 'standard reset must restore a shoulder target default');
+assert.match(animationAuthorSource, /publishCharacterHandShouldersV1525/, 'gizmo edits must feed the live idle-hand renderer');
+assert.match(animationAuthorSource, /idle hands render at matching shoulder X and derived posterior Y/, 'rig inspector must explain live hand placement');
+assert.doesNotMatch(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author must not load the retired portrait-click companion workflow');
 assert.match(animationAuthorSource, /'js\/held-action-animations\.js'/, 'Animation Author must load the shared idle-hand runtime');
 assert.match(animationAuthorSource, /await window\.HobunjiHandRuntimeReady/, 'Animation Author must wait for the hand frame driver before building avatars');
 assert.match(animationAuthorSource, /AUTHOR_HAND_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\/held-action-animations\.js/, 'Animation Author hand preview must use the runtime paired with the author page rather than a stale selected ref');
