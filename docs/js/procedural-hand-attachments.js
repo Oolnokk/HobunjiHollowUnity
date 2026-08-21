@@ -16,6 +16,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
+  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
   let showGripGuides = false;
   let gameDeps = null;
 
@@ -98,7 +99,7 @@
     return promise;
   }
 
-  function cloneSceneWithOwnedResources(THREE, source, model, speciesId, bodyColors) {
+  function cloneSceneWithOwnedResources(THREE, source, modelKey, model, speciesId, bodyColors) {
     const clone = source.clone(true);
     const remapped = new Map();
     clone.traverse(child => {
@@ -107,11 +108,14 @@
       const replaceMaterial = material => {
         if (remapped.has(material)) return remapped.get(material);
         const role = model?.materialRoles?.[material?.name] || 'body';
+        const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
         const next = new THREE.MeshBasicMaterial({
           color: roleColor(role, speciesId, bodyColors),
           side: THREE.DoubleSide,
+          depthWrite: !isParrotWingLayer,
         });
         next.name = material?.name || `${role}_hand_material`;
+        next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;
       };
@@ -127,7 +131,7 @@
   async function buildGlbHand(THREE, modelKey, model, options, side) {
     const source = await loadGlbScene(THREE, model.glb);
     if (!source) throw new Error(`Hand GLB had no scene: ${model.glb}`);
-    const clone = cloneSceneWithOwnedResources(THREE, source, model, options.speciesId, options.bodyColors);
+    const clone = cloneSceneWithOwnedResources(THREE, source, modelKey, model, options.speciesId, options.bodyColors);
 
     // Measure only to preserve the existing hand-height normalization. Do NOT
     // recenter the clone: the GLB's own 0,0,0 is the authored grip/origin and is
@@ -152,11 +156,13 @@
     const group = new THREE.Group();
     group.name = `${side}_hand_visual`;
     group.add(clone);
+    if (side === 'right') group.rotation.y = THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG);
     group.userData.handModelKey = modelKey;
     group.userData.modelScale = modelScale;
     group.userData.speciesScale = speciesScale;
     group.userData.canonicalFit = canonicalFit;
     group.userData.authoredOriginPreserved = true;
+    group.userData.shoulderAxisTwistDeg = side === 'right' ? RIGHT_SHOULDER_AXIS_TWIST_DEG : 0;
     markOutline(group);
     return group;
   }
@@ -380,6 +386,8 @@
           glb: state.glb,
           loadError: state.loadError,
           fallbackPoseInput: 'per-side-local-offset',
+          rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
+          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
         };
       },
     };
@@ -403,6 +411,7 @@
     getActiveDebug() { return [...activeRigs].map(rig => rig.getDebug()); },
     refreshAllProfiles() { for (const rig of activeRigs) rig.refreshModelProfile?.(); },
     idleMedialYawDeg: IDLE_MEDIAL_YAW_DEG,
+    rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
   };
 
   global.ProceduralHandAttachments = publicApi;

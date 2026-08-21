@@ -94,6 +94,10 @@ for (const species of ['mao-ao','engh-sho','tletingan','mashtzarr','kenkari','ra
 assert.match(handSource, /authored origin/i, 'direct hand runtime must preserve the GLB authored origin');
 assert.doesNotMatch(handSource, /solveTwoBoneArm|shoulderNode|upper_arm/, 'direct hand runtime must contain no arm-chain implementation');
 assert.match(handSource, /THREE\.DoubleSide/, 'direct runtime must keep hand backface culling disabled');
+assert.match(handSource, /RIGHT_SHOULDER_AXIS_TWIST_DEG = 180/, 'right hand must twist 180 degrees around its shoulder-pointing local axis');
+assert.match(handSource, /side === 'right'.*group\.rotation\.y = THREE\.MathUtils\.degToRad\(RIGHT_SHOULDER_AXIS_TWIST_DEG\)/, 'right-hand twist must be applied around visual local +Y without changing shoulder aim');
+assert.match(handSource, /modelKey === 'parrot' && role === 'body'/, 'Kenkari-family modeled wing continuation must be identified independently of its talons');
+assert.match(handSource, /depthWrite: !isParrotWingLayer/, 'portrait clothing must be able to occlude the parrot body-colored wing continuation');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
