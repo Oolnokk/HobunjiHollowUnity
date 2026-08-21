@@ -12030,17 +12030,17 @@ serializeAttachmentRigLibrary = function() {
 const basePrepareMultiAvatarAnimationAuthorV1525 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1525();
-  document.title = 'Hobunji Animation Author V15.26';
+  document.title = 'Hobunji Animation Author V15.27';
   return result;
 };
 
 animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
 COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
 animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
-animationAuthor.recentChange = 'V15.26 fixes idle-hand Y by consuming the exact floor-relative posterior gizmo coordinate, and restores hand size halfway from the prior 85% reduction to the original.';
+animationAuthor.recentChange = 'V15.27 imports ten reauthored character posterior offsets and hand-shoulder anchors; Mao’ao female’s mismatched left shoulder Y is aligned to the right shoulder.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.26 patch installed: rigger hands now use the exact floor-relative posterior coordinate without adding avatar half-height.');
+log('V15.27 patch installed: ten authored posterior/hand-shoulder profiles loaded; Mao’ao female shoulder Y aligned.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
