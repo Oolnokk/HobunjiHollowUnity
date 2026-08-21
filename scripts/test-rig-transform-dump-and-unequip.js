@@ -35,6 +35,9 @@ for (const label of ['portrait', 'ground', 'posterior', 'left hand shoulder', 'r
   assert(probe.includes(`'${label}'`), `runtime dump omits ${label}`);
 }
 assert(index.includes('id="debugRigTransformDumpBtn"'), 'runtime Debug dump button is missing');
+assert(author.includes("existingFixedProfile?.shoulderPerchRule?.authoredFixed === true"), 'legacy all-species arm scan can still replace fixed authored shoulder perches');
+assert(author.includes('preserved ${preservedFixed} fixed authored profiles'), 'mobile log does not report preserved fixed rig profiles');
+assert(author.includes("document.title = 'Hobunji Animation Author V15.41'"), 'rigger title does not identify the fixed-profile parity build');
 
 const context = { window: {} };
 vm.createContext(context);

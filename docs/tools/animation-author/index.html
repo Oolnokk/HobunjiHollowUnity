@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.40</title>
+<title>Hobunji Animation Author V15.41</title>
 <style>
 :root {
   color-scheme: dark;
@@ -8372,8 +8372,16 @@ async function deriveEveryCharacterShoulderPerchDefault() {
 
   let updated = 0;
   let failed = 0;
+  let preservedFixed = 0; // Reported in the mobile-readable log so repository-authored profiles can be distinguished from newly scanned fallbacks.
   for (const [key, entry] of unique) {
     try {
+      const existingFixedProfile = animationAuthor.attachmentRigProfiles.characters[key]; // Prevents the legacy all-species scan from replacing the canonical gameplay coordinate and stripping its fixed-profile metadata.
+      if (existingFixedProfile?.shoulderPerchRule?.authoredFixed === true
+          && existingFixedProfile.shoulderPerchRule.recalculateOnPreview === false
+          && existingFixedProfile.anchors?.shoulderPerch?.position) {
+        preservedFixed++;
+        continue;
+      }
       let profile = window.NpcAvatarPreview.randomProfile(`attachment-rig-shoulder-default:${key}`, {
         speciesId: entry.species,
         gender: entry.gender,
@@ -8443,8 +8451,8 @@ async function deriveEveryCharacterShoulderPerchDefault() {
   }
   scheduleAnimationProjectSave();
   renderAllAnimationUi();
-  log(`Precomputed zero-offset arm-R shoulder perches for ${updated}/${unique.size} character species/gender profiles${failed ? `; ${failed} failed` : ''}.`);
-  return { updated, failed, total: unique.size };
+  log(`Precomputed zero-offset arm-R shoulder perches for ${updated}/${unique.size} character species/gender profiles; preserved ${preservedFixed} fixed authored profiles${failed ? `; ${failed} failed` : ''}.`);
+  return { updated, failed, preservedFixed, total: unique.size };
 }
 
 const baseLoadSourceV1510 = loadSource;
@@ -12949,15 +12957,15 @@ renderAttachmentRigInspector = function() {
 const basePrepareMultiAvatarAnimationAuthorV1540 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1540();
-  document.title = 'Hobunji Animation Author V15.40';
+  document.title = 'Hobunji Animation Author V15.41';
   return result;
 };
 
 window.dumpAnimationAuthorRigTransforms = dumpAnimationAuthorRigTransformsV1540;
-animationAuthor.recentChange = 'V15.40 adds matching editor/runtime transform dumps for the portrait, ground, posterior, hand shoulders, and shoulder perch.';
+animationAuthor.recentChange = 'V15.41 preserves fixed authored character rig profiles during the asynchronous all-species arm scan, keeping rigger posterior and shoulder-perch coordinates identical to gameplay.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.40 patch installed: Shoulder Rig now dumps its exact visible transforms in the same format as runtime Debug.');
+log('V15.41 patch installed: fixed authored shoulder perches bypass the legacy all-species scan, preventing both perch replacement and the resulting posterior-rule reset.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
