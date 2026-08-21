@@ -413,12 +413,26 @@
     return true;
   }
 
+  // The extra yaw (radians) the active channels will add to playerMesh at the
+  // next render, without waiting for one. Channels like weapon-idle-stance-
+  // body-yaw only ever reach playerMesh through this composer's render-time
+  // world delta (see the module comment above) — anything that needs to
+  // reason about the body's yaw ahead of render (e.g. game.js's
+  // updatePlayerHeadAim, which counter-rotates the neck so the head keeps
+  // its own world yaw locked to the aim direction) must add this in, or it
+  // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
+  // and the head renders off-target by whatever yaw a channel contributes.
+  function resolvedYawDeltaRad() {
+    return new THREE.Euler().setFromQuaternion(resolveDelta().rotation, 'YXZ').y;
+  }
+
   window.PlayerBodyTransformComposer = {
     setChannel,
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
     captureNextRenderTransforms,
+    resolvedYawDeltaRad,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),

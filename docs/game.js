@@ -3541,7 +3541,15 @@
         const targetWorldYaw = sitInteraction?.phase === 'active'
           ? activeCameraAzimuthRad()
           : -player.angle + Math.PI / 2;
-        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y);
+        // playerMesh.rotation.y is this function's only body-yaw signal, but
+        // channels like weapon-idle-stance-body-yaw (see
+        // weapon-idle-body-yaw-runtime.js) never touch it directly — they
+        // only reach playerMesh through PlayerBodyTransformComposer's
+        // render-time world delta. Left out, the neck counters only the
+        // pre-delta resting yaw and the head renders off-target by whatever
+        // yaw the active channels are about to add.
+        const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0;
+        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y + composerYawDelta);
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
