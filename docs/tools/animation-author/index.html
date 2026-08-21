@@ -12367,17 +12367,21 @@ function rememberRigActorBodyScaleV1531(actor) {
   actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
 }
 
-function resolvedRigActorAvatarScaleV1533(actor, fallbackScale = 1) {
+function requestedRigActorAvatarScaleV1534(actor, portraitScale = 1) {
+  const desiredScale = Number(portraitScale); // Supplies the authoritative species/gender value currently entered in the Shoulder Rig field.
+  if (!Number.isFinite(desiredScale) || desiredScale <= 0) return 1;
   const npcRecord = actor?.source?.type === 'npc'
     ? state.npcs.find(npc => String(npc.id || npc.name || '') === String(actor.source.id || ''))
-    : null; // Supplies child markers and strict appearance data to the same scale resolver used by PNGPlaneAvatar construction.
-  const resolved = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+    : null; // Supplies child markers to the same classifier used by PNGPlaneAvatar construction.
+  const childAvatar = !!window.PNGPlaneAvatar?.isChildAvatar?.({
     speciesId: actor?.source?.species,
     gender: actor?.source?.gender,
     appearance: actor?.source?.appearance,
     npcRecord,
-  }));
-  return Number.isFinite(resolved) && resolved > 0 ? resolved : fallbackScale;
+  }); // Determines whether the entered species/gender scale also needs the shared child multiplier.
+  const configuredChildScale = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.childScaleMultiplier); // Matches the extra multiplier applied when the real portrait model is built.
+  const childScale = childAvatar && Number.isFinite(configuredChildScale) && configuredChildScale > 0 ? configuredChildScale : 1; // Keeps child preview and rebuild dimensions identical.
+  return desiredScale * childScale;
 }
 
 function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio) {
@@ -12395,8 +12399,7 @@ function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio
 
 function previewRigActorBodyScaleV1531(actor, portraitScale) {
   const builtScale = Number(actor?.rigBuiltAvatarScaleV1533);
-  const desiredScale = Number(portraitScale); // Remains the fallback if the shared PNG-avatar resolver is unavailable.
-  const targetScale = resolvedRigActorAvatarScaleV1533(actor, desiredScale);
+  const targetScale = requestedRigActorAvatarScaleV1534(actor, portraitScale); // Uses the live field value directly instead of re-reading the prior configured scale.
   const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
   if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
   const ratio = targetScale / builtScale;
@@ -12657,14 +12660,14 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.33';
+  document.title = 'Hobunji Animation Author V15.34';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.33 measures rebuilt avatar geometry, reapplies the resolved body-scale ratio after replacement, and shows built/target/carrier scale diagnostics in Shoulder Rig.';
+animationAuthor.recentChange = 'V15.34 makes the live Shoulder Rig body-scale value authoritative while retaining child scaling and measured post-rebuild reconciliation.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.33 patch installed: measured rebuilt body-scale reconciliation, visible scale diagnostics, and preserved reference NPCs.');
+log('V15.34 patch installed: authoritative live body-scale preview, child-scale parity, measured rebuild reconciliation, and preserved reference NPCs.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

@@ -249,16 +249,32 @@ for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpe
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
 assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.33'/, 'the published author title must identify the measured-scale reconciliation build');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.34'/, 'the published author title must identify the authoritative live-scale build');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');
 assert.match(animationAuthorSource, /absent from animationAuthor\.actors, selection, gizmos, and exports/, 'reference NPC must remain outside every interactive/exported actor path');
 assert.match(animationAuthorSource, /id="maaRandomizeReferenceNpc"/, 'Shoulder Rig must offer one-button reference NPC randomization');
 assert.match(animationAuthorSource, /presentation\.scale\.copy\(actor\.rigBodyPresentationBaseScaleV1532\)\.multiplyScalar\(ratio\)/, 'body-scale input must preview on the stable presentation carrier');
 assert.doesNotMatch(animationAuthorSource, /actor\.model\.scale\.copy\(actor\.rigBodyModelBaseScaleV1531\)/, 'body-scale input must not mutate the runtime-managed portrait model');
 assert.match(animationAuthorSource, /actor\.rigBuiltAvatarScaleV1533 = builtModelWidth \/ baseModelWidth/, 'body-scale reconciliation must measure the scale actually built into the replacement model');
-assert.match(animationAuthorSource, /const targetScale = resolvedRigActorAvatarScaleV1533\(actor, desiredScale\)/, 'body-scale reconciliation must compare built geometry against the live PNG-avatar resolver');
+assert.match(animationAuthorSource, /const targetScale = requestedRigActorAvatarScaleV1534\(actor, portraitScale\)/, 'live body-scale preview must use the entered species\/gender scale instead of re-reading the prior resolver value');
+assert.match(animationAuthorSource, /return desiredScale \* childScale/, 'live body-scale preview must retain the real avatar builder\'s child multiplier');
+assert.doesNotMatch(animationAuthorSource, /const targetScale = resolvedRigActorAvatarScaleV1533/, 'live body-scale preview must not discard the entered value for a configured resolver result');
 assert.match(animationAuthorSource, /previewRigActorBodyScaleV1531\(actor, anatomy\.portraitScale\)/, 'every newly rebuilt rig actor must reapply its measured carrier correction');
 assert.match(animationAuthorSource, /id="maaBodyScaleDiagnostic"/, 'Shoulder Rig must expose built, target, and carrier scale diagnostics without DevTools');
+const liveBodyScaleHelperSource = animationAuthorSource.match(/function requestedRigActorAvatarScaleV1534\([\s\S]*?\n\}/)?.[0]; // Executes the authored helper so a static call-site assertion cannot hide a constant preview ratio.
+assert(liveBodyScaleHelperSource, 'live body-scale target helper must remain directly testable');
+const liveBodyScaleSandbox = {
+  state: { npcs: [{ id: 'adult' }, { id: 'child', role: 'child' }] },
+  window: {
+    PNGPlaneAvatar: { isChildAvatar: options => options.npcRecord?.role === 'child' },
+    SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { childScaleMultiplier: 0.8 } } } },
+  },
+}; // Models the adult and child branches of the real PNGPlaneAvatar builder without requiring a WebGL scene.
+vm.runInNewContext(`${liveBodyScaleHelperSource}\nthis.liveBodyScaleResults = [
+  requestedRigActorAvatarScaleV1534({ source: { type: 'npc', id: 'adult', species: 'mashtzarr', gender: 'male' } }, 1.35),
+  requestedRigActorAvatarScaleV1534({ source: { type: 'npc', id: 'child', species: 'engh-sho', gender: 'male' } }, 1.35),
+];`, liveBodyScaleSandbox, { filename: 'animation-author-live-body-scale-helper.js' });
+assert.deepStrictEqual(Array.from(liveBodyScaleSandbox.liveBodyScaleResults), [1.35, 1.08], 'entered body scale must remain authoritative while child avatars retain their 0.8 multiplier');
 assert.match(animationAuthorSource, /rigReferencePreserveDuringActorSwapV1532 = !!preservedReference/, 'rig NPC replacement must guard its reference from the shared actor clear');
 assert.match(animationAuthorSource, /if \(!rigReferencePreserveDuringActorSwapV1532\) disposeRigReferenceNpcV1531\(\)/, 'ordinary project clears must still dispose the reference NPC');
 assert.match(animationAuthorSource, /positionRigReferenceNpcV1532\(actor\)/, 'a preserved reference NPC must be repositioned beside the newly selected rig actor');
