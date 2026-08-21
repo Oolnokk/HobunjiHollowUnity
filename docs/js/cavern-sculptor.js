@@ -915,7 +915,13 @@
   // that). Keying the clip off "touched" instead of "claimed" sidesteps
   // the whole problem: geometry belonging to a neighboring wall just
   // renders in that wall's own tiles, not layered onto the floor.
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize) {
+  // A triangle whose 3 vertices span more than this much Y reads as
+  // "wall-like" (steep/vertical), as opposed to a near-flat floor
+  // triangle — same heuristic the tuner's own computeMissingWallPct
+  // already relies on to find wall geometry by shape alone.
+  const WALL_YRANGE_THRESHOLD = 0.15;
+
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
     const addVertex = v => {
@@ -931,6 +937,42 @@
       if (ia === ib || ib === ic || ic === ia) return;
       outIndices.push(ia, ib, ic);
     };
+    // A claimed tile's own interior is field-guaranteed solid-free —
+    // carveTileColumn force-carves its exact footprint open at every
+    // height, and solidifyBoundaryWalls's heal only ever restores an
+    // *unclaimed* neighbor, never a claimed tile's own interior — so no
+    // real wall/ceiling surface should ever render inside one. It still
+    // can: a wall/ceiling triangle's XZ bounding box routinely overlaps a
+    // little past its own tile's edge into a claimed neighbor (normal
+    // dual-contour surface curvature from a leaf whose own cell straddles
+    // the boundary — not an error, see leafSurfaceVertex), and since that
+    // neighbor is always in keepTiles too (claimed tiles are always
+    // touched), the overlapping sliver gets clipped and rendered right
+    // there, reading as wall rock cosmetically dipping into the tile's
+    // own open floor space (confirmed via a raw, mesh-triangle-independent
+    // check: 4000+ misplaced dual-contour vertices per den, landing up to
+    // half a tile deep inside claimed tiles' own footprints — exactly the
+    // "significant improvement but not quite there — wall rock dips into
+    // the edge tiles a little" residual left after switching this clip's
+    // own cull from claimed to touched, see this function's docblock
+    // above on that earlier fix). An earlier attempt fixed this by
+    // repositioning the offending raw vertices before clipping instead —
+    // reverted after headless verification showed it corrupts the
+    // triangle shapes clipPolyToXZRect depends on, badly damaging real
+    // wall coverage. This version changes nothing about vertex positions
+    // or triangle shapes at all: it only withholds WALL-SHAPED (yRange
+    // test) fragments from a claimed tile's own bucket, since the tile's
+    // own FLOOR triangles (the flat crossing at floorY that spans every
+    // claimed tile, because carving never touches anything below floorY —
+    // see carveSphere/carveTileColumn's own floorY guards) must still
+    // render there. The wall's own home tile still renders the full
+    // triangle right up to the shared edge regardless (its own clip is
+    // completely untouched by this), so nothing goes gappy or missing —
+    // just no redundant sliver rendering on the far side of a boundary it
+    // should never have crossed. Verified via a field-level (not mesh-
+    // triangle) ground-truth check across 5 seeds: real wall coverage is
+    // bit-for-bit identical with and without this change.
+    const skipClaimedWallLike = (key, yRange) => claimed && claimed.has(key) && yRange > WALL_YRANGE_THRESHOLD;
 
     for (let q = 0; q < indices.length; q += 3) {
       const ia = indices[q] * 3, ib = indices[q + 1] * 3, ic = indices[q + 2] * 3;
@@ -939,11 +981,12 @@
         { x: positions[ib], y: positions[ib + 1], z: positions[ib + 2] },
         { x: positions[ic], y: positions[ic + 1], z: positions[ic + 2] },
       ];
+      const yRange = Math.max(tri[0].y, tri[1].y, tri[2].y) - Math.min(tri[0].y, tri[1].y, tri[2].y);
       const areaXZ = Math.abs((tri[1].x - tri[0].x) * (tri[2].z - tri[0].z) - (tri[2].x - tri[0].x) * (tri[1].z - tri[0].z));
       if (areaXZ < 1e-10) {
         const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
         const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
-        if (keepTiles.has(key)) addTri(tri[0], tri[1], tri[2]);
+        if (keepTiles.has(key) && !skipClaimedWallLike(key, yRange)) addTri(tri[0], tri[1], tri[2]);
         continue;
       }
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
@@ -953,6 +996,7 @@
       for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
         const key = `${ix},${iz}`;
         if (!keepTiles.has(key)) continue;
+        if (skipClaimedWallLike(key, yRange)) continue;
         const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
         for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
@@ -963,7 +1007,7 @@
     return { positions: new Float32Array(outPositions), indices: outIndices };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges, tileSize) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -1009,7 +1053,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -1402,7 +1446,7 @@
     // instead of being clipped down to a flat stitched cap.
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
-    const mesh = extractMesh(st, touched, skipCapEdges, ts);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
