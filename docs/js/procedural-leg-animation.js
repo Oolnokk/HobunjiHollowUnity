@@ -96,26 +96,20 @@
     return defaultMultiplier;
   }
 
-  // Per-species/gender authored posterior height rule (posteriorRule.
-  // heightPercentOffset in attachment-rig-profiles.js — the same rig data
-  // docs/tools/animation-author/index.html authors and the game's own
-  // mount-seat placement references), mirroring that tool's own live-preview
-  // formula: hip height = handAttachY + modelHeight * heightPercentOffset/100,
-  // both terms already in the avatar's floor-anchored root space (handAttachY
-  // is png-plane-avatar.js's own scanned hand-height, passed in via
-  // options.handAttachY). Falls back to -18 (this rig data's own default,
-  // see DEFAULT_POSTERIOR_HEIGHT_PERCENT in animation-author/index.html) for
-  // any species/gender without an authored rule.
-  function heightPercentOffsetForSpecies(speciesId, gender) {
+  // Reads the same floor-relative posterior rule used by mounts and Shoulder
+  // Rig. The shared resolver keeps old handAttachY-relative imports readable.
+  function posteriorRuleForSpecies(speciesId, gender) {
     const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
-    const rec = lib[`${speciesId}::${gender}`];
-    const value = Number(rec?.posteriorRule?.heightPercentOffset);
-    return Number.isFinite(value) ? value : -18;
+    return lib[`${speciesId}::${gender}`]?.posteriorRule || null;
   }
 
   function posteriorYForSpecies(speciesId, gender, modelHeight, handAttachY) {
+    const rule = posteriorRuleForSpecies(speciesId, gender);
+    const sharedY = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rule, modelHeight, handAttachY);
+    if (Number.isFinite(sharedY)) return sharedY;
+    const legacyOffset = Number(rule?.heightPercentOffset);
     const baseY = Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2;
-    return baseY + modelHeight * heightPercentOffsetForSpecies(speciesId, gender) / 100;
+    return baseY + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
   }
 
   // Per-species/gender authored posterior anchor X (attachment-rig-profiles.js

@@ -5173,18 +5173,19 @@
         if (!anchor) return null;
         // 'posterior' is special: docs/tools/animation-author/index.html's own
         // export always writes position.y = 0 for it and stores the real
-        // per-species height as posteriorRule.heightPercentOffset instead (the
+        // per-species height as posteriorRule.heightPercentFromFloor instead (the
         // tool's own live preview recomputes from that rule — see
         // resolvedCharacterPosteriorSnapshot in that file) — reading
         // position.y directly here was always wrong (flat 0 for every
         // species), which is why mounting used to seat the player too high.
-        // Recompute the same way: handAttachY + portraitModelHeight *
-        // heightPercentOffset / 100, both terms already in this same
-        // floor-anchored space (see playerToolBaseY's own usage elsewhere).
+        // Resolve the shared floor-relative height percentage. Legacy imports
+        // still fall back to their old handAttachY + height-offset rule.
         if (anchorName === 'posterior' && rec.posteriorRule) {
-          const offset = Number(rec.posteriorRule.heightPercentOffset);
           const modelHeight = Number(playerAvatarModelHeight) || 0.9;
-          const y = (Number(playerToolBaseY) || modelHeight / 2) + modelHeight * (Number.isFinite(offset) ? offset : -18) / 100;
+          const legacyOffset = Number(rec.posteriorRule.heightPercentOffset);
+          const y = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rec.posteriorRule, modelHeight, playerToolBaseY)
+            ?? ((Number.isFinite(Number(playerToolBaseY)) ? Number(playerToolBaseY) : modelHeight / 2)
+              + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
           return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
