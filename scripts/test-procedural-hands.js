@@ -205,6 +205,8 @@ assert.match(shoulderAimSource, /rotationVector\.z \* weights\.roll/, 'Roll shou
 assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
 assert.match(shoulderAimSource, /freeSide = \{ left: true, right: true \}/, 'shoulder edits must track which hands are available for idle-position feedback');
 assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandToFallbackAnchor\(side\)/s, 'manual shoulder edits must move free idle hands to shoulder X and posterior Y in the live preview');
+assert.match(shoulderAimSource, /armLengthHeightPercentOffset/, 'free-hand fallback must read the exported species/gender arm-length offset');
+assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHeight \* authored \/ 100 : 0/, 'positive arm length must push a free hand below the posterior by a portrait-height percentage');
 assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
@@ -236,10 +238,18 @@ assert.match(animationAuthorSource, /authorPairedRuntimeUrl \|\| rawUrl\(path\)/
 assert.match(animationAuthorSource, /installShoulderRigFeetPreviewV1529/, 'shoulder rig must attach the gameplay feet preview to character actors');
 assert.match(animationAuthorSource, /ProceduralLegAnimation\.attach\(state\.three\.THREE, actor\.visualOffset/, 'feet must share the floor-relative parent used by hands and rig anchors');
 assert.match(animationAuthorSource, /rigFeetPreview\?\.dispose/, 'actor removal must dispose shoulder-rig foot resources');
+for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesHandScale', 'maaSpeciesFootScale', 'maaArmLengthOffset']) {
+  assert(animationAuthorSource.includes(`id="${controlId}"`), `Shoulder Rig must expose ${controlId} as a live species/gender anatomy control`);
+}
+assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
+assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
+assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v7/, 'anatomy-bearing rig profiles must use the v7 schema');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.30'/, 'the published author title must identify the anatomy-control build');
 assert.match(animationAuthorSource, /attachmentProfileReady = window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'Animation Author must apply deferred attachment-profile corrections after its repository config loads');
 assert.match(animationAuthorSource, /Attachment rig profile corrections could not find/, 'deferred config failures must appear in the author\'s built-in Diagnostics panel');
 assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
 assert.match(heldSource, /window\.HobunjiHandRuntimeReady = ready/, 'dynamic repository tools need an explicit hand-runtime readiness signal');
+assert.match(heldSource, /ready\.then\(\(\) => window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)\)/, 'hand bootstrap must apply exported hand scales once the profile manager is available');
 assert.match(heldSource, /selfUrl && selfUrl\.protocol !== 'blob:'/, 'blob-executed bootstraps must not pass a null base into the URL constructor');
 assert.match(attachmentRigProfileSource, /SCRATCHBONES_CONFIG\?\.game\?\.assets\?\.pngPlaneAvatar/, 'attachment profiles must tolerate Animation Author loading the shared config later');
 assert.match(attachmentRigProfileSource, /HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS/, 'delayed attachment-profile setup must expose a mobile-visible diagnostics state');
@@ -250,6 +260,7 @@ const attachmentProfileSandbox = {
 };
 vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filename: 'attachment-rig-profiles.js' });
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'pending');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'pending');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES.count, 12);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 12);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
@@ -275,13 +286,22 @@ for (const [key, [posterior, leftX, leftY, rightX, rightY]] of Object.entries(ex
   assert.strictEqual(profile.anchors.leftHandShoulder.position.y, leftY, `${key} must retain its reviewed left shoulder Y`);
   assert.strictEqual(profile.anchors.rightHandShoulder.position.x, rightX, `${key} must retain its authored right shoulder X`);
   assert.strictEqual(profile.anchors.rightHandShoulder.position.y, rightY, `${key} must retain its reviewed right shoulder Y`);
+  assert.strictEqual(profile.anatomy.portraitVerticalPlacementRatio, profile.shoulderPerchRule.portraitVerticalPlacementRatio, `${key} must export its portrait Y placement as anatomy`);
+  assert.strictEqual(profile.anatomy.handScale, 1, `${key} must export an independent hand scale`);
+  assert.strictEqual(profile.anatomy.footScale, 1, `${key} must export an independent foot scale`);
+  assert.strictEqual(profile.anatomy.armLengthHeightPercentOffset, 0, `${key} must export a free-hand arm-length offset`);
 }
 assert.match(authoredCharacterProfiles['mao-ao::female'].handShoulderRule.yAlignmentCorrection, /left matched right/, 'the Mao’ao female shoulder-Y correction must remain documented');
 assert.strictEqual(authoredCharacterProfiles['kenkari::male'].handShoulderRule.sharedFrom, 'rakakoan::male');
 assert.strictEqual(authoredCharacterProfiles['rakakoan::female'].handShoulderRule.sharedFrom, 'kenkari::female');
 attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
-  portraitScaleBySpecies: {}, portraitVerticalPlacement: {},
+  portraitScaleBySpecies: {}, portraitVerticalPlacement: {}, proceduralFeet: { footScale: { default: 1 } },
 } } } };
+const appliedHandScales = {};
+attachmentProfileWindow.HobunjiHandModelProfiles = {
+  data: { speciesScaleOverrides: appliedHandScales },
+  mutate(mutator) { mutator(this.data); },
+};
 attachmentProfileWindow.applyHobunjiAttachmentRigProfileCorrections();
 assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr, 1.18);
 assert.deepStrictEqual(
@@ -289,6 +309,10 @@ assert.deepStrictEqual(
   { male: 0.6864406779661016, female: 0.6440677966101696 },
 );
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'applied');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'applied');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement['engh-sho'].male, 0.88, 'profile correction must apply exported portrait Y placement');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['engh-sho'].male, 1, 'profile correction must apply exported foot scale');
+assert.strictEqual(appliedHandScales['engh-sho'].male, 1, 'profile correction must apply exported hand scale after that runtime loads');
 
 const authorPreviewUrl = new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/example/docs/tools/animation-author/index.html'); // Mirrors the immutable per-commit test URL used for this author.
 const authorDocsBase = new URL('../../', authorPreviewUrl);

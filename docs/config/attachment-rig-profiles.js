@@ -75,24 +75,63 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
       ...(authored.yCorrection ? { yAlignmentCorrection: authored.yCorrection } : {}),
       ...(authored.sharedFrom ? { sharedFrom: authored.sharedFrom } : {}),
     };
+    profile.anatomy = {
+      portraitVerticalPlacementRatio: authored.placement,
+      handScale: 1,
+      footScale: 1,
+      armLengthHeightPercentOffset: 0,
+      version: 1,
+    }; // Keeps species/gender proportions and free-hand reach beside the anchors they visually depend on.
     profile.characterAttachZDefaultVersion = 1;
   }
   window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, maoAoFemaleShoulderYCorrected: true, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
 })();
 
-// Static, manually calculated portrait configuration correction for Mashtzarr.
-// Animation Author loads SCRATCHBONES_CONFIG after this file, so expose an
-// idempotent apply hook instead of throwing and interrupting its bootstrap.
-window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', authoredCharacterProfiles: 12, maoAoFemaleShoulderYCorrected: true, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
+// Apply profile-backed portrait/limb proportions, including the static Mashtzarr
+// portrait-scale correction. Animation Author loads shared configs after this
+// file, so expose an idempotent hook instead of interrupting its bootstrap.
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, maoAoFemaleShoulderYCorrected: true, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
 (() => {
-  const applyMashtzarrPortraitCorrection = () => {
+  const applyAttachmentRigProfileCorrections = () => {
     const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives the literal Mashtzarr values once the shared repository config exists.
     if (!pngAvatarConfig?.portraitScaleBySpecies || !pngAvatarConfig?.portraitVerticalPlacement) return false;
     pngAvatarConfig.portraitScaleBySpecies.mashtzarr = 1.18;
-    pngAvatarConfig.portraitVerticalPlacement.mashtzarr = { male: 0.6864406779661016, female: 0.6440677966101696 };
+    pngAvatarConfig.proceduralFeet ||= {};
+    pngAvatarConfig.proceduralFeet.footScale ||= { default: 1 };
+    const handScaleUpdates = []; // Defers hand-profile mutation until that later-loaded runtime exists.
+    for (const profile of Object.values(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {})) {
+      const species = String(profile?.species || '').trim().toLowerCase();
+      const gender = String(profile?.gender || '').trim().toLowerCase();
+      const anatomy = profile?.anatomy || {};
+      if (!species || !gender) continue;
+      const placement = Number(anatomy.portraitVerticalPlacementRatio);
+      const handScale = Number(anatomy.handScale);
+      const footScale = Number(anatomy.footScale);
+      if (Number.isFinite(placement)) {
+        pngAvatarConfig.portraitVerticalPlacement[species] ||= {};
+        pngAvatarConfig.portraitVerticalPlacement[species][gender] = placement;
+      }
+      if (Number.isFinite(footScale) && footScale > 0) {
+        pngAvatarConfig.proceduralFeet.footScale[species] ||= {};
+        pngAvatarConfig.proceduralFeet.footScale[species][gender] = footScale;
+      }
+      if (Number.isFinite(handScale) && handScale > 0) handScaleUpdates.push({ species, gender, handScale });
+    }
+    const handProfiles = window.HobunjiHandModelProfiles;
+    if (handProfiles?.mutate && handScaleUpdates.length) {
+      const needsMutation = handScaleUpdates.some(update => Number(handProfiles.data?.speciesScaleOverrides?.[update.species]?.[update.gender]) !== update.handScale); // Avoids rebuilding every active hand when the deferred hook is called twice.
+      if (needsMutation) handProfiles.mutate(data => {
+        data.speciesScaleOverrides ||= {};
+        for (const update of handScaleUpdates) {
+          data.speciesScaleOverrides[update.species] ||= {};
+          data.speciesScaleOverrides[update.species][update.gender] = update.handScale;
+        }
+      });
+    }
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection = 'applied';
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles = handProfiles?.mutate ? 'applied' : 'config-applied; hand-runtime-pending';
     return true;
   };
-  window.applyHobunjiAttachmentRigProfileCorrections = applyMashtzarrPortraitCorrection; // Called again by repository-backed tools immediately after their deferred config loads.
-  applyMashtzarrPortraitCorrection();
+  window.applyHobunjiAttachmentRigProfileCorrections = applyAttachmentRigProfileCorrections; // Called again after deferred config/hand-profile loads.
+  applyAttachmentRigProfileCorrections();
 })();

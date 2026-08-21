@@ -142,12 +142,17 @@
       return (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100;
     }
 
+    function armLengthOffsetY() {
+      const authored = Number(attachmentRigProfile()?.anatomy?.armLengthHeightPercentOffset); // Positive profile values lengthen a free arm by pushing its hand below the posterior.
+      return Number.isFinite(authored) ? -modelHeight * authored / 100 : 0;
+    }
+
     function alignFreeHandToFallbackAnchor(side, fallbackPose = null) {
       const socket = socketFor(side); // Free-hand socket whose idle position follows shoulder X and posterior Y.
       const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
       if (!socket || !shoulder) return false;
       socket.position.x = shoulder.x;
-      socket.position.y = posteriorYInParent() + (Number(fallbackPose?.position?.y) || 0);
+      socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;

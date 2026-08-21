@@ -49,7 +49,7 @@
     new URL('js/procedural-hand-attachments.js?v=20260821g', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260821j', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260821k', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260821d', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -92,5 +92,6 @@
     ready = loadSequentially(handScripts);
   }
   window.HobunjiHandRuntimeReady = ready; // Repository tools await this before constructing avatars that the frame driver must wrap.
+  ready.then(() => window.applyHobunjiAttachmentRigProfileCorrections?.()); // Applies exported species/gender hand scales after the hand-profile manager finishes loading.
   ready.catch(error => console.warn('[hands] bootstrap failed:', error));
 })();
