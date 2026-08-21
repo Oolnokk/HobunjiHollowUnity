@@ -674,11 +674,12 @@
     const modelHeight = Number(options.modelHeight) || modelWidth;
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
+    const sizeBalanceMultiplier = Number(c.sizeBalanceMultiplier) > 0 ? Number(c.sizeBalanceMultiplier) : 1; // Enlarges every fallback/imported foot toward the shared hand/foot midpoint.
     // footScale is an authored per-species/gender multiplier
     // (proceduralFeet.footScale) on top of this base formula — defaults to
     // 1 (formula unchanged) for any species/gender without an authored
     // entry.
-    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender);
+    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender) * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;

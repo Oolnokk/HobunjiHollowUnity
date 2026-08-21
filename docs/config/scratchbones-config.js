@@ -3848,6 +3848,7 @@ window.SCRATCHBONES_CONFIG = {
           "enabled": true,
           "stanceWidthFraction": 0.16,
           "footHeightFraction": 0.11,
+          "sizeBalanceMultiplier": 1.2,
           "referenceSpeedWorldUnitsPerSecond": 4.3,
           "alphaThreshold": 8,
           "boneColorHex": "#D8C7A3",

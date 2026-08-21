@@ -57,13 +57,14 @@ assert.strictEqual(profiles.modelKeyForSpecies('kenkari'), 'parrot');
 assert.strictEqual(profiles.modelKeyForSpecies('rakakoan'), 'parrot');
 assert.strictEqual(profiles.data.models.parrot.glb, 'assets/models/hands/hand_parrot.glb');
 assert.strictEqual(profiles.speciesScaleFor('mao-ao', 'male'), 0.7, 'hand size should still inherit foot scale by default');
-assert.strictEqual(profiles.modelScaleFor('mao-ao'), 2, 'hand GLBs keep the 2x model default');
+assert.strictEqual(profiles.modelScaleFor('mao-ao'), 1.7, 'ordinary hand GLBs use the 85%-balanced model default');
+assert.strictEqual(profiles.modelScaleFor('kenkari'), 2.55, 'parrot hand GLBs retain their relative larger basis at 85% size');
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the normal source-X mirror');
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
 const maoTransform = JSON.stringify({
   position: { x: -0.07, y: -0.13, z: 0.21 },
-  rotationDeg: { pitch: 90, yaw: -28, roll: 92 },
+  rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
 });
 for (const [key, model] of Object.entries(profiles.data.models)) {
   assert.strictEqual(JSON.stringify(model.handFromTool), maoTransform, `${key} must use the Mao'ao tool-relative hand setup`);
@@ -95,7 +96,7 @@ assert.doesNotMatch(handSource, /solveTwoBoneArm|shoulderNode|upper_arm/, 'direc
 assert.match(handSource, /THREE\.DoubleSide/, 'direct runtime must keep hand backface culling disabled');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
-assert.match(driverSource, /setSideIdle\?\.\('left'/, 'left hand must idle on one-handed tools');
+assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
 assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profile must be retained for post-build shoulder scanning');
 assert.match(driverSource, /profile: record\.profile/, 'hand attachment must receive the original avatar profile');
 assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver must never perform arm reach correction');
@@ -105,13 +106,13 @@ gripSandbox.window.localStorage = sandbox.localStorage;
 vm.runInNewContext(gripConfigSource, gripSandbox, { filename: 'hand-tool-grips.js' });
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
-assert.strictEqual(grips.secondaryGripForTool('hatchet').enabled, true, 'hatchet must start two-handed');
-assert.strictEqual(grips.secondaryGripForTool('bronzehoe').enabled, true, 'hoe must start two-handed');
+assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet must start with its second-hand grip disabled');
+assert.strictEqual(grips.secondaryGripForTool('bronzehoe'), null, 'hoe must start with its second-hand grip disabled');
 assert.strictEqual(grips.secondaryGripForTool('pickshovel'), null, 'other tools must remain one-handed unless authored');
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
-assert.match(gripModeSource, /multiplyQuat\(modeQ, fineQ\)/, 'grip rotations must remain quaternion-composed');
+assert.match(gripModeSource, /multiplyQuat\(rotationQuaternion, inverseQuat\(fineQ\)\)/, 'grip rotations must derive a rigid quaternion delta');
 assert.match(gripEditorSource, /handGripModeSelect/, 'Attack Editor must keep the grip-mode dropdown');
 assert.match(gripEditorSource, /JSON\.parse\(jsonView\.value\)/, 'grip export must compose with later JSON extensions instead of bypassing them');
 assert.match(directEditorSource, /handSecondaryGripEnabled/, 'Attack Editor must expose secondary grip enablement');
@@ -163,17 +164,15 @@ assert.match(shoulderPoseProfilesSource, /pitch: false, yaw: false, roll: true/,
 assert.match(shoulderAimSource, /new THREE\.Vector3\(0, 1, 0\)/, 'GLB local +Y/top must be treated as the wrist direction');
 assert.match(shoulderAimSource, /HobunjiHandShoulderPoints/, 'manual shoulder points must override fallback scan');
 assert.match(shoulderAimSource, /manual-portrait-200px/, 'debug must distinguish manually authored shoulder points');
-assert.match(shoulderAimSource, /lerpAngle\(currentEuler\.x, aimedEuler\.x, weights\.pitch\)/, 'Pitch shoulder influence must blend smoothly');
-assert.match(shoulderAimSource, /lerpAngle\(currentEuler\.y, aimedEuler\.y, weights\.yaw\)/, 'Yaw shoulder influence must blend smoothly');
-assert.match(shoulderAimSource, /lerpAngle\(currentEuler\.z, aimedEuler\.z, weights\.roll\)/, 'Roll shoulder influence must blend smoothly');
+assert.match(shoulderAimSource, /rotationVector\.x \* weights\.pitch/, 'Pitch shoulder influence must blend smoothly');
+assert.match(shoulderAimSource, /rotationVector\.y \* weights\.yaw/, 'Yaw shoulder influence must blend smoothly');
+assert.match(shoulderAimSource, /rotationVector\.z \* weights\.roll/, 'Roll shoulder influence must blend smoothly');
 assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
 assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
-for (const phase of ['neutral','windup','strike']) {
-  for (const axis of ['pitch','yaw','roll']) {
-    assert(shoulderControlsSource.includes(`handShoulderAim_${phase}_${axis}`), `Attack Editor must expose ${phase} ${axis} shoulder checkbox`);
-  }
-}
+assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
+assert.match(shoulderControlsSource, /\['pitch','yaw','roll'\]\.map/, 'Attack Editor must expose all three shoulder axes');
+assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
 assert.match(shoulderControlsSource, /shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose checkbox state must be serialized inside each pose');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');
 assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor must retain preview-only arm hiding');

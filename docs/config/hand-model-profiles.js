@@ -10,10 +10,11 @@
 (function (global) {
   'use strict';
 
-  const DEFAULT_MODEL_SCALE = 2;
-  const PARROT_MODEL_SCALE = 3;
+  const HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Reduces every hand model toward the shared hand/foot visual midpoint.
+  const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
+  const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
   const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
-  const MODEL_SCALE_PRESET = 'parrot-3x-v1';
+  const MODEL_SCALE_PRESET = 'hands-85-feet-120-v1';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
@@ -217,8 +218,9 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    const previousScalePreset = next.modelScalePreset; // Distinguishes the oldest 2x parrot default from the later 3x preset during migration.
     const migrateToSharedAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
-    const migrateParrotScale = next.modelScalePreset !== MODEL_SCALE_PRESET;
+    const migrateSizeBalance = next.modelScalePreset !== MODEL_SCALE_PRESET; // Applies the new global reduction once to saved/custom profiles.
     next.alignmentPreset = SHARED_ALIGNMENT_PRESET;
     next.modelScalePreset = MODEL_SCALE_PRESET;
     next.sourceBasis = {
@@ -236,11 +238,12 @@
     for (const [modelKey, model] of Object.entries(next.models)) {
       if (!model || typeof model !== 'object') continue;
       const modelScale = Number(model.scale);
-      if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = defaultScaleForModel(modelKey);
-      // A stored parrot value of exactly 2 is the former source default. Migrate it
-      // once to the new 3x pre-scale while preserving genuinely custom values.
-      if (migrateParrotScale && modelKey === 'parrot' && Number(model.scale) === DEFAULT_MODEL_SCALE) {
-        model.scale = PARROT_MODEL_SCALE;
+      const hasSavedScale = Number.isFinite(modelScale) && modelScale > 0;
+      if (!hasSavedScale) {
+        model.scale = defaultScaleForModel(modelKey);
+      } else if (migrateSizeBalance) {
+        if (modelKey === 'parrot' && previousScalePreset !== 'parrot-3x-v1' && Number(model.scale) === 2) model.scale = 3;
+        model.scale *= HAND_SIZE_BALANCE_MULTIPLIER;
       }
       // Existing local/exported drafts from before this shared direction migrate once.
       // After the marker is present, editor changes remain freely editable.
