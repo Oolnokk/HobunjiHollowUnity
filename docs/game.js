@@ -10083,6 +10083,31 @@
         window.BanditCamps?.markZoneEntered(mapId);
       }
 
+      async function restoreCampfireCheckpoint(record) {
+        const checkpoint = record?.checkpoint; // Persisted campfire records supply exact player-space coordinates and facing.
+        const checkpointX = Number(checkpoint?.x); // Invalid legacy/corrupt coordinates are rejected before they reach movement state.
+        const checkpointY = Number(checkpoint?.y);
+        if (!Number.isFinite(checkpointX) || !Number.isFinite(checkpointY)
+          || (record.area !== 'farm' && !EXTERIOR_ZONES[record.area] && !_zoneLayouts.has(record.area))) return false;
+        if (record.area === 'farm') {
+          if (currentArea !== 'farm') _returnToFarmMeshes();
+        } else {
+          await enterZone(record.area, Math.floor(checkpointX / TILE), Math.floor(checkpointY / TILE));
+        }
+        if (currentArea !== record.area) return false;
+        const maxX = getActiveCols() * TILE - PLAYER_RADIUS; // Old or edited maps cannot restore the player outside current bounds.
+        const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        player.x = clamp(checkpointX, PLAYER_RADIUS, maxX);
+        player.y = clamp(checkpointY, PLAYER_RADIUS, maxY);
+        player.vx = 0;
+        player.vy = 0;
+        facingAngle = Number(checkpoint.angle) || 0;
+        player.angle = facingAngle;
+        _snapCameraTarget();
+        refreshActionBar();
+        return true;
+      }
+
       // Town/zone building mesh spawning (detectTownBuildings/
       // spawnTownBuildings/spawnZoneBuildings) and decorative furniture/
       // prop spawning (spawnZoneDecorFurniture) now live in
@@ -12736,6 +12761,16 @@
             && tileSpeedAt(wx + radius, wy - radius) !== null
             && tileSpeedAt(wx - radius, wy + radius) !== null
             && tileSpeedAt(wx + radius, wy + radius) !== null;
+      }
+
+      function canPlaceCampfireAt(col, row) {
+        const tile = getActiveGrid()?.[row]?.[col]; // Campfire placement uses the live farm/zone grid, including generated maps.
+        if (!tile || tile.crop || Number(tile.water) > 0.01) return false;
+        const blockedTerrain = new Set([TileType.ROCK, TileType.SHRUB, TileType.WEEDS, TileType.TRENCH, TileType.RIVER, TileType.STREAM, TileType.WATERFALL]);
+        if (blockedTerrain.has(tile.type) || tile.incline) return false;
+        const centerX = (col + 0.5) * TILE; // A small footprint catches buildings and placed furniture through normal collision.
+        const centerY = (row + 0.5) * TILE;
+        return canOccupyAt(centerX, centerY, TILE * 0.28);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -23225,6 +23260,8 @@
         damageCreature,
         getActiveGrid,
         tileSurfaceYInArea,
+        canPlaceCampfireAt,
+        restoreCampfireCheckpoint,
         markOutline: _markOutline,
         zoneScenes: _zoneScenes,
         treeFadeActive: _treeFadeActive,

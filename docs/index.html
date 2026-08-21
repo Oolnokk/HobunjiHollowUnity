@@ -385,7 +385,7 @@
        — pure DOM/state, no other window.* system reads; load order relative
        to the other systems above doesn't matter; must load before game.js,
        which calls window.CraftingPanel.init(...) during its own setup. -->
-  <script src="js/crafting-panel.js?v=20260807a"></script>
+  <script src="js/crafting-panel.js?v=20260821a"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -1758,7 +1758,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260817d"></script>
+  <script src="game.js?v=20260821a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -7,7 +7,7 @@
   if (window.CampfireSystem || document.querySelector('script[data-hobunji-campfire-system]')) return;
   const databaseSrc = 'js/normalized-furniture-database.js?v=20260819a';
   const visualSrc = 'js/campfire-furniture-visual.js?v=20260819a';
-  const campfireSrc = 'js/campfire-system.js?v=20260819b';
+  const campfireSrc = 'js/campfire-system.js?v=20260821a';
 
   if (document.readyState === 'loading') {
     if (!window.HobunjiNormalizedFurnitureDatabase && !document.querySelector('script[data-hobunji-normalized-furniture]')) {

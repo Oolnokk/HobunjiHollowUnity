@@ -118,6 +118,10 @@
   function craft() {
     const deps = state.craftingDeps;
     if (!deps?.inventory) return false;
+    if (ownedCount() >= 99) {
+      deps.showToast?.('Campfire stack is full.', false);
+      return false;
+    }
     if (woodCount() < CRAFT_COST.wood) {
       deps.showToast?.(`Not enough wood — need ${CRAFT_COST.wood} Pine/Shadewood Logs.`, false);
       return false;
@@ -174,12 +178,37 @@
     pointerNdc.x = ((Number(clientX) - rect.left) / rect.width) * 2 - 1;
     pointerNdc.y = -((Number(clientY) - rect.top) / rect.height) * 2 + 1;
     pointerRay.setFromCamera(pointerNdc, state.camera);
+    const scene = state.worldDeps?.getActiveScene?.(); // Active terrain is authoritative on elevated wilderness maps.
+    const hits = scene ? pointerRay.intersectObjects(scene.children || [], true) : [];
+    for (const hit of hits) {
+      if (!hit?.object?.isMesh || likelyNonGroundObject(hit.object)) continue;
+      if (hit.face?.normal && normalScratch) {
+        normalScratch.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+        if (normalScratch.y < 0.35) continue;
+      }
+      if (!Number.isFinite(hit.point?.x) || !Number.isFinite(hit.point?.y) || !Number.isFinite(hit.point?.z)) continue;
+      const bounds = areaBounds();
+      if (!bounds) return null;
+      return {
+        col: clampTile(hit.point.x, bounds.cols),
+        row: clampTile(hit.point.z, bounds.rows),
+        surfaceY: hit.point.y,
+      };
+    }
+
+    const d = state.worldDeps;
+    const playerCol = Math.floor((Number(d?.player?.x) || 0) / (Number(d?.TILE) || 1)); // Fallback plane follows the player's terrain tier, never global y=0.
+    const playerRow = Math.floor((Number(d?.player?.y) || 0) / (Number(d?.TILE) || 1));
+    const playerTile = d?.getActiveGrid?.()?.[playerRow]?.[playerCol];
+    const fallbackY = Number(d?.tileSurfaceYInArea?.(playerTile, currentArea())) || 0;
+    pointerPlane.constant = -fallbackY;
     if (!pointerRay.ray.intersectPlane(pointerPlane, pointerHit)) return null;
     const bounds = areaBounds();
     if (!bounds) return null;
     return {
       col: clampTile(pointerHit.x, bounds.cols),
       row: clampTile(pointerHit.z, bounds.rows),
+      surfaceY: fallbackY,
     };
   }
 
@@ -204,9 +233,8 @@
     return /avatar|creature|npc|companion|foliage|tree|shrub|bush|crop|furniture|building|roof|wall|door|totem|tent/.test(name);
   }
 
-  // Placement uses the same y=0 screen-plane convention as game.js's normal
-  // furniture picker to choose a tile, then resolves that tile's actual visible
-  // surface with a downward ray so plateau/ramp camps don't sink to elevation 0.
+  // Programmatic/fallback placement resolves a tile's actual visible surface
+  // with a downward ray so plateau/ramp camps do not sink to elevation 0.
   function surfaceYAtTile(col, row) {
     const scene = state.worldDeps?.getActiveScene?.();
     if (!scene || !downRay || !downOrigin || !downDirection) return 0;
@@ -319,7 +347,7 @@
     return had;
   }
 
-  function placeAtTile(col, row) {
+  function placeAtTile(col, row, resolvedSurfaceY = null) {
     const d = state.worldDeps;
     const area = currentArea();
     if (!d || !state.craftingDeps?.inventory) return false;
@@ -336,6 +364,10 @@
     if (!bounds) return false;
     col = clampTile(col, bounds.cols);
     row = clampTile(row, bounds.rows);
+    if (d.canPlaceCampfireAt?.(col, row) === false) {
+      d.showToast?.('Place the campfire on a clear, dry tile.', false);
+      return false;
+    }
 
     // One campsite per map visit. Replacing it intentionally does not refund
     // the old kit; the newly placed fire consumes the new crafted kit.
@@ -346,7 +378,7 @@
       area,
       col,
       row,
-      surfaceY: surfaceYAtTile(col, row),
+      surfaceY: Number.isFinite(resolvedSurfaceY) ? resolvedSurfaceY : surfaceYAtTile(col, row),
       placedAt: Date.now(),
       checkpoint: null,
     };
@@ -366,7 +398,7 @@
       state.worldDeps?.showToast?.('Could not find a ground tile there.', false);
       return false;
     }
-    return placeAtTile(tile.col, tile.row);
+    return placeAtTile(tile.col, tile.row, tile.surfaceY);
   }
 
   function armPlacement(enabled = true) {
@@ -396,21 +428,17 @@
     if (!nearCampfire() || state.pendingSleep) return false;
     const calendar = state.calendarDeps?.calendar;
     if (!calendar || typeof window.CalendarSystem?.openTimePassage !== 'function') return false;
+    const opened = window.CalendarSystem.openTimePassage('sleep'); // Only an actually opened sleep dialog may arm a checkpoint.
+    if (!opened) return false;
     state.pendingSleep = { day: Number(calendar.day), time01: Number(calendar.time01) };
-    window.CalendarSystem.openTimePassage('sleep');
     return true;
   }
 
-  function finishSleepCheckpointIfNeeded() {
-    const pending = state.pendingSleep;
-    if (!pending) return;
-    const calendar = state.calendarDeps?.calendar;
-    if (!calendar) return;
-    const changed = Number(calendar.day) !== pending.day || Math.abs(Number(calendar.time01) - pending.time01) > 1e-6;
-    if (!changed) return;
+  function completeSleepCheckpoint(event) {
+    if (!state.pendingSleep || event?.detail?.kind !== 'sleep') return false;
     state.pendingSleep = null;
     const d = state.worldDeps;
-    if (!state.record || currentArea() !== state.record.area || !d?.player) return;
+    if (!state.record || currentArea() !== state.record.area || !d?.player) return false;
     state.record.checkpoint = {
       x: Number(d.player.x),
       y: Number(d.player.y),
@@ -421,52 +449,30 @@
     state.craftingDeps?.saveMemberWorldData?.();
     d.showToast?.('🔥 Campfire checkpoint saved. You will return here next login.', true);
     log(`sleep checkpoint saved area=${state.record.area} x=${state.record.checkpoint.x.toFixed(1)} y=${state.record.checkpoint.y.toFixed(1)}`, 'info', 'storage');
+    return true;
   }
 
-  function addPlayerObjects(scene) {
-    const d = state.worldDeps;
-    if (!scene || !d) return;
-    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) if (object) scene.add(object);
+  function cancelPendingSleepIfClosed() {
+    if (!state.pendingSleep) return;
+    const backdrop = document.querySelector?.('.time-passage-backdrop'); // A closed dialog without a sleep event means cancel/backdrop/Escape.
+    if (!backdrop?.classList?.contains('open')) state.pendingSleep = null;
   }
 
-  function removePlayerObjects(scene) {
-    const d = state.worldDeps;
-    if (!scene || !d) return;
-    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) if (object) scene.remove(object);
-  }
-
-  function restoreCheckpoint() {
+  async function restoreCheckpoint() {
     const d = state.worldDeps;
     const rec = state.record;
-    if (!d || !rec?.checkpoint || !isPortableMap(rec.area)) return false;
-    const fromScene = d.getActiveScene?.();
-    let targetScene = null;
+    if (!d || !rec?.checkpoint || !isPortableMap(rec.area) || typeof d.restoreCampfireCheckpoint !== 'function') return false;
     state.restoring = true;
     try {
-      if (rec.area === 'farm') {
-        d.setCurrentBuildingMapId?.(null);
-        d.setCurrentArea?.('farm');
-        targetScene = d.getActiveScene?.();
-      } else if (d.EXTERIOR_ZONES?.[rec.area]) {
-        targetScene = d.buildZoneScene?.(rec.area)?.scene || null;
-        if (!targetScene) return false;
-        d.setCurrentBuildingMapId?.(null);
-        d.setCurrentArea?.(rec.area);
-      }
-      if (!targetScene) return false;
-      if (fromScene !== targetScene) removePlayerObjects(fromScene);
-      d.player.x = Number(rec.checkpoint.x);
-      d.player.y = Number(rec.checkpoint.y);
-      d.player.vx = 0;
-      d.player.vy = 0;
-      d.player.angle = Number(rec.checkpoint.angle) || 0;
-      addPlayerObjects(targetScene);
-      d._snapCameraTarget?.();
-      d.refreshActionBar?.();
+      const restored = await d.restoreCampfireCheckpoint(rec); // game.js owns the complete zone-entry lifecycle and private facing state.
+      if (!restored) return false;
       state.lastArea = rec.area;
       ensureVisual();
       log(`restored login checkpoint in ${rec.area} at ${d.player.x.toFixed(1)},${d.player.y.toFixed(1)}`, 'info', 'storage');
       return true;
+    } catch (error) {
+      log(`checkpoint restore failed: ${error?.message || error}`, 'warn', 'storage');
+      return false;
     } finally {
       state.restoring = false;
     }
@@ -480,7 +486,7 @@
     state.record = loadRecord();
     state.bootstrapDone = true;
     state.lastArea = currentArea();
-    if (state.record?.checkpoint) restoreCheckpoint();
+    if (state.record?.checkpoint) void restoreCheckpoint();
     else if (state.record?.area === currentArea()) ensureVisual();
     log(state.record ? `restored persisted campfire state for ${state.record.area}${state.record.checkpoint ? ' with checkpoint' : ' (not yet slept)'}` : 'no persisted campfire for this member', 'info', 'storage');
   }
@@ -563,7 +569,7 @@
 
   function tick(now) {
     mapLifecycleTick();
-    finishSleepCheckpointIfNeeded();
+    cancelPendingSleepIfClosed();
     syncActionButton();
     updateVisual(now);
     const interactCode = window.InputBindingRuntime?.bindingFor?.('controller', 'interact');
@@ -609,6 +615,8 @@
     beginSleep();
   }, true);
 
+  window.addEventListener('hobunji-time-passage', completeSleepCheckpoint);
+
   function patchDevSpawner(value) {
     if (!value || value.__campfirePatched) return value;
     const rawInit = value.init;
@@ -652,12 +660,25 @@
     let current = window[name];
     if (current) { patcher(current); return; }
     const descriptor = Object.getOwnPropertyDescriptor(window, name);
-    if (descriptor && !descriptor.configurable) return;
+    if (descriptor && !descriptor.configurable) {
+      const poll = () => {
+        if (window[name]) patcher(window[name]);
+        else requestAnimationFrame(poll);
+      };
+      poll();
+      return;
+    }
+    const previousGet = descriptor?.get; // Preserve earlier feature interceptors waiting on the same late global.
+    const previousSet = descriptor?.set;
     Object.defineProperty(window, name, {
       configurable: true,
       enumerable: true,
-      get() { return current; },
-      set(value) { current = patcher(value); },
+      get() { return previousGet ? previousGet.call(window) : current; },
+      set(value) {
+        if (previousSet) previousSet.call(window, value);
+        const assigned = previousGet ? previousGet.call(window) : value; // Earlier setters may have wrapped or replaced the assignment.
+        current = patcher(assigned);
+      },
     });
   }
 
@@ -676,6 +697,8 @@
       checkpointActive: !!state.record?.checkpoint,
       visualLive: !!state.visual?.group?.parent,
       bootstrapDone: state.bootstrapDone,
+      restoring: state.restoring,
+      pendingSleep: state.pendingSleep ? { ...state.pendingSleep } : null,
       cameraReady: !!state.camera,
       profileKey: state.profileKey,
     };
