@@ -32,7 +32,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = configuredDocsBase
     ? new URL(configuredDocsBase, location.href)
-    : (selfUrl?.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
+    : (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [

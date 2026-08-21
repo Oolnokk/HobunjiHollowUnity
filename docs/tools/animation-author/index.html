@@ -1213,6 +1213,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821h', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1446,7 +1447,7 @@ function prepareRepositoryScript(code, relativePath, settings) {
     return `${code}\n;window.HobunjiPortraitEmoteAnimations = JSON.parse(JSON.stringify(EMOTE_ANIMATIONS));`;
   }
   if (relativePath === 'js/held-action-animations.js') {
-    const docsBase = cdnUrl(settings.docsRoot); // Pins dynamically loaded hand scripts and GLBs to this author session's selected repository revision.
+    const docsBase = new URL('../../', location.href).href; // Resolves hand scripts and GLBs beside the author page that implements their preview contract.
     return `window.__HobunjiHandBootstrapDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiHandBootstrapDocsBase;`;
   }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
@@ -1486,11 +1487,20 @@ async function loadRepositoryRuntime(settings) {
 
   for (const relativePath of REQUIRED_SCRIPTS) {
     const path = settings.docsRoot + relativePath;
-    const code = prepareRepositoryScript(await fetchRepoText(path), relativePath, settings);
-    await executeClassicScript(code, rawUrl(path));
+    const isAuthorHandRuntime = relativePath === 'js/held-action-animations.js'; // Selects the author-paired hand bootstrap while other runtime files still follow the requested repository ref.
+    const sourceUrl = isAuthorHandRuntime ? AUTHOR_HAND_RUNTIME_SCRIPT : rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
+    const sourceCode = isAuthorHandRuntime
+      ? await (await fetchWithTimeout(sourceUrl)).text()
+      : await fetchRepoText(path);
+    const code = prepareRepositoryScript(sourceCode, relativePath, settings);
+    await executeClassicScript(code, sourceUrl);
     log(`Loaded runtime script ${path}`);
   }
   if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
+  const attachmentProfileReady = window.applyHobunjiAttachmentRigProfileCorrections?.(); // Feeds config-order failures into the author's built-in mobile-accessible Diagnostics panel.
+  if (window.applyHobunjiAttachmentRigProfileCorrections && !attachmentProfileReady) {
+    log('Attachment rig profile corrections could not find the loaded PNG-avatar configuration.', 'warn');
+  }
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');

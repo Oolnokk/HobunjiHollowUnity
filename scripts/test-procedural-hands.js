@@ -32,6 +32,7 @@ const heldSource = read('docs/js/held-action-animations.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
+const attachmentRigProfileSource = read('docs/config/attachment-rig-profiles.js'); // Executed below against the Animation Author's config-late loading order.
 
 function readGlbJson(relativePath) {
   const buffer = fs.readFileSync(path.join(root, relativePath)); // Used to validate the actual bundled parrot primitive/material layout below.
@@ -216,8 +217,38 @@ assert.match(animationAuthorShoulderSource, /addEventListener\('input', apply\)/
 assert.match(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author runtime must load the shoulder companion panel');
 assert.match(animationAuthorSource, /'js\/held-action-animations\.js'/, 'Animation Author must load the shared idle-hand runtime');
 assert.match(animationAuthorSource, /await window\.HobunjiHandRuntimeReady/, 'Animation Author must wait for the hand frame driver before building avatars');
+assert.match(animationAuthorSource, /AUTHOR_HAND_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\/held-action-animations\.js/, 'Animation Author hand preview must use the runtime paired with the author page rather than a stale selected ref');
+assert.match(animationAuthorSource, /isAuthorHandRuntime \? AUTHOR_HAND_RUNTIME_SCRIPT : rawUrl\(path\)/, 'only the hand preview bootstrap should bypass the selected repository runtime ref');
+assert.match(animationAuthorSource, /attachmentProfileReady = window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'Animation Author must apply deferred attachment-profile corrections after its repository config loads');
+assert.match(animationAuthorSource, /Attachment rig profile corrections could not find/, 'deferred config failures must appear in the author\'s built-in Diagnostics panel');
 assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
 assert.match(heldSource, /window\.HobunjiHandRuntimeReady = ready/, 'dynamic repository tools need an explicit hand-runtime readiness signal');
+assert.match(heldSource, /selfUrl && selfUrl\.protocol !== 'blob:'/, 'blob-executed bootstraps must not pass a null base into the URL constructor');
+assert.match(attachmentRigProfileSource, /SCRATCHBONES_CONFIG\?\.game\?\.assets\?\.pngPlaneAvatar/, 'attachment profiles must tolerate Animation Author loading the shared config later');
+assert.match(attachmentRigProfileSource, /HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS/, 'delayed attachment-profile setup must expose a mobile-visible diagnostics state');
+
+const attachmentProfileWindow = {}; // Represents Animation Author before its repository configuration script has executed.
+const attachmentProfileSandbox = {
+  window: attachmentProfileWindow,
+};
+vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filename: 'attachment-rig-profiles.js' });
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'pending');
+attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
+  portraitScaleBySpecies: {}, portraitVerticalPlacement: {},
+} } } };
+attachmentProfileWindow.applyHobunjiAttachmentRigProfileCorrections();
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr, 1.18);
+assert.deepStrictEqual(
+  { ...attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement.mashtzarr },
+  { male: 0.6864406779661016, female: 0.6440677966101696 },
+);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'applied');
+
+const authorPreviewUrl = new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/example/docs/tools/animation-author/index.html'); // Mirrors the immutable per-commit test URL used for this author.
+const authorDocsBase = new URL('../../', authorPreviewUrl);
+assert.strictEqual(authorDocsBase.pathname, '/Oolnokk/HobunjiHollowUnity/example/docs/');
+assert.strictEqual(new URL('assets/portraitsprites/arm-R_mao-ao_m.png', authorDocsBase).pathname, '/Oolnokk/HobunjiHollowUnity/example/docs/assets/portraitsprites/arm-R_mao-ao_m.png');
+assert(!new URL('assets/portraitsprites/arm-R_mao-ao_m.png', authorDocsBase).pathname.includes('/docs/docs/'), 'author hand asset paths must never duplicate the docs root');
 
 assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
 assert.match(materialRoleSource, /MAT_EyeSurface_0c0c0c: 'body'/, 'parrot second export material must be flipped to body');
