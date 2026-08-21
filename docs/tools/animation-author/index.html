@@ -12361,10 +12361,7 @@ function rememberRigActorBodyScaleV1531(actor) {
   const baseModelWidth = Math.max(.001, Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.modelWidth) || 1); // Converts the rendered model width back into its actual total avatar multiplier.
   const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
   actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
-  actor.rigBodyPresentationBaseScaleV1532 = actor.avatarPresentation?.scale?.clone?.() || null; // Used to scale the stable presentation carrier instead of the runtime-managed portrait model.
-  actor.rigBodyPresentationBaseYV1531 = Number(actor.avatarPresentation?.position?.y) || 0;
-  actor.rigBodyBoxBasePositionYV1531 = Number(actor.rigPreviewBox?.position?.y) || 0;
-  actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
+  actor.rigBodyVisualOffsetBaseScaleV1535 = actor.visualOffset?.scale?.clone?.() || null; // Used to scale the common portrait, hand, foot, anchor, and rig-box parent without touching runtime-managed children.
 }
 
 function requestedRigActorAvatarScaleV1534(actor, portraitScale = 1) {
@@ -12400,16 +12397,12 @@ function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio
 function previewRigActorBodyScaleV1531(actor, portraitScale) {
   const builtScale = Number(actor?.rigBuiltAvatarScaleV1533);
   const targetScale = requestedRigActorAvatarScaleV1534(actor, portraitScale); // Uses the live field value directly instead of re-reading the prior configured scale.
-  const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
-  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
+  const scaleRoot = actor?.visualOffset; // Common parent for the portrait, procedural hands, procedural feet, attachment anchors, and preview box.
+  if (!scaleRoot || !actor.rigBodyVisualOffsetBaseScaleV1535 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
   const ratio = targetScale / builtScale;
-  presentation.scale.copy(actor.rigBodyPresentationBaseScaleV1532).multiplyScalar(ratio);
-  presentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
-  if (actor.rigPreviewBox) {
-    if (actor.rigBodyBoxBaseScaleV1531) actor.rigPreviewBox.scale.copy(actor.rigBodyBoxBaseScaleV1531).multiplyScalar(ratio);
-    actor.rigPreviewBox.position.y = actor.rigBodyBoxBasePositionYV1531 * ratio;
-  }
-  presentation.updateMatrixWorld?.(true);
+  scaleRoot.scale.copy(actor.rigBodyVisualOffsetBaseScaleV1535).multiplyScalar(ratio);
+  scaleRoot.updateMatrixWorld?.(true);
+  positionRigReferenceNpcV1532(actor);
   updateAnimationSelectionBox();
   updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio);
   return true;
@@ -12446,7 +12439,8 @@ function randomRigReferenceNpcV1531(actor = selectedAnimationActor()) {
 function positionRigReferenceNpcV1532(actor = selectedAnimationActor()) {
   const reference = animationAuthor.rig.referenceNpcV1531; // Repositions the preserved comparison after the editable NPC changes species or scale.
   if (!reference?.group || !actor?.root || !actor?.model) return false;
-  const actorWidth = Number(actor.model.userData?.portraitModelWidth) || 1;
+  const actorScaleX = Math.abs(Number(actor.visualOffset?.scale?.x)) || 1; // Keeps reference spacing outside the editable character's live whole-root scale.
+  const actorWidth = (Number(actor.model.userData?.portraitModelWidth) || 1) * actorScaleX;
   const referenceWidth = Number(reference.model?.userData?.portraitModelWidth) || 1;
   reference.group.position.x = actor.root.position.x + actorWidth / 2 + referenceWidth / 2 + .35;
   reference.group.position.z = actor.root.position.z;
@@ -12660,14 +12654,14 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.34';
+  document.title = 'Hobunji Animation Author V15.35';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.34 makes the live Shoulder Rig body-scale value authoritative while retaining child scaling and measured post-rebuild reconciliation.';
+animationAuthor.recentChange = 'V15.35 applies live body scale to the complete character presentation root, keeping the portrait, hands, feet, anchors, and rig box together.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.34 patch installed: authoritative live body-scale preview, child-scale parity, measured rebuild reconciliation, and preserved reference NPCs.');
+log('V15.35 patch installed: whole-character live scale, child-scale parity, measured rebuild reconciliation, and preserved reference NPCs.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

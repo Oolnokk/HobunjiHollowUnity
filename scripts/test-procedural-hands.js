@@ -249,16 +249,20 @@ for (const controlId of ['maaSpeciesYOffset', 'maaSpeciesPortraitScale', 'maaSpe
 assert.match(animationAuthorSource, /profile\.anatomy\[field\] = convert\(entered\)/, 'anatomy control edits must write into the selected attachment-rig profile');
 assert.match(animationAuthorSource, /data\.anatomySemantics =/, 'attachment-rig export must document its bundled anatomy fields');
 assert.match(animationAuthorSource, /hobunji\.attachment-rig-profiles\.v8/, 'gender-scaled anatomy-bearing rig profiles must use the v8 schema');
-assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.34'/, 'the published author title must identify the authoritative live-scale build');
+assert.match(animationAuthorSource, /document\.title = 'Hobunji Animation Author V15\.35'/, 'the published author title must identify the whole-character live-scale build');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');
 assert.match(animationAuthorSource, /absent from animationAuthor\.actors, selection, gizmos, and exports/, 'reference NPC must remain outside every interactive/exported actor path');
 assert.match(animationAuthorSource, /id="maaRandomizeReferenceNpc"/, 'Shoulder Rig must offer one-button reference NPC randomization');
-assert.match(animationAuthorSource, /presentation\.scale\.copy\(actor\.rigBodyPresentationBaseScaleV1532\)\.multiplyScalar\(ratio\)/, 'body-scale input must preview on the stable presentation carrier');
+assert.match(animationAuthorSource, /const scaleRoot = actor\?\.visualOffset/, 'body-scale input must target the common portrait, hand, foot, anchor, and rig-box parent');
+assert.match(animationAuthorSource, /scaleRoot\.scale\.copy\(actor\.rigBodyVisualOffsetBaseScaleV1535\)\.multiplyScalar\(ratio\)/, 'body-scale input must scale the complete character presentation root');
+assert.doesNotMatch(animationAuthorSource, /presentation\.scale\.copy\(actor\.rigBodyPresentationBaseScaleV1532\)/, 'body-scale input must not leave hands, feet, and anchors behind by scaling only the portrait carrier');
+assert.doesNotMatch(animationAuthorSource, /rigBodyBoxBaseScaleV1531/, 'whole-root scaling must not double-scale the child rig preview box');
 assert.doesNotMatch(animationAuthorSource, /actor\.model\.scale\.copy\(actor\.rigBodyModelBaseScaleV1531\)/, 'body-scale input must not mutate the runtime-managed portrait model');
 assert.match(animationAuthorSource, /actor\.rigBuiltAvatarScaleV1533 = builtModelWidth \/ baseModelWidth/, 'body-scale reconciliation must measure the scale actually built into the replacement model');
 assert.match(animationAuthorSource, /const targetScale = requestedRigActorAvatarScaleV1534\(actor, portraitScale\)/, 'live body-scale preview must use the entered species\/gender scale instead of re-reading the prior resolver value');
 assert.match(animationAuthorSource, /return desiredScale \* childScale/, 'live body-scale preview must retain the real avatar builder\'s child multiplier');
 assert.doesNotMatch(animationAuthorSource, /const targetScale = resolvedRigActorAvatarScaleV1533/, 'live body-scale preview must not discard the entered value for a configured resolver result');
+assert.match(animationAuthorSource, /portraitModelWidth\) \|\| 1\) \* actorScaleX/, 'reference NPC spacing must include the editable character root\'s live X scale');
 assert.match(animationAuthorSource, /previewRigActorBodyScaleV1531\(actor, anatomy\.portraitScale\)/, 'every newly rebuilt rig actor must reapply its measured carrier correction');
 assert.match(animationAuthorSource, /id="maaBodyScaleDiagnostic"/, 'Shoulder Rig must expose built, target, and carrier scale diagnostics without DevTools');
 const liveBodyScaleHelperSource = animationAuthorSource.match(/function requestedRigActorAvatarScaleV1534\([\s\S]*?\n\}/)?.[0]; // Executes the authored helper so a static call-site assertion cannot hide a constant preview ratio.
