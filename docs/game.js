@@ -14760,6 +14760,11 @@
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
       let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
+      // Reused across calls instead of allocated fresh each frame — this
+      // runs unconditionally every frame outlines are on (the default), for
+      // every visible player/NPC/creature/mount mesh, so a per-frame Map
+      // plus a per-mesh temp array here was pure steady-state GC churn.
+      const _pngOutlineMaterialStates = new Map();
 
       // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
       // Their original alpha-tested materials preserve the real sprite
@@ -14767,17 +14772,25 @@
       // image, while forcing depthWrite on makes every visible pet/player/NPC
       // capable of blocking the shell and material-seam passes that follow.
       function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        const materialStates = new Map(); // Restores avatar materials after this depth-only draw.
+        const materialStates = _pngOutlineMaterialStates;
         let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
         activeScene.traverse(object => {
           if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
           meshCount++;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          for (const material of materials) {
-            if (!material || materialStates.has(material)) continue;
-            materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
-            material.colorWrite = false;
-            material.depthWrite = true;
+          if (Array.isArray(object.material)) {
+            for (const material of object.material) {
+              if (!material || materialStates.has(material)) continue;
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
+          } else {
+            const material = object.material;
+            if (material && !materialStates.has(material)) {
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
           }
         });
         if (meshCount === 0) return;
@@ -14792,6 +14805,7 @@
             material.colorWrite = state.colorWrite;
             material.depthWrite = state.depthWrite;
           }
+          materialStates.clear();
         }
         if (meshCount !== _lastPngOutlineOccluderCount) {
           _lastPngOutlineOccluderCount = meshCount;
