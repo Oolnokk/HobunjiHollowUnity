@@ -238,23 +238,37 @@
 
   function spawnPackAtDen(zoneId, den, denKey) {
     const zdef = deps.EXTERIOR_ZONES[zoneId];
-    // A den's population type (predator pack vs. herbivore herd) is
-    // decided fresh each spawn cycle rather than fixed per den — simplest
-    // v1 (see the wildlife-schedule-AI plan's Feature 4 notes). Falls
-    // back to whichever pool the zone actually has if only one exists.
+    const cavernMapId = denCavernMapId(zoneId, den.id);
+    // Pack-vs-herd used to be re-rolled fresh every spawn cycle from the
+    // general mutable RNG stream — independent of the den's cavern
+    // interior, which picks its own Den-Mother/creature-spawn species from
+    // a FIXED roll keyed to the den's own identity (see
+    // cavern-generator.js's nativeSpeciesFor). When a zone configures both
+    // a packSpecies and a herbivoreSpecies pool, that let the exterior and
+    // interior of the same den independently land on different answers —
+    // confirmed directly: a den with gar-wolves guarding the mouth turned
+    // out to be full of drenkirra inside. Same formula, same deterministic
+    // per-den seed (mapId + '_denpop') as nativeSpeciesFor, so a den's
+    // population type is one fixed identity everywhere it's decided, not
+    // two independent coin flips that happen to usually agree.
     const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
-    const useHerd = hasHerd && (!hasPack || deps.rnd() < 0.5);
+    const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
+    const useHerd = hasHerd && (!hasPack || popRng() < 0.5);
     const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
     if (!pool || !pool.length) {
       window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
       return;
     }
+    // Which INDIVIDUAL species within that fixed pool (relevant only for a
+    // zone with multiple pack or multiple herd species) and how many still
+    // vary per spawn cycle — only the pack-vs-herd identity itself is
+    // pinned to the den.
     const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.
     const denFamily = denGenotypeFamily(speciesKey);
-    const denGenotype = denFamily ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id), denFamily) : null;
+    const denGenotype = denFamily ? getOrMakeDenGenotype(cavernMapId, denFamily) : null;
     // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
     // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
     const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
