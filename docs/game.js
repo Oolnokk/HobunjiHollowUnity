@@ -6246,6 +6246,132 @@
       // exact same map, not a fresh reroll.
       let _tothalShiftedThisSession = false;
 
+      // Cache of performTothalShift's per-zone generator output, keyed by
+      // world+year+zone (the same string already used to seed the
+      // generator) plus the generator/fold scripts' own cache-busting
+      // ?v= tags. generateZoneWorkspace + buildMergedZoneGrid are pure
+      // functions of that seed — reachability validation/repair, plateau
+      // generation and animal-route pathfinding inside them measured at
+      // several seconds of blocking main-thread work per zone, redone from
+      // scratch on *every single page load* even though a same-year reload
+      // always reproduces the exact same result. Caching their raw output
+      // here lets a same-year session skip straight to replaying the
+      // (cheap) NPC-station/building/decor bookkeeping that follows.
+      //
+      // IndexedDB, not localStorage: one zone's merged tile grid alone
+      // serializes to several MB, which blew straight through localStorage's
+      // ~5-10MB per-origin quota after just the first zone — the other three
+      // zones' writes then failed (silently, since caching here is a pure
+      // optimization) and kept regenerating every load anyway. IndexedDB's
+      // quota is disk-sized, and its structured-clone storage accepts the
+      // tiles Map directly, no JSON (de)serialization needed. Mirrors the
+      // openDb/idbGet/idbSet helper shape docs/js/local-save-folder-core.js
+      // already uses for its own IndexedDB store, as its own separate DB
+      // (this one is a disposable cache, not save data worth backing up).
+      const _TOTHAL_GEN_VERSION_TAG = (() => {
+        const versionOf = (fileName) => {
+          const el = document.querySelector(`script[src*="${fileName}"]`);
+          const m = el && el.src.match(/[?&]v=([^&]+)/);
+          return m ? m[1] : 'noversion';
+        };
+        return `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}`;
+      })();
+      const _TOTHAL_CACHE_DB_NAME = 'hobunji-tothal-zone-cache';
+      const _TOTHAL_CACHE_STORE = 'zones';
+      function _tothalCacheOpenDb() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(_TOTHAL_CACHE_DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            if (!req.result.objectStoreNames.contains(_TOTHAL_CACHE_STORE)) req.result.createObjectStore(_TOTHAL_CACHE_STORE);
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      }
+      async function _tothalCacheGet(key) {
+        try {
+          const db = await _tothalCacheOpenDb();
+          return await new Promise((resolve, reject) => {
+            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).get(key);
+            req.onsuccess = () => resolve(req.result ?? null);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (_) { return null; }
+      }
+      async function _tothalCacheSet(key, value) {
+        try {
+          const db = await _tothalCacheOpenDb();
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
+            tx.objectStore(_TOTHAL_CACHE_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (_) {
+          // Quota exceeded or storage unavailable — this cache is a pure
+          // optimization; silently skip it and let next session regenerate.
+        }
+      }
+      async function _tothalCacheDeleteKeys(keys) {
+        if (!keys.length) return;
+        try {
+          const db = await _tothalCacheOpenDb();
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
+            keys.forEach(k => tx.objectStore(_TOTHAL_CACHE_STORE).delete(k));
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (_) {}
+      }
+      async function _tothalCacheAllKeys() {
+        try {
+          const db = await _tothalCacheOpenDb();
+          return await new Promise((resolve, reject) => {
+            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).getAllKeys();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (_) { return []; }
+      }
+      function _tothalZoneCacheKey(worldId, year, zoneId) {
+        return `hobunji_tothal_zonecache_v1_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
+      }
+      async function _loadTothalZoneCache(key) {
+        const cached = await _tothalCacheGet(key);
+        if (!cached?.merged || !cached?.workspace) return null;
+        return cached; // merged.tiles is already a real Map (IndexedDB structured clone, not JSON)
+      }
+      async function _saveTothalZoneCache(key, workspace, merged) {
+        await _tothalCacheSet(key, {
+          workspace: {
+            entry: workspace.entry || null,
+            animalDens: workspace.animalDens || [],
+            localeInstances: workspace.localeInstances || [],
+            rootTotems: workspace.rootTotems || [],
+            foliagePatches: workspace.foliagePatches || [],
+            wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
+            ambushStations: workspace.ambushStations || [],
+          },
+          merged: {
+            cols: merged.cols, rows: merged.rows, tiles: merged.tiles,
+            mesas: merged.mesas, buildings: merged.buildings,
+          },
+        });
+      }
+      // Drops this world's stale zone caches (older years or a stale
+      // generator/fold version) before writing this shift's entries, so a
+      // save that's played across many Tothal years doesn't accumulate an
+      // unbounded pile of dead cache entries. Other worlds' caches are left
+      // untouched.
+      async function _evictStaleTothalZoneCaches(worldId, year) {
+        const prefix = 'hobunji_tothal_zonecache_v1_';
+        const keep = new Set(WildernessMapGenerator.zoneMapIds().map(zoneId => _tothalZoneCacheKey(worldId, year, zoneId)));
+        const allKeys = await _tothalCacheAllKeys();
+        const stale = allKeys.filter(k => typeof k === 'string' && k.startsWith(prefix) && k.includes(`_${worldId}_y`) && !keep.has(k));
+        await _tothalCacheDeleteKeys(stale);
+      }
+
       // Regenerates all four wilderness zones for the given Tothal year and
       // saves that year to the world file so future checks this session skip
       // redundant rebuilds. Seeded from the world id + year + zone, so the
@@ -6277,31 +6403,39 @@
           // against the finished zone (see ensureCurrentZoneBanditCamps).
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
+          await _evictStaleTothalZoneCaches(worldId, year);
           let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
-            let workspace;
-            try {
-              // Random seed, entry side set per zone — otherwise the tool's own
-              // defaults, no post-processing. This is meant to be exactly what
-              // a human would get generating a map with the standalone tool and
-              // importing it into the Map Editor by hand. remainingLocales are
-              // the not-yet-placed locales this shift (see above).
-              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
-            } catch (e) {
-              debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
-              continue;
+            const cacheKey = _tothalZoneCacheKey(worldId, year, zoneId);
+            const cached = await _loadTothalZoneCache(cacheKey);
+            let workspace, merged;
+            if (cached) {
+              ({ workspace, merged } = cached);
+              debugLog(`Tothal Shift: ${zoneId} restored from cache (same seed as last time)`);
+            } else {
+              try {
+                // Random seed, entry side set per zone — otherwise the tool's own
+                // defaults, no post-processing. This is meant to be exactly what
+                // a human would get generating a map with the standalone tool and
+                // importing it into the Map Editor by hand. remainingLocales are
+                // the not-yet-placed locales this shift (see above).
+                workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
+              } catch (e) {
+                debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
+                continue;
+              }
+              const root = workspace.maps[0];
+              try {
+                merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
+              } catch (e) {
+                debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
+                continue;
+              }
+              if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+              await _saveTothalZoneCache(cacheKey, workspace, merged);
             }
-            const root = workspace.maps[0];
-            let merged;
-            try {
-              merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
-            } catch (e) {
-              debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
-              continue;
-            }
-            if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
 
             const localeInstances = workspace.localeInstances || [];
             if (localeInstances.length) {
@@ -14626,6 +14760,11 @@
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
       let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
+      // Reused across calls instead of allocated fresh each frame — this
+      // runs unconditionally every frame outlines are on (the default), for
+      // every visible player/NPC/creature/mount mesh, so a per-frame Map
+      // plus a per-mesh temp array here was pure steady-state GC churn.
+      const _pngOutlineMaterialStates = new Map();
 
       // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
       // Their original alpha-tested materials preserve the real sprite
@@ -14633,17 +14772,25 @@
       // image, while forcing depthWrite on makes every visible pet/player/NPC
       // capable of blocking the shell and material-seam passes that follow.
       function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        const materialStates = new Map(); // Restores avatar materials after this depth-only draw.
+        const materialStates = _pngOutlineMaterialStates;
         let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
         activeScene.traverse(object => {
           if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
           meshCount++;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          for (const material of materials) {
-            if (!material || materialStates.has(material)) continue;
-            materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
-            material.colorWrite = false;
-            material.depthWrite = true;
+          if (Array.isArray(object.material)) {
+            for (const material of object.material) {
+              if (!material || materialStates.has(material)) continue;
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
+          } else {
+            const material = object.material;
+            if (material && !materialStates.has(material)) {
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
           }
         });
         if (meshCount === 0) return;
@@ -14658,6 +14805,7 @@
             material.colorWrite = state.colorWrite;
             material.depthWrite = state.depthWrite;
           }
+          materialStates.clear();
         }
         if (meshCount !== _lastPngOutlineOccluderCount) {
           _lastPngOutlineOccluderCount = meshCount;
