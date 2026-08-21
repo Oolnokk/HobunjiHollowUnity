@@ -432,6 +432,23 @@
     const ts = tileSize || 1;
     const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
     const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
+    // The heal itself must never reach past the immediate unclaimed
+    // neighbor's own far edge — depth (a physical margin derived from
+    // brush/probe radius, independent of tileSize) can be, and often is,
+    // wider than a single tile once tileSize gets small (confirmed: at
+    // tileSize .5 with the default probe/brush radii, depth ≈ .7 > ts).
+    // Since the "is this edge even unclaimed" check below only looks at
+    // the ONE immediate neighbor, an unclamped heal region can overshoot
+    // straight through that neighbor and silently re-solidify a tile two
+    // steps away that IS claimed and was already correctly carved open —
+    // confirmed directly via a before/after field snapshot around this
+    // call: a claimed tile's own center flipped from open to solid purely
+    // from a distant neighbor's heal pass, producing a real hole in the
+    // floor mesh with no wall/bump to show for it (no clipping artifact —
+    // the geometry was just gone). Clamping to at most one tile width
+    // keeps every heal inside the single neighbor tile it was actually
+    // verified unclaimed for.
+    const healDepth = Math.min(depth, ts);
     for (const key of claimed) {
       const [c, r] = key.split(',').map(Number);
       // c/r are tile indices; depth is a physical-world margin (independent
@@ -439,24 +456,40 @@
       // tile edges themselves convert through tileSize, not depth.
       const wx0 = c * ts, wx1 = (c + 1) * ts, wz0 = r * ts, wz1 = (r + 1) * ts;
       const edges = [
-        { dir: 'W', nc: c - 1, nr: r, x0: wx0 - depth, x1: wx0, z0: wz0, z1: wz1 },
-        { dir: 'E', nc: c + 1, nr: r, x0: wx1, x1: wx1 + depth, z0: wz0, z1: wz1 },
-        { dir: 'N', nc: c, nr: r - 1, x0: wx0, x1: wx1, z0: wz0 - depth, z1: wz0 },
-        { dir: 'S', nc: c, nr: r + 1, x0: wx0, x1: wx1, z0: wz1, z1: wz1 + depth },
+        { dir: 'W', nc: c - 1, nr: r, x0: wx0 - healDepth, x1: wx0, z0: wz0, z1: wz1 },
+        { dir: 'E', nc: c + 1, nr: r, x0: wx1, x1: wx1 + healDepth, z0: wz0, z1: wz1 },
+        { dir: 'N', nc: c, nr: r - 1, x0: wx0, x1: wx1, z0: wz0 - healDepth, z1: wz0 },
+        { dir: 'S', nc: c, nr: r + 1, x0: wx0, x1: wx1, z0: wz1, z1: wz1 + healDepth },
       ];
       for (const e of edges) {
         if (claimed.has(`${e.nc},${e.nr}`)) continue; // shared wall between two claimed tiles stays open
         if (skipCapEdges?.has(`${c},${r},${e.dir}`)) continue; // the doorway/vestibule — never re-seal it
         const g0 = worldToGrid(st, { x: e.x0, y: -st.domainHalf.y, z: e.z0 });
         const g1 = worldToGrid(st, { x: e.x1, y: st.domainHalf.y, z: e.z1 });
+        // floor(min)/ceil(max) is a fast bounding-box PRE-filter, not the
+        // actual heal boundary — it over-includes grid points near the
+        // edge on purpose for carving (see carveTileColumn, where
+        // over-inclusion only ever opens MORE space, which is harmless).
+        // Healing does the opposite — it restores toward solid — so any
+        // grid point swept up by this coarse pre-filter but genuinely
+        // outside [e.x0,e.x1]x[e.z0,e.z1] must be explicitly excluded
+        // below, or a single grid cell wider than one tile (confirmed:
+        // happens at tileSize .5 with this engine's usual domain sizes)
+        // lets the heal quietly reach past the one neighbor tile it was
+        // verified unclaimed for and re-solidify a claimed tile beyond it
+        // — confirmed directly via a before/after field snapshot around
+        // this call showing exactly that on a real den.
+        const eps = 1e-6;
         const i0 = Math.max(0, Math.floor(Math.min(g0.x, g1.x))), i1 = Math.min(st.N, Math.ceil(Math.max(g0.x, g1.x)));
         const k0 = Math.max(0, Math.floor(Math.min(g0.z, g1.z))), k1 = Math.min(st.N, Math.ceil(Math.max(g0.z, g1.z)));
         for (let k = k0; k <= k1; k++) {
           const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
+          if (z < e.z0 - eps || z > e.z1 + eps) continue;
           for (let j = 0; j <= st.N; j++) {
             const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
             for (let i = i0; i <= i1; i++) {
               const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+              if (x < e.x0 - eps || x > e.x1 + eps) continue;
               const id = idxP(st, i, j, k);
               const pristine = pristineAt(x, y, z);
               if (pristine > st.field[id]) st.field[id] = pristine; // only ever restore, never carve
@@ -480,6 +513,11 @@
           const ecx = (e.x0 + e.x1) * .5, ecz = (e.z0 + e.z1) * .5;
           const rr = Math.max(depth, ts * .6);
           for (const y of refineOpts.levels) ensureLocalResolution(st, { x: ecx, y, z: ecz }, rr, refineOpts);
+          // Same floorY gap as carveTileColumn's own refine call, and the
+          // same fix — refineNear unconditionally, not gated behind
+          // faceThreshold (see carveTileColumn's own comment on why the
+          // gate isn't reliable specifically at floor height).
+          if (refineOpts.floorY != null) refineNear(st, { x: ecx, y: refineOpts.floorY, z: ecz }, rr, refineOpts.minCell, false);
         }
       }
     }
@@ -527,9 +565,27 @@
     // already relies on — at this tile's own center, at every height the
     // maze's sweep uses, closes that gap for every claimed tile, not just
     // ones lucky enough to sit directly under a stamp.
+    //   floorY itself also needs its own explicit refine call, not just
+    // opts.levels — the lowest sweep level sits a full probeYRadius above
+    // floorY (see carveMazeCavern's own floorY formula), well outside a
+    // sweep-centered refine sphere's own reach (confirmed directly: a
+    // claimed tile along a sparsely-stamped single-file corridor — where
+    // no organic hook stamp happened to refine near the floor on its
+    // own — left an octree leaf 2+ cells wide straddling the actual floor
+    // crossing, so the mesh's own vertex there landed nowhere near
+    // floorY, reading as a real gap in the rendered floor even though the
+    // field itself was correctly open). This one can't use
+    // ensureLocalResolution's own faceThreshold gate like the sweep
+    // levels do — confirmed directly that gate can read "enough nearby
+    // surface leaves" from unrelated wall geometry elsewhere in the same
+    // sparse corridor and stop early, leaving the floor's own leaf coarse
+    // regardless. refineNear(..., oneLevelOnly:false) refines straight
+    // down to minCell unconditionally, which is what floor precision
+    // actually needs — every claimed tile's own floor, not most of them.
     if (opts.adaptive !== false && opts.levels) {
       const rr = Math.max(opts.probeRadius || 0, ts * .75);
       for (const y of opts.levels) ensureLocalResolution(st, { x: cx, y, z: cz }, rr, opts);
+      if (opts.floorY != null) refineNear(st, { x: cx, y: opts.floorY, z: cz }, rr, opts.minCell, false);
     }
   }
 
