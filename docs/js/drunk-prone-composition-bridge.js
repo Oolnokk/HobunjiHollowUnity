@@ -313,6 +313,14 @@
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
+    // held-object-render-order.js's internal depth-replay passes look for the
+    // TRUE, undecorated render() by walking a chain of __hobunji*Original
+    // markers (see its unwrapRendererRender) — without this marker those
+    // replay passes still ran through this wrap (and, chained beneath it,
+    // PlayerBodyTransformComposer's own wrap) with scene.autoUpdate forced
+    // false around them, so a freshly-applied composed delta never
+    // propagated into descendants' matrixWorld for those passes.
+    rendererProto.render.__hobunjiDrunkProneCompositionOriginal = previousRender;
     rendererProto.__drunkProneCompositionRenderHook = true;
   }
 

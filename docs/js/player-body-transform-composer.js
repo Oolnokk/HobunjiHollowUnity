@@ -396,6 +396,16 @@
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
+    // held-object-render-order.js's internal depth-replay passes need the
+    // TRUE, undecorated render() — no visual-delta wrapper applied — and
+    // find it by walking a chain of __hobunji*Original markers left by each
+    // wrapper (see its unwrapRendererRender). Without this marker on this
+    // wrap specifically, that unwrap stopped one link too early and those
+    // replay passes still ran this wrap's full apply-delta/render/undo cycle
+    // (with scene.autoUpdate forced false around them, so the freshly-applied
+    // delta never propagated into matrixWorld for that one call) instead of
+    // the plain pass-through the depth-replay design intends.
+    proto.render.__hobunjiPlayerBodyComposerOriginal = originalRender;
     proto.__playerBodyTransformComposerRenderHook = true;
   }
 
