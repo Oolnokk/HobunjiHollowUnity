@@ -63,14 +63,15 @@
   function markOutline(root) {
     root?.traverse?.(child => {
       if (!child.isMesh) return;
+      if (child.userData?.noOutline === true) return;
       child.layers.enable(1);
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       for (const material of materials) {
         if (!material) continue;
         material.side = child.material?.constructor?.DoubleSide || material.side;
       }
+      global.HobunjiOutlines?.markMaterialSeamId?.(child);
     });
-    global.HobunjiOutlines?.markMaterialSeamId?.(root);
   }
 
   function disposeObjectResources(root) {
@@ -115,16 +116,23 @@
           depthWrite: !isParrotWingLayer,
         });
         next.name = material?.name || `${role}_hand_material`;
+        next.userData.hobunjiHandRole = role;
         next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;
       };
       child.material = Array.isArray(child.material) ? child.material.map(replaceMaterial) : replaceMaterial(child.material);
+      const ownedMaterials = Array.isArray(child.material) ? child.material : [child.material]; // Used here to tag the already-split GLTFLoader primitive for render-pass routing.
+      const isParrotWingMesh = modelKey === 'parrot'
+        && ownedMaterials.length > 0
+        && ownedMaterials.every(material => material?.userData?.hobunjiHandRole === 'body');
+      if (isParrotWingMesh) {
+        child.userData = { ...child.userData, hobunjiHandRole: 'body-wing', hobunjiPortraitOccludedWingLayer: true, noOutline: true };
+      }
       child.castShadow = true;
       child.receiveShadow = true;
-      child.layers.enable(1);
+      if (child.userData?.noOutline !== true) child.layers.enable(1);
     });
-    global.HobunjiOutlines?.markMaterialSeamId?.(clone);
     return clone;
   }
 

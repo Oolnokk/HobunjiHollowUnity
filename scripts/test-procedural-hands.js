@@ -12,6 +12,8 @@ const configSource = read('docs/config/hand-model-profiles.js');
 const shoulderPointConfigSource = read('docs/config/hand-shoulder-points.js');
 const shoulderPoseProfilesSource = read('docs/config/hand-shoulder-pose-profiles.js');
 const handSource = read('docs/js/procedural-hand-attachments.js');
+const handOutlineSource = read('docs/js/procedural-hand-outline-parity.js');
+const gltfLoaderSource = read('docs/js/GLTFLoader.js');
 const driverSource = read('docs/js/procedural-hand-frame-driver.js');
 const gripConfigSource = read('docs/js/hand-tool-grips.js');
 const editorUiSource = read('docs/js/attack-editor-hand-configurator.js');
@@ -29,6 +31,19 @@ const heldSource = read('docs/js/held-action-animations.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
+
+function readGlbJson(relativePath) {
+  const buffer = fs.readFileSync(path.join(root, relativePath)); // Used to validate the actual bundled parrot primitive/material layout below.
+  for (let offset = 12; offset + 8 <= buffer.length;) {
+    const length = buffer.readUInt32LE(offset);
+    const type = buffer.readUInt32LE(offset + 4);
+    if (type === 0x4E4F534A) return JSON.parse(buffer.toString('utf8', offset + 8, offset + 8 + length));
+    offset += 8 + length;
+  }
+  throw new Error(`${relativePath} has no glTF JSON chunk`);
+}
+
+const parrotGlbJson = readGlbJson('docs/assets/models/hands/hand_parrot.glb');
 
 const storage = new Map();
 const sandbox = {
@@ -98,6 +113,9 @@ assert.match(handSource, /RIGHT_SHOULDER_AXIS_TWIST_DEG = 180/, 'right hand must
 assert.match(handSource, /side === 'right'.*group\.rotation\.y = THREE\.MathUtils\.degToRad\(RIGHT_SHOULDER_AXIS_TWIST_DEG\)/, 'right-hand twist must be applied around visual local +Y without changing shoulder aim');
 assert.match(handSource, /modelKey === 'parrot' && role === 'body'/, 'Kenkari-family modeled wing continuation must be identified independently of its talons');
 assert.match(handSource, /depthWrite: !isParrotWingLayer/, 'portrait clothing must be able to occlude the parrot body-colored wing continuation');
+assert.match(handSource, /ownedMaterials\.every\(material => material\?\.userData\?\.hobunjiHandRole === 'body'\)/, 'the repository GLTFLoader\'s already-separated parrot body primitive must be tagged directly');
+assert.match(handSource, /hobunjiPortraitOccludedWingLayer: true, noOutline: true/, 'portrait-covered wing continuation must retain its occlusion tag and not leak a 3D shell outline through clothing');
+assert.match(handOutlineSource, /hobunjiPortraitOccludedWingLayer === true\) return false/, 'portrait-occluded wing mesh must stay out of the held-object foreground replay');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
@@ -194,6 +212,9 @@ assert.match(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Ani
 
 assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
 assert.match(materialRoleSource, /MAT_EyeSurface_0c0c0c: 'body'/, 'parrot second export material must be flipped to body');
+assert.strictEqual(parrotGlbJson.meshes?.[0]?.primitives?.length, 2, 'parrot GLB must retain separate keratin and body-wing primitives');
+assert.deepStrictEqual(parrotGlbJson.materials.map(material => material.name), ['MAT_None_7a4e2e', 'MAT_EyeSurface_0c0c0c']);
+assert.match(gltfLoaderSource, /meshes\.push\( mesh \)/, 'bundled GLTFLoader must continue creating one runtime mesh per primitive');
 
 assert.match(weaponScaleSource, /BASE_WEAPON_PNG_SCALE = 1\.15/, 'unscaled weapon PNG baseline must be 1.15x');
 for (const key of ['hatchet', 'bronzehoe', 'pickshovel', 'fishingspear', 'fishingmace']) {
