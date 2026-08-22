@@ -89,6 +89,35 @@ directional:
   module shape as `docs/js/rain-planes.js`, and is wired into the same
   per-frame update tick in `docs/game.js`.
 
+## Outlines are fog-aware; the furniture seam pass is off
+
+`shellOutlineMat` (`docs/game.js`, the inverted-hull "Shell Outlines" pass —
+the dark border on rocks/crops/terrain steps) now declares `fog: true` and
+merges in `THREE.UniformsLib.fog`, so it mixes its black line toward whichever
+scene's actual `fogColor`/`fogDensity` is active based on distance, by hand in
+its own vertex/fragment shaders (the built-in `fog_vertex`/`fog_fragment`
+chunks assume a view-space variable named `mvPosition`, which this shader
+calls `viewPos`, so the same math is written out explicitly instead of using
+`#include`). In the Cloud Forest specifically, this means an outline far
+enough away to already be swallowed by the white mist now actually fades
+into it instead of staying a crisp black line poking through.
+
+Two other, separate outline sources existed alongside the shell pass:
+
+- **Depth-edge outlines** (`s_depthOutlines`, Settings → Visual Effects →
+  "Depth Outlines") — already off by default; unchanged.
+- **Furniture material-seam outlines** (`_markFurnitureEdgeId`/the
+  composite shader's `idEdge` — catches boundaries between two touching
+  parts of the same furniture group, e.g. a chair leg against its seat) had
+  no Settings toggle at all and simply ran unconditionally whenever Shell
+  Outlines was on. It's now gated behind a new `s_furnitureSeamOutlines`
+  flag (`docs/game.js`), defaulted to `false`: it isn't fog-aware like the
+  shell pass above, so leaving it on would keep drawing crisp seam lines
+  straight through the Cloud Forest's mist. The render pass that builds its
+  source buffer is skipped entirely while off (not just hidden), and a new
+  `uSeamOutlinesOn` uniform zeroes its contribution in the composite shader
+  regardless of that buffer's contents.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining
