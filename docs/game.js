@@ -4297,6 +4297,21 @@
         return best;
       }
 
+      // Where a ranged shot currently flies, in the flat XY logical-angle
+      // convention (atan2(y,x), matching player.angle/facingAngle) — shared
+      // by RangedWeapons.init's getPlayerAimAngle (below) and
+      // updateToolMesh's ranged pose branch, which rotates the hands/tool
+      // to face this instantly rather than waiting on the body. Shoulder-
+      // surf mode always uses the raycast-derived shared aim point
+      // (mouseLookAngle, same one the head/reticle use); the ordinary
+      // camera falls back to whatever auto-target lock (if any) is
+      // steering facing, then to plain body facing.
+      function currentPlayerAimAngle() {
+        if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
+        const target = findAutoTarget();
+        return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
+      }
+
       // Used by updateAmbientCues() to duck exploration/dawn music during a
       // fight — true whenever any live hostile in the player's current area
       // is actively chasing/attacking (state === 'chase'), regardless of
@@ -7134,9 +7149,18 @@
       // Shoulder-surf's over-the-shoulder framing offsets (Settings →
       // Camera), in tiles, applied relative to the camera's own right/up
       // axes — see updateCameraPosition. Positive H = shift camera/framing
-      // to the head's right; positive V = raise the framing.
-      let s_shoulderSurfOffsetH = 0.65;
-      let s_shoulderSurfOffsetV = 0;
+      // to the head's right; positive V = raise the framing. Kept as two
+      // separate presets rather than one flat value — a weapon/ranged tool
+      // actually being drawn (see shoulderSurfCombatStanceActive()) wants a
+      // wider H offset to clear the weapon out of the middle of the screen
+      // than plain movement/farming does — and the settings sliders read
+      // and write whichever preset is currently active (see their input
+      // handlers and the per-frame sync below) rather than a single value.
+      let s_shoulderSurfOffsetH_default = 0.35;
+      let s_shoulderSurfOffsetV_default = -0.05;
+      let s_shoulderSurfOffsetH_combat = 0.60;
+      let s_shoulderSurfOffsetV_combat = -0.05;
+      let _shoulderSurfOffsetSliderCombat = false; // last-synced stance, for the slider UI sync below
       // One-shot azimuth snap for whenever shoulder-surf is already the
       // active mode the very first time the camera-follow code below runs
       // (i.e. it's the default) — mirrors the snap the settingShoulderSurf
@@ -8196,6 +8220,14 @@
       }
       function defaultCameraModeKey() {
         return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+      }
+      // Same "weapon tool actually equipped AND selected" gate as
+      // updateMovement's own weaponEngaged/findAutoTarget's meleeActive —
+      // duplicated rather than shared since this one only ever needs to
+      // answer "which shoulder-surf offset preset applies" (see
+      // s_shoulderSurfOffsetH_default/_combat above).
+      function shoulderSurfCombatStanceActive() {
+        return heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
       }
       // One-shot reset used only when freshly entering shoulder-surf (mode
       // toggled on, standing up from a chair, dialogue/cutscene ending) —
@@ -15721,10 +15753,13 @@
         // directly) carries the offset into idealX/idealZ/cameraY below too,
         // sliding the whole camera rig rather than just skewing its aim.
         if (activeCameraMode === SHOULDER_SURF_MODE && !portraitAim) {
+          const combatStance = shoulderSurfCombatStanceActive();
+          const offH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+          const offV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
           const rightX = Math.cos(azimuth), rightZ = -Math.sin(azimuth);
-          lookAtX += rightX * s_shoulderSurfOffsetH;
-          lookAtZ += rightZ * s_shoulderSurfOffsetH;
-          lookY += s_shoulderSurfOffsetV;
+          lookAtX += rightX * offH;
+          lookAtZ += rightZ * offH;
+          lookY += offV;
         }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
@@ -17362,6 +17397,7 @@
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
       let playerFacing = 0;
+      let _debugRangedToolYawRad = null; // set each frame by updateToolMesh's ranged branch — debug/QA only
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
@@ -18450,11 +18486,25 @@
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
           const neutral = { ...STYLE_NEUTRAL_POSE.ranged, ...(rangedIdlePose || {}) };
           toolHolder.scale.setScalar(neutral.scale);
-          const vθ = θ + THREE.MathUtils.degToRad(neutral.bodyYaw);
-          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ);
-          const vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+          const bodyYawOffsetRad = THREE.MathUtils.degToRad(neutral.bodyYaw);
+          const vθ = θ + bodyYawOffsetRad;
           playerMesh.rotation.y = vθ;
-          _qFac.setFromAxisAngle(_tUp, vθ);
+          // While actually loaded/fire-ready, the hands+tool track the
+          // current aim (mouse/camera/auto-target — see
+          // currentPlayerAimAngle(), same convention playerFacing already
+          // converts facingAngle with) instantly, ahead of and independent
+          // from the body's own slower catch-up — even while standing
+          // still with the aim still inside the comfortable neck-turn
+          // range where the body hasn't turned at all yet. Reloading/empty
+          // keeps the ordinary body-relative stance, since there's nothing
+          // to aim yet.
+          const toolVθ = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false
+            ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
+            : vθ;
+          _debugRangedToolYawRad = toolVθ;
+          const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
+          const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
+          _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -20206,16 +20256,24 @@
       threeContainer.addEventListener('click', () => {
         if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
       });
+      // Both offset sliders read/write whichever stance preset is currently
+      // active (see shoulderSurfCombatStanceActive()) rather than a single
+      // flat value — the per-frame sync below snaps the slider itself back
+      // to the other preset's stored number the instant the stance flips,
+      // so what's on screen always matches what's actually driving the
+      // camera.
       document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
-        s_shoulderSurfOffsetH = parseFloat(e.target.value) || 0;
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetH_combat = v; else s_shoulderSurfOffsetH_default = v;
         const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
-        if (valueEl) valueEl.textContent = s_shoulderSurfOffsetH.toFixed(2);
+        if (valueEl) valueEl.textContent = v.toFixed(2);
         updateCameraPosition();
       });
       document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
-        s_shoulderSurfOffsetV = parseFloat(e.target.value) || 0;
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetV_combat = v; else s_shoulderSurfOffsetV_default = v;
         const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
-        if (valueEl) valueEl.textContent = s_shoulderSurfOffsetV.toFixed(2);
+        if (valueEl) valueEl.textContent = v.toFixed(2);
         updateCameraPosition();
       });
 
@@ -20364,6 +20422,32 @@
         // cheap enough (one property read) to just check every frame rather
         // than hunting down every such call site individually.
         if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        // Same "don't hunt down every mode-switch call site" reasoning as
+        // the Pointer Lock release above — held-item ground x-ray reads as
+        // clarity from the normal top-down view but just looks wrong at
+        // shoulder-surf's close third-person range, so keep it in lockstep
+        // with the camera mode every frame instead.
+        window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
+        // Keeps the offset sliders' displayed value in sync with whichever
+        // stance preset is actually driving the camera right now — only
+        // touches the DOM the instant the stance itself flips (drawing/
+        // sheathing a weapon), not every frame.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const combatStance = shoulderSurfCombatStanceActive();
+          if (combatStance !== _shoulderSurfOffsetSliderCombat) {
+            _shoulderSurfOffsetSliderCombat = combatStance;
+            const h = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+            const v = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
+            const hEl = document.getElementById('settingShoulderSurfOffsetH');
+            const vEl = document.getElementById('settingShoulderSurfOffsetV');
+            const hValEl = document.getElementById('settingShoulderSurfOffsetHValue');
+            const vValEl = document.getElementById('settingShoulderSurfOffsetVValue');
+            if (hEl) hEl.value = h;
+            if (vEl) vEl.value = v;
+            if (hValEl) hValEl.textContent = h.toFixed(2);
+            if (vValEl) vValEl.textContent = v.toFixed(2);
+          }
+        }
         // Floating camera joystick: held-off-center knob position drives an
         // ongoing turn rate every frame, for as long as the touch lasts (see
         // the pointerdown/pointermove handlers below that materialize it and
@@ -23549,6 +23633,11 @@
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
+        get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
+        get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
+        get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
+        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat }; },
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
@@ -23758,20 +23847,7 @@
         hostileObjects,
         getCurrentArea: () => currentArea,
         getActiveScene,
-        getPlayerAimAngle: () => {
-          // Shoulder-surf mode's whole point is manual aim, so it never
-          // snaps to the nearest hostile here either — see the matching
-          // autoAiming opt-out in the FACING section of updateMovement.
-          // Uses the same raycast-derived aim point the reticle/head use
-          // (mouseLookAngle), not player.angle/body facing — the body is
-          // allowed to lag up to a comfortable neck-turn behind that point
-          // while standing still, but a shot should still fly exactly where
-          // the crosshair/camera is actually pointing, not where the torso
-          // happens to be facing.
-          if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
-          const target = findAutoTarget();
-          return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
-        },
+        getPlayerAimAngle: currentPlayerAimAngle,
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
