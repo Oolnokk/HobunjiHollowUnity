@@ -208,6 +208,10 @@ assert.match(game, /recallLastTool\(\)/, 'all Tool Select adapters must share la
 assert.match(game, /entryMenuOpen\(\)[\s\S]*toolMenuOpen\(\)/, 'shared arches must expose common keyboard/controller navigation state');
 assert.match(game, /_arcBd\.addEventListener\('pointermove'[\s\S]*_arcMove/, 'shared entry arches must support mouse/touch drag navigation');
 assert.match(game, /onSelect:\(\) => _selectHeldInventoryKey\(entry\.itemKey\)/, 'potion/flask selection must only put the item in hand');
+assert.match(game, /potionAction3Press[\s\S]*openPotions\(\)[\s\S]*releaseSelection\(\)/, 'potion selection must open on hold and commit from the original input release');
+assert.match(game, /potionAction3Press\.down[\s\S]*scrollEntries\(-dir\)/, 'desktop potion selection must navigate with the scroll wheel while held');
+assert.match(game, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function _openPotionBranch[\s\S]*_outerR\(\)[\s\S]*function _openPotionItems[\s\S]*_outerR\(\)/, 'all potion hierarchy levels must use the ordinary tool/item arch radius');
+assert.doesNotMatch(game, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');
 assert.match(read('docs/js/alchemy-system.js'), /alchemy:\{level:alchemyLevel\(\),xp:/, 'Alchemy diagnostics must expose both level and XP');
 assert.match(game, /setTarget\(_mouseWorld\.x \* TILE/, 'mouse must control the flask ground cursor');
 assert.match(game, /setTargetFromVector\(rx, ry/, 'controller right stick must control the flask ground cursor');

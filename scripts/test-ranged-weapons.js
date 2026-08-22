@@ -58,7 +58,7 @@ assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
 assert.match(index, /ranged-weapons\.js\?v=20260817e/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
 assert.match(index, /scratchbones-config\.js\?v=20260821alchemy1/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
-assert.match(index, /game\.js\?v=20260821alchemy1/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
+assert.match(index, /game\.js\?v=20260821alchemy2/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 
 assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');
 assert.match(ranged, /SPECIAL_AMMO_LOOT_CHANCE\s*=\s*0\.72/, 'all enemy corpses must have a high special-ammo drop chance');
@@ -68,6 +68,10 @@ assert.match(ranged, /disorientUntil[\s\S]*movementDirectionMultiplier/, 'Concus
 assert.match(game, /footingDamageMultiplier[\s\S]*Math\.max\(0, footingOverride\)/, 'damage routing must support explicit zero Footing damage for normal ranged hits');
 assert.match(ranged, /footingDamageMultiplier:\s*2\.25/, 'Concussive ammo must explicitly opt into high Footing damage');
 assert.match(game, /activeTool === 'ranged'[\s\S]*_desktopSelectionArc\?\.openAmmo/, 'holding ranged Action 2 must open the ammo selection arch');
+assert.match(game, /scrollAmmo\(dir\)[\s\S]*_setActive\([\s\S]*Highlight only/, 'scrolling ammo must highlight without equipping before release');
+assert.doesNotMatch(game.match(/scrollAmmo\(dir\)[\s\S]*?\n\s*},\n\s*scrollEntries/)?.[0] || '', /cycleAmmo/, 'the shared ammo arch must not cycle/equip ammo during navigation');
+assert.match(game, /rangedAmmoAction2Press\.held\) window\._desktopSelectionArc\?\.releaseSelection\(\)/, 'releasing the original held ammo input must commit the highlighted ammo');
+assert.match(game, /_openAmmoArc\(\)[\s\S]*_openEntries\('ammo',[\s\S]*ordinary-radius arch primitive/, 'special ammo must use the normal shared arch radius and icon presentation');
 assert.match(editor, /heavy_weapon_idle[\s\S]*light_weapon_idle/, 'attack editor must expose the two runtime Heavy/Light weapon stances');
 assert.match(editor, /neutralWeight[\s\S]*toolPlane\.rotation\.z = anim\.style === 'sweep'/, 'attack editor weapon orientation must derive from the previewed animation and runtime Neutral correction');
 
