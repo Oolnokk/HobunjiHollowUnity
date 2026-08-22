@@ -5,6 +5,7 @@ const vm = require('vm');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const styles = fs.readFileSync('docs/style.css', 'utf8');
+const cookingStyles = fs.readFileSync('docs/cooking-ui.css', 'utf8');
 const author = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
 const probe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 
@@ -17,17 +18,19 @@ assert(game.includes("actionId === 'action2' && heldMode === 'tool' && activeToo
 const outerArchOrder = ['btnUnequipHeld', 'btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
   .map((id) => index.indexOf(`id="${id}"`));
 assert(outerArchOrder.every((position, i) => position >= 0 && (i === 0 || position > outerArchOrder[i - 1])), 'outer arch DOM order is not put-away, weapon, tool, item, mount');
+assert(index.indexOf('cooking-ui.css') > index.indexOf('style.css'), 'post-base HUD overrides must load after style.css');
 
 const expectedAngles = {
   btnUnequipHeld: '180deg',
-  btnWeaponSwitch: '157.5deg',
-  toolBtn: '135deg',
-  itemBtn: '112.5deg',
-  btnCallMount: '90deg',
+  btnWeaponSwitch: '165deg',
+  toolBtn: '150deg',
+  itemBtn: '135deg',
+  btnCallMount: '120deg',
 };
+const outerArchStyles = `${styles}\n${cookingStyles}`;
 for (const [id, angle] of Object.entries(expectedAngles)) {
-  const rules = [...styles.matchAll(new RegExp(`#${id}\\s*\\{[\\s\\S]*?\\}`, 'g'))].map((match) => match[0]);
-  assert(rules.some((rule) => rule.includes(`cos(${angle})`)), `${id} is not at ${angle} on the outer arch`);
+  const rules = [...outerArchStyles.matchAll(new RegExp(`#${id}\\s*\\{[\\s\\S]*?\\}`, 'g'))].map((match) => match[0]);
+  assert(rules.some((rule) => rule.includes(`cos(${angle})`)), `${id} is not at ${angle} on the compact outer arch`);
 }
 
 for (const label of ['portrait', 'ground', 'posterior', 'left hand shoulder', 'right hand shoulder', 'shoulder perch']) {
