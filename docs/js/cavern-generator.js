@@ -52,58 +52,6 @@
     return { zoneId, nativeSpecies: useHerd ? herbivoreSpecies : packSpecies };
   }
 
-  // Connectivity-safe "solidify the outer ring" pass: the carved mesh's
-  // rock already visually crowds right up against any floor tile
-  // bordering unclaimed rock (see cavern-sculptor.js's own docblock on
-  // wall/ceiling geometry hugging a claimed tile's boundary), but every
-  // one of those tiles is still collision-open, same as any interior
-  // floor tile — reported directly: "the outermost tiles [are] covered
-  // entirely in geometry and passable." Any floor tile touching a
-  // non-floor neighbor is a candidate to also collide, dropped one at a
-  // time with the same connectivity veto CavernSculptor's own deformed-
-  // tile pass uses internally (see carveMazeCavern's
-  // classifyDeformedBoundaryTiles call) — skip a candidate whenever
-  // removing it would split the remaining walkable tiles into more than
-  // one connected piece, so the entrance and nest always stay reachable.
-  // Entrance and nest tiles are exempt outright, never candidates. This
-  // only ever affects collision (mapData.colliders, read by
-  // loadBuildingScene as "override this floor tile back to solid" — see
-  // its own comment) — the visual floor/mesh is untouched, since the
-  // carved mesh renders from mapData.mesh regardless of what
-  // mapData.floor/colliders say.
-  function pickBoundaryColliderTiles(floor, exitTiles, nestCol, nestRow) {
-    const walkable = new Set(floor.map(([c, r]) => `${c},${r}`));
-    const protectedTiles = new Set(exitTiles.map(([c, r]) => `${c},${r}`));
-    for (let dr = 0; dr < 2; dr++) for (let dc = 0; dc < 2; dc++) protectedTiles.add(`${nestCol + dc},${nestRow + dr}`);
-    const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    const candidates = [];
-    for (const key of walkable) {
-      if (protectedTiles.has(key)) continue;
-      const [c, r] = key.split(',').map(Number);
-      if (DIRS4.some(([dx, dy]) => !walkable.has(`${c + dx},${r + dy}`))) candidates.push(key);
-    }
-    const startKey = exitTiles[Math.floor(exitTiles.length / 2)].join(',');
-    function isConnected(set, start) {
-      if (!set.has(start)) return false;
-      const seen = new Set([start]); const queue = [start];
-      while (queue.length) {
-        const k = queue.shift(); const [x, y] = k.split(',').map(Number);
-        for (const [dx, dy] of DIRS4) { const nk = `${x + dx},${y + dy}`; if (set.has(nk) && !seen.has(nk)) { seen.add(nk); queue.push(nk); } }
-      }
-      return seen.size === set.size;
-    }
-    const colliders = [];
-    for (const key of candidates) {
-      walkable.delete(key);
-      if (isConnected(walkable, startKey)) {
-        colliders.push(key.split(',').map(Number));
-      } else {
-        walkable.add(key); // would have disconnected the maze — keep it walkable
-      }
-    }
-    return colliders;
-  }
-
   // generateCavernFloor's SDF carve is real work (not the cheap blob-growth
   // it replaced) — and it's already called twice per den visit by design
   // (once by game.js's denTransitions setup, purely for exitCol/exitRow,
@@ -166,16 +114,13 @@
     // entry is the same guaranteed-walkable tile carveMazeCavern itself
     // already treats as "the" entrance (see its own startKey).
     const [exitCol, exitRow] = exitTiles[Math.floor(exitTiles.length / 2)];
-    const nestCol = nfx + shiftX, nestRow = nfy + shiftY;
-    const colliders = pickBoundaryColliderTiles(floor, exitTiles, nestCol, nestRow);
 
     const floorResult = {
       floor, cols, rows,
       exitCol, exitRow,
       exitTiles,
-      nestCol, nestRow,
+      nestCol: nfx + shiftX, nestRow: nfy + shiftY,
       mesh: { positions, indices: result.mesh.indices },
-      colliders,
     };
     _cavernFloorCache.set(seedText, floorResult);
     return floorResult;
@@ -244,14 +189,11 @@
   }
 
   function synthesizeCavernMapData(mapId) {
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, mesh, colliders } = generateCavernFloor(mapId);
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, mesh } = generateCavernFloor(mapId);
 
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
-    // Collider tiles (see pickBoundaryColliderTiles) are excluded same as
-    // the entrance/nest — an ore rock or creature spawned there would sit
-    // on a tile the player can no longer actually walk onto.
-    const excludeSet = new Set([...exitTiles, ...colliders, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => `${c},${r}`));
+    const excludeSet = new Set([...exitTiles, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => `${c},${r}`));
     const { nativeSpecies } = nativeSpeciesFor(mapId);
     const oreRocks = pickOreRockTiles(decorRng, floor, excludeSet);
     const creatureSpawns = pickCreatureSpawnTiles(decorRng, floor, excludeSet, nativeSpecies);
@@ -266,7 +208,7 @@
       // wall panels entirely, but the transition-trigger contract is the
       // same either way).
       exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
-      colliders, floor, furniture: [],
+      colliders: [], floor, furniture: [],
       wallStyle: 'cavern',
       // The guaranteed-walkable middle entrance tile — game.js's
       // loadBuildingScene reads mapData.exitCol/exitRow directly to place
