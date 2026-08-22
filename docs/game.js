@@ -16,12 +16,15 @@
       const debugLog = window.__farmLog || ((m) => console.log(m));
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
+      const cameraJoystickZone = document.getElementById('cameraJoystickZone');
+      const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnUnequipHeld = document.getElementById('btnUnequipHeld');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
+      const btnMeleeAutoTarget = document.getElementById('btnMeleeAutoTarget');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -139,6 +142,10 @@
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
         menuOpen = true;
+        // Release shoulder-surf's Pointer Lock (see requestShoulderSurfPointerLock
+        // below) so the cursor is free to click around the menu — it isn't
+        // visible/usable at all while locked.
+        releaseShoulderSurfPointerLock();
         window.WorldPopupText?.clearInteractionPrompts?.();
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
@@ -172,6 +179,10 @@
         menuPanel.classList.remove('open');
         paused = false;
         window.FurniturePlacer?.refreshVisibility();
+        // The click that closed the menu is itself a user gesture, so
+        // resume shoulder-surf's Pointer Lock immediately rather than
+        // waiting for a separate click on the game world.
+        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -478,7 +489,7 @@
           _dialogueWalker.catchupDur = 8;
           _dialogueWalker = null;
         }
-        activeCameraMode = cameraConfig().defaultMode || 'default';
+        enterDefaultCameraMode();
         activeCameraTarget = null;
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
@@ -552,6 +563,15 @@
       const JOYSTICK_RADIUS = 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
       const JOYSTICK_DEADZONE = 0.14; // used by updateJoystick() to prevent thumb drift near center.
       const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
+      // Floating camera-look joystick (materializes under the thumb on a
+      // right-half touch — see cameraDragRequested/updateCameraJoystick).
+      // Same deadzone/response shape as the movement joystick, but the knob
+      // offset drives an ongoing turn RATE for as long as it's held off
+      // center, instead of the movement stick's instantaneous speed/direction.
+      const CAMERA_JOYSTICK_RADIUS = 56;
+      const CAMERA_JOYSTICK_DEADZONE = 0.14;
+      const CAMERA_JOYSTICK_RESPONSE = 0.82;
+      const CAMERA_JOYSTICK_DEG_PER_SEC = 150; // turn rate at full deflection
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
@@ -3532,10 +3552,15 @@
         if (e >= 1) {
           if (s.phase === 'in') { s.phase = 'active'; s.t = 0; }
           else {
-            activeCameraMode = s.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            enterDefaultCameraMode(s.prevCameraMode);
             activeCameraTarget = s.prevCameraTarget ?? null;
-            cameraAzimuthOffsetDeg = 0;
-            cameraAngleOffsetDeg = 0;
+            // enterDefaultCameraMode already snapped these behind the player
+            // when landing back in shoulder-surf — don't stomp that back to
+            // due-south here too.
+            if (activeCameraMode !== SHOULDER_SURF_MODE) {
+              cameraAzimuthOffsetDeg = 0;
+              cameraAngleOffsetDeg = 0;
+            }
             sitInteraction = null;
           }
         }
@@ -3548,9 +3573,22 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
-        const targetWorldYaw = sitInteraction?.phase === 'active'
-          ? activeCameraAzimuthRad()
-          : -player.angle + Math.PI / 2;
+        // Shoulder-surf: the head locks onto the shared aim point
+        // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
+        // raycast) rather than the camera's own raw azimuth. Those two agree
+        // when the camera looks straight at the player, but a horizontal
+        // camera-offset slide points the camera at a spot beside the player
+        // instead — using the raycast's actual ground target keeps the head
+        // (and the body catch-up / WASD-relative movement below, which read
+        // the same value) aimed at what's really in front of the reticle
+        // instead of visibly disagreeing with it. Same facingAngle-
+        // convention-to-world-yaw conversion the default case below applies
+        // to player.angle, just fed the shared aim angle instead.
+        const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE
+          ? -mouseLookAngle + Math.PI / 2
+          : sitInteraction?.phase === 'active'
+            ? activeCameraAzimuthRad()
+            : -player.angle + Math.PI / 2;
         // playerMesh.rotation.y is this function's only body-yaw signal, but
         // channels like weapon-idle-stance-body-yaw (see
         // weapon-idle-body-yaw-runtime.js) never touch it directly — they
@@ -3560,6 +3598,17 @@
         // yaw the active channels are about to add.
         const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0;
         playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y + composerYawDelta);
+        // Purely cosmetic head nod matching the camera's own up/down tilt
+        // (cameraAngleOffsetDeg — how far the player has pitched the camera
+        // off the mode's neutral framing) — this rig has no other pitch
+        // consumer, so a plain local X rotation on the neck bone (not a
+        // world-yaw-style correction like above) is enough. Scaled down from
+        // the camera's own pitch range since a flat cutout head tilting a
+        // full ±45° reads as exaggerated compared to the same swing on an
+        // actual 3D head.
+        playerNeckJoint.rotation.x = activeCameraMode === SHOULDER_SURF_MODE
+          ? THREE.MathUtils.degToRad(cameraAngleOffsetDeg) * 0.6
+          : 0;
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -4216,6 +4265,13 @@
       // nearest-hostile default until it dies, leaves range/area, or the
       // player swaps again. Cleared automatically once invalid.
       let manualAutoTarget = null;
+      // Melee-only auto-target toggle (see updateMeleeAutoTarget below) —
+      // an opt-in aim assist the player switches on/off themselves (Shift-
+      // tap desktop, right-stick click controller, the arch's 6th mobile
+      // button), unlike the old always-on lock this replaced. Forced back
+      // off the instant a melee weapon isn't actually out (see
+      // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
+      let meleeAutoTargetOn = false;
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
@@ -4247,6 +4303,21 @@
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      // Where a ranged shot currently flies, in the flat XY logical-angle
+      // convention (atan2(y,x), matching player.angle/facingAngle) — shared
+      // by RangedWeapons.init's getPlayerAimAngle (below) and
+      // updateToolMesh's ranged pose branch, which rotates the hands/tool
+      // to face this instantly rather than waiting on the body. Shoulder-
+      // surf mode always uses the raycast-derived shared aim point
+      // (mouseLookAngle, same one the head/reticle use); the ordinary
+      // camera falls back to whatever auto-target lock (if any) is
+      // steering facing, then to plain body facing.
+      function currentPlayerAimAngle() {
+        if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
+        const target = findAutoTarget();
+        return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
       }
 
       // Used by updateAmbientCues() to duck exploration/dawn music during a
@@ -4292,6 +4363,104 @@
         if (!best) return false;
         manualAutoTarget = best;
         return true;
+      }
+
+      // Melee-only auto-target: is the currently equipped/active tool a
+      // melee weapon? (Ranged/farm tools/bare hands never engage this —
+      // ranged already went fully manual last session.)
+      function meleeWeaponOut() {
+        return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+      }
+
+      // "Am I roughly looking at a targetable hostile right now" — used
+      // only to decide whether starting a melee swing should auto-engage
+      // the toggle (see tryAutoEngageMeleeTarget below), not for anything
+      // continuous. Reads whichever look/aim signal is actually driving
+      // facing right now (shoulder-surf's camera reticle, manual mouse/
+      // stick look, or plain body facing) rather than just nearest-in-
+      // range regardless of where the player is pointed.
+      const MELEE_AUTO_TARGET_ENGAGE_CONE_RAD = Math.PI / 4;
+      function meleeAttackTargetCandidate() {
+        const aimAngle = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        let best = null, bestDist = maxDist;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > bestDist) continue;
+          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > MELEE_AUTO_TARGET_ENGAGE_CONE_RAD) continue;
+          bestDist = dist; best = c;
+        }
+        return best;
+      }
+
+      // Turns melee auto-target on the instant an attack is thrown while
+      // roughly looking at something targetable — lets a player who's
+      // never touched the toggle just swing at what they're already
+      // looking at and have it pick up from there. No-ops if already on, no
+      // melee weapon out, or nothing qualifies.
+      function tryAutoEngageMeleeTarget() {
+        if (meleeAutoTargetOn || !meleeWeaponOut()) return;
+        const candidate = meleeAttackTargetCandidate();
+        if (!candidate) return;
+        manualAutoTarget = candidate;
+        meleeAutoTargetOn = true;
+      }
+
+      // Cycles melee auto-target's current lock among every hostile within
+      // range, ordered by angle around the player ("orbitally") — Shift+
+      // wheel desktop, right-stick tilt controller, and the hidden mobile
+      // joystick's left/right all drive this while a lock is already
+      // active. A no-op while auto-target is off (per spec, cycling only
+      // matters once there's something to cycle among) or with no
+      // candidates in range.
+      function cycleMeleeAutoTarget(direction) {
+        if (!meleeAutoTargetOn || !meleeWeaponOut()) return;
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const candidates = Array.from(hostileObjects)
+          .filter(c => c.health > 0 && c.areaId === currentArea && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
+          .map(c => ({ c, angle: Math.atan2(c.y - player.y, c.x - player.x) }))
+          .sort((a, b) => a.angle - b.angle);
+        if (!candidates.length) return;
+        const current = findAutoTarget();
+        let idx = candidates.findIndex(entry => entry.c === current);
+        idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
+        manualAutoTarget = candidates[idx].c;
+      }
+
+      // Drives melee auto-target's actual aim, once per frame (see its call
+      // site in gameLoop, right before updateMovement) — by simulating
+      // exactly the input a real mouse/stick would give, not a separate
+      // hard override: in shoulder-surf that means smoothly turning the
+      // camera itself (mouseLookAngle then follows for free via
+      // updateShoulderSurfReticleAim, same as manual mouse-look/the touch
+      // joystick already do); in the ordinary camera it means driving
+      // mouseLookAngle/controllerLookAngle directly, exactly the values
+      // manual input already feeds into updateMovement's FACING section.
+      const MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC = 320;
+      function updateMeleeAutoTarget(dt) {
+        if (!meleeWeaponOut()) { meleeAutoTargetOn = false; return; }
+        if (!meleeAutoTargetOn) return;
+        const target = findAutoTarget();
+        if (!target) return;
+        const aimAngle = Math.atan2(target.y - player.y, target.x - player.x);
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const targetAzimuthDeg = wrapAzimuthDeg(-(aimAngle * 180 / Math.PI) - 90 - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+          const diffDeg = angleDiff(THREE.MathUtils.degToRad(targetAzimuthDeg), THREE.MathUtils.degToRad(cameraAzimuthOffsetDeg)) * 180 / Math.PI;
+          const maxStepDeg = MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC * dt;
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + clamp(diffDeg, -maxStepDeg, maxStepDeg));
+        } else {
+          mouseLookAngle = aimAngle;
+          targetAimAngle = aimAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+          controllerLookAngle = aimAngle;
+          controllerLookActive = true;
+        }
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -4514,7 +4683,12 @@
           // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
           // a red target-lock ring renders around a hostile's resource rings
           // while it's the current target (see resource-rings.js).
-          const isTarget = !c.isCompanion && c === findAutoTarget();
+          // Ranged still shows its lock unconditionally (unaffected by the
+          // melee-only auto-target toggle below); melee only shows it once
+          // that toggle is actually on, so the ring never lies about a hit
+          // that isn't really being auto-aimed.
+          const isTarget = !c.isCompanion && c === findAutoTarget()
+            && (activeTool === 'ranged' || meleeAutoTargetOn);
           const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
           ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
@@ -7075,7 +7249,57 @@
       let playerItemHoldY = 0.64;
 
       let npcDialogueStaging = null;
-      let activeCameraMode   = cameraConfig().defaultMode || 'default';
+      // Experimental over-the-shoulder camera (Settings → Camera). See
+      // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
+      // that already resolves "back to the ordinary gameplay camera" (initial
+      // load, dialogue close, standing up, cutscene end) goes through those,
+      // so this substitutes for the normal follow camera without needing any
+      // special-casing in the other camera modes (seated/fishing/music/etc.
+      // all restore whatever mode they captured on entry, unaffected).
+      let s_shoulderSurf = true;
+      // Shoulder-surf's over-the-shoulder framing offsets (Settings →
+      // Camera), in tiles, applied relative to the camera's own right/up
+      // axes — see updateCameraPosition. Positive H = shift camera/framing
+      // to the head's right; positive V = raise the framing. Kept as two
+      // separate presets rather than one flat value — a weapon/ranged tool
+      // actually being drawn (see shoulderSurfCombatStanceActive()) wants a
+      // wider H offset to clear the weapon out of the middle of the screen
+      // than plain movement/farming does — and the settings sliders read
+      // and write whichever preset is currently active (see their input
+      // handlers and the per-frame sync below) rather than a single value.
+      let s_shoulderSurfOffsetH_default = 0.35;
+      let s_shoulderSurfOffsetV_default = -0.05;
+      let s_shoulderSurfOffsetH_combat = 0.60;
+      let s_shoulderSurfOffsetV_combat = -0.05;
+      // What the camera actually reads (see updateCameraPosition) — eased
+      // toward whichever preset is active every frame (see the per-frame
+      // sync below) rather than snapping the instant a weapon is drawn/
+      // sheathed, so swapping stances reads as a smooth push-in/pull-back
+      // instead of a jump-cut. Slider input handlers set these directly
+      // instead of letting them ease, since a live drag should track the
+      // mouse immediately.
+      let s_shoulderSurfOffsetH_current = s_shoulderSurfOffsetH_default;
+      let s_shoulderSurfOffsetV_current = s_shoulderSurfOffsetV_default;
+      const SHOULDER_SURF_OFFSET_LERP = 6;
+      let _shoulderSurfOffsetSliderCombat = false; // last-synced stance, for the slider UI sync below
+      // One-shot azimuth snap for whenever shoulder-surf is already the
+      // active mode the very first time the camera-follow code below runs
+      // (i.e. it's the default) — mirrors the snap the settingShoulderSurf
+      // checkbox handler does when toggling it on mid-session, since the
+      // module-level activeCameraMode init just above can't call it itself
+      // (facingAngle/player aren't real yet at that point in the script).
+      let _shoulderSurfBootSnapped = false;
+      // Mode key substituted for the ordinary gameplay camera by the
+      // shoulder-surf toggle above. Kept as its own constant rather than
+      // reading cameraConfig().defaultMode so a modder renaming/removing
+      // "default" in scratchbones-config.js can't silently break the
+      // toggle. Declared here (not next to cameraModeConfig() below, where
+      // it conceptually belongs) because defaultCameraModeKey() reads it
+      // eagerly on the very next line — a const only reads as declared
+      // once its own declaration has actually run, and s_shoulderSurf now
+      // defaulting to true means that ternary branch is hit immediately.
+      const SHOULDER_SURF_MODE = 'shoulderSurf';
+      let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
       // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
@@ -7089,6 +7313,21 @@
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
         return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+      }
+      // The world direction the camera is actually looking (as opposed to
+      // activeCameraAzimuthRad(), which is where the camera SITS relative to
+      // its target) — used by shoulder-surf to make WASD relative to
+      // wherever the mouse has turned the camera. updateCameraPosition
+      // places the camera at world offset (sin(az), cos(az))*distance from
+      // its look-at target and then looks back at that target, so the
+      // camera's own view direction is the negation of that offset;
+      // converting (-sin(az), -cos(az)) into this game's atan2(y,x) facing
+      // convention (matching facingAngle/lastMoveAngle elsewhere) reduces to
+      // -az - 90°. Cross-checked against beginSitInteraction's "camera sits
+      // opposite the character's facing" azimuth (270 - facingDeg): feeding
+      // that back through this gives exactly facingAngle again.
+      function cameraFacingAngleRad() {
+        return angleDiff(-activeCameraAzimuthRad() - Math.PI / 2, 0);
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -8099,6 +8338,39 @@
       function cameraModeConfig(mode) {
         const modes = cameraModesConfig();
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
+      }
+      function defaultCameraModeKey() {
+        return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+      }
+      // Same "weapon tool actually equipped AND selected" gate as
+      // updateMovement's own weaponEngaged/findAutoTarget's meleeActive —
+      // duplicated rather than shared since this one only ever needs to
+      // answer "which shoulder-surf offset preset applies" (see
+      // s_shoulderSurfOffsetH_default/_combat above).
+      function shoulderSurfCombatStanceActive() {
+        return heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
+      }
+      // One-shot reset used only when freshly entering shoulder-surf (mode
+      // toggled on, standing up from a chair, dialogue/cutscene ending) —
+      // snaps directly behind the player's current facing and levels the
+      // pitch, the same "camera sits opposite the direction the character
+      // faces" derivation beginSitInteraction uses for the seated camera's
+      // initial framing. From here on, plain mouse movement (see the
+      // mousemove handler's freeRotate branch) drives cameraAzimuthOffsetDeg
+      // directly — this only ever runs once per mode-entry, not continuously.
+      function snapShoulderSurfAzimuth() {
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+        cameraAngleOffsetDeg = 0;
+      }
+      // Every call site that resolves "return to the ordinary gameplay
+      // camera" (dialogue close, standing up from a chair, cutscene end)
+      // should go through this instead of assigning defaultCameraModeKey()
+      // directly, so landing back in shoulder-surf always re-centers behind
+      // the player rather than resuming wherever a prior free-look drag left
+      // the azimuth.
+      function enterDefaultCameraMode(prevMode) {
+        activeCameraMode = prevMode ?? defaultCameraModeKey();
+        if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
       }
       function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
       function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
@@ -12584,6 +12856,16 @@
       let facingAngle = -Math.PI / 2;   // starts facing north
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
+      // is free to lag the (mouse-driven) camera by up to this much before
+      // it starts turning to catch up — a comfortable human neck's
+      // horizontal rotation range, not the full "look over your shoulder"
+      // 90° a real shoulder/torso twist could reach. While MOVING, the body
+      // instead straightens all the way out to match the camera exactly
+      // (see the FACING section below) — a real person squares up to their
+      // direction of travel rather than continuing to crane their neck.
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60°
+      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // rad/sec effective turn rate once past the free-look range
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
@@ -12607,6 +12889,15 @@
       // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
+      // Shoulder-surf's crosshair-style aim raycast (updateShoulderSurfReticleAim)
+      // runs on both desktop (no cursor to raycast once the mouse is
+      // Pointer-Locked) and touch (the floating camera joystick has no
+      // cursor either), so unlike _raycaster/_groundPlane/_mouseWorld above
+      // these are always allocated, not just on desktop.
+      const _screenCenterNDC = new THREE.Vector2(0, 0);
+      const _shoulderSurfReticleRaycaster = new THREE.Raycaster();
+      const _shoulderSurfReticleGroundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const _shoulderSurfReticleWorld = new THREE.Vector3();
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
       const _edRay = new THREE.Raycaster();
       const _edNDC = new THREE.Vector2();
@@ -12939,6 +13230,31 @@
           iy /= biasedLen;
         }
 
+        // Shoulder-surf: rotate the final (already cardinal-biased) local
+        // move vector into world space relative to the direction the camera
+        // is actually facing (cameraFacingAngleRad()) instead of leaving it
+        // on world-fixed axes, so "forward" always means "toward wherever
+        // the camera is looking," like a standard third-person action
+        // camera. Deliberately NOT mouseLookAngle (the shared aim point head
+        // yaw/body catch-up use, a bearing toward a specific ground spot):
+        // that's fine for orientation, which just re-aims every frame, but
+        // using it here would feed the player's own position back into the
+        // "forward" direction itself — walking toward a close reticle point
+        // swings its bearing as you approach and pass it, so "forward" would
+        // spin (even flip outright) mid-stride instead of holding steady.
+        // cameraFacingAngleRad() is a pure direction with no such point to
+        // pass, so it can't destabilize this way. Deliberately last, after
+        // cardinal bias: biasing this vector toward world cardinals instead
+        // of the player's actual local forward/strafe axes would visibly
+        // skew the intended camera-relative direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
+          const aim = cameraFacingAngleRad();
+          const s = Math.sin(aim), c = Math.cos(aim);
+          const rIx = -ix * s - iy * c;
+          const rIy =  ix * c - iy * s;
+          ix = rIx; iy = rIy;
+        }
+
         // ── Tile-speed lookup ─────────────────────────────────
         const rawSpeed = tileSpeedAt(player.x, player.y);
         // If the player ever gets nudged onto an invalid edge/solid sample, keep input alive so they can step back out.
@@ -12994,34 +13310,57 @@
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
-        const autoTarget = weaponEngaged ? findAutoTarget() : null;
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
         btnUnequipHeld?.classList.toggle('active', heldMode === 'none');
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
+        // Melee auto-target's sixth arch button: hidden entirely unless
+        // melee is actually out; otherwise grayed out (base style) until a
+        // targetable hostile is in range (.abt-target-ready lights it up),
+        // and solid once actually engaged (.active).
+        const meleeOutNow = meleeWeaponOut();
+        btnMeleeAutoTarget?.classList.toggle('abt-hidden', !meleeOutNow);
+        if (meleeOutNow) {
+          btnMeleeAutoTarget?.classList.toggle('abt-target-ready', !!findAutoTarget());
+          btnMeleeAutoTarget?.classList.toggle('active', meleeAutoTargetOn);
+        }
 
-        // Auto-aim lock takes absolute priority over mouse-look/right-stick
-        // look while it's engaged, so neither can interrupt or steal facing
-        // away from the locked target. It now keeps tracking through an
-        // attack swing too (toolSwingT > 0), just at a slower rate — it used
-        // to fully release during swings ("the swing pose drives its own
-        // body rotation instead"), but combo steps chain fast enough that
-        // facing/lunge direction were effectively frozen at whatever they
-        // were when the string started (see combat-combo.js's onTap, which
-        // samples player.angle fresh on every tap). A target that moved or
-        // got knocked back by an earlier combo hit would then drift right
-        // out of the next step's hit cone. The slower mid-swing rate keeps
-        // the swing pose's own bodyYaw flourish reading as the dominant
-        // motion. Only the weapon being switched away from/unequipped fully
-        // releases it (weaponEngaged false, so autoTarget is already null).
-        const autoAiming = !!autoTarget;
-
-        if (autoAiming) {
-          const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
-          const diff = angleDiff(targetAngle, facingAngle);
-          const autoAimRate = toolSwingT > 0 ? FACING_LERP : FACING_LERP * 2;
-          facingAngle += diff * Math.min(1, autoAimRate * dt);
-          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
-          cardinalHoldTimer = CARDINAL_HOLD;
+        // The old always-on auto-aim lock (hard-overrode facing the instant
+        // a weapon was out and a hostile was in range, "absolute priority
+        // over mouse-look/right-stick") is gone — replaced by
+        // updateMeleeAutoTarget(), called once per frame before this
+        // function, which drives melee-only, opt-in target tracking by
+        // simulating the same mouse-move/right-stick-tilt input a real
+        // player would give (mouseLookAngle/controllerLookAngle in the
+        // ordinary camera, cameraAzimuthOffsetDeg in shoulder-surf), so it
+        // flows through the exact same catch-up branches below/above rather
+        // than a separate override. Ranged weapons are unaffected — see
+        // getPlayerAimAngle/currentPlayerAimAngle for their own aim.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // The body doesn't chase raw movement DIRECTION here (that's what
+          // every other mode does below) — moving camera-relative already
+          // means walking backward/strafing shouldn't spin the character to
+          // face sideways. It does fully square up to the shared aim point
+          // (mouseLookAngle, same one the head and reticle use — see
+          // updateShoulderSurfReticleAim) the instant there's any movement
+          // input though — a real person straightens their neck out to walk
+          // instead of continuing to crane it sideways. Only while standing
+          // still is the body left free to lag that aim point (up to a
+          // comfortable neck-rotation range), turning just enough to stay
+          // within it — the over-the-shoulder body/camera coupling
+          // described where the constants are declared above.
+          const camFacing = mouseLookAngle;
+          if (inputStrength > 0.001) {
+            const diff = angleDiff(camFacing, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * dt);
+            lastMoveAngle = Math.atan2(iy, ix);
+          } else {
+            const diff = angleDiff(facingAngle, camFacing);
+            if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
+              const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+              const turnDiff = angleDiff(targetFacing, facingAngle);
+              facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+            }
+          }
           player.angle = facingAngle;
         } else {
           if (controllerLookActive) {
@@ -14446,6 +14785,34 @@
         return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
       }
 
+      // Shoulder-surf has no cursor to raycast onto the ground for aim (the
+      // desktop mouse is Pointer-Locked and hidden, the touch floating
+      // camera joystick has no cursor either), so it raycasts from
+      // dead-center of the screen instead, same ground-plane technique the
+      // normal cursor-aim code uses just with a fixed screen-center NDC.
+      // Writes the exact same mouseLookAngle/mouseLookActive/targetAimAngle
+      // state the cursor version does — this is the SHARED aim point
+      // getReticleTile, updatePlayerHeadAim, and updateMovement's body
+      // catch-up all read off of, deliberately, rather than each computing
+      // its own idea of "where the camera is looking": once a horizontal
+      // camera offset is in play the camera's own azimuth stops lining up
+      // with the actual point on the ground being targeted, and every
+      // consumer needs to agree on that one real point or the head/body/
+      // reticle visibly disagree with each other.
+      function updateShoulderSurfReticleAim() {
+        _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
+        const dx = _shoulderSurfReticleWorld.x - player.x / TILE;
+        const dz = _shoulderSurfReticleWorld.z - player.y / TILE;
+        if (Math.hypot(dx, dz) > 0.3) {
+          mouseLookAngle = Math.atan2(dz, dx);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+        }
+      }
+
       function getReticleTile() {
         const cfg = targetingConfig();
         const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
@@ -15485,13 +15852,27 @@
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
-        const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
-        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
-        const groundDistance = Math.cos(angle) * distance;
+        let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
         // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
         // original due-south-looking-north framing.
-        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        let lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        // Shoulder-surf's horizontal/vertical camera-offset sliders (Settings
+        // → Camera), applied relative to the camera's own right/world-up axes
+        // — the same over-the-shoulder framing knobs most third-person games
+        // expose — so they stay "camera-left/right" and "higher/lower"
+        // regardless of which way the head/camera currently points. Shifting
+        // the look-at point here (rather than the final camera position
+        // directly) carries the offset into idealX/idealZ/cameraY below too,
+        // sliding the whole camera rig rather than just skewing its aim.
+        if (activeCameraMode === SHOULDER_SURF_MODE && !portraitAim) {
+          const rightX = Math.cos(azimuth), rightZ = -Math.sin(azimuth);
+          lookAtX += rightX * s_shoulderSurfOffsetH_current;
+          lookAtZ += rightZ * s_shoulderSurfOffsetH_current;
+          lookY += s_shoulderSurfOffsetV_current;
+        }
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
+        const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
         const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
         const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
@@ -17126,6 +17507,7 @@
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
       let playerFacing = 0;
+      let _debugRangedToolYawRad = null; // set each frame by updateToolMesh's ranged branch — debug/QA only
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
@@ -18214,11 +18596,25 @@
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
           const neutral = { ...STYLE_NEUTRAL_POSE.ranged, ...(rangedIdlePose || {}) };
           toolHolder.scale.setScalar(neutral.scale);
-          const vθ = θ + THREE.MathUtils.degToRad(neutral.bodyYaw);
-          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ);
-          const vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+          const bodyYawOffsetRad = THREE.MathUtils.degToRad(neutral.bodyYaw);
+          const vθ = θ + bodyYawOffsetRad;
           playerMesh.rotation.y = vθ;
-          _qFac.setFromAxisAngle(_tUp, vθ);
+          // While actually loaded/fire-ready, the hands+tool track the
+          // current aim (mouse/camera/auto-target — see
+          // currentPlayerAimAngle(), same convention playerFacing already
+          // converts facingAngle with) instantly, ahead of and independent
+          // from the body's own slower catch-up — even while standing
+          // still with the aim still inside the comfortable neck-turn
+          // range where the body hasn't turned at all yet. Reloading/empty
+          // keeps the ordinary body-relative stance, since there's nothing
+          // to aim yet.
+          const toolVθ = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false
+            ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
+            : vθ;
+          _debugRangedToolYawRad = toolVθ;
+          const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
+          const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
+          _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -19924,6 +20320,74 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
+      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
+      // the OS cursor itself must never move (a free-roaming cursor runs out
+      // of screen/desk space and pins at the display edge, capping how far
+      // you can turn) — so it Pointer-Locks the canvas instead of just
+      // reading movementX/Y off a visible cursor. Locked or not, the
+      // mousemove handler below always reads movementX/Y the same way;
+      // locking only stops the OS cursor from moving/being visible at all,
+      // so those deltas keep coming no matter how far or how many times the
+      // physical mouse moves in one direction.
+      function shoulderSurfPointerLockActive() {
+        return document.pointerLockElement === threeContainer;
+      }
+      function requestShoulderSurfPointerLock() {
+        if (!isDesktop || shoulderSurfPointerLockActive()) return;
+        // Can reject (no transient user activation, or the browser's own
+        // rate-limit on repeated requests) — that's fine, the click-to-relock
+        // handler below gives the player another chance.
+        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
+      }
+      function releaseShoulderSurfPointerLock() {
+        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
+      }
+      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
+        s_shoulderSurf = e.target.checked;
+        // Only live-swap while in one of the two plain gameplay camera
+        // states — mid-dialogue/fishing/seated/cutscene, leave the active
+        // mode alone and let its own existing restore path (now routed
+        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
+        // the new toggle state next time it resolves back to gameplay.
+        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
+          activeCameraMode = defaultCameraModeKey();
+          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
+        }
+        if (s_shoulderSurf) {
+          requestShoulderSurfPointerLock();
+          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
+        } else releaseShoulderSurfPointerLock();
+      });
+      // Re-engage after the browser's own Escape-releases-lock behavior, or
+      // after the settings menu (below) let go of it — a plain click on the
+      // game world is the same click-to-resume-look convention most desktop
+      // games with Pointer Lock use.
+      threeContainer.addEventListener('click', () => {
+        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+      });
+      // Both offset sliders read/write whichever stance preset is currently
+      // active (see shoulderSurfCombatStanceActive()) rather than a single
+      // flat value — the per-frame sync below snaps the slider itself back
+      // to the other preset's stored number the instant the stance flips,
+      // so what's on screen always matches what's actually driving the
+      // camera.
+      document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetH_combat = v; else s_shoulderSurfOffsetH_default = v;
+        s_shoulderSurfOffsetH_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
+      document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetV_combat = v; else s_shoulderSurfOffsetV_default = v;
+        s_shoulderSurfOffsetV_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -19972,6 +20436,7 @@
           updateCalendar(dt);
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
+          updateMeleeAutoTarget(dt);
           updateMovement(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
@@ -20050,12 +20515,105 @@
         const targetPosition = activeCameraTarget?.position;
         const wx = targetPosition ? targetPosition.x : player.x / TILE;
         const wz = targetPosition ? targetPosition.z : player.y / TILE;
-        const wy = targetPosition ? targetPosition.y : _playerGroundY();
+        // Shoulder-surf tracks the actual rendered player mesh height rather
+        // than bare ground height, so the camera rises and sinks along with
+        // it — mountSeatLift/chairSeatSink/water bob/etc. (see the movement
+        // update's targetY) already compose into playerMesh.position.y every
+        // frame before this runs, so mounting a tall creature or wading into
+        // water carries straight through to the camera for free.
+        const wy = targetPosition ? targetPosition.y
+          : (activeCameraMode === SHOULDER_SURF_MODE ? playerMesh.position.y : _playerGroundY());
         const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
+        // Safety net: some camera-mode transitions (fishing, the music
+        // minigame, NPC dialogue, harvest interactions...) assign
+        // activeCameraMode directly rather than through
+        // enterDefaultCameraMode(), so this catches any of them landing
+        // outside shoulder-surf while its Pointer Lock is still held —
+        // cheap enough (one property read) to just check every frame rather
+        // than hunting down every such call site individually.
+        if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        // Same "don't hunt down every mode-switch call site" reasoning as
+        // the Pointer Lock release above — held-item ground x-ray reads as
+        // clarity from the normal top-down view but just looks wrong at
+        // shoulder-surf's close third-person range, so keep it in lockstep
+        // with the camera mode every frame instead.
+        window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
+        // Eases the camera's actual offset (…_current) toward whichever
+        // stance preset applies right now — every frame, not just the
+        // instant the stance flips — so drawing/sheathing a weapon (or any
+        // other tool/item swap that changes stance) reads as a smooth
+        // push-in/pull-back instead of a jump-cut. The offset sliders'
+        // displayed value still jumps immediately on the flip, since that's
+        // just showing which preset's number is now in charge, not the
+        // transient eased position.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const combatStance = shoulderSurfCombatStanceActive();
+          const targetH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+          const targetV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
+          s_shoulderSurfOffsetH_current += (targetH - s_shoulderSurfOffsetH_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          s_shoulderSurfOffsetV_current += (targetV - s_shoulderSurfOffsetV_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          if (combatStance !== _shoulderSurfOffsetSliderCombat) {
+            _shoulderSurfOffsetSliderCombat = combatStance;
+            const hEl = document.getElementById('settingShoulderSurfOffsetH');
+            const vEl = document.getElementById('settingShoulderSurfOffsetV');
+            const hValEl = document.getElementById('settingShoulderSurfOffsetHValue');
+            const vValEl = document.getElementById('settingShoulderSurfOffsetVValue');
+            if (hEl) hEl.value = targetH;
+            if (vEl) vEl.value = targetV;
+            if (hValEl) hValEl.textContent = targetH.toFixed(2);
+            if (vValEl) vValEl.textContent = targetV.toFixed(2);
+          }
+        }
+        // Floating camera joystick: held-off-center knob position drives an
+        // ongoing turn rate every frame, for as long as the touch lasts (see
+        // the pointerdown/pointermove handlers below that materialize it and
+        // fill in cameraJoystickX/Y). Self-heals if some other UI claims
+        // input mid-hold instead of leaving the joystick stuck on screen.
+        if (cameraDragPointerId !== null) {
+          if (!cameraDragAllowed()) {
+            cameraDragPointerId = null;
+            hideCameraJoystick();
+          } else if (meleeAutoTargetOn && meleeWeaponOut()) {
+            // While melee auto-target is locked on, this same hidden stick
+            // swaps targets left/right instead of rotating the camera —
+            // akin to the controller's right-stick-tilt cycling. Edge-
+            // triggered off the raw X value (not cameraJoystickX, which is
+            // already deadzone/response-curved for the camera-rotate case)
+            // so one full push-past-threshold reads as exactly one cycle
+            // step, the same discrete feel as the controller's synthesized
+            // RightStickLeft/RightStickRight buttons.
+            const past = Math.abs(cameraJoystickX) >= CAMERA_JOYSTICK_DEADZONE * 2;
+            if (past && !_cameraJoystickTargetCyclePast) cycleMeleeAutoTarget(cameraJoystickX > 0 ? 1 : -1);
+            _cameraJoystickTargetCyclePast = past;
+          } else if (cameraJoystickX !== 0 || cameraJoystickY !== 0) {
+            _cameraJoystickTargetCyclePast = false;
+            const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
+              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            // Inverted relative to X on purpose — matches the desktop
+            // Shift-drag/plain-mouselook convention just below (+movementY
+            // pitches the same way), whereas the raw touch delta this knob
+            // is built from reads the other way for vertical.
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+          }
+        }
+        if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
+          _shoulderSurfBootSnapped = true;
+          snapShoulderSurfAzimuth();
+        }
         updateCameraPosition();
+        // Refreshes the shared head/body/reticle aim point every frame
+        // (rather than only on a mousemove/touch event) so it always
+        // reflects the current camera — including a horizontal offset slide
+        // — even if the player is just standing still having already turned
+        // the camera. Must run after updateCameraPosition() above, not
+        // before, or the raycast would use last frame's stale camera
+        // position/orientation.
+        if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
@@ -21441,7 +21999,7 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
-                if (_pressSlot) window.Combat.input.pressStart(_pressSlot);
+                if (_pressSlot) { tryAutoEngageMeleeTarget(); window.Combat.input.pressStart(_pressSlot); }
               }
             });
 
@@ -22099,6 +22657,21 @@
         window.Mounts?.toggleMount();
       });
 
+      // Melee auto-target's sixth outer-ring button: a plain tap toggles —
+      // off turns it on and locks the closest hostile in range (no facing
+      // cone required, unlike the attack-triggered auto-engage), on turns
+      // it back off. No-ops if melee isn't out or (turning on) nothing is
+      // in range.
+      btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        if (!meleeWeaponOut()) return;
+        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; return; }
+        const target = findAutoTarget();
+        if (!target) return;
+        manualAutoTarget = target;
+        meleeAutoTargetOn = true;
+      });
+
       // Swap Target button: its own dedicated drag-direction stick (separate
       // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
       // behavior disabled). Pushing it toward a hostile swaps auto-targeting
@@ -22476,6 +23049,7 @@
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
+          tryAutoEngageMeleeTarget();
           window.Combat.input.pressStart(weaponSlot);
           return;
         }
@@ -22490,6 +23064,11 @@
           swapAutoTarget(aimAngle);
           return;
         }
+        // Right-stick tilt (controller only — desktop cycles via Shift+
+        // wheel instead) — a no-op unless melee auto-target is already on,
+        // per cycleMeleeAutoTarget's own gate.
+        if (actionId === 'meleeTargetPrev') { cycleMeleeAutoTarget(-1); return; }
+        if (actionId === 'meleeTargetNext') { cycleMeleeAutoTarget(1); return; }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);
@@ -22578,6 +23157,18 @@
         if (rx >= axisPress) down.add('RightStickRight');
         if (ry <= -axisPress) down.add('RightStickUp');
         if (ry >= axisPress) down.add('RightStickDown');
+        // Right-stick click (Button11 — R3) toggles melee auto-target
+        // while a melee weapon is out, taking over from its default
+        // weaponSwitch binding for exactly that window (weaponSwitch still
+        // works normally the rest of the time, and via its other bindings/
+        // the action-bar button even then).
+        if (down.has('Button11') && meleeWeaponOut()) {
+          if (!gamepadState.previous.has('Button11')) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          down.delete('Button11');
+        }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) controllerLookActive = false;
         for (const button of down) {
@@ -22616,6 +23207,17 @@
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
 
+      // Desktop Shift's dual role: held + mouse movement rotates the camera
+      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
+      // clean TAP — pressed and released within the same tap window as
+      // every other tap/hold gesture here, with no mouse movement in
+      // between — toggles melee auto-target instead. _shiftDragged is set
+      // the instant any mousemove event fires while Shift is down
+      // (regardless of which branch handles it — shoulder-surf's own free
+      // mouselook included), so a hold-to-rotate never gets misread as a
+      // toggle on release.
+      let _shiftDownAt = null;
+      let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
         if (window.Fishing?.state?.active) {
@@ -22640,6 +23242,19 @@
           menuOpen ? closeMenu() : openMenu();
           return;
         }
+        // Tab: same menu open/close as Escape, without Escape's browser side
+        // effect of exiting Fullscreen — added specifically so a player in
+        // fullscreen doesn't have to drop out of it just to reach the menu.
+        // Shift+Tab does the same (no direction to pick between for a plain
+        // open/close toggle); item-cycling moved to [ / ] below to free up
+        // both bindings. Skipped during dialogue/the music minigame, same
+        // as Escape, so the menu can't pop open over either overlay.
+        if (key === 'tab') {
+          event.preventDefault();
+          if (window.MusicMinigame?.state?.active || dialogueOpen) return;
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
         // M: wilderness map — closes if already open on the map tab (mirrors
         // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
         if (key === 'm') {
@@ -22659,6 +23274,10 @@
         if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          return;
+        }
+        if (key === 'shift') {
+          if (!event.repeat) { _shiftDownAt = performance.now(); _shiftDragged = false; }
           return;
         }
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
@@ -22697,12 +23316,13 @@
         if (key === '5') setActiveTool('pick');
         if (key === '6') setActiveTool('harpoon');
 
-        // Item scroll: , / . or Tab/Shift+Tab
-        if (key === ',') {
+        // Item scroll: , / . or [ / ] — Tab/Shift+Tab moved to opening the
+        // menu (see the keydown handler above) so both are free here.
+        if (key === ',' || key === '[') {
           cycleActiveInventoryItem(-1);
           refreshItemScroll(); refreshActionBar();
         }
-        if (key === '.' || key === 'tab') {
+        if (key === '.' || key === ']') {
           event.preventDefault();
           cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
           refreshItemScroll(); refreshActionBar();
@@ -22755,6 +23375,15 @@
         if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
         }
+        if (key === 'shift') {
+          const heldMs = performance.now() - (_shiftDownAt ?? 0);
+          if (!menuOpen && !_shiftDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          _shiftDownAt = null;
+          return;
+        }
         if (key === 'e' && isDesktop) {
           event.preventDefault();
           const wasHeld = finishDesktopHoldKey('e');
@@ -22778,6 +23407,15 @@
       function handleGameWheel(e, heldOnly = false) {
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
+        // Shift+wheel cycles melee auto-target's lock orbitally around the
+        // player instead of zooming — only once a lock is already active,
+        // same "nothing happens if it's off" rule the controller/mobile
+        // cycling inputs follow.
+        if (e.shiftKey && meleeAutoTargetOn && meleeWeaponOut()) {
+          e.preventDefault();
+          cycleMeleeAutoTarget(dir);
+          return true;
+        }
         const heldEntrySelectorKind = window._desktopSelectionArc?.heldSelectionKind?.(); // Includes keyboard/controller and pointer-held action buttons.
         if (isDesktop && (potionAction3Press.down || heldEntrySelectorKind === 'potions')) {
           e.preventDefault();
@@ -22861,11 +23499,19 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
-      // ── Camera drag-to-look: single-finger drag on mobile, Shift+mouse movement on desktop.
-      // Nudges the look angle on top of the active mode's base framing, clamped to the configured range.
+      // ── Camera look: a floating joystick that materializes under the
+      // thumb on a right-half touch (mobile), Shift+mouse movement on
+      // desktop. The mobile half used to be a raw delta-drag (camera offset
+      // tracked 1:1 with however far the finger had traveled from its start
+      // point); it's a rate-control stick now instead — hold the knob off
+      // center and the camera keeps turning, same paradigm as the movement
+      // joystick's own analog stick, and the genre-standard "look stick"
+      // behavior on mobile (materialize-under-thumb dynamic joysticks, the
+      // way most twin-stick mobile games handle look input).
       let cameraDragPointerId = null;
-      let cameraDragStartX = 0, cameraDragStartY = 0;
-      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
+      let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
+      let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
@@ -22886,16 +23532,32 @@
         if (d <= -180) d += 360;
         return d;
       }
+      // Right half only — the left half is the movement joystick's territory
+      // (see #joystickZone, bottom-left) and this keeps the two thumbs from
+      // ever fighting over the same touch. A touch that lands on an existing
+      // button never reaches here at all: buttons are separate overlaid
+      // elements that catch their own pointerdown before it could bubble to
+      // #threeContainer, so nothing extra is needed to exclude them.
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch';
+        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+      }
+      function hideCameraJoystick() {
+        cameraJoystickZone.style.display = 'none';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
       }
       threeContainer.addEventListener('pointerdown', (e) => {
         if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
         cameraDragPointerId = e.pointerId;
-        cameraDragStartX = e.clientX;
-        cameraDragStartY = e.clientY;
-        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
-        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        cameraJoystickOriginX = e.clientX;
+        cameraJoystickOriginY = e.clientY;
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
+        cameraJoystickZone.style.left = e.clientX + 'px';
+        cameraJoystickZone.style.top = e.clientY + 'px';
+        cameraJoystickZone.style.display = 'block';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
         // Can throw ("No active pointer with the given id is found") for a
         // touch that starts before the browser considers the pointer fully
         // active — e.g. right as the page/layout is still settling after
@@ -22907,19 +23569,26 @@
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
-        const dx = e.clientX - cameraDragStartX;
-        const dy = e.clientY - cameraDragStartY;
-        const cfg = desktopControlsConfig();
-        const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
-        const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-        cameraAzimuthOffsetDeg = freeRotateCameraActive()
-          ? wrapAzimuthDeg(cameraDragStartAzimuthOffset + dx * degPerPx)
-          : clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
-        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
-        updateCameraPosition();
+        // Base stays put where the thumb first touched down — only the knob
+        // (and the resulting turn rate) tracks the finger from there, same
+        // clamp/deadzone/response-curve shape as updateJoystick() below.
+        const rawX = e.clientX - cameraJoystickOriginX;
+        const rawY = e.clientY - cameraJoystickOriginY;
+        const distance = Math.hypot(rawX, rawY);
+        const angle = Math.atan2(rawY, rawX);
+        const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
+        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
+          ? 0
+          : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
+        cameraJoystickX = remapped > 0 ? Math.cos(angle) * remapped : 0;
+        cameraJoystickY = remapped > 0 ? Math.sin(angle) * remapped : 0;
+        cameraJoystickKnob.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`;
       });
       function clearCameraDragPointer(e) {
-        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+        if (e.pointerId !== cameraDragPointerId) return;
+        cameraDragPointerId = null;
+        hideCameraJoystick();
       }
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
@@ -22934,6 +23603,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+            tryAutoEngageMeleeTarget();
             if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
             return;
@@ -22963,6 +23633,7 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
@@ -22971,7 +23642,14 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
-          if (e.shiftKey && cameraDragAllowed()) {
+          // Shoulder-surf gets mouse-look "for free" here: plain mouse
+          // movement drives the camera exactly like Shift+drag does
+          // everywhere else, no modifier key needed, and freeRotateCameraActive()
+          // (true for shoulder-surf's config, same as 'seated') already makes
+          // this wrap into a full 360° orbit instead of the usual ±45° peek
+          // clamp. Falls through to the raycast-based facing/aim below
+          // otherwise, same as it always has.
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
@@ -23150,8 +23828,25 @@
         get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerNeckJointRotX() { return playerNeckJoint ? playerNeckJoint.rotation.x : null; },
         get playerMeshRotY() { return playerMesh.rotation.y; },
+        get playerMeshWorldY() { return playerMesh.position.y; },
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        get cameraFacingAngleDeg() { return cameraFacingAngleRad() * 180 / Math.PI; },
+        get facingAngleDeg() { return facingAngle * 180 / Math.PI; },
+        get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
+        get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
+        get mouseLookActive() { return mouseLookActive; },
+        get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
+        get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
+        get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
+        get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
+        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
+        get meleeAutoTargetOn() { return meleeAutoTargetOn; },
+        setMeleeAutoTargetOn: (v) => { meleeAutoTargetOn = !!v; },
+        get meleeAutoTarget() { const t = findAutoTarget(); return t ? { x: t.x, y: t.y, id: t.id } : null; },
+        cycleMeleeAutoTargetDebug: (dir) => cycleMeleeAutoTarget(dir),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
@@ -23361,10 +24056,7 @@
         hostileObjects,
         getCurrentArea: () => currentArea,
         getActiveScene,
-        getPlayerAimAngle: () => {
-          const target = findAutoTarget();
-          return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
-        },
+        getPlayerAimAngle: currentPlayerAimAngle,
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
@@ -23723,6 +24415,7 @@
         showToast,
         debugLog,
         worldToOverlay,
+        camera,
         lctx,
         player,
         npcWalkers,
@@ -25408,7 +26101,7 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           cutscenePreviewDialogueSpeaker = null;
-          activeCameraMode = cameraConfig().defaultMode || 'default';
+          enterDefaultCameraMode();
           activeCameraTarget = null;
           cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
         };

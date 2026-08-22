@@ -218,6 +218,14 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.18,
           "targetYOffsetTiles": 0,
           "freeRotate": true
+        },
+        "shoulderSurf": {
+          "distanceTiles": 2.6,
+          "angleFromGroundDeg": 9,
+          "fovDeg": 55,
+          "followLerp": 0.16,
+          "targetYOffsetTiles": 0.62,
+          "freeRotate": true
         }
       }
     },
@@ -249,6 +257,8 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
+        { "id": "meleeTargetPrev", "label": "Melee Auto-Target: Previous", "desktop": null, "controller": "RightStickLeft" },
+        { "id": "meleeTargetNext", "label": "Melee Auto-Target: Next", "desktop": null, "controller": "RightStickRight" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
         { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "Digit3", "controller": "Button11" },
         { "id": "toolSelect", "label": "Tool Select", "desktop": "KeyT", "controller": "Button10" },

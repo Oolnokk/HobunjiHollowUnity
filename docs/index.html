@@ -1244,6 +1244,33 @@
               <option value="2">200%</option>
             </select>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam (Experimental)</div>
+              <div class="settings-desc">Close, over-the-shoulder camera — mouse looks around, WASD moves relative to where you're looking</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShoulderSurf" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam Offset — Horizontal</div>
+              <div class="settings-desc">Shifts the shoulder cam's framing left/right relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingShoulderSurfOffsetH" min="-1" max="1" step="0.05" value="0.35" style="align-self:center">
+              <span id="settingShoulderSurfOffsetHValue" class="settings-slider-value">0.35</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam Offset — Vertical</div>
+              <div class="settings-desc">Raises/lowers the shoulder cam's framing relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="-0.05" style="align-self:center">
+              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">-0.05</span>
+            </div>
+          </label>
           <div class="settings-section-title" style="margin-top:10px">Input</div>
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
@@ -1412,7 +1439,7 @@
       </div><!-- /mpDebug -->
 
       <!-- ── Pixel-probe armed hint (shown over the world while waiting for the next click/tap) ── -->
-      <div id="pixelProbeHint" style="display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;background:rgba(10,14,10,.92);border:1px solid rgba(163,230,53,.5);border-radius:10px;padding:8px 14px;font-size:12px;color:#a3e635;display:flex;align-items:center;gap:10px;pointer-events:none">
+      <div id="pixelProbeHint" style="display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;background:rgba(10,14,10,.92);border:1px solid rgba(163,230,53,.5);border-radius:10px;padding:8px 14px;font-size:12px;color:#a3e635;align-items:center;gap:10px;pointer-events:none">
         <span>🎯 Probe armed — click/tap anywhere on the game world</span>
         <button id="pixelProbeCancelBtn" style="pointer-events:auto;font-size:11px;padding:2px 8px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);border-radius:6px;color:#f87171;cursor:pointer">Cancel</button>
       </div>
@@ -1555,6 +1582,14 @@
     <div id="joystickKnob">🕹️</div>
   </div>
 
+  <!-- Floating camera-look joystick: hidden until a touch starts on the
+       right half of the game view (see cameraDragRequested in game.js),
+       then JS positions it under that touch point and shows it. -->
+  <div id="cameraJoystickZone" class="control-zone" aria-hidden="true">
+    <div id="cameraJoystickBase"></div>
+    <div id="cameraJoystickKnob">👁️</div>
+  </div>
+
   <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
   <div id="arcContainer">
@@ -1592,6 +1627,26 @@
            .active reflects mountRideState !== 'none' (see updateMountRide). -->
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
+      </button>
+      <!-- Melee auto-target toggle: sixth outer-ring control, continuing
+           the same clockwise sweep one more step past Call Mount. Melee-
+           only and hidden until a melee weapon is out (see
+           updateMovement's weaponEngaged/activeTool checks); grayed out
+           with no targetable hostile nearby, lights up white the instant
+           one is (see .abt-target-ready), and turns solid red once
+           actually engaged (see .active, matching the other outer-ring
+           toggles' convention). Tap targets the closest hostile and turns
+           the toggle on; the hidden camera joystick's left/right then
+           swaps targets instead of rotating the camera while it's on. -->
+      <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <circle cx="12" cy="12" r="0.6" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </span>
+        <span class="abt-label">Auto-Target</span>
       </button>
     </div>
     <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->

@@ -717,6 +717,7 @@
     #keyHud { display: none; }
     @media (pointer: fine) {
       #joystickZone  { display: none !important; }
+      #cameraJoystickZone { display: none !important; }
       #keyHud        { display: flex; }
       /* Action buttons on desktop: keep interactive, just smaller touch area is fine */
     }
@@ -757,6 +758,38 @@
       border: 2px solid rgba(255,255,255,0.13);
     }
     #joystickKnob {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%) translate(0px, 0px);
+      width: clamp(44px, 8vmin, 58px); height: clamp(44px, 8vmin, 58px);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.14);
+      border: 2px solid rgba(255,255,255,0.28);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; pointer-events: none;
+    }
+    /* Floating camera-look joystick — unlike #joystickZone (a fixed hit
+       target with its own pointer listeners), this one is purely a visual
+       overlay: the real touch handling stays on #threeContainer (see
+       cameraDragRequested/cameraDragAllowed in game.js), which is what lets
+       a touch starting on an existing button keep working normally instead
+       of this zone stealing the hit-test. JS just moves it under the thumb
+       and toggles display on press/release. left/top are set inline per
+       touch; this only supplies the centering transform and look. */
+    #cameraJoystickZone {
+      display: none;
+      pointer-events: none;
+      width: clamp(96px, 18vmin, 132px);
+      height: clamp(96px, 18vmin, 132px);
+      transform: translate(-50%, -50%);
+    }
+    #cameraJoystickBase {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.13);
+    }
+    #cameraJoystickKnob {
       position: absolute;
       top: 50%; left: 50%;
       transform: translate(-50%,-50%) translate(0px, 0px);
@@ -910,6 +943,38 @@
     #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
     #btnCallMount .abt-icon { font-size: 0.85em; }
     #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
+    /* ── Melee auto-target: sixth outer-ring position, one step further
+       clockwise past Call Mount (12:00 → 12:45). Slightly larger than its
+       ring-mates per spec; hidden via .abt-hidden (see updateMovement's
+       weaponEngaged toggle) whenever melee isn't out. Base/gray = no
+       targetable hostile nearby; .abt-target-ready = one's in view (still
+       off); .active = actually engaged. ── */
+    #btnMeleeAutoTarget {
+      position: absolute;
+      right:  calc(-1*cos(67.5deg)*var(--ar2));
+      bottom: calc(   sin(67.5deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(30px, calc(0.7 * var(--col)), 42px); height: clamp(30px, calc(0.7 * var(--col)), 42px);
+      border-radius: 50%;
+      background: rgba(140,140,140,0.09); border: 1.5px solid rgba(140,140,140,0.4);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: rgba(210,210,210,0.55);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
+      overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnMeleeAutoTarget:active { transform: translate(50%,50%) scale(0.92); }
+    #btnMeleeAutoTarget .abt-icon { font-size: 0.9em; }
+    #btnMeleeAutoTarget.abt-target-ready {
+      background: rgba(255,120,120,0.09); border-color: rgba(255,120,120,0.5);
+      color: #fff;
+    }
+    #btnMeleeAutoTarget.active {
+      background: rgba(255,80,80,0.36); border-color: rgba(255,80,80,0.9);
+      color: #fff;
+    }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
@@ -1693,6 +1758,13 @@
     .settings-label { flex: 1; min-width: 0; }
     .settings-name  { font-size: 12px; color: var(--text); }
     .settings-desc  { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    /* Numeric readout next to a settings <input type="range"> — fixed width
+       so the row doesn't jitter as the sign/digit count changes. */
+    .settings-slider-value {
+      font-size: 11px; color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      min-width: 3.4em; text-align: right;
+    }
     /* Toggle switch */
     .settings-toggle {
       position: relative; display: inline-block;

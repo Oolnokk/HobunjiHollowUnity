@@ -56,6 +56,12 @@
   let invariantRepairCount = 0;
   let internalReplay = false;
   let lastDebugSignature = '';
+  // Off in shoulder-surf camera mode (see game.js's settingShoulderSurf
+  // handling) — the ground x-ray reads as clarity from the normal top-down
+  // view but just looks wrong at close third-person range, so that mode
+  // disables it and lets held sprites depth-test against the ground like
+  // everything else.
+  let enabled = true;
 
   function hasLayer(object, layer) {
     const mask = Number(object?.layers?.mask ?? 0) >>> 0;
@@ -486,7 +492,7 @@
     }
 
     scanScene(scene);
-    if (!isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
+    if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     const held = collectVisible(heldRegistry, scene);
@@ -559,6 +565,8 @@
     scanScene,
     snapshot,
     debugLogSnapshot,
+    get enabled() { return enabled; },
+    setEnabled(v) { enabled = !!v; },
     enforceHeldInvariant() {
       for (const mesh of heldRegistry) enforceHeldMesh(mesh);
     },
