@@ -1,32 +1,31 @@
-// Quick Potion Select presentation layer.
-// Keeps the shared selection-arch input/callback machinery authoritative while
-// tightening only potion menus and adding map-style curved category labels.
+// Shared toggled-selection arch presentation.
+// Tool, item, ammo, and potion selectors all reuse the permanent outer HUD
+// ring's exact center/radius, half-size buttons, and Khymeryyan labels.
 (() => {
   'use strict';
 
-  const ARC_SPAN_SCALE = 0.42; // Used to pull potion-only slots together along the existing arc without shrinking the arc toward its center.
-  const BUTTON_DIAMETER_SCALE = 0.50; // Used by the scoped potion-slot CSS so visible quick-potion buttons are half the generic arc diameter.
-  const LABEL_OUTSET_PX = 17; // Used to place curved category text just outside the half-size buttons, leaving only a tiny visual gap.
-  const MIN_LABEL_SPAN_PX = 92; // Used to keep short two-button branches readable as curved text.
+  const ARC_SPAN_SCALE = 0.42; // Used by every toggled selector to keep its choices clustered like the approved potion selector.
+  const BUTTON_DIAMETER_SCALE = 0.50; // Used by every toggled selector so all selector buttons match the approved half-size potion buttons.
+  const LABEL_OUTSET_PX = 17; // Used by the large curved potion-category title to preserve its current button-to-title gap.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
+  const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose live geometry is the selector-ring source of truth.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
-  const OUTER_ARCH_ID = 'toolSelect'; // Used to hide the normal tool/weapon/item/mount ring while Potion Select owns the held input.
 
-  let installed = false; // Guards against duplicate observers if this script is cache-busted/reloaded.
-  let lastArcCenter = null; // Reused for two-slot potion menus after a 3+ slot menu reveals the exact circle center.
-  let currentBranchLabel = ''; // Medicine/Utility label shown while their child categories are visible.
-  let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks label shown while concrete potion items are visible.
-  let refreshQueued = false; // Coalesces MutationObserver bursts into one animation-frame layout pass.
+  let installed = false; // Guards against duplicate observers if the module is cache-busted/reloaded.
+  let currentBranchLabel = ''; // Medicine/Utility heading retained while the concrete child category is open.
+  let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
+  let refreshQueued = false; // Coalesces selection-arc DOM mutations into one animation-frame layout pass.
+  let lastGeometry = null; // Mobile-visible diagnostic snapshot of the actual outer-ring geometry used by selectors.
 
   function log(message, detail) {
-    const text = `[quick-potion-arc] ${message}`;
+    const text = `[selection-arc-ui] ${message}`;
     if (typeof window.__farmLog === 'function') window.__farmLog(detail ? `${text} ${JSON.stringify(detail)}` : text, 'items');
     else if (detail) console.debug(text, detail);
     else console.debug(text);
   }
 
   function slotLabel(slot) {
-    return String(slot?.getAttribute?.('aria-label') || slot?.title || slot?.textContent || '')
+    return String(slot?.getAttribute?.('aria-label') || slot?.title || slot?.querySelector?.('.arc-label')?.textContent || slot?.textContent || '')
       .replace(/\s+/g, ' ').trim();
   }
 
@@ -35,33 +34,27 @@
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
-  function circumcenter(a, b, c) {
-    const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
-    if (Math.abs(d) < 0.001) return null;
-    const aa = a.x * a.x + a.y * a.y;
-    const bb = b.x * b.x + b.y * b.y;
-    const cc = c.x * c.x + c.y * c.y;
-    return {
-      x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (a.y - b.y)) / d,
-      y: (aa * (c.x - b.x) + bb * (a.x - c.x) + cc * (b.x - a.x)) / d,
-    };
+  function median(values) {
+    const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+    if (!sorted.length) return 0;
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   }
 
-  function fallbackArcCenter() {
-    const toolButton = document.getElementById('toolBtn'); // Existing selection-arch anchor; visibility:hidden still retains its rect.
-    const rect = toolButton?.getBoundingClientRect?.();
-    if (rect?.width || rect?.height) return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    return { x: innerWidth / 2, y: innerHeight / 2 };
-  }
-
-  function resolveArcCenter(slots) {
-    const points = slots.map(slotCenter);
-    if (points.length >= 3) {
-      const mid = points[Math.floor(points.length / 2)];
-      const fit = circumcenter(points[0], mid, points[points.length - 1]);
-      if (fit && Number.isFinite(fit.x) && Number.isFinite(fit.y)) lastArcCenter = fit;
-    }
-    return lastArcCenter || fallbackArcCenter();
+  function outerRingGeometry() {
+    const anchor = document.getElementById(OUTER_ARCH_ID); // Zero-size bottom-right anchor shared by the permanent outer HUD ring.
+    const rect = anchor?.getBoundingClientRect?.();
+    const center = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: innerWidth, y: innerHeight };
+    const ringButtons = ['btnUnequipHeld', 'btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
+      .map(id => document.getElementById(id)).filter(Boolean);
+    const measuredRadii = ringButtons.map(button => {
+      const point = slotCenter(button);
+      return Math.hypot(point.x - center.x, point.y - center.y);
+    }).filter(radius => radius > 8);
+    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)) when child geometry is unavailable.
+    const radius = median(measuredRadii) || fallbackRadius;
+    lastGeometry = { center, radius, measuredButtons: measuredRadii.length };
+    return lastGeometry;
   }
 
   function unwrapAngles(records) {
@@ -78,30 +71,29 @@
     return records;
   }
 
-  function compactPotionSlots(slots) {
+  function layoutSharedSelector(slots) {
     if (!slots.length) return;
-    const center = resolveArcCenter(slots); // Authoritative circle center; selection-angle logic in game.js remains untouched.
+    const { center, radius } = outerRingGeometry(); // Exact permanent-ring geometry, even while visibility:hidden keeps it out of view.
     const records = unwrapAngles(slots.map(slot => {
       const point = slotCenter(slot);
       return {
         slot,
-        radius: Math.hypot(point.x - center.x, point.y - center.y),
         angle: Math.atan2(point.y - center.y, point.x - center.x),
         unwrappedAngle: 0,
       };
     }));
     const midpoint = records.length > 1
       ? (records[0].unwrappedAngle + records[records.length - 1].unwrappedAngle) / 2
-      : records[0]?.unwrappedAngle || 0;
+      : records[0]?.unwrappedAngle || -Math.PI * 3 / 4;
 
     records.forEach(record => {
-      const { slot, radius } = record;
-      slot.classList.add('quick-potion-slot');
-      if (slot.dataset.quickPotionCompacted === '1') return;
+      const slot = record.slot;
+      slot.classList.add('shared-selection-slot');
+      if (slot.dataset.sharedSelectionPositioned === '1') return;
       const angle = midpoint + (record.unwrappedAngle - midpoint) * ARC_SPAN_SCALE;
       slot.style.left = `${center.x + Math.cos(angle) * radius}px`;
       slot.style.top = `${center.y + Math.sin(angle) * radius}px`;
-      slot.dataset.quickPotionCompacted = '1';
+      slot.dataset.sharedSelectionPositioned = '1';
     });
   }
 
@@ -115,7 +107,7 @@
   }
 
   function setOuterArchHidden(hidden) {
-    document.body.classList.toggle('quick-potion-select-active', Boolean(hidden)); // CSS keeps the potion overlay fixed while hiding only the normal outer ring.
+    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves the permanent ring's measurable geometry.
   }
 
   function removeCurvedLabel() {
@@ -130,7 +122,8 @@
     const branch = slots.find(slot => slot.classList.contains('potion-branch'));
     const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
     if (branch && hasChildCategories) {
-      const branchName = branch.classList.contains('medicine') ? 'Medicine' : branch.classList.contains('utility') ? 'Utility' : slotLabel(branch);
+      const branchName = branch.classList.contains('medicine') ? 'Medicine'
+        : branch.classList.contains('utility') ? 'Utility' : slotLabel(branch);
       currentBranchLabel = branchName;
       return branchName;
     }
@@ -141,38 +134,32 @@
     const dx = point.x - center.x;
     const dy = point.y - center.y;
     const length = Math.max(1, Math.hypot(dx, dy));
-    return {
-      x: point.x + dx / length * LABEL_OUTSET_PX,
-      y: point.y + dy / length * LABEL_OUTSET_PX,
-    };
+    return { x: point.x + dx / length * LABEL_OUTSET_PX, y: point.y + dy / length * LABEL_OUTSET_PX };
   }
 
-  function renderCurvedLabel(slots) {
+  function renderCurvedPotionLabel(slots) {
     removeCurvedLabel();
     const text = curvedLabelText(slots);
     if (!text || slots.length < 2) return;
 
-    const center = resolveArcCenter(slots);
-    const points = slots.map(slot => outwardLabelPoint(slotCenter(slot), center)); // Keeps the label almost touching the outside edge of the half-size selection buttons.
+    const { center } = outerRingGeometry();
+    const points = slots.map(slot => outwardLabelPoint(slotCenter(slot), center)); // Same 17px relative spacing after snapping the selector to the outer ring.
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
-    const span = Math.max(MIN_LABEL_SPAN_PX, Math.hypot(end.x - start.x, end.y - start.y));
+    const mx = (start.x + end.x) / 2;
+    const my = (start.y + end.y) / 2;
     let control;
     if (points.length >= 3) {
-      control = {
-        x: 2 * middle.x - (start.x + end.x) / 2,
-        y: 2 * middle.y - (start.y + end.y) / 2,
-      };
+      control = { x: 2 * middle.x - mx, y: 2 * middle.y - my };
     } else {
-      const mx = (start.x + end.x) / 2;
-      const my = (start.y + end.y) / 2;
       const dx = end.x - start.x;
       const dy = end.y - start.y;
       const length = Math.max(1, Math.hypot(dx, dy));
       let nx = -dy / length;
       let ny = dx / length;
       if ((center.x - mx) * nx + (center.y - my) * ny > 0) { nx *= -1; ny *= -1; }
+      const span = Math.hypot(dx, dy);
       control = { x: mx + nx * Math.min(30, span * 0.16), y: my + ny * Math.min(30, span * 0.16) };
     }
 
@@ -198,7 +185,7 @@
     document.body.appendChild(svg);
   }
 
-  function rememberRemovedSelection(records) {
+  function rememberRemovedPotionSelection(records) {
     for (const record of records) {
       for (const node of record.removedNodes || []) {
         if (!(node instanceof Element)) continue;
@@ -206,7 +193,8 @@
         const activeLeaf = removed.find(slot => slot.classList.contains('arc-active') && slot.classList.contains('potion-category'));
         if (activeLeaf) currentLeafLabel = slotLabel(activeLeaf).replace(/^[^A-Za-z0-9]+/, '').trim();
         const activeBranch = removed.find(slot => slot.classList.contains('arc-active') && slot.classList.contains('potion-branch'));
-        if (activeBranch) currentBranchLabel = activeBranch.classList.contains('medicine') ? 'Medicine' : activeBranch.classList.contains('utility') ? 'Utility' : slotLabel(activeBranch);
+        if (activeBranch) currentBranchLabel = activeBranch.classList.contains('medicine') ? 'Medicine'
+          : activeBranch.classList.contains('utility') ? 'Utility' : slotLabel(activeBranch);
       }
     }
   }
@@ -220,12 +208,6 @@
 
   function refresh() {
     refreshQueued = false;
-    const marker = document.querySelector(POTION_MARKER_SELECTOR);
-    if (!marker) {
-      setOuterArchHidden(false);
-      removeCurvedLabel();
-      return;
-    }
     const slots = [...document.querySelectorAll('.arc-slot')];
     if (!slots.length) {
       setOuterArchHidden(false);
@@ -233,17 +215,21 @@
       return;
     }
 
-    setOuterArchHidden(true); // Potion Select is open/held: hide only #toolSelect; the independently rendered potion arc does not move.
-    const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
-    const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
-    if (branchSlot && hasChildCategories) makeBranchCancel(branchSlot); // Existing callback already returns to the root, so only its presentation changes.
+    setOuterArchHidden(true); // Every toggled selector temporarily replaces the permanent outer ring visually.
+    const potionOpen = Boolean(document.querySelector(POTION_MARKER_SELECTOR));
+    if (potionOpen) {
+      const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
+      const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
+      if (branchSlot && hasChildCategories) makeBranchCancel(branchSlot); // Callback remains the original back-to-root behavior.
+    }
 
-    compactPotionSlots(slots);
-    renderCurvedLabel(slots);
+    layoutSharedSelector(slots);
+    if (potionOpen) renderCurvedPotionLabel(slots);
+    else removeCurvedLabel();
   }
 
   function queueRefresh(records = []) {
-    rememberRemovedSelection(records);
+    rememberRemovedPotionSelection(records);
     if (refreshQueued) return;
     refreshQueued = true;
     requestAnimationFrame(refresh);
@@ -253,45 +239,47 @@
     if (installed) return;
     installed = true;
     const style = document.createElement('style');
-    style.id = 'quickPotionArcUiStyles';
+    style.id = 'sharedSelectionArcUiStyles';
     style.textContent = `
-      body.quick-potion-select-active #${OUTER_ARCH_ID} {
+      body.shared-selection-arc-open #${OUTER_ARCH_ID} {
         visibility:hidden !important;
         pointer-events:none !important;
       }
+      .arc-slot.shared-selection-slot {
+        width:clamp(22px,4.25vmin,30px) !important;
+        height:clamp(22px,4.25vmin,30px) !important;
+        border-width:1px !important;
+        gap:1px !important;
+        overflow:visible !important;
+        box-shadow:0 2px 7px rgba(0,0,0,.42) !important;
+      }
+      .arc-slot.shared-selection-slot .arc-icon { font-size:.78em; }
+      .arc-slot.shared-selection-slot .arc-icon img,
+      .arc-slot.shared-selection-slot .arc-icon canvas,
+      .arc-slot.shared-selection-slot .arc-icon svg { max-width:18px; max-height:18px; }
       .arc-slot .arc-label {
         position:absolute;
-        left:50%; top:calc(100% + 4px);
+        left:50%; top:calc(100% + 3px);
         transform:translateX(-50%);
         width:max-content;
         max-width:110px;
         color:#f9e28a;
         font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',sans-serif;
-        font-size:clamp(10px,1.55vmin,13px);
+        font-size:clamp(9px,1.25vmin,11px);
         line-height:1;
-        letter-spacing:.055em;
+        letter-spacing:.04em;
         text-transform:none;
         text-align:center;
         white-space:nowrap;
         pointer-events:none;
         text-shadow:-1px -1px 0 rgba(0,0,0,.9), 1px -1px 0 rgba(0,0,0,.9), -1px 1px 0 rgba(0,0,0,.9), 1px 1px 0 rgba(0,0,0,.9), 0 2px 4px rgba(0,0,0,.9);
       }
-      .arc-slot.quick-potion-slot {
-        width:clamp(22px,4.25vmin,30px); height:clamp(22px,4.25vmin,30px);
-        border-width:1px; gap:1px; box-shadow:0 2px 7px rgba(0,0,0,.42);
-      }
-      .arc-slot.quick-potion-slot .arc-icon { font-size:.78em; }
-      .arc-slot.quick-potion-slot .arc-label {
-        top:calc(100% + 3px);
-        font-size:clamp(9px,1.25vmin,11px);
-        letter-spacing:.04em;
-      }
-      .arc-slot.quick-potion-slot .category-x { inset:-3px; font-size:1.15em; }
-      .arc-slot.quick-potion-slot .cure-family-grid { width:16px; height:16px; }
-      .arc-slot.quick-potion-slot .cure-family { font-size:4px; }
-      .arc-slot.quick-potion-slot .cure-family.active { font-size:6px; }
-      .arc-slot.quick-potion-slot .cure-family.severe { font-size:8px; }
-      .arc-slot.quick-potion-slot .cure-family-x { font-size:.9em; }
+      .arc-slot.shared-selection-slot .category-x { inset:-3px; font-size:1.15em; }
+      .arc-slot.shared-selection-slot .cure-family-grid { width:16px; height:16px; }
+      .arc-slot.shared-selection-slot .cure-family { font-size:4px; }
+      .arc-slot.shared-selection-slot .cure-family.active { font-size:6px; }
+      .arc-slot.shared-selection-slot .cure-family.severe { font-size:8px; }
+      .arc-slot.shared-selection-slot .cure-family-x { font-size:.9em; }
       .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:.82em; line-height:1; }
       .quick-potion-curved-category {
         fill:#f9e28a; stroke:rgba(0,0,0,.82); stroke-width:3px; paint-order:stroke fill;
@@ -303,25 +291,32 @@
     document.head.appendChild(style);
 
     new MutationObserver(records => {
-      const relevantRecords = records.filter(recordTouchesSelectionArc); // Ignore the SVG label's own add/remove mutations so redraws cannot self-trigger.
+      const relevantRecords = records.filter(recordTouchesSelectionArc); // Ignores the curved SVG label's own add/remove mutations.
       if (relevantRecords.length) queueRefresh(relevantRecords);
     }).observe(document.body, { childList:true, subtree:true });
-    addEventListener('resize', () => { lastArcCenter = null; document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.quickPotionCompacted); queueRefresh(); }, { passive:true });
+    addEventListener('resize', () => {
+      document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.sharedSelectionPositioned);
+      queueRefresh();
+    }, { passive:true });
     queueRefresh();
     window.QuickPotionArcUI = Object.freeze({
       diagnostics: () => ({
         installed,
         currentBranchLabel,
         currentLeafLabel,
-        lastArcCenter,
-        arcSpanScale: ARC_SPAN_SCALE,
-        buttonDiameterScale: BUTTON_DIAMETER_SCALE,
-        labelOutsetPx: LABEL_OUTSET_PX,
-        outerArchHidden: document.body.classList.contains('quick-potion-select-active'),
+        outerRingGeometry:lastGeometry,
+        arcSpanScale:ARC_SPAN_SCALE,
+        buttonDiameterScale:BUTTON_DIAMETER_SCALE,
+        labelOutsetPx:LABEL_OUTSET_PX,
+        outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
+        selectorCount:document.querySelectorAll('.arc-slot').length,
       }),
-      refresh: () => queueRefresh(),
+      refresh: () => {
+        document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.sharedSelectionPositioned);
+        queueRefresh();
+      },
     });
-    log('installed', { arcSpanScale: ARC_SPAN_SCALE, buttonDiameterScale: BUTTON_DIAMETER_SCALE, labelOutsetPx: LABEL_OUTSET_PX });
+    log('installed', { arcSpanScale:ARC_SPAN_SCALE, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
