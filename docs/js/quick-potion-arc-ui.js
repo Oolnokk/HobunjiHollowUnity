@@ -5,23 +5,25 @@
   'use strict';
 
   const SELECTOR_MID_DEG = 135; // Keeps every toggled selector centered on the permanent outer-ring quadrant.
-  const COMPACT_SWEEP_DEG = 40; // Used by short selectors so the approved tight potion spacing stays unchanged.
+  const COMPACT_SWEEP_DEG = 40; // Short selectors retain the approved tight potion spacing.
   const MAX_SWEEP_DEG = 90; // Dense selectors may use the whole 9-to-12-o'clock outer-ring quadrant.
-  const TARGET_SLOT_GAP_PX = 58; // Desired center-to-center spacing used to expand dense selectors without changing radius.
-  const BUTTON_SIZE = 'clamp(22px,4.25vmin,30px)'; // Single authoritative visual diameter for every toggled selector button.
+  const TARGET_SLOT_GAP_PX = 58; // Desired center-to-center spacing for dense selector choices.
+  const BUTTON_SIZE = 'clamp(22px,4.25vmin,30px)'; // Authoritative diameter for every toggled selector button.
   const BUTTON_DIAMETER_SCALE = 0.50; // Diagnostic/documentation value for the half-size selector rule.
   const LABEL_OUTSET_PX = 17; // Large curved potion-category title keeps its approved button-to-title gap.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
-  const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose live geometry is the selector-ring source of truth.
-  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // One canonical outer-ring button prevents mixed-radius measurements.
+  const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose geometry is the selector source of truth.
+  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // Canonical outer-ring button used to measure one shared radius.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
 
-  let installed = false; // Guards against duplicate observers if this module is reloaded.
-  let refreshing = false; // Prevents nested presentation refreshes while a potion breadcrumb is rewritten as Cancel.
+  let installed = false; // Guards against duplicate observers/listeners if this module is reloaded.
+  let refreshing = false; // Prevents nested structural refreshes while a potion breadcrumb is rewritten as Cancel.
+  let frameRunning = false; // One lightweight RAF enforcer runs only while a selector is actually visible.
+  let refreshQueued = false; // Coalesces post-input refresh requests into one microtask.
   let currentBranchLabel = ''; // Medicine/Utility heading retained while child categories are open.
   let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
   let lastGeometry = null; // Diagnostic snapshot of the exact center/radius used by every selector button.
-  let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of the currently chosen capacity-aware sweep.
+  let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of the capacity-aware sweep currently in use.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -58,21 +60,19 @@
     const measuredRadius = referenceCenter ? Math.hypot(referenceCenter.x - center.x, referenceCenter.y - center.y) : 0;
     const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)).
     const radius = measuredRadius > 8 ? measuredRadius : fallbackRadius;
-
     lastGeometry = { center, radius, referenceButton:OUTER_RADIUS_REFERENCE_ID, measured:measuredRadius > 8 };
     return lastGeometry;
   }
 
   function selectorSweepDeg(count, radius) {
     if (count <= 4) return COMPACT_SWEEP_DEG;
-    const safeRadius = Math.max(1, radius);
-    const ratio = Math.min(0.95, TARGET_SLOT_GAP_PX / (2 * safeRadius));
-    const stepDeg = 2 * Math.asin(ratio) * 180 / Math.PI; // Chord spacing converted to an angular step at the one fixed radius.
+    const ratio = Math.min(0.95, TARGET_SLOT_GAP_PX / (2 * Math.max(1, radius)));
+    const stepDeg = 2 * Math.asin(ratio) * 180 / Math.PI; // Converts desired chord spacing to angular spacing at this exact radius.
     return Math.min(MAX_SWEEP_DEG, Math.max(COMPACT_SWEEP_DEG, stepDeg * Math.max(1, count - 1)));
   }
 
   function selectorAngleRad(index, count, sweepDeg) {
-    const t = count <= 1 ? 0.5 : index / (count - 1); // One-entry selectors remain centered instead of sticking to an edge.
+    const t = count <= 1 ? 0.5 : index / (count - 1); // One-entry selectors remain centered rather than sticking to one end.
     const start = SELECTOR_MID_DEG + sweepDeg / 2;
     const end = SELECTOR_MID_DEG - sweepDeg / 2;
     return (start + (end - start) * t) * Math.PI / 180;
@@ -100,19 +100,19 @@
 
   function layoutSharedSelector(slots) {
     if (!slots.length) return;
-    const { center, radius } = outerRingGeometry(); // One center + one scalar radius for every button, every time.
-    const sweepDeg = selectorSweepDeg(slots.length, radius); // Larger lists expand around the same ring rather than stacking labels in 40 degrees.
+    const { center, radius } = outerRingGeometry(); // One center + one scalar radius for every button, every frame.
+    const sweepDeg = selectorSweepDeg(slots.length, radius);
     const dense = slots.length >= 6;
     lastSweepDeg = sweepDeg;
 
     slots.forEach((slot, index) => {
-      enforceSlotPresentation(slot, dense); // Reasserted even when scroll reuses/restyles an existing slot node.
-      const angle = selectorAngleRad(index, slots.length, sweepDeg); // Slot order, never current geometry, determines angular placement.
+      enforceSlotPresentation(slot, dense);
+      const angle = selectorAngleRad(index, slots.length, sweepDeg); // Slot order, never current rendered geometry, determines angular placement.
       const left = center.x + Math.cos(angle) * radius;
       const top = center.y - Math.sin(angle) * radius; // Screen Y grows downward while authored ring angles grow upward.
       setImportantStyle(slot, 'left', `${left}px`);
       setImportantStyle(slot, 'top', `${top}px`);
-      slot.dataset.sharedSelectionRadius = radius.toFixed(2); // Exposed for in-game diagnostics.
+      slot.dataset.sharedSelectionRadius = radius.toFixed(2);
       slot.dataset.sharedSelectionAngle = (angle * 180 / Math.PI).toFixed(2);
     });
   }
@@ -163,7 +163,7 @@
     if (!text || slots.length < 2) return;
 
     const { center } = outerRingGeometry();
-    const points = slots.map(slot => outwardLabelPoint(elementCenter(slot), center)); // Keeps the approved 17px spacing after the shared layout is applied.
+    const points = slots.map(slot => outwardLabelPoint(elementCenter(slot), center));
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
@@ -220,11 +220,30 @@
   }
 
   function recordTouchesSelectionArc(record) {
-    if (record.type === 'attributes') return record.target instanceof Element && record.target.matches?.('.arc-slot');
     if (record.target instanceof Element && record.target.closest('.arc-slot')) return true;
     return [...record.addedNodes, ...record.removedNodes].some(node =>
       node instanceof Element && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot'))
     );
+  }
+
+  function startFrameEnforcer() {
+    if (frameRunning) return;
+    frameRunning = true;
+    const frame = () => {
+      const slots = activeSelectionSlots();
+      if (!slots.length) {
+        frameRunning = false;
+        setOuterArchHidden(false);
+        return;
+      }
+      // This intentionally does only geometry/size. It does not rebuild labels or
+      // touch observer configuration, so recycled scroll slots are corrected before
+      // paint without creating a MutationObserver feedback loop.
+      setOuterArchHidden(true);
+      layoutSharedSelector(slots);
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
   }
 
   function refresh() {
@@ -238,7 +257,7 @@
         return;
       }
 
-      setOuterArchHidden(true); // Every toggled selector visually replaces the permanent outer ring.
+      setOuterArchHidden(true);
       const potionOpen = slots.some(slot => slot.matches(POTION_MARKER_SELECTOR));
       if (potionOpen) {
         const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
@@ -249,9 +268,19 @@
       layoutSharedSelector(slots);
       if (potionOpen) renderCurvedPotionLabel(slots);
       else removeCurvedLabel();
+      startFrameEnforcer();
     } finally {
       refreshing = false;
     }
+  }
+
+  function scheduleRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    queueMicrotask(() => {
+      refreshQueued = false;
+      refresh(); // Runs after the current wheel/key event has finished mutating/recycling selector slots.
+    });
   }
 
   function install() {
@@ -265,10 +294,6 @@
         visibility:hidden !important;
         pointer-events:none !important;
       }
-
-      /* Base fallback is intentionally identical to the inline authority in
-         enforceSlotPresentation(); recycled wheel slots therefore cannot flash
-         back to the legacy 44–60px selector size between observer passes. */
       .arc-slot {
         position:fixed !important;
         width:${BUTTON_SIZE} !important;
@@ -289,7 +314,6 @@
       .arc-slot .cure-family.active { font-size:6px !important; }
       .arc-slot .cure-family.severe { font-size:8px !important; }
       .arc-slot .cure-family-x { font-size:.9em !important; }
-
       .arc-slot .arc-label {
         position:absolute;
         left:50%; top:calc(100% + 3px);
@@ -324,21 +348,24 @@
     `;
     document.head.appendChild(style);
 
+    // Structural changes are safe to observe. Attribute observation was removed:
+    // reacting to the selector's own style/class rewrites could recursively starve
+    // the event loop when the item wheel recycled slots during scrolling.
     new MutationObserver(records => {
-      const relevantRecords = records.filter(recordTouchesSelectionArc); // Includes style/class rewrites on recycled slots, not just node replacement.
+      const relevantRecords = records.filter(recordTouchesSelectionArc);
       if (!relevantRecords.length) return;
       rememberRemovedPotionSelection(relevantRecords);
-      refresh(); // Idempotent important-style writes make the second observer pass a no-op instead of a loop.
-    }).observe(document.body, {
-      childList:true,
-      subtree:true,
-      attributes:true,
-      attributeFilter:['style', 'class'],
-    });
+      scheduleRefresh();
+    }).observe(document.body, { childList:true, subtree:true });
 
-    addEventListener('resize', refresh, { passive:true });
+    // Scroll/key navigation can recycle existing slot nodes without adding/removing
+    // DOM children. A post-event microtask refresh catches that path without watching
+    // attributes, and the RAF enforcer keeps geometry authoritative before paint.
+    addEventListener('wheel', scheduleRefresh, { capture:true, passive:true });
+    addEventListener('keydown', scheduleRefresh, { capture:true, passive:true });
+    addEventListener('resize', scheduleRefresh, { passive:true });
+
     refresh();
-
     window.QuickPotionArcUI = Object.freeze({
       diagnostics: () => ({
         installed,
@@ -352,8 +379,9 @@
         labelOutsetPx:LABEL_OUTSET_PX,
         outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
         selectorRadii:[...document.querySelectorAll('.arc-slot')].map(slot => Number(slot.dataset.sharedSelectionRadius)),
+        frameEnforcerRunning:frameRunning,
       }),
-      refresh,
+      refresh:scheduleRefresh,
     });
     log('installed', { selectorMidDeg:SELECTOR_MID_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
   }
