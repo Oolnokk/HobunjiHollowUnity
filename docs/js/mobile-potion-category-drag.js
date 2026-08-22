@@ -41,9 +41,13 @@
 
   function liveSlots(selector) {
     return [...document.querySelectorAll(selector)].filter(slot => {
-      if (slot.classList.contains('shared-selection-exit-ghost')) return false;
+      if (slot.classList.contains('shared-selection-exit-ghost') || slot.classList.contains('shared-selection-retired-original')) return false;
       const style = getComputedStyle(slot);
-      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
+      // Do NOT reject opacity:0. The new wheel intentionally stages incoming
+      // category buttons at zero opacity for its opening animation; mobile input
+      // must still recognize that hierarchy immediately or legacy nearest-angle
+      // selection can leak through during the first animation frames.
+      return style.display !== 'none' && style.visibility !== 'hidden';
     });
   }
 
