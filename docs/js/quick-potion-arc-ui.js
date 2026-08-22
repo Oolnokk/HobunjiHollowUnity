@@ -39,7 +39,7 @@
     const bb = b.x * b.x + b.y * b.y;
     const cc = c.x * c.x + c.y * c.y;
     return {
-      x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (a.y - b.y)) / d,
+      x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (b.y - a.y)) / d,
       y: (aa * (c.x - b.x) + bb * (a.x - c.x) + cc * (b.x - a.x)) / d,
     };
   }
@@ -167,6 +167,13 @@
     }
   }
 
+  function recordTouchesSelectionArc(record) {
+    if (record.target instanceof Element && record.target.closest('.arc-slot')) return true;
+    return [...record.addedNodes, ...record.removedNodes].some(node =>
+      node instanceof Element && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot'))
+    );
+  }
+
   function refresh() {
     refreshQueued = false;
     const marker = document.querySelector(POTION_MARKER_SELECTOR);
@@ -206,7 +213,10 @@
     `;
     document.head.appendChild(style);
 
-    new MutationObserver(records => queueRefresh(records)).observe(document.body, { childList:true, subtree:true });
+    new MutationObserver(records => {
+      const relevantRecords = records.filter(recordTouchesSelectionArc); // Ignore the SVG label's own add/remove mutations so redraws cannot self-trigger.
+      if (relevantRecords.length) queueRefresh(relevantRecords);
+    }).observe(document.body, { childList:true, subtree:true });
     addEventListener('resize', () => { lastArcCenter = null; document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.quickPotionCompacted); queueRefresh(); }, { passive:true });
     queueRefresh();
     window.QuickPotionArcUI = Object.freeze({
