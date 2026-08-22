@@ -7103,6 +7103,21 @@
       function activeCameraAzimuthRad() {
         return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
       }
+      // The world direction the camera is actually looking (as opposed to
+      // activeCameraAzimuthRad(), which is where the camera SITS relative to
+      // its target) — used by shoulder-surf to make WASD relative to
+      // wherever the mouse has turned the camera. updateCameraPosition
+      // places the camera at world offset (sin(az), cos(az))*distance from
+      // its look-at target and then looks back at that target, so the
+      // camera's own view direction is the negation of that offset;
+      // converting (-sin(az), -cos(az)) into this game's atan2(y,x) facing
+      // convention (matching facingAngle/lastMoveAngle elsewhere) reduces to
+      // -az - 90°. Cross-checked against beginSitInteraction's "camera sits
+      // opposite the character's facing" azimuth (270 - facingDeg): feeding
+      // that back through this gives exactly facingAngle again.
+      function cameraFacingAngleRad() {
+        return angleDiff(-activeCameraAzimuthRad() - Math.PI / 2, 0);
+      }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
       // need to rotate along with the camera's azimuth so this still works once the
@@ -8122,12 +8137,14 @@
       function defaultCameraModeKey() {
         return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
       }
-      // Snaps the free-look azimuth built up by shoulder-surf's freeRotate
-      // drag (see cameraDragAllowed/freeRotateCameraActive below) back to
-      // directly behind the player's current facing — the same "camera sits
-      // opposite the direction the character faces" derivation
-      // beginSitInteraction uses for the seated camera's initial framing,
-      // just re-run live off facingAngle instead of a one-time seat angle.
+      // One-shot reset used only when freshly entering shoulder-surf (mode
+      // toggled on, standing up from a chair, dialogue/cutscene ending) —
+      // snaps directly behind the player's current facing and levels the
+      // pitch, the same "camera sits opposite the direction the character
+      // faces" derivation beginSitInteraction uses for the seated camera's
+      // initial framing. From here on, plain mouse movement (see the
+      // mousemove handler's freeRotate branch) drives cameraAzimuthOffsetDeg
+      // directly — this only ever runs once per mode-entry, not continuously.
       function snapShoulderSurfAzimuth() {
         cameraAzimuthOffsetDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
         cameraAngleOffsetDeg = 0;
@@ -12979,6 +12996,23 @@
           const biasedLen = Math.hypot(ix, iy) || 1;
           ix /= biasedLen;
           iy /= biasedLen;
+        }
+
+        // Shoulder-surf: rotate the final (already cardinal-biased) local
+        // move vector into world space relative to the direction the
+        // (mouse-controlled) camera is currently facing — see
+        // cameraFacingAngleRad() — instead of leaving it on world-fixed
+        // axes, so "forward" always means "toward wherever the camera is
+        // looking," like a standard third-person action camera. Deliberately
+        // last, after cardinal bias: biasing this vector toward world
+        // cardinals instead of the player's actual local forward/strafe axes
+        // would visibly skew the intended camera-relative direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
+          const aim = cameraFacingAngleRad();
+          const s = Math.sin(aim), c = Math.cos(aim);
+          const rIx = -ix * s - iy * c;
+          const rIy =  ix * c - iy * s;
+          ix = rIx; iy = rIy;
         }
 
         // ── Tile-speed lookup ─────────────────────────────────
@@ -20110,18 +20144,6 @@
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
-        // Shoulder-surf: ease the free-look azimuth back to directly behind
-        // the player's current facing while they're actually walking, so the
-        // over-the-shoulder framing keeps up with turns during normal play.
-        // Gated on cameraDragPointerId (not mid-drag) and on movement (not
-        // just standing there) so an active look-around drag, or one just
-        // released while stationary, isn't fought/overridden every frame —
-        // same freeRotate drag this mode shares with 'seated' still gets to
-        // hold wherever the player left it once they stop moving.
-        if (activeCameraMode === SHOULDER_SURF_MODE && cameraDragPointerId === null && Math.hypot(player.vx, player.vy) > 5) {
-          const behindAzimuthDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + wrapAzimuthDeg(behindAzimuthDeg - cameraAzimuthOffsetDeg) * (1 - Math.exp(-6 * dt)));
-        }
         updateCameraPosition();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
@@ -23038,7 +23060,14 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
-          if (e.shiftKey && cameraDragAllowed()) {
+          // Shoulder-surf gets mouse-look "for free" here: plain mouse
+          // movement drives the camera exactly like Shift+drag does
+          // everywhere else, no modifier key needed, and freeRotateCameraActive()
+          // (true for shoulder-surf's config, same as 'seated') already makes
+          // this wrap into a full 360° orbit instead of the usual ±45° peek
+          // clamp. Falls through to the raycast-based facing/aim below
+          // otherwise, same as it always has.
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
