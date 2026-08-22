@@ -11,27 +11,24 @@
   const BUTTON_SIZE = 'clamp(22px,4.25vmin,30px)'; // One authoritative diameter for every toggled selector button.
   const BUTTON_DIAMETER_SCALE = 0.50; // Diagnostic value documenting the half-size rule.
   const LABEL_OUTSET_PX = 17; // Curved potion heading stays this far outside button centers.
-  const SLOT_MOVE_MS = 230; // Retained choices glide around the new shared radius at this duration.
-  const SLOT_ENTER_MS = 205; // New edge choices ease/fade into the new wheel instead of inheriting legacy motion.
-  const SLOT_EXIT_MS = 185; // Outgoing choices get a short new-wheel ghost animation before disappearing.
-  const OPEN_FAN_MS = 220; // Newly opened selectors fan smoothly out from the middle of their final arc.
-  const MOTION_EASING = 'cubic-bezier(.22,.82,.24,1)'; // Soft acceleration with a quick, controlled settle.
+  const GROUP_MOVE_MS = 190; // One shared duration for retained, incoming, and outgoing boundary motion.
+  const MOTION_EASING = 'cubic-bezier(.22,.82,.24,1)'; // Soft acceleration with a controlled settle.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
-  const LEGACY_ARROW_SELECTOR = '.arc-slot.arc-arrow'; // Old item-wheel edge controls remain internal sentinels, never visual choices.
+  const LEGACY_ARROW_SELECTOR = '.arc-slot.arc-arrow'; // Old edge arrows stay internal sentinels, never visual choices.
   const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring used as the geometry source of truth.
   const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // Canonical permanent-ring button used to measure radius.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
 
   let installed = false; // Prevents duplicate observers/listeners if the script is loaded twice.
-  let refreshing = false; // Prevents nested presentation refreshes while a potion breadcrumb is rewritten.
-  let frameRunning = false; // One geometry-only RAF runs while a selector is visible.
+  let refreshing = false; // Prevents nested structural refreshes while a potion breadcrumb is rewritten.
+  let frameRunning = false; // One geometry enforcer runs only while a selector is visible.
   let refreshQueued = false; // Coalesces same-event refresh requests.
+  let groupCommitPending = false; // Freezes the enforcer for the one staging frame of an atomic wheel transition.
   let currentBranchLabel = ''; // Medicine/Utility heading retained while child categories are open.
   let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
   let lastGeometry = null; // Diagnostic snapshot of center/radius currently in use.
   let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of current visible-choice sweep.
   let lastVisibleChoiceCount = 0; // Used to send outgoing choices one logical slot beyond the current arc edge.
-  const slotMotionAnimations = new WeakMap(); // Presentation-owned animations; legacy game.js animations are never adopted.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -52,13 +49,13 @@
   function elementCenter(element) {
     const rect = element?.getBoundingClientRect?.();
     if (!rect) return null;
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    return { x:rect.left + rect.width / 2, y:rect.top + rect.height / 2 };
   }
 
   function setImportantStyle(element, property, value) {
     if (!element) return;
     if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') return;
-    element.style.setProperty(property, value, 'important'); // Keeps size/shape authoritative when legacy wheel code recycles nodes.
+    element.style.setProperty(property, value, 'important'); // Keeps shape authoritative when legacy wheel code recycles nodes.
   }
 
   function setSharedCoordinate(slot, property, value) {
@@ -66,13 +63,17 @@
     slot.style.setProperty(property, value); // CSS consumes these vars; legacy inline left/top cannot render.
   }
 
+  function setSharedVisual(slot, opacity, scale) {
+    slot.style.setProperty('--shared-selection-opacity', String(opacity));
+    slot.style.setProperty('--shared-selection-scale', String(scale));
+  }
+
   function outerRingGeometry() {
     const anchor = document.getElementById(OUTER_ARCH_ID); // Zero-size bottom-right anchor shared by the permanent outer ring.
     const anchorRect = anchor?.getBoundingClientRect?.();
     const center = anchorRect
-      ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 }
-      : { x: innerWidth, y: innerHeight };
-
+      ? { x:anchorRect.left + anchorRect.width / 2, y:anchorRect.top + anchorRect.height / 2 }
+      : { x:innerWidth, y:innerHeight };
     const referenceCenter = elementCenter(document.getElementById(OUTER_RADIUS_REFERENCE_ID));
     const measuredRadius = referenceCenter ? Math.hypot(referenceCenter.x - center.x, referenceCenter.y - center.y) : 0;
     const fallbackRadius = innerWidth / 32 * 10; // Mirrors the authored #toolSelect --ar2 radius.
@@ -100,140 +101,47 @@
     return { x:center.x + Math.cos(angle) * radius, y:center.y - Math.sin(angle) * radius };
   }
 
-  function renderedAngleDeg(slot, center) {
-    const point = elementCenter(slot);
+  function angleForPoint(point, center) {
     if (!point) return null;
     return Math.atan2(-(point.y - center.y), point.x - center.x) * 180 / Math.PI;
   }
 
   function sharedTargetCenter(slot) {
-    const x = Number.parseFloat(slot?.style?.getPropertyValue('--shared-selection-left') || '');
-    const y = Number.parseFloat(slot?.style?.getPropertyValue('--shared-selection-top') || '');
-    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : elementCenter(slot);
+    const x = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
+    const y = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+    const styleX = Number.parseFloat(slot?.style?.getPropertyValue('--shared-selection-left') || '');
+    const styleY = Number.parseFloat(slot?.style?.getPropertyValue('--shared-selection-top') || '');
+    return Number.isFinite(styleX) && Number.isFinite(styleY) ? { x:styleX, y:styleY } : elementCenter(slot);
   }
 
   function legacyInlineLeft(slot) {
-    const value = Number.parseFloat(slot?.style?.left || ''); // game.js still writes the old arc target here even though CSS no longer renders it.
+    const value = Number.parseFloat(slot?.style?.left || ''); // Legacy scroll still writes logical slot targets here.
     return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
   }
 
   function itemWheelSentinelsPresent() {
-    return Boolean(document.querySelector(LEGACY_ARROW_SELECTOR)); // A scrollable legacy item wheel always owns at least one edge arrow.
+    return Boolean(document.querySelector(LEGACY_ARROW_SELECTOR)); // Scrollable legacy item wheels own at least one edge arrow.
+  }
+
+  function realArcSlots() {
+    return [...document.querySelectorAll('.arc-slot:not(.arc-arrow):not(.shared-selection-exit-ghost)')];
+  }
+
+  function outgoingLegacySlots() {
+    return realArcSlots().filter(slot => slot.style.opacity === '0' && slot.dataset.sharedSelectionPresented === '1');
   }
 
   function activeSelectionSlots() {
     const itemWheel = itemWheelSentinelsPresent();
-    const slots = [...document.querySelectorAll('.arc-slot')].filter(slot => {
-      if (slot.matches(LEGACY_ARROW_SELECTOR) || slot.classList.contains('shared-selection-exit-ghost')) return false;
+    const slots = realArcSlots().filter(slot => {
       const style = getComputedStyle(slot);
       if (style.display === 'none' || style.visibility === 'hidden') return false;
-      // The legacy scroll animation keeps outgoing item nodes for 150ms at opacity 0.
-      // Exclude them immediately, but keep brand-new opacity-0 nodes so the new
-      // animation layer can place and fade them in from the correct shared edge.
-      if (slot.style.opacity === '0' && slot.dataset.sharedSelectionPresented === '1') return false;
-      return true;
+      if (slot.style.opacity === '0' && slot.dataset.sharedSelectionPresented === '1') return false; // Retiring legacy node.
+      return true; // Brand-new legacy opacity:0 slots are deliberately included for staging.
     });
-
-    if (itemWheel) {
-      // Legacy item scrolling reuses DOM nodes and does NOT reorder the DOM. Its
-      // hidden inline left value still describes logical order, so retain that only
-      // as bookkeeping and render every real choice through the shared-radius layer.
-      slots.sort((a, b) => legacyInlineLeft(a) - legacyInlineLeft(b));
-    }
+    if (itemWheel) slots.sort((a, b) => legacyInlineLeft(a) - legacyInlineLeft(b)); // DOM order is not logical order after recycling.
     return slots;
-  }
-
-  function cancelOwnedMotion(slot) {
-    const animation = slotMotionAnimations.get(slot);
-    if (!animation) return;
-    animation.cancel();
-    slotMotionAnimations.delete(slot);
-  }
-
-  function animateAlongArc(slot, startAngleDeg, endAngleDeg, center, radius, options = {}) {
-    if (!motionAllowed() || typeof slot?.animate !== 'function') return;
-    cancelOwnedMotion(slot);
-
-    const duration = Number(options.duration) || SLOT_MOVE_MS;
-    const fadeIn = Boolean(options.fadeIn);
-    const delay = Math.max(0, Number(options.delay) || 0);
-    const finalPoint = pointOnSharedArc(endAngleDeg, center, radius);
-    const offsets = [0, 0.26, 0.54, 0.8, 1];
-    const keyframes = offsets.map((offset, index) => {
-      const angle = startAngleDeg + (endAngleDeg - startAngleDeg) * offset;
-      const point = pointOnSharedArc(angle, center, radius);
-      const frame = {
-        offset,
-        translate: `${point.x - finalPoint.x}px ${point.y - finalPoint.y}px`,
-      };
-      if (fadeIn) {
-        frame.opacity = index === 0 ? 0 : Math.min(1, 0.18 + offset * 1.08);
-        frame.scale = index === 0 ? 0.72 : (index === 3 ? 1.035 : 1);
-      }
-      return frame;
-    });
-
-    const animation = slot.animate(keyframes, { duration, delay, easing:MOTION_EASING, fill:'none' });
-    slotMotionAnimations.set(slot, animation);
-    animation.finished.catch(() => {}).finally(() => {
-      if (slotMotionAnimations.get(slot) === animation) slotMotionAnimations.delete(slot);
-    });
-  }
-
-  function animateOpeningSlot(slot, targetAngleDeg, center, radius, index, count) {
-    const midpointBias = 0.16; // Starts clustered near the arc middle, then fans into the final wheel.
-    const startAngle = SELECTOR_MID_DEG + (targetAngleDeg - SELECTOR_MID_DEG) * midpointBias;
-    const distanceFromMiddle = Math.abs(index - (count - 1) / 2);
-    animateAlongArc(slot, startAngle, targetAngleDeg, center, radius, {
-      duration:OPEN_FAN_MS,
-      delay:distanceFromMiddle * 12,
-      fadeIn:true,
-    });
-  }
-
-  function animateEnteringSlot(slot, targetAngleDeg, sweepDeg, count, center, radius) {
-    const step = count > 1 ? sweepDeg / (count - 1) : 10;
-    const edgeDirection = targetAngleDeg >= SELECTOR_MID_DEG ? 1 : -1;
-    const outsideStep = Math.min(14, Math.max(7, step * 0.82));
-    animateAlongArc(slot, targetAngleDeg + edgeDirection * outsideStep, targetAngleDeg, center, radius, {
-      duration:SLOT_ENTER_MS,
-      fadeIn:true,
-    });
-  }
-
-  function animateLegacyExits() {
-    if (!motionAllowed()) return;
-    const { center, radius } = outerRingGeometry();
-    document.querySelectorAll('.arc-slot:not(.arc-arrow):not(.shared-selection-exit-ghost)').forEach(slot => {
-      if (slot.style.opacity !== '0' || slot.dataset.sharedSelectionPresented !== '1' || slot.dataset.sharedSelectionExitGhosted === '1') return;
-      slot.dataset.sharedSelectionExitGhosted = '1';
-      const oldAngle = Number.parseFloat(slot.dataset.sharedSelectionAngle || '');
-      if (!Number.isFinite(oldAngle)) return;
-
-      const ghost = slot.cloneNode(true); // Visual-only copy lets the new layer own the exit instead of reviving the legacy node.
-      ghost.classList.remove('arc-active', 'shared-selection-motion');
-      ghost.classList.add('shared-selection-exit-ghost');
-      ghost.dataset.sharedSelectionGhost = '1';
-      ghost.removeAttribute('id');
-      ghost.setAttribute('aria-hidden', 'true');
-      ghost.style.removeProperty('opacity');
-      ghost.style.pointerEvents = 'none';
-      document.body.appendChild(ghost);
-
-      const step = lastVisibleChoiceCount > 1 ? lastSweepDeg / (lastVisibleChoiceCount - 1) : 10;
-      const direction = oldAngle >= SELECTOR_MID_DEG ? 1 : -1;
-      const exitAngle = oldAngle + direction * Math.min(14, Math.max(7, step * 0.8));
-      const oldPoint = pointOnSharedArc(oldAngle, center, radius);
-      const exitPoint = pointOnSharedArc(exitAngle, center, radius);
-      const dx = exitPoint.x - oldPoint.x;
-      const dy = exitPoint.y - oldPoint.y;
-      const animation = ghost.animate([
-        { translate:'0px 0px', opacity:1, scale:1 },
-        { offset:0.62, translate:`${dx * 0.62}px ${dy * 0.62}px`, opacity:0.58, scale:0.92 },
-        { translate:`${dx}px ${dy}px`, opacity:0, scale:0.76 },
-      ], { duration:SLOT_EXIT_MS, easing:MOTION_EASING, fill:'forwards' });
-      animation.finished.catch(() => {}).finally(() => ghost.remove());
-    });
   }
 
   function enforceSlotPresentation(slot, dense) {
@@ -250,9 +158,59 @@
 
   function neutralizeLegacyArrows() {
     document.querySelectorAll(LEGACY_ARROW_SELECTOR).forEach(slot => {
-      slot.classList.add('shared-selection-sentinel'); // Keeps game.js references alive while making the DOM role explicit.
+      slot.classList.add('shared-selection-sentinel'); // Keeps old references alive while making the DOM role explicit.
       slot.setAttribute('aria-hidden', 'true');
       slot.dataset.sharedSelectionSentinel = '1';
+    });
+  }
+
+  function clearExitGhosts() {
+    document.querySelectorAll('.shared-selection-exit-ghost').forEach(ghost => ghost.remove());
+  }
+
+  function makeExitGhost(slot, center, radius) {
+    if (!slot || slot.dataset.sharedSelectionExitGhosted === '1') return null;
+    slot.dataset.sharedSelectionExitGhosted = '1';
+    slot.classList.add('shared-selection-retired-original'); // The real node remains only for the legacy 150ms retirement timer.
+
+    const currentPoint = elementCenter(slot) || sharedTargetCenter(slot);
+    const oldTargetAngle = Number.parseFloat(slot.dataset.sharedSelectionAngle || '');
+    const currentAngle = angleForPoint(currentPoint, center);
+    const startAngle = Number.isFinite(currentAngle) ? currentAngle : oldTargetAngle;
+    if (!currentPoint || !Number.isFinite(startAngle)) return null;
+
+    const ghost = slot.cloneNode(true); // Presentation-only copy is not subject to the legacy retirement timer.
+    ghost.classList.remove('arc-active', 'shared-selection-retired-original');
+    ghost.classList.add('shared-selection-exit-ghost', 'shared-selection-preparing');
+    ghost.removeAttribute('id');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.pointerEvents = 'none';
+    ghost.style.removeProperty('opacity');
+    ghost.style.setProperty('--shared-selection-motion-ms', `${GROUP_MOVE_MS}ms`);
+    setSharedCoordinate(ghost, '--shared-selection-left', `${currentPoint.x}px`);
+    setSharedCoordinate(ghost, '--shared-selection-top', `${currentPoint.y}px`);
+    setSharedVisual(ghost, 1, 1);
+    document.body.appendChild(ghost);
+
+    const step = lastVisibleChoiceCount > 1 ? lastSweepDeg / (lastVisibleChoiceCount - 1) : 10;
+    const directionBasis = Number.isFinite(oldTargetAngle) ? oldTargetAngle : startAngle;
+    const direction = directionBasis >= SELECTOR_MID_DEG ? 1 : -1;
+    const exitAngle = startAngle + direction * Math.min(14, Math.max(7, step * 0.82));
+    return { ghost, exitPoint:pointOnSharedArc(exitAngle, center, radius) };
+  }
+
+  function scheduleAtomicCommit(actions) {
+    if (!motionAllowed()) {
+      actions.forEach(action => action());
+      groupCommitPending = false;
+      return;
+    }
+    groupCommitPending = true;
+    // All staged retained/new/outgoing nodes commit in this one animation frame,
+    // so crossing the item-window boundary reads as one conveyor movement.
+    requestAnimationFrame(() => {
+      actions.forEach(action => action());
+      groupCommitPending = false;
     });
   }
 
@@ -261,36 +219,85 @@
     neutralizeLegacyArrows();
     const { center, radius } = outerRingGeometry();
     const sweepDeg = selectorSweepDeg(slots.length, radius);
-    const dense = slots.length >= 5; // Five long item names benefit from wrapped labels even though arrows no longer inflate the count.
-    const opening = !slots.some(slot => slot.dataset.sharedSelectionPresented === '1');
+    const dense = slots.length >= 5;
+    const outgoing = outgoingLegacySlots();
+    const newSlots = slots.filter(slot => slot.dataset.sharedSelectionPresented !== '1');
+    const opening = newSlots.length === slots.length && outgoing.length === 0;
+    const atomicBoundary = opening || newSlots.length > 0 || outgoing.length > 0;
+    const actions = [];
     lastSweepDeg = sweepDeg;
+
+    // Stage outgoing visuals first, but do not start their exit until the same commit
+    // that moves retained choices and reveals the incoming edge choice.
+    outgoing.forEach(slot => {
+      const prepared = makeExitGhost(slot, center, radius);
+      if (!prepared) return;
+      prepared.ghost.getBoundingClientRect(); // Locks the ghost's current interpolated position as its baseline.
+      actions.push(() => {
+        if (!prepared.ghost.isConnected) return;
+        prepared.ghost.classList.remove('shared-selection-preparing');
+        setSharedCoordinate(prepared.ghost, '--shared-selection-left', `${prepared.exitPoint.x}px`);
+        setSharedCoordinate(prepared.ghost, '--shared-selection-top', `${prepared.exitPoint.y}px`);
+        setSharedVisual(prepared.ghost, 0, 0.76);
+        setTimeout(() => prepared.ghost.remove(), GROUP_MOVE_MS + 70);
+      });
+    });
 
     slots.forEach((slot, index) => {
       enforceSlotPresentation(slot, dense);
       const targetAngle = selectorAngleDeg(index, slots.length, sweepDeg);
       const targetPoint = pointOnSharedArc(targetAngle, center, radius);
-      const previousTargetAngle = Number.parseFloat(slot.dataset.sharedSelectionAngle || '');
       const wasPresented = slot.dataset.sharedSelectionPresented === '1';
-      const renderedStartAngle = wasPresented ? renderedAngleDeg(slot, center) : null;
-
-      // Set the destination immediately. Motion is then a presentation-only
-      // translate layered over this final geometry, so hit testing/state never lag.
-      setSharedCoordinate(slot, '--shared-selection-left', `${targetPoint.x}px`);
-      setSharedCoordinate(slot, '--shared-selection-top', `${targetPoint.y}px`);
       slot.dataset.sharedSelectionRadius = radius.toFixed(2);
       slot.dataset.sharedSelectionAngle = targetAngle.toFixed(2);
+      slot.dataset.sharedSelectionTargetX = targetPoint.x.toFixed(3);
+      slot.dataset.sharedSelectionTargetY = targetPoint.y.toFixed(3);
+      slot.style.setProperty('--shared-selection-motion-ms', `${GROUP_MOVE_MS}ms`);
+      slot.style.setProperty('--shared-selection-delay', '0ms');
 
       if (!wasPresented) {
         slot.dataset.sharedSelectionPresented = '1';
-        if (opening) animateOpeningSlot(slot, targetAngle, center, radius, index, slots.length);
-        else animateEnteringSlot(slot, targetAngle, sweepDeg, slots.length, center, radius);
-      } else if (Number.isFinite(previousTargetAngle) && Math.abs(previousTargetAngle - targetAngle) > 0.04) {
-        animateAlongArc(slot, Number.isFinite(renderedStartAngle) ? renderedStartAngle : previousTargetAngle, targetAngle, center, radius, {
-          duration:SLOT_MOVE_MS,
+        slot.classList.add('shared-selection-preparing');
+        const step = slots.length > 1 ? sweepDeg / (slots.length - 1) : 10;
+        const direction = targetAngle >= SELECTOR_MID_DEG ? 1 : -1;
+        const outsideStep = Math.min(14, Math.max(7, step * 0.82));
+        const startAngle = opening
+          ? SELECTOR_MID_DEG + (targetAngle - SELECTOR_MID_DEG) * 0.14
+          : targetAngle + direction * outsideStep;
+        const startPoint = pointOnSharedArc(startAngle, center, radius);
+        setSharedCoordinate(slot, '--shared-selection-left', `${startPoint.x}px`);
+        setSharedCoordinate(slot, '--shared-selection-top', `${startPoint.y}px`);
+        setSharedVisual(slot, 0, opening ? 0.82 : 0.78);
+        slot.getBoundingClientRect(); // Ensures every new entry has the same pre-transition baseline.
+        actions.push(() => {
+          if (!slot.isConnected) return;
+          slot.classList.remove('shared-selection-preparing');
+          setSharedCoordinate(slot, '--shared-selection-left', `${targetPoint.x}px`);
+          setSharedCoordinate(slot, '--shared-selection-top', `${targetPoint.y}px`);
+          setSharedVisual(slot, 1, 1);
         });
+        return;
+      }
+
+      if (slot.classList.contains('shared-selection-preparing')) return; // A pending atomic commit owns this node's start position.
+      if (atomicBoundary) {
+        // Retained choices wait for the same frame as incoming/outgoing choices.
+        actions.push(() => {
+          if (!slot.isConnected) return;
+          setSharedCoordinate(slot, '--shared-selection-left', `${targetPoint.x}px`);
+          setSharedCoordinate(slot, '--shared-selection-top', `${targetPoint.y}px`);
+          setSharedVisual(slot, 1, 1);
+        });
+      } else {
+        // Non-boundary changes can safely retarget immediately; CSS transitions
+        // naturally continue from the current interpolated point if still moving.
+        setSharedCoordinate(slot, '--shared-selection-left', `${targetPoint.x}px`);
+        setSharedCoordinate(slot, '--shared-selection-top', `${targetPoint.y}px`);
+        setSharedVisual(slot, 1, 1);
       }
     });
 
+    if (atomicBoundary && actions.length) scheduleAtomicCommit(actions);
     lastVisibleChoiceCount = slots.length;
   }
 
@@ -315,7 +322,6 @@
     const hasConcreteItems = slots.some(slot => slot.classList.contains('potion-cancel'))
       && !slots.some(slot => slot.classList.contains('potion-category'));
     if (hasConcreteItems) return currentLeafLabel || currentBranchLabel;
-
     const branch = slots.find(slot => slot.classList.contains('potion-branch'));
     const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
     if (branch && hasChildCategories) {
@@ -339,9 +345,8 @@
     removeCurvedLabel();
     const text = curvedLabelText(slots);
     if (!text || slots.length < 2) return;
-
     const { center } = outerRingGeometry();
-    const points = slots.map(slot => outwardLabelPoint(sharedTargetCenter(slot), center)); // Heading tracks final geometry, not transient motion frames.
+    const points = slots.map(slot => outwardLabelPoint(sharedTargetCenter(slot), center)); // Tracks final geometry, not transient animation positions.
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
@@ -414,11 +419,12 @@
     frameRunning = true;
     const frame = () => {
       neutralizeLegacyArrows();
-      animateLegacyExits(); // Timer-driven legacy retirement is converted into a new-wheel exit ghost here.
+      if (groupCommitPending) { requestAnimationFrame(frame); return; } // Do not break the staged atomic boundary frame.
       const slots = activeSelectionSlots();
       if (!slots.length) {
         frameRunning = false;
         lastVisibleChoiceCount = 0;
+        clearExitGhosts();
         setOuterArchHidden(false);
         return;
       }
@@ -430,14 +436,14 @@
   }
 
   function refresh() {
-    if (refreshing) return;
+    if (refreshing || groupCommitPending) return;
     refreshing = true;
     try {
       neutralizeLegacyArrows();
-      animateLegacyExits();
       const slots = activeSelectionSlots();
       if (!slots.length) {
         lastVisibleChoiceCount = 0;
+        clearExitGhosts();
         setOuterArchHidden(false);
         removeCurvedLabel();
         return;
@@ -481,8 +487,6 @@
         pointer-events:none !important;
       }
 
-      /* Legacy item-scroll arrows stay alive only as hidden control sentinels.
-         The presentation layer never lets them occupy a visual selector slot. */
       ${LEGACY_ARROW_SELECTOR} {
         visibility:hidden !important;
         opacity:0 !important;
@@ -490,27 +494,38 @@
         transition:none !important;
       }
 
-      /* Final selector geometry comes only from shared-radius variables. Motion
-         uses Web Animations' independent translate/scale properties so the
-         gameplay transform and hit-test destination are never interpolated. */
+      .arc-slot.shared-selection-retired-original {
+        visibility:hidden !important;
+        pointer-events:none !important;
+      }
+
+      /* Legacy inline left/top/opacity remain available as bookkeeping only.
+         Rendering comes exclusively from the shared selector variables below. */
       .arc-slot:not(.arc-arrow) {
         position:fixed !important;
         left:var(--shared-selection-left, -10000px) !important;
         top:var(--shared-selection-top, -10000px) !important;
+        opacity:var(--shared-selection-opacity, 1) !important;
+        scale:var(--shared-selection-scale, 1) !important;
         width:${BUTTON_SIZE} !important;
         height:${BUTTON_SIZE} !important;
         border-width:1px !important;
         gap:1px !important;
         overflow:visible !important;
         box-shadow:0 2px 7px rgba(0,0,0,.42) !important;
-        transition:transform .1s ease, background .1s ease, border-color .1s ease !important;
-        will-change:translate, opacity;
-      }
-      .arc-slot.shared-selection-exit-ghost {
-        pointer-events:none !important;
-        z-index:202 !important;
+        transition:
+          left var(--shared-selection-motion-ms, ${GROUP_MOVE_MS}ms) ${MOTION_EASING} var(--shared-selection-delay, 0ms),
+          top var(--shared-selection-motion-ms, ${GROUP_MOVE_MS}ms) ${MOTION_EASING} var(--shared-selection-delay, 0ms),
+          opacity var(--shared-selection-motion-ms, ${GROUP_MOVE_MS}ms) ease var(--shared-selection-delay, 0ms),
+          scale var(--shared-selection-motion-ms, ${GROUP_MOVE_MS}ms) ${MOTION_EASING} var(--shared-selection-delay, 0ms),
+          transform .1s ease,
+          background .1s ease,
+          border-color .1s ease !important;
+        will-change:left, top, opacity, scale;
       }
 
+      .arc-slot.shared-selection-preparing { transition:none !important; }
+      .arc-slot.shared-selection-exit-ghost { pointer-events:none !important; z-index:202 !important; }
       .arc-slot .arc-icon { font-size:.78em !important; transition:filter .12s ease !important; }
       .arc-slot .arc-icon img,
       .arc-slot .arc-icon canvas,
@@ -560,8 +575,8 @@
     `;
     document.head.appendChild(style);
 
-    // Observe only structural changes. Style/class observation caused the old
-    // item-wheel recycler and the presenter to recursively trigger one another.
+    // Observe structure only. Attribute observation previously created a feedback
+    // loop with the legacy recycler and froze item-wheel scrolling.
     new MutationObserver(records => {
       const relevantRecords = records.filter(recordTouchesSelectionArc);
       if (!relevantRecords.length) return;
@@ -569,8 +584,8 @@
       scheduleRefresh();
     }).observe(document.body, { childList:true, subtree:true });
 
-    // Wheel/key navigation can recycle the same node set. The microtask refresh
-    // plus geometry-only RAF covers those paths without mutation feedback.
+    // Wheel/key navigation may recycle the same nodes, while arrow hover scrolling
+    // is timer-driven. The microtask refresh plus enforcer covers both paths.
     addEventListener('wheel', scheduleRefresh, { capture:true, passive:true });
     addEventListener('keydown', scheduleRefresh, { capture:true, passive:true });
     addEventListener('resize', scheduleRefresh, { passive:true });
@@ -587,17 +602,18 @@
         buttonDiameterScale:BUTTON_DIAMETER_SCALE,
         buttonSize:BUTTON_SIZE,
         labelOutsetPx:LABEL_OUTSET_PX,
-        motion:{ slotMoveMs:SLOT_MOVE_MS, enterMs:SLOT_ENTER_MS, exitMs:SLOT_EXIT_MS, openFanMs:OPEN_FAN_MS, enabled:motionAllowed() },
+        motion:{ groupMoveMs:GROUP_MOVE_MS, atomicBoundary:true, enabled:motionAllowed() },
         hiddenLegacyArrowCount:document.querySelectorAll(LEGACY_ARROW_SELECTOR).length,
         visibleChoiceCount:activeSelectionSlots().length,
         exitGhostCount:document.querySelectorAll('.shared-selection-exit-ghost').length,
         outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
         selectorRadii:activeSelectionSlots().map(slot => Number(slot.dataset.sharedSelectionRadius)),
+        groupCommitPending,
         frameEnforcerRunning:frameRunning,
       }),
       refresh:scheduleRefresh,
     });
-    log('installed', { selectorMidDeg:SELECTOR_MID_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, motionMs:SLOT_MOVE_MS, labelOutsetPx:LABEL_OUTSET_PX });
+    log('installed', { selectorMidDeg:SELECTOR_MID_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, groupMoveMs:GROUP_MOVE_MS, labelOutsetPx:LABEL_OUTSET_PX });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
