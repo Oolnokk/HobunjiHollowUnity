@@ -717,6 +717,7 @@
     #keyHud { display: none; }
     @media (pointer: fine) {
       #joystickZone  { display: none !important; }
+      #cameraJoystickZone { display: none !important; }
       #keyHud        { display: flex; }
       /* Action buttons on desktop: keep interactive, just smaller touch area is fine */
     }
@@ -757,6 +758,38 @@
       border: 2px solid rgba(255,255,255,0.13);
     }
     #joystickKnob {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%) translate(0px, 0px);
+      width: clamp(44px, 8vmin, 58px); height: clamp(44px, 8vmin, 58px);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.14);
+      border: 2px solid rgba(255,255,255,0.28);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; pointer-events: none;
+    }
+    /* Floating camera-look joystick — unlike #joystickZone (a fixed hit
+       target with its own pointer listeners), this one is purely a visual
+       overlay: the real touch handling stays on #threeContainer (see
+       cameraDragRequested/cameraDragAllowed in game.js), which is what lets
+       a touch starting on an existing button keep working normally instead
+       of this zone stealing the hit-test. JS just moves it under the thumb
+       and toggles display on press/release. left/top are set inline per
+       touch; this only supplies the centering transform and look. */
+    #cameraJoystickZone {
+      display: none;
+      pointer-events: none;
+      width: clamp(96px, 18vmin, 132px);
+      height: clamp(96px, 18vmin, 132px);
+      transform: translate(-50%, -50%);
+    }
+    #cameraJoystickBase {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.13);
+    }
+    #cameraJoystickKnob {
       position: absolute;
       top: 50%; left: 50%;
       transform: translate(-50%,-50%) translate(0px, 0px);

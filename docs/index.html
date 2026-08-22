@@ -1576,6 +1576,14 @@
     <div id="joystickKnob">🕹️</div>
   </div>
 
+  <!-- Floating camera-look joystick: hidden until a touch starts on the
+       right half of the game view (see cameraDragRequested in game.js),
+       then JS positions it under that touch point and shows it. -->
+  <div id="cameraJoystickZone" class="control-zone" aria-hidden="true">
+    <div id="cameraJoystickBase"></div>
+    <div id="cameraJoystickKnob">👁️</div>
+  </div>
+
   <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
   <div id="arcContainer">

@@ -16,6 +16,8 @@
       const debugLog = window.__farmLog || ((m) => console.log(m));
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
+      const cameraJoystickZone = document.getElementById('cameraJoystickZone');
+      const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnUnequipHeld = document.getElementById('btnUnequipHeld');
@@ -560,6 +562,15 @@
       const JOYSTICK_RADIUS = 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
       const JOYSTICK_DEADZONE = 0.14; // used by updateJoystick() to prevent thumb drift near center.
       const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
+      // Floating camera-look joystick (materializes under the thumb on a
+      // right-half touch — see cameraDragRequested/updateCameraJoystick).
+      // Same deadzone/response shape as the movement joystick, but the knob
+      // offset drives an ongoing turn RATE for as long as it's held off
+      // center, instead of the movement stick's instantaneous speed/direction.
+      const CAMERA_JOYSTICK_RADIUS = 56;
+      const CAMERA_JOYSTICK_DEADZONE = 0.14;
+      const CAMERA_JOYSTICK_RESPONSE = 0.82;
+      const CAMERA_JOYSTICK_DEG_PER_SEC = 150; // turn rate at full deflection
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
@@ -20306,6 +20317,23 @@
         // cheap enough (one property read) to just check every frame rather
         // than hunting down every such call site individually.
         if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        // Floating camera joystick: held-off-center knob position drives an
+        // ongoing turn rate every frame, for as long as the touch lasts (see
+        // the pointerdown/pointermove handlers below that materialize it and
+        // fill in cameraJoystickX/Y). Self-heals if some other UI claims
+        // input mid-hold instead of leaving the joystick stuck on screen.
+        if (cameraDragPointerId !== null) {
+          if (!cameraDragAllowed()) {
+            cameraDragPointerId = null;
+            hideCameraJoystick();
+          } else if (cameraJoystickX !== 0 || cameraJoystickY !== 0) {
+            const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
+              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg - cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+          }
+        }
         updateCameraPosition();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
@@ -23112,11 +23140,18 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
-      // ── Camera drag-to-look: single-finger drag on mobile, Shift+mouse movement on desktop.
-      // Nudges the look angle on top of the active mode's base framing, clamped to the configured range.
+      // ── Camera look: a floating joystick that materializes under the
+      // thumb on a right-half touch (mobile), Shift+mouse movement on
+      // desktop. The mobile half used to be a raw delta-drag (camera offset
+      // tracked 1:1 with however far the finger had traveled from its start
+      // point); it's a rate-control stick now instead — hold the knob off
+      // center and the camera keeps turning, same paradigm as the movement
+      // joystick's own analog stick, and the genre-standard "look stick"
+      // behavior on mobile (materialize-under-thumb dynamic joysticks, the
+      // way most twin-stick mobile games handle look input).
       let cameraDragPointerId = null;
-      let cameraDragStartX = 0, cameraDragStartY = 0;
-      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
+      let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
@@ -23137,16 +23172,32 @@
         if (d <= -180) d += 360;
         return d;
       }
+      // Right half only — the left half is the movement joystick's territory
+      // (see #joystickZone, bottom-left) and this keeps the two thumbs from
+      // ever fighting over the same touch. A touch that lands on an existing
+      // button never reaches here at all: buttons are separate overlaid
+      // elements that catch their own pointerdown before it could bubble to
+      // #threeContainer, so nothing extra is needed to exclude them.
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch';
+        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+      }
+      function hideCameraJoystick() {
+        cameraJoystickZone.style.display = 'none';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
       }
       threeContainer.addEventListener('pointerdown', (e) => {
         if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
         cameraDragPointerId = e.pointerId;
-        cameraDragStartX = e.clientX;
-        cameraDragStartY = e.clientY;
-        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
-        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        cameraJoystickOriginX = e.clientX;
+        cameraJoystickOriginY = e.clientY;
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
+        cameraJoystickZone.style.left = e.clientX + 'px';
+        cameraJoystickZone.style.top = e.clientY + 'px';
+        cameraJoystickZone.style.display = 'block';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
         // Can throw ("No active pointer with the given id is found") for a
         // touch that starts before the browser considers the pointer fully
         // active — e.g. right as the page/layout is still settling after
@@ -23158,19 +23209,26 @@
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
-        const dx = e.clientX - cameraDragStartX;
-        const dy = e.clientY - cameraDragStartY;
-        const cfg = desktopControlsConfig();
-        const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
-        const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-        cameraAzimuthOffsetDeg = freeRotateCameraActive()
-          ? wrapAzimuthDeg(cameraDragStartAzimuthOffset + dx * degPerPx)
-          : clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
-        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
-        updateCameraPosition();
+        // Base stays put where the thumb first touched down — only the knob
+        // (and the resulting turn rate) tracks the finger from there, same
+        // clamp/deadzone/response-curve shape as updateJoystick() below.
+        const rawX = e.clientX - cameraJoystickOriginX;
+        const rawY = e.clientY - cameraJoystickOriginY;
+        const distance = Math.hypot(rawX, rawY);
+        const angle = Math.atan2(rawY, rawX);
+        const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
+        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
+          ? 0
+          : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
+        cameraJoystickX = remapped > 0 ? Math.cos(angle) * remapped : 0;
+        cameraJoystickY = remapped > 0 ? Math.sin(angle) * remapped : 0;
+        cameraJoystickKnob.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`;
       });
       function clearCameraDragPointer(e) {
-        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+        if (e.pointerId !== cameraDragPointerId) return;
+        cameraDragPointerId = null;
+        hideCameraJoystick();
       }
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
