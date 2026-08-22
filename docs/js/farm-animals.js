@@ -278,7 +278,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -415,7 +415,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);

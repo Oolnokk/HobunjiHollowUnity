@@ -210,6 +210,11 @@ assert.match(game, /_arcBd\.addEventListener\('pointermove'[\s\S]*_arcMove/, 'sh
 assert.match(game, /onSelect:\(\) => _selectHeldInventoryKey\(entry\.itemKey\)/, 'potion/flask selection must only put the item in hand');
 assert.match(game, /potionAction3Press[\s\S]*openPotions\(\)[\s\S]*releaseSelection\(\)/, 'potion selection must open on hold and commit from the original input release');
 assert.match(game, /potionAction3Press\.down[\s\S]*scrollEntries\(-dir\)/, 'desktop potion selection must navigate with the scroll wheel while held');
+assert.match(game, /beginHeldSelection\?\.\(_selectorKind\)[\s\S]*heldSelectionKind\?\.\(\)/, 'pointer-held potion and ammo buttons must share their ownership state with the wheel adapter');
+assert.match(game, /heldEntrySelectorKind === 'potions'[\s\S]*scrollEntries\(-dir\)/, 'a wheel over a pointer-held potion action must navigate instead of zooming');
+assert.match(game, /navigationOnly:true[\s\S]*onNavigate:\(\) => _openPotionBranch\(branch\)/, 'each potion item arch must retain a category marker that repopulates its parent without release');
+assert.match(game, /_arcMove\(px, py\); \/\/ Re-evaluate the same continuous drag/, 'one continuous drag must traverse a newly populated potion hierarchy without a second press');
+assert.match(game, /navigation\?\.navigationOnly\) navigation\.onNavigate\?\.\(\)/, 'wheel navigation over intermediate category markers must repopulate immediately');
 assert.match(game, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function _openPotionBranch[\s\S]*_outerR\(\)[\s\S]*function _openPotionItems[\s\S]*_outerR\(\)/, 'all potion hierarchy levels must use the ordinary tool/item arch radius');
 assert.doesNotMatch(game, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');
 assert.match(read('docs/js/alchemy-system.js'), /alchemy:\{level:alchemyLevel\(\),xp:/, 'Alchemy diagnostics must expose both level and XP');

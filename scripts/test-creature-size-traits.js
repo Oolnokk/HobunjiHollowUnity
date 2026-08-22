@@ -32,6 +32,14 @@ assert.deepEqual(
   { sizeClass: 'medium', x: 2, y: 2 },
   'genotype objects select the authored Drenkirra class scale',
 );
+const grehlrScale = context.CreatureGenetics.creatureSizeScale('grehlr', { sizeClass: 'medium' }); // Rare companion-size Grehlr regression case.
+const billboardGroup = { scale: { set(x, y, z) { this.x = x; this.y = y; this.z = z; } } }; // Mimics the Three.js group scale API.
+context.CreatureGenetics.applyCreatureBillboardScale(billboardGroup, grehlrScale);
+assert.deepEqual(
+  { x: billboardGroup.scale.x, y: billboardGroup.scale.y, z: billboardGroup.scale.z },
+  { x: 1, y: 0.5, z: 0.5 },
+  'a Medium Grehlr scales visible plane width on group Z as well as height on group Y',
+);
 assert.deepEqual(
   { ...context.CreatureGenetics.creatureSizeScale('unknown-creature', 'small') },
   { sizeClass: 'small', x: 1, y: 1 },
@@ -74,5 +82,7 @@ assert.equal(mutatedChild.sizeClass, 'medium', 'a successful endpoint mutation a
 
 const farmPanelSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
 assert.doesNotMatch(farmPanelSource, /scaleText|% scale|% wide|% tall/, 'Farm and Stable cards keep authored scale percentages hidden');
+const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
+assert.match(pixelProbeSource, /group\.scale\.z[\s\S]*%w×[\s\S]*group\.scale\.y[\s\S]*%h/, 'mobile pixel probe reports the live rotated billboard width and height axes');
 
 console.log('creature size scaling and trait-summary tests passed');

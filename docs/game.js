@@ -3784,7 +3784,7 @@
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
-        avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+        window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Animal planes face along group Z, so visible width cannot use group X.
         // Skip the species-differentiation tint for genotype-bearing
         // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
         // replaced by a genotype-composited texture and def.tint would
@@ -4492,8 +4492,7 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        grp.scale.x = c.visualScaleX || 1;
-        grp.scale.y = (c.visualScaleY || 1) * scaleY;
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY); // Preserves both authored size axes through attack squash.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -20320,6 +20319,7 @@
         }
 
         let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
+        let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
         let _fadingEls = [];
 
         function _clearArc(keepBackdrop = false) {
@@ -20459,11 +20459,19 @@
           const items = category === 'healing' ? state.healing?.usefulItems
             : category === 'cures' ? state.cures?.usefulItems
               : category === 'buffs' ? state.buffs?.items : state.flasks?.items;
-          _openEntries(`potion-items-${category}`, (items || []).map(entry => {
+          const itemEntries = (items || []).map(entry => {
             const definition = entry.recipe || window.AlchemySystem.RECIPE_DEFS[entry.payload.recipeId];
             const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
             return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
-          }), _outerR());
+          });
+          const branch = category === 'healing' || category === 'cures' ? 'medicine' : 'utility'; // Used by the persistent category marker to repopulate its parent arch.
+          const categoryMeta = {
+            healing: { icon:'💚', label:'Healing' }, cures: { icon:'🩹', label:'Cures' },
+            buffs: { icon:'✨', label:'Buffs' }, flasks: { icon:'🫙', label:'Flasks' },
+          }[category];
+          const parentEntry = { id:`category-${category}`, ...categoryMeta, className:'potion-category potion-parent', navigationOnly:true, onNavigate:() => _openPotionBranch(branch) }; // Scrolling/dragging back over this category repopulates without release.
+          itemEntries.splice(Math.floor(itemEntries.length / 2), 0, parentEntry);
+          _openEntries(`potion-items-${category}`, itemEntries, _outerR());
         }
 
         let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
@@ -20557,10 +20565,16 @@
           _setActive(best);
           if (_arcOpen === 'entries:potion-root') {
             const branch = _arcSlots[best]?.data.id;
-            if (branch === 'medicine' || branch === 'utility') _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+            if (branch === 'medicine' || branch === 'utility') {
+              _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+              _arcMove(px, py); // Re-evaluate the same continuous drag against the newly populated category arch.
+            }
           } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
             const category = _arcSlots[best]?.data;
             if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) _openPotionItems(category.id);
+          } else if (_arcOpen?.startsWith('entries:potion-items-')) {
+            const navigation = _arcSlots[best]?.data;
+            if (navigation?.navigationOnly) navigation.onNavigate?.();
           }
         }
 
@@ -20649,6 +20663,8 @@
               return true;
             }
             _setActive((_arcActive + (dir < 0 ? -1 : 1) + _arcSlots.length) % _arcSlots.length);
+            const navigation = _arcSlots[_arcActive]?.data;
+            if (navigation?.navigationOnly) navigation.onNavigate?.(); // Intermediate categories repopulate immediately; release remains reserved for final items.
             return true;
           },
           movePointer(x, y) { _arcMove(x, y); },
@@ -20657,6 +20673,9 @@
             if (_arcOpen?.startsWith('entries:potion-') && !_arcOpen.startsWith('entries:potion-items-')) _clearArc();
             else _arcUp();
           }, // Releasing a held selector commits only a concrete item/ammo choice, never a hierarchy branch.
+          beginHeldSelection(kind) { _heldEntrySelectorKind = kind === 'ammo' ? 'ammo' : kind === 'potions' ? 'potions' : null; },
+          endHeldSelection() { _heldEntrySelectorKind = null; },
+          heldSelectionKind() { return _heldEntrySelectorKind; },
           close() { _clearArc(); },
           entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
           toolMenuOpen() { return _arcOpen === 'tool'; }
@@ -21152,6 +21171,7 @@
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
               if (act === 'ammo_select' || act === 'potion_select') {
                 _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
+                window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
                 _selectorArcOpen = false;
                 _selectorHoldTimer = setTimeout(() => {
                   if (_ptId === null) return;
@@ -21250,6 +21270,7 @@
               _drag = false;
               _chargeFiredOnPress = false;
               _selectorArcOpen = false;
+              if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
               _selectorKind = null;
               document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
               _flaskGesture = false;
@@ -22144,12 +22165,14 @@
             potionAction3Press.down = false;
             if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
             if (potionAction3Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
             potionAction3Press.held = false;
             return;
           }
           if (potionAction3Press.down) return;
           potionAction3Press.down = true;
           potionAction3Press.held = false;
+          window._desktopSelectionArc?.beginHeldSelection?.('potions');
           potionAction3Press.timer = setTimeout(() => {
             if (!potionAction3Press.down) return;
             potionAction3Press.held = true;
@@ -22172,12 +22195,14 @@
             rangedAmmoAction2Press.down = false;
             if (rangedAmmoAction2Press.timer) { clearTimeout(rangedAmmoAction2Press.timer); rangedAmmoAction2Press.timer = null; }
             if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
             rangedAmmoAction2Press.held = false;
             return;
           }
           if (rangedAmmoAction2Press.down) return;
           rangedAmmoAction2Press.down = true;
           rangedAmmoAction2Press.held = false;
+          window._desktopSelectionArc?.beginHeldSelection?.('ammo');
           rangedAmmoAction2Press.timer = setTimeout(() => {
             if (!rangedAmmoAction2Press.down) return;
             rangedAmmoAction2Press.held = true;
@@ -22497,14 +22522,23 @@
       function handleGameWheel(e, heldOnly = false) {
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
-        if (isDesktop && potionAction3Press.down) {
+        const heldEntrySelectorKind = window._desktopSelectionArc?.heldSelectionKind?.(); // Includes keyboard/controller and pointer-held action buttons.
+        if (isDesktop && (potionAction3Press.down || heldEntrySelectorKind === 'potions')) {
           e.preventDefault();
-          if (!potionAction3Press.held) {
+          if (potionAction3Press.down && !potionAction3Press.held) {
             potionAction3Press.held = true;
             if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
             window._desktopSelectionArc?.openPotions();
+          } else if (!window._desktopSelectionArc?.entryMenuOpen?.()) {
+            window._desktopSelectionArc?.openPotions();
           }
           window._desktopSelectionArc?.scrollEntries(-dir);
+          return true;
+        }
+        if (isDesktop && heldEntrySelectorKind === 'ammo') {
+          e.preventDefault();
+          window._desktopSelectionArc?.openAmmo();
+          window._desktopSelectionArc?.scrollAmmo(-dir);
           return true;
         }
         if (isDesktop && desktopHoldKeys.q.down) {
