@@ -13067,16 +13067,24 @@
         }
 
         // Shoulder-surf: rotate the final (already cardinal-biased) local
-        // move vector into world space relative to the shared aim point
-        // (mouseLookAngle — see updateShoulderSurfReticleAim) instead of
-        // leaving it on world-fixed axes, so "forward" always means "toward
-        // what's actually being targeted," like a standard third-person
-        // action camera. Deliberately last, after cardinal bias: biasing
-        // this vector toward world cardinals instead of the player's actual
-        // local forward/strafe axes would visibly skew the intended
-        // camera-relative direction.
+        // move vector into world space relative to the direction the camera
+        // is actually facing (cameraFacingAngleRad()) instead of leaving it
+        // on world-fixed axes, so "forward" always means "toward wherever
+        // the camera is looking," like a standard third-person action
+        // camera. Deliberately NOT mouseLookAngle (the shared aim point head
+        // yaw/body catch-up use, a bearing toward a specific ground spot):
+        // that's fine for orientation, which just re-aims every frame, but
+        // using it here would feed the player's own position back into the
+        // "forward" direction itself — walking toward a close reticle point
+        // swings its bearing as you approach and pass it, so "forward" would
+        // spin (even flip outright) mid-stride instead of holding steady.
+        // cameraFacingAngleRad() is a pure direction with no such point to
+        // pass, so it can't destabilize this way. Deliberately last, after
+        // cardinal bias: biasing this vector toward world cardinals instead
+        // of the player's actual local forward/strafe axes would visibly
+        // skew the intended camera-relative direction.
         if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
-          const aim = mouseLookAngle;
+          const aim = cameraFacingAngleRad();
           const s = Math.sin(aim), c = Math.cos(aim);
           const rIx = -ix * s - iy * c;
           const rIy =  ix * c - iy * s;
