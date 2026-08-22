@@ -139,6 +139,10 @@
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
         menuOpen = true;
+        // Release shoulder-surf's Pointer Lock (see requestShoulderSurfPointerLock
+        // below) so the cursor is free to click around the menu — it isn't
+        // visible/usable at all while locked.
+        releaseShoulderSurfPointerLock();
         window.WorldPopupText?.clearInteractionPrompts?.();
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
@@ -172,6 +176,10 @@
         menuPanel.classList.remove('open');
         paused = false;
         window.FurniturePlacer?.refreshVisibility();
+        // The click that closed the menu is itself a user gesture, so
+        // resume shoulder-surf's Pointer Lock immediately rather than
+        // waiting for a separate click on the game world.
+        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -20000,6 +20008,28 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
+      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
+      // the OS cursor itself must never move (a free-roaming cursor runs out
+      // of screen/desk space and pins at the display edge, capping how far
+      // you can turn) — so it Pointer-Locks the canvas instead of just
+      // reading movementX/Y off a visible cursor. Locked or not, the
+      // mousemove handler below always reads movementX/Y the same way;
+      // locking only stops the OS cursor from moving/being visible at all,
+      // so those deltas keep coming no matter how far or how many times the
+      // physical mouse moves in one direction.
+      function shoulderSurfPointerLockActive() {
+        return document.pointerLockElement === threeContainer;
+      }
+      function requestShoulderSurfPointerLock() {
+        if (!isDesktop || shoulderSurfPointerLockActive()) return;
+        // Can reject (no transient user activation, or the browser's own
+        // rate-limit on repeated requests) — that's fine, the click-to-relock
+        // handler below gives the player another chance.
+        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
+      }
+      function releaseShoulderSurfPointerLock() {
+        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
+      }
       document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
         s_shoulderSurf = e.target.checked;
         // Only live-swap while in one of the two plain gameplay camera
@@ -20012,6 +20042,17 @@
           if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
           else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
         }
+        if (s_shoulderSurf) {
+          requestShoulderSurfPointerLock();
+          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
+        } else releaseShoulderSurfPointerLock();
+      });
+      // Re-engage after the browser's own Escape-releases-lock behavior, or
+      // after the settings menu (below) let go of it — a plain click on the
+      // game world is the same click-to-resume-look convention most desktop
+      // games with Pointer Lock use.
+      threeContainer.addEventListener('click', () => {
+        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
       });
 
       function gameLoop(now) {
@@ -20144,6 +20185,14 @@
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
+        // Safety net: some camera-mode transitions (fishing, the music
+        // minigame, NPC dialogue, harvest interactions...) assign
+        // activeCameraMode directly rather than through
+        // enterDefaultCameraMode(), so this catches any of them landing
+        // outside shoulder-surf while its Pointer Lock is still held —
+        // cheap enough (one property read) to just check every frame rather
+        // than hunting down every such call site individually.
+        if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
         updateCameraPosition();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
