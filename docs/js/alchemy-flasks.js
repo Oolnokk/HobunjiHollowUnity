@@ -54,7 +54,7 @@
     if (!aimState) return;
     const tile = deps.TILE || 64; // World-pixel to Three-unit conversion.
     ring.position.set(aimState.targetX / tile, deps.getGroundY?.(aimState.targetX, aimState.targetY) ?? 0.025, aimState.targetY / tile);
-    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Recipe-configured splash preview.
+    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
     ring.scale.setScalar(radius / 0.27);
   }
 
@@ -184,3 +184,22 @@
 
   window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, primaryAction, heldActions, update, diagnostics, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
+
+// The shared selector presentation and mobile tap-only potion navigator both
+// load after game.js has created window._desktopSelectionArc.
+addEventListener('load', () => {
+  if (!document.querySelector('script[data-quick-potion-arc-ui]')) {
+    const presentation = document.createElement('script'); // Shared visual/radius/animation treatment for toggled selector arches.
+    presentation.src = 'js/quick-potion-arc-ui.js?v=20260821a';
+    presentation.dataset.quickPotionArcUi = '1';
+    presentation.async = false;
+    document.head.appendChild(presentation);
+  }
+  if (!document.querySelector('script[data-mobile-potion-category-drag]')) {
+    const mobileTap = document.createElement('script'); // Mobile potion hierarchy uses actual circle taps; desktop/controller retain the original selector input.
+    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260822d';
+    mobileTap.dataset.mobilePotionCategoryDrag = '1';
+    mobileTap.async = false;
+    document.head.appendChild(mobileTap);
+  }
+}, { once:true });

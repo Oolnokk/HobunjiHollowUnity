@@ -1,0 +1,1 @@
+Mobile Potion Select hierarchy is tap-only. Implementation remains in mobile-potion-category-drag.js for loader/path compatibility with existing branch history.
