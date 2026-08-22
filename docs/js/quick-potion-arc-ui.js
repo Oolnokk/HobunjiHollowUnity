@@ -4,18 +4,20 @@
 (() => {
   'use strict';
 
-  const ARC_SPAN_SCALE = 0.42; // Used by every toggled selector to keep its choices clustered like the approved potion selector.
+  const SELECTOR_START_DEG = 155; // Used by every toggled selector as the left/top end of one stable compact sweep.
+  const SELECTOR_END_DEG = 115; // Used by every toggled selector as the right/bottom end of the same sweep.
   const BUTTON_DIAMETER_SCALE = 0.50; // Used by every toggled selector so all selector buttons match the approved half-size potion buttons.
-  const LABEL_OUTSET_PX = 17; // Used by the large curved potion-category title to preserve its current button-to-title gap.
+  const LABEL_OUTSET_PX = 17; // Used by the large curved potion-category title to preserve its approved button-to-title gap.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
   const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose live geometry is the selector-ring source of truth.
+  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // One canonical outer-ring button; using one radius prevents mixed-size/transition measurements from producing a zigzag.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
 
   let installed = false; // Guards against duplicate observers if the module is cache-busted/reloaded.
   let currentBranchLabel = ''; // Medicine/Utility heading retained while the concrete child category is open.
   let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
   let refreshQueued = false; // Coalesces selection-arc DOM mutations into one animation-frame layout pass.
-  let lastGeometry = null; // Mobile-visible diagnostic snapshot of the actual outer-ring geometry used by selectors.
+  let lastGeometry = null; // Mobile-visible diagnostic snapshot of the exact center/radius used by every selector button.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -29,71 +31,53 @@
       .replace(/\s+/g, ' ').trim();
   }
 
-  function slotCenter(slot) {
-    const rect = slot.getBoundingClientRect();
+  function elementCenter(element) {
+    const rect = element?.getBoundingClientRect?.();
+    if (!rect) return null;
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }
-
-  function median(values) {
-    const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
-    if (!sorted.length) return 0;
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   }
 
   function outerRingGeometry() {
     const anchor = document.getElementById(OUTER_ARCH_ID); // Zero-size bottom-right anchor shared by the permanent outer HUD ring.
-    const rect = anchor?.getBoundingClientRect?.();
-    const center = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: innerWidth, y: innerHeight };
-    const ringButtons = ['btnUnequipHeld', 'btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
-      .map(id => document.getElementById(id)).filter(Boolean);
-    const measuredRadii = ringButtons.map(button => {
-      const point = slotCenter(button);
-      return Math.hypot(point.x - center.x, point.y - center.y);
-    }).filter(radius => radius > 8);
-    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)) when child geometry is unavailable.
-    const radius = median(measuredRadii) || fallbackRadius;
-    lastGeometry = { center, radius, measuredButtons: measuredRadii.length };
+    const anchorRect = anchor?.getBoundingClientRect?.();
+    const center = anchorRect
+      ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 }
+      : { x: innerWidth, y: innerHeight };
+
+    const referenceButton = document.getElementById(OUTER_RADIUS_REFERENCE_ID); // Tool button is always authored directly on --ar2.
+    const referenceCenter = elementCenter(referenceButton);
+    const measuredRadius = referenceCenter ? Math.hypot(referenceCenter.x - center.x, referenceCenter.y - center.y) : 0;
+    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)) if the live reference cannot be measured.
+    const radius = measuredRadius > 8 ? measuredRadius : fallbackRadius;
+
+    lastGeometry = {
+      center,
+      radius,
+      referenceButton: OUTER_RADIUS_REFERENCE_ID,
+      measured: measuredRadius > 8,
+    };
     return lastGeometry;
   }
 
-  function unwrapAngles(records) {
-    if (!records.length) return records;
-    let previous = records[0].angle;
-    records[0].unwrappedAngle = previous;
-    for (let index = 1; index < records.length; index++) {
-      let angle = records[index].angle;
-      while (angle - previous > Math.PI) angle -= Math.PI * 2;
-      while (angle - previous < -Math.PI) angle += Math.PI * 2;
-      records[index].unwrappedAngle = angle;
-      previous = angle;
-    }
-    return records;
+  function selectorAngleRad(index, count) {
+    const t = count <= 1 ? 0.5 : index / (count - 1); // Keeps a one-entry selector centered instead of pinning it to an edge.
+    const degrees = SELECTOR_START_DEG + (SELECTOR_END_DEG - SELECTOR_START_DEG) * t;
+    return degrees * Math.PI / 180;
   }
 
   function layoutSharedSelector(slots) {
     if (!slots.length) return;
-    const { center, radius } = outerRingGeometry(); // Exact permanent-ring geometry, even while visibility:hidden keeps it out of view.
-    const records = unwrapAngles(slots.map(slot => {
-      const point = slotCenter(slot);
-      return {
-        slot,
-        angle: Math.atan2(point.y - center.y, point.x - center.x),
-        unwrappedAngle: 0,
-      };
-    }));
-    const midpoint = records.length > 1
-      ? (records[0].unwrappedAngle + records[records.length - 1].unwrappedAngle) / 2
-      : records[0]?.unwrappedAngle || -Math.PI * 3 / 4;
+    const { center, radius } = outerRingGeometry(); // One center + one radius for the whole selector; no per-button radius measurement is allowed.
 
-    records.forEach(record => {
-      const slot = record.slot;
+    slots.forEach((slot, index) => {
       slot.classList.add('shared-selection-slot');
-      if (slot.dataset.sharedSelectionPositioned === '1') return;
-      const angle = midpoint + (record.unwrappedAngle - midpoint) * ARC_SPAN_SCALE;
-      slot.style.left = `${center.x + Math.cos(angle) * radius}px`;
-      slot.style.top = `${center.y + Math.sin(angle) * radius}px`;
-      slot.dataset.sharedSelectionPositioned = '1';
+      const angle = selectorAngleRad(index, slots.length); // Stable slot order prevents geometry feedback from left/top transitions.
+      const left = center.x + Math.cos(angle) * radius;
+      const top = center.y - Math.sin(angle) * radius; // Screen Y grows downward while the authored outer-ring angles grow upward.
+      slot.style.setProperty('left', `${left}px`, 'important');
+      slot.style.setProperty('top', `${top}px`, 'important');
+      slot.dataset.sharedSelectionRadius = radius.toFixed(2); // Visible through mobile diagnostics/DOM inspection when debugging a bad layout.
+      slot.dataset.sharedSelectionAngle = (angle * 180 / Math.PI).toFixed(2);
     });
   }
 
@@ -143,7 +127,7 @@
     if (!text || slots.length < 2) return;
 
     const { center } = outerRingGeometry();
-    const points = slots.map(slot => outwardLabelPoint(slotCenter(slot), center)); // Same 17px relative spacing after snapping the selector to the outer ring.
+    const points = slots.map(slot => outwardLabelPoint(elementCenter(slot), center)); // Same 17px relative spacing after every slot is locked to the one outer-ring radius.
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
@@ -206,9 +190,19 @@
     );
   }
 
+  function activeSelectionSlots() {
+    // Selection slots are appended directly to the page by the shared presenter.
+    // Fading/retired slots can coexist briefly during hierarchy transitions, so
+    // ignore elements that are no longer participating in layout/hit-testing.
+    return [...document.querySelectorAll('.arc-slot')].filter(slot => {
+      const style = getComputedStyle(slot);
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
+    });
+  }
+
   function refresh() {
     refreshQueued = false;
-    const slots = [...document.querySelectorAll('.arc-slot')];
+    const slots = activeSelectionSlots();
     if (!slots.length) {
       setOuterArchHidden(false);
       removeCurvedLabel();
@@ -216,7 +210,7 @@
     }
 
     setOuterArchHidden(true); // Every toggled selector temporarily replaces the permanent outer ring visually.
-    const potionOpen = Boolean(document.querySelector(POTION_MARKER_SELECTOR));
+    const potionOpen = slots.some(slot => slot.matches(POTION_MARKER_SELECTOR));
     if (potionOpen) {
       const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
       const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
@@ -246,12 +240,14 @@
         pointer-events:none !important;
       }
       .arc-slot.shared-selection-slot {
+        position:fixed !important;
         width:clamp(22px,4.25vmin,30px) !important;
         height:clamp(22px,4.25vmin,30px) !important;
         border-width:1px !important;
         gap:1px !important;
         overflow:visible !important;
         box-shadow:0 2px 7px rgba(0,0,0,.42) !important;
+        transition:transform .08s, background .08s, border-color .08s, opacity .12s !important;
       }
       .arc-slot.shared-selection-slot .arc-icon { font-size:.78em; }
       .arc-slot.shared-selection-slot .arc-icon img,
@@ -294,29 +290,25 @@
       const relevantRecords = records.filter(recordTouchesSelectionArc); // Ignores the curved SVG label's own add/remove mutations.
       if (relevantRecords.length) queueRefresh(relevantRecords);
     }).observe(document.body, { childList:true, subtree:true });
-    addEventListener('resize', () => {
-      document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.sharedSelectionPositioned);
-      queueRefresh();
-    }, { passive:true });
+    addEventListener('resize', () => queueRefresh(), { passive:true });
     queueRefresh();
+
     window.QuickPotionArcUI = Object.freeze({
       diagnostics: () => ({
         installed,
         currentBranchLabel,
         currentLeafLabel,
         outerRingGeometry:lastGeometry,
-        arcSpanScale:ARC_SPAN_SCALE,
+        selectorStartDeg:SELECTOR_START_DEG,
+        selectorEndDeg:SELECTOR_END_DEG,
         buttonDiameterScale:BUTTON_DIAMETER_SCALE,
         labelOutsetPx:LABEL_OUTSET_PX,
         outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
-        selectorCount:document.querySelectorAll('.arc-slot').length,
+        selectorRadii:[...document.querySelectorAll('.arc-slot.shared-selection-slot')].map(slot => Number(slot.dataset.sharedSelectionRadius)),
       }),
-      refresh: () => {
-        document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.sharedSelectionPositioned);
-        queueRefresh();
-      },
+      refresh: () => queueRefresh(),
     });
-    log('installed', { arcSpanScale:ARC_SPAN_SCALE, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
+    log('installed', { selectorStartDeg:SELECTOR_START_DEG, selectorEndDeg:SELECTOR_END_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
