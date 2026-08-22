@@ -39,7 +39,7 @@
     const bb = b.x * b.x + b.y * b.y;
     const cc = c.x * c.x + c.y * c.y;
     return {
-      x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (b.y - a.y)) / d,
+      x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (a.y - b.y)) / d,
       y: (aa * (c.x - b.x) + bb * (a.x - c.x) + cc * (b.x - a.x)) / d,
     };
   }
