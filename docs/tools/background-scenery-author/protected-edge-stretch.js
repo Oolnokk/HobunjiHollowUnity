@@ -5,7 +5,7 @@
 // terrain baker here too so the 3D author preview uses exactly the runtime UV
 // code instead of maintaining a second approximation.
 if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof document.write === 'function') {
-  document.write('<script src="../../js/terrain-render-chunks.js?v=20260822jigsaw1"><\\/script>');
+  document.write('<script src="../../js/terrain-render-chunks.js?v=20260822jigsaw1"></script>');
 }
 
 (() => {
@@ -47,10 +47,6 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
     return {schema:DEFAULTS.schema,enabled:src.enabled!==false,slots:{grass:readSlot('grass'),cliff:readSlot('cliff')}};
   }
 
-  // BackgroundScenery's core resolver deliberately whitelists its v1 keys.
-  // Preserve this author-owned UV block through load/export/apply. The runtime
-  // terrain baker has compatible defaults globally; the author uses these slot
-  // values for exact live comparison/tuning.
   const originalResolveConfig = Core.resolveConfig.bind(Core);
   Core.resolveConfig = function jigsawSurfaceResolveConfig(map) {
     const cfg = originalResolveConfig(map);
@@ -130,8 +126,6 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
     img.src=assetUrl(path);
   }
 
-  // Deliberately irregular with a notch and an interior hole so the schematic
-  // communicates the real topology: the border is not a rectangular crop.
   const outer=[[.08,.22],[.24,.08],[.47,.13],[.57,.05],[.83,.16],[.91,.38],[.77,.48],[.88,.69],[.72,.91],[.48,.83],[.34,.95],[.14,.79],[.22,.58],[.07,.49]];
   const hole=[[.43,.39],[.58,.34],[.67,.47],[.59,.60],[.43,.58],[.36,.48]];
   function pathPoly(c,pts,x,y,w,h){c.beginPath();pts.forEach((p,i)=>{const px=x+p[0]*w,py=y+p[1]*h;i?c.lineTo(px,py):c.moveTo(px,py);});c.closePath();}
