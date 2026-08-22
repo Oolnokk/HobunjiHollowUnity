@@ -3,7 +3,7 @@
 // keep at least 3 tiles of distance, and lift as the camera is forced closer.
 (() => {
   'use strict';
-  const VERSION = '1.1.0'; // Reported by the generator debug panel.
+  const VERSION = '1.2.0'; // Reported by the generator debug panel.
   const CAMERA_FLOOR_CLEARANCE = 0.2; // Same minimum floor clearance used by game.js.
   const HIT_PADDING = 0.6; // Same stop-short distance used by game.js.
   const MIN_SAFE_DISTANCE = 3; // Same minimum camera distance used by game.js.
@@ -12,12 +12,14 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   function collectObstacles(scene) {
-    // Generator marks wall/elevation groups and blocking furniture as camera obstacles.
-    const out = [];
+    // Prefer purpose-built camera proxy shells when the standalone tool provides them.
+    // This keeps decorative holes, individual wall bricks and rubble out of the raycast.
+    const proxies = [], legacy = [];
     scene?.traverse?.(object => {
-      if (object?.userData?.cameraObstacle === true) out.push(object);
+      if (object?.userData?.cameraOcclusionProxy === true) proxies.push(object);
+      else if (object?.userData?.cameraObstacle === true) legacy.push(object);
     });
-    return out;
+    return proxies.length ? proxies : legacy;
   }
 
   function cameraLookTarget(THREE, camera, floorY, fallback) {
@@ -125,7 +127,7 @@
         const solved = solve(THREE, raycaster, state.obstacles, lookAt, ideal, player.position.y);
         camera.position.set(solved.x, solved.y, solved.z);
         camera.lookAt(lookAt.x, lookAt.y, lookAt.z);
-        state.debug = { obstacleCount: state.obstacles.length, lookAt, ...solved };
+        state.debug = { obstacleCount: state.obstacles.length, proxyMode: state.obstacles.some(o => o.userData?.cameraOcclusionProxy === true), lookAt, ...solved };
       }
       state.raf = requestAnimationFrame(frame);
     };
