@@ -184,3 +184,14 @@
 
   window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, primaryAction, heldActions, update, diagnostics, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
+
+// Quick Potion Select has its own presentation module so the shared arc input
+// state machine remains in game.js. Load it once the page has completed its
+// normal boot, which guarantees window._desktopSelectionArc already exists.
+addEventListener('load', () => {
+  if (document.querySelector('script[data-quick-potion-arc-ui]')) return;
+  const script = document.createElement('script'); // Loads the potion-only arch presentation after game.js has created the shared selector.
+  script.src = 'js/quick-potion-arc-ui.js?v=20260821a';
+  script.dataset.quickPotionArcUi = '1';
+  document.head.appendChild(script);
+}, { once:true });
