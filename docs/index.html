@@ -16,10 +16,10 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260821alchemy1"></script>
+  <script src="config/scratchbones-config.js?v=20260821alchemy2"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260821e"></script>
-  <link rel="stylesheet" href="style.css?v=20260821alchemy2">
+  <link rel="stylesheet" href="style.css?v=20260821alchemy3">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
@@ -1365,8 +1365,9 @@
               <button id="debugViewLogBtn"   class="debug-view-tab active" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:6px;color:#6aa7ff;cursor:pointer">Log</button>
               <button id="debugViewProbeBtn" class="debug-view-tab"        style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">🎯 Pixel Probe</button>
             </div>
-            <div style="display:flex;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button id="debugProbeArmBtn" style="font-size:11px;padding:3px 10px;background:rgba(163,230,53,.15);border:1px solid rgba(163,230,53,.4);border-radius:6px;color:#a3e635;cursor:pointer">🎯 Probe a pixel</button>
+              <button id="debugRigTransformDumpBtn" style="font-size:11px;padding:3px 10px;background:rgba(69,214,160,.15);border:1px solid rgba(69,214,160,.4);border-radius:6px;color:#45d6a0;cursor:pointer">Dump rig transforms</button>
               <button id="debugCopyBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy</button>
               <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
             </div>
@@ -1554,23 +1555,28 @@
     </div>
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
+      <!-- Put away whichever tool, item, or weapon is currently visible while
+           keeping its gear assignment/selection intact. Z mirrors this on
+           keyboard. This is the first (leftmost) outer-arch control. -->
+      <button id="btnUnequipHeld" class="abt" aria-label="Put away held tool, item, or weapon">
+        <span class="abt-icon">✋</span>
+      </button>
       <!-- Combat quick-switch: enters melee from a normal tool, then swaps
            directly between the dedicated melee and ranged slots. -->
       <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
-      </button>
-      <!-- Call/dismiss mount: same outer ring as tool/item dials and the
-           weapon switch, one more step out (135°) — evenly spaces all four
-           at 15° apart. Mirrors the V key / D-pad down 'toggleMount' action;
-           .active reflects mountRideState !== 'none' (see updateMountRide). -->
-      <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
-        <span class="abt-icon">🐴</span>
       </button>
       <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
         <span class="ts-icon" id="toolBtnIcon">⛏️</span>
         <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
       </button>
       <button id="itemBtn" aria-label="Select item">🌾</button>
+      <!-- Call/dismiss mount: final control on the outer ring after item
+           select. Mirrors the V key / D-pad down 'toggleMount' action;
+           .active reflects mountRideState !== 'none' (see updateMountRide). -->
+      <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
+        <span class="abt-icon">🐴</span>
+      </button>
     </div>
     <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
     <div id="actionStack">
@@ -1676,11 +1682,11 @@
        also loaded by the Attack Animation Editor, so a probed character's
        node-by-node local transforms use the exact same code/format as the
        editor's own preview dump. Must load before pixel-probe.js below. -->
-  <script src="js/transform-dump-utils.js?v=20260820a"></script>
+  <script src="js/transform-dump-utils.js?v=20260821a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260821d"></script>
+  <script src="js/pixel-probe.js?v=20260821e"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1699,7 +1705,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260811a"></script>
+  <script src="js/fishing-minigame.js?v=20260821a"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -1753,7 +1759,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260821alchemy5"></script>
+  <script src="game.js?v=20260821alchemy6"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

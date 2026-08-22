@@ -21,6 +21,11 @@
 // authored offset (e.g. every creature's shoulderGrip carries -61° yaw) —
 // apply it, don't discard it.
 //
+// The V15.28 character anchors were authored while Animation Author built its
+// portrait plane at width 1.0, although game.js builds the same plane at width
+// 0.9. The concise character overrides below convert those absolute X/Y/Z
+// positions by 0.9. Uniform scaling does not change rotationDeg or percentages.
+//
 // characters are keyed "<speciesId>::<gender>"; creatures are keyed by their
 // CREATURE_DB kind. Missing entries should fall back to a hardcoded estimate
 // rather than throwing — re-export from the tool and refresh this file
@@ -31,28 +36,42 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
 // overrides keep the canonical one-line library intact while replacing every
 // field that was deliberately reauthored in the supplied character profiles.
 (() => {
+  const authoredPreviewBaseWidth = 1; // Records the accidentally oversized Animation Author portrait used while these character anchors were positioned.
+  const gameAvatarBaseWidth = 0.9; // Matches pngPlaneAvatar.worldModelWidth and the explicit modelWidth used by game.js.
+  const authoredPreviewToGameScale = gameAvatarBaseWidth / authoredPreviewBaseWidth; // Converts absolute avatar-local attachment positions into runtime coordinates.
   const updates = { // Applied below to gameplay and every repository-backed authoring preview.
-    'mashtzarr::male': { posterior: 0.6880202107561688, perch: [-0.3080816783597182, 0.8820611278141346, 0], left: [0.2938287377558306, 0.471474644548211, 0], right: [-0.3481292844745114, 0.5072329547240978, 0], pixel: [63.960809102402024, 87.5], height: 1, placement: 0.755, bodyScale: 1.18, handScale: 0.925, footScale: 1.175, armLength: 0 },
-    'tletingan::male': { posterior: 8.329594593937665, perch: [-0.17173123931623935, 0.5355, 0], left: [0.22770354382724423, 0.42663710735156957, 0], right: [-0.2448354156580218, 0.4465232083661127, 0], pixel: [59.09264957264957, 108.5], height: 0.85, placement: 0.645, bodyScale: 0.85, handScale: 0.9, footScale: 1, armLength: 6 },
-    'kenkari::male': { posterior: 7.633738099540614, perch: [-0.18055321970300925, 0.37969897363327487, 0], left: [0.17819817802695415, 0.27810760526210354, 0], right: [-0.18055321970300925, 0.37969897363327487, 0], pixel: [79.65683229813665, 77.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 1, footScale: 1, armLength: 0 },
-    'mao-ao::male': { posterior: -9.686481272760854, perch: [-0.29650716367602115, 0.6947557240731601, 0], left: [0.19067248465844266, 0.6947557240731601, 0], right: [-0.28087406205430004, 0.6455541403639915, 0], pixel: [62.551070840197696, 125.5], placement: 0.95, bodyScale: 1, handScale: 1.1, footScale: 1.05, armLength: 0 },
-    'engh-sho::male': { posterior: -12.036557901087457, perch: [-0.2823783104116402, 0.5175336815283819, 0], left: [0.2721813782445264, 0.6838406837818225, 0], right: [-0.28930388062923146, 0.7000103424366998, 0], pixel: [53.60656565656566, 128.5], height: 0.95, placement: 1.005, bodyScale: 0.95, handScale: 1.15, footScale: 1.275, armLength: 0 },
-    'mao-ao::female': { posterior: -4.30199269420537, perch: [-0.22083596137467643, 0.6289206407533765, 0], left: [0.1771042396564939, 0.6511546407522855, 0], right: [-0.23898599170593354, 0.646996571654354, 0], pixel: [76.5545073375262, 114.5], height: 1, placement: 0.925, bodyScale: 1, handScale: 1, footScale: 1.025, armLength: 0 },
-    'engh-sho::female': { posterior: -8.338179933841042, perch: [-0.13091066725197542, 0.69825, 0], left: [0.20505349784094706, 0.4967497459859368, 0], right: [-0.24815066240089945, 0.46042886220274515, 0], pixel: [71.9398595258999, 112.5], height: 0.95, placement: 0.975, bodyScale: 0.95, handScale: 1.225, footScale: 1.325, armLength: 0 },
-    'mashtzarr::female': { posterior: -1.540326776219386, perch: [-0.21765356423931137, 0.29498687183448, 0], left: [0.30553153725919435, 0.39823082948935073, 0], right: [-0.2938000697183753, 0.37168801102709437, 0], pixel: [72.13592233009709, 97.5], height: 1, placement: 0.79, bodyScale: 1.18, handScale: 0.9, footScale: 1.125, armLength: 0 },
-    'kenkari::female': { posterior: 14.996754350465022, perch: [-0.13819980616286182, 0.29929878500014695, 0], left: [0.1629792650553279, 0.29929878500014695, 0], right: [-0.16564616738866406, 0.25011972083640993, 0], pixel: [87.90841750841751, 82.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 0.925, footScale: 1, armLength: 0 },
-    'tletingan::female': { posterior: -1.3735593215106594, perch: [-0.18362271672504038, 0.30917820531717677, 0], left: [0.19339659287777322, 0.38426858848533485, 0], right: [-0.19326419458235525, 0.38220450093854685, 0], pixel: [67.36241610738254, 99.5], height: 0.85, placement: 0.62, bodyScale: 0.85, handScale: 0.925, footScale: 1.025, armLength: 5 },
+    'mashtzarr::male': { posterior: 0.6880202107561688, posteriorFloor: 28.18802021075617, perch: [-0.3080816783597182, 0.8820611278141346, 0], left: [0.2938287377558306, 0.471474644548211, 0], right: [-0.3481292844745114, 0.5072329547240978, 0], pixel: [63.960809102402024, 87.5], height: 1, placement: 0.755, bodyScale: 1.18, handScale: 0.925, footScale: 1.175, armLength: 0 },
+    'tletingan::male': { posterior: 8.329594593937665, posteriorFloor: 24.829594593937666, perch: [-0.17173123931623935, 0.5355, 0], left: [0.22770354382724423, 0.42663710735156957, 0], right: [-0.2448354156580218, 0.4465232083661127, 0], pixel: [59.09264957264957, 108.5], height: 0.85, placement: 0.645, bodyScale: 0.85, handScale: 0.9, footScale: 1, armLength: 6 },
+    'kenkari::male': { posterior: 7.633738099540614, posteriorFloor: 13.133738099540614, perch: [-0.18055321970300925, 0.37969897363327487, 0], left: [0.17819817802695415, 0.27810760526210354, 0], right: [-0.18055321970300925, 0.37969897363327487, 0], pixel: [79.65683229813665, 77.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 1, footScale: 1, armLength: 0 },
+    'mao-ao::male': { posterior: -9.686481272760854, posteriorFloor: 37.31351872723915, perch: [-0.29650716367602115, 0.6947557240731601, 0], left: [0.19067248465844266, 0.6947557240731601, 0], right: [-0.28087406205430004, 0.6455541403639915, 0], pixel: [62.551070840197696, 125.5], placement: 0.95, bodyScale: 1, handScale: 1.1, footScale: 1.05, armLength: 0 },
+    'engh-sho::male': { posterior: -12.036557901087457, posteriorFloor: 40.46344209891254, perch: [-0.2823783104116402, 0.5175336815283819, 0], left: [0.2721813782445264, 0.6838406837818225, 0], right: [-0.28930388062923146, 0.7000103424366998, 0], pixel: [53.60656565656566, 128.5], height: 0.95, placement: 1.005, bodyScale: 0.95, handScale: 1.15, footScale: 1.275, armLength: 0 },
+    'mao-ao::female': { posterior: -4.30199269420537, posteriorFloor: 40.198007305794635, perch: [-0.22083596137467643, 0.6289206407533765, 0], left: [0.1771042396564939, 0.6511546407522855, 0], right: [-0.23898599170593354, 0.646996571654354, 0], pixel: [76.5545073375262, 114.5], height: 1, placement: 0.925, bodyScale: 1, handScale: 1, footScale: 1.025, armLength: 0 },
+    'engh-sho::female': { posterior: -8.338179933841042, posteriorFloor: 41.16182006615896, perch: [-0.13091066725197542, 0.69825, 0], left: [0.20505349784094706, 0.4967497459859368, 0], right: [-0.24815066240089945, 0.46042886220274515, 0], pixel: [71.9398595258999, 112.5], height: 0.95, placement: 0.975, bodyScale: 0.95, handScale: 1.225, footScale: 1.325, armLength: 0 },
+    'mashtzarr::female': { posterior: -1.540326776219386, posteriorFloor: 29.459673223780613, perch: [-0.21765356423931137, 0.29498687183448, 0], left: [0.30553153725919435, 0.39823082948935073, 0], right: [-0.2938000697183753, 0.37168801102709437, 0], pixel: [72.13592233009709, 97.5], height: 1, placement: 0.79, bodyScale: 1.18, handScale: 0.9, footScale: 1.125, armLength: 0 },
+    'kenkari::female': { posterior: 14.996754350465022, posteriorFloor: 18.49675435046502, perch: [-0.13819980616286182, 0.29929878500014695, 0], left: [0.1629792650553279, 0.29929878500014695, 0], right: [-0.16564616738866406, 0.25011972083640993, 0], pixel: [87.90841750841751, 82.5], height: 0.75, placement: 0.51, bodyScale: 0.75, handScale: 0.925, footScale: 1, armLength: 0 },
+    'tletingan::female': { posterior: -1.3735593215106594, posteriorFloor: 21.62644067848934, perch: [-0.18362271672504038, 0.30917820531717677, 0], left: [0.19339659287777322, 0.38426858848533485, 0], right: [-0.19326419458235525, 0.38220450093854685, 0], pixel: [67.36241610738254, 99.5], height: 0.85, placement: 0.62, bodyScale: 0.85, handScale: 0.925, footScale: 1.025, armLength: 5 },
   };
   const sharedProfileAliases = { 'rakakoan::male': 'kenkari::male', 'rakakoan::female': 'kenkari::female' }; // Reuses the confirmed gender-matched parrot rig geometry below.
   for (const [aliasKey, sourceKey] of Object.entries(sharedProfileAliases)) updates[aliasKey] = { ...updates[sourceKey], sharedFrom: sourceKey };
-  const identityAnchor = ([x, y, z]) => ({ position: { x, y, z }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }); // Builds the exact transform shape consumed by rig profiles.
+  const calibratedIdentityAnchor = ([x, y, z]) => ({
+    position: { x: x * authoredPreviewToGameScale, y: y * authoredPreviewToGameScale, z: z * authoredPreviewToGameScale },
+    rotationDeg: { x: 0, y: 0, z: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+  }); // Preserves each authored direction while moving its absolute position onto the game's 0.9-wide avatar.
   for (const [key, authored] of Object.entries(updates)) {
     const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[key]; // Existing species/gender record whose authored fields are replaced in place.
     if (!profile) continue;
-    profile.posteriorRule = { ...profile.posteriorRule, heightPercentOffset: authored.posterior, defaultRuleVersion: 3 };
-    profile.anchors.shoulderPerch = identityAnchor(authored.perch);
-    profile.anchors.leftHandShoulder = identityAnchor(authored.left);
-    profile.anchors.rightHandShoulder = identityAnchor(authored.right);
+    profile.posteriorRule = {
+      ...profile.posteriorRule,
+      heightPercentOffset: authored.posterior,
+      heightPercentFromFloor: authored.posteriorFloor,
+      ySource: 'portraitModelHeight-from-floor',
+      floorCalibrationSource: 'v15.28-authored-posterior-resolved-at-game-width',
+      defaultRuleVersion: 4,
+    };
+    profile.anchors.shoulderPerch = calibratedIdentityAnchor(authored.perch);
+    profile.anchors.leftHandShoulder = calibratedIdentityAnchor(authored.left);
+    profile.anchors.rightHandShoulder = calibratedIdentityAnchor(authored.right);
     profile.shoulderPerchRule = {
       ...profile.shoulderPerchRule,
       source: 'imported-authored-rig-json',
@@ -70,10 +89,18 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
     };
     profile.handShoulderRule = {
       source: 'rig-anchor-gizmo',
-      coordinateSpace: 'character-visual-local',
-      version: 1,
+      coordinateSpace: 'game-avatar-local-0.9-base-width',
+      version: 2,
       ...(authored.sharedFrom ? { sharedFrom: authored.sharedFrom } : {}),
     };
+    profile.anchorPositionCalibration = {
+      sourceBaseWidth: authoredPreviewBaseWidth,
+      targetBaseWidth: gameAvatarBaseWidth,
+      positionScale: authoredPreviewToGameScale,
+      axes: 'x-y-z',
+      rotationDeg: 'unchanged-uniform-scale',
+      version: 1,
+    }; // Makes the one-time repair inspectable in exported/static configuration diagnostics.
     profile.anatomy = {
       portraitVerticalPlacementRatio: authored.placement,
       portraitScale: authored.bodyScale,
@@ -84,13 +111,26 @@ window.HOBUNJI_ATTACHMENT_RIG_PROFILES = {"characters":{"tletingan::male":{"spec
     }; // Keeps species/gender proportions and free-hand reach beside the anchors they visually depend on.
     profile.characterAttachZDefaultVersion = 1;
   }
-  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, exactSuppliedProfiles: 10, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
+  window.HOBUNJI_AUTHORED_CHARACTER_RIG_UPDATES = Object.freeze({ count: Object.keys(updates).length, exactSuppliedProfiles: 10, authoredPreviewBaseWidth, gameAvatarBaseWidth, anchorPositionScale: authoredPreviewToGameScale, sharedProfileAliases: Object.freeze({ ...sharedProfileAliases }) }); // Exposes a mobile-readable diagnostic without requiring DevTools.
 })();
+
+window.HOBUNJI_ATTACHMENT_RIG_MATH = Object.freeze({
+  characterPosteriorY(posteriorRule, modelHeight, legacyHandAttachY) {
+    const height = Number(modelHeight);
+    const safeHeight = Number.isFinite(height) && height > 0 ? height : 0.9;
+    const floorPercent = Number(posteriorRule?.heightPercentFromFloor);
+    if (Number.isFinite(floorPercent)) return safeHeight * floorPercent / 100;
+    const legacyOffset = Number(posteriorRule?.heightPercentOffset);
+    const legacyBase = Number(legacyHandAttachY);
+    return (Number.isFinite(legacyBase) ? legacyBase : safeHeight / 2)
+      + safeHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
+  },
+}); // One posterior formula is shared by gameplay, procedural limbs, and Animation Author; old pixel-relative profiles remain readable as a fallback.
 
 // Apply profile-backed portrait/limb proportions, including per-gender body
 // scale. Animation Author loads shared configs after this file, so expose an
 // idempotent hook instead of interrupting its bootstrap.
-window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, exactSuppliedProfiles: 10, parrotSharedProfiles: 2 }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = { mashtzarrPortraitCorrection: 'pending', anatomyProfiles: 'pending', authoredCharacterProfiles: 12, exactSuppliedProfiles: 10, parrotSharedProfiles: 2, anchorPositionCalibration: 'applied:1.000->0.900', anchorPositionScale: 0.9, posteriorCoordinateSpace: 'portraitModelHeight-percent-from-gameplay-floor', posteriorPixelDependency: 'removed' }; // Exposes delayed correction and authored-profile status through the tool's existing page diagnostics.
 (() => {
   const applyAttachmentRigProfileCorrections = () => {
     const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives the authored anatomy values once the shared repository config exists.

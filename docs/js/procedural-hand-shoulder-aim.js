@@ -136,10 +136,13 @@
     function posteriorYInParent() {
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
       if (Number.isFinite(resolvedY)) return resolvedY;
-      const profileOffset = Number(attachmentRigProfile()?.posteriorRule?.heightPercentOffset); // Uses the same derived posterior rule as mounts and the rig-coordinate preview.
-      const heightPercentOffset = Number.isFinite(profileOffset) ? profileOffset : -18;
+      const posteriorRule = attachmentRigProfile()?.posteriorRule;
       const handAttachY = Number(avatarRoot.userData?.handAttachY ?? options.handAttachY);
-      return (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2) + modelHeight * heightPercentOffset / 100;
+      const sharedY = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(posteriorRule, modelHeight, handAttachY);
+      if (Number.isFinite(sharedY)) return sharedY;
+      const profileOffset = Number(posteriorRule?.heightPercentOffset);
+      return (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2)
+        + modelHeight * (Number.isFinite(profileOffset) ? profileOffset : -18) / 100;
     }
 
     function armLengthOffsetY() {

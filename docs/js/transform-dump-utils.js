@@ -83,6 +83,34 @@
     return entries;
   }
 
+  // Captures one Object3D without walking its children. This is used by the
+  // rig-parity reports, where a small, fixed set of semantic transforms is
+  // more useful than a complete scene graph. World rotation/scale are
+  // included because an innocent-looking unit local scale can still render
+  // differently after inheriting a scaled parent.
+  function snapshotObject(label, object, options = {}) {
+    if (!object?.isObject3D) return null;
+    object.updateWorldMatrix?.(true, false);
+    const localRotationDeg = eulerYXZFromQuat(object.quaternion);
+    let worldPosition = null, worldRotationDeg = null, worldScale = null;
+    try {
+      worldPosition = object.getWorldPosition(new object.position.constructor());
+      const worldQuaternion = object.getWorldQuaternion(new object.quaternion.constructor());
+      worldRotationDeg = eulerYXZFromQuat(worldQuaternion);
+      worldScale = object.getWorldScale(new object.scale.constructor());
+    } catch (_) { /* local values still make the report useful */ }
+    return {
+      label,
+      source: options.source || object.name || object.type || 'Object3D',
+      localPosition: { x: object.position.x, y: object.position.y, z: object.position.z },
+      localRotationDeg,
+      localScale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+      worldPosition: worldPosition ? { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z } : null,
+      worldRotationDeg,
+      worldScale: worldScale ? { x: worldScale.x, y: worldScale.y, z: worldScale.z } : null,
+    };
+  }
+
   function num(value, digits) { return Number(value).toFixed(digits); }
 
   function formatReport(entries, options = {}) {
@@ -104,5 +132,40 @@
     return lines.join('\n');
   }
 
-  global.HobunjiTransformDump = Object.freeze({ dumpSubtree, formatReport, eulerYXZFromQuat });
+  function tuple(value, digits = 4) {
+    if (!value) return '-';
+    return `(${num(value.x, digits)}, ${num(value.y, digits)}, ${num(value.z, digits)})`;
+  }
+
+  function angles(value) {
+    if (!value) return '-';
+    return `(X${num(value.pitch ?? value.x, 2)}°, Y${num(value.yaw ?? value.y, 2)}°, Z${num(value.roll ?? value.z, 2)}°)`;
+  }
+
+  // Formats editor and runtime rig snapshots field-for-field. Callers may
+  // mix snapshotObject() results with virtual runtime anchors, as long as
+  // they provide the same local*/world* fields.
+  function formatNamedTransformReport(entries, options = {}) {
+    const title = options.title || 'Rig transform parity dump';
+    const lines = [
+      `=== ${title} ===`,
+      `actor=${options.actor || '-'} species=${options.species || '-'} gender=${options.gender || '-'} coordinateSpace=${options.coordinateSpace || 'unspecified'}`,
+      'local = transform relative to the reported object\'s gameplay/editor parent; world = composed transform after every parent translation/rotation/scale.',
+    ];
+    for (const entry of entries.filter(Boolean)) {
+      lines.push('');
+      lines.push(`[${entry.label}] source=${entry.source || '-'}`);
+      lines.push(`  local position=${tuple(entry.localPosition)} rotation=${angles(entry.localRotationDeg)} scale=${tuple(entry.localScale, 4)}`);
+      lines.push(`  world position=${tuple(entry.worldPosition)} rotation=${angles(entry.worldRotationDeg)} scale=${tuple(entry.worldScale, 4)}`);
+    }
+    return lines.join('\n');
+  }
+
+  global.HobunjiTransformDump = Object.freeze({
+    dumpSubtree,
+    formatReport,
+    eulerYXZFromQuat,
+    snapshotObject,
+    formatNamedTransformReport,
+  });
 })(window);

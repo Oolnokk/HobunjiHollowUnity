@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.24</title>
+<title>Hobunji Animation Author V15.41</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1203,6 +1203,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
 <script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../js/transform-dump-utils.js?v=20260821a"></script>
 
 <script>
 (() => {
@@ -1215,7 +1216,7 @@ const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20260821k', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821e', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -2558,11 +2559,14 @@ async function placeThreeModel(npc, avatar) {
   await initThree();
   const t = state.three;
   disposeCurrentThreeModel();
+  const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Keeps the repository portrait viewer in the same base-width coordinate space as game.js.
   t.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(t.THREE, avatar.front, {
     backCanvas: avatar.back,
     profile: avatar.profile,
     appearance: avatar.exportNpc.appearance,
     npcRecord: npc,
+    modelWidth: previewBaseWidth,
+    modelHeight: previewBaseWidth,
     name: `NPC_${safeFilename(npc.id || npc.name, 'avatar')}`,
     userData: { source: 'local-repo-viewer', npcId: npc.id || null, repositoryCommit: state.resolvedSha },
   });
@@ -3037,7 +3041,7 @@ const animationAuthor = {
   pendingProject: null,
   saveTimer: null,
   relationLines: new Map(),
-  recentChange: 'Posterior origins now derive from the repository tool-grip height with a species/gender height-percent offset and centered X.',
+  recentChange: 'Posterior origins use a species/gender floor-relative height percentage with centered X.',
   // Viewport-only facing correction keeps authored transforms untouched while preventing PNG planes from becoming edge-on to the active camera.
   viewportFacing: {
     characterDeg: 40,
@@ -3050,7 +3054,7 @@ const animationAuthor = {
   modeStates: {
     multi: { projectName: 'New Multi-Avatar Animation', fps: 12, duration: 4, loop: true, currentTime: 0, actors: null, selectedActorId: null, relationLines: null, recentChange: 'Authoring roots are independent; gameplay relationships are retained only as export metadata.' },
     single: { projectName: 'New Single-Avatar Animation', fps: 12, duration: 10, loop: true, currentTime: 0, actors: [], selectedActorId: null, relationLines: new Map(), recentChange: 'Choose a repository animation to begin; character facing uses the camera-relative repository deadzone.' },
-    rig: { projectName: 'Attachment Rig Coordinates', fps: 12, duration: 1, loop: false, currentTime: 0, actors: [], selectedActorId: null, relationLines: new Map(), recentChange: 'Character posterior Y derives from tool-grip height; edit its height-percent offset or the remaining fixed coordinates.' },
+    rig: { projectName: 'Attachment Rig Coordinates', fps: 12, duration: 1, loop: false, currentTime: 0, actors: [], selectedActorId: null, relationLines: new Map(), recentChange: 'Character posterior Y is a fixed percentage of model height above the gameplay floor.' },
   },
   // The single-avatar editor stores the native portrait deformation object and repository catalog metadata here.
   single: {
@@ -4030,7 +4034,7 @@ function animationUiTemplate() {
           </section>
           <section class="maaSection maaRigOnly" id="maaRigLibrarySection">
             <div class="maaSectionTitle"><b>Reusable attachment coordinates</b><span class="maaSmall maaMuted">Species profiles</span></div>
-            <div class="maaSmall maaMuted">Characters store a posterior and shoulder-perch origin by species + gender. Posterior X is centered and posterior Y is derived from the repository tool-grip height plus an editable percentage of rendered character height. Creatures store saddle and shoulder-grip origins by species.</div>
+            <div class="maaSmall maaMuted">Characters store a posterior and shoulder-perch origin by species + gender. Posterior X is centered and posterior Y is an editable percentage of rendered character height above the gameplay floor. Creatures store saddle and shoulder-grip origins by species.</div>
             <div class="maaSmall maaMuted" style="margin-top:7px">Mounting aligns posterior → saddle. Shoulder pets align shoulder grip → shoulder perch. Animation keys belong to the invisible intermediate parent between those two fixed pivots.</div>
           </section>
           <section class="maaSection" id="maaViewportFacingSection">
@@ -4810,11 +4814,14 @@ async function addNpcAnimationActor(npcId, options = {}) {
   showOverlay(`Adding ${npc.name || npc.id}`, 'Building a repository-backed two-sided skinned portrait plane.', true);
   try {
     const avatar = await buildAvatarRender(npc);
+    const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Prevents rig coordinates from being authored against the builder's wider 1.0 default while gameplay uses 0.9.
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(state.three.THREE, avatar.front, {
       backCanvas: avatar.back,
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: npc,
+      modelWidth: previewBaseWidth,
+      modelHeight: previewBaseWidth,
       name: `AnimationNPC_${safeFilename(npc.id || npc.name, 'avatar')}`,
       userData: { source: 'multi-avatar-animation-author', npcId: npc.id || null, repositoryCommit: state.resolvedSha },
     });
@@ -7045,23 +7052,27 @@ function normalizedRigProfileLibrary(value = {}) {
     const importedRule = profile.posteriorRule || profile.posteriorHeightRule || {};
     const importedOffset = importedRule.heightPercentOffset ?? profile.posteriorHeightPercentOffset;
     const hasImportedOffset = importedOffset !== null && importedOffset !== undefined && importedOffset !== '' && Number.isFinite(Number(importedOffset));
+    const importedFloorPercent = importedRule.heightPercentFromFloor;
+    const hasImportedFloorPercent = importedFloorPercent !== null && importedFloorPercent !== undefined && importedFloorPercent !== '' && Number.isFinite(Number(importedFloorPercent));
     const legacyAbsoluteY = Number(profile.anchors?.posterior?.position?.y);
     output.characters[key] = {
       species: String(profile.species || key.split('::')[0] || 'unknown'),
       gender: String(profile.gender || key.split('::')[1] || 'unspecified'),
       posteriorRule: {
         xMode: 'center',
-        ySource: 'png-plane-avatar.handAttachY',
+        ySource: hasImportedFloorPercent ? 'portraitModelHeight-from-floor' : 'png-plane-avatar.handAttachY',
         offsetBasis: 'portraitModelHeight',
         heightPercentOffset: hasImportedOffset ? clampPosteriorHeightPercentOffset(importedOffset) : null,
-        ...(hasImportedOffset || !Number.isFinite(legacyAbsoluteY) ? {} : { legacyAbsoluteY }),
+        ...(hasImportedFloorPercent ? { heightPercentFromFloor: clampPosteriorHeightPercentOffset(importedFloorPercent) } : {}),
+        ...(importedRule.floorCalibrationSource ? { floorCalibrationSource: String(importedRule.floorCalibrationSource) } : {}),
+        ...(hasImportedOffset || hasImportedFloorPercent || !Number.isFinite(legacyAbsoluteY) ? {} : { legacyAbsoluteY }),
       },
       anchors: {
         posterior,
         shoulderPerch: normalizeTransformSnapshot(profile.anchors?.shoulderPerch, 1),
       },
     };
-    if (hasImportedOffset) output.characters[key].anchors.posterior.position.y = 0;
+    if (hasImportedOffset || hasImportedFloorPercent) output.characters[key].anchors.posterior.position.y = 0;
   }
   for (const [kind, profile] of Object.entries(value.creatures || {})) {
     output.creatures[kind] = {
@@ -7087,6 +7098,8 @@ function clampPosteriorHeightPercentOffset(value) {
   return Math.max(-100, Math.min(100, Number.isFinite(number) ? number : 0));
 }
 
+const POSTERIOR_FLOOR_RULE_VERSION = 4;
+
 function characterPosteriorMetrics(actor) {
   const bounds = actorModelBoundsInRootSpace(actor);
   const boundsHeight = Math.max(.001, bounds.max.y - bounds.min.y);
@@ -7106,18 +7119,25 @@ function ensureCharacterPosteriorRule(actor, profile) {
   const metrics = characterPosteriorMetrics(actor);
   const rule = profile.posteriorRule = {
     xMode: 'center',
-    ySource: 'png-plane-avatar.handAttachY',
+    ySource: 'portraitModelHeight-from-floor',
     offsetBasis: 'portraitModelHeight',
     ...(profile.posteriorRule || {}),
   };
+  let floorPercent = Number(rule.heightPercentFromFloor);
   let offset = Number(rule.heightPercentOffset);
-  if (!Number.isFinite(offset)) {
+  if (!Number.isFinite(floorPercent)) {
     const legacyY = Number(rule.legacyAbsoluteY ?? profile.anchors?.posterior?.position?.y);
-    offset = Number.isFinite(legacyY)
-      ? ((legacyY - metrics.toolGripY) / metrics.avatarHeight) * 100
-      : 0;
+    const resolvedLegacyY = Number.isFinite(legacyY)
+      ? legacyY
+      : metrics.toolGripY + metrics.avatarHeight * (Number.isFinite(offset) ? offset : 0) / 100;
+    floorPercent = resolvedLegacyY / metrics.avatarHeight * 100;
   }
-  rule.heightPercentOffset = clampPosteriorHeightPercentOffset(offset);
+  rule.heightPercentFromFloor = clampPosteriorHeightPercentOffset(floorPercent);
+  rule.ySource = 'portraitModelHeight-from-floor';
+  rule.defaultRuleVersion = Math.max(POSTERIOR_FLOOR_RULE_VERSION, Number(rule.defaultRuleVersion) || 0);
+  rule.heightPercentOffset = clampPosteriorHeightPercentOffset(
+    (metrics.avatarHeight * rule.heightPercentFromFloor / 100 - metrics.toolGripY) / metrics.avatarHeight * 100
+  ); // Kept only so older imported tools can approximate the fixed floor-relative point.
   delete rule.legacyAbsoluteY;
   profile.anchors.posterior.position.x = 0;
   profile.anchors.posterior.position.y = 0;
@@ -7129,8 +7149,8 @@ function resolvedCharacterPosteriorSnapshot(actor, profile) {
   const snapshot = normalizeTransformSnapshot(profile?.anchors?.posterior, 1);
   if (!resolved) return snapshot;
   snapshot.position.x = 0;
-  snapshot.position.y = resolved.metrics.toolGripY
-    + resolved.metrics.avatarHeight * resolved.rule.heightPercentOffset / 100;
+  snapshot.position.y = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(resolved.rule, resolved.metrics.avatarHeight, resolved.metrics.toolGripY)
+    ?? resolved.metrics.avatarHeight * resolved.rule.heightPercentFromFloor / 100;
   return snapshot;
 }
 
@@ -7138,6 +7158,9 @@ function updateCharacterPosteriorRuleFromGroup(actor, profile, group) {
   const resolved = ensureCharacterPosteriorRule(actor, profile);
   if (!resolved || !group) return null;
   group.position.x = 0;
+  resolved.rule.heightPercentFromFloor = clampPosteriorHeightPercentOffset(
+    group.position.y / resolved.metrics.avatarHeight * 100
+  );
   resolved.rule.heightPercentOffset = clampPosteriorHeightPercentOffset(
     ((group.position.y - resolved.metrics.toolGripY) / resolved.metrics.avatarHeight) * 100
   );
@@ -7327,22 +7350,22 @@ function rigAnchorFieldMarkup(actor, anchorName) {
       <div class="maaSmall maaMuted" style="margin-bottom:4px">${label}</div>
       <div class="maaGrid3">${['x','y','z'].map(axis => {
         const derivedAxis = derivedPosterior && kind === 'position' && (axis === 'x' || axis === 'y');
-        const title = axis === 'x' ? 'Posterior X is fixed to the character center.' : 'Posterior Y is calculated from tool-grip height plus the percentage offset below.';
+        const title = axis === 'x' ? 'Posterior X is fixed to the character center.' : 'Posterior Y is calculated as a percentage of model height above the gameplay floor.';
         return `<div class="maaField"><label>${axis.toUpperCase()}</label><input type="number" step="${step}" value="${Number(snap[kind][axis]).toFixed(kind === 'rotationDeg' ? 2 : 3)}" data-maa-rig-kind="${kind}" data-maa-rig-axis="${axis}"${derivedAxis ? ` readonly aria-readonly="true" title="${title}"` : ''}></div>`;
       }).join('')}</div>
     </div>`).join('');
   if (!resolved) return fields;
-  const calculatedY = resolved.metrics.toolGripY + resolved.metrics.avatarHeight * resolved.rule.heightPercentOffset / 100;
+  const calculatedY = resolved.metrics.avatarHeight * resolved.rule.heightPercentFromFloor / 100;
   return `${fields}
     <div class="maaRigStatus" style="margin-top:9px">
-      <b>Derived posterior origin</b><br>
-      X is fixed at <b>0.000</b>. Repository tool-grip Y: <b id="maaPosteriorToolGripY">${resolved.metrics.toolGripY.toFixed(3)}</b>.
+      <b>Floor-relative posterior origin</b><br>
+      X is fixed at <b>0.000</b>. Legacy tool-grip Y (diagnostic only): <b id="maaPosteriorToolGripY">${resolved.metrics.toolGripY.toFixed(3)}</b>.
       Rendered character height: <b id="maaPosteriorAvatarHeight">${resolved.metrics.avatarHeight.toFixed(3)}</b>.
       <div class="maaField" style="margin-top:8px">
-        <label for="maaPosteriorHeightPercentOffset">Height percentile offset (%)</label>
-        <input id="maaPosteriorHeightPercentOffset" type="number" min="-100" max="100" step="0.5" value="${resolved.rule.heightPercentOffset.toFixed(2)}">
+        <label for="maaPosteriorHeightPercentOffset">Height from floor (%)</label>
+        <input id="maaPosteriorHeightPercentOffset" type="number" min="-100" max="100" step="0.5" value="${resolved.rule.heightPercentFromFloor.toFixed(2)}">
       </div>
-      Calculated posterior Y: <b id="maaPosteriorCalculatedY">${calculatedY.toFixed(3)}</b>. Dragging the posterior gizmo vertically updates this percentage; horizontal X movement snaps back to center.
+      Calculated posterior Y: <b id="maaPosteriorCalculatedY">${calculatedY.toFixed(3)}</b>. This coordinate no longer changes with a species' lowest opaque portrait pixel. Dragging the gizmo vertically updates this percentage; horizontal X movement snaps back to center.
     </div>`;
 }
 
@@ -7416,11 +7439,14 @@ function renderAttachmentRigInspector() {
     const profile = attachmentRigProfileForActor(actor);
     const resolved = ensureCharacterPosteriorRule(actor, profile);
     if (!resolved) return;
-    resolved.rule.heightPercentOffset = clampPosteriorHeightPercentOffset(event.currentTarget.value);
+    resolved.rule.heightPercentFromFloor = clampPosteriorHeightPercentOffset(event.currentTarget.value);
+    resolved.rule.heightPercentOffset = clampPosteriorHeightPercentOffset(
+      (resolved.metrics.avatarHeight * resolved.rule.heightPercentFromFloor / 100 - resolved.metrics.toolGripY) / resolved.metrics.avatarHeight * 100
+    );
     applyAttachmentRigProfileToActor(actor);
     syncAnimationTransformFields();
     scheduleAnimationProjectSave();
-    setAnimationRecentChange(`Set ${characterRigProfileKey(actor.source)} posterior to tool-grip height ${resolved.rule.heightPercentOffset >= 0 ? '+' : ''}${resolved.rule.heightPercentOffset.toFixed(1)}% of rendered height.`);
+    setAnimationRecentChange(`Set ${characterRigProfileKey(actor.source)} posterior to ${resolved.rule.heightPercentFromFloor.toFixed(1)}% of rendered height above the floor.`);
   });
   $('maaResetRigAnchorBtn').addEventListener('click', () => {
     const anchorName = selectedRigAnchorName(actor);
@@ -7497,7 +7523,7 @@ handleAnimationTransformChanged = function(source, changedTarget = animationAuth
       syncAnimationTransformFields();
       scheduleAnimationProjectSave();
       setAnimationRecentChange(derivedPosterior
-        ? `Updated ${characterRigProfileKey(actor.source)} posterior height offset to ${resolved.rule.heightPercentOffset >= 0 ? '+' : ''}${resolved.rule.heightPercentOffset.toFixed(1)}% using ${source}; X remains centered.`
+        ? `Updated ${characterRigProfileKey(actor.source)} posterior to ${resolved.rule.heightPercentFromFloor.toFixed(1)}% of character height above the floor using ${source}; X remains centered.`
         : `Updated ${name} for ${actor.source.type === 'creature' ? actor.source.kind : characterRigProfileKey(actor.source)} using ${source}.`);
     }
     return;
@@ -7517,7 +7543,7 @@ syncAnimationTransformFields = function() {
   if (actor.source.type === 'npc' && anchorName === 'posterior') {
     group.position.x = 0;
     posteriorMetrics = characterPosteriorMetrics(actor);
-    previewOffset = clampPosteriorHeightPercentOffset(((group.position.y - posteriorMetrics.toolGripY) / posteriorMetrics.avatarHeight) * 100);
+    previewOffset = clampPosteriorHeightPercentOffset(group.position.y / posteriorMetrics.avatarHeight * 100);
   }
   const snap = transformSnapshot(group);
   document.querySelectorAll('[data-maa-rig-kind]').forEach(input => {
@@ -7537,12 +7563,12 @@ function serializeAttachmentRigLibrary() {
   return {
     schema: animationAuthor.attachmentRigSchema,
     exportedAt: new Date().toISOString(),
-    coordinateSpace: 'Anchors are local to the unanimated species visual origin. Character posterior X is centered; posterior Y is derived from repository PNGPlaneAvatar.handAttachY plus portraitModelHeight × heightPercentOffset / 100. Other translations and all rotations are fixed rig coordinates; scale is identity.',
+    coordinateSpace: 'Anchors are local to the unanimated species visual origin. Character posterior X is centered; posterior Y is portraitModelHeight × heightPercentFromFloor / 100. Other translations and all rotations are fixed rig coordinates; scale is identity.',
     derivedCoordinates: {
       characterPosterior: {
         x: 0,
-        yFormula: 'PNGPlaneAvatar.handAttachY + PNGPlaneAvatar.portraitModelHeight * heightPercentOffset / 100',
-        profileField: 'posteriorRule.heightPercentOffset',
+        yFormula: 'PNGPlaneAvatar.portraitModelHeight * heightPercentFromFloor / 100',
+        profileField: 'posteriorRule.heightPercentFromFloor',
       },
     },
     attachmentSemantics: {
@@ -7605,7 +7631,7 @@ renderAnimationModeChrome = function() {
   if ($('maaSceneActorsTitle')) $('maaSceneActorsTitle').textContent = 'Rig preview';
   if ($('maaAddNpcTitle')) $('maaAddNpcTitle').textContent = 'Choose character preview';
   if ($('maaRightPanelTitle')) $('maaRightPanelTitle').textContent = 'Species attachment coordinates';
-  if ($('maaViewportBadge')) $('maaViewportBadge').textContent = 'Rig pivots are shared by species. Character posterior X is centered and Y follows repository tool-grip height plus a height-percent offset; mount and shoulder animations key invisible intermediate parents.';
+  if ($('maaViewportBadge')) $('maaViewportBadge').textContent = 'Rig pivots are shared by species. Character posterior X is centered and Y is a fixed model-height percentage above the gameplay floor; mount and shoulder animations key invisible intermediate parents.';
   if ($('maaRecentChange')) $('maaRecentChange').innerHTML = `<b>Most recent change:</b> ${escapeHtml(animationAuthor.recentChange)}`;
 };
 
@@ -8101,6 +8127,7 @@ function applyCharacterDefaultRules(actor, { force = false } = {}) {
       heightPercentOffset: DEFAULT_POSTERIOR_HEIGHT_PERCENT,
       defaultRuleVersion: ATTACHMENT_DEFAULT_RULE_VERSION,
     };
+    delete profile.posteriorRule.heightPercentFromFloor;
     profile.anchors.posterior.position.x = 0;
     profile.anchors.posterior.position.y = 0;
   }
@@ -8163,6 +8190,7 @@ function resetAttachmentRigAnchorToRepositoryDefault(actor, anchorName) {
   if (actor.source.type === 'npc' && anchorName === 'posterior') {
     profile.posteriorRule ||= {};
     profile.posteriorRule.heightPercentOffset = DEFAULT_POSTERIOR_HEIGHT_PERCENT;
+    delete profile.posteriorRule.heightPercentFromFloor;
     profile.posteriorRule.defaultRuleVersion = ATTACHMENT_DEFAULT_RULE_VERSION;
     profile.anchors.posterior = identityTransformSnapshot();
     profile.anchors.posterior.position.x = 0;
@@ -8199,6 +8227,7 @@ normalizedRigProfileLibrary = function(value = {}) {
       profile.posteriorRule.defaultRuleVersion = importedPosteriorVersion;
     } else {
       profile.posteriorRule.heightPercentOffset = DEFAULT_POSTERIOR_HEIGHT_PERCENT;
+      delete profile.posteriorRule.heightPercentFromFloor;
       profile.posteriorRule.defaultRuleVersion = ATTACHMENT_DEFAULT_RULE_VERSION;
       profile.anchors.posterior.position.x = 0;
       profile.anchors.posterior.position.y = 0;
@@ -8232,6 +8261,7 @@ attachmentRigProfileForActor = function(actor, options = {}) {
     profile.posteriorRule ||= {};
     if (Number(profile.posteriorRule.defaultRuleVersion) < ATTACHMENT_DEFAULT_RULE_VERSION) {
       profile.posteriorRule.heightPercentOffset = DEFAULT_POSTERIOR_HEIGHT_PERCENT;
+      delete profile.posteriorRule.heightPercentFromFloor;
       profile.posteriorRule.defaultRuleVersion = ATTACHMENT_DEFAULT_RULE_VERSION;
     }
   }
@@ -8298,7 +8328,8 @@ renderAttachmentRigInspector = function() {
   if (actor.source.type === 'npc') {
     const metrics = portraitModelMetrics(actor);
     if (anchorName === 'posterior') {
-      detail = `Repository floor-space preview: model lift <b>${metrics.groundLiftY.toFixed(3)}</b>; full canvas Y <b>${metrics.canvasBottomY.toFixed(3)}…${metrics.canvasTopY.toFixed(3)}</b>; default posterior <b>${DEFAULT_POSTERIOR_HEIGHT_PERCENT}%</b> below the detected tool-grip/belt line.`;
+      const rule = attachmentRigProfileForActor(actor)?.posteriorRule;
+      detail = `Repository floor-space preview: model lift <b>${metrics.groundLiftY.toFixed(3)}</b>; full canvas Y <b>${metrics.canvasBottomY.toFixed(3)}…${metrics.canvasTopY.toFixed(3)}</b>; posterior <b>${finiteNumber(rule?.heightPercentFromFloor).toFixed(2)}%</b> of model height above the gameplay floor.`;
     } else {
       const arm = characterRightArmTopMetrics(actor);
       detail = arm
@@ -8341,8 +8372,16 @@ async function deriveEveryCharacterShoulderPerchDefault() {
 
   let updated = 0;
   let failed = 0;
+  let preservedFixed = 0; // Reported in the mobile-readable log so repository-authored profiles can be distinguished from newly scanned fallbacks.
   for (const [key, entry] of unique) {
     try {
+      const existingFixedProfile = animationAuthor.attachmentRigProfiles.characters[key]; // Prevents the legacy all-species scan from replacing the canonical gameplay coordinate and stripping its fixed-profile metadata.
+      if (existingFixedProfile?.shoulderPerchRule?.authoredFixed === true
+          && existingFixedProfile.shoulderPerchRule.recalculateOnPreview === false
+          && existingFixedProfile.anchors?.shoulderPerch?.position) {
+        preservedFixed++;
+        continue;
+      }
       let profile = window.NpcAvatarPreview.randomProfile(`attachment-rig-shoulder-default:${key}`, {
         speciesId: entry.species,
         gender: entry.gender,
@@ -8412,8 +8451,8 @@ async function deriveEveryCharacterShoulderPerchDefault() {
   }
   scheduleAnimationProjectSave();
   renderAllAnimationUi();
-  log(`Precomputed zero-offset arm-R shoulder perches for ${updated}/${unique.size} character species/gender profiles${failed ? `; ${failed} failed` : ''}.`);
-  return { updated, failed, total: unique.size };
+  log(`Precomputed zero-offset arm-R shoulder perches for ${updated}/${unique.size} character species/gender profiles; preserved ${preservedFixed} fixed authored profiles${failed ? `; ${failed} failed` : ''}.`);
+  return { updated, failed, preservedFixed, total: unique.size };
 }
 
 const baseLoadSourceV1510 = loadSource;
@@ -8430,12 +8469,13 @@ serializeAttachmentRigLibrary = function() {
   data.schema = animationAuthor.attachmentRigSchema;
   data.coordinateSpace = 'Character rig anchors are floor-relative. The visible PNG-plane model receives the same portraitModelHeight/2 runtime lift as game.js, while portraitVerticalPlacementRatio remains inside the model assembly. Creature coordinates remain local to the unscaled idle-sprite plane.';
   data.defaultRuleVersion = ATTACHMENT_DEFAULT_RULE_VERSION;
+  data.posteriorFloorRuleVersion = POSTERIOR_FLOOR_RULE_VERSION;
   data.shoulderPerchDefaultRuleVersion = SHOULDER_PERCH_DEFAULT_RULE_VERSION;
   data.derivedCoordinates = {
     characterPosterior: {
-      source: 'PNGPlaneAvatar.handAttachY',
-      formula: 'handAttachY + portraitModelHeight * (-18 / 100)',
-      offsetPercent: DEFAULT_POSTERIOR_HEIGHT_PERCENT,
+      source: 'posteriorRule.heightPercentFromFloor',
+      formula: 'portraitModelHeight * heightPercentFromFloor / 100',
+      legacyFallback: 'handAttachY + portraitModelHeight * heightPercentOffset / 100',
     },
     characterShoulderPerch: {
       source: 'highest opaque pixel of species+gender arm-R portrait layer',
@@ -12356,28 +12396,34 @@ let rigReferenceBuildGenerationV1531 = 0; // Invalidates an older randomized ref
 let rigBodyScaleRebuildGenerationV1531 = 0; // Prevents overlapping body-scale releases from restoring stale NPC previews.
 let rigReferencePreserveDuringActorSwapV1532 = false; // Used by rig-mode NPC replacement so its comparison NPC survives the shared clear path.
 
-function rememberRigActorBodyScaleV1531(actor) {
-  if (actor?.source?.type !== 'npc' || !actor.model) return;
-  const baseModelWidth = Math.max(.001, Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.modelWidth) || 1); // Converts the rendered model width back into its actual total avatar multiplier.
-  const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
-  actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
-  actor.rigBodyPresentationBaseScaleV1532 = actor.avatarPresentation?.scale?.clone?.() || null; // Used to scale the stable presentation carrier instead of the runtime-managed portrait model.
-  actor.rigBodyPresentationBaseYV1531 = Number(actor.avatarPresentation?.position?.y) || 0;
-  actor.rigBodyBoxBasePositionYV1531 = Number(actor.rigPreviewBox?.position?.y) || 0;
-  actor.rigBodyBoxBaseScaleV1531 = actor.rigPreviewBox?.scale?.clone?.() || null;
+function animationAuthorAvatarBaseWidthV1536() {
+  const configuredWidth = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth); // Reads the exact base portrait width passed by both game.js avatar construction paths.
+  return Number.isFinite(configuredWidth) && configuredWidth > 0 ? configuredWidth : 0.9;
 }
 
-function resolvedRigActorAvatarScaleV1533(actor, fallbackScale = 1) {
+function rememberRigActorBodyScaleV1531(actor) {
+  if (actor?.source?.type !== 'npc' || !actor.model) return;
+  const baseModelWidth = animationAuthorAvatarBaseWidthV1536(); // Converts the rendered model width back into its actual species/gender multiplier using gameplay's base width.
+  const builtModelWidth = Math.max(.001, Number(actor.model.userData?.portraitModelWidth) || baseModelWidth); // Measures what PNGPlaneAvatar really built instead of assuming the requested profile was used.
+  actor.rigBuiltAvatarScaleV1533 = builtModelWidth / baseModelWidth;
+  actor.rigBodyVisualOffsetBaseScaleV1535 = actor.visualOffset?.scale?.clone?.() || null; // Used to scale the common portrait, hand, foot, anchor, and rig-box parent without touching runtime-managed children.
+}
+
+function requestedRigActorAvatarScaleV1534(actor, portraitScale = 1) {
+  const desiredScale = Number(portraitScale); // Supplies the authoritative species/gender value currently entered in the Shoulder Rig field.
+  if (!Number.isFinite(desiredScale) || desiredScale <= 0) return 1;
   const npcRecord = actor?.source?.type === 'npc'
     ? state.npcs.find(npc => String(npc.id || npc.name || '') === String(actor.source.id || ''))
-    : null; // Supplies child markers and strict appearance data to the same scale resolver used by PNGPlaneAvatar construction.
-  const resolved = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+    : null; // Supplies child markers to the same classifier used by PNGPlaneAvatar construction.
+  const childAvatar = !!window.PNGPlaneAvatar?.isChildAvatar?.({
     speciesId: actor?.source?.species,
     gender: actor?.source?.gender,
     appearance: actor?.source?.appearance,
     npcRecord,
-  }));
-  return Number.isFinite(resolved) && resolved > 0 ? resolved : fallbackScale;
+  }); // Determines whether the entered species/gender scale also needs the shared child multiplier.
+  const configuredChildScale = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.childScaleMultiplier); // Matches the extra multiplier applied when the real portrait model is built.
+  const childScale = childAvatar && Number.isFinite(configuredChildScale) && configuredChildScale > 0 ? configuredChildScale : 1; // Keeps child preview and rebuild dimensions identical.
+  return desiredScale * childScale;
 }
 
 function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio) {
@@ -12395,18 +12441,13 @@ function updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio
 
 function previewRigActorBodyScaleV1531(actor, portraitScale) {
   const builtScale = Number(actor?.rigBuiltAvatarScaleV1533);
-  const desiredScale = Number(portraitScale); // Remains the fallback if the shared PNG-avatar resolver is unavailable.
-  const targetScale = resolvedRigActorAvatarScaleV1533(actor, desiredScale);
-  const presentation = actor?.avatarPresentation; // Receives the live body-only preview without being rewritten by portrait or hand runtime refreshes.
-  if (!presentation || !actor.rigBodyPresentationBaseScaleV1532 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
+  const targetScale = requestedRigActorAvatarScaleV1534(actor, portraitScale); // Uses the live field value directly instead of re-reading the prior configured scale.
+  const scaleRoot = actor?.visualOffset; // Common parent for the portrait, procedural hands, procedural feet, attachment anchors, and preview box.
+  if (!scaleRoot || !actor.rigBodyVisualOffsetBaseScaleV1535 || !Number.isFinite(builtScale) || builtScale <= 0 || !Number.isFinite(targetScale) || targetScale <= 0) return false;
   const ratio = targetScale / builtScale;
-  presentation.scale.copy(actor.rigBodyPresentationBaseScaleV1532).multiplyScalar(ratio);
-  presentation.position.y = actor.rigBodyPresentationBaseYV1531 * ratio;
-  if (actor.rigPreviewBox) {
-    if (actor.rigBodyBoxBaseScaleV1531) actor.rigPreviewBox.scale.copy(actor.rigBodyBoxBaseScaleV1531).multiplyScalar(ratio);
-    actor.rigPreviewBox.position.y = actor.rigBodyBoxBasePositionYV1531 * ratio;
-  }
-  presentation.updateMatrixWorld?.(true);
+  scaleRoot.scale.copy(actor.rigBodyVisualOffsetBaseScaleV1535).multiplyScalar(ratio);
+  scaleRoot.updateMatrixWorld?.(true);
+  positionRigReferenceNpcV1532(actor);
   updateAnimationSelectionBox();
   updateRigBodyScaleDiagnosticV1533(actor, builtScale, targetScale, ratio);
   return true;
@@ -12443,7 +12484,8 @@ function randomRigReferenceNpcV1531(actor = selectedAnimationActor()) {
 function positionRigReferenceNpcV1532(actor = selectedAnimationActor()) {
   const reference = animationAuthor.rig.referenceNpcV1531; // Repositions the preserved comparison after the editable NPC changes species or scale.
   if (!reference?.group || !actor?.root || !actor?.model) return false;
-  const actorWidth = Number(actor.model.userData?.portraitModelWidth) || 1;
+  const actorScaleX = Math.abs(Number(actor.visualOffset?.scale?.x)) || 1; // Keeps reference spacing outside the editable character's live whole-root scale.
+  const actorWidth = (Number(actor.model.userData?.portraitModelWidth) || 1) * actorScaleX;
   const referenceWidth = Number(reference.model?.userData?.portraitModelWidth) || 1;
   reference.group.position.x = actor.root.position.x + actorWidth / 2 + referenceWidth / 2 + .35;
   reference.group.position.z = actor.root.position.z;
@@ -12471,11 +12513,14 @@ async function showRigReferenceNpcV1531(npcId = null) {
     const group = new THREE.Group(); // Comparison carrier is deliberately absent from animationAuthor.actors, selection, gizmos, and exports.
     group.name = `RigReferenceNPC_${safeFilename(npc.id || npc.name)}`;
     group.userData.rigReferenceOnly = true;
+    const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Gives the comparison NPC the same game-space base width as the editable NPC.
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
       backCanvas: avatar.back,
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: npc,
+      modelWidth: previewBaseWidth,
+      modelHeight: previewBaseWidth,
       name: `${group.name}_portrait`,
       userData: { source: 'shoulder-rig-reference-npc', nonInteractive: true, npcId: npc.id || null },
     });
@@ -12657,14 +12702,270 @@ COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v8');
 const basePrepareMultiAvatarAnimationAuthorV1531 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1531();
-  document.title = 'Hobunji Animation Author V15.33';
+  document.title = 'Hobunji Animation Author V15.36';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.33 measures rebuilt avatar geometry, reapplies the resolved body-scale ratio after replacement, and shows built/target/carrier scale diagnostics in Shoulder Rig.';
+animationAuthor.recentChange = 'V15.36 matches the rigger portrait base width to gameplay and calibrates V15.28 character attachment positions from the accidental 1.0 preview width to the intended 0.9 runtime width.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.33 patch installed: measured rebuilt body-scale reconciliation, visible scale diagnostics, and preserved reference NPCs.');
+log('V15.36 patch installed: game-width avatar previews plus 0.9-calibrated character attachment positions; uniform rotations remain unchanged.');
+
+
+// -----------------------------------------------------------------------------
+// V15.37 restores the canonical shared character profiles after older embedded
+// defaults have finished installing. V15.24 deliberately replaced the complete
+// internal library, which left its pre-calibration attachment coordinates active in
+// the rigger even though gameplay read the corrected shared configuration.
+// -----------------------------------------------------------------------------
+function canonicalCharacterRigProfilesV1537() {
+  const sharedCharacters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Supplies the same calibrated character profiles consumed directly by game.js.
+  return normalizedRigProfileLibrary({ characters: structuredCloneSafe(sharedCharacters), creatures: {} }).characters;
+}
+
+function installCanonicalCharacterRigProfilesV1537(target = animationAuthor.attachmentRigProfiles) {
+  if (!target) return 0;
+  const characters = canonicalCharacterRigProfilesV1537(); // Runs the shared profiles through every current schema migration before replacing stale embedded snapshots.
+  target.characters = characters;
+  const maximumPositionDelta = { x: 0, y: 0, z: 0 }; // Reports whether the rigger's final attachment positions differ from the gameplay configuration on any axis.
+  let maximumPosteriorPercentDelta = 0; // Reports divergence in either posterior percentage field that cannot be represented by the stored zero-position anchor.
+  for (const [key, profile] of Object.entries(characters)) {
+    const runtimeProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key];
+    for (const anchorName of ['leftHandShoulder', 'rightHandShoulder', 'shoulderPerch']) {
+      for (const axis of ['x', 'y', 'z']) {
+        const authorPosition = Number(profile?.anchors?.[anchorName]?.position?.[axis]);
+        const runtimePosition = Number(runtimeProfile?.anchors?.[anchorName]?.position?.[axis]);
+        if (Number.isFinite(authorPosition) && Number.isFinite(runtimePosition)) maximumPositionDelta[axis] = Math.max(maximumPositionDelta[axis], Math.abs(authorPosition - runtimePosition));
+      }
+    }
+    const authorPosteriorPercent = Number(profile?.posteriorRule?.heightPercentOffset);
+    const runtimePosteriorPercent = Number(runtimeProfile?.posteriorRule?.heightPercentOffset);
+    if (Number.isFinite(authorPosteriorPercent) && Number.isFinite(runtimePosteriorPercent)) maximumPosteriorPercentDelta = Math.max(maximumPosteriorPercentDelta, Math.abs(authorPosteriorPercent - runtimePosteriorPercent));
+    const authorPosteriorFloorPercent = Number(profile?.posteriorRule?.heightPercentFromFloor);
+    const runtimePosteriorFloorPercent = Number(runtimeProfile?.posteriorRule?.heightPercentFromFloor);
+    if (Number.isFinite(authorPosteriorFloorPercent) && Number.isFinite(runtimePosteriorFloorPercent)) maximumPosteriorPercentDelta = Math.max(maximumPosteriorPercentDelta, Math.abs(authorPosteriorFloorPercent - runtimePosteriorFloorPercent));
+  }
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCanonicalCharacters = Object.keys(characters).length;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorAnchorPositionMaxDelta = maximumPositionDelta;
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorPosteriorPercentMaxDelta = maximumPosteriorPercentDelta;
+  return Object.keys(characters).length;
+}
+
+installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles);
+installCanonicalCharacterRigProfilesV1537(DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516);
+
+const baseImportAnimationProjectDataV1537 = importAnimationProjectData;
+importAnimationProjectData = async function(data, options = {}) {
+  const result = await baseImportAnimationProjectDataV1537(data, options);
+  if (options.fromAutosave) {
+    installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles); // Prevents old autosaves from reintroducing embedded pre-calibration character coordinates.
+    for (const actor of animationAuthor.actors) if (actor.source?.type === 'npc') applyAttachmentRigProfileToActor(actor);
+  }
+  return result;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1537 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1537();
+  document.title = 'Hobunji Animation Author V15.37';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.37 keeps the rigger on the same calibrated character anchor library as gameplay, including shoulder X/Y/Z positions and derived posterior height rules.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.37 patch installed: canonical gameplay character anchors now replace stale embedded rigger snapshots after every bootstrap and autosave restore.');
+
+
+// -----------------------------------------------------------------------------
+// V15.38 gives Shoulder Rig the same visible floor used by gameplay. The shared
+// scene grid predates floor-relative avatars and remains at Y=-0.55 for the
+// portrait/creature viewers; procedural feet and gameplay both stand at Y=0.
+// -----------------------------------------------------------------------------
+const ANIMATION_AUTHOR_LEGACY_GRID_Y_V1538 = -.55;
+
+function syncAnimationAuthorFloorGridV1538() {
+  const grid = state.three.grid;
+  if (!grid) return null;
+  grid.position.y = animationAuthor.mode === 'rig' ? 0 : ANIMATION_AUTHOR_LEGACY_GRID_Y_V1538;
+  grid.updateMatrixWorld?.(true);
+  return grid.position.y;
+}
+
+function rigVerticalParityV1538(actor = selectedAnimationActor()) {
+  if (actor?.source?.type !== 'npc') return null;
+  const metrics = portraitModelMetrics(actor);
+  const profile = attachmentRigProfileForActor(actor);
+  const feet = actor.rigFeetPreview?.getStandingPoseDebug?.() || null;
+  const shoulderSurface = characterRightArmTopMetrics(actor)?.point?.y;
+  const shoulderY = {};
+  for (const name of ['leftHandShoulder', 'rightHandShoulder', 'shoulderPerch']) {
+    const value = Number(profile?.anchors?.[name]?.position?.y);
+    shoulderY[name] = Number.isFinite(value) ? value : null;
+  }
+  const expectedLiftY = metrics.modelHeight / 2;
+  const actualLiftY = Number(actor.avatarPresentation?.position?.y);
+  const footBottoms = [feet?.left?.bottomY, feet?.right?.bottomY].filter(Number.isFinite);
+  const maximumFootFloorDelta = footBottoms.length ? Math.max(...footBottoms.map(value => Math.abs(value))) : null;
+  const posteriorFloorPercent = Number(profile?.posteriorRule?.heightPercentFromFloor);
+  const posteriorY = Number(actor.rigAnchors?.posterior?.position?.y);
+  const diagnostic = {
+    coordinateSpace: 'game-avatar-floor-relative',
+    visibleGridY: Number(state.three.grid?.position?.y),
+    gameFloorY: 0,
+    portraitExpectedLiftY: expectedLiftY,
+    portraitActualLiftY: Number.isFinite(actualLiftY) ? actualLiftY : null,
+    portraitLiftDelta: Number.isFinite(actualLiftY) ? actualLiftY - expectedLiftY : null,
+    portraitOpaqueBottomY: Number(actor.model?.userData?.handAttachY),
+    posteriorFloorPercent: Number.isFinite(posteriorFloorPercent) ? posteriorFloorPercent : null,
+    posteriorY: Number.isFinite(posteriorY) ? posteriorY : null,
+    rightArmTopY: Number.isFinite(shoulderSurface) ? shoulderSurface : null,
+    shoulderY,
+    feet,
+    maximumFootFloorDelta,
+  }; // One mobile-readable snapshot distinguishes a bad viewport floor from a portrait, anchor, or rendered-foot offset.
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorVerticalParity = diagnostic;
+  return diagnostic;
+}
+
+function rigVerticalParityMarkupV1538(actor) {
+  const diagnostic = rigVerticalParityV1538(actor);
+  if (!diagnostic) return '';
+  const display = value => Number.isFinite(value) ? Number(value).toFixed(3) : 'loading';
+  const leftFoot = diagnostic.feet?.left?.bottomY;
+  const rightFoot = diagnostic.feet?.right?.bottomY;
+  return `<div id="maaRigVerticalParity" class="maaRigStatus" style="margin-top:10px">
+    <b>Game-parity vertical references</b><br>
+    <span class="maaSmall">The cyan grid is Y <b>${display(diagnostic.visibleGridY)}</b>; gameplay floor is Y <b>${display(diagnostic.gameFloorY)}</b>. Rendered foot bottoms: L <b>${display(leftFoot)}</b>, R <b>${display(rightFoot)}</b>. Portrait lift: actual <b>${display(diagnostic.portraitActualLiftY)}</b>, game formula <b>${display(diagnostic.portraitExpectedLiftY)}</b>.</span><br>
+    <span class="maaSmall">Posterior Y <b>${display(diagnostic.posteriorY)}</b> (<b>${display(diagnostic.posteriorFloorPercent)}%</b> from floor); portrait opaque bottom <b>${display(diagnostic.portraitOpaqueBottomY)}</b> (diagnostic only); arm-R top <b>${display(diagnostic.rightArmTopY)}</b>; shoulder Y: L <b>${display(diagnostic.shoulderY.leftHandShoulder)}</b>, R <b>${display(diagnostic.shoulderY.rightHandShoulder)}</b>, perch <b>${display(diagnostic.shoulderY.shoulderPerch)}</b>.</span>
+  </div>`;
+}
+
+const baseSetAnimationAuthorModeV1538 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode) {
+  const result = await baseSetAnimationAuthorModeV1538(mode);
+  syncAnimationAuthorFloorGridV1538();
+  if (animationAuthor.mode === 'rig') renderAnimationInspector();
+  return result;
+};
+
+const baseRenderAttachmentRigInspectorV1538 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  syncAnimationAuthorFloorGridV1538();
+  baseRenderAttachmentRigInspectorV1538();
+  const actor = selectedAnimationActor();
+  const section = $('maaCharacterAnatomySection');
+  if (actor?.source?.type !== 'npc' || !section || $('maaRigVerticalParity')) return;
+  section.insertAdjacentHTML('beforeend', rigVerticalParityMarkupV1538(actor));
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1538 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1538();
+  document.title = 'Hobunji Animation Author V15.38';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.38 moves the Shoulder Rig grid from the obsolete Y=-0.55 portrait-viewer baseline to gameplay floor Y=0 and reports rendered feet, portrait lift, opaque-body, and shoulder Y references in the inspector.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.38 patch installed: Shoulder Rig now shows the real gameplay floor and measured vertical-parity diagnostics.');
+
+
+// -----------------------------------------------------------------------------
+// V15.39 freezes character posteriors as a percentage of model height above
+// the gameplay floor. The prior rule used the current portrait's lowest opaque
+// pixel as its base, so nominally shared species profiles could resolve to
+// different Y coordinates when their silhouettes ended on different rows.
+// -----------------------------------------------------------------------------
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v9';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v9');
+
+const basePrepareMultiAvatarAnimationAuthorV1539 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1539();
+  document.title = 'Hobunji Animation Author V15.39';
+  return result;
+};
+
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.posteriorCoordinateSpace = 'portraitModelHeight-percent-from-gameplay-floor';
+window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.posteriorPixelDependency = 'removed';
+animationAuthor.recentChange = 'V15.39 makes every character posterior a fixed floor-relative height, eliminating species/cosmetic drift from the portrait bottom-pixel scan while retaining legacy import fallback.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.39 patch installed: posterior Y now uses one shared floor-relative formula in the rigger, gameplay, idle hands, and procedural legs.');
+
+
+// -----------------------------------------------------------------------------
+// V15.40 exposes the exact rendered portrait/floor/attachment transforms so a
+// rigger snapshot can be diffed field-for-field against the runtime Debug dump.
+// -----------------------------------------------------------------------------
+function animationAuthorRigTransformReportV1540(actor = selectedAnimationActor()) {
+  const dumpApi = window.HobunjiTransformDump;
+  if (!dumpApi?.snapshotObject || !actor || actor.source?.type !== 'npc') return '';
+  const entries = [
+    dumpApi.snapshotObject('portrait', actor.avatarPresentation || actor.model, { source: 'RepositoryAvatarBox Object3D' }),
+    dumpApi.snapshotObject('ground', state.three.grid, { source: 'rigger GridHelper' }),
+    dumpApi.snapshotObject('posterior', actor.rigAnchors?.posterior, { source: 'RigAnchor_posterior Object3D' }),
+    dumpApi.snapshotObject('left hand shoulder', actor.rigAnchors?.leftHandShoulder, { source: 'RigAnchor_leftHandShoulder Object3D' }),
+    dumpApi.snapshotObject('right hand shoulder', actor.rigAnchors?.rightHandShoulder, { source: 'RigAnchor_rightHandShoulder Object3D' }),
+    dumpApi.snapshotObject('shoulder perch', actor.rigAnchors?.shoulderPerch, { source: 'RigAnchor_shoulderPerch Object3D' }),
+  ];
+  return dumpApi.formatNamedTransformReport(entries, {
+    title: 'Rigger preview transforms',
+    actor: actor.label,
+    species: actor.source.species || actor.source.appearance?.speciesId || '-',
+    gender: actor.source.gender || actor.source.appearance?.gender || '-',
+    coordinateSpace: 'character visual-local + editor world',
+  });
+}
+
+async function dumpAnimationAuthorRigTransformsV1540(actor = selectedAnimationActor()) {
+  const report = animationAuthorRigTransformReportV1540(actor);
+  if (!report) return;
+  const output = $('maaRigTransformDumpOutput');
+  if (output) {
+    output.textContent = report;
+    output.hidden = false;
+  }
+  try {
+    await navigator.clipboard.writeText(report);
+    setStatus('Rigger transforms dumped and copied.', 'good');
+  } catch (_) {
+    setStatus('Rigger transforms dumped below; clipboard access was blocked.', 'warn');
+  }
+}
+
+const baseRenderAttachmentRigInspectorV1540 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1540();
+  const actor = selectedAnimationActor();
+  const section = $('maaCharacterAnatomySection');
+  if (actor?.source?.type !== 'npc' || !section || $('maaRigTransformDumpTool')) return;
+  section.insertAdjacentHTML('beforeend', `<div id="maaRigTransformDumpTool" class="maaRigStatus" style="margin-top:10px">
+    <b>Editor/runtime parity dump</b><br>
+    <span class="maaSmall maaMuted">Reports the actual composed portrait, floor, posterior, both hand shoulders, and shoulder-perch transforms currently visible in this preview.</span>
+    <button id="maaDumpRigTransformsBtn" type="button" class="secondary" style="width:100%;margin-top:8px">Dump preview transforms</button>
+    <pre id="maaRigTransformDumpOutput" hidden style="max-height:280px;overflow:auto;margin:8px 0 0;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.22);font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word;user-select:text"></pre>
+  </div>`);
+  $('maaDumpRigTransformsBtn')?.addEventListener('click', () => dumpAnimationAuthorRigTransformsV1540(actor));
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1540 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1540();
+  document.title = 'Hobunji Animation Author V15.41';
+  return result;
+};
+
+window.dumpAnimationAuthorRigTransforms = dumpAnimationAuthorRigTransformsV1540;
+animationAuthor.recentChange = 'V15.41 preserves fixed authored character rig profiles during the asynchronous all-species arm scan, keeping rigger posterior and shoulder-perch coordinates identical to gameplay.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.41 patch installed: fixed authored shoulder perches bypass the legacy all-species scan, preventing both perch replacement and the resulting posterior-rule reset.');
 
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();

@@ -122,7 +122,8 @@ assert.match(shoulderSource, /socket\.position\.x = shoulder\.x/, 'a free hand m
 assert.match(shoulderSource, /socket\.position\.y = posteriorYInParent\(\)/, 'a free hand must hang at the derived posterior Y');
 assert.match(shoulderSource, /resolvedPosteriorPosition\?\.y/, 'Animation Author fallback hands must consume the exact live posterior gizmo Y');
 assert.doesNotMatch(shoulderSource, /posteriorYInParent[\s\S]{0,900}avatarRoot\.localToWorld/, 'floor-relative posterior Y must not add the avatar half-height again');
-assert.match(shoulderSource, /heightPercentOffset = Number\.isFinite\(profileOffset\) \? profileOffset : -18/, 'posterior Y must use the shared attachment-rig rule and repository fallback');
+assert.match(shoulderSource, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'posterior Y must use the shared floor-relative attachment-rig resolver');
+assert.match(shoulderSource, /Number\.isFinite\(profileOffset\) \? profileOffset : -18/, 'posterior Y must retain the repository legacy-import fallback');
 assert.match(shoulderSource, /leftHandShoulder.*rightHandShoulder/s, 'shoulder aiming must consume the standard attachment-rig hand targets');
 assert.match(shoulderSource, /shoulderAimSetSideIdle[\s\S]*alignFreeHandToFallbackAnchor\(side, fallbackPose\)/, 'single-side fallback must align to shoulder X and posterior Y before aiming');
 assert.match(shoulderSource, /shoulderAimUseIdlePose[\s\S]*alignFreeHandToFallbackAnchor\('left'[\s\S]*alignFreeHandToFallbackAnchor\('right'/, 'two-hand fallback must align both sides');
