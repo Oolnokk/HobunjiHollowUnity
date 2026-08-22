@@ -6,18 +6,18 @@
 
   const SELECTOR_START_DEG = 155; // Used by every toggled selector as the left/top end of one stable compact sweep.
   const SELECTOR_END_DEG = 115; // Used by every toggled selector as the right/bottom end of the same sweep.
-  const BUTTON_DIAMETER_SCALE = 0.50; // Used by every toggled selector so all selector buttons match the approved half-size potion buttons.
+  const BUTTON_DIAMETER_SCALE = 0.50; // Diagnostic/documentation value for the global half-size selector rule below.
   const LABEL_OUTSET_PX = 17; // Used by the large curved potion-category title to preserve its approved button-to-title gap.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
   const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose live geometry is the selector-ring source of truth.
-  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // One canonical outer-ring button; using one radius prevents mixed-size/transition measurements from producing a zigzag.
+  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // One canonical outer-ring button prevents mixed-radius measurements.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
 
-  let installed = false; // Guards against duplicate observers if the module is cache-busted/reloaded.
-  let currentBranchLabel = ''; // Medicine/Utility heading retained while the concrete child category is open.
+  let installed = false; // Guards against duplicate observers if this module is reloaded.
+  let refreshing = false; // Prevents nested presentation refreshes while a potion breadcrumb is being rewritten as Cancel.
+  let currentBranchLabel = ''; // Medicine/Utility heading retained while child categories are open.
   let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
-  let refreshQueued = false; // Coalesces selection-arc DOM mutations into one animation-frame layout pass.
-  let lastGeometry = null; // Mobile-visible diagnostic snapshot of the exact center/radius used by every selector button.
+  let lastGeometry = null; // Diagnostic snapshot of the exact center/radius used by every selector button.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -44,39 +44,38 @@
       ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 }
       : { x: innerWidth, y: innerHeight };
 
-    const referenceButton = document.getElementById(OUTER_RADIUS_REFERENCE_ID); // Tool button is always authored directly on --ar2.
-    const referenceCenter = elementCenter(referenceButton);
+    const referenceCenter = elementCenter(document.getElementById(OUTER_RADIUS_REFERENCE_ID)); // Tool button is authored directly on --ar2.
     const measuredRadius = referenceCenter ? Math.hypot(referenceCenter.x - center.x, referenceCenter.y - center.y) : 0;
-    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)) if the live reference cannot be measured.
+    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)).
     const radius = measuredRadius > 8 ? measuredRadius : fallbackRadius;
 
-    lastGeometry = {
-      center,
-      radius,
-      referenceButton: OUTER_RADIUS_REFERENCE_ID,
-      measured: measuredRadius > 8,
-    };
+    lastGeometry = { center, radius, referenceButton:OUTER_RADIUS_REFERENCE_ID, measured:measuredRadius > 8 };
     return lastGeometry;
   }
 
   function selectorAngleRad(index, count) {
-    const t = count <= 1 ? 0.5 : index / (count - 1); // Keeps a one-entry selector centered instead of pinning it to an edge.
-    const degrees = SELECTOR_START_DEG + (SELECTOR_END_DEG - SELECTOR_START_DEG) * t;
-    return degrees * Math.PI / 180;
+    const t = count <= 1 ? 0.5 : index / (count - 1); // Keeps one-entry selectors centered in the shared sweep.
+    return (SELECTOR_START_DEG + (SELECTOR_END_DEG - SELECTOR_START_DEG) * t) * Math.PI / 180;
+  }
+
+  function activeSelectionSlots() {
+    return [...document.querySelectorAll('.arc-slot')].filter(slot => {
+      const style = getComputedStyle(slot); // Retired hierarchy slots can briefly coexist while a category repopulates.
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
+    });
   }
 
   function layoutSharedSelector(slots) {
     if (!slots.length) return;
-    const { center, radius } = outerRingGeometry(); // One center + one radius for the whole selector; no per-button radius measurement is allowed.
-
+    const { center, radius } = outerRingGeometry(); // One center + one scalar radius for every button, every time.
     slots.forEach((slot, index) => {
       slot.classList.add('shared-selection-slot');
-      const angle = selectorAngleRad(index, slots.length); // Stable slot order prevents geometry feedback from left/top transitions.
+      const angle = selectorAngleRad(index, slots.length); // Slot order, never current geometry, determines angular placement.
       const left = center.x + Math.cos(angle) * radius;
-      const top = center.y - Math.sin(angle) * radius; // Screen Y grows downward while the authored outer-ring angles grow upward.
+      const top = center.y - Math.sin(angle) * radius; // Screen Y grows downward while authored ring angles grow upward.
       slot.style.setProperty('left', `${left}px`, 'important');
       slot.style.setProperty('top', `${top}px`, 'important');
-      slot.dataset.sharedSelectionRadius = radius.toFixed(2); // Visible through mobile diagnostics/DOM inspection when debugging a bad layout.
+      slot.dataset.sharedSelectionRadius = radius.toFixed(2); // Exposed for in-game diagnostics.
       slot.dataset.sharedSelectionAngle = (angle * 180 / Math.PI).toFixed(2);
     });
   }
@@ -91,7 +90,7 @@
   }
 
   function setOuterArchHidden(hidden) {
-    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves the permanent ring's measurable geometry.
+    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves measurable outer-ring geometry.
   }
 
   function removeCurvedLabel() {
@@ -118,7 +117,7 @@
     const dx = point.x - center.x;
     const dy = point.y - center.y;
     const length = Math.max(1, Math.hypot(dx, dy));
-    return { x: point.x + dx / length * LABEL_OUTSET_PX, y: point.y + dy / length * LABEL_OUTSET_PX };
+    return { x:point.x + dx / length * LABEL_OUTSET_PX, y:point.y + dy / length * LABEL_OUTSET_PX };
   }
 
   function renderCurvedPotionLabel(slots) {
@@ -127,7 +126,7 @@
     if (!text || slots.length < 2) return;
 
     const { center } = outerRingGeometry();
-    const points = slots.map(slot => outwardLabelPoint(elementCenter(slot), center)); // Same 17px relative spacing after every slot is locked to the one outer-ring radius.
+    const points = slots.map(slot => outwardLabelPoint(elementCenter(slot), center)); // Keeps the approved 17px spacing after the shared layout is applied.
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
@@ -135,7 +134,7 @@
     const my = (start.y + end.y) / 2;
     let control;
     if (points.length >= 3) {
-      control = { x: 2 * middle.x - mx, y: 2 * middle.y - my };
+      control = { x:2 * middle.x - mx, y:2 * middle.y - my };
     } else {
       const dx = end.x - start.x;
       const dy = end.y - start.y;
@@ -144,7 +143,7 @@
       let ny = dx / length;
       if ((center.x - mx) * nx + (center.y - my) * ny > 0) { nx *= -1; ny *= -1; }
       const span = Math.hypot(dx, dy);
-      control = { x: mx + nx * Math.min(30, span * 0.16), y: my + ny * Math.min(30, span * 0.16) };
+      control = { x:mx + nx * Math.min(30, span * 0.16), y:my + ny * Math.min(30, span * 0.16) };
     }
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -190,48 +189,37 @@
     );
   }
 
-  function activeSelectionSlots() {
-    // Selection slots are appended directly to the page by the shared presenter.
-    // Fading/retired slots can coexist briefly during hierarchy transitions, so
-    // ignore elements that are no longer participating in layout/hit-testing.
-    return [...document.querySelectorAll('.arc-slot')].filter(slot => {
-      const style = getComputedStyle(slot);
-      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
-    });
-  }
-
   function refresh() {
-    refreshQueued = false;
-    const slots = activeSelectionSlots();
-    if (!slots.length) {
-      setOuterArchHidden(false);
-      removeCurvedLabel();
-      return;
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const slots = activeSelectionSlots();
+      if (!slots.length) {
+        setOuterArchHidden(false);
+        removeCurvedLabel();
+        return;
+      }
+
+      setOuterArchHidden(true); // Every toggled selector visually replaces the permanent outer ring.
+      const potionOpen = slots.some(slot => slot.matches(POTION_MARKER_SELECTOR));
+      if (potionOpen) {
+        const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
+        const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
+        if (branchSlot && hasChildCategories) makeBranchCancel(branchSlot);
+      }
+
+      layoutSharedSelector(slots);
+      if (potionOpen) renderCurvedPotionLabel(slots);
+      else removeCurvedLabel();
+    } finally {
+      refreshing = false;
     }
-
-    setOuterArchHidden(true); // Every toggled selector temporarily replaces the permanent outer ring visually.
-    const potionOpen = slots.some(slot => slot.matches(POTION_MARKER_SELECTOR));
-    if (potionOpen) {
-      const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
-      const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
-      if (branchSlot && hasChildCategories) makeBranchCancel(branchSlot); // Callback remains the original back-to-root behavior.
-    }
-
-    layoutSharedSelector(slots);
-    if (potionOpen) renderCurvedPotionLabel(slots);
-    else removeCurvedLabel();
-  }
-
-  function queueRefresh(records = []) {
-    rememberRemovedPotionSelection(records);
-    if (refreshQueued) return;
-    refreshQueued = true;
-    requestAnimationFrame(refresh);
   }
 
   function install() {
     if (installed) return;
     installed = true;
+
     const style = document.createElement('style');
     style.id = 'sharedSelectionArcUiStyles';
     style.textContent = `
@@ -239,7 +227,11 @@
         visibility:hidden !important;
         pointer-events:none !important;
       }
-      .arc-slot.shared-selection-slot {
+
+      /* Authoritative base selector size. This applies the instant an .arc-slot
+         node is created, before MutationObserver presentation work runs, so
+         game.js and this module can no longer alternate between two scales. */
+      .arc-slot {
         position:fixed !important;
         width:clamp(22px,4.25vmin,30px) !important;
         height:clamp(22px,4.25vmin,30px) !important;
@@ -249,10 +241,17 @@
         box-shadow:0 2px 7px rgba(0,0,0,.42) !important;
         transition:transform .08s, background .08s, border-color .08s, opacity .12s !important;
       }
-      .arc-slot.shared-selection-slot .arc-icon { font-size:.78em; }
-      .arc-slot.shared-selection-slot .arc-icon img,
-      .arc-slot.shared-selection-slot .arc-icon canvas,
-      .arc-slot.shared-selection-slot .arc-icon svg { max-width:18px; max-height:18px; }
+      .arc-slot .arc-icon { font-size:.78em !important; }
+      .arc-slot .arc-icon img,
+      .arc-slot .arc-icon canvas,
+      .arc-slot .arc-icon svg { max-width:18px !important; max-height:18px !important; }
+      .arc-slot .category-x { inset:-3px !important; font-size:1.15em !important; }
+      .arc-slot .cure-family-grid { width:16px !important; height:16px !important; }
+      .arc-slot .cure-family { font-size:4px !important; }
+      .arc-slot .cure-family.active { font-size:6px !important; }
+      .arc-slot .cure-family.severe { font-size:8px !important; }
+      .arc-slot .cure-family-x { font-size:.9em !important; }
+
       .arc-slot .arc-label {
         position:absolute;
         left:50%; top:calc(100% + 3px);
@@ -270,12 +269,6 @@
         pointer-events:none;
         text-shadow:-1px -1px 0 rgba(0,0,0,.9), 1px -1px 0 rgba(0,0,0,.9), -1px 1px 0 rgba(0,0,0,.9), 1px 1px 0 rgba(0,0,0,.9), 0 2px 4px rgba(0,0,0,.9);
       }
-      .arc-slot.shared-selection-slot .category-x { inset:-3px; font-size:1.15em; }
-      .arc-slot.shared-selection-slot .cure-family-grid { width:16px; height:16px; }
-      .arc-slot.shared-selection-slot .cure-family { font-size:4px; }
-      .arc-slot.shared-selection-slot .cure-family.active { font-size:6px; }
-      .arc-slot.shared-selection-slot .cure-family.severe { font-size:8px; }
-      .arc-slot.shared-selection-slot .cure-family-x { font-size:.9em; }
       .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:.82em; line-height:1; }
       .quick-potion-curved-category {
         fill:#f9e28a; stroke:rgba(0,0,0,.82); stroke-width:3px; paint-order:stroke fill;
@@ -287,11 +280,14 @@
     document.head.appendChild(style);
 
     new MutationObserver(records => {
-      const relevantRecords = records.filter(recordTouchesSelectionArc); // Ignores the curved SVG label's own add/remove mutations.
-      if (relevantRecords.length) queueRefresh(relevantRecords);
+      const relevantRecords = records.filter(recordTouchesSelectionArc); // SVG label mutations are ignored.
+      if (!relevantRecords.length) return;
+      rememberRemovedPotionSelection(relevantRecords);
+      refresh(); // MutationObserver runs before paint, so new/repopulated selectors are positioned without a one-frame old-style flash.
     }).observe(document.body, { childList:true, subtree:true });
-    addEventListener('resize', () => queueRefresh(), { passive:true });
-    queueRefresh();
+
+    addEventListener('resize', refresh, { passive:true });
+    refresh();
 
     window.QuickPotionArcUI = Object.freeze({
       diagnostics: () => ({
@@ -304,9 +300,9 @@
         buttonDiameterScale:BUTTON_DIAMETER_SCALE,
         labelOutsetPx:LABEL_OUTSET_PX,
         outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
-        selectorRadii:[...document.querySelectorAll('.arc-slot.shared-selection-slot')].map(slot => Number(slot.dataset.sharedSelectionRadius)),
+        selectorRadii:[...document.querySelectorAll('.arc-slot')].map(slot => Number(slot.dataset.sharedSelectionRadius)),
       }),
-      refresh: () => queueRefresh(),
+      refresh,
     });
     log('installed', { selectorStartDeg:SELECTOR_START_DEG, selectorEndDeg:SELECTOR_END_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
   }
