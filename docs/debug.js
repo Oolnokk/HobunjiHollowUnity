@@ -20,6 +20,24 @@
     document.head.appendChild(script);
   })();
 
+  // Creature grounding must install before png-plane-avatar.js publishes its
+  // helper API and before game.js performs the first cached idle-sprite scan.
+  // Keep this synchronous for the same reason as the Cloud Forest bootstrap;
+  // creature-grounding.js itself is a tiny load-order adapter, not debug-only
+  // behavior, despite using this early bootstrap as its safest insertion point.
+  (function loadCreatureGroundingEarly() {
+    const src = 'js/creature-grounding.js?v=20260822a';
+    if (document.querySelector('script[data-creature-grounding]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-creature-grounding="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.creatureGrounding = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
