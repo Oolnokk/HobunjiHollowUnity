@@ -157,6 +157,26 @@
     return group;
   }
 
+  // Carved cavern shell — floor, walls, and ceiling as one organic
+  // low-poly rock mesh, produced by CavernSculptor's SDF carve + dual
+  // contour extraction (see cavern-sculptor.js / cavern-generator.js's
+  // generateCavernFloor) rather than flat per-panel geometry. Same rock
+  // look as the old buildCavernWalls (kept below for anything still using
+  // the flat-panel path) so a den still reads as the same rock throughout.
+  function buildCarvedCavernMesh(THREE, meshData) {
+    if (!meshData || !meshData.positions || !meshData.positions.length) return new THREE.Group();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.positions, 3));
+    const indices = meshData.indices;
+    geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x5f5a56, roughness: .92, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.userData.cameraObstacle = true;
+    return mesh;
+  }
+
   // Flat cloth-colored wall panels for a canvas tent interior, tinted to
   // match the exterior tent piece's canvas material (HousePieceGen's
   // matCanvas, 0xcbb489). Exact port of game.js's buildCanvasWalls.
@@ -246,5 +266,6 @@
   root.InteriorSceneBuilder = {
     buildWallPanels, buildWallGroup, buildFloorMaterial,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
+    buildCarvedCavernMesh,
   };
 })(window);

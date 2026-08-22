@@ -8,7 +8,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260808a"></script>
+  <script src="js/interior-scene-builder.js?v=20260815a"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -423,7 +423,12 @@
        can otherwise be reached earlier still, from the fire-and-forget
        Tothal Shift kicked off during world boot — that path never touches
        deps, so it works regardless of init() timing. -->
-  <script src="js/cavern-generator.js?v=20260807a"></script>
+  <!-- Generic adaptive-octree SDF carve + dual-contour mesh engine (window.
+       CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
+       Framework-agnostic pure data/math — must load before cavern-generator.js,
+       whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
+  <script src="js/cavern-sculptor.js?v=20260815a"></script>
+  <script src="js/cavern-generator.js?v=20260815a"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -466,6 +471,17 @@
       <canvas id="overlayCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
       <canvas id="lightingCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;"></canvas>
       <div id="fpsCounter" aria-hidden="true" style="display:none;position:absolute;top:6px;left:6px;font:11px monospace;color:#9f9;background:rgba(0,0,0,.45);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:50">0 FPS</div>
+      <!-- Den-entry loading label — shown only while the SDF cavern carve
+           (a synchronous, blocking ~25-40s call — see loadBuildingScene's
+           'map_i_den_' branch) runs behind the scene-transition's black
+           fade, so the freeze doesn't read as a hang. The carve is one
+           unbroken call with no yield points, so the browser can't repaint
+           mid-generation no matter what — a moving percent isn't possible
+           without restructuring that pipeline, which wasn't worth the risk
+           to a freshly-stabilized generator. Static text only. -->
+      <div id="denLoadingLabel" aria-hidden="true" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;pointer-events:none;z-index:10;">
+        <span style="font-family:'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;font-size:26px;letter-spacing:0.08em;color:#f3e6c8;text-shadow:0 2px 10px rgba(0,0,0,0.85);">Generating den&hellip;</span>
+      </div>
     </div>
   </div>
 

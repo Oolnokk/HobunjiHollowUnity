@@ -1272,6 +1272,11 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          // Previously the only zone with no packSpecies pool at all, so
+          // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
+          // scratchbones-config.js's wildlife.denMothers) had no zone to
+          // ever spawn from, anywhere.
+          packSpecies: ['gar-wolf'],
           herbivoreSpecies: ['drenkirra'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
@@ -3303,6 +3308,11 @@
       // updateMovement, which feeds computed direction through the exact
       // same ix/iy → speed/collision pipeline manual input uses, and any
       // real manual input cancels it outright rather than fighting it.
+      // Tracks whether the player had real movement input last frame — used
+      // by updateMovement's stuck-recovery check to fire only on the
+      // idle→moving edge (the instant a movement key/stick is first
+      // pressed), not every single frame the player happens to be moving.
+      let _playerWasMoving = false;
       let playerAutoWalk = null;
       const PLAYER_AUTOWALK_ARRIVE_PX = TILE * 0.35;
       const PLAYER_AUTOWALK_PATH_PADDING_TILES = 10;
@@ -6552,11 +6562,24 @@
               .filter(den => den.mouthAnchor)
               .map(den => {
                 const cavernMapId = window.WildlifeSpawn.denCavernMapId(zoneId, den.id);
-                const { exitCol, exitRow } = window.CavernGenerator.generateCavernFloor(cavernMapId);
+                // No eager generateCavernFloor(cavernMapId) call here on
+                // purpose: its SDF carve is real work (unlike the old
+                // blob-growth generator this replaced), and this transition
+                // list gets rebuilt for every den in the zone whenever the
+                // zone itself (re)generates — including at world boot's
+                // fire-and-forget Tothal Shift across all four zones (see
+                // spawnPlayerAvatar's checkTothalShift() call). Eagerly
+                // resolving every den's spawn tile here meant carving every
+                // den in every zone up front, whether or not the player
+                // ever visits it, which is exactly the boot-time freeze
+                // this avoids. targetCol/targetRow are left unset;
+                // loadBuildingScene's cavern branch resolves the real
+                // (guaranteed-walkable) spawn tile itself, the one time a
+                // player actually enters this specific den — see its
+                // _pendingEntrySpawnFromExit handling.
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
                   target: 'building', targetMapId: cavernMapId,
-                  targetCol: exitCol, targetRow: exitRow,
                 };
               });
             _zoneLayouts.set(zoneId, {
@@ -9750,9 +9773,21 @@
         let loadSource = 'missing';
         if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
-          // (see synthesizeCavernMapData).
+          // (see synthesizeCavernMapData) — but that generation is one
+          // unbroken synchronous SDF carve (~25-40s), during which the
+          // browser can't repaint at all, so the black scene-transition
+          // fade (see startSceneTransition/updateSceneTransition, which
+          // already holds it until _buildingScenes resolves) would
+          // otherwise sit there with no indication anything is happening.
+          // Two rAFs guarantee this label actually paints before the
+          // blocking call starts — a single rAF can still land in the
+          // same paint as this DOM write, showing nothing at all.
+          const denLoadingLabel = document.getElementById('denLoadingLabel');
+          if (denLoadingLabel) denLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
           mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
           loadSource = 'cavern';
+          if (denLoadingLabel) denLoadingLabel.style.display = 'none';
         } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
@@ -9822,27 +9857,52 @@
           }
           const bScene = new THREE.Scene();
           bScene.background = new THREE.Color(0x2a1a0a);
-          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
-          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          // A den's cavern is meant to read as genuinely dark — the warm
+          // door light + floor glow patch below (built fresh every time
+          // this scene loads, i.e. every time the player actually enters)
+          // is the only real light source, standing in for daylight
+          // spilling through the mouth. A near-zero ambient/key light keeps
+          // the rest of the room from washing that out — every other
+          // interior style keeps the normal bright, evenly-lit look.
+          // Matches the farmhouse interior's own "dark room, single warm
+          // lantern" baseline (see the _intAmbient/_intKey pair near the
+          // Three.js renderer setup) rather than a guessed-lower value —
+          // near-zero ambient read as almost pure black even right next to
+          // the door light in a headless render check, since a point
+          // light's falloff only reaches surfaces facing toward it.
+          const isCavernInterior = mapData.wallStyle === 'cavern';
+          bScene.add(new THREE.AmbientLight(0xfff5e0, isCavernInterior ? 0.15 : 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
-          // Floor tiles only for defined floor set
-          for (const [c, r] of (mapData.floor || [])) {
-            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
-            fl.position.set(c + 0.5, -0.05, r + 0.5);
-            bScene.add(fl);
-          }
-          // Irregular brick walls with gaps at all exit tiles — or, for a den's
-          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
-          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
-          // flat cloth-colored panels matching the exterior tent piece's
-          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
-          const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
-          if (wallPanels.length) {
-            const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
-            _markOutline(wallGroup);
-            bScene.add(wallGroup);
+          // A den's cavern (mapData.wallStyle === 'cavern') carries its own
+          // pre-carved organic rock shell (see generateCavernFloor/
+          // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
+          // one mesh, replacing the flat per-tile floor boxes and flat wall
+          // panels every other interior style still uses below.
+          if (mapData.wallStyle === 'cavern' && mapData.mesh) {
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh);
+            _markOutline(cavernMesh);
+            bScene.add(cavernMesh);
+          } else {
+            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            // Floor tiles only for defined floor set
+            for (const [c, r] of (mapData.floor || [])) {
+              const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.position.set(c + 0.5, -0.05, r + 0.5);
+              bScene.add(fl);
+            }
+            // Irregular brick walls with gaps at all exit tiles, or for a
+            // canvas tent interior (mapData.wallStyle === 'canvas'), flat
+            // cloth-colored panels matching the exterior tent piece's
+            // 'canvas' material (see HousePieceGen's matCanvas) instead of
+            // brick.
+            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+            if (wallPanels.length) {
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
+              _markOutline(wallGroup);
+              bScene.add(wallGroup);
+            }
           }
           // A den's cavern entrance had no visual distinguishing it from any
           // other dark corner of the cave (see generateCavernFloor's
@@ -9860,7 +9920,16 @@
             const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
             const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
             glow.rotation.x = -Math.PI / 2;
-            glow.position.set(ex, 0.02, ez);
+            // y=0.02 used to sit right at the entrance's own carved floor
+            // surface — not reliably ABOVE it: confirmed directly (SDF
+            // field sampling, not just visual guessing) that the true
+            // floor at the entrance's exact centroid only clears open air
+            // somewhere between y=0.02 and y=0.05, so the glow patch was
+            // landing inside the floor/rock there on every single den,
+            // reading as "a little arch of light placed inside a rock,
+            // cutting a hole in it" instead of lying flat on open floor.
+            // 0.15 clears that transition with real margin.
+            glow.position.set(ex, 0.15, ez);
             bScene.add(glow);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
@@ -9974,6 +10043,75 @@
             const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
             nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
             bScene.add(nestMarker);
+
+            // A "bigger, tunnely" den (see generateCavernFloor) deserves real
+            // content along the crawl to the Den-Mother rather than an empty
+            // corridor — sparse mineable ore rocks and a few regular
+            // (non-Den-Mother) creatures from the same native pool, both
+            // picked deterministically by synthesizeCavernMapData (see
+            // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
+            const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
+            // Fresh map each build (rather than reusing any Map left over
+            // from a stale pre-Tothal-Shift cavern of the same mapId — see
+            // forgetZoneDenState) so removeZoneMineableRockVisual never
+            // targets an orphaned rock group from a layout that no longer
+            // exists.
+            const oreRockMeshes = new Map();
+            if (mapData.oreRocks?.length) _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            for (const rock of (mapData.oreRocks || [])) {
+              if (bGrid[rock.row]?.[rock.col]) {
+                bGrid[rock.row][rock.col].type = TileType.ROCK;
+                bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
+                bGrid[rock.row][rock.col].oreKind = rock.oreKind;
+              }
+              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              if (!stoneGeo) continue;
+              const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
+              rockMesh.castShadow = rockMesh.receiveShadow = true;
+              const rockGroup = new THREE.Group();
+              rockGroup.add(rockMesh);
+              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+              bScene.add(rockGroup);
+              _markOutline(rockGroup);
+              // Reuses the same mineableRocksByTile/isMineableRockTile/
+              // removeZoneMineableRockVisual pipeline the outdoor ore rocks
+              // already go through (see mergeZoneTiles/buildMergedZoneGrid),
+              // so mining one here needs no new gameplay code.
+              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+            }
+            // Regular wildlife species (e.g. uumkaoii-wild) are hostile:false
+            // outdoors — pure fleeable prey, per CREATURE_DB's own comment —
+            // with no aggroRangePx/attack stats at all. A den's own pack
+            // defends its home turf regardless of species though, so a
+            // spawn here whose species wouldn't otherwise fight gets a
+            // modest defensive combat profile merged onto a per-instance
+            // clone of its def (creature.def, not the shared CREATURE_DB
+            // entry — makeCreatureEntity's opts.def overrides it cleanly via
+            // restOpts, which spreads after `def` in the creature object
+            // literal, so every existing hostile/aggroRangePx/attack* read
+            // throughout updateHostiles picks it up with no other changes
+            // needed). Weaker/shorter-ranged than an actual predator's pack
+            // (e.g. gar-wolf) — a startled herbivore defending its nest, not
+            // a hunter.
+            const DEN_HERBIVORE_DEFENDER_STATS = {
+              hostile: true, aggroRangePx: TILE * 4.5, leashRangePx: TILE * 4,
+              attackDamage: 10, attackRangePx: TILE * 0.8, attackHalfConeRad: 40 * Math.PI / 180,
+              attackStaminaCost: 10, attackCooldownS: 1.3, attacks: ['pounce'], attackTag: 'blunt',
+            };
+            for (const spawn of (mapData.creatureSpawns || [])) {
+              const spawnFamily = window.WildlifeSpawn.denGenotypeFamily(spawn.kind);
+              const spawnGenotype = spawnFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, spawnFamily) : null;
+              const sx = (spawn.col + 0.5) * TILE, sy = (spawn.row + 0.5) * TILE;
+              const baseDef = CREATURE_DB[spawn.kind];
+              const defOverride = baseDef && baseDef.hostile === false ? Object.assign({}, baseDef, DEN_HERBIVORE_DEFENDER_STATS) : null;
+              const creature = makeCreatureEntity(spawn.kind, sx, sy, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX: sx, homeY: sy, state: 'idle',
+                isDenMother: false, genotype: spawnGenotype,
+                ...(defOverride ? { def: defOverride } : {}),
+              });
+              if (creature) hostileObjects.add(creature);
+            }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
@@ -9986,7 +10124,14 @@
             worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
             rebuildRouteGraphs();
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
+          // Meshes tall enough to get between the fixed follow camera and the
+          // player (cavern rock walls, house/shop wall panels — see their
+          // own `.userData.cameraObstacle` tags) — collected once here, same
+          // as buildZoneScene's occlusionMeshes, rather than walking the
+          // whole scene graph every frame in occlusionSafeCameraPosition.
+          const occlusionMeshes = [];
+          bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -10004,7 +10149,16 @@
             }
             if (_pendingEntrySpawnFromExit) {
               _pendingEntrySpawnFromExit = false;
-              const sp = buildingSpawnFromExit(info, cols, rows);
+              // A den's cavern skips the generic "average exit col, one
+              // tile north" heuristic — mapData.exitCol/exitRow (the
+              // guaranteed-walkable middle entrance tile generateCavernFloor
+              // already computed above) is exact, where that heuristic can
+              // land outside the organic floor blob (see denTransitions'
+              // comment in performTothalShift for why this is resolved
+              // lazily here rather than eagerly at zone-generation time).
+              const sp = mapData.wallStyle === 'cavern' && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+                ? { col: mapData.exitCol, row: mapData.exitRow }
+                : buildingSpawnFromExit(info, cols, rows);
               player.x = (sp.col + 0.5) * TILE;
               player.y = (sp.row + 0.5) * TILE;
               _snapCameraTarget();
@@ -10056,7 +10210,9 @@
           _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
+        const occlusionMeshes = [];
+        bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId, occlusionMeshes };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -10434,11 +10590,15 @@
         return true;
       }
 
-      // Removes one separately-built wilderness resource rock. Its full
-      // grass floor tile is already in the merged ground mesh, so only the
-      // small mound group needs to disappear when mining completes.
+      // Removes one separately-built resource rock's mound. For a wilderness
+      // zone its full grass floor tile is already in the merged ground mesh,
+      // so only the small mound group needs to disappear when mining
+      // completes; for a den's cavern (see loadBuildingScene's oreRocks
+      // handling) the mound sits directly on the carved floor with nothing
+      // else to reveal underneath. Resolves either scene registry so both
+      // share this one removal path instead of duplicating it per area kind.
       function removeZoneMineableRockVisual(mapId, col, row) {
-        const zi = _zoneScenes.get(mapId);
+        const zi = _zoneScenes.get(mapId) || _buildingScenes.get(mapId);
         const byTile = _zoneMineableRockMeshes.get(mapId);
         const rockGroup = byTile?.get(`${col},${row}`);
         if (!zi || !rockGroup) return false;
@@ -12744,6 +12904,21 @@
           if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
+        // Universal stuck-recovery: the instant the player first presses a
+        // movement input after standing still, check whether they're
+        // actually embedded in solid geometry right now (spawned/
+        // teleported into a wall sliver — see canPlayerOccupy's own
+        // escape-hatch fallback just below, which keeps movement usable in
+        // this state but still leaves the player to wander their own way
+        // out). If so, snap straight to the nearest genuinely clear tile
+        // instead, so getting stuck never requires guessing which
+        // direction happens to be open.
+        if (inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          const rescue = findNearestWalkableTileCenter(player.x, player.y);
+          if (rescue) { player.x = rescue.x; player.y = rescue.y; player.vx = 0; player.vy = 0; }
+        }
+        _playerWasMoving = inputStrength > 0.001;
+
         // Raw per-frame move intent, read by hold abilities (Blink Dodge)
         // that need to know which way the player is trying to go.
         player.inputX = ix;
@@ -12902,7 +13077,50 @@
       }
 
       function canPlayerOccupy(wx, wy) {
-        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+        if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
+        // Universal "unstuck" escape: if the player's own true position is
+        // itself embedded in solid geometry (spawned/teleported into a wall
+        // sliver, a boundary tile a mesh fix didn't quite seal, etc.), the
+        // full-radius box check above can never pass for ANY nearby
+        // candidate whose box still grazes that same solid region — every
+        // direction reads as blocked and the player is permanently welded
+        // in place. While that's true, fall back to a bare center-point
+        // sample (ignores the radius) so movement keeps working and the
+        // player can walk free of the solid patch under their own input
+        // instead of needing a teleport/reload to recover. Normal strict
+        // box collision resumes automatically the instant their real
+        // position is valid again, so this never opens a lasting way to
+        // squeeze through walls.
+        if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          return tileSpeedAt(wx, wy) !== null;
+        }
+        return false;
+      }
+
+      // Expanding-ring search for the nearest genuinely-clear tile center
+      // around (px, py) — used by updateMovement's stuck-recovery teleport.
+      // Deliberately checks the strict box occupancy (canOccupyAt), not
+      // canPlayerOccupy's own lenient escape-hatch fallback above: that
+      // fallback only reads "clear" relative to the player's CURRENT
+      // (stuck) position, so using it here while the player hasn't moved
+      // yet would happily hand back a candidate tile that doesn't actually
+      // satisfy full-radius collision either. Rings out from the player's
+      // own tile outward (Chebyshev distance) so the result is always the
+      // closest real fit, capped at a generous search radius so a
+      // pathologically fully-blocked area can't spin forever.
+      const STUCK_RECOVERY_MAX_RING = 24;
+      function findNearestWalkableTileCenter(px, py) {
+        const col0 = Math.floor(px / TILE), row0 = Math.floor(py / TILE);
+        for (let ring = 0; ring <= STUCK_RECOVERY_MAX_RING; ring++) {
+          for (let dr = -ring; dr <= ring; dr++) {
+            for (let dc = -ring; dc <= ring; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue; // only this ring's perimeter
+              const cx = (col0 + dc + 0.5) * TILE, cy = (row0 + dr + 0.5) * TILE;
+              if (canOccupyAt(cx, cy, PLAYER_RADIUS * 0.72)) return { x: cx, y: cy };
+            }
+          }
+        }
+        return null;
       }
 
       // A fast forced move (combat lunge, knockback, dodge) recomputes its
@@ -15034,6 +15252,15 @@
           return meshes;
         }
         const meshes = [];
+        // Generic building interiors (map_i_* — dens, shops, workshops...):
+        // same tagged-mesh snapshot as zones, collected once when the
+        // building's scene is built (see loadBuildingScene). Without this,
+        // a den's carved cavern rock (or any other building's walls) never
+        // pulled the camera in when it got between the camera and the
+        // player, unlike the outdoor case just above.
+        if (_isBuildingArea(currentArea)) {
+          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) meshes.push(m);
+        }
         if (currentArea === 'farm') {
           for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
