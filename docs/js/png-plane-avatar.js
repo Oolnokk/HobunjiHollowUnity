@@ -334,6 +334,20 @@
     return { x: totalWeight ? weightedX / totalWeight : w / 2, y: neckY + .5 };
   }
 
+  // Trims a mask's raw bottom-most opaque row upward past any stray/
+  // anti-aliased single-pixel rows, stopping at the first row that's
+  // actually a coherent (wide-enough) edge. Shared by detectHeadRigPixels
+  // (the head's own bottom, for the neck pivot) and
+  // detectHeadCosmeticsBottomPx (hair/hood/hat's combined bottom, for how
+  // far down the neck rig's full-head-weight zone needs to reach).
+  function coherentBottomOf(mask) {
+    if (!mask) return null;
+    const minimumRowPixels = Math.max(2, Math.round(mask.width * .012));
+    let bottom = mask.bottom;
+    while (bottom > mask.top && mask.rowCounts[bottom] < minimumRowPixels) bottom--;
+    return bottom;
+  }
+
   // The optional head-only canvas is rendered from the fighter's base head
   // sprite. Its alpha centroid locates the actual visible head rather than
   // guessing from the full square portrait canvas; its coherent bottom edge
@@ -344,15 +358,27 @@
       const fallbackPivot = detectNeckPivotPx(avatarCanvas, alphaThreshold);
       return fallbackPivot ? { pivotPx: fallbackPivot, centroidPx: { ...fallbackPivot }, boundsPx: null, method: 'full-avatar-fallback' } : null;
     }
-    const minimumRowPixels = Math.max(2, Math.round(headMask.width * .012));
-    let coherentBottom = headMask.bottom;
-    while (coherentBottom > headMask.top && headMask.rowCounts[coherentBottom] < minimumRowPixels) coherentBottom--;
+    const coherentBottom = coherentBottomOf(headMask);
     return {
       pivotPx: { x: headMask.centroidPx.x, y: coherentBottom + .5 },
       centroidPx: { ...headMask.centroidPx },
       boundsPx: { top: headMask.top, bottom: coherentBottom, left: headMask.left, right: headMask.right },
       method: 'head-sprite-alpha-centroid',
     };
+  }
+
+  // The optional head-cosmetics canvas is rendered from the base head PLUS
+  // hair/hood/hat (see game.js's headCosmeticsCanvas / portrait-utils.js's
+  // onlyHeadAndCosmetics) — everything that should rotate rigidly with the
+  // head. Its coherent bottom edge is how far DOWN a tall/draping cosmetic
+  // (a fin-shaped hood, a long mantle) actually extends, which can reach
+  // well past the bare head sprite alone. Returns null (meaning "no
+  // adjustment, use the default blend band") if the canvas is missing or
+  // unreadable — this is a pure enhancement, never required.
+  function detectHeadCosmeticsBottomPx(headCosmeticsCanvas, alphaThreshold) {
+    const mask = scanOpaquePixelMask(headCosmeticsCanvas, alphaThreshold);
+    if (!mask) return null;
+    return coherentBottomOf(mask) + .5;
   }
 
   function smoothstep01(value) {
@@ -378,15 +404,29 @@
     const cropWidthPx = Math.max(1, right - left + 1), cropHeightPx = Math.max(1, bottom - top + 1);
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
+    // Default ramp: weight 0 at neckLocal.y - .55*blendHeight, saturating to
+    // weight 1 at neckLocal.y + .45*blendHeight. A tall/draping head cosmetic
+    // (fin-shaped hood, long mantle) can extend further down than that
+    // default saturation point — options.headWeightFloorY (from
+    // detectHeadCosmeticsBottomPx, the measured bottom of head+hair+hood+hat
+    // combined) shifts the WHOLE ramp down by just enough that its 1.0 point
+    // covers that real extent instead, same width, so a character whose
+    // cosmetics fit inside the default reach gets pixel-identical behavior
+    // to before this existed.
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
     const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
+    const defaultRampEndY = neckLocal.y + blendHeight * .45;
+    const rampEndY = (Number.isFinite(options.headWeightFloorY) && options.headWeightFloorY < defaultRampEndY)
+      ? options.headWeightFloorY
+      : defaultRampEndY;
+    const rampStartY = rampEndY - blendHeight;
     const appendVertex = (pixelX, pixelY, normalZ) => {
       const x = toModelX(pixelX);
       const y = toModelY(pixelY);
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
+      const headWeight = smoothstep01((y - rampStartY) / blendHeight);
       skinIndices.push(0, 1, 0, 0);
       skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
@@ -443,6 +483,7 @@
     geometry.userData = {
       segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
       opaqueBoundsPx: { left, right, top, bottom }, visibleCellCount: visibleCells.length,
+      headWeightFloorY: options.headWeightFloorY ?? null, rampStartY, rampEndY,
     };
     return geometry;
   }
@@ -474,7 +515,18 @@
       y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
       z: 0,
     };
-    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask });
+    // Optional: how far down hair/hood/hat combined actually extend (see
+    // detectHeadCosmeticsBottomPx) — widens the neck rig's full-head-weight
+    // zone to cover a tall/draping cosmetic instead of tearing partway down
+    // it. null (no config.headCosmeticsCanvas, or nothing readable in it)
+    // just falls back to the original fixed-fraction blend band untouched.
+    const headCosmeticsBottomPx = config.headCosmeticsCanvas
+      ? detectHeadCosmeticsBottomPx(config.headCosmeticsCanvas, config.alphaThreshold)
+      : null;
+    const headWeightFloorY = Number.isFinite(headCosmeticsBottomPx)
+      ? modelHeight / 2 - (headCosmeticsBottomPx / pxH) * modelHeight
+      : null;
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask, headWeightFloorY });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
@@ -509,6 +561,7 @@
       group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
       detectionMethod: detectedHead.method, opaqueBoundsPx: geometry.userData.opaqueBoundsPx,
+      headWeightFloorY,
     };
   }
 
@@ -628,7 +681,8 @@
       ? buildSkinnedSinglePlaneAssembly(THREE, {
           planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY,
           sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
-          headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
+          headCanvas: options.headCanvas, headCosmeticsCanvas: options.headCosmeticsCanvas,
+          alphaThreshold: options.neckAlphaThreshold,
           name: `${root.name}_skinned_plane_assembly`,
         })
       : null;
