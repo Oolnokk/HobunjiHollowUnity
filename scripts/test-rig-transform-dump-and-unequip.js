@@ -21,11 +21,11 @@ assert(outerArchOrder.every((position, i) => position >= 0 && (i === 0 || positi
 assert(index.indexOf('cooking-ui.css') > index.indexOf('style.css'), 'post-base HUD overrides must load after style.css');
 
 const expectedAngles = {
-  btnUnequipHeld: '155deg',
-  btnWeaponSwitch: '145deg',
-  toolBtn: '135deg',
-  itemBtn: '125deg',
-  btnCallMount: '115deg',
+  btnUnequipHeld: '165deg',
+  btnWeaponSwitch: '155deg',
+  toolBtn: '145deg',
+  itemBtn: '135deg',
+  btnCallMount: '125deg',
 };
 const outerArchStyles = `${styles}\n${cookingStyles}`;
 for (const [id, angle] of Object.entries(expectedAngles)) {
