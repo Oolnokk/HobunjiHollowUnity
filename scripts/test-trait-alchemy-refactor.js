@@ -216,6 +216,9 @@ assert.match(game, /id:`cancel-\$\{category\}`[\s\S]*label:'Cancel'[\s\S]*active
 assert.match(game, /category === 'healing' \|\| category === 'buffs'[\s\S]*unshift\(cancelEntry\)[\s\S]*push\(cancelEntry\)/, 'Cancel must occupy the same left/right edge angle as the category it replaces');
 assert.match(game, /_arcMove\(px, py\); \/\/ Re-evaluate the same continuous drag/, 'one continuous drag must traverse a newly populated potion hierarchy without a second press');
 assert.match(game, /_openPotionItems\(category\.id\);[\s\S]*_arcMove\(px, py\); \/\/ The replacement Cancel button/, 'continuous drag must focus the replacement Cancel without another pointer event');
+assert.match(game, /entries:potion-items-[\s\S]*Math\.max\(0, Math\.min\(_arcSlots\.length - 1, nextIndex\)\)/, 'final potion lists must clamp so repeated wheel events cannot wrap past Cancel');
+assert.match(game, /potionAction3Press\.held = true; \/\/ Potion Select is exclusively[\s\S]*openPotions\(\)/, 'held potion input must display Medicine and Utility immediately rather than waiting for wheel movement');
+assert.match(game, /_selectorArcOpen = true; \/\/ These actions have no tap behavior[\s\S]*openPotions\(\)/, 'pointer-held potion input must also display its root options immediately');
 assert.match(style, /\.arc-slot\.potion-cancel[\s\S]*\.arc-slot\.potion-cancel\.arc-active/, 'Cancel must have readable idle and selected presentation');
 assert.match(game, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function _openPotionBranch[\s\S]*_outerR\(\)[\s\S]*function _openPotionItems[\s\S]*_outerR\(\)/, 'all potion hierarchy levels must use the ordinary tool/item arch radius');
 assert.doesNotMatch(game, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');

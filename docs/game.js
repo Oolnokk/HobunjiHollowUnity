@@ -20658,7 +20658,12 @@
               else if (category) _setActive(_arcSlots.indexOf(category));
               return true;
             }
-            _setActive((_arcActive + (dir < 0 ? -1 : 1) + _arcSlots.length) % _arcSlots.length);
+            const nextIndex = _arcActive + (dir < 0 ? -1 : 1);
+            if (_arcOpen.startsWith('entries:potion-items-')) {
+              _setActive(Math.max(0, Math.min(_arcSlots.length - 1, nextIndex))); // Final lists stop at Cancel instead of wrapping past it on repeated wheel events.
+            } else {
+              _setActive((nextIndex + _arcSlots.length) % _arcSlots.length);
+            }
             return true;
           },
           movePointer(x, y) { _arcMove(x, y); },
@@ -21166,13 +21171,9 @@
               if (act === 'ammo_select' || act === 'potion_select') {
                 _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
                 window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
-                _selectorArcOpen = false;
-                _selectorHoldTimer = setTimeout(() => {
-                  if (_ptId === null) return;
-                  _selectorArcOpen = true;
-                  if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
-                  else window._desktopSelectionArc?.openPotions();
-                }, desktopTapWindowMs());
+                _selectorArcOpen = true; // These actions have no tap behavior to preserve, so show their choices as soon as the held input begins.
+                if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
+                else window._desktopSelectionArc?.openPotions();
               }
               _chargeFiredOnPress = Boolean(act && !el.classList.contains('abt-hidden') && wouldStartCharge(activeTool, act));
               if (_chargeFiredOnPress) {
@@ -22165,13 +22166,9 @@
           }
           if (potionAction3Press.down) return;
           potionAction3Press.down = true;
-          potionAction3Press.held = false;
+          potionAction3Press.held = true; // Potion Select is exclusively a held selector; its root choices should be visible immediately.
           window._desktopSelectionArc?.beginHeldSelection?.('potions');
-          potionAction3Press.timer = setTimeout(() => {
-            if (!potionAction3Press.down) return;
-            potionAction3Press.held = true;
-            window._desktopSelectionArc?.openPotions();
-          }, desktopTapWindowMs());
+          window._desktopSelectionArc?.openPotions();
           return;
         }
         if (window._desktopSelectionArc?.entryMenuOpen?.() && !(actionId === 'action2' && activeTool === 'ranged' && rangedAmmoAction2Press.down) && !(actionId === 'action3' && potionAction3Press.down)) {
@@ -22195,13 +22192,9 @@
           }
           if (rangedAmmoAction2Press.down) return;
           rangedAmmoAction2Press.down = true;
-          rangedAmmoAction2Press.held = false;
+          rangedAmmoAction2Press.held = true; // Ammo Select likewise has no competing tap action while ranged is drawn.
           window._desktopSelectionArc?.beginHeldSelection?.('ammo');
-          rangedAmmoAction2Press.timer = setTimeout(() => {
-            if (!rangedAmmoAction2Press.down) return;
-            rangedAmmoAction2Press.held = true;
-            window._desktopSelectionArc?.openAmmo();
-          }, desktopTapWindowMs());
+          window._desktopSelectionArc?.openAmmo();
           return;
         }
         if (phase === 'release') {
