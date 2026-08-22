@@ -1,78 +1,62 @@
-// Mobile-only guard for the hierarchical Potion Select wheel.
-// Category stages require a true outside-to-inside drag onto the actual button;
-// concrete potion lists keep the selector's normal nearest-angle behavior.
+// Mobile-only tap navigation for the hierarchical Potion Select wheel.
+// Potion Select -> branch -> category -> concrete potion is a series of taps;
+// desktop/controller retain the shared selector's original held/drag behavior.
 (() => {
   'use strict';
 
-  const DRAG_ARM_PX = 10; // Thumb jitter around Action 3 must not count as an intentional category drag.
-  const HIT_RADIUS_SCALE = 0.72; // Uses an inner activation core so Action 3 cannot overlap a category's effective hit radius.
-  const RECENT_POINTER_MS = 900; // Associates openPotions() with the touch that actually pressed Action 3.
+  const TAP_SLOP_PX = 12; // Used to reject drags while still forgiving normal thumb movement during a tap.
+  const HIT_PAD_PX = 5; // Used to make the half-size visible circles slightly easier to tap without nearest-angle selection.
 
-  let installed = false; // Prevents wrapping the shared selector more than once.
-  let lastPointerDown = null; // {x,y,pointerId,at} used as the first category-stage drag origin.
-  let stageOrigin = null; // Reset at each hierarchy transition so every category tier needs a fresh drag.
-  let stageGate = null; // {key,sawOutside}; category buttons trigger only after an outside-to-inside crossing.
-  let activePointerId = null; // Keeps unrelated touches from arming the potion hierarchy.
-  let originalArc = null; // Authoritative shared selector object created by game.js.
-  let wrappedArc = null; // Proxy that intercepts only mobile potion hierarchy pointer movement.
+  let installed = false; // Prevents wrapping the shared selector and capture listeners more than once.
+  let originalArc = null; // Authoritative selector object created by game.js and used for actual hierarchy/state changes.
+  let wrappedArc = null; // Proxy exposed back to game.js so mobile potion releases cannot close hierarchy stages.
+  let tapGesture = null; // {pointerId,startX,startY,moved,stageKey}; only gestures that begin on an already-open potion wheel are captured.
+  let pressedSlot = null; // Visual-only tap feedback target; never changes the selector's authoritative active index.
 
   function mobilePointerMode() {
     return !window.matchMedia('(pointer: fine)').matches; // Mirrors game.js's own desktop/mobile split.
   }
 
-  function nowMs() {
-    return performance.now();
-  }
-
-  function rememberPointerDown(ev) {
-    if (!mobilePointerMode()) return;
-    if (ev.pointerType && ev.pointerType !== 'touch' && ev.pointerType !== 'pen') return;
-    lastPointerDown = { x:ev.clientX, y:ev.clientY, pointerId:ev.pointerId, at:nowMs() };
-    activePointerId = ev.pointerId;
-  }
-
-  function clearPointer(ev) {
-    if (activePointerId !== null && ev?.pointerId !== undefined && ev.pointerId !== activePointerId) return;
-    activePointerId = null;
-    lastPointerDown = null;
-    stageOrigin = null;
-    stageGate = null;
+  function isTouchLikePointer(ev) {
+    return !ev.pointerType || ev.pointerType === 'touch' || ev.pointerType === 'pen'; // Keeps phone/tablet input tap-only without changing mouse behavior.
   }
 
   function liveSlots(selector) {
     return [...document.querySelectorAll(selector)].filter(slot => {
       if (slot.classList.contains('shared-selection-exit-ghost') || slot.classList.contains('shared-selection-retired-original')) return false;
       const style = getComputedStyle(slot);
-      // Do NOT reject opacity:0. The new wheel intentionally stages incoming
-      // category buttons at zero opacity for its opening animation; mobile input
-      // must still recognize that hierarchy immediately or legacy nearest-angle
-      // selection can leak through during the first animation frames.
+      // Opacity is intentionally ignored: the new selector stages new buttons at
+      // opacity 0 during fan-in, but they are already the current hierarchy stage.
       return style.display !== 'none' && style.visibility !== 'hidden';
     });
+  }
+
+  function slotName(slot) {
+    return String(slot?.getAttribute?.('aria-label') || slot?.title || slot?.querySelector?.('.arc-label')?.textContent || slot?.textContent || '')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
   function potionStage() {
     const categories = liveSlots('.arc-slot.potion-category:not(.arc-arrow)');
     if (categories.length) {
       const cancel = liveSlots('.arc-slot.potion-branch.potion-cancel:not(.arc-arrow)')[0] || null;
-      const key = `category:${categories.map(slotName).sort().join('|')}`;
-      return { type:'category', key, slots:categories, cancel };
+      return { type:'category', key:`category:${categories.map(slotName).sort().join('|')}`, slots:categories, cancel };
     }
 
     const branches = liveSlots('.arc-slot.potion-branch:not(.potion-cancel):not(.arc-arrow)');
     if (branches.length) {
-      const key = `root:${branches.map(slotName).sort().join('|')}`;
-      return { type:'root', key, slots:branches, cancel:null };
+      return { type:'root', key:`root:${branches.map(slotName).sort().join('|')}`, slots:branches, cancel:null };
     }
 
-    const finalItems = liveSlots('.arc-slot.potion-cancel:not(.potion-branch):not(.arc-arrow)');
-    if (finalItems.length) return { type:'items', key:'items', slots:[], cancel:null };
+    const finalCancel = liveSlots('.arc-slot.potion-cancel:not(.potion-branch):not(.arc-arrow)');
+    if (finalCancel.length) {
+      const slots = liveSlots('.arc-slot:not(.arc-arrow)').filter(slot => !slot.classList.contains('potion-branch') && !slot.classList.contains('potion-category'));
+      return { type:'items', key:`items:${slots.map(slotName).join('|')}`, slots, cancel:null };
+    }
     return { type:'other', key:'other', slots:[], cancel:null };
   }
 
-  function slotCenter(slot) {
-    // Prefer the new wheel's final authored target rather than an in-flight animation
-    // position. This keeps the touch core stable while the wheel fans or scrolls.
+  function sharedTargetCenter(slot) {
     const targetX = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
     const targetY = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
     if (Number.isFinite(targetX) && Number.isFinite(targetY)) return { x:targetX, y:targetY };
@@ -85,9 +69,8 @@
     let bestDistance = Infinity;
     for (const slot of slots) {
       const rect = slot.getBoundingClientRect();
-      const center = slotCenter(slot);
-      const visualRadius = Math.max(rect.width, rect.height) / 2;
-      const radius = Math.max(7, visualRadius * HIT_RADIUS_SCALE); // Intentional inner core, never an expanded overlapping halo.
+      const center = sharedTargetCenter(slot); // Stable final center avoids the tap target drifting during wheel fan/scroll animation.
+      const radius = Math.max(rect.width, rect.height) / 2 + HIT_PAD_PX;
       const distance = Math.hypot(x - center.x, y - center.y);
       if (distance <= radius && distance < bestDistance) {
         best = slot;
@@ -97,15 +80,15 @@
     return best;
   }
 
-  function movedFarEnough(x, y) {
-    const origin = stageOrigin || (lastPointerDown && nowMs() - lastPointerDown.at <= RECENT_POINTER_MS ? lastPointerDown : null);
-    if (!origin) return true;
-    return Math.hypot(x - origin.x, y - origin.y) >= DRAG_ARM_PX;
-  }
-
-  function slotName(slot) {
-    return String(slot?.getAttribute?.('aria-label') || slot?.title || slot?.querySelector?.('.arc-label')?.textContent || slot?.textContent || '')
-      .replace(/\s+/g, ' ').trim().toLowerCase();
+  function logicalPointerForSlot(slot) {
+    // game.js still writes its original logical arc location into inline left/top.
+    // The presentation module visually overrides those values, so feeding this
+    // hidden logical point back through _arcMove selects the exact tapped slot
+    // without relying on the new visual wheel's nearest-angle geometry.
+    const x = Number.parseFloat(slot?.style?.left || '');
+    const y = Number.parseFloat(slot?.style?.top || '');
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+    return sharedTargetCenter(slot);
   }
 
   function branchDirection(slot) {
@@ -121,119 +104,128 @@
     return 0;
   }
 
-  function ensureStageGate(stage) {
-    if (!stageGate || stageGate.key !== stage.key) {
-      stageGate = { key:stage.key, sawOutside:false }; // A newly populated tier begins deliberately unarmed.
-    }
-    return stageGate;
+  function clearPressedSlot() {
+    pressedSlot?.classList?.remove('mobile-potion-tap-pressed');
+    pressedSlot = null;
   }
 
-  function categoryEntryArmed(stage, x, y) {
-    const gate = ensureStageGate(stage);
-    const inside = Boolean(hitSlot(stage.slots, x, y));
-    if (!gate.sawOutside) {
-      if (!inside && movedFarEnough(x, y)) {
-        gate.sawOutside = true; // The thumb has genuinely cleared every category activation core.
-        stageOrigin = { x, y }; // Subsequent entry is measured from this neutral point, not Action 3.
-      }
-      return false; // The same event that leaves the overlap can never also select a category.
-    }
-    return inside;
+  function setPressedSlot(slot) {
+    clearPressedSlot();
+    if (!slot) return;
+    pressedSlot = slot;
+    slot.classList.add('mobile-potion-tap-pressed'); // Visual-only touch-down acknowledgement for a real circle hit.
   }
 
-  function resetForNextTier(x, y) {
-    stageOrigin = { x, y };
-    stageGate = null; // Next potionStage() call creates a fresh outside-to-inside requirement.
+  function stopBackdropGesture(ev) {
+    ev.preventDefault();
+    ev.stopImmediatePropagation(); // Prevents .arc-backdrop from starting its legacy nearest-angle drag/commit path.
   }
 
-  function routeMobilePotionPointer(x, y, originalMovePointer, originalScrollEntries) {
-    if (!mobilePointerMode()) return false;
+  function onPointerDown(ev) {
+    if (!mobilePointerMode() || !isTouchLikePointer(ev)) return;
     const stage = potionStage();
-    if (stage.type === 'items' || stage.type === 'other') return false; // Final potion list keeps normal nearest-angle selection.
+    if (stage.type === 'other') return; // The original Potion Select button press must still reach game.js so it can open the root.
 
+    tapGesture = { pointerId:ev.pointerId, startX:ev.clientX, startY:ev.clientY, moved:false, stageKey:stage.key };
+    const tappable = stage.type === 'category' && stage.cancel ? [...stage.slots, stage.cancel] : stage.slots;
+    setPressedSlot(hitSlot(tappable, ev.clientX, ev.clientY));
+    stopBackdropGesture(ev);
+  }
+
+  function onPointerMove(ev) {
+    if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+    if (Math.hypot(ev.clientX - tapGesture.startX, ev.clientY - tapGesture.startY) > TAP_SLOP_PX) {
+      tapGesture.moved = true; // Movement cancels the tap; it never becomes drag navigation.
+      clearPressedSlot();
+    }
+    stopBackdropGesture(ev);
+  }
+
+  function commitTap(stage, x, y, originalMovePointer, originalScrollEntries, originalReleaseSelection, originalClose) {
     if (stage.type === 'root') {
-      if (!categoryEntryArmed(stage, x, y)) return true;
       const hit = hitSlot(stage.slots, x, y);
-      if (!hit) return true;
       const direction = branchDirection(hit);
-      if (!direction) return true;
-      originalScrollEntries(direction); // Opens Medicine/Utility without game.js's recursive nearest-pointer re-evaluation.
-      resetForNextTier(x, y); // Healing/Cures/Buffs/Flasks must also be entered from outside.
-      return true;
+      if (hit && direction) originalScrollEntries(direction); // Tap Medicine/Utility to open exactly that branch.
+      return;
     }
 
-    // Cancel retains its special replacement behavior: if the branch button becomes
-    // Cancel under the held finger, releasing there may still close the selector.
-    if (stage.cancel && hitSlot([stage.cancel], x, y)) {
-      originalMovePointer(x, y);
-      return true;
+    if (stage.type === 'category') {
+      if (stage.cancel && hitSlot([stage.cancel], x, y)) {
+        originalClose?.(); // Branch-level Cancel is an explicit tap target on mobile.
+        return;
+      }
+      const hit = hitSlot(stage.slots, x, y);
+      const direction = categoryDirection(hit);
+      if (hit && direction) originalScrollEntries(direction); // Tap Healing/Cures/Buffs/Flasks to open exactly that list.
+      return;
     }
 
-    if (!categoryEntryArmed(stage, x, y)) return true;
-    const hit = hitSlot(stage.slots, x, y);
-    if (!hit) return true;
-    const direction = categoryDirection(hit);
-    if (!direction) return true;
-    originalScrollEntries(direction); // Opens Healing/Cures/Buffs/Flasks only after a true circle entry.
-
-    // If enabled, scrollEntries synchronously opens the final concrete list. From
-    // here onward the user's requested normal nearest-item behavior is restored.
-    if (potionStage().type === 'items') {
-      stageOrigin = null;
-      stageGate = null;
-      originalMovePointer(x, y);
+    if (stage.type === 'items') {
+      const hit = hitSlot(stage.slots, x, y);
+      if (!hit) return;
+      const logical = logicalPointerForSlot(hit);
+      originalMovePointer(logical.x, logical.y); // Set the authoritative active slot to the exact visible circle that was tapped.
+      originalReleaseSelection?.(); // Concrete potion (or final Cancel) commits immediately on that tap.
     }
-    return true;
+  }
+
+  function onPointerUp(ev, handlers) {
+    if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+    const gesture = tapGesture;
+    tapGesture = null;
+    clearPressedSlot();
+    stopBackdropGesture(ev);
+    if (gesture.moved) return;
+
+    const stage = potionStage();
+    if (stage.key !== gesture.stageKey) return; // A hierarchy change during the gesture invalidates the tap rather than guessing.
+    commitTap(stage, ev.clientX, ev.clientY, handlers.originalMovePointer, handlers.originalScrollEntries, handlers.originalReleaseSelection, handlers.originalClose);
+  }
+
+  function onPointerCancel(ev) {
+    if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+    tapGesture = null;
+    clearPressedSlot();
+    stopBackdropGesture(ev);
   }
 
   function install() {
     if (installed) return;
     const arc = window._desktopSelectionArc;
-    if (!arc?.movePointer || !arc?.scrollEntries || !arc?.openPotions) return;
+    if (!arc?.movePointer || !arc?.scrollEntries || !arc?.openPotions || !arc?.releaseSelection) return;
     installed = true;
     originalArc = arc;
 
     const originalMovePointer = arc.movePointer.bind(arc);
     const originalScrollEntries = arc.scrollEntries.bind(arc);
     const originalOpenPotions = arc.openPotions.bind(arc);
+    const originalReleaseSelection = arc.releaseSelection.bind(arc);
     const originalClose = arc.close?.bind(arc);
-    const originalReleaseSelection = arc.releaseSelection?.bind(arc);
     const originalEndHeldSelection = arc.endHeldSelection?.bind(arc);
+    const handlers = { originalMovePointer, originalScrollEntries, originalReleaseSelection, originalClose };
 
     const overrides = {
       movePointer(x, y) {
-        if (routeMobilePotionPointer(x, y, originalMovePointer, originalScrollEntries)) return;
+        const stage = potionStage();
+        if (mobilePointerMode() && stage.type !== 'other') return; // Mobile potion hierarchy never responds to drag/nearest-pointer movement.
         return originalMovePointer(x, y);
       },
       openPotions(...args) {
-        const result = originalOpenPotions(...args);
-        if (mobilePointerMode()) {
-          const recent = lastPointerDown && nowMs() - lastPointerDown.at <= RECENT_POINTER_MS;
-          stageOrigin = recent ? { x:lastPointerDown.x, y:lastPointerDown.y } : null;
-          stageGate = null; // Root never starts armed, even if Utility overlaps Action 3's touch point.
-        }
-        return result;
-      },
-      close(...args) {
-        stageOrigin = null;
-        stageGate = null;
-        return originalClose?.(...args);
+        return originalOpenPotions(...args); // The Action 3 tap still opens the root immediately.
       },
       releaseSelection(...args) {
-        const result = originalReleaseSelection?.(...args);
-        stageOrigin = null;
-        stageGate = null;
-        return result;
+        const stage = potionStage();
+        if (mobilePointerMode() && (stage.type === 'root' || stage.type === 'category')) return false;
+        // Suppresses the original Action 3 release from closing a hierarchy stage;
+        // concrete items still use the normal authoritative release commit.
+        return originalReleaseSelection(...args);
       },
       endHeldSelection(...args) {
-        const result = originalEndHeldSelection?.(...args);
-        stageOrigin = null;
-        stageGate = null;
-        return result;
+        return originalEndHeldSelection?.(...args); // Only clears held-input bookkeeping; the tap-open hierarchy remains visible.
       },
     };
 
-    const boundMethods = new Map(); // Keeps non-overridden shared-selector methods bound to the original closure-owning object.
+    const boundMethods = new Map(); // Keeps non-overridden selector methods bound to the original closure-owning object.
     wrappedArc = new Proxy(arc, {
       get(target, property) {
         if (Object.prototype.hasOwnProperty.call(overrides, property)) return overrides[property];
@@ -248,20 +240,33 @@
     window._desktopSelectionArc = wrappedArc;
     if (window.SharedSelectionArch === arc) window.SharedSelectionArch = wrappedArc;
 
-    document.addEventListener('pointerdown', rememberPointerDown, { capture:true, passive:true });
-    document.addEventListener('pointerup', clearPointer, { capture:true, passive:true });
-    document.addEventListener('pointercancel', clearPointer, { capture:true, passive:true });
+    // Capture phase is required because game.js's .arc-backdrop owns its own
+    // pointerdown/move/up listeners. Mobile potion taps stop there first.
+    document.addEventListener('pointerdown', onPointerDown, { capture:true, passive:false });
+    document.addEventListener('pointermove', onPointerMove, { capture:true, passive:false });
+    document.addEventListener('pointerup', ev => onPointerUp(ev, handlers), { capture:true, passive:false });
+    document.addEventListener('pointercancel', onPointerCancel, { capture:true, passive:false });
+
+    const style = document.createElement('style');
+    style.id = 'mobilePotionTapStyles';
+    style.textContent = `
+      .arc-slot.mobile-potion-tap-pressed:not(.arc-arrow) {
+        filter:brightness(1.24) !important;
+        outline:2px solid rgba(255,255,255,.72);
+        outline-offset:2px;
+      }
+    `; // Gives each actual circle tap immediate feedback without changing .arc-active state.
+    document.head.appendChild(style);
 
     window.MobilePotionCategoryDrag = Object.freeze({
       diagnostics: () => ({
         installed,
+        mode:'tap-only',
         mobilePointerMode:mobilePointerMode(),
         stage:potionStage().type,
-        stageOrigin:stageOrigin ? { ...stageOrigin } : null,
-        stageGate:stageGate ? { ...stageGate } : null,
-        lastPointerDown:lastPointerDown ? { ...lastPointerDown } : null,
-        dragArmPx:DRAG_ARM_PX,
-        hitRadiusScale:HIT_RADIUS_SCALE,
+        tapGesture:tapGesture ? { ...tapGesture } : null,
+        tapSlopPx:TAP_SLOP_PX,
+        hitPadPx:HIT_PAD_PX,
       }),
     });
   }
