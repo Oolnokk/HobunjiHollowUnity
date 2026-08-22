@@ -20,7 +20,7 @@ const gangConfig = JSON.parse(read('docs/config/bandits/bandit-gang-config.json'
 const scratchbonesConfig = read('docs/config/scratchbones-config.js');
 
 assert.match(index, /js\/combat\/ranged-weapons\.js/, 'runtime must load the ranged module');
-assert.match(game, /ranged:\s*\['shoot', 'ammo_select'\]/, 'ranged slot must expose fire and ammo-selection actions');
+assert.match(game, /ranged:\s*\['shoot', 'ammo_select', 'potion_select'\]/, 'ranged slot must expose fire, ammo-selection, and contextual potion actions');
 assert.match(game, /ranged:\s*null/, 'equipment must own a dedicated ranged slot');
 assert.match(game, /activeTool === 'weapon'\) setActiveTool\('ranged'\)/, 'combat toggle must swap melee to ranged');
 assert.match(game, /activeTool === 'ranged'\) setActiveTool\('weapon'\)/, 'combat toggle must swap ranged to melee');
@@ -57,8 +57,8 @@ assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S
 assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
 assert.match(index, /ranged-weapons\.js\?v=20260817e/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
-assert.match(index, /scratchbones-config\.js\?v=20260817e/, 'game bootstrap must invalidate the mobile-safe ranged audio mix');
-assert.match(index, /game\.js\?v=20260817d/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
+assert.match(index, /scratchbones-config\.js\?v=20260821alchemy1/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
+assert.match(index, /game\.js\?v=20260821alchemy1/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 
 assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');
 assert.match(ranged, /SPECIAL_AMMO_LOOT_CHANCE\s*=\s*0\.72/, 'all enemy corpses must have a high special-ammo drop chance');
@@ -90,7 +90,7 @@ assert.doesNotMatch(exportFunction, /neckPreview|neckStrength|neckRadius|headSki
 assert.match(game, /toolHolder\.scale\.setScalar\(Number\.isFinite\(Number\(neutral\.scale\)\)/, 'runtime must apply authored neutral tool scale');
 assert.match(game, /playerIdlePose\?\.\(equipmentSlots\.ranged\)/, 'runtime must select the loaded or empty ranged neutral pose');
 assert.match(game, /function updatePlayerHeadAim\(\)/, 'runtime must own global player head aim tracking');
-assert.match(game, /angleDiff\(targetWorldYaw, playerMesh\.rotation\.y\)/, 'head aim must counter the rendered body yaw');
+assert.match(game, /angleDiff\(targetWorldYaw, playerMesh\.rotation\.y \+ composerYawDelta\)/, 'head aim must counter the fully composed rendered body yaw');
 assert.match(pngAvatar, /top \+ totalHeight \* fraction/, 'neck pivot must be measured from the avatar top rather than its feet');
 assert.match(pngAvatar, /const fraction = Number\.isFinite\(neckHeightFraction\) \? neckHeightFraction : 0\.13/, 'neck weighting must default to the head-only region');
 const sharedNeckRig = pngAvatar.slice(pngAvatar.indexOf('function buildSkinnedSinglePlaneAssembly'), pngAvatar.indexOf('function createSinglePlaneAssembly'));
@@ -104,8 +104,8 @@ assert.match(pngAvatar, /Number\(options\.blendHeight\) \|\| modelHeight \* \.30
 assert.match(sharedNeckRig, /frontMaterial\.skinning = true;[\s\S]*backMaterial\.skinning = true;/, 'r128 portrait materials must explicitly compile their skinning shader path');
 assert.match(editor, /renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/, 'attack editor must render the head-only centroid mask');
 assert.strictEqual((game.match(/renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/g) || []).length, 2, 'player and walking NPC neck rigs must use head-only centroid masks');
-assert.match(index, /png-plane-avatar\.js\?v=20260817e/, 'game bootstrap must invalidate the broad-deformation cache');
-assert.match(editor, /png-plane-avatar\.js\?v=20260817e/, 'attack editor must invalidate the broad-deformation cache');
+assert.match(index, /png-plane-avatar\.js\?v=20260821f/, 'game bootstrap must invalidate the broad-deformation cache');
+assert.match(editor, /png-plane-avatar\.js\?v=20260821f/, 'attack editor must invalidate the broad-deformation cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

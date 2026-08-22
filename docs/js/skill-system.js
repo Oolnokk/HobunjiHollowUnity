@@ -9,11 +9,13 @@
     fishing: { label: 'Fishing', icon: '🎣', effect: 'Rarer fish encounters and better fish quality.' },
     combat: { label: 'Combat', icon: '⚔️', effect: 'Higher attack power and better meat quality.' },
     crafting: { label: 'Crafting', icon: '🛠️', effect: 'Better food and a chance to save ingredients.' },
+    alchemy: { label: 'Alchemy', icon: '⚗️', effect: 'More reliable targeted reactions and stronger brewed potency tiers.' },
   }; // Used by progression, food-skill buffs, and the Skills tab.
-  const LEGACY_SKILL_MAP = { alchemy: 'crafting', cooking: 'crafting' }; // Used to preserve old creation/cooking progress under the nearest new skill.
+  const LEGACY_SKILL_MAP = { cooking: 'crafting' }; // Used to preserve only old Cooking progress under Crafting; Alchemy is now a real skill.
   const XP_GAINS = {
     forage: 4, tree: 8, rock: 8, dig: 1, crop: 6, animalGood: 5,
     fish: 10, combatHit: 1, combatKill: 8, cook: 8,
+    alchemyBrew: 8, alchemyDiscovery: 18, alchemyTarget: 5,
   }; // Used by game actions so balance remains centralized.
 
   let deps = null; // Used to access saving, random rolls, popups, and food stacks.
@@ -113,8 +115,9 @@
   function rareFishWeightMultiplier(rarity) {
     const perceptionStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('perception')) || 0); // Used to let Perception food contribute to fish selection.
     const power = normalizedPower('fishing') + Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries.
-    if (rarity === 'rare') return 1 + power * 2.5;
-    if (rarity === 'uncommon') return 1 + power * 1.1;
+    const alchemyPerception = window.AlchemySystem?.getPerceptionMultiplier?.() || 1; // Reuses the existing fishing Perception check.
+    if (rarity === 'rare') return (1 + power * 2.5) * alchemyPerception;
+    if (rarity === 'uncommon') return (1 + power * 1.1) * alchemyPerception;
     return 1;
   }
 

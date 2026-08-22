@@ -16,10 +16,10 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260821d"></script>
+  <script src="config/scratchbones-config.js?v=20260821alchemy1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260821e"></script>
-  <link rel="stylesheet" href="style.css?v=20260815a">
+  <link rel="stylesheet" href="style.css?v=20260821alchemy1">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
@@ -39,7 +39,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260821k"></script>
+  <script src="js/held-action-animations.js?v=20260821alchemy1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260811a"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -100,9 +100,9 @@
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
   <script src="onboarding.js?v=20260811b"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260712d"></script>
+  <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260811a"></script>
+  <script src="js/combat/combat-core.js?v=20260821alchemy1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
        rig. Must load after that module (see the "Procedural leg/foot
@@ -151,7 +151,7 @@
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
-  <script src="js/skill-system.js?v=20260811a"></script>
+  <script src="js/skill-system.js?v=20260821alchemy1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -160,7 +160,8 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20260811a"></script>
+  <script src="js/alchemy-system.js?v=20260821alchemy1"></script>
+  <script src="js/alchemy-flasks.js?v=20260821alchemy1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -185,14 +186,14 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260807a"></script>
+  <script src="js/wild-treasure.js?v=20260821alchemy1"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260811a"></script>
+  <script src="js/farm-animals.js?v=20260821alchemy1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -225,7 +226,7 @@
        via init(), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.ProceduralTasks.init(...) during its own setup. -->
-  <script src="js/procedural-tasks.js?v=20260807a"></script>
+  <script src="js/procedural-tasks.js?v=20260821alchemy1"></script>
   <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -1106,6 +1107,7 @@
           <div id="alchemySelectedStrip" class="alch-selected-strip"></div>
           <div id="alchemyEffectPreview" class="alch-effect-preview"></div>
           <button id="alchemyBrewBtn" class="shop-buy-btn alch-brew-btn" onclick="window._doBrewPotion?.()" disabled>⚗️ Brew Potion</button>
+          <details class="alchemy-diagnostics"><summary>Alchemy diagnostics</summary><pre id="alchemyDiagnostics"></pre></details>
         </div>
       </div><!-- /mpAlchemy -->
 
@@ -1564,28 +1566,6 @@
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
-      <div id="toolPicker" role="menu" aria-label="Select tool">
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Shovel</span>
-          <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>⛏️</b></button>
-        </div>
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Hoe</span>
-          <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
-        </div>
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Axe</span>
-          <button class="tool-pick-btn" data-tool="axe" role="menuitem"><b>🪓</b></button>
-        </div>
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Pick</span>
-          <button class="tool-pick-btn" data-tool="pick" role="menuitem"><b>⛏️</b></button>
-        </div>
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Harpoon</span>
-          <button class="tool-pick-btn" data-tool="harpoon" role="menuitem"><b>🎣</b></button>
-        </div>
-      </div>
       <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
         <span class="ts-icon" id="toolBtnIcon">⛏️</span>
         <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
@@ -1634,10 +1614,6 @@
     </div>
     <button class="is-arr" id="itemNext" aria-label="Next item">›</button>
   </div>
-
-  <!-- Tool wheel overlay (radial picker) -->
-  <div id="toolWheelOverlay"></div>
-  <div id="toolWheel"></div>
 
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
@@ -1711,7 +1687,7 @@
        window.DialogueContent.init(...) during its own setup.
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
-  <script src="js/dialogue-content.js?v=20260806a"></script>
+  <script src="js/dialogue-content.js?v=20260821alchemy1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260811b"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
@@ -1777,7 +1753,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260817d"></script>
+  <script src="game.js?v=20260821alchemy1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

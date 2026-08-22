@@ -15,13 +15,18 @@ const editor = source('docs/tools/attack-animation-editor/index.html');
 const pixelProbe = source('docs/js/pixel-probe.js');
 const heldAnimations = source('docs/js/held-action-animations.js');
 
-const context = { window: {} };
+const context = {
+  window: {}, console, URL, Promise,
+  location: { href: 'https://example.test/docs/index.html', pathname: '/docs/index.html' },
+  document: { currentScript: { src: 'https://example.test/docs/js/held-action-animations.js' }, readyState: 'loading', write: () => {} },
+};
 vm.runInNewContext(heldAnimations, context);
 const drink = context.window.HeldActionAnimations?.drink;
 assert.equal(drink?.style, 'drink', 'shared held-action data defines the drink style');
 assert(drink.durationS > 0 && drink.windupFrac < drink.strikeFrac && drink.strikeFrac <= drink.holdFrac,
   'drink animation timing is positive and ordered');
-assert.deepEqual(JSON.parse(JSON.stringify(drink.poses)), {
+const numericDrinkPoses = Object.fromEntries(Object.entries(drink.poses).map(([phase, pose]) => [phase, Object.fromEntries(['x','y','z','pitch','yaw','roll','bodyYaw'].map(channel => [channel, pose[channel]]))]));
+assert.deepEqual(JSON.parse(JSON.stringify(numericDrinkPoses)), {
   neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
   windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0 },
   strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 },
@@ -51,8 +56,8 @@ assert.match(game, /heldMode === 'item' \|\| _heldDrinkAnimT > 0/,
   'the consumed bottle remains rendered through the full animation');
 assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?triggerHeldDrinkAnimation/,
   'the consumption bridge receives the runtime animation trigger');
-assert.match(bridge, /triggerHeldDrinkAnimation\?\.\(key\)[\s\S]*?Math\.max\(180, animationMs\)/,
-  'successful drinks trigger animation and lock repeats until it finishes');
+assert.match(bridge, /triggerHeldDrinkAnimation\?\.\(key, applyDrink\)[\s\S]*?Math\.max\(180, animationMs\)/,
+  'successful drinks apply at the animation strike and lock repeats until it finishes');
 
 assert(editor.includes('../../js/held-action-animations.js'),
   'the animation editor loads the same drink pose data as the game');

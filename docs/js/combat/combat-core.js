@@ -214,10 +214,12 @@
 
   RS.AFFLICTIONS[DRUNK_FOOTING_ID] = {
     name: "Drunken Footing", resource: "footing", extend: "maxBack", priority: 100, recovers: false,
+    family: "control", tags: ["alcohol"],
     desc: "Black reserved Footing that always counts as spent until sobriety very slowly returns."
   };
   RS.AFFLICTIONS[DRUNK_HEALTH_ID] = {
     name: "Drunken Health", resource: "health", extend: "drunkBand", priority: 40, recovers: false,
+    family: "defensiveDebuff", tags: ["alcohol"],
     desc: "Pink Health buffer: direct damage converts this band into Bleeding Health before real Health is lost."
   };
 

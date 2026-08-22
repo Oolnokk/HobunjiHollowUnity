@@ -121,19 +121,14 @@
     return priced[Math.floor(Math.random() * (maxIdx + 1))].key;
   }
 
-  // The only currently-live numeric skill signals in the game: per-tool
-  // mastery (see awardToolUseMasteryXp) for farming/fishing/combat, and
-  // discovered alchemy-reagent-effect count as a rough alchemy proxy
-  // (there's no dedicated alchemy mastery counter yet). skillLevels from
-  // onboarding.js is a dormant, never-incremented stub — deliberately
-  // not used here.
+  // Farming/fishing/combat retain their existing tool-mastery signals.
+  // Alchemy now uses the real seventh SkillSystem progression track.
   function getPlayerSkillLevels() {
-    const alchemyDiscoveries = window.AlchemySystem.discoveryCount();
     return {
       farming: deps.toolMasteryLevel(deps.equipmentSlots.hoe),
       fishing: deps.toolMasteryLevel(deps.equipmentSlots.harpoon),
       combat:  deps.toolMasteryLevel(deps.equipmentSlots.weapon),
-      alchemy: Math.min(5, Math.floor(alchemyDiscoveries / 4)),
+      alchemy: window.SkillSystem?.level?.('alchemy') || 0,
     };
   }
   function getPlayerHighestSkillDomain() {

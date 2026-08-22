@@ -156,6 +156,8 @@
   function adjustNpcFavor(npcId, amount, reason) {
     if (!npcId) return;
     const st = getNpcDlgState(npcId);
+    if (amount > 0) amount *= window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1; // Love Potion hooks the one favor adjustment path.
+    amount = Math.round(amount * 10) / 10;
     st.favor = (st.favor || 0) + amount;
     if (amount) window.WorldPopupText?.queueReward('favor', `${amount > 0 ? '+' : '-'}${Math.abs(amount)} Favor`);
     recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));

@@ -63,8 +63,6 @@
       const toolBtn        = document.getElementById('toolBtn');
       const toolBtnIcon    = document.getElementById('toolBtnIcon');
       const toolBtnLabel   = document.getElementById('toolBtnLabel');
-      const toolPicker     = document.getElementById('toolPicker');
-      const toolPickBtns   = [...document.querySelectorAll('.tool-pick-btn')];
       // actionRows removed — refreshActionBar now targets fixed #btnActionN elements
 
       // Item scroll
@@ -642,8 +640,8 @@
         // the shovel slot for terrain work instead.
         pick:    ['mine'],
         harpoon: ['fish'],
-        weapon:  ['cut', 'slash'],
-        ranged:  ['shoot', 'ammo_select'],
+        weapon:  ['cut', 'slash', 'potion_select'],
+        ranged:  ['shoot', 'ammo_select', 'potion_select'],
       };
 
       const actionLabels = {
@@ -659,6 +657,7 @@
         hack:       ['💢', 'Hack'],
         mine:       ['⛏️', 'Mine'],
         ammo_select:['🏹', 'Ammo'],
+        potion_select:['🧪', 'Potions'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
         shoot:      ['🏹', 'Fire / Load'],
@@ -4057,9 +4056,12 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+        amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
         amount = banditTryGuard(c, amount, player);
         window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        const impactMultiplier = window.AlchemySystem?.getFootingDamageMultiplier?.() || 1; // Potion of Impact's shared outgoing stagger hook.
+        resourceDamage.footing *= impactMultiplier;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
         c.hitFlashT = 0.25;
@@ -4088,7 +4090,7 @@
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
 
@@ -6091,7 +6093,7 @@
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
           alcoholBottleSwigs: {}, npcAlcoholState: {},
-          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
+          alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
           joinedAt: Date.now(),
         };
       }
@@ -6184,6 +6186,7 @@
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+          member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
           member.cookingState = window.CookingSystem.serialize();
@@ -11514,7 +11517,7 @@
           ITEM_DEFS[key] = {
             icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
             tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
-            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${window.AlchemySystem.EFFECT_DEFS[def.effects[0]].label}.`,
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Traits: ${def.traits.humour}, ${def.traits.drive}, ${def.traits.magnetism}.`,
           };
         }
       });
@@ -11885,14 +11888,15 @@
               if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
             });
           }
-          // Potions are drinkable from right here — the Inventory panel is
-          // reachable from anywhere, so this is the "consume anywhere" path
-          // (as opposed to brewing, which still needs the Alchemy Table).
+          // Alchemical items follow the same physical held-item language as
+          // every other bag item. Selecting here only places the bottle in
+          // hand; Drink/Throw/Read/Eat remains on the normal action arch.
           if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
-            mkBtn('🧪 Drink', 'equip', () => {
-              const result = window.AlchemySystem.drinkPotion(key);
-              showToast(result.message, result.ok !== false);
-              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            mkBtn('🤲 Hold', 'equip', () => {
+              const index = getInventoryStackItems().findIndex(item => item.key === key);
+              if (index >= 0) activeItemIndex = index;
+              heldMode = 'item';
+              refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
           if (def.isCookedFood && count > 0) {
@@ -12406,6 +12410,7 @@
       let activeTool = 'shovel';
       let activeAction = 'dig';
       let heldMode = 'tool'; // 'tool' | 'item'
+      let lastHeldFarmTool = 'shovel'; // Tool Select tap recalls the last valid tool from its ordinary farm-tool arch.
       let lastTime = performance.now();
       let simAccumulator = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
@@ -13970,6 +13975,20 @@
         if (activeAction === 'consume_held_item') {
           window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
           refreshActionBar();
+          return;
+        }
+        if (activeAction === 'alchemy_flask_primary') {
+          window.AlchemyFlasks?.primaryAction?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'alchemy_flask_cancel') {
+          window.AlchemyFlasks?.cancelAim?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'potion_select') {
+          window._desktopSelectionArc?.openPotions?.();
           return;
         }
         if (activeAction === 'consume_food_item') {
@@ -17540,6 +17559,10 @@
       let _heldItemPlane = null, _heldItemKey = null;
       // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
       let _heldDrinkAnimT = 0;
+      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
+      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
+      let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
       let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
@@ -17572,7 +17595,7 @@
         playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
       }
 
-      function triggerHeldDrinkAnimation(itemKey) {
+      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
         const animation = window.HeldActionAnimations?.drink;
         if (!animation) {
           window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
@@ -17584,6 +17607,8 @@
         if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
         _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
         _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
+        _heldDrinkApplied = false;
         heldItemHolder.visible = true;
         window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
         return Math.round(_heldDrinkAnimDuration * 1000);
@@ -17641,6 +17666,26 @@
           _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
           const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
           applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnimations?.throwFlask;
+        if (_heldThrowAimT && throwAnimation && _heldItemPlane) {
+          if (_heldThrowAimT === 1) _heldThrowAnimProgress = throwAnimation.windupFrac || 0.44;
+          else {
+            _heldThrowAnimProgress = Math.min(1, _heldThrowAnimProgress + Math.max(0, dt) / Math.max(0.1, throwAnimation.durationS || 0.62));
+            if (_heldThrowAnimProgress >= 1) _heldThrowAimT = 0;
+          }
+          applyHeldDrinkPose(throwAnimation, _heldThrowAnimProgress);
           heldItemHolder.visible = true;
           return;
         }
@@ -19696,6 +19741,7 @@
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
+          window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
 
@@ -20181,6 +20227,7 @@
         if (!toolActions[tool]) return;
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         activeTool = tool;
+        if (WHEEL_SLOTS.includes(tool)) lastHeldFarmTool = tool; // Direct hotkeys/cycling must update the same recall memory as arch selection.
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
@@ -20189,11 +20236,9 @@
         const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', ranged:'Ranged Weapon', machete:'Weapon' }[tool] || tool;
         toolBtnIcon.innerHTML  = toolSelectIconHTML(def, fallbackIcon, '0.85em');
         toolBtnLabel.textContent = label;
-        toolPickBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
         // Swap visible tool mesh
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[tool]) toolHolder.add(toolMeshMap[tool]);
-        closeToolPicker();
         refreshActionBar();
         refreshWeaponSwitchBtn();
         // opts.silent: hydrating the tool held last session (see
@@ -20233,74 +20278,9 @@
         useActiveAction();
       }
 
-      // ── Tool wheel (radial picker) ─────────────────────────
-      const toolWheelOverlay = document.getElementById('toolWheelOverlay');
-      const toolWheelEl      = document.getElementById('toolWheel');
       // Both combat slots are deliberately excluded — the dedicated combat
       // toggle swaps weapon↔ranged without putting either in the farm-tool cycle.
       const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
-      const WHEEL_RADIUS = 72; // px — distance from center to each spoke button
-
-      let toolPickerOpen = false;
-
-      function openToolPicker() {
-        toolPickerOpen = true;
-        const rect = toolBtn.getBoundingClientRect();
-        const cx = rect.left + rect.width  / 2;
-        const cy = rect.top  + rect.height / 2;
-
-        // Clamp center so all spoke buttons stay fully on screen
-        const margin = WHEEL_RADIUS + 32;
-        const wcx = Math.max(margin, Math.min(window.innerWidth  - margin, cx));
-        const wcy = Math.max(margin, Math.min(window.innerHeight - margin, cy));
-
-        toolWheelEl.innerHTML = '';
-        const n = WHEEL_SLOTS.length;
-        WHEEL_SLOTS.forEach((slot, i) => {
-          const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // 0 = top
-          const sx = wcx + Math.cos(angle) * WHEEL_RADIUS;
-          const sy = wcy + Math.sin(angle) * WHEEL_RADIUS;
-
-          const equippedKey = equipmentSlots[slot];
-          const eqDef = equippedKey ? TOOL_ITEM_DEFS[equippedKey] : null;
-          const icon  = eqDef?.icon  || ({shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'})[slot] || '🔧';
-          const label = ({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'})[slot] || slot;
-
-          const spoke = document.createElement('div');
-          spoke.className = 'tw-spoke';
-          spoke.style.cssText = `left:${sx}px;top:${sy}px;animation-delay:${i * 0.018}s`;
-
-          const btn = document.createElement('button');
-          btn.className = 'tw-btn' + (activeTool === slot ? ' active' : '');
-          btn.textContent = icon;
-
-          const chip = document.createElement('span');
-          chip.className = 'tw-chip';
-          chip.textContent = label;
-
-          spoke.appendChild(btn);
-          spoke.appendChild(chip);
-
-          const pick = () => { setActiveTool(slot); closeToolPicker(); };
-          btn.addEventListener('pointerup', (e) => { e.stopPropagation(); pick(); });
-
-          toolWheelEl.appendChild(spoke);
-        });
-
-        toolWheelOverlay.classList.add('open');
-        toolWheelEl.classList.add('open');
-        toolBtn.setAttribute('aria-expanded', 'true');
-        toolBtn.style.borderColor = 'rgba(249,226,138,0.6)';
-      }
-
-      function closeToolPicker() {
-        toolPickerOpen = false;
-        toolWheelOverlay.classList.remove('open');
-        toolWheelEl.classList.remove('open');
-        toolWheelEl.innerHTML = '';
-        toolBtn.setAttribute('aria-expanded', 'false');
-        toolBtn.style.borderColor = '';
-      }
 
       // ── Outer arch — tool & item arc-dial ─────────────────
       {
@@ -20342,8 +20322,8 @@
         let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
         let _fadingEls = [];
 
-        function _clearArc() {
-          if (_arcBd) { _arcBd.remove(); _arcBd = null; }
+        function _clearArc(keepBackdrop = false) {
+          if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
           _arcEls.forEach(e => e.remove()); _arcEls = [];
           _fadingEls.forEach(e => e.remove()); _fadingEls = [];
           _arcSlots = []; _arcActive = -1; _arcOpen = null;
@@ -20390,26 +20370,102 @@
         }
 
         function _openAmmoArc() {
-          _clearArc(); _arcOpen = 'ammo';
-          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
-          toolBtn.style.visibility = 'hidden';
-          _arcBd = document.createElement('div');
-          _arcBd.className = 'arc-backdrop';
-          document.body.appendChild(_arcBd);
           const choices = window.RangedWeapons?.ammoChoices?.(equipmentSlots.ranged) || [];
           const activeAmmo = window.RangedWeapons?.activeAmmoId?.(equipmentSlots.ranged) || 'basic';
-          const n = choices.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
-          choices.forEach((choice, i) => {
-            const deg = ARC_S - i * step;
-            const label = choice.available ? choice.label : `${choice.label} · 0/8`;
-            const extra = `${choice.id === activeAmmo ? 'arc-active ' : ''}${choice.available ? '' : 'blocked'}`.trim();
-            const el = _mkSlot(deg, choice.icon, label, extra, _innerR());
-            _arcSlots.push({ angle: deg, el, data: { ...choice, type: 'ammo' } });
-            if (choice.id === activeAmmo) _arcActive = i;
-          });
+          _openEntries('ammo', choices.map(choice => ({
+            id: choice.id, icon: choice.icon, label: choice.available ? choice.label : `${choice.label} · 0/8`,
+            disabled: !choice.available, active: choice.id === activeAmmo,
+            onSelect: () => window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, choice.id),
+          }))); // Special ammo uses the same ordinary-radius arch primitive.
         }
 
-        let _lastHeldTool = activeTool;
+        function _openEntries(mode, entries, radius = _outerR()) {
+          const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
+          _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          toolBtn.style.visibility = 'hidden';
+          if (!_arcBd) {
+            _arcBd = document.createElement('div');
+            _arcBd.className = 'arc-backdrop';
+            let pointerId = null; // One pointer owns general entry-arch navigation until commit/cancel.
+            _arcBd.addEventListener('pointerdown', event => {
+              pointerId = event.pointerId;
+              try { _arcBd.setPointerCapture(pointerId); } catch (error) { /* Pointer capture is an optional enhancement. */ }
+              _arcMove(event.clientX, event.clientY);
+              event.preventDefault();
+            });
+            _arcBd.addEventListener('pointermove', event => { if (event.pointerId === pointerId) _arcMove(event.clientX, event.clientY); });
+            _arcBd.addEventListener('pointerup', event => { if (event.pointerId === pointerId) { pointerId = null; _arcUp(); } });
+            _arcBd.addEventListener('pointercancel', event => { if (event.pointerId === pointerId) { pointerId = null; _clearArc(); } });
+            document.body.appendChild(_arcBd);
+          }
+          const n = entries.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
+          entries.forEach((entry, index) => {
+            const deg = ARC_S - index * step;
+            const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
+            const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
+            _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
+            if (entry.active) _arcActive = index;
+          });
+          if (_arcActive < 0 && entries.length) _setActive(Math.floor((entries.length - 1) / 2));
+        }
+
+        function _selectHeldInventoryKey(itemKey) {
+          const index = getInventoryStackItems().findIndex(item => item.key === itemKey);
+          if (index < 0) return;
+          activeItemIndex = index;
+          heldMode = 'item';
+          refreshItemScroll(); refreshActionBar();
+        }
+
+        const CURE_FAMILY_ICONS = { damage: '🩸', control: '🌀', offensiveDebuff: '⚔️', defensiveDebuff: '🛡️' }; // Four-family selector vocabulary.
+        function _cureCoverageIcon(coverage, urgent = true) {
+          return `<span class="cure-family-grid">${window.AlchemySystem.FAMILY_ORDER.map(family => {
+            const state = coverage[family] || {};
+            const severity = state.activeAmount >= 45 ? ' severe' : state.activeAmount > 0 ? ' active' : '';
+            const missing = state.owned ? '' : `<b class="cure-family-x${state.urgentMissing && urgent ? ' urgent' : ''}">×</b>`;
+            return `<span class="cure-family${severity}" data-family="${family}">${CURE_FAMILY_ICONS[family]}${missing}</span>`;
+          }).join('')}</span>`;
+        }
+
+        function _openPotionRoot() {
+          _openEntries('potion-root', [
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:() => _openPotionBranch('medicine') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:() => _openPotionBranch('utility') },
+          ], _innerR() * .88);
+        }
+
+        function _openPotionBranch(branch) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const healing = state.healing || {}, cures = state.cures || {}, buffs = state.buffs || {}, flasks = state.flasks || {};
+          const urgent = state.inCombat !== false; // Outside combat, unavailable marks stay muted.
+          const healingClass = `potion-category${healing.needed ? '' : ' muted'}${healing.urgentMissing ? ` unavailable${urgent ? ' urgent' : ''}` : ''}`;
+          const curesUseful = (cures.usefulItems || []).length > 0;
+          const buffsUseful = (buffs.usefulItems || []).length > 0;
+          const entries = branch === 'medicine' ? [
+            { id:'healing', icon:`💚${healing.urgentMissing ? '<b class="category-x red">×</b>' : ''}`, label:'Healing', className:healingClass, disabled:!(healing.needed && healing.owned), onSelect:() => _openPotionItems('healing') },
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:_openPotionRoot },
+            { id:'cures', icon:_cureCoverageIcon(cures.coverage || {}, urgent), label:'Cures', className:`potion-category${curesUseful ? '' : ' muted'}`, disabled:!curesUseful, onSelect:() => _openPotionItems('cures') },
+          ] : [
+            { id:'buffs', icon:`✨${buffs.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Buffs', className:`potion-category${buffsUseful ? '' : ' muted'}`, disabled:!buffsUseful, onSelect:() => _openPotionItems('buffs') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:_openPotionRoot },
+            { id:'flasks', icon:`🫙${flasks.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Flasks', className:`potion-category${flasks.owned ? '' : ' muted'}`, disabled:!flasks.owned, onSelect:() => _openPotionItems('flasks') },
+          ];
+          _openEntries(`potion-${branch}`, entries, _innerR());
+        }
+
+        function _openPotionItems(category) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const items = category === 'healing' ? state.healing?.usefulItems
+            : category === 'cures' ? state.cures?.usefulItems
+              : category === 'buffs' ? state.buffs?.items : state.flasks?.items;
+          _openEntries(`potion-items-${category}`, (items || []).map(entry => {
+            const definition = entry.recipe || window.AlchemySystem.RECIPE_DEFS[entry.payload.recipeId];
+            const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
+            return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
+          }), _outerR() * 1.15);
+        }
+
         let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
         const ITEM_VIS = 5;
 
@@ -20499,6 +20555,10 @@
             }
           }
           _setActive(best);
+          if (_arcOpen === 'entries:potion-root') {
+            const branch = _arcSlots[best]?.data.id;
+            if (branch === 'medicine' || branch === 'utility') _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+          }
         }
 
         function _arcUp() {
@@ -20506,14 +20566,19 @@
           if (!_arcOpen) return;
           const slot = _arcSlots[_arcActive];
           if (_arcOpen === 'tool' && slot) {
-            heldMode = 'tool'; _lastHeldTool = slot.data;
+            heldMode = 'tool'; lastHeldFarmTool = slot.data;
             setActiveTool(slot.data); // calls refreshActionBar internally
           } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
             heldMode = 'item';
             activeItemIndex = slot.data.index;
             refreshItemScroll(); refreshActionBar();
-          } else if (_arcOpen === 'ammo' && slot?.data.available) {
-            window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, slot.data.id);
+          } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
+            const select = slot.data.onSelect;
+            if (typeof select === 'function') {
+              const previousMode = _arcOpen; // Branch callbacks replace the current arch; item callbacks do not.
+              select();
+              if (_arcOpen !== previousMode) return;
+            }
           }
           _clearArc();
         }
@@ -20521,13 +20586,23 @@
         window._desktopSelectionArc = {
           openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
-          openAmmo() { if (_arcOpen !== 'ammo') _openAmmoArc(); },
+          openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
+          openPotions() { _openPotionRoot(); },
+          openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
+          recallLastTool() {
+            const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
+            const recalled = WHEEL_SLOTS.includes(lastHeldFarmTool) && equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
+            lastHeldFarmTool = recalled;
+            heldMode = 'tool';
+            setActiveTool(recalled);
+            return recalled;
+          },
           scrollTool(dir) {
             if (_arcOpen !== 'tool') _openToolArc();
             const idx = WHEEL_SLOTS.indexOf(activeTool);
             const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
             heldMode = 'tool';
-            _lastHeldTool = WHEEL_SLOTS[next];
+            lastHeldFarmTool = WHEEL_SLOTS[next];
             setActiveTool(WHEEL_SLOTS[next]);
             _arcSlots.forEach((s, i) => {
               const active = s.data === activeTool;
@@ -20549,7 +20624,7 @@
             });
           },
           scrollAmmo(dir) {
-            if (_arcOpen !== 'ammo') _openAmmoArc();
+            if (_arcOpen !== 'entries:ammo') _openAmmoArc();
             const active = window.RangedWeapons?.cycleAmmo?.(equipmentSlots.ranged, dir);
             _arcSlots.forEach((slot, i) => {
               const selected = slot.data.id === active;
@@ -20557,10 +20632,27 @@
               if (selected) _arcActive = i;
             });
           },
+          scrollEntries(dir) {
+            if (!_arcOpen?.startsWith('entries:') || !_arcSlots.length) return false;
+            if (_arcOpen === 'entries:potion-root') {
+              _openPotionBranch(dir < 0 ? 'medicine' : 'utility'); // Direction itself chooses the first hierarchical branch.
+              return true;
+            }
+            _setActive((_arcActive + (dir < 0 ? -1 : 1) + _arcSlots.length) % _arcSlots.length);
+            return true;
+          },
           movePointer(x, y) { _arcMove(x, y); },
           commit() { _arcUp(); },
-          close() { _clearArc(); }
+          close() { _clearArc(); },
+          entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
+          toolMenuOpen() { return _arcOpen === 'tool'; }
         };
+        window.SharedSelectionArch = window._desktopSelectionArc; // One configurable arch presenter for tools/items/ammo/potions.
+        document.addEventListener('hobunji-alchemy-change', () => {
+          if (_arcOpen === 'entries:potion-medicine') _openPotionBranch('medicine');
+          else if (_arcOpen === 'entries:potion-utility') _openPotionBranch('utility');
+          else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
+        }); // Refresh the open hierarchy only when its thresholded context changes.
 
         let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
         toolBtn.addEventListener('pointerdown', ev => {
@@ -20586,10 +20678,9 @@
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld && !_tMoved && heldMode === 'item') {
-            // Tap while in item mode → return to last held tool
-            heldMode = 'tool';
-            setActiveTool(_lastHeldTool); // calls refreshActionBar internally
+          else if (!_tHeld && !_tMoved) {
+            // A Tool Select tap always recalls the last valid held tool.
+            window._desktopSelectionArc.recallLastTool();
           }
           _tHeld = false; _tMoved = false;
         });
@@ -20623,7 +20714,7 @@
             if (_arcOpen === 'item') _arcUp();
             else if (!_iHeld && !_iMoved && heldMode === 'tool') {
               // Tap while in tool mode → switch to item mode
-              _lastHeldTool = activeTool;
+              if (WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
               heldMode = 'item';
               refreshItemScroll(); refreshActionBar();
             }
@@ -20757,6 +20848,8 @@
           // indoors so isn't duplicated here.
           if (heldMode === 'item') {
             const heldItem = getActiveInventoryItem();
+            const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+            if (flaskActions.length) return flaskActions;
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
             if (consumeAction) return [consumeAction];
             if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
@@ -20824,8 +20917,10 @@
         // A selected consumable is Item Action 1. Its configured binding owns
         // consumption; raw Space/Enter/Interact keys have no special behavior.
         const heldItem = getActiveInventoryItem();
+        const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+        if (flaskActions.length) flaskActions.slice().reverse().forEach(action => btns.unshift(action));
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
-        if (consumeAction) btns.unshift(consumeAction);
+        if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
 
@@ -20947,7 +21042,7 @@
         if (!needsRebuild) return;
 
         // Split tool actions from item-owned consume/plant/place/harvest actions.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('plant_')
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = btns.filter(b => !isItemButton(b));
         const itemBtns = btns.filter(isItemButton);
@@ -20975,6 +21070,7 @@
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             let _ammoHoldTimer = null, _ammoArcOpen = false; // Ranged Action 2 tap cycles; a sustained press opens the ammo selector.
+            let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -21037,6 +21133,9 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              _flaskGesture = act === 'alchemy_flask_primary';
+              _flaskCanceled = false;
+              if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
               if (activeTool === 'ranged' && act === 'ammo_select') {
                 _ammoArcOpen = false;
                 _ammoHoldTimer = setTimeout(() => {
@@ -21065,6 +21164,17 @@
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              if (_flaskGesture && window.AlchemyFlasks?.aiming) {
+                window.AlchemyFlasks.setTargetFromVector(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
+                const cancelButton = [...document.querySelectorAll('[data-action="alchemy_flask_cancel"]')][0]; // Current Item Action 2 cancel region.
+                const cancelRect = cancelButton?.getBoundingClientRect(); // Used for continuous drag-over cancellation.
+                if (cancelRect && ev.clientX >= cancelRect.left && ev.clientX <= cancelRect.right && ev.clientY >= cancelRect.top && ev.clientY <= cancelRect.bottom) {
+                  cancelButton.classList.add('flask-cancel-hover');
+                  window.AlchemyFlasks.cancelAim();
+                  _flaskCanceled = true;
+                }
+                return;
+              }
               if (activeTool === 'ranged' && el.dataset.action === 'ammo_select') {
                 if (_ammoArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
                 return;
@@ -21112,6 +21222,8 @@
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
               if (_ammoArcOpen) {
                 window._desktopSelectionArc?.commit();
+              } else if (_flaskGesture) {
+                if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
                 else _abtFire();
@@ -21119,6 +21231,9 @@
               _drag = false;
               _chargeFiredOnPress = false;
               _ammoArcOpen = false;
+              document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
+              _flaskGesture = false;
+              _flaskCanceled = false;
               _pressSlot = null;
             }
 
@@ -21225,6 +21340,7 @@
         if (action === 'fish') return 'Fish';
         if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
         if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
+        if (action === 'potion_select') return 'Potions';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
@@ -21935,6 +22051,7 @@
         const toolSet = new Set(Object.values(toolActions).flat());
         const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
+          || action.startsWith('alchemy_flask_')
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && !toolSet.has(b.action) && !isItemAction(b.action));
@@ -21962,8 +22079,46 @@
         if (activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
-      const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the inner ammo arch.
+      const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
+      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'toolSelect') {
+          if (phase === 'release') {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.down = false;
+            if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; }
+            if (toolSelectPress.held) window._desktopSelectionArc?.commit();
+            else window._desktopSelectionArc?.recallLastTool?.();
+            toolSelectPress.held = false;
+            return;
+          }
+          if (toolSelectPress.down) return;
+          toolSelectPress.down = true; toolSelectPress.held = false;
+          toolSelectPress.timer = setTimeout(() => {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.held = true;
+            window._desktopSelectionArc?.openTool?.();
+          }, desktopTapWindowMs());
+          return;
+        }
+        if (window._desktopSelectionArc?.toolMenuOpen?.()) {
+          const isToolBrowseAction = ['action1', 'action2', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Keyboard browsing mirrors controller stick selection while Tool Select is held.
+          if (isToolBrowseAction && phase === 'press') {
+            if (actionId === 'action1') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollTool(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isToolBrowseAction) return;
+        }
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !(actionId === 'action2' && activeTool === 'ranged' && rangedAmmoAction2Press.down)) {
+          const isSelectorAction = ['action1', 'action2', 'interact', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Common keyboard/controller selector vocabulary.
+          if (isSelectorAction && phase === 'press') {
+            if (actionId === 'action1' || actionId === 'interact') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollEntries(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isSelectorAction) return;
+        }
         if (actionId === 'action2' && activeTool === 'ranged') {
           if (phase === 'release') {
             if (!rangedAmmoAction2Press.down) return;
@@ -22054,6 +22209,19 @@
         const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
         input.x = ax; input.y = ay;
         controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          controllerLookActive = false;
+          const now = performance.now();
+          if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
+            pollControllerInput._selectionArchMovedAt = now;
+            const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
+            window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+          }
+        }
+        if (window.AlchemyFlasks?.aiming) {
+          controllerLookActive = false;
+          window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
+        }
         if (controllerLookActive) {
           controllerLookAngle = Math.atan2(ry, rx);
           targetAimAngle = controllerLookAngle;
@@ -22063,6 +22231,13 @@
           if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
             rangedAmmoAction2Press.lastScrollAt = now;
             window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        if (toolSelectPress.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - toolSelectPress.lastScrollAt >= 220) {
+            toolSelectPress.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
           }
         }
         const down = new Set();
@@ -22466,6 +22641,7 @@
           // via _playerGroundY) instead of always sitting at world Y=0.
           _groundPlane.constant = -_playerGroundY();
           if (_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) {
+            if (window.AlchemyFlasks?.aiming) window.AlchemyFlasks.setTarget(_mouseWorld.x * TILE, _mouseWorld.z * TILE); // Mouse ground-target cursor.
             const dx = _mouseWorld.x - player.x / TILE;
             const dz = _mouseWorld.z - player.y / TILE;
             if (Math.hypot(dx, dz) > 0.3) {
@@ -23100,7 +23276,47 @@
         inventory,
         clampInventoryStack,
         refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
         showToast,
+        saveMemberWorldData,
+        random: rnd,
+        getPlayer: () => player,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getInCombat: () => isPlayerInCombat(),
+      });
+
+      window.AlchemyFlasks?.init({
+        THREE,
+        TILE,
+        inventory,
+        clampInventoryStack,
+        getPlayer: () => player,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
+        getGroundY: () => _playerGroundY() + 0.025,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getHeldWorldPosition: () => {
+          const position = new THREE.Vector3(); // Used to release the rendered flask from the player's hand.
+          heldItemHolder.getWorldPosition(position);
+          return position;
+        },
+        getSplashEntities: (area, x, y, radiusPx) => {
+          const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
+          return entities.filter(entity => entity && entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx);
+        },
+        spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
+          const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.
+          const fx = { isCone: true, x: x / TILE, z: y / TILE, y: _playerGroundY() + 0.08, angle: 0, halfConeRad: Math.PI, rangeTiles: radiusTiles, age: 0, maxAge: 0.34, ok: true, color }; // Uses the same bounded radial-particle renderer as combat/Grehlr-style bursts.
+          fx.particles = weaponTrailParticleSeeds(fx);
+          weaponTrailEffects.push(fx);
+        },
+        startThrowWindup: () => { _heldThrowAimT = 1; },
+        confirmThrowAnimation: () => { _heldThrowAimT = 2; },
+        cancelThrowWindup: () => { _heldThrowAimT = 0; },
+        refreshItemScroll,
+        refreshActionBar,
         saveMemberWorldData,
       });
 
@@ -23801,6 +24017,10 @@
         cameraRelativeCreaturePerps,
         cameraRelativePerps,
         clampInventoryStack,
+        getHeldItemKey: () => heldMode === 'item' ? getActiveInventoryItem()?.key || null : null,
+        refreshItemScroll,
+        refreshActionBar,
+        saveMemberWorldData,
         companionAiTypeForKind,
         creatureAttachmentAnchor,
         creaturePlaneGroundOffset,
@@ -24138,7 +24358,7 @@
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all
         // world-scoped per character, same as the fields just above.
-        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreKnownRecipes(playerData.alchemyKnownRecipes, playerData.alchemyKnownEffects);
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
@@ -24150,9 +24370,12 @@
         // session, unlike the static reagent/furniture/fish tables) — rebuild
         // each one's display/Drink metadata straight from its key, which
         // deterministically encodes its effects (see ensurePotionItemDef).
+        window.AlchemySystem.migrateLegacyPotionInventory(inventory);
         Object.keys(inventory).forEach(key => {
-          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
-          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
+          const payload = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (payload?.recipeId) window.AlchemySystem.ensureRecipeItemDef(payload.recipeId, payload.potencyTier);
+          else if (payload?.legacyEffects) window.AlchemySystem.ensurePotionItemDef(payload.legacyEffects);
+          if (key.startsWith('alchemy_recipe_')) window.AlchemySystem.ensureRecipeScrollItemDef(key.slice('alchemy_recipe_'.length));
         });
 
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
