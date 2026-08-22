@@ -553,6 +553,7 @@
         white-space:nowrap;
         pointer-events:none;
         text-shadow:-1px -1px 0 rgba(0,0,0,.9), 1px -1px 0 rgba(0,0,0,.9), -1px 1px 0 rgba(0,0,0,.9), 1px 1px 0 rgba(0,0,0,.9), 0 2px 4px rgba(0,0,0,.9);
+        transition:color .12s ease, text-shadow .12s ease;
       }
       .arc-slot.shared-selection-dense .arc-label {
         width:72px;
@@ -561,6 +562,18 @@
         line-height:.92;
         text-wrap:balance;
       }
+
+      /* One shared active-state language for tools, items, ammo, and potions.
+         Cyan/teal deliberately contrasts the normal gold labels and red Cancel. */
+      .arc-slot.shared-selection-slot.arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost) {
+        background:#145d68 !important;
+        border-color:#8df7ff !important;
+      }
+      .arc-slot.shared-selection-slot.arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost) .arc-label {
+        color:#92f8ff !important;
+        text-shadow:-1px -1px 0 rgba(0,0,0,.95), 1px -1px 0 rgba(0,0,0,.95), -1px 1px 0 rgba(0,0,0,.95), 1px 1px 0 rgba(0,0,0,.95), 0 0 5px rgba(113,238,255,.9), 0 2px 4px rgba(0,0,0,.95);
+      }
+
       .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:.82em; line-height:1; }
       .quick-potion-curved-category {
         fill:#f9e28a; stroke:rgba(0,0,0,.82); stroke-width:3px; paint-order:stroke fill;
