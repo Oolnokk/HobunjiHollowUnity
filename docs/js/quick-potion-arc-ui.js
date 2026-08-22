@@ -10,6 +10,7 @@
   const MIN_LABEL_SPAN_PX = 92; // Used to keep short two-button branches readable as curved text.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
   const LABEL_ID = 'quickPotionArcCategoryLabel';
+  const OUTER_ARCH_ID = 'toolSelect'; // Used to hide the normal tool/weapon/item/mount ring while Potion Select owns the held input.
 
   let installed = false; // Guards against duplicate observers if this script is cache-busted/reloaded.
   let lastArcCenter = null; // Reused for two-slot potion menus after a 3+ slot menu reveals the exact circle center.
@@ -110,7 +111,11 @@
     slot.classList.add('potion-cancel', 'quick-potion-category-cancel');
     slot.setAttribute('aria-label', 'Cancel');
     slot.title = 'Cancel';
-    slot.innerHTML = '<span class="quick-potion-cancel-icon" aria-hidden="true">✕</span><span class="quick-potion-cancel-word">Cancel</span>';
+    slot.innerHTML = '<span class="quick-potion-cancel-icon" aria-hidden="true">✕</span><span class="arc-label">Cancel</span>';
+  }
+
+  function setOuterArchHidden(hidden) {
+    document.body.classList.toggle('quick-potion-select-active', Boolean(hidden)); // CSS keeps the potion overlay fixed while hiding only the normal outer ring.
   }
 
   function removeCurvedLabel() {
@@ -216,10 +221,19 @@
   function refresh() {
     refreshQueued = false;
     const marker = document.querySelector(POTION_MARKER_SELECTOR);
-    if (!marker) { removeCurvedLabel(); return; }
+    if (!marker) {
+      setOuterArchHidden(false);
+      removeCurvedLabel();
+      return;
+    }
     const slots = [...document.querySelectorAll('.arc-slot')];
-    if (!slots.length) { removeCurvedLabel(); return; }
+    if (!slots.length) {
+      setOuterArchHidden(false);
+      removeCurvedLabel();
+      return;
+    }
 
+    setOuterArchHidden(true); // Potion Select is open/held: hide only #toolSelect; the independently rendered potion arc does not move.
     const branchSlot = slots.find(slot => slot.classList.contains('potion-branch'));
     const hasChildCategories = slots.some(slot => slot.classList.contains('potion-category'));
     if (branchSlot && hasChildCategories) makeBranchCancel(branchSlot); // Existing callback already returns to the root, so only its presentation changes.
@@ -241,12 +255,37 @@
     const style = document.createElement('style');
     style.id = 'quickPotionArcUiStyles';
     style.textContent = `
+      body.quick-potion-select-active #${OUTER_ARCH_ID} {
+        visibility:hidden !important;
+        pointer-events:none !important;
+      }
+      .arc-slot .arc-label {
+        position:absolute;
+        left:50%; top:calc(100% + 4px);
+        transform:translateX(-50%);
+        width:max-content;
+        max-width:110px;
+        color:#f9e28a;
+        font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',sans-serif;
+        font-size:clamp(10px,1.55vmin,13px);
+        line-height:1;
+        letter-spacing:.055em;
+        text-transform:none;
+        text-align:center;
+        white-space:nowrap;
+        pointer-events:none;
+        text-shadow:-1px -1px 0 rgba(0,0,0,.9), 1px -1px 0 rgba(0,0,0,.9), -1px 1px 0 rgba(0,0,0,.9), 1px 1px 0 rgba(0,0,0,.9), 0 2px 4px rgba(0,0,0,.9);
+      }
       .arc-slot.quick-potion-slot {
         width:clamp(22px,4.25vmin,30px); height:clamp(22px,4.25vmin,30px);
         border-width:1px; gap:1px; box-shadow:0 2px 7px rgba(0,0,0,.42);
       }
       .arc-slot.quick-potion-slot .arc-icon { font-size:.78em; }
-      .arc-slot.quick-potion-slot .arc-label { font-size:5px; letter-spacing:.02em; }
+      .arc-slot.quick-potion-slot .arc-label {
+        top:calc(100% + 3px);
+        font-size:clamp(9px,1.25vmin,11px);
+        letter-spacing:.04em;
+      }
       .arc-slot.quick-potion-slot .category-x { inset:-3px; font-size:1.15em; }
       .arc-slot.quick-potion-slot .cure-family-grid { width:16px; height:16px; }
       .arc-slot.quick-potion-slot .cure-family { font-size:4px; }
@@ -254,7 +293,6 @@
       .arc-slot.quick-potion-slot .cure-family.severe { font-size:8px; }
       .arc-slot.quick-potion-slot .cure-family-x { font-size:.9em; }
       .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:.82em; line-height:1; }
-      .quick-potion-category-cancel .quick-potion-cancel-word { font-size:clamp(4.5px,.72vmin,6px); line-height:1; margin-top:0; }
       .quick-potion-curved-category {
         fill:#f9e28a; stroke:rgba(0,0,0,.82); stroke-width:3px; paint-order:stroke fill;
         font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',sans-serif;
@@ -279,6 +317,7 @@
         arcSpanScale: ARC_SPAN_SCALE,
         buttonDiameterScale: BUTTON_DIAMETER_SCALE,
         labelOutsetPx: LABEL_OUTSET_PX,
+        outerArchHidden: document.body.classList.contains('quick-potion-select-active'),
       }),
       refresh: () => queueRefresh(),
     });
