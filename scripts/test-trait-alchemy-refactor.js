@@ -212,9 +212,11 @@ assert.match(game, /potionAction3Press[\s\S]*openPotions\(\)[\s\S]*releaseSelect
 assert.match(game, /potionAction3Press\.down[\s\S]*scrollEntries\(-dir\)/, 'desktop potion selection must navigate with the scroll wheel while held');
 assert.match(game, /beginHeldSelection\?\.\(_selectorKind\)[\s\S]*heldSelectionKind\?\.\(\)/, 'pointer-held potion and ammo buttons must share their ownership state with the wheel adapter');
 assert.match(game, /heldEntrySelectorKind === 'potions'[\s\S]*scrollEntries\(-dir\)/, 'a wheel over a pointer-held potion action must navigate instead of zooming');
-assert.match(game, /navigationOnly:true[\s\S]*onNavigate:\(\) => _openPotionBranch\(branch\)/, 'each potion item arch must retain a category marker that repopulates its parent without release');
+assert.match(game, /id:`cancel-\$\{category\}`[\s\S]*label:'Cancel'[\s\S]*active:true[\s\S]*onSelect:\(\) => _clearArc\(\)/, 'the focused category must be replaced by a selected Cancel entry that closes on release');
+assert.match(game, /category === 'healing' \|\| category === 'buffs'[\s\S]*unshift\(cancelEntry\)[\s\S]*push\(cancelEntry\)/, 'Cancel must occupy the same left/right edge angle as the category it replaces');
 assert.match(game, /_arcMove\(px, py\); \/\/ Re-evaluate the same continuous drag/, 'one continuous drag must traverse a newly populated potion hierarchy without a second press');
-assert.match(game, /navigation\?\.navigationOnly\) navigation\.onNavigate\?\.\(\)/, 'wheel navigation over intermediate category markers must repopulate immediately');
+assert.match(game, /_openPotionItems\(category\.id\);[\s\S]*_arcMove\(px, py\); \/\/ The replacement Cancel button/, 'continuous drag must focus the replacement Cancel without another pointer event');
+assert.match(style, /\.arc-slot\.potion-cancel[\s\S]*\.arc-slot\.potion-cancel\.arc-active/, 'Cancel must have readable idle and selected presentation');
 assert.match(game, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function _openPotionBranch[\s\S]*_outerR\(\)[\s\S]*function _openPotionItems[\s\S]*_outerR\(\)/, 'all potion hierarchy levels must use the ordinary tool/item arch radius');
 assert.doesNotMatch(game, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');
 assert.match(read('docs/js/alchemy-system.js'), /alchemy:\{level:alchemyLevel\(\),xp:/, 'Alchemy diagnostics must expose both level and XP');

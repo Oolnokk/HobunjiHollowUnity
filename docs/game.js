@@ -20464,13 +20464,9 @@
             const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
             return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
           });
-          const branch = category === 'healing' || category === 'cures' ? 'medicine' : 'utility'; // Used by the persistent category marker to repopulate its parent arch.
-          const categoryMeta = {
-            healing: { icon:'💚', label:'Healing' }, cures: { icon:'🩹', label:'Cures' },
-            buffs: { icon:'✨', label:'Buffs' }, flasks: { icon:'🫙', label:'Flasks' },
-          }[category];
-          const parentEntry = { id:`category-${category}`, ...categoryMeta, className:'potion-category potion-parent', navigationOnly:true, onNavigate:() => _openPotionBranch(branch) }; // Scrolling/dragging back over this category repopulates without release.
-          itemEntries.splice(Math.floor(itemEntries.length / 2), 0, parentEntry);
+          const cancelEntry = { id:`cancel-${category}`, icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:() => _clearArc() }; // Occupies the focused category's former angle and closes only when the held selector is released on it.
+          if (category === 'healing' || category === 'buffs') itemEntries.unshift(cancelEntry);
+          else itemEntries.push(cancelEntry);
           _openEntries(`potion-items-${category}`, itemEntries, _outerR());
         }
 
@@ -20571,10 +20567,10 @@
             }
           } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
             const category = _arcSlots[best]?.data;
-            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) _openPotionItems(category.id);
-          } else if (_arcOpen?.startsWith('entries:potion-items-')) {
-            const navigation = _arcSlots[best]?.data;
-            if (navigation?.navigationOnly) navigation.onNavigate?.();
+            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) {
+              _openPotionItems(category.id);
+              _arcMove(px, py); // The replacement Cancel button becomes selected immediately under the uninterrupted drag.
+            }
           }
         }
 
@@ -20663,8 +20659,6 @@
               return true;
             }
             _setActive((_arcActive + (dir < 0 ? -1 : 1) + _arcSlots.length) % _arcSlots.length);
-            const navigation = _arcSlots[_arcActive]?.data;
-            if (navigation?.navigationOnly) navigation.onNavigate?.(); // Intermediate categories repopulate immediately; release remains reserved for final items.
             return true;
           },
           movePointer(x, y) { _arcMove(x, y); },

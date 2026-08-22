@@ -58,7 +58,7 @@ assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
 assert.match(index, /ranged-weapons\.js\?v=20260817e/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
 assert.match(index, /scratchbones-config\.js\?v=20260821alchemy1/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
-assert.match(index, /game\.js\?v=20260821alchemy3/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
+assert.match(index, /game\.js\?v=20260821alchemy4/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 
 assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');
 assert.match(ranged, /SPECIAL_AMMO_LOOT_CHANCE\s*=\s*0\.72/, 'all enemy corpses must have a high special-ammo drop chance');

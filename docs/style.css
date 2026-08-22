@@ -928,6 +928,8 @@
     }
     .arc-slot.blocked, .arc-slot.muted, .arc-slot.redundant { filter: grayscale(.9); opacity:.48; }
     .arc-slot.unavailable.urgent { opacity:.9; border-color:#ff4b55; }
+    .arc-slot.potion-cancel { color:#ff6873; border-color:rgba(255,80,94,.72); background:rgba(105,16,27,.54); }
+    .arc-slot.potion-cancel.arc-active { color:#fff; border-color:#ff4050; background:rgba(175,24,40,.72); box-shadow:0 0 16px rgba(255,48,67,.65); }
     .category-x { position:absolute; inset:-7px; display:grid; place-items:center; font-size:2em; font-weight:900; line-height:1; transform:rotate(-15deg); text-shadow:0 1px 3px #000; }
     .category-x.red { color:#ff3d4a; }
     .category-x.white { color:#fff; }
