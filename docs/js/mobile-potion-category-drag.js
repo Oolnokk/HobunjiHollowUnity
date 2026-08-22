@@ -4,25 +4,22 @@
 (() => {
   'use strict';
 
-  const TAP_SLOP_PX = 12; // Cancels a tap if the finger meaningfully drags.
-  const HIT_PAD_PX = 5; // Small forgiveness around the visible half-size circle.
-
-  let installed = false; // Prevents duplicate proxy/listener installation.
-  let tapGesture = null; // Active mobile tap on an already-open potion stage.
-  let pressedSlot = null; // Visual-only pressed-circle feedback.
+  const TAP_SLOP_PX = 12;
+  const HIT_PAD_PX = 5;
+  let installed = false;
+  let tapGesture = null;
+  let pressedSlot = null;
 
   function mobilePointerMode() { return !window.matchMedia('(pointer: fine)').matches; }
   function touchLike(ev) { return !ev.pointerType || ev.pointerType === 'touch' || ev.pointerType === 'pen'; }
   function slotName(slot) { return String(slot?.getAttribute?.('aria-label') || slot?.title || slot?.querySelector?.('.arc-label')?.textContent || slot?.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
   function liveSlots(selector) {
     return [...document.querySelectorAll(selector)].filter(slot => {
       if (slot.classList.contains('shared-selection-exit-ghost') || slot.classList.contains('shared-selection-retired-original')) return false;
       const style = getComputedStyle(slot);
-      return style.display !== 'none' && style.visibility !== 'hidden'; // Ignore opacity: new-wheel fan-in starts at zero opacity.
+      return style.display !== 'none' && style.visibility !== 'hidden';
     });
   }
-
   function stage() {
     const categories = liveSlots('.arc-slot.potion-category:not(.arc-arrow)');
     if (categories.length) {
@@ -37,7 +34,6 @@
     }
     return { type:'other', key:'other', slots:[], cancel:null };
   }
-
   function visualCenter(slot) {
     const x = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
     const y = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
@@ -45,25 +41,21 @@
     const rect = slot.getBoundingClientRect();
     return { x:rect.left + rect.width / 2, y:rect.top + rect.height / 2 };
   }
-
   function hit(slots, x, y) {
-    let best = null, distanceBest = Infinity;
+    let best = null, bestDistance = Infinity;
     for (const slot of slots) {
       const rect = slot.getBoundingClientRect();
       const center = visualCenter(slot);
-      const radius = Math.max(rect.width, rect.height) / 2 + HIT_PAD_PX;
       const distance = Math.hypot(x - center.x, y - center.y);
-      if (distance <= radius && distance < distanceBest) { best = slot; distanceBest = distance; }
+      if (distance <= Math.max(rect.width, rect.height) / 2 + HIT_PAD_PX && distance < bestDistance) { best = slot; bestDistance = distance; }
     }
     return best;
   }
-
   function logicalCenter(slot) {
     const x = Number.parseFloat(slot?.style?.left || '');
     const y = Number.parseFloat(slot?.style?.top || '');
-    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : visualCenter(slot); // game.js's hidden original arc point selects the exact tapped data slot.
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : visualCenter(slot);
   }
-
   function branchDir(slot) {
     if (slot?.classList.contains('medicine') || slotName(slot).startsWith('medicine')) return -1;
     if (slot?.classList.contains('utility') || slotName(slot).startsWith('utility')) return 1;
@@ -75,33 +67,30 @@
     if (name.startsWith('cures') || name.startsWith('flasks')) return 1;
     return 0;
   }
-
   function clearPressed() { pressedSlot?.classList?.remove('mobile-potion-tap-pressed'); pressedSlot = null; }
   function press(slot) { clearPressed(); if (slot) { pressedSlot = slot; slot.classList.add('mobile-potion-tap-pressed'); } }
-  function swallow(ev) { ev.preventDefault(); ev.stopImmediatePropagation(); } // Blocks .arc-backdrop nearest-angle drag logic.
+  function swallow(ev) { ev.preventDefault(); ev.stopImmediatePropagation(); }
 
   function install() {
     if (installed) return;
     const arc = window._desktopSelectionArc;
     if (!arc?.movePointer || !arc?.scrollEntries || !arc?.openPotions || !arc?.releaseSelection) return;
     installed = true;
-
     const movePointer = arc.movePointer.bind(arc);
     const scrollEntries = arc.scrollEntries.bind(arc);
     const openPotions = arc.openPotions.bind(arc);
     const releaseSelection = arc.releaseSelection.bind(arc);
     const close = arc.close?.bind(arc);
     const endHeldSelection = arc.endHeldSelection?.bind(arc);
-
     const overrides = {
       movePointer(x, y) {
-        if (mobilePointerMode() && stage().type !== 'other') return; // No potion drag navigation on mobile, including concrete lists.
+        if (mobilePointerMode() && stage().type !== 'other') return;
         return movePointer(x, y);
       },
       openPotions(...args) { return openPotions(...args); },
       releaseSelection(...args) {
         const current = stage();
-        if (mobilePointerMode() && (current.type === 'root' || current.type === 'category')) return false; // Initial Potion Select release leaves the tapped hierarchy open.
+        if (mobilePointerMode() && (current.type === 'root' || current.type === 'category')) return false;
         return releaseSelection(...args);
       },
       endHeldSelection(...args) { return endHeldSelection?.(...args); },
@@ -123,26 +112,22 @@
     document.addEventListener('pointerdown', ev => {
       if (!mobilePointerMode() || !touchLike(ev)) return;
       const current = stage();
-      if (current.type === 'other') return; // Let the original Action 3 tap open the root.
+      if (current.type === 'other') return;
       tapGesture = { pointerId:ev.pointerId, x:ev.clientX, y:ev.clientY, moved:false, stageKey:current.key };
-      const tappable = current.type === 'category' && current.cancel ? [...current.slots, current.cancel] : current.slots;
-      press(hit(tappable, ev.clientX, ev.clientY));
+      press(hit(current.type === 'category' && current.cancel ? [...current.slots, current.cancel] : current.slots, ev.clientX, ev.clientY));
       swallow(ev);
     }, { capture:true, passive:false });
-
     document.addEventListener('pointermove', ev => {
       if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
       if (Math.hypot(ev.clientX - tapGesture.x, ev.clientY - tapGesture.y) > TAP_SLOP_PX) { tapGesture.moved = true; clearPressed(); }
-      swallow(ev); // Movement never navigates; it can only cancel the pending tap.
+      swallow(ev);
     }, { capture:true, passive:false });
-
     document.addEventListener('pointerup', ev => {
       if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
       const gesture = tapGesture; tapGesture = null; clearPressed(); swallow(ev);
       if (gesture.moved) return;
       const current = stage();
       if (current.key !== gesture.stageKey) return;
-
       if (current.type === 'root') {
         const slot = hit(current.slots, ev.clientX, ev.clientY), direction = branchDir(slot);
         if (slot && direction) scrollEntries(direction);
@@ -158,11 +143,10 @@
         const slot = hit(current.slots, ev.clientX, ev.clientY);
         if (!slot) return;
         const point = logicalCenter(slot);
-        movePointer(point.x, point.y); // Exact tapped slot, not nearest visual angle.
-        releaseSelection(); // Concrete potion/final Cancel commits on this tap.
+        movePointer(point.x, point.y);
+        releaseSelection();
       }
     }, { capture:true, passive:false });
-
     document.addEventListener('pointercancel', ev => {
       if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
       tapGesture = null; clearPressed(); swallow(ev);
@@ -172,9 +156,8 @@
     style.id = 'mobilePotionTapStyles';
     style.textContent = `.arc-slot.mobile-potion-tap-pressed:not(.arc-arrow){filter:brightness(1.24)!important;outline:2px solid rgba(255,255,255,.72);outline-offset:2px;}`;
     document.head.appendChild(style);
-
     window.MobilePotionTapNavigation = Object.freeze({ diagnostics:() => ({ installed, mode:'tap-only', mobilePointerMode:mobilePointerMode(), stage:stage().type, tapSlopPx:TAP_SLOP_PX, hitPadPx:HIT_PAD_PX }) });
-    window.MobilePotionCategoryDrag = window.MobilePotionTapNavigation; // Compatibility alias for the previous diagnostic object name.
+    window.MobilePotionCategoryDrag = window.MobilePotionTapNavigation;
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
