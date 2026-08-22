@@ -3572,18 +3572,19 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
-        // Shoulder-surf: the head locks onto wherever the (mouse-driven)
-        // camera is actually looking — cameraFacingAngleRad() — using the
-        // exact same facingAngle-convention-to-world-yaw conversion the
-        // default case below applies to player.angle, just fed the camera's
-        // angle instead. Deliberately NOT activeCameraAzimuthRad() (what
-        // seated uses just below): that's where the camera SITS relative to
-        // its target, which is the opposite direction from where it's
-        // actually looking — fine for seated (the head tracking the orbit
-        // reads as "looking toward the viewer"), wrong here (the head should
-        // look the same way the camera does, like real third-person aim).
+        // Shoulder-surf: the head locks onto the shared aim point
+        // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
+        // raycast) rather than the camera's own raw azimuth. Those two agree
+        // when the camera looks straight at the player, but a horizontal
+        // camera-offset slide points the camera at a spot beside the player
+        // instead — using the raycast's actual ground target keeps the head
+        // (and the body catch-up / WASD-relative movement below, which read
+        // the same value) aimed at what's really in front of the reticle
+        // instead of visibly disagreeing with it. Same facingAngle-
+        // convention-to-world-yaw conversion the default case below applies
+        // to player.angle, just fed the shared aim angle instead.
         const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE
-          ? -cameraFacingAngleRad() + Math.PI / 2
+          ? -mouseLookAngle + Math.PI / 2
           : sitInteraction?.phase === 'active'
             ? activeCameraAzimuthRad()
             : -player.angle + Math.PI / 2;
@@ -12724,12 +12725,15 @@
       // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
-      // Screen-center NDC for shoulder-surf's crosshair-style aim raycast
-      // below (updateShoulderSurfReticleAim) — there's no cursor to raycast
-      // from once the mouse is Pointer-Locked, so aim/interaction targeting
-      // reads off dead-center of the view instead, the same way any
-      // first/third-person game with a fixed reticle does.
-      const _screenCenterNDC = isDesktop ? new THREE.Vector2(0, 0) : null;
+      // Shoulder-surf's crosshair-style aim raycast (updateShoulderSurfReticleAim)
+      // runs on both desktop (no cursor to raycast once the mouse is
+      // Pointer-Locked) and touch (the floating camera joystick has no
+      // cursor either), so unlike _raycaster/_groundPlane/_mouseWorld above
+      // these are always allocated, not just on desktop.
+      const _screenCenterNDC = new THREE.Vector2(0, 0);
+      const _shoulderSurfReticleRaycaster = new THREE.Raycaster();
+      const _shoulderSurfReticleGroundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const _shoulderSurfReticleWorld = new THREE.Vector3();
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
       const _edRay = new THREE.Raycaster();
       const _edNDC = new THREE.Vector2();
@@ -13063,16 +13067,16 @@
         }
 
         // Shoulder-surf: rotate the final (already cardinal-biased) local
-        // move vector into world space relative to the direction the
-        // (mouse-controlled) camera is currently facing — see
-        // cameraFacingAngleRad() — instead of leaving it on world-fixed
-        // axes, so "forward" always means "toward wherever the camera is
-        // looking," like a standard third-person action camera. Deliberately
-        // last, after cardinal bias: biasing this vector toward world
-        // cardinals instead of the player's actual local forward/strafe axes
-        // would visibly skew the intended camera-relative direction.
+        // move vector into world space relative to the shared aim point
+        // (mouseLookAngle — see updateShoulderSurfReticleAim) instead of
+        // leaving it on world-fixed axes, so "forward" always means "toward
+        // what's actually being targeted," like a standard third-person
+        // action camera. Deliberately last, after cardinal bias: biasing
+        // this vector toward world cardinals instead of the player's actual
+        // local forward/strafe axes would visibly skew the intended
+        // camera-relative direction.
         if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
-          const aim = cameraFacingAngleRad();
+          const aim = mouseLookAngle;
           const s = Math.sin(aim), c = Math.cos(aim);
           const rIx = -ix * s - iy * c;
           const rIy =  ix * c - iy * s;
@@ -13167,15 +13171,16 @@
           // The body doesn't chase raw movement DIRECTION here (that's what
           // every other mode does below) — moving camera-relative already
           // means walking backward/strafing shouldn't spin the character to
-          // face sideways. It does fully square up to the CAMERA itself the
-          // instant there's any movement input though — a real person
-          // straightens their neck out to walk instead of continuing to
-          // crane it sideways. Only while standing still is the body left
-          // free to lag the camera (up to a comfortable neck-rotation
-          // range), turning just enough to stay within it — the over-the-
-          // shoulder body/camera coupling described where the constants are
-          // declared above.
-          const camFacing = cameraFacingAngleRad();
+          // face sideways. It does fully square up to the shared aim point
+          // (mouseLookAngle, same one the head and reticle use — see
+          // updateShoulderSurfReticleAim) the instant there's any movement
+          // input though — a real person straightens their neck out to walk
+          // instead of continuing to crane it sideways. Only while standing
+          // still is the body left free to lag that aim point (up to a
+          // comfortable neck-rotation range), turning just enough to stay
+          // within it — the over-the-shoulder body/camera coupling
+          // described where the constants are declared above.
+          const camFacing = mouseLookAngle;
           if (inputStrength > 0.001) {
             const diff = angleDiff(camFacing, facingAngle);
             facingAngle += diff * Math.min(1, FACING_LERP * dt);
@@ -14613,22 +14618,25 @@
       }
 
       // Shoulder-surf has no cursor to raycast onto the ground for aim (the
-      // mouse is Pointer-Locked and hidden — see the mousemove handler
-      // below), so it raycasts from dead-center of the screen instead, same
-      // ground-plane technique the normal cursor-aim code uses just with a
-      // fixed screen-center NDC. Writes the exact same mouseLookAngle/
-      // mouseLookActive/targetAimAngle state the cursor version does, so
-      // every existing aim consumer (getReticleTile below, weapon/ranged
-      // aim, the alchemy flask throw target, NPC interaction highlighting...)
-      // picks up accurate camera-relative targeting for free, with nothing
-      // else needing to know shoulder-surf even exists.
+      // desktop mouse is Pointer-Locked and hidden, the touch floating
+      // camera joystick has no cursor either), so it raycasts from
+      // dead-center of the screen instead, same ground-plane technique the
+      // normal cursor-aim code uses just with a fixed screen-center NDC.
+      // Writes the exact same mouseLookAngle/mouseLookActive/targetAimAngle
+      // state the cursor version does — this is the SHARED aim point
+      // getReticleTile, updatePlayerHeadAim, and updateMovement's body
+      // catch-up all read off of, deliberately, rather than each computing
+      // its own idea of "where the camera is looking": once a horizontal
+      // camera offset is in play the camera's own azimuth stops lining up
+      // with the actual point on the ground being targeted, and every
+      // consumer needs to agree on that one real point or the head/body/
+      // reticle visibly disagree with each other.
       function updateShoulderSurfReticleAim() {
-        if (!isDesktop) return;
-        _groundPlane.constant = -_playerGroundY();
-        _raycaster.setFromCamera(_screenCenterNDC, camera);
-        if (!_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) return;
-        const dx = _mouseWorld.x - player.x / TILE;
-        const dz = _mouseWorld.z - player.y / TILE;
+        _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
+        const dx = _shoulderSurfReticleWorld.x - player.x / TILE;
+        const dz = _shoulderSurfReticleWorld.z - player.y / TILE;
         if (Math.hypot(dx, dz) > 0.3) {
           mouseLookAngle = Math.atan2(dz, dx);
           targetAimAngle = mouseLookAngle;
@@ -20177,10 +20185,14 @@
       });
       document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
         s_shoulderSurfOffsetH = parseFloat(e.target.value) || 0;
+        const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
+        if (valueEl) valueEl.textContent = s_shoulderSurfOffsetH.toFixed(2);
         updateCameraPosition();
       });
       document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
         s_shoulderSurfOffsetV = parseFloat(e.target.value) || 0;
+        const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
+        if (valueEl) valueEl.textContent = s_shoulderSurfOffsetV.toFixed(2);
         updateCameraPosition();
       });
 
@@ -20347,6 +20359,14 @@
           }
         }
         updateCameraPosition();
+        // Refreshes the shared head/body/reticle aim point every frame
+        // (rather than only on a mousemove/touch event) so it always
+        // reflects the current camera — including a horizontal offset slide
+        // — even if the player is just standing still having already turned
+        // the camera. Must run after updateCameraPosition() above, not
+        // before, or the raycast would use last frame's stale camera
+        // position/orientation.
+        if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
@@ -22931,6 +22951,19 @@
           menuOpen ? closeMenu() : openMenu();
           return;
         }
+        // Tab: same menu open/close as Escape, without Escape's browser side
+        // effect of exiting Fullscreen — added specifically so a player in
+        // fullscreen doesn't have to drop out of it just to reach the menu.
+        // Shift+Tab does the same (no direction to pick between for a plain
+        // open/close toggle); item-cycling moved to [ / ] below to free up
+        // both bindings. Skipped during dialogue/the music minigame, same
+        // as Escape, so the menu can't pop open over either overlay.
+        if (key === 'tab') {
+          event.preventDefault();
+          if (window.MusicMinigame?.state?.active || dialogueOpen) return;
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
         // M: wilderness map — closes if already open on the map tab (mirrors
         // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
         if (key === 'm') {
@@ -22988,12 +23021,13 @@
         if (key === '5') setActiveTool('pick');
         if (key === '6') setActiveTool('harpoon');
 
-        // Item scroll: , / . or Tab/Shift+Tab
-        if (key === ',') {
+        // Item scroll: , / . or [ / ] — Tab/Shift+Tab moved to opening the
+        // menu (see the keydown handler above) so both are free here.
+        if (key === ',' || key === '[') {
           cycleActiveInventoryItem(-1);
           refreshItemScroll(); refreshActionBar();
         }
-        if (key === '.' || key === 'tab') {
+        if (key === '.' || key === ']') {
           event.preventDefault();
           cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
           refreshItemScroll(); refreshActionBar();
@@ -23308,7 +23342,6 @@
               : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
-            if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
             return;
           }
 
