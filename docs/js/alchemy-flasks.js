@@ -185,13 +185,21 @@
   window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, primaryAction, heldActions, update, diagnostics, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
 
-// Quick Potion Select has its own presentation module so the shared arc input
-// state machine remains in game.js. Load it once the page has completed its
-// normal boot, which guarantees window._desktopSelectionArc already exists.
+// The shared selector presentation and mobile category-drag guard both load
+// after game.js has created window._desktopSelectionArc.
 addEventListener('load', () => {
-  if (document.querySelector('script[data-quick-potion-arc-ui]')) return;
-  const script = document.createElement('script'); // Loads the potion-only arch presentation after game.js has created the shared selector.
-  script.src = 'js/quick-potion-arc-ui.js?v=20260821a';
-  script.dataset.quickPotionArcUi = '1';
-  document.head.appendChild(script);
+  if (!document.querySelector('script[data-quick-potion-arc-ui]')) {
+    const presentation = document.createElement('script'); // Shared visual/radius/animation treatment for toggled selector arches.
+    presentation.src = 'js/quick-potion-arc-ui.js?v=20260821a';
+    presentation.dataset.quickPotionArcUi = '1';
+    presentation.async = false;
+    document.head.appendChild(presentation);
+  }
+  if (!document.querySelector('script[data-mobile-potion-category-drag]')) {
+    const mobileDrag = document.createElement('script'); // Mobile hierarchy input guard; concrete potion lists keep normal pointer selection.
+    mobileDrag.src = 'js/mobile-potion-category-drag.js?v=20260822a';
+    mobileDrag.dataset.mobilePotionCategoryDrag = '1';
+    mobileDrag.async = false;
+    document.head.appendChild(mobileDrag);
+  }
 }, { once:true });
