@@ -1292,6 +1292,17 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          // It's a *cloud* forest — thicker than the 0.018 every other zone
+          // shares (see buildZoneScene's fogDensity fallback), so the mist
+          // itself reads as part of the biome rather than an oversight.
+          // Picked so FogExp2 has already all but swallowed anything by the
+          // time it would hit VEG_CULL_FORWARD_TILES (42 tiles): the hard
+          // pop-in edge of that aggressive vegetation cull — newly visible
+          // now that shoulder-surf lets the camera actually look down the
+          // forest instead of past it — sits inside the fog instead of out
+          // in the open, without touching the cull range or tree density
+          // that keeps this zone's frame rate afloat.
+          fogDensity: 0.055,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -7249,7 +7260,8 @@
       let playerItemHoldY = 0.64;
 
       let npcDialogueStaging = null;
-      // Experimental over-the-shoulder camera (Settings → Camera). See
+      // Over-the-shoulder camera (Settings → Camera) — the default camera
+      // mode as of this build, no longer experimental. See
       // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
       // that already resolves "back to the ordinary gameplay camera" (initial
       // load, dialogue close, standing up, cutscene end) goes through those,
@@ -7847,7 +7859,7 @@
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(fogColor);
-        zScene.fog = new THREE.FogExp2(fogColor, 0.018); // match town/farm fog density
+        zScene.fog = new THREE.FogExp2(fogColor, zdef?.fogDensity ?? 0.018); // match town/farm fog density unless the zone overrides it (see map_southern_cloud_forest)
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);

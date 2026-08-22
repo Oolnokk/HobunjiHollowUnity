@@ -42,6 +42,35 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
 
+## Camera: Shoulder Cam is the default
+
+The over-the-shoulder camera (`Settings → Camera → Shoulder Cam`, `docs/game.js`'s
+`s_shoulderSurf`/`SHOULDER_SURF_MODE`) shipped as an experimental toggle and has
+graduated to the standard camera — it now ships on by default and is no longer
+labeled experimental in Settings. It's a close, near-eye-level view: mouse looks
+around freely (Pointer Lock on desktop), WASD moves relative to where you're
+looking rather than the camera's fixed azimuth, and separate horizontal/vertical
+framing offsets (also in Settings) ease between a default and a combat stance so
+a drawn weapon/tool doesn't sit in the middle of the screen. The plain fixed
+follow camera is still reachable by unchecking the toggle.
+
+## Southern Cloud Forest fog
+
+The Southern Cloud Forest (`map_southern_cloud_forest`) now sets its own,
+noticeably thicker `fogDensity` (0.055 vs. every other zone's shared 0.018) via
+`EXTERIOR_ZONES` in `docs/game.js`, read by `buildZoneScene`. Two things
+motivated it:
+
+- Thematically, a *cloud* forest with no clouds in it was an obvious gap —
+  dense ground fog reads as the biome's own weather rather than as missing art.
+- Now that Shoulder Cam lets the camera actually look down the length of the
+  forest instead of past it, the aggressive vegetation cull this zone needs
+  for performance (`VEG_CULL_FORWARD_TILES`, 42 tiles) became visible as a
+  hard pop-in edge. The fog density is tuned so `FogExp2` has already all but
+  swallowed the view well before that edge, hiding the cull boundary in mist
+  instead of open air — without loosening the cull range or forest density
+  that keep this zone's frame rate acceptable.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining
