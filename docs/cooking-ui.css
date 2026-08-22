@@ -94,25 +94,25 @@
   .cooking-recipe-card { flex: 0 0 160px; margin-bottom: 0; }
 }
 
-/* Shared post-base HUD override: keep the five outer-arch controls on the
-   compact 15-degree cadence used before the put-away control was added. */
+/* Shared post-base HUD override: center the five outer-arch controls on the
+   45-degree diagonal from the hub, with a compact 10-degree cadence. */
 #btnUnequipHeld {
-  right: calc(-1*cos(180deg)*var(--ar2));
-  bottom: calc(sin(180deg)*var(--ar2));
+  right: calc(-1*cos(155deg)*var(--ar2));
+  bottom: calc(sin(155deg)*var(--ar2));
 }
 #btnWeaponSwitch {
-  right: calc(-1*cos(165deg)*var(--ar2));
-  bottom: calc(sin(165deg)*var(--ar2));
+  right: calc(-1*cos(145deg)*var(--ar2));
+  bottom: calc(sin(145deg)*var(--ar2));
 }
 #toolBtn {
-  right: calc(-1*cos(150deg)*var(--ar2));
-  bottom: calc(sin(150deg)*var(--ar2));
-}
-#itemBtn {
   right: calc(-1*cos(135deg)*var(--ar2));
   bottom: calc(sin(135deg)*var(--ar2));
 }
+#itemBtn {
+  right: calc(-1*cos(125deg)*var(--ar2));
+  bottom: calc(sin(125deg)*var(--ar2));
+}
 #btnCallMount {
-  right: calc(-1*cos(120deg)*var(--ar2));
-  bottom: calc(sin(120deg)*var(--ar2));
+  right: calc(-1*cos(115deg)*var(--ar2));
+  bottom: calc(sin(115deg)*var(--ar2));
 }
