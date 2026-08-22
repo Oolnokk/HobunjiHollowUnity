@@ -3561,9 +3561,21 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
-        const targetWorldYaw = sitInteraction?.phase === 'active'
-          ? activeCameraAzimuthRad()
-          : -player.angle + Math.PI / 2;
+        // Shoulder-surf: the head locks onto wherever the (mouse-driven)
+        // camera is actually looking — cameraFacingAngleRad() — using the
+        // exact same facingAngle-convention-to-world-yaw conversion the
+        // default case below applies to player.angle, just fed the camera's
+        // angle instead. Deliberately NOT activeCameraAzimuthRad() (what
+        // seated uses just below): that's where the camera SITS relative to
+        // its target, which is the opposite direction from where it's
+        // actually looking — fine for seated (the head tracking the orbit
+        // reads as "looking toward the viewer"), wrong here (the head should
+        // look the same way the camera does, like real third-person aim).
+        const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE
+          ? -cameraFacingAngleRad() + Math.PI / 2
+          : sitInteraction?.phase === 'active'
+            ? activeCameraAzimuthRad()
+            : -player.angle + Math.PI / 2;
         // playerMesh.rotation.y is this function's only body-yaw signal, but
         // channels like weapon-idle-stance-body-yaw (see
         // weapon-idle-body-yaw-runtime.js) never touch it directly — they
@@ -3573,6 +3585,17 @@
         // yaw the active channels are about to add.
         const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0;
         playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y + composerYawDelta);
+        // Purely cosmetic head nod matching the camera's own up/down tilt
+        // (cameraAngleOffsetDeg — how far the player has pitched the camera
+        // off the mode's neutral framing) — this rig has no other pitch
+        // consumer, so a plain local X rotation on the neck bone (not a
+        // world-yaw-style correction like above) is enough. Scaled down from
+        // the camera's own pitch range since a flat cutout head tilting a
+        // full ±45° reads as exaggerated compared to the same swing on an
+        // actual 3D head.
+        playerNeckJoint.rotation.x = activeCameraMode === SHOULDER_SURF_MODE
+          ? THREE.MathUtils.degToRad(cameraAngleOffsetDeg) * 0.6
+          : 0;
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -7096,6 +7119,12 @@
       // special-casing in the other camera modes (seated/fishing/music/etc.
       // all restore whatever mode they captured on entry, unaffected).
       let s_shoulderSurf = false;
+      // Shoulder-surf's over-the-shoulder framing offsets (Settings →
+      // Camera), in tiles, applied relative to the camera's own right/up
+      // axes — see updateCameraPosition. Positive H = shift camera/framing
+      // to the head's right; positive V = raise the framing.
+      let s_shoulderSurfOffsetH = 0;
+      let s_shoulderSurfOffsetV = 0;
       let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
@@ -12651,6 +12680,12 @@
       let facingAngle = -Math.PI / 2;   // starts facing north
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      // Shoulder-surf's body/camera coupling: the body is free to lag the
+      // (mouse-driven) camera by up to this much before it starts turning to
+      // catch up — the "look over your shoulder" range every third-person
+      // action camera gives before your feet follow your eyes.
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 2;
+      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // rad/sec effective turn rate once past the free-look range
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
@@ -12674,6 +12709,12 @@
       // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
+      // Screen-center NDC for shoulder-surf's crosshair-style aim raycast
+      // below (updateShoulderSurfReticleAim) — there's no cursor to raycast
+      // from once the mouse is Pointer-Locked, so aim/interaction targeting
+      // reads off dead-center of the view instead, the same way any
+      // first/third-person game with a fixed reticle does.
+      const _screenCenterNDC = isDesktop ? new THREE.Vector2(0, 0) : null;
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
       const _edRay = new THREE.Raycaster();
       const _edNDC = new THREE.Vector2();
@@ -13107,6 +13148,24 @@
           if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
           cardinalHoldTimer = CARDINAL_HOLD;
           player.angle = facingAngle;
+        } else if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // The body doesn't chase raw movement direction here (that's what
+          // every other mode does below) — moving camera-relative already
+          // means walking backward/strafing shouldn't spin the character to
+          // face sideways. Instead the body only turns once it would lag the
+          // camera by more than the free-look range, and only turns as far
+          // as putting it back at that boundary — the same over-the-
+          // shoulder body/camera coupling described where the constants are
+          // declared above.
+          const camFacing = cameraFacingAngleRad();
+          const diff = angleDiff(facingAngle, camFacing);
+          if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
+            const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+            const turnDiff = angleDiff(targetFacing, facingAngle);
+            facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+          }
+          player.angle = facingAngle;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
         } else {
           if (controllerLookActive) {
             const diff = angleDiff(controllerLookAngle, facingAngle);
@@ -14530,6 +14589,31 @@
         return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
       }
 
+      // Shoulder-surf has no cursor to raycast onto the ground for aim (the
+      // mouse is Pointer-Locked and hidden — see the mousemove handler
+      // below), so it raycasts from dead-center of the screen instead, same
+      // ground-plane technique the normal cursor-aim code uses just with a
+      // fixed screen-center NDC. Writes the exact same mouseLookAngle/
+      // mouseLookActive/targetAimAngle state the cursor version does, so
+      // every existing aim consumer (getReticleTile below, weapon/ranged
+      // aim, the alchemy flask throw target, NPC interaction highlighting...)
+      // picks up accurate camera-relative targeting for free, with nothing
+      // else needing to know shoulder-surf even exists.
+      function updateShoulderSurfReticleAim() {
+        if (!isDesktop) return;
+        _groundPlane.constant = -_playerGroundY();
+        _raycaster.setFromCamera(_screenCenterNDC, camera);
+        if (!_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) return;
+        const dx = _mouseWorld.x - player.x / TILE;
+        const dz = _mouseWorld.z - player.y / TILE;
+        if (Math.hypot(dx, dz) > 0.3) {
+          mouseLookAngle = Math.atan2(dz, dx);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+        }
+      }
+
       function getReticleTile() {
         const cfg = targetingConfig();
         const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
@@ -15569,13 +15653,27 @@
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
-        const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
-        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
-        const groundDistance = Math.cos(angle) * distance;
+        let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
         // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
         // original due-south-looking-north framing.
-        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        let lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        // Shoulder-surf's horizontal/vertical camera-offset sliders (Settings
+        // → Camera), applied relative to the camera's own right/world-up axes
+        // — the same over-the-shoulder framing knobs most third-person games
+        // expose — so they stay "camera-left/right" and "higher/lower"
+        // regardless of which way the head/camera currently points. Shifting
+        // the look-at point here (rather than the final camera position
+        // directly) carries the offset into idealX/idealZ/cameraY below too,
+        // sliding the whole camera rig rather than just skewing its aim.
+        if (activeCameraMode === SHOULDER_SURF_MODE && !portraitAim) {
+          const rightX = Math.cos(azimuth), rightZ = -Math.sin(azimuth);
+          lookAtX += rightX * s_shoulderSurfOffsetH;
+          lookAtZ += rightZ * s_shoulderSurfOffsetH;
+          lookY += s_shoulderSurfOffsetV;
+        }
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
+        const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
         const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
         const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
@@ -20054,6 +20152,14 @@
       threeContainer.addEventListener('click', () => {
         if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
       });
+      document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
+        s_shoulderSurfOffsetH = parseFloat(e.target.value) || 0;
+        updateCameraPosition();
+      });
+      document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
+        s_shoulderSurfOffsetV = parseFloat(e.target.value) || 0;
+        updateCameraPosition();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -20180,7 +20286,14 @@
         const targetPosition = activeCameraTarget?.position;
         const wx = targetPosition ? targetPosition.x : player.x / TILE;
         const wz = targetPosition ? targetPosition.z : player.y / TILE;
-        const wy = targetPosition ? targetPosition.y : _playerGroundY();
+        // Shoulder-surf tracks the actual rendered player mesh height rather
+        // than bare ground height, so the camera rises and sinks along with
+        // it — mountSeatLift/chairSeatSink/water bob/etc. (see the movement
+        // update's targetY) already compose into playerMesh.position.y every
+        // frame before this runs, so mounting a tall creature or wading into
+        // water carries straight through to the camera for free.
+        const wy = targetPosition ? targetPosition.y
+          : (activeCameraMode === SHOULDER_SURF_MODE ? playerMesh.position.y : _playerGroundY());
         const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
@@ -23125,6 +23238,7 @@
               : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
+            if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
             return;
           }
 
@@ -23295,8 +23409,16 @@
         get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerNeckJointRotX() { return playerNeckJoint ? playerNeckJoint.rotation.x : null; },
         get playerMeshRotY() { return playerMesh.rotation.y; },
+        get playerMeshWorldY() { return playerMesh.position.y; },
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        get cameraFacingAngleDeg() { return cameraFacingAngleRad() * 180 / Math.PI; },
+        get facingAngleDeg() { return facingAngle * 180 / Math.PI; },
+        get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
+        get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
+        get mouseLookActive() { return mouseLookActive; },
+        get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
