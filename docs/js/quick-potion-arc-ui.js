@@ -4,7 +4,9 @@
 (() => {
   'use strict';
 
-  const COMPACT_RADIUS_SCALE = 0.68; // Used to pull potion-only arch slots toward the existing arc center.
+  const ARC_SPAN_SCALE = 0.42; // Used to pull potion-only slots together along the existing arc without shrinking the arc toward its center.
+  const BUTTON_DIAMETER_SCALE = 0.50; // Used by the scoped potion-slot CSS so visible quick-potion buttons are half the generic arc diameter.
+  const LABEL_OUTSET_PX = 17; // Used to place curved category text just outside the half-size buttons, leaving only a tiny visual gap.
   const MIN_LABEL_SPAN_PX = 92; // Used to keep short two-button branches readable as curved text.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
   const LABEL_ID = 'quickPotionArcCategoryLabel';
@@ -61,16 +63,43 @@
     return lastArcCenter || fallbackArcCenter();
   }
 
+  function unwrapAngles(records) {
+    if (!records.length) return records;
+    let previous = records[0].angle;
+    records[0].unwrappedAngle = previous;
+    for (let index = 1; index < records.length; index++) {
+      let angle = records[index].angle;
+      while (angle - previous > Math.PI) angle -= Math.PI * 2;
+      while (angle - previous < -Math.PI) angle += Math.PI * 2;
+      records[index].unwrappedAngle = angle;
+      previous = angle;
+    }
+    return records;
+  }
+
   function compactPotionSlots(slots) {
     if (!slots.length) return;
-    const center = resolveArcCenter(slots); // Radial scaling preserves every slot's original selection angle.
-    slots.forEach(slot => {
-      if (slot.dataset.quickPotionCompacted === '1') return;
+    const center = resolveArcCenter(slots); // Authoritative circle center; selection-angle logic in game.js remains untouched.
+    const records = unwrapAngles(slots.map(slot => {
       const point = slotCenter(slot);
-      const x = center.x + (point.x - center.x) * COMPACT_RADIUS_SCALE;
-      const y = center.y + (point.y - center.y) * COMPACT_RADIUS_SCALE;
-      slot.style.left = `${x}px`;
-      slot.style.top = `${y}px`;
+      return {
+        slot,
+        radius: Math.hypot(point.x - center.x, point.y - center.y),
+        angle: Math.atan2(point.y - center.y, point.x - center.x),
+        unwrappedAngle: 0,
+      };
+    }));
+    const midpoint = records.length > 1
+      ? (records[0].unwrappedAngle + records[records.length - 1].unwrappedAngle) / 2
+      : records[0]?.unwrappedAngle || 0;
+
+    records.forEach(record => {
+      const { slot, radius } = record;
+      slot.classList.add('quick-potion-slot');
+      if (slot.dataset.quickPotionCompacted === '1') return;
+      const angle = midpoint + (record.unwrappedAngle - midpoint) * ARC_SPAN_SCALE;
+      slot.style.left = `${center.x + Math.cos(angle) * radius}px`;
+      slot.style.top = `${center.y + Math.sin(angle) * radius}px`;
       slot.dataset.quickPotionCompacted = '1';
     });
   }
@@ -103,12 +132,23 @@
     return '';
   }
 
+  function outwardLabelPoint(point, center) {
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    return {
+      x: point.x + dx / length * LABEL_OUTSET_PX,
+      y: point.y + dy / length * LABEL_OUTSET_PX,
+    };
+  }
+
   function renderCurvedLabel(slots) {
     removeCurvedLabel();
     const text = curvedLabelText(slots);
     if (!text || slots.length < 2) return;
 
-    const points = slots.map(slotCenter);
+    const center = resolveArcCenter(slots);
+    const points = slots.map(slot => outwardLabelPoint(slotCenter(slot), center)); // Keeps the label almost touching the outside edge of the half-size selection buttons.
     const start = points[0];
     const end = points[points.length - 1];
     const middle = points[Math.floor(points.length / 2)];
@@ -125,11 +165,10 @@
       const dx = end.x - start.x;
       const dy = end.y - start.y;
       const length = Math.max(1, Math.hypot(dx, dy));
-      const towardCenter = resolveArcCenter(slots);
       let nx = -dy / length;
       let ny = dx / length;
-      if ((towardCenter.x - mx) * nx + (towardCenter.y - my) * ny > 0) { nx *= -1; ny *= -1; }
-      control = { x: mx + nx * Math.min(42, span * 0.23), y: my + ny * Math.min(42, span * 0.23) };
+      if ((center.x - mx) * nx + (center.y - my) * ny > 0) { nx *= -1; ny *= -1; }
+      control = { x: mx + nx * Math.min(30, span * 0.16), y: my + ny * Math.min(30, span * 0.16) };
     }
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -202,8 +241,20 @@
     const style = document.createElement('style');
     style.id = 'quickPotionArcUiStyles';
     style.textContent = `
-      .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:1.45em; line-height:1; }
-      .quick-potion-category-cancel .quick-potion-cancel-word { font-size:clamp(8px,1.45vmin,11px); line-height:1; margin-top:1px; }
+      .arc-slot.quick-potion-slot {
+        width:clamp(22px,4.25vmin,30px); height:clamp(22px,4.25vmin,30px);
+        border-width:1px; gap:1px; box-shadow:0 2px 7px rgba(0,0,0,.42);
+      }
+      .arc-slot.quick-potion-slot .arc-icon { font-size:.78em; }
+      .arc-slot.quick-potion-slot .arc-label { font-size:5px; letter-spacing:.02em; }
+      .arc-slot.quick-potion-slot .category-x { inset:-3px; font-size:1.15em; }
+      .arc-slot.quick-potion-slot .cure-family-grid { width:16px; height:16px; }
+      .arc-slot.quick-potion-slot .cure-family { font-size:4px; }
+      .arc-slot.quick-potion-slot .cure-family.active { font-size:6px; }
+      .arc-slot.quick-potion-slot .cure-family.severe { font-size:8px; }
+      .arc-slot.quick-potion-slot .cure-family-x { font-size:.9em; }
+      .quick-potion-category-cancel .quick-potion-cancel-icon { font-size:.82em; line-height:1; }
+      .quick-potion-category-cancel .quick-potion-cancel-word { font-size:clamp(4.5px,.72vmin,6px); line-height:1; margin-top:0; }
       .quick-potion-curved-category {
         fill:#f9e28a; stroke:rgba(0,0,0,.82); stroke-width:3px; paint-order:stroke fill;
         font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',sans-serif;
@@ -220,10 +271,18 @@
     addEventListener('resize', () => { lastArcCenter = null; document.querySelectorAll('.arc-slot').forEach(slot => delete slot.dataset.quickPotionCompacted); queueRefresh(); }, { passive:true });
     queueRefresh();
     window.QuickPotionArcUI = Object.freeze({
-      diagnostics: () => ({ installed, currentBranchLabel, currentLeafLabel, lastArcCenter, compactRadiusScale:COMPACT_RADIUS_SCALE }),
+      diagnostics: () => ({
+        installed,
+        currentBranchLabel,
+        currentLeafLabel,
+        lastArcCenter,
+        arcSpanScale: ARC_SPAN_SCALE,
+        buttonDiameterScale: BUTTON_DIAMETER_SCALE,
+        labelOutsetPx: LABEL_OUTSET_PX,
+      }),
       refresh: () => queueRefresh(),
     });
-    log('installed', { compactRadiusScale: COMPACT_RADIUS_SCALE });
+    log('installed', { arcSpanScale: ARC_SPAN_SCALE, buttonDiameterScale: BUTTON_DIAMETER_SCALE, labelOutsetPx: LABEL_OUTSET_PX });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
