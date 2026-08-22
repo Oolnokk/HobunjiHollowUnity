@@ -7130,13 +7130,30 @@
       // so this substitutes for the normal follow camera without needing any
       // special-casing in the other camera modes (seated/fishing/music/etc.
       // all restore whatever mode they captured on entry, unaffected).
-      let s_shoulderSurf = false;
+      let s_shoulderSurf = true;
       // Shoulder-surf's over-the-shoulder framing offsets (Settings →
       // Camera), in tiles, applied relative to the camera's own right/up
       // axes — see updateCameraPosition. Positive H = shift camera/framing
       // to the head's right; positive V = raise the framing.
-      let s_shoulderSurfOffsetH = 0;
+      let s_shoulderSurfOffsetH = 0.65;
       let s_shoulderSurfOffsetV = 0;
+      // One-shot azimuth snap for whenever shoulder-surf is already the
+      // active mode the very first time the camera-follow code below runs
+      // (i.e. it's the default) — mirrors the snap the settingShoulderSurf
+      // checkbox handler does when toggling it on mid-session, since the
+      // module-level activeCameraMode init just above can't call it itself
+      // (facingAngle/player aren't real yet at that point in the script).
+      let _shoulderSurfBootSnapped = false;
+      // Mode key substituted for the ordinary gameplay camera by the
+      // shoulder-surf toggle above. Kept as its own constant rather than
+      // reading cameraConfig().defaultMode so a modder renaming/removing
+      // "default" in scratchbones-config.js can't silently break the
+      // toggle. Declared here (not next to cameraModeConfig() below, where
+      // it conceptually belongs) because defaultCameraModeKey() reads it
+      // eagerly on the very next line — a const only reads as declared
+      // once its own declaration has actually run, and s_shoulderSurf now
+      // defaulting to true means that ternary branch is hit immediately.
+      const SHOULDER_SURF_MODE = 'shoulderSurf';
       let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
@@ -8177,12 +8194,6 @@
         const modes = cameraModesConfig();
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
-      // Mode key substituted for the ordinary gameplay camera by the
-      // shoulder-surf toggle — see s_shoulderSurf above. Kept as its own
-      // constant rather than reading cameraConfig().defaultMode so a modder
-      // renaming/removing "default" in scratchbones-config.js can't silently
-      // break the toggle.
-      const SHOULDER_SURF_MODE = 'shoulderSurf';
       function defaultCameraModeKey() {
         return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
       }
@@ -13165,7 +13176,11 @@
         // the swing pose's own bodyYaw flourish reading as the dominant
         // motion. Only the weapon being switched away from/unequipped fully
         // releases it (weaponEngaged false, so autoTarget is already null).
-        const autoAiming = !!autoTarget;
+        // Shoulder-surf mode opts out of the lock entirely — the whole
+        // point of that mode is the mouse/right-stick steering the
+        // character directly, so a nearby hostile should never be able to
+        // wrench facing away from wherever the player is actually looking.
+        const autoAiming = !!autoTarget && activeCameraMode !== SHOULDER_SURF_MODE;
 
         if (autoAiming) {
           const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
@@ -20366,6 +20381,10 @@
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg - cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
           }
         }
+        if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
+          _shoulderSurfBootSnapped = true;
+          snapShoulderSurfAzimuth();
+        }
         updateCameraPosition();
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
@@ -23740,6 +23759,16 @@
         getCurrentArea: () => currentArea,
         getActiveScene,
         getPlayerAimAngle: () => {
+          // Shoulder-surf mode's whole point is manual aim, so it never
+          // snaps to the nearest hostile here either — see the matching
+          // autoAiming opt-out in the FACING section of updateMovement.
+          // Uses the same raycast-derived aim point the reticle/head use
+          // (mouseLookAngle), not player.angle/body facing — the body is
+          // allowed to lag up to a comfortable neck-turn behind that point
+          // while standing still, but a shot should still fly exactly where
+          // the crosshair/camera is actually pointing, not where the torso
+          // happens to be facing.
+          if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
           const target = findAutoTarget();
           return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
         },

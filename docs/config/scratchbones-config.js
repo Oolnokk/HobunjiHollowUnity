@@ -223,7 +223,7 @@ window.SCRATCHBONES_CONFIG = {
           "distanceTiles": 2.6,
           "angleFromGroundDeg": 9,
           "fovDeg": 55,
-          "followLerp": 0.08,
+          "followLerp": 0.45,
           "targetYOffsetTiles": 0.62,
           "freeRotate": true
         }
