@@ -54,7 +54,7 @@
     if (!aimState) return;
     const tile = deps.TILE || 64; // World-pixel to Three-unit conversion.
     ring.position.set(aimState.targetX / tile, deps.getGroundY?.(aimState.targetX, aimState.targetY) ?? 0.025, aimState.targetY / tile);
-    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
+    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Recipe-configured splash preview.
     ring.scale.setScalar(radius / 0.27);
   }
 
@@ -111,10 +111,10 @@
 
   function makeProjectile(record) {
     const THREE = deps.THREE; // Runtime Three namespace.
-    const geometry = new deps.THREE.SphereGeometry(0.09, 8, 6); // Small low-cost readable flask proxy.
+    const geometry = new THREE.SphereGeometry(0.09, 8, 6); // Small low-cost readable flask proxy.
     const color = record.definition.particleColors?.[0] || '#7eea90'; // Recipe presentation color.
-    const material = new deps.THREE.MeshBasicMaterial({ color }); // Projectile-only material.
-    const mesh = new deps.THREE.Mesh(geometry, material);
+    const material = new THREE.MeshBasicMaterial({ color }); // Projectile-only material.
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = 35;
     deps.getActiveScene?.()?.add(mesh);
     record.mesh = mesh;
