@@ -3,7 +3,7 @@
 // keep at least 3 tiles of distance, and lift as the camera is forced closer.
 (() => {
   'use strict';
-  const VERSION = '1.0.0'; // Reported by the generator debug panel.
+  const VERSION = '1.1.0'; // Reported by the generator debug panel.
   const CAMERA_FLOOR_CLEARANCE = 0.2; // Same minimum floor clearance used by game.js.
   const HIT_PADDING = 0.6; // Same stop-short distance used by game.js.
   const MIN_SAFE_DISTANCE = 3; // Same minimum camera distance used by game.js.
@@ -18,6 +18,26 @@
       if (object?.userData?.cameraObstacle === true) out.push(object);
     });
     return out;
+  }
+
+  function cameraLookTarget(THREE, camera, floorY, fallback) {
+    // The playtest runtime already applied Hobunji's follow smoothing before this helper runs.
+    // Recover that smoothed target from the camera's current direction instead of snapping aim
+    // to the player's unsmoothed position. Default gameplay targetYOffsetTiles is zero, so its
+    // target lies on the player's current ground-height plane.
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    if (Math.abs(forward.y) > 1e-5) {
+      const t = (Number(floorY) - camera.position.y) / forward.y;
+      if (Number.isFinite(t) && t > 0) {
+        return {
+          x: camera.position.x + forward.x * t,
+          y: camera.position.y + forward.y * t,
+          z: camera.position.z + forward.z * t
+        };
+      }
+    }
+    return { x: fallback.x, y: fallback.y, z: fallback.z };
   }
 
   function solve(THREE, raycaster, obstacles, lookAt, ideal, floorY) {
@@ -97,13 +117,15 @@
       if (!state.active || session !== state) return;
       const player = scene.getObjectByName(playerName);
       if (player) {
-        // Runtime writes the ideal game camera first each frame; this helper runs afterward and only shortens that line of sight.
-        const lookAt = { x: player.position.x, y: player.position.y, z: player.position.z };
+        // Runtime writes the ideal game camera first each frame. Recover its already-smoothed
+        // look target, then shorten only that exact target→camera line when an obstacle blocks it.
         const ideal = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+        const fallback = { x: player.position.x, y: player.position.y, z: player.position.z };
+        const lookAt = cameraLookTarget(THREE, camera, player.position.y, fallback);
         const solved = solve(THREE, raycaster, state.obstacles, lookAt, ideal, player.position.y);
         camera.position.set(solved.x, solved.y, solved.z);
         camera.lookAt(lookAt.x, lookAt.y, lookAt.z);
-        state.debug = { obstacleCount: state.obstacles.length, ...solved };
+        state.debug = { obstacleCount: state.obstacles.length, lookAt, ...solved };
       }
       state.raf = requestAnimationFrame(frame);
     };
@@ -126,6 +148,7 @@
     attach,
     detach,
     collectObstacles,
+    cameraLookTarget,
     solve,
     debugSnapshot: () => session ? { ...session.debug } : null
   });
