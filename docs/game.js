@@ -12691,11 +12691,15 @@
       let facingAngle = -Math.PI / 2;   // starts facing north
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
-      // Shoulder-surf's body/camera coupling: the body is free to lag the
-      // (mouse-driven) camera by up to this much before it starts turning to
-      // catch up — the "look over your shoulder" range every third-person
-      // action camera gives before your feet follow your eyes.
-      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 2;
+      // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
+      // is free to lag the (mouse-driven) camera by up to this much before
+      // it starts turning to catch up — a comfortable human neck's
+      // horizontal rotation range, not the full "look over your shoulder"
+      // 90° a real shoulder/torso twist could reach. While MOVING, the body
+      // instead straightens all the way out to match the camera exactly
+      // (see the FACING section below) — a real person squares up to their
+      // direction of travel rather than continuing to crane their neck.
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60°
       const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // rad/sec effective turn rate once past the free-look range
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
@@ -13160,23 +13164,31 @@
           cardinalHoldTimer = CARDINAL_HOLD;
           player.angle = facingAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The body doesn't chase raw movement direction here (that's what
+          // The body doesn't chase raw movement DIRECTION here (that's what
           // every other mode does below) — moving camera-relative already
           // means walking backward/strafing shouldn't spin the character to
-          // face sideways. Instead the body only turns once it would lag the
-          // camera by more than the free-look range, and only turns as far
-          // as putting it back at that boundary — the same over-the-
+          // face sideways. It does fully square up to the CAMERA itself the
+          // instant there's any movement input though — a real person
+          // straightens their neck out to walk instead of continuing to
+          // crane it sideways. Only while standing still is the body left
+          // free to lag the camera (up to a comfortable neck-rotation
+          // range), turning just enough to stay within it — the over-the-
           // shoulder body/camera coupling described where the constants are
           // declared above.
           const camFacing = cameraFacingAngleRad();
-          const diff = angleDiff(facingAngle, camFacing);
-          if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
-            const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
-            const turnDiff = angleDiff(targetFacing, facingAngle);
-            facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+          if (inputStrength > 0.001) {
+            const diff = angleDiff(camFacing, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * dt);
+            lastMoveAngle = Math.atan2(iy, ix);
+          } else {
+            const diff = angleDiff(facingAngle, camFacing);
+            if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
+              const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+              const turnDiff = angleDiff(targetFacing, facingAngle);
+              facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+            }
           }
           player.angle = facingAngle;
-          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
         } else {
           if (controllerLookActive) {
             const diff = angleDiff(controllerLookAngle, facingAngle);
