@@ -1,0 +1,15 @@
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync('docs/js/hobunji-puzzle-runtime.js','utf8');
+const context={console,setTimeout:(fn)=>{fn();return 1;},setInterval:()=>1,CustomEvent:function(type,init){this.type=type;this.detail=init?.detail;},window:{dispatchEvent(){},fetch:null}};
+vm.createContext(context); vm.runInContext(source,context,{filename:'hobunji-puzzle-runtime.js'});
+const runtime=context.window.HobunjiPuzzleRuntime; assert(runtime,'runtime export missing');
+const map={schema:'hobunji_building_interior.v1',id:'map_i_puzzle_test',name:'Puzzle Test',colliders:[],generator:{puzzles:{schema:'hobunji_puzzle_runtime.v1',machines:[{id:'machine_1',goalNodeId:'gate',rootNodeId:'gate',target:{kind:'routeGate',label:'Open test gate',tile:[4,4]},nodes:[{id:'a',atomId:'handCrank',label:'Hand crank',kind:'source',inputSignals:[],outputSignal:'rotation',tile:[1,1],activationMode:'interact'},{id:'b',atomId:'cistern',label:'Cistern',kind:'source',inputSignals:[],outputSignal:'water',tile:[2,1],activationMode:'interact'},{id:'mix',atomId:'waterwheel',label:'Waterwheel',kind:'junction',inputSignals:['rotation','water'],outputSignal:'motion',tile:[3,2],activationMode:'automatic'},{id:'gate',atomId:'counterweightGate',label:'Counterweight gate',kind:'transform',inputSignals:['motion'],outputSignal:'gateOpen',tile:[4,4],activationMode:'automatic'}],edges:[{from:'a',to:'mix',signal:'rotation'},{from:'b',to:'mix',signal:'water'},{from:'mix',to:'gate',signal:'motion'}],solutionOrder:['a','b','mix','gate']}]}}};
+assert.strictEqual(runtime.validatePuzzleData(map).errors.length,0);
+assert.strictEqual(runtime.registerMap(map).ok,true); assert.strictEqual(runtime.isGateLocked(map.id,'machine_1'),true); assert(map.colliders.some(c=>c[0]===4&&c[1]===4));
+runtime.activateNode(map.id,'machine_1','a','interact'); assert.strictEqual(runtime.isMachineComplete(map.id,'machine_1'),false);
+runtime.activateNode(map.id,'machine_1','b','interact'); assert.strictEqual(runtime.isMachineComplete(map.id,'machine_1'),true); assert(!map.colliders.some(c=>c[0]===4&&c[1]===4));
+const snapshot=runtime.exportState(map.id); runtime.reset(map.id); assert.strictEqual(runtime.isGateLocked(map.id,'machine_1'),true); runtime.importState(map.id,snapshot); assert.strictEqual(runtime.isGateLocked(map.id,'machine_1'),false);
+const bad=JSON.parse(JSON.stringify(map.generator.puzzles)); bad.machines[0].edges.push({from:'missing',to:'gate',signal:'motion'}); assert.strictEqual(runtime.validatePuzzleData(bad).ok,false);
+console.log('PASS puzzle runtime: multi-input gating, automatic propagation, dynamic gate collider, save/restore, validation');
