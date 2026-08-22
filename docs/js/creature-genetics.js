@@ -220,6 +220,18 @@
       y: Number.isFinite(y) && y > 0 ? y : 1,
     };
   }
+  function applyCreatureBillboardScale(group, sizeScale, heightMultiplier = 1) {
+    if (!group?.scale?.set) return false;
+    const visibleWidthScale = Number(sizeScale?.x); // Used on group Z because each animal plane is rotated ±90° inside the group.
+    const visibleHeightScale = Number(sizeScale?.y); // Used on group Y and optionally multiplied by an attack squash.
+    const resolvedHeightMultiplier = Number(heightMultiplier); // Used to preserve temporary pounce/burrow squash independently from genotype size.
+    group.scale.set(
+      1,
+      (Number.isFinite(visibleHeightScale) && visibleHeightScale > 0 ? visibleHeightScale : 1) * (Number.isFinite(resolvedHeightMultiplier) ? Math.max(0, resolvedHeightMultiplier) : 1),
+      Number.isFinite(visibleWidthScale) && visibleWidthScale > 0 ? visibleWidthScale : 1,
+    );
+    return true;
+  }
   function creatureSizeTrait(kind, genotype) {
     const sizeScale = creatureSizeScale(kind, genotype); // Supplies UI labels and the same percentages used in-world.
     const defaultSizeClass = normalizeCreatureSizeClass(deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'); // Flags inherited non-default sizes.
@@ -445,6 +457,7 @@
     stableEntryRole,
     creatureSizeClass,
     creatureSizeScale,
+    applyCreatureBillboardScale,
     creatureSizeTrait,
     genotypeTraits,
     paletteName: _furPaletteName,

@@ -28,7 +28,7 @@ assert.match(alcohol, /getHeldItemAction[\s\S]*?action: 'consume_held_item'/,
 assert.match(alcohol, /const heldMode = itemDeps\?\.getHeldMode\?\.\(\);[\s\S]*?heldMode !== 'item'/,
   'consumable eligibility uses synchronous held mode instead of waiting for a rendered plane');
 
-assert.match(game, /getHeldItemAction\?\.\(\);\s*if \(consumeAction\) btns\.unshift\(consumeAction\);/,
+assert.match(game, /getHeldItemAction\?\.\(\);\s*if \(!flaskActions\.length && consumeAction\) btns\.unshift\(consumeAction\);/,
   'a held consumable occupies item action slot 1');
 assert.match(game, /if \(item && item\.seedFor\)[\s\S]{0,500}?const plantAct\s*=\s*'plant_' \+ cropName;[\s\S]{0,500}?btns\.push\(/,
   'every selected seedFor entry routes through the generic numbered plant action');
@@ -74,8 +74,8 @@ assert.match(inventoryMetadata, /Object\.assign\(entry, \{ \.\.\.definition, \.\
   'canonical metadata enriches selectable entries without overwriting scroll-owned context fields');
 assert.match(inventoryMetadata, /originalInit\(injectedDeps\);[\s\S]{0,120}?syncInventoryEntries\(injectedDeps\);/,
   'inventory metadata synchronizes immediately after cooking/item registration');
-assert.match(inventoryMetadata, /document\.addEventListener\('pointerup'[\s\S]*?syntheticPointerCleanup\(button, event\);[\s\S]*?finishPlantContext\(context\);/,
-  'touch Plant taps bypass the stale tool-swing gate while preserving the native pointer cleanup path');
+assert.match(inventoryMetadata, /document\.addEventListener\('pointerup'[\s\S]*?syntheticPointerCleanup\(button, event\);[\s\S]*?finishCropContext\(context\);/,
+  'touch crop taps bypass the stale tool-swing gate while preserving the native pointer cleanup path');
 assert.match(inventoryMetadata, /scene\.onBeforeRender[\s\S]*?applyPlantReticleOverride\(scene\);/,
   'held seeds can override the stale active-tool reticle color immediately before rendering');
 assert.match(loader, /inventory-action-metadata-bridge\.js\?v=20260813b/,

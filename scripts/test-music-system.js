@@ -54,9 +54,9 @@ assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=20260811b/,
+assert.match(index, /scratchbones-config\.js\?v=20260821alchemy2/,
   'the browser cache key loads the rain-only playlist');
-assert.match(index, /music-system\.js\?v=20260811c/,
+assert.match(index, /music-system\.js\?v=20260814a/,
   'the browser cache key loads the fixed scheduler');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,

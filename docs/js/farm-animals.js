@@ -222,15 +222,23 @@
     if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
+    const buttons = []; // Livestock may offer both its normal resource action and an administered potion action.
+    const heldKey = deps.getHeldItemKey?.(); // Ordinary held-item selection is the only administration source.
+    const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
+    const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
+    if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
+      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'primary', allowed: true });
+    }
     if (rec?.resourceReady && resDef) {
       const itemLabel = deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
       const verb = deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
-      return [{ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
+      buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
     }
-    return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
+    return buttons.length ? buttons : [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
   }
 
   function _farmAnimalOnAction(animal, action, fallbackMessage) {
+    if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_collect_' + animal.id) {
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
       const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
@@ -238,6 +246,23 @@
       return collectResource(animal.livestockId);
     }
     return { ok: false, message: fallbackMessage };
+  }
+
+  function administerBreedingPotion(livestockId, itemKey) {
+    const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Permanent brewed potency payload.
+    const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authoritative administration mode.
+    if (definition?.useMode !== 'livestock' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
+    const list = deps.loadWorldLivestock();
+    const rec = list.find(entry => entry.id === livestockId);
+    if (!rec) return { ok: false, message: 'Livestock not found.' };
+    rec.pendingOffspringSizeShift = Math.sign(definition.sizeShift); // Exactly one pending next-offspring class shift.
+    deps.inventory[itemKey]--;
+    deps.clampInventoryStack(itemKey);
+    deps.saveWorldLivestock(list);
+    deps.saveMemberWorldData?.();
+    deps.refreshItemScroll?.();
+    return { ok: true, message: `${definition.icon} ${definition.label} will affect ${rec.name || 'this animal'}'s next offspring.` };
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
@@ -253,7 +278,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -390,7 +415,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -879,26 +904,52 @@
       return (meta?.characters || []).find(c => c.id === characterId)?.stable ?? [];
     } catch { return []; }
   }
-  function resolveBreedingParent(ref, worldLivestock) {
+  function _saveCharacterStable(characterId, stableEntries) {
+    try {
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const character = (meta?.characters || []).find(entry => entry.id === characterId);
+      if (!character) return;
+      character.stable = stableEntries;
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+    } catch { /* A malformed legacy profile must not break the day tick. */ }
+  }
+  function resolveBreedingParent(ref, worldLivestock, stableCache) {
     if (!ref) return null;
-    if (ref.source === 'stable') return _loadCharacterStable(ref.characterId).find(s => s.id === ref.id) || null;
+    if (ref.source === 'stable') {
+      const stable = stableCache?.get(ref.characterId) || _loadCharacterStable(ref.characterId);
+      stableCache?.set(ref.characterId, stable);
+      return stable.find(s => s.id === ref.id) || null;
+    }
     return worldLivestock.find(l => l.id === ref.id) || null;
+  }
+
+  function shiftedSizeClass(sizeClass, shift) {
+    const classes = ['small', 'medium', 'large']; // Existing genotype Size vocabulary.
+    const index = Math.max(0, classes.indexOf(String(sizeClass || 'medium').toLowerCase()));
+    return classes[Math.max(0, Math.min(classes.length - 1, index + Math.sign(shift || 0)))];
   }
 
   function tickBreeding() {
     const pairs = deps._loadWorldBreedingPairs();
     if (!pairs.length) return;
     const livestock = deps.loadWorldLivestock();
+    const stableCache = new Map(); // Persists pending modifiers for stable parents too.
     const remainingPairs = [];
     let changed = false;
     for (const pair of pairs) {
       if (deps.calendar.day < pair.readyDay) { remainingPairs.push(pair); continue; }
-      const parentA = resolveBreedingParent(pair.parentA, livestock);
-      const parentB = resolveBreedingParent(pair.parentB, livestock);
+      const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
+      const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
       changed = true;
       if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
       const kind = parentA.kind;
       const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind);
+      const shiftA = Math.sign(Number(parentA.pendingOffspringSizeShift) || 0); // Pending one-off parent A modifier.
+      const shiftB = Math.sign(Number(parentB.pendingOffspringSizeShift) || 0); // Pending one-off parent B modifier.
+      const resolvedShift = shiftA && shiftB ? (shiftA === shiftB ? shiftA : 0) : (shiftA || shiftB); // Same applies once; opposites cancel.
+      if (resolvedShift) childGenotype.sizeClass = shiftedSizeClass(childGenotype.sizeClass, resolvedShift); // Genetics first, authored shift second.
+      if (shiftA) parentA.pendingOffspringSizeShift = 0;
+      if (shiftB) parentB.pendingOffspringSizeShift = 0;
       // Newborns start in stasis just like a freshly-released crate
       // animal — the owner assigns them to a barn from the Farm tab
       // when there's room, same as any other unhoused livestock.
@@ -911,6 +962,7 @@
     }
     if (changed) {
       deps.saveWorldLivestock(livestock);
+      stableCache.forEach((entries, characterId) => _saveCharacterStable(characterId, entries));
       deps._saveWorldBreedingPairs(remainingPairs);
     }
   }
@@ -1017,10 +1069,12 @@
     isHarvesting,
     updateHarvestInteraction,
     addToStable,
+    administerBreedingPotion,
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,
     resolveBreedingParent,
+    shiftedSizeClass,
     tickBreeding,
     clearAnimalObjects,
     updateAnimalMeshes,

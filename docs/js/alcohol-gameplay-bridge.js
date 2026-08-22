@@ -449,8 +449,10 @@
 
   function isPotionOrDrink(key, def) {
     if (!key || !def) return false;
-    if (window.AlchemySystem?.POTION_ITEMS?.[key]
-      || window.AlchemySystem?.getPotionEffectsFromKey?.(key)) return true;
+    const alchemyPayload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.getPotionEffectsFromKey?.(key); // Used to respect explicit alchemy use modes.
+    const alchemyRecipe = alchemyPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[alchemyPayload.recipeId]; // Central recipe definition.
+    if (alchemyRecipe) return alchemyRecipe.useMode === 'drink';
+    if (alchemyPayload?.legacyEffects) return true;
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirit|potion|drink|tea|juice|milk)\b/
       .test(`${def.label || ''} ${tags.join(' ')}`.toLowerCase());
@@ -481,6 +483,8 @@
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
     if (def.isCookedFood) return null; // CookingSystem owns generated meals and their stacked effects.
+    if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, def, inventory, kind: 'rawReagent' };
+    if (def.alchemyRecipeScrollId) return { key, def, inventory, kind: 'recipe' };
     if (isPotionOrDrink(key, def)) return { key, def, inventory, kind: 'drink' };
     if (isFood(def)) return { key, def, inventory, kind: 'food' };
     return null;
@@ -500,7 +504,7 @@
       : null;
     return {
       icon: held.def.icon || (held.kind === 'drink' ? '🥤' : '🍽️'),
-      label: `${held.kind === 'drink' ? 'Drink' : 'Eat'} ${held.def.label || held.key}`,
+      label: `${held.kind === 'drink' ? 'Drink' : held.kind === 'recipe' ? 'Read' : 'Eat'} ${held.def.label || held.key}`,
       action: 'consume_held_item',
       style: 'primary',
       allowed: true,
@@ -567,21 +571,37 @@
     const { key, def, inventory } = held;
 
     if (held.kind === 'drink') {
-      const result = window.AlchemySystem?.drinkPotion?.(key);
-      if (!result) return false;
-      itemDeps.showToast?.(result.message, result.ok !== false);
-      if (result.ok !== false) {
-        // Used to retain the just-consumed bottle and lock repeat consumption
-        // until its authored raise/drink/return animation has completed.
-        const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key)) || 0;
+      let result = null; // Filled exactly once at the authored drink strike.
+      const applyDrink = () => {
+        if (result) return result;
+        result = window.AlchemySystem?.drinkPotion?.(key);
+        if (!result) return null;
+        itemDeps.showToast?.(result.message, result.ok !== false);
         itemDeps.refreshItemScroll?.();
         itemDeps.buildInventoryGrid?.();
         itemDeps.refreshActionBar?.();
         itemDeps.saveMemberWorldData?.();
-        consumeLockUntil = performance.now() + Math.max(180, animationMs);
-      } else {
-        consumeLockUntil = performance.now() + 180;
-      }
+        return result;
+      };
+      const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key, applyDrink)) || 0; // Existing liquor animation path.
+      if (!(animationMs > 0)) applyDrink();
+      consumeLockUntil = performance.now() + Math.max(180, animationMs);
+      return true;
+    }
+
+    if (held.kind === 'rawReagent') {
+      const result = window.AlchemySystem?.consumeRawReagent?.(key);
+      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
+      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+      consumeLockUntil = performance.now() + 180;
+      return true;
+    }
+
+    if (held.kind === 'recipe') {
+      const result = window.AlchemySystem?.readRecipeItem?.(key);
+      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
+      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+      consumeLockUntil = performance.now() + 180;
       return true;
     }
 

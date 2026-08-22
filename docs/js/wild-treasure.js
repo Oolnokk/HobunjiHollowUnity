@@ -68,7 +68,7 @@
   // Store's daily stock rolls from (see game.js's generateDailyClothingStock),
   // just freely randomized instead of seeded by day.
   function _rollTreasureLootBundle() {
-    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, clothing: null };
+    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, clothing: null };
     if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = _rollTreasureMetalKeys();
     if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = _rollTreasureDyeItemKeys();
     if (_rollTreasureChance('gold', 0.7)) {
@@ -78,19 +78,10 @@
       bundle.gold = min + Math.floor(deps.rnd() * steps) * step;
     }
     if (_rollTreasureChance('potion', 0.35)) {
-      const effectKeys = Object.keys(window.AlchemySystem.EFFECT_DEFS);
-      const boonKeys = effectKeys.filter(k => window.AlchemySystem.EFFECT_DEFS[k].kind === 'boon');
-      const pickEffect = () => {
-        const pool = deps.rnd() < 0.75 && boonKeys.length ? boonKeys : effectKeys;
-        return pool[Math.floor(deps.rnd() * pool.length)];
-      };
-      const effects = [pickEffect() ?? effectKeys[0]];
-      if (deps.rnd() < 0.4) {
-        const second = pickEffect();
-        if (second && !effects.includes(second)) effects.push(second);
-      }
-      const reagentKeys = Object.keys(window.AlchemySystem.REAGENT_DEFS).sort(() => deps.rnd() - 0.5).slice(0, 2);
-      bundle.potionKey = window.AlchemySystem.ensurePotionItemDef(effects, reagentKeys);
+      const recipes = Object.values(window.AlchemySystem.RECIPE_DEFS); // Only explicitly authored valid reactions can enter treasure.
+      const chosen = recipes[Math.floor(deps.rnd() * recipes.length)]; // Seeded treasure choice.
+      if (chosen && deps.rnd() < 0.25) bundle.recipeItemKey = window.AlchemySystem.ensureRecipeScrollItemDef(chosen.id);
+      else if (chosen) bundle.potionKey = window.AlchemySystem.ensureRecipeItemDef(chosen.id, Math.floor(deps.rnd() * 3));
     }
     if (_rollTreasureChance('clothing', 0.25)) {
       const catalog = window.DyeSystem.getCatalog();
@@ -198,6 +189,10 @@
         if (loot.potionKey) {
           deps.inventory[loot.potionKey] = Math.min(99, (deps.inventory[loot.potionKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[loot.potionKey]?.icon || '🧪') + ' ' + (deps.ITEM_DEFS[loot.potionKey]?.label || 'Potion'));
+        }
+        if (loot.recipeItemKey) {
+          deps.inventory[loot.recipeItemKey] = Math.min(99, (deps.inventory[loot.recipeItemKey] || 0) + 1);
+          parts.push((deps.ITEM_DEFS[loot.recipeItemKey]?.icon || '📜') + ' ' + (deps.ITEM_DEFS[loot.recipeItemKey]?.label || 'Alchemy Recipe'));
         }
         if (loot.clothing) {
           deps.getPackClothing().push({ ...loot.clothing });

@@ -22,7 +22,24 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink });
+  const throwFlask = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Overhead Flask Throw',
+    style: 'throw',
+    durationS: 0.62,
+    windupFrac: 0.44,
+    strikeFrac: 0.62,
+    holdFrac: 0.68,
+    releaseFrac: 0.62,
+    poses: {
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
+      windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12 },
+      strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8 },
+    },
+  }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
+
+  window.HeldActionAnimations = Object.freeze({ drink, throwFlask });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
