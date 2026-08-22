@@ -10,27 +10,34 @@
   // can become the "ground" pixel and leave every real foot visibly hovering.
   //
   // This module installs before png-plane-avatar.js and wraps that public image
-  // scan the moment PNGPlaneAvatar is assigned. The wrapper keeps the original
-  // top bound and alpha threshold, but replaces a sparse bottom fringe with the
-  // lowest coherent contact row. Size scaling remains downstream exactly where
-  // it belongs: game.js/farm-animals.js convert this normalized row into local
-  // plane space, and the final group Y scale then scales that correction along
-  // with the animal.
+  // scan the moment PNGPlaneAvatar is assigned. Only the gameplay creature
+  // grounding call opts into this refinement by requesting alpha > 254; generic
+  // callers (dew piles and any future image-bound users) retain the exact raw
+  // scan behavior. Size scaling remains downstream exactly where it belongs:
+  // game.js/farm-animals.js convert this normalized row into local plane space,
+  // and the final group Y scale then scales that correction with the animal.
 
   const WRAP_MARK = '__hobunjiCoherentCreatureGroundingV1';
+  const CREATURE_SCAN_THRESHOLD = 254; // Matches game.js's fully-opaque creature grounding request; used to avoid changing generic image scans.
   const SIDE_INSET_FRACTION = 0.075; // Ignores extreme silhouette edges where tails/decorative fringe usually live.
   const MIN_CONTACT_ROW_FRACTION = 0.012; // Reuses the coherent-row density already proven by the avatar neck scan.
   const MAX_UPWARD_SEARCH_FRACTION = 0.08; // Safety cap: never reinterpret more than the lowest 8% of the sprite as fringe.
+  const status = window.HOBUNJI_CREATURE_GROUNDING_STATUS = window.HOBUNJI_CREATURE_GROUNDING_STATUS || { installed: false, scans: 0, corrections: 0, last: null }; // Used by mobile diagnostics to confirm the wrapper actually ran.
+
+  function imageLabel(image) {
+    const src = String(image?.currentSrc || image?.src || 'inline-image'); // Used only in the one-line mobile debug report below.
+    return src.split('/').pop()?.split('?')[0] || src;
+  }
 
   function install(api) {
     if (!api || typeof api.scanOpaqueVerticalBoundsOfImage !== 'function') return false;
-    if (api.scanOpaqueVerticalBoundsOfImage[WRAP_MARK]) return true;
+    if (api.scanOpaqueVerticalBoundsOfImage[WRAP_MARK]) { status.installed = true; return true; }
 
     const rawScan = api.scanOpaqueVerticalBoundsOfImage.bind(api);
 
     function scanCoherentGroundContact(image, alphaThreshold) {
       const rawBounds = rawScan(image, alphaThreshold);
-      if (!rawBounds) return rawBounds;
+      if (!rawBounds || Number(alphaThreshold) < CREATURE_SCAN_THRESHOLD) return rawBounds; // Only creature grounding's alpha-255 scan is allowed to reinterpret the bottom row.
 
       const width = image?.naturalWidth || image?.width || 0;
       const height = image?.naturalHeight || image?.height || 0;
@@ -48,7 +55,7 @@
         return rawBounds;
       }
 
-      const threshold = alphaThreshold ?? 8;
+      const threshold = Number(alphaThreshold);
       let left = width, right = -1;
       for (let y = rawBounds.top; y <= rawBounds.bottom; y++) {
         const rowOffset = y * width * 4;
@@ -66,7 +73,7 @@
       const scanRight = Math.max(scanLeft, right - sideInset);
       const coherentSpan = Math.max(1, scanRight - scanLeft + 1);
       const minimumRowPixels = Math.max(2, Math.round(coherentSpan * MIN_CONTACT_ROW_FRACTION)); // Used to distinguish a real paw/contact row from isolated low pixels.
-      const maxRise = Math.max(2, Math.round(height * MAX_UPWARD_SEARCH_FRACTION));
+      const maxRise = Math.max(2, Math.round(height * MAX_UPWARD_SEARCH_FRACTION)); // Used to cap how far a mistaken fringe rejection can move the visible animal.
       const searchTop = Math.max(rawBounds.top, rawBounds.bottom - maxRise);
 
       let coherentBottom = rawBounds.bottom;
@@ -83,16 +90,24 @@
         break;
       }
 
-      // If the lowest 8% contains no coherent contact at all, the art may
-      // genuinely have a very narrow foot. Preserve the original bound rather
-      // than risking a large automatic correction that could bury the sprite.
-      if (!found || coherentBottom === rawBounds.bottom) return rawBounds;
-
+      const corrected = found && coherentBottom !== rawBounds.bottom; // Used by diagnostics and by the returned gameplay bound below.
+      status.scans++;
+      if (corrected) status.corrections++;
+      status.last = {
+        image: imageLabel(image), rawBottom: rawBounds.bottom,
+        coherentBottom: corrected ? coherentBottom : rawBounds.bottom,
+        height, corrected, minimumRowPixels, scanLeft, scanRight,
+      };
       window.__farmLog?.(
-        `[creature-ground] ignored sparse low fringe: row ${rawBounds.bottom} -> coherent contact ${coherentBottom} of ${height}`,
+        `[creature-ground] ${status.last.image}: raw=${rawBounds.bottom}/${height - 1} contact=${status.last.coherentBottom}/${height - 1} ${corrected ? 'CORRECTED' : 'unchanged'}`,
         'wildlife',
         'world',
       );
+
+      // If the lowest 8% contains no coherent contact at all, the art may
+      // genuinely have a very narrow foot. Preserve the original bound rather
+      // than risking a large automatic correction that could bury the sprite.
+      if (!corrected) return rawBounds;
       return {
         ...rawBounds,
         bottom: coherentBottom,
@@ -105,6 +120,7 @@
     scanCoherentGroundContact[WRAP_MARK] = true;
     scanCoherentGroundContact.rawScan = rawScan;
     api.scanOpaqueVerticalBoundsOfImage = scanCoherentGroundContact;
+    status.installed = true;
     return true;
   }
 
