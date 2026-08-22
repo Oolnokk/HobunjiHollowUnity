@@ -19073,6 +19073,13 @@
         uniform float uStrength;
         varying vec2 vUv;
         varying float vRandom;
+        // See shellOutlineMat's own vFogDepth comment — same by-hand fog
+        // depth instead of the built-in fog_vertex chunk (which expects a
+        // view-space variable literally named mvPosition). Computed
+        // unconditionally (cheap, one varying) so this one vertex shader
+        // keeps serving both grassBillboardMat (fog: true) and
+        // cuttableBillboardGlowMat (no fog) without needing two copies.
+        varying float vFogDepth;
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -19091,7 +19098,9 @@
           float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
           worldPos.x += sway;
           worldPos.z += sway2;
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
+          vec4 mvPosition = viewMatrix * worldPos;
+          vFogDepth = -mvPosition.z;
+          gl_Position = projectionMatrix * mvPosition;
         }
       `;
 
@@ -19099,8 +19108,16 @@
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
         uniform float uDensity;
+        uniform vec3 fogColor;
+        #ifdef FOG_EXP2
+          uniform float fogDensity;
+        #else
+          uniform float fogNear;
+          uniform float fogFar;
+        #endif
         varying vec2 vUv;
         varying float vRandom;
+        varying float vFogDepth;
         void main() {
           if (vRandom > uDensity) discard;
           vec4 texel = texture2D(uGrassTex, vUv);
@@ -19115,6 +19132,14 @@
           vec3 tinted = uTint * (0.7 + lum * 0.8);
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
+          #ifdef USE_FOG
+            #ifdef FOG_EXP2
+              float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
+            #else
+              float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+            #endif
+            col = mix(col, fogColor, fogFactor);
+          #endif
           gl_FragColor = vec4(col, texel.a);
         }
       `;
@@ -19139,7 +19164,8 @@
           uDensity:    { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
-          uniforms:       sharedUniforms(),
+          fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
+          uniforms:       THREE.UniformsUtils.merge([THREE.UniformsLib.fog, sharedUniforms()]),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
@@ -24225,6 +24251,8 @@
         getControllerLookAngle: () => controllerLookAngle,
         getLastMouseMoveTime: () => lastMouseMoveTime,
         getMouseLookAngle: () => mouseLookAngle,
+        isShoulderSurfMode: () => activeCameraMode === SHOULDER_SURF_MODE,
+        cameraFacingAngleRad,
       });
 
       window.Fishing?.init({
