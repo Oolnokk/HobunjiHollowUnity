@@ -4,27 +4,28 @@
 (() => {
   'use strict';
 
-  const SELECTOR_MID_DEG = 135; // Keeps every toggled selector centered on the permanent outer-ring quadrant.
-  const COMPACT_SWEEP_DEG = 40; // Short selectors retain the approved tight potion spacing.
-  const MAX_SWEEP_DEG = 90; // Dense selectors may use the whole 9-to-12-o'clock outer-ring quadrant.
-  const TARGET_SLOT_GAP_PX = 58; // Desired center-to-center spacing for dense selector choices.
-  const BUTTON_SIZE = 'clamp(22px,4.25vmin,30px)'; // Authoritative diameter for every toggled selector button.
-  const BUTTON_DIAMETER_SCALE = 0.50; // Diagnostic/documentation value for the half-size selector rule.
-  const LABEL_OUTSET_PX = 17; // Large curved potion-category title keeps its approved button-to-title gap.
-  const SLOT_MOVE_MS = 135; // Shared-radius scroll animation duration; legacy old-radius positions are never rendered.
+  const SELECTOR_MID_DEG = 135; // Centers every toggled selector on the permanent outer-ring quadrant.
+  const COMPACT_SWEEP_DEG = 40; // Short selectors retain the tight potion spacing.
+  const MAX_SWEEP_DEG = 90; // Dense selectors may use the whole 9-to-12-o'clock quadrant.
+  const TARGET_SLOT_GAP_PX = 58; // Desired center-to-center spacing when several real choices are visible.
+  const BUTTON_SIZE = 'clamp(22px,4.25vmin,30px)'; // One authoritative diameter for every toggled selector button.
+  const BUTTON_DIAMETER_SCALE = 0.50; // Diagnostic value documenting the half-size rule.
+  const LABEL_OUTSET_PX = 17; // Curved potion heading stays this far outside button centers.
+  const SLOT_MOVE_MS = 135; // Actual choices glide only between positions on the shared radius.
   const POTION_MARKER_SELECTOR = '.arc-slot.potion-branch, .arc-slot.potion-category, .arc-slot.potion-cancel';
-  const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring whose geometry is the selector source of truth.
-  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // Canonical outer-ring button used to measure one shared radius.
+  const LEGACY_ARROW_SELECTOR = '.arc-slot.arc-arrow'; // Old item-wheel edge controls remain internal sentinels, never visual choices.
+  const OUTER_ARCH_ID = 'toolSelect'; // Permanent tool/weapon/item/mount ring used as the geometry source of truth.
+  const OUTER_RADIUS_REFERENCE_ID = 'toolBtn'; // Canonical permanent-ring button used to measure radius.
   const LABEL_ID = 'quickPotionArcCategoryLabel';
 
-  let installed = false; // Guards against duplicate observers/listeners if this module is reloaded.
-  let refreshing = false; // Prevents nested structural refreshes while a potion breadcrumb is rewritten as Cancel.
-  let frameRunning = false; // One lightweight RAF enforcer runs only while a selector is actually visible.
-  let refreshQueued = false; // Coalesces post-input refresh requests into one microtask.
+  let installed = false; // Prevents duplicate observers/listeners if the script is loaded twice.
+  let refreshing = false; // Prevents nested presentation refreshes while a potion breadcrumb is rewritten.
+  let frameRunning = false; // One geometry-only RAF runs while a selector is visible.
+  let refreshQueued = false; // Coalesces same-event refresh requests.
   let currentBranchLabel = ''; // Medicine/Utility heading retained while child categories are open.
   let currentLeafLabel = ''; // Healing/Cures/Buffs/Flasks heading retained while concrete potions are open.
-  let lastGeometry = null; // Diagnostic snapshot of the exact center/radius used by every selector button.
-  let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of the capacity-aware sweep currently in use.
+  let lastGeometry = null; // Diagnostic snapshot of center/radius currently in use.
+  let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of current visible-choice sweep.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -47,24 +48,24 @@
   function setImportantStyle(element, property, value) {
     if (!element) return;
     if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') return;
-    element.style.setProperty(property, value, 'important'); // Size/shape authority survives slot recycling during wheel scroll.
+    element.style.setProperty(property, value, 'important'); // Keeps size/shape authoritative when legacy wheel code recycles nodes.
   }
 
   function setSharedCoordinate(slot, property, value) {
     if (slot.style.getPropertyValue(property) === value) return;
-    slot.style.setProperty(property, value); // CSS consumes these vars with !important left/top, insulating layout from legacy _arcPt writes.
+    slot.style.setProperty(property, value); // CSS consumes these vars; legacy inline left/top cannot render.
   }
 
   function outerRingGeometry() {
-    const anchor = document.getElementById(OUTER_ARCH_ID); // Zero-size bottom-right anchor shared by the permanent outer HUD ring.
+    const anchor = document.getElementById(OUTER_ARCH_ID); // Zero-size bottom-right anchor shared by the permanent outer ring.
     const anchorRect = anchor?.getBoundingClientRect?.();
     const center = anchorRect
       ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 }
       : { x: innerWidth, y: innerHeight };
 
-    const referenceCenter = elementCenter(document.getElementById(OUTER_RADIUS_REFERENCE_ID)); // Tool button is authored directly on --ar2.
+    const referenceCenter = elementCenter(document.getElementById(OUTER_RADIUS_REFERENCE_ID));
     const measuredRadius = referenceCenter ? Math.hypot(referenceCenter.x - center.x, referenceCenter.y - center.y) : 0;
-    const fallbackRadius = innerWidth / 32 * 10; // Mirrors #toolSelect --ar2: calc(10 * var(--col)).
+    const fallbackRadius = innerWidth / 32 * 10; // Mirrors the authored #toolSelect --ar2 radius.
     const radius = measuredRadius > 8 ? measuredRadius : fallbackRadius;
     lastGeometry = { center, radius, referenceButton:OUTER_RADIUS_REFERENCE_ID, measured:measuredRadius > 8 };
     return lastGeometry;
@@ -73,37 +74,56 @@
   function selectorSweepDeg(count, radius) {
     if (count <= 4) return COMPACT_SWEEP_DEG;
     const ratio = Math.min(0.95, TARGET_SLOT_GAP_PX / (2 * Math.max(1, radius)));
-    const stepDeg = 2 * Math.asin(ratio) * 180 / Math.PI; // Converts desired chord spacing to angular spacing at this exact radius.
+    const stepDeg = 2 * Math.asin(ratio) * 180 / Math.PI; // Converts desired chord spacing to angular spacing on this exact radius.
     return Math.min(MAX_SWEEP_DEG, Math.max(COMPACT_SWEEP_DEG, stepDeg * Math.max(1, count - 1)));
   }
 
   function selectorAngleRad(index, count, sweepDeg) {
-    const t = count <= 1 ? 0.5 : index / (count - 1); // One-entry selectors remain centered rather than sticking to one end.
+    const t = count <= 1 ? 0.5 : index / (count - 1);
     const start = SELECTOR_MID_DEG + sweepDeg / 2;
     const end = SELECTOR_MID_DEG - sweepDeg / 2;
     return (start + (end - start) * t) * Math.PI / 180;
   }
 
+  function legacyInlineLeft(slot) {
+    const value = Number.parseFloat(slot?.style?.left || ''); // game.js still writes the old arc target here even though CSS no longer renders it.
+    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+  }
+
+  function itemWheelSentinelsPresent() {
+    return Boolean(document.querySelector(LEGACY_ARROW_SELECTOR)); // A scrollable legacy item wheel always owns at least one edge arrow.
+  }
+
   function activeSelectionSlots() {
-    return [...document.querySelectorAll('.arc-slot')].filter(slot => {
+    const itemWheel = itemWheelSentinelsPresent();
+    const slots = [...document.querySelectorAll('.arc-slot')].filter(slot => {
+      if (slot.matches(LEGACY_ARROW_SELECTOR)) return false; // Arrows are control sentinels, never entries in the shared visual wheel.
       const style = getComputedStyle(slot);
       if (style.display === 'none' || style.visibility === 'hidden') return false;
-      // The legacy item-wheel animation leaves outgoing nodes in the DOM for 150ms
-      // with inline opacity:0. Exclude those immediately so they cannot distort the
-      // new wheel's count/sweep, but keep brand-new opacity:0 nodes so we can place
-      // them on the shared radius before their fade-in RAF makes them visible.
+      // The legacy scroll animation keeps outgoing item nodes for 150ms at opacity 0.
+      // Exclude them immediately, but keep brand-new opacity-0 nodes so their first
+      // visible frame is already on the correct shared-radius edge.
       if (slot.style.opacity === '0' && slot.dataset.sharedSelectionPresented === '1') return false;
       return true;
     });
+
+    if (itemWheel) {
+      // Legacy item scrolling reuses DOM nodes and does NOT reorder the DOM. Its
+      // inline left value does still describe each entry's intended logical slot,
+      // so sort by that hidden bookkeeping coordinate before assigning shared slots.
+      // This makes all retained items advance together instead of only whichever
+      // subset happens to be in DOM order.
+      slots.sort((a, b) => legacyInlineLeft(a) - legacyInlineLeft(b));
+    }
+    return slots;
   }
 
   function armSharedMotion(slot) {
     if (slot.dataset.sharedSelectionPresented === '1') {
-      slot.classList.add('shared-selection-motion'); // Existing/recycled entries may glide between adjacent shared-radius slots.
+      slot.classList.add('shared-selection-motion'); // Recycled choices may glide to an adjacent shared-radius position.
       return;
     }
-
-    slot.classList.remove('shared-selection-motion'); // First placement must never animate from the hidden fallback or legacy radius.
+    slot.classList.remove('shared-selection-motion'); // New choices first snap invisibly to their real destination.
     slot.dataset.sharedSelectionPresented = '1';
     requestAnimationFrame(() => {
       if (slot.isConnected && slot.dataset.sharedSelectionPresented === '1') slot.classList.add('shared-selection-motion');
@@ -122,23 +142,28 @@
     setImportantStyle(slot, 'box-shadow', '0 2px 7px rgba(0,0,0,.42)');
   }
 
+  function neutralizeLegacyArrows() {
+    document.querySelectorAll(LEGACY_ARROW_SELECTOR).forEach(slot => {
+      slot.classList.add('shared-selection-sentinel'); // Keeps game.js references alive while making the DOM role explicit.
+      slot.setAttribute('aria-hidden', 'true');
+      slot.dataset.sharedSelectionSentinel = '1';
+    });
+  }
+
   function layoutSharedSelector(slots) {
     if (!slots.length) return;
-    const { center, radius } = outerRingGeometry(); // One center + one scalar radius for every button, every frame.
+    neutralizeLegacyArrows();
+    const { center, radius } = outerRingGeometry();
     const sweepDeg = selectorSweepDeg(slots.length, radius);
-    const dense = slots.length >= 6;
+    const dense = slots.length >= 5; // Five long item names benefit from wrapped labels even though arrows no longer inflate the count.
     lastSweepDeg = sweepDeg;
 
     slots.forEach((slot, index) => {
       enforceSlotPresentation(slot, dense);
       armSharedMotion(slot);
-      const angle = selectorAngleRad(index, slots.length, sweepDeg); // Slot order, never current rendered geometry, determines angular placement.
+      const angle = selectorAngleRad(index, slots.length, sweepDeg);
       const left = center.x + Math.cos(angle) * radius;
-      const top = center.y - Math.sin(angle) * radius; // Screen Y grows downward while authored ring angles grow upward.
-
-      // IMPORTANT: game.js's 2026-06 smooth-scroll code still writes old _arcPt
-      // left/top values while recycling item slots. Those writes are deliberately
-      // ignored by CSS. Only these shared-coordinate vars drive rendered position.
+      const top = center.y - Math.sin(angle) * radius;
       setSharedCoordinate(slot, '--shared-selection-left', `${left}px`);
       setSharedCoordinate(slot, '--shared-selection-top', `${top}px`);
       slot.dataset.sharedSelectionRadius = radius.toFixed(2);
@@ -156,7 +181,7 @@
   }
 
   function setOuterArchHidden(hidden) {
-    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves measurable outer-ring geometry.
+    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves permanent-ring geometry for measurement.
   }
 
   function removeCurvedLabel() {
@@ -260,17 +285,15 @@
     if (frameRunning) return;
     frameRunning = true;
     const frame = () => {
+      neutralizeLegacyArrows();
       const slots = activeSelectionSlots();
       if (!slots.length) {
         frameRunning = false;
         setOuterArchHidden(false);
         return;
       }
-      // Item-arrow hover scrolling is timer-driven and can recycle existing nodes
-      // without a DOM insertion. This geometry-only RAF keeps their CSS variables
-      // current without observing style/class attributes (which previously froze).
       setOuterArchHidden(true);
-      layoutSharedSelector(slots);
+      layoutSharedSelector(slots); // Timer-driven item scrolling can recycle nodes without inserting anything.
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -280,6 +303,7 @@
     if (refreshing) return;
     refreshing = true;
     try {
+      neutralizeLegacyArrows();
       const slots = activeSelectionSlots();
       if (!slots.length) {
         setOuterArchHidden(false);
@@ -309,7 +333,7 @@
     refreshQueued = true;
     queueMicrotask(() => {
       refreshQueued = false;
-      refresh(); // Runs after the current wheel/key event has finished mutating/recycling selector slots.
+      refresh();
     });
   }
 
@@ -325,10 +349,20 @@
         pointer-events:none !important;
       }
 
-      /* Rendered selector position is sourced only from the shared-radius CSS
-         variables. Legacy game.js may continue writing inline left/top while it
-         recycles the item wheel, but those old-radius coordinates cannot render. */
-      .arc-slot {
+      /* Legacy item-scroll arrows are still kept alive as invisible internal
+         sentinels so the old pointer-hover scroll state machine keeps working.
+         They never count as visible choices and never receive shared positions. */
+      ${LEGACY_ARROW_SELECTOR} {
+        visibility:hidden !important;
+        opacity:0 !important;
+        pointer-events:none !important;
+        transition:none !important;
+      }
+
+      /* Rendered selector position comes only from shared-radius variables.
+         game.js may keep writing its old _arcPt inline left/top values for item
+         recycling/order bookkeeping, but those coordinates cannot render. */
+      .arc-slot:not(.arc-arrow) {
         position:fixed !important;
         left:var(--shared-selection-left, -10000px) !important;
         top:var(--shared-selection-top, -10000px) !important;
@@ -341,10 +375,7 @@
         transition:transform .08s, background .08s, border-color .08s, opacity .12s !important;
       }
 
-      /* Existing/recycled entries animate only between two coordinates on the
-         approved shared radius. Brand-new entries receive their first target
-         before this class is armed, so they never fly in from -10000px or _arcPt. */
-      .arc-slot.shared-selection-motion {
+      .arc-slot:not(.arc-arrow).shared-selection-motion {
         transition:
           transform .08s,
           background .08s,
@@ -399,10 +430,8 @@
     `;
     document.head.appendChild(style);
 
-    // The original 2026-06 item-wheel animation intentionally reuses entries,
-    // slides them by writing left/top, fades new nodes in, and leaves outgoing
-    // nodes around briefly. Observe structure only; style/class observation
-    // caused the prior scroll freeze.
+    // Observe only structural changes. Style/class observation caused the old
+    // item-wheel recycler and the presenter to recursively trigger one another.
     new MutationObserver(records => {
       const relevantRecords = records.filter(recordTouchesSelectionArc);
       if (!relevantRecords.length) return;
@@ -410,9 +439,8 @@
       scheduleRefresh();
     }).observe(document.body, { childList:true, subtree:true });
 
-    // Wheel/key navigation may recycle the same node set, and hover arrows use a
-    // timer. The microtask + RAF paths cover both without reacting recursively to
-    // the selector's own style mutations.
+    // Wheel/key navigation can recycle the same node set. The microtask refresh
+    // plus geometry-only RAF covers those paths without mutation feedback.
     addEventListener('wheel', scheduleRefresh, { capture:true, passive:true });
     addEventListener('keydown', scheduleRefresh, { capture:true, passive:true });
     addEventListener('resize', scheduleRefresh, { passive:true });
@@ -429,19 +457,15 @@
         buttonDiameterScale:BUTTON_DIAMETER_SCALE,
         buttonSize:BUTTON_SIZE,
         labelOutsetPx:LABEL_OUTSET_PX,
-        slotMoveMs:SLOT_MOVE_MS,
+        hiddenLegacyArrowCount:document.querySelectorAll(LEGACY_ARROW_SELECTOR).length,
+        visibleChoiceCount:activeSelectionSlots().length,
         outerArchHidden:document.body.classList.contains('shared-selection-arc-open'),
-        selectorRadii:[...document.querySelectorAll('.arc-slot')].map(slot => Number(slot.dataset.sharedSelectionRadius)),
+        selectorRadii:activeSelectionSlots().map(slot => Number(slot.dataset.sharedSelectionRadius)),
         frameEnforcerRunning:frameRunning,
       }),
       refresh:scheduleRefresh,
     });
-    log('installed', {
-      selectorMidDeg:SELECTOR_MID_DEG,
-      buttonDiameterScale:BUTTON_DIAMETER_SCALE,
-      labelOutsetPx:LABEL_OUTSET_PX,
-      slotMoveMs:SLOT_MOVE_MS,
-    });
+    log('installed', { selectorMidDeg:SELECTOR_MID_DEG, buttonDiameterScale:BUTTON_DIAMETER_SCALE, labelOutsetPx:LABEL_OUTSET_PX });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
