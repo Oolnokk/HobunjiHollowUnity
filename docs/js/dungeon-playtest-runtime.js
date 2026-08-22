@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.1';
   const TILE = 55;
   const RADIUS = (15 * .72) / TILE;
   const SPEED = 238 / TILE;
@@ -29,6 +29,7 @@
   const key = (c, r) => `${c},${r}`;
   const tileElev = (c, r) => Number(S.elevation?.(c, r, S.map)) || 0;
   const groundY = (x, z) => {
+    // Stand on a caller-provided continuous collision deck when available. Decorative floor/stair meshes never participate here.
     if (typeof S.surfaceY === 'function') {
       const y = Number(S.surfaceY(x, z, S.map));
       if (Number.isFinite(y)) return y;
