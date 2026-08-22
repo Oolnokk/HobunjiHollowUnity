@@ -1,16 +1,17 @@
 // Mobile-only guard for the hierarchical Potion Select wheel.
-// Category stages require an intentional drag onto the actual category button;
+// Category stages require a true outside-to-inside drag onto the actual button;
 // concrete potion lists keep the selector's normal nearest-angle behavior.
 (() => {
   'use strict';
 
   const DRAG_ARM_PX = 10; // Thumb jitter around Action 3 must not count as an intentional category drag.
-  const HIT_PAD_PX = 5; // Small touch forgiveness around the half-size visual category circles.
+  const HIT_RADIUS_SCALE = 0.72; // Uses an inner activation core so Action 3 cannot overlap a category's effective hit radius.
   const RECENT_POINTER_MS = 900; // Associates openPotions() with the touch that actually pressed Action 3.
 
   let installed = false; // Prevents wrapping the shared selector more than once.
   let lastPointerDown = null; // {x,y,pointerId,at} used as the first category-stage drag origin.
-  let stageOrigin = null; // Reset at each category hierarchy transition so every stage needs a fresh drag.
+  let stageOrigin = null; // Reset at each hierarchy transition so every category tier needs a fresh drag.
+  let stageGate = null; // {key,sawOutside}; category buttons trigger only after an outside-to-inside crossing.
   let activePointerId = null; // Keeps unrelated touches from arming the potion hierarchy.
   let originalArc = null; // Authoritative shared selector object created by game.js.
   let wrappedArc = null; // Proxy that intercepts only mobile potion hierarchy pointer movement.
@@ -35,6 +36,7 @@
     activePointerId = null;
     lastPointerDown = null;
     stageOrigin = null;
+    stageGate = null;
   }
 
   function liveSlots(selector) {
@@ -49,15 +51,29 @@
     const categories = liveSlots('.arc-slot.potion-category:not(.arc-arrow)');
     if (categories.length) {
       const cancel = liveSlots('.arc-slot.potion-branch.potion-cancel:not(.arc-arrow)')[0] || null;
-      return { type:'category', slots:categories, cancel };
+      const key = `category:${categories.map(slotName).sort().join('|')}`;
+      return { type:'category', key, slots:categories, cancel };
     }
 
     const branches = liveSlots('.arc-slot.potion-branch:not(.potion-cancel):not(.arc-arrow)');
-    if (branches.length) return { type:'root', slots:branches, cancel:null };
+    if (branches.length) {
+      const key = `root:${branches.map(slotName).sort().join('|')}`;
+      return { type:'root', key, slots:branches, cancel:null };
+    }
 
     const finalItems = liveSlots('.arc-slot.potion-cancel:not(.potion-branch):not(.arc-arrow)');
-    if (finalItems.length) return { type:'items', slots:[], cancel:null };
-    return { type:'other', slots:[], cancel:null };
+    if (finalItems.length) return { type:'items', key:'items', slots:[], cancel:null };
+    return { type:'other', key:'other', slots:[], cancel:null };
+  }
+
+  function slotCenter(slot) {
+    // Prefer the new wheel's final authored target rather than an in-flight animation
+    // position. This keeps the touch core stable while the wheel fans or scrolls.
+    const targetX = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
+    const targetY = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
+    if (Number.isFinite(targetX) && Number.isFinite(targetY)) return { x:targetX, y:targetY };
+    const rect = slot.getBoundingClientRect();
+    return { x:rect.left + rect.width / 2, y:rect.top + rect.height / 2 };
   }
 
   function hitSlot(slots, x, y) {
@@ -65,10 +81,10 @@
     let bestDistance = Infinity;
     for (const slot of slots) {
       const rect = slot.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const radius = Math.max(rect.width, rect.height) / 2 + HIT_PAD_PX;
-      const distance = Math.hypot(x - cx, y - cy);
+      const center = slotCenter(slot);
+      const visualRadius = Math.max(rect.width, rect.height) / 2;
+      const radius = Math.max(7, visualRadius * HIT_RADIUS_SCALE); // Intentional inner core, never an expanded overlapping halo.
+      const distance = Math.hypot(x - center.x, y - center.y);
       if (distance <= radius && distance < bestDistance) {
         best = slot;
         bestDistance = distance;
@@ -101,38 +117,66 @@
     return 0;
   }
 
+  function ensureStageGate(stage) {
+    if (!stageGate || stageGate.key !== stage.key) {
+      stageGate = { key:stage.key, sawOutside:false }; // A newly populated tier begins deliberately unarmed.
+    }
+    return stageGate;
+  }
+
+  function categoryEntryArmed(stage, x, y) {
+    const gate = ensureStageGate(stage);
+    const inside = Boolean(hitSlot(stage.slots, x, y));
+    if (!gate.sawOutside) {
+      if (!inside && movedFarEnough(x, y)) {
+        gate.sawOutside = true; // The thumb has genuinely cleared every category activation core.
+        stageOrigin = { x, y }; // Subsequent entry is measured from this neutral point, not Action 3.
+      }
+      return false; // The same event that leaves the overlap can never also select a category.
+    }
+    return inside;
+  }
+
+  function resetForNextTier(x, y) {
+    stageOrigin = { x, y };
+    stageGate = null; // Next potionStage() call creates a fresh outside-to-inside requirement.
+  }
+
   function routeMobilePotionPointer(x, y, originalMovePointer, originalScrollEntries) {
     if (!mobilePointerMode()) return false;
     const stage = potionStage();
     if (stage.type === 'items' || stage.type === 'other') return false; // Final potion list keeps normal nearest-angle selection.
 
-    if (!movedFarEnough(x, y)) return true; // Swallow thumb jitter while still near the button/stage entry point.
-
     if (stage.type === 'root') {
+      if (!categoryEntryArmed(stage, x, y)) return true;
       const hit = hitSlot(stage.slots, x, y);
-      if (!hit) return true; // Nearest branch is never enough on mobile; the finger must actually enter its circle.
+      if (!hit) return true;
       const direction = branchDirection(hit);
       if (!direction) return true;
-      originalScrollEntries(direction); // Opens Medicine/Utility without invoking game.js's recursive nearest-pointer re-evaluation.
-      stageOrigin = { x, y }; // The next category tier now needs another intentional drag from this point.
+      originalScrollEntries(direction); // Opens Medicine/Utility without game.js's recursive nearest-pointer re-evaluation.
+      resetForNextTier(x, y); // Healing/Cures/Buffs/Flasks must also be entered from outside.
       return true;
     }
 
+    // Cancel retains its special replacement behavior: if the branch button becomes
+    // Cancel under the held finger, releasing there may still close the selector.
     if (stage.cancel && hitSlot([stage.cancel], x, y)) {
-      originalMovePointer(x, y); // Preserve the branch-level Cancel highlight/release behavior.
+      originalMovePointer(x, y);
       return true;
     }
 
+    if (!categoryEntryArmed(stage, x, y)) return true;
     const hit = hitSlot(stage.slots, x, y);
     if (!hit) return true;
     const direction = categoryDirection(hit);
     if (!direction) return true;
-    originalScrollEntries(direction); // Opens Healing/Cures/Buffs/Flasks only after an actual button hit.
+    originalScrollEntries(direction); // Opens Healing/Cures/Buffs/Flasks only after a true circle entry.
 
-    // If that category was enabled, scrollEntries synchronously opened the final potion list.
-    // Re-apply the same pointer there so concrete potions retain the existing nearest-item behavior.
+    // If enabled, scrollEntries synchronously opens the final concrete list. From
+    // here onward the user's requested normal nearest-item behavior is restored.
     if (potionStage().type === 'items') {
       stageOrigin = null;
+      stageGate = null;
       originalMovePointer(x, y);
     }
     return true;
@@ -158,24 +202,29 @@
         return originalMovePointer(x, y);
       },
       openPotions(...args) {
+        const result = originalOpenPotions(...args);
         if (mobilePointerMode()) {
           const recent = lastPointerDown && nowMs() - lastPointerDown.at <= RECENT_POINTER_MS;
           stageOrigin = recent ? { x:lastPointerDown.x, y:lastPointerDown.y } : null;
+          stageGate = null; // Root never starts armed, even if Utility overlaps Action 3's touch point.
         }
-        return originalOpenPotions(...args);
+        return result;
       },
       close(...args) {
         stageOrigin = null;
+        stageGate = null;
         return originalClose?.(...args);
       },
       releaseSelection(...args) {
         const result = originalReleaseSelection?.(...args);
         stageOrigin = null;
+        stageGate = null;
         return result;
       },
       endHeldSelection(...args) {
         const result = originalEndHeldSelection?.(...args);
         stageOrigin = null;
+        stageGate = null;
         return result;
       },
     };
@@ -205,9 +254,10 @@
         mobilePointerMode:mobilePointerMode(),
         stage:potionStage().type,
         stageOrigin:stageOrigin ? { ...stageOrigin } : null,
+        stageGate:stageGate ? { ...stageGate } : null,
         lastPointerDown:lastPointerDown ? { ...lastPointerDown } : null,
         dragArmPx:DRAG_ARM_PX,
-        hitPadPx:HIT_PAD_PX,
+        hitRadiusScale:HIT_RADIUS_SCALE,
       }),
     });
   }
