@@ -1628,6 +1628,26 @@
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
+      <!-- Melee auto-target toggle: sixth outer-ring control, continuing
+           the same clockwise sweep one more step past Call Mount. Melee-
+           only and hidden until a melee weapon is out (see
+           updateMovement's weaponEngaged/activeTool checks); grayed out
+           with no targetable hostile nearby, lights up white the instant
+           one is (see .abt-target-ready), and turns solid red once
+           actually engaged (see .active, matching the other outer-ring
+           toggles' convention). Tap targets the closest hostile and turns
+           the toggle on; the hidden camera joystick's left/right then
+           swaps targets instead of rotating the camera while it's on. -->
+      <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <circle cx="12" cy="12" r="0.6" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </span>
+        <span class="abt-label">Auto-Target</span>
+      </button>
     </div>
     <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
     <div id="actionStack">

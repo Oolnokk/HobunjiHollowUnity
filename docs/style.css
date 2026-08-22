@@ -943,6 +943,38 @@
     #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
     #btnCallMount .abt-icon { font-size: 0.85em; }
     #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
+    /* ── Melee auto-target: sixth outer-ring position, one step further
+       clockwise past Call Mount (12:00 → 12:45). Slightly larger than its
+       ring-mates per spec; hidden via .abt-hidden (see updateMovement's
+       weaponEngaged toggle) whenever melee isn't out. Base/gray = no
+       targetable hostile nearby; .abt-target-ready = one's in view (still
+       off); .active = actually engaged. ── */
+    #btnMeleeAutoTarget {
+      position: absolute;
+      right:  calc(-1*cos(67.5deg)*var(--ar2));
+      bottom: calc(   sin(67.5deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(30px, calc(0.7 * var(--col)), 42px); height: clamp(30px, calc(0.7 * var(--col)), 42px);
+      border-radius: 50%;
+      background: rgba(140,140,140,0.09); border: 1.5px solid rgba(140,140,140,0.4);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: rgba(210,210,210,0.55);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
+      overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnMeleeAutoTarget:active { transform: translate(50%,50%) scale(0.92); }
+    #btnMeleeAutoTarget .abt-icon { font-size: 0.9em; }
+    #btnMeleeAutoTarget.abt-target-ready {
+      background: rgba(255,120,120,0.09); border-color: rgba(255,120,120,0.5);
+      color: #fff;
+    }
+    #btnMeleeAutoTarget.active {
+      background: rgba(255,80,80,0.36); border-color: rgba(255,80,80,0.9);
+      color: #fff;
+    }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
