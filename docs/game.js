@@ -3308,6 +3308,11 @@
       // updateMovement, which feeds computed direction through the exact
       // same ix/iy → speed/collision pipeline manual input uses, and any
       // real manual input cancels it outright rather than fighting it.
+      // Tracks whether the player had real movement input last frame — used
+      // by updateMovement's stuck-recovery check to fire only on the
+      // idle→moving edge (the instant a movement key/stick is first
+      // pressed), not every single frame the player happens to be moving.
+      let _playerWasMoving = false;
       let playerAutoWalk = null;
       const PLAYER_AUTOWALK_ARRIVE_PX = TILE * 0.35;
       const PLAYER_AUTOWALK_PATH_PADDING_TILES = 10;
@@ -12884,6 +12889,21 @@
           if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
+        // Universal stuck-recovery: the instant the player first presses a
+        // movement input after standing still, check whether they're
+        // actually embedded in solid geometry right now (spawned/
+        // teleported into a wall sliver — see canPlayerOccupy's own
+        // escape-hatch fallback just below, which keeps movement usable in
+        // this state but still leaves the player to wander their own way
+        // out). If so, snap straight to the nearest genuinely clear tile
+        // instead, so getting stuck never requires guessing which
+        // direction happens to be open.
+        if (inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          const rescue = findNearestWalkableTileCenter(player.x, player.y);
+          if (rescue) { player.x = rescue.x; player.y = rescue.y; player.vx = 0; player.vy = 0; }
+        }
+        _playerWasMoving = inputStrength > 0.001;
+
         // Raw per-frame move intent, read by hold abilities (Blink Dodge)
         // that need to know which way the player is trying to go.
         player.inputX = ix;
@@ -13059,6 +13079,32 @@
           return tileSpeedAt(wx, wy) !== null;
         }
         return false;
+      }
+
+      // Expanding-ring search for the nearest genuinely-clear tile center
+      // around (px, py) — used by updateMovement's stuck-recovery teleport.
+      // Deliberately checks the strict box occupancy (canOccupyAt), not
+      // canPlayerOccupy's own lenient escape-hatch fallback above: that
+      // fallback only reads "clear" relative to the player's CURRENT
+      // (stuck) position, so using it here while the player hasn't moved
+      // yet would happily hand back a candidate tile that doesn't actually
+      // satisfy full-radius collision either. Rings out from the player's
+      // own tile outward (Chebyshev distance) so the result is always the
+      // closest real fit, capped at a generous search radius so a
+      // pathologically fully-blocked area can't spin forever.
+      const STUCK_RECOVERY_MAX_RING = 24;
+      function findNearestWalkableTileCenter(px, py) {
+        const col0 = Math.floor(px / TILE), row0 = Math.floor(py / TILE);
+        for (let ring = 0; ring <= STUCK_RECOVERY_MAX_RING; ring++) {
+          for (let dr = -ring; dr <= ring; dr++) {
+            for (let dc = -ring; dc <= ring; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue; // only this ring's perimeter
+              const cx = (col0 + dc + 0.5) * TILE, cy = (row0 + dr + 0.5) * TILE;
+              if (canOccupyAt(cx, cy, PLAYER_RADIUS * 0.72)) return { x: cx, y: cy };
+            }
+          }
+        }
+        return null;
       }
 
       // A fast forced move (combat lunge, knockback, dodge) recomputes its
