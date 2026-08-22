@@ -1291,18 +1291,29 @@
         map_southern_cloud_forest: {
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
-          groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          groundColor: 0x2d4a3a, fogColor: 0xffffff,
           // It's a *cloud* forest — thicker than the 0.018 every other zone
-          // shares (see buildZoneScene's fogDensity fallback), so the mist
-          // itself reads as part of the biome rather than an oversight.
-          // Picked so FogExp2 has already all but swallowed anything by the
-          // time it would hit VEG_CULL_FORWARD_TILES (42 tiles): the hard
-          // pop-in edge of that aggressive vegetation cull — newly visible
-          // now that shoulder-surf lets the camera actually look down the
-          // forest instead of past it — sits inside the fog instead of out
-          // in the open, without touching the cull range or tree density
-          // that keeps this zone's frame rate afloat.
+          // shares (see buildZoneScene's fogDensity fallback), and white
+          // rather than every other zone's dark tint, so the mist itself
+          // reads as part of the biome rather than an oversight. Layered on
+          // top by CloudForestFog's player-centered mist cylinders (see
+          // docs/js/cloud-forest-fog.js) for something with actual visual
+          // presence, since a flat per-pixel exponential fog alone reads as
+          // computed haze rather than something with real volume.
           fogDensity: 0.055,
+          // updateZoneVegetationCulling uses this zone's presence here to
+          // switch from the other zones' camera-forward/rear/width box to a
+          // simple circle around the player — it pairs with CloudForestFog's
+          // outer mist cylinder, which is scaled to this same radius, so the
+          // ring where vegetation pops in/out sits inside the mist in every
+          // direction rather than just character-forward. 34 tiles is where
+          // fogDensity above has already made FogExp2 ~97% opaque, so the
+          // pop-in itself stays hidden without changing how much actually
+          // renders at once (a full circle this size does mean more gets
+          // drawn behind/beside the player than the old forward-biased box
+          // did — the fog now doing the work that box previously did makes
+          // that an acceptable trade, not a free one).
+          vegCullRadiusTiles: 34,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -16020,15 +16031,27 @@
         const cullables = zi?.cullables;
         if (!cullables || !cullables.length) return;
         const camX = camera.position.x, camZ = camera.position.z;
-        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
-        let viewLen = Math.hypot(viewX, viewZ);
-        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
-        viewX /= viewLen; viewZ /= viewLen;
-        const rightX = viewZ, rightZ = -viewX;
-        const forwardRange = VEG_CULL_FORWARD_TILES;
-        const rearRange = VEG_CULL_REAR_TILES;
-        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const px = player.x / TILE, pz = player.y / TILE;
+        // A handful of zones (currently just the Southern Cloud Forest, via
+        // vegCullRadiusTiles — see its EXTERIOR_ZONES comment) swap the
+        // camera-forward/rear/width box every other zone uses below for a
+        // plain circle centered on the PLAYER, not the camera — pairing with
+        // CloudForestFog's own player-centered mist cylinders so the ring
+        // where vegetation pops in/out sits inside the mist uniformly in
+        // every direction instead of only character-forward.
+        const radialCullRadius = EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles;
+        let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
+        if (!radialCullRadius) {
+          let vx = camTargetX - camX, vz = camTargetZ - camZ;
+          let viewLen = Math.hypot(vx, vz);
+          if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
+          viewX = vx / viewLen; viewZ = vz / viewLen;
+          rightX = viewZ; rightZ = -viewX;
+          forwardRange = VEG_CULL_FORWARD_TILES;
+          rearRange = VEG_CULL_REAR_TILES;
+          halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        }
         // Every character worth revealing an occluder for, not just the
         // player -- a tree that only fades for the player would leave a
         // companion standing behind the SAME tree fully hidden by it, since
@@ -16037,19 +16060,24 @@
         // without also sitting on the camera-to-player line (they're rarely
         // standing on exactly the same spot), so this needs its own check
         // per target rather than reusing the player's.
-        const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
+        const revealTargets = [{ x: px, z: pz }];
         for (const c of companionObjects) {
           if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
         }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
-          const dx = s.x - camX, dz = s.z - camZ;
-          const along = dx * viewX + dz * viewZ;
-          const side = Math.abs(dx * rightX + dz * rightZ);
           const sticky = obj.visible ? hysteresis : 0;
           const expandedRadius = s.radius + sticky;
-          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
-            && side <= halfWidth + expandedRadius;
+          let show;
+          if (radialCullRadius) {
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + expandedRadius;
+          } else {
+            const dx = s.x - camX, dz = s.z - camZ;
+            const along = dx * viewX + dz * viewZ;
+            const side = Math.abs(dx * rightX + dz * rightZ);
+            show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+              && side <= halfWidth + expandedRadius;
+          }
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
@@ -20734,6 +20762,7 @@
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
+        window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
@@ -24499,6 +24528,16 @@
         getActiveScene,
         getCurrentArea: () => currentArea,
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
+      });
+
+      window.CloudForestFog?.init({
+        THREE,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+        getCloudForestFogRadiusTiles: () => EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles,
       });
 
       window.FarmPanel?.init({

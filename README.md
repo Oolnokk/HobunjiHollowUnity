@@ -56,20 +56,38 @@ follow camera is still reachable by unchecking the toggle.
 
 ## Southern Cloud Forest fog
 
-The Southern Cloud Forest (`map_southern_cloud_forest`) now sets its own,
-noticeably thicker `fogDensity` (0.055 vs. every other zone's shared 0.018) via
-`EXTERIOR_ZONES` in `docs/game.js`, read by `buildZoneScene`. Two things
-motivated it:
+The Southern Cloud Forest (`map_southern_cloud_forest`) sets its own zone
+config in `EXTERIOR_ZONES` (`docs/game.js`) to make the fog both thicker and
+actually present, and to make its vegetation cull radial instead of
+directional:
 
-- Thematically, a *cloud* forest with no clouds in it was an obvious gap —
-  dense ground fog reads as the biome's own weather rather than as missing art.
-- Now that Shoulder Cam lets the camera actually look down the length of the
-  forest instead of past it, the aggressive vegetation cull this zone needs
-  for performance (`VEG_CULL_FORWARD_TILES`, 42 tiles) became visible as a
-  hard pop-in edge. The fog density is tuned so `FogExp2` has already all but
-  swallowed the view well before that edge, hiding the cull boundary in mist
-  instead of open air — without loosening the cull range or forest density
-  that keep this zone's frame rate acceptable.
+- **`fogDensity: 0.055`** vs. every other zone's shared `0.018`, read by
+  `buildZoneScene`. Thematically, a *cloud* forest with no clouds in it was an
+  obvious gap. `fogColor` is white (`0xffffff`) instead of every other zone's
+  dark tint, so the mist reads as bright overcast weather rather than gloom.
+- **`vegCullRadiusTiles: 34`** — `updateZoneVegetationCulling` uses its
+  presence to swap the other zones' camera-forward/rear/width box for a plain
+  circle centered on the *player*. Shoulder Cam lets the camera actually look
+  down the length of the forest now, which had made that box's forward pop-in
+  edge (`VEG_CULL_FORWARD_TILES`, 42 tiles) visible; 34 tiles is where
+  `fogDensity` above has already made `FogExp2` ~97% opaque, so the (now
+  uniform-in-every-direction) pop-in ring stays hidden in the mist. A full
+  circle that size does mean more renders behind/beside the player than the
+  old forward-biased box did — an acceptable trade since the fog is now doing
+  the work that box used to.
+- **`docs/js/cloud-forest-fog.js`** (`window.CloudForestFog`) adds three
+  large, translucent white cylinders centered on the player — scaled to
+  0.42×/0.70×/1.00× `vegCullRadiusTiles` — that the camera always renders from
+  the inside (`THREE.BackSide`). A flat per-pixel `FogExp2` alone reads as
+  computed haze; real geometry the camera sits inside of gives the mist actual
+  visual presence, drifting and layered on top of (not replacing) the
+  ordinary fog. Each layer is textured with a procedurally-painted white
+  "spray paint" `CanvasTexture` (soft random blotches, wrap-seamless) used as
+  a fallback — the module also tries `assets/textures/cloud_forest_mist.png`
+  first and upgrades to it transparently if that asset ever shows up. Follows
+  the same self-contained `window.<Namespace>` + `init(deps)`/`update(dt)`
+  module shape as `docs/js/rain-planes.js`, and is wired into the same
+  per-frame update tick in `docs/game.js`.
 
 ## Future plans: multiplayer
 
