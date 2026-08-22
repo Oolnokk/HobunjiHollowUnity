@@ -17,13 +17,22 @@
   let texture = null;
   const layers = [];
 
-  // radiusFrac scales the outer (cull-radius-matched) distance down for each
-  // inner shell, so there's mist close to the player as well as at the edge
-  // where the vegetation cull (see updateZoneVegetationCulling's radial
-  // branch) actually pops trees in/out.
+  // The innermost shell is pinned to an absolute, close-to-the-player
+  // distance rather than a fraction of the outer (cull-radius-matched) one
+  // below — 5 tiles puts real, textured mist geometry well inside the
+  // player's immediate surroundings instead of only appearing well out
+  // toward the cull edge. The middle shell keeps the same closer-in ratio
+  // to the inner one it held back when both were fractions of the outer
+  // radius (0.70 / 0.42 = 5/3), just re-anchored to the new inner distance.
+  const INNER_RADIUS_TILES = 5;
+  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42); // = 25/3 ≈ 8.33
+  // radiusFrac scales the outer (cull-radius-matched) distance for the
+  // outermost shell only, so it stays tied to wherever
+  // updateZoneVegetationCulling's vegetation cull actually pops trees in/out
+  // even if that radius is ever retuned.
   const LAYER_CONFIG = [
-    { radiusFrac: 0.42, height: 6.5, opacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
-    { radiusFrac: 0.70, height: 8.5, opacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
+    { radiusTiles: INNER_RADIUS_TILES, height: 6.5, opacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
+    { radiusTiles: MIDDLE_RADIUS_TILES, height: 8.5, opacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
   // Matches map_southern_cloud_forest's vegCullRadiusTiles — used only if a
@@ -162,7 +171,7 @@
 
     for (const layer of layers) {
       const { mesh, material, config } = layer;
-      const radius = outerRadius * config.radiusFrac;
+      const radius = config.radiusTiles ?? outerRadius * config.radiusFrac;
       mesh.position.set(px, groundY + config.height * 0.5, pz);
       mesh.scale.set(radius, config.height, radius);
       mesh.rotation.y = t * config.spinSpeed;
