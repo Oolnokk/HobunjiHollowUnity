@@ -54,7 +54,7 @@
     if (!aimState) return;
     const tile = deps.TILE || 64; // World-pixel to Three-unit conversion.
     ring.position.set(aimState.targetX / tile, deps.getGroundY?.(aimState.targetX, aimState.targetY) ?? 0.025, aimState.targetY / tile);
-    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Recipe-configured splash preview.
+    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
     ring.scale.setScalar(radius / 0.27);
   }
 
