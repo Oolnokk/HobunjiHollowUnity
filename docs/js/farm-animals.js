@@ -367,8 +367,8 @@
         this.wx += (tx - this.wx) * sp;
         this.wz += (tz - this.wz) * sp;
         this.wy += (ty - this.wy) * sp;
-        this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
-        this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        const bobY = Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006 * sizeScale.y; // Used only by rendering so the persistent grounded Y never absorbs/accumulates bob, and scales with the final animal height.
+        this.avatarRef.group.position.set(this.wx, this.wy + bobY, this.wz);
 
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
@@ -486,8 +486,8 @@
         this.wx += (tx - this.wx) * sp;
         this.wz += (tz - this.wz) * sp;
         this.wy += (ty - this.wy) * sp;
-        this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
-        this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        const bobY = Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006 * sizeScale.y; // Used only by rendering so the persistent grounded Y never absorbs/accumulates bob, and scales with the final animal height.
+        this.avatarRef.group.position.set(this.wx, this.wy + bobY, this.wz);
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
         const lookTarget = idle ? deps.nearestAngleAmong(this.groupRot, deps.cameraRelativePerps()) : this.targetRot;
