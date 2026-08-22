@@ -218,6 +218,14 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.18,
           "targetYOffsetTiles": 0,
           "freeRotate": true
+        },
+        "shoulderSurf": {
+          "distanceTiles": 2.6,
+          "angleFromGroundDeg": 9,
+          "fovDeg": 55,
+          "followLerp": 0.08,
+          "targetYOffsetTiles": 0.62,
+          "freeRotate": true
         }
       }
     },

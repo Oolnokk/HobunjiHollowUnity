@@ -478,7 +478,7 @@
           _dialogueWalker.catchupDur = 8;
           _dialogueWalker = null;
         }
-        activeCameraMode = cameraConfig().defaultMode || 'default';
+        enterDefaultCameraMode();
         activeCameraTarget = null;
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
@@ -3532,10 +3532,15 @@
         if (e >= 1) {
           if (s.phase === 'in') { s.phase = 'active'; s.t = 0; }
           else {
-            activeCameraMode = s.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            enterDefaultCameraMode(s.prevCameraMode);
             activeCameraTarget = s.prevCameraTarget ?? null;
-            cameraAzimuthOffsetDeg = 0;
-            cameraAngleOffsetDeg = 0;
+            // enterDefaultCameraMode already snapped these behind the player
+            // when landing back in shoulder-surf — don't stomp that back to
+            // due-south here too.
+            if (activeCameraMode !== SHOULDER_SURF_MODE) {
+              cameraAzimuthOffsetDeg = 0;
+              cameraAngleOffsetDeg = 0;
+            }
             sitInteraction = null;
           }
         }
@@ -7075,7 +7080,15 @@
       let playerItemHoldY = 0.64;
 
       let npcDialogueStaging = null;
-      let activeCameraMode   = cameraConfig().defaultMode || 'default';
+      // Experimental over-the-shoulder camera (Settings → Camera). See
+      // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
+      // that already resolves "back to the ordinary gameplay camera" (initial
+      // load, dialogue close, standing up, cutscene end) goes through those,
+      // so this substitutes for the normal follow camera without needing any
+      // special-casing in the other camera modes (seated/fishing/music/etc.
+      // all restore whatever mode they captured on entry, unaffected).
+      let s_shoulderSurf = false;
+      let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
       // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
@@ -8099,6 +8112,35 @@
       function cameraModeConfig(mode) {
         const modes = cameraModesConfig();
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
+      }
+      // Mode key substituted for the ordinary gameplay camera by the
+      // shoulder-surf toggle — see s_shoulderSurf above. Kept as its own
+      // constant rather than reading cameraConfig().defaultMode so a modder
+      // renaming/removing "default" in scratchbones-config.js can't silently
+      // break the toggle.
+      const SHOULDER_SURF_MODE = 'shoulderSurf';
+      function defaultCameraModeKey() {
+        return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+      }
+      // Snaps the free-look azimuth built up by shoulder-surf's freeRotate
+      // drag (see cameraDragAllowed/freeRotateCameraActive below) back to
+      // directly behind the player's current facing — the same "camera sits
+      // opposite the direction the character faces" derivation
+      // beginSitInteraction uses for the seated camera's initial framing,
+      // just re-run live off facingAngle instead of a one-time seat angle.
+      function snapShoulderSurfAzimuth() {
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+        cameraAngleOffsetDeg = 0;
+      }
+      // Every call site that resolves "return to the ordinary gameplay
+      // camera" (dialogue close, standing up from a chair, cutscene end)
+      // should go through this instead of assigning defaultCameraModeKey()
+      // directly, so landing back in shoulder-surf always re-centers behind
+      // the player rather than resuming wherever a prior free-look drag left
+      // the azimuth.
+      function enterDefaultCameraMode(prevMode) {
+        activeCameraMode = prevMode ?? defaultCameraModeKey();
+        if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
       }
       function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
       function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
@@ -19924,6 +19966,19 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
+      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
+        s_shoulderSurf = e.target.checked;
+        // Only live-swap while in one of the two plain gameplay camera
+        // states — mid-dialogue/fishing/seated/cutscene, leave the active
+        // mode alone and let its own existing restore path (now routed
+        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
+        // the new toggle state next time it resolves back to gameplay.
+        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
+          activeCameraMode = defaultCameraModeKey();
+          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
+        }
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -20055,6 +20110,18 @@
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
+        // Shoulder-surf: ease the free-look azimuth back to directly behind
+        // the player's current facing while they're actually walking, so the
+        // over-the-shoulder framing keeps up with turns during normal play.
+        // Gated on cameraDragPointerId (not mid-drag) and on movement (not
+        // just standing there) so an active look-around drag, or one just
+        // released while stationary, isn't fought/overridden every frame —
+        // same freeRotate drag this mode shares with 'seated' still gets to
+        // hold wherever the player left it once they stop moving.
+        if (activeCameraMode === SHOULDER_SURF_MODE && cameraDragPointerId === null && Math.hypot(player.vx, player.vy) > 5) {
+          const behindAzimuthDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + wrapAzimuthDeg(behindAzimuthDeg - cameraAzimuthOffsetDeg) * (1 - Math.exp(-6 * dt)));
+        }
         updateCameraPosition();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
@@ -25408,7 +25475,7 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           cutscenePreviewDialogueSpeaker = null;
-          activeCameraMode = cameraConfig().defaultMode || 'default';
+          enterDefaultCameraMode();
           activeCameraTarget = null;
           cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
         };
