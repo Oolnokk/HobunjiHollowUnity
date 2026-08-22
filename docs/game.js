@@ -7160,6 +7160,16 @@
       let s_shoulderSurfOffsetV_default = -0.05;
       let s_shoulderSurfOffsetH_combat = 0.60;
       let s_shoulderSurfOffsetV_combat = -0.05;
+      // What the camera actually reads (see updateCameraPosition) — eased
+      // toward whichever preset is active every frame (see the per-frame
+      // sync below) rather than snapping the instant a weapon is drawn/
+      // sheathed, so swapping stances reads as a smooth push-in/pull-back
+      // instead of a jump-cut. Slider input handlers set these directly
+      // instead of letting them ease, since a live drag should track the
+      // mouse immediately.
+      let s_shoulderSurfOffsetH_current = s_shoulderSurfOffsetH_default;
+      let s_shoulderSurfOffsetV_current = s_shoulderSurfOffsetV_default;
+      const SHOULDER_SURF_OFFSET_LERP = 6;
       let _shoulderSurfOffsetSliderCombat = false; // last-synced stance, for the slider UI sync below
       // One-shot azimuth snap for whenever shoulder-surf is already the
       // active mode the very first time the camera-follow code below runs
@@ -15753,13 +15763,10 @@
         // directly) carries the offset into idealX/idealZ/cameraY below too,
         // sliding the whole camera rig rather than just skewing its aim.
         if (activeCameraMode === SHOULDER_SURF_MODE && !portraitAim) {
-          const combatStance = shoulderSurfCombatStanceActive();
-          const offH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
-          const offV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
           const rightX = Math.cos(azimuth), rightZ = -Math.sin(azimuth);
-          lookAtX += rightX * offH;
-          lookAtZ += rightZ * offH;
-          lookY += offV;
+          lookAtX += rightX * s_shoulderSurfOffsetH_current;
+          lookAtZ += rightZ * s_shoulderSurfOffsetH_current;
+          lookY += s_shoulderSurfOffsetV_current;
         }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
@@ -20265,6 +20272,7 @@
       document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
         const v = parseFloat(e.target.value) || 0;
         if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetH_combat = v; else s_shoulderSurfOffsetH_default = v;
+        s_shoulderSurfOffsetH_current = v; // a live drag should track the mouse immediately, not ease in
         const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
         if (valueEl) valueEl.textContent = v.toFixed(2);
         updateCameraPosition();
@@ -20272,6 +20280,7 @@
       document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
         const v = parseFloat(e.target.value) || 0;
         if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetV_combat = v; else s_shoulderSurfOffsetV_default = v;
+        s_shoulderSurfOffsetV_current = v; // a live drag should track the mouse immediately, not ease in
         const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
         if (valueEl) valueEl.textContent = v.toFixed(2);
         updateCameraPosition();
@@ -20428,24 +20437,30 @@
         // shoulder-surf's close third-person range, so keep it in lockstep
         // with the camera mode every frame instead.
         window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
-        // Keeps the offset sliders' displayed value in sync with whichever
-        // stance preset is actually driving the camera right now — only
-        // touches the DOM the instant the stance itself flips (drawing/
-        // sheathing a weapon), not every frame.
+        // Eases the camera's actual offset (…_current) toward whichever
+        // stance preset applies right now — every frame, not just the
+        // instant the stance flips — so drawing/sheathing a weapon (or any
+        // other tool/item swap that changes stance) reads as a smooth
+        // push-in/pull-back instead of a jump-cut. The offset sliders'
+        // displayed value still jumps immediately on the flip, since that's
+        // just showing which preset's number is now in charge, not the
+        // transient eased position.
         if (activeCameraMode === SHOULDER_SURF_MODE) {
           const combatStance = shoulderSurfCombatStanceActive();
+          const targetH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+          const targetV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
+          s_shoulderSurfOffsetH_current += (targetH - s_shoulderSurfOffsetH_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          s_shoulderSurfOffsetV_current += (targetV - s_shoulderSurfOffsetV_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
           if (combatStance !== _shoulderSurfOffsetSliderCombat) {
             _shoulderSurfOffsetSliderCombat = combatStance;
-            const h = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
-            const v = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
             const hEl = document.getElementById('settingShoulderSurfOffsetH');
             const vEl = document.getElementById('settingShoulderSurfOffsetV');
             const hValEl = document.getElementById('settingShoulderSurfOffsetHValue');
             const vValEl = document.getElementById('settingShoulderSurfOffsetVValue');
-            if (hEl) hEl.value = h;
-            if (vEl) vEl.value = v;
-            if (hValEl) hValEl.textContent = h.toFixed(2);
-            if (vValEl) vValEl.textContent = v.toFixed(2);
+            if (hEl) hEl.value = targetH;
+            if (vEl) vEl.value = targetV;
+            if (hValEl) hValEl.textContent = targetH.toFixed(2);
+            if (vValEl) vValEl.textContent = targetV.toFixed(2);
           }
         }
         // Floating camera joystick: held-off-center knob position drives an
@@ -23637,7 +23652,7 @@
         get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
         get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
         get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
-        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat }; },
+        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
@@ -24206,6 +24221,7 @@
         showToast,
         debugLog,
         worldToOverlay,
+        camera,
         lctx,
         player,
         npcWalkers,

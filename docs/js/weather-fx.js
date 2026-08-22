@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const THREE = window.THREE;
 
   // Weather rolling (daily forecast + rain-window scheduling), the outdoor
   // day/night + weather lighting overlay (sky tint, lantern masks, lightning
@@ -72,9 +73,24 @@
   const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
   const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
 
+  // Measures a world-space distance in screen pixels, but along the
+  // CAMERA's own screen-horizontal axis rather than the fixed world-X axis
+  // the old version used. World-X only reads as "screen-horizontal" for a
+  // steep, near-overhead camera (the original default follow cam) — once
+  // shoulder-surf's close, near-eye-level camera can face any azimuth, a
+  // fixed world-X offset from the light is sometimes nearly along the
+  // camera's own view axis (collapsing to a near-zero radius — the "can't
+  // see anything" direction) and sometimes nearly full-lateral (blowing up
+  // to a huge radius — the "looks like daytime" direction), with an
+  // arbitrary stretched-ellipse mask in between (the "flashlight cone"
+  // that only looked right facing one particular way). Projecting along
+  // the camera's actual right vector instead gives the same screen radius
+  // no matter which way the camera is yawed, by construction.
+  const _camRightVec = new THREE.Vector3();
   function _lightScreenRadius(tx, tz, worldY, tiles) {
+    _camRightVec.setFromMatrixColumn(deps.camera.matrixWorld, 0);
     const c = deps.worldToOverlay(tx, worldY, tz);
-    const e = deps.worldToOverlay(tx + tiles, worldY, tz);
+    const e = deps.worldToOverlay(tx + _camRightVec.x * tiles, worldY + _camRightVec.y * tiles, tz + _camRightVec.z * tiles);
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
@@ -462,5 +478,9 @@
     updateRainState,
     setDebugWeather,
     getDebugWeather,
+    // Debug/QA only — the player lantern's current on-screen shine radius,
+    // to verify it stays roughly constant across camera azimuths instead of
+    // collapsing/ballooning with view direction (see _lightScreenRadius).
+    debugLanternShineR: () => _lightScreenRadius(deps.player.x / deps.TILE, deps.player.y / deps.TILE, deps.getPlayerWorldY() + 0.5, LANTERN_SHINE_TILES),
   };
 })();
