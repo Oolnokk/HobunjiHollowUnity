@@ -54,7 +54,7 @@
     if (!aimState) return;
     const tile = deps.TILE || 64; // World-pixel to Three-unit conversion.
     ring.position.set(aimState.targetX / tile, deps.getGroundY?.(aimState.targetX, aimState.targetY) ?? 0.025, aimState.targetY / tile);
-    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
+    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Recipe-configured splash preview.
     ring.scale.setScalar(radius / 0.27);
   }
 
@@ -197,7 +197,7 @@ addEventListener('load', () => {
   }
   if (!document.querySelector('script[data-mobile-potion-category-drag]')) {
     const mobileTap = document.createElement('script'); // Mobile potion hierarchy uses actual circle taps; desktop/controller retain the original selector input.
-    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260822b';
+    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260822c';
     mobileTap.dataset.mobilePotionCategoryDrag = '1';
     mobileTap.async = false;
     document.head.appendChild(mobileTap);
