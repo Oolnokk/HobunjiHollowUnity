@@ -37,7 +37,8 @@
 
     function scanCoherentGroundContact(image, alphaThreshold) {
       const rawBounds = rawScan(image, alphaThreshold);
-      if (!rawBounds || Number(alphaThreshold) < CREATURE_SCAN_THRESHOLD) return rawBounds; // Only creature grounding's alpha-255 scan is allowed to reinterpret the bottom row.
+      const requestedThreshold = Number(alphaThreshold); // Used to distinguish the explicit creature-grounding request from generic/default scans.
+      if (!rawBounds || requestedThreshold !== CREATURE_SCAN_THRESHOLD) return rawBounds; // Exact opt-in keeps dew piles and future generic image scans unchanged.
 
       const width = image?.naturalWidth || image?.width || 0;
       const height = image?.naturalHeight || image?.height || 0;
@@ -55,7 +56,7 @@
         return rawBounds;
       }
 
-      const threshold = Number(alphaThreshold);
+      const threshold = requestedThreshold;
       let left = width, right = -1;
       for (let y = rawBounds.top; y <= rawBounds.bottom; y++) {
         const rowOffset = y * width * 4;
