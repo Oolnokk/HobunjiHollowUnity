@@ -9916,7 +9916,16 @@
             const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
             const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
             glow.rotation.x = -Math.PI / 2;
-            glow.position.set(ex, 0.02, ez);
+            // y=0.02 used to sit right at the entrance's own carved floor
+            // surface — not reliably ABOVE it: confirmed directly (SDF
+            // field sampling, not just visual guessing) that the true
+            // floor at the entrance's exact centroid only clears open air
+            // somewhere between y=0.02 and y=0.05, so the glow patch was
+            // landing inside the floor/rock there on every single den,
+            // reading as "a little arch of light placed inside a rock,
+            // cutting a hole in it" instead of lying flat on open floor.
+            // 0.15 clears that transition with real margin.
+            glow.position.set(ex, 0.15, ez);
             bScene.add(glow);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
