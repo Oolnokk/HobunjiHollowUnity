@@ -13,13 +13,8 @@
   let tapGesture = null; // {pointerId,startX,startY,moved,stageKey}; only gestures that begin on an already-open potion wheel are captured.
   let pressedSlot = null; // Visual-only tap feedback target; never changes the selector's authoritative active index.
 
-  function mobilePointerMode() {
-    return !window.matchMedia('(pointer: fine)').matches; // Mirrors game.js's own desktop/mobile split.
-  }
-
-  function isTouchLikePointer(ev) {
-    return !ev.pointerType || ev.pointerType === 'touch' || ev.pointerType === 'pen'; // Keeps phone/tablet input tap-only without changing mouse behavior.
-  }
+  function mobilePointerMode() { return !window.matchMedia('(pointer: fine)').matches; }
+  function isTouchLikePointer(ev) { return !ev.pointerType || ev.pointerType === 'touch' || ev.pointerType === 'pen'; }
 
   function liveSlots(selector) {
     return [...document.querySelectorAll(selector)].filter(slot => {
@@ -59,8 +54,7 @@
   }
 
   function hitSlot(slots, x, y) {
-    let best = null;
-    let bestDistance = Infinity;
+    let best = null, bestDistance = Infinity;
     for (const slot of slots) {
       const rect = slot.getBoundingClientRect();
       const center = sharedTargetCenter(slot);
@@ -74,8 +68,7 @@
   function logicalPointerForSlot(slot) {
     const x = Number.parseFloat(slot?.style?.left || '');
     const y = Number.parseFloat(slot?.style?.top || '');
-    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
-    return sharedTargetCenter(slot);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : sharedTargetCenter(slot);
   }
 
   function branchDirection(slot) {
@@ -83,7 +76,6 @@
     if (slot?.classList.contains('utility') || slotName(slot).startsWith('utility')) return 1;
     return 0;
   }
-
   function categoryDirection(slot) {
     const name = slotName(slot);
     if (name.startsWith('healing') || name.startsWith('buffs')) return -1;
@@ -91,22 +83,9 @@
     return 0;
   }
 
-  function clearPressedSlot() {
-    pressedSlot?.classList?.remove('mobile-potion-tap-pressed');
-    pressedSlot = null;
-  }
-
-  function setPressedSlot(slot) {
-    clearPressedSlot();
-    if (!slot) return;
-    pressedSlot = slot;
-    slot.classList.add('mobile-potion-tap-pressed');
-  }
-
-  function stopBackdropGesture(ev) {
-    ev.preventDefault();
-    ev.stopImmediatePropagation();
-  }
+  function clearPressedSlot() { pressedSlot?.classList?.remove('mobile-potion-tap-pressed'); pressedSlot = null; }
+  function setPressedSlot(slot) { clearPressedSlot(); if (slot) { pressedSlot = slot; slot.classList.add('mobile-potion-tap-pressed'); } }
+  function stopBackdropGesture(ev) { ev.preventDefault(); ev.stopImmediatePropagation(); }
 
   function onPointerDown(ev) {
     if (!mobilePointerMode() || !isTouchLikePointer(ev)) return;
@@ -120,85 +99,49 @@
 
   function onPointerMove(ev) {
     if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
-    if (Math.hypot(ev.clientX - tapGesture.startX, ev.clientY - tapGesture.startY) > TAP_SLOP_PX) {
-      tapGesture.moved = true;
-      clearPressedSlot();
-    }
+    if (Math.hypot(ev.clientX - tapGesture.startX, ev.clientY - tapGesture.startY) > TAP_SLOP_PX) { tapGesture.moved = true; clearPressedSlot(); }
     stopBackdropGesture(ev);
   }
 
-  function commitTap(stage, x, y, originalMovePointer, originalScrollEntries, originalReleaseSelection, originalClose) {
+  function commitTap(stage, x, y, movePointer, scrollEntries, releaseSelection, close) {
     if (stage.type === 'root') {
-      const hit = hitSlot(stage.slots, x, y);
-      const direction = branchDirection(hit);
-      if (hit && direction) originalScrollEntries(direction);
+      const hit = hitSlot(stage.slots, x, y), direction = branchDirection(hit);
+      if (hit && direction) scrollEntries(direction);
       return;
     }
     if (stage.type === 'category') {
-      if (stage.cancel && hitSlot([stage.cancel], x, y)) { originalClose?.(); return; }
-      const hit = hitSlot(stage.slots, x, y);
-      const direction = categoryDirection(hit);
-      if (hit && direction) originalScrollEntries(direction);
+      if (stage.cancel && hitSlot([stage.cancel], x, y)) { close?.(); return; }
+      const hit = hitSlot(stage.slots, x, y), direction = categoryDirection(hit);
+      if (hit && direction) scrollEntries(direction);
       return;
     }
     if (stage.type === 'items') {
       const hit = hitSlot(stage.slots, x, y);
       if (!hit) return;
       const logical = logicalPointerForSlot(hit);
-      originalMovePointer(logical.x, logical.y);
-      originalReleaseSelection?.();
+      movePointer(logical.x, logical.y);
+      releaseSelection?.();
     }
-  }
-
-  function onPointerUp(ev, handlers) {
-    if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
-    const gesture = tapGesture;
-    tapGesture = null;
-    clearPressedSlot();
-    stopBackdropGesture(ev);
-    if (gesture.moved) return;
-    const stage = potionStage();
-    if (stage.key !== gesture.stageKey) return;
-    commitTap(stage, ev.clientX, ev.clientY, handlers.originalMovePointer, handlers.originalScrollEntries, handlers.originalReleaseSelection, handlers.originalClose);
-  }
-
-  function onPointerCancel(ev) {
-    if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
-    tapGesture = null;
-    clearPressedSlot();
-    stopBackdropGesture(ev);
   }
 
   function install() {
     if (installed) return;
     const arc = window._desktopSelectionArc;
     if (!arc?.movePointer || !arc?.scrollEntries || !arc?.openPotions || !arc?.releaseSelection) return;
-    installed = true;
-    originalArc = arc;
+    installed = true; originalArc = arc;
 
-    const originalMovePointer = arc.movePointer.bind(arc);
-    const originalScrollEntries = arc.scrollEntries.bind(arc);
-    const originalOpenPotions = arc.openPotions.bind(arc);
-    const originalReleaseSelection = arc.releaseSelection.bind(arc);
-    const originalClose = arc.close?.bind(arc);
-    const originalEndHeldSelection = arc.endHeldSelection?.bind(arc);
-    const handlers = { originalMovePointer, originalScrollEntries, originalReleaseSelection, originalClose };
-
+    const movePointer = arc.movePointer.bind(arc), scrollEntries = arc.scrollEntries.bind(arc), openPotions = arc.openPotions.bind(arc);
+    const releaseSelection = arc.releaseSelection.bind(arc), close = arc.close?.bind(arc), endHeldSelection = arc.endHeldSelection?.bind(arc);
     const overrides = {
-      movePointer(x, y) {
-        const stage = potionStage();
-        if (mobilePointerMode() && stage.type !== 'other') return;
-        return originalMovePointer(x, y);
-      },
-      openPotions(...args) { return originalOpenPotions(...args); },
+      movePointer(x, y) { if (mobilePointerMode() && potionStage().type !== 'other') return; return movePointer(x, y); },
+      openPotions(...args) { return openPotions(...args); },
       releaseSelection(...args) {
         const stage = potionStage();
         if (mobilePointerMode() && (stage.type === 'root' || stage.type === 'category')) return false;
-        return originalReleaseSelection(...args);
+        return releaseSelection(...args);
       },
-      endHeldSelection(...args) { return originalEndHeldSelection?.(...args); },
+      endHeldSelection(...args) { return endHeldSelection?.(...args); },
     };
-
     const boundMethods = new Map();
     wrappedArc = new Proxy(arc, {
       get(target, property) {
@@ -210,23 +153,35 @@
       },
       set(target, property, value) { return Reflect.set(target, property, value, target); },
     });
-
     window._desktopSelectionArc = wrappedArc;
     if (window.SharedSelectionArch === arc) window.SharedSelectionArch = wrappedArc;
 
     document.addEventListener('pointerdown', onPointerDown, { capture:true, passive:false });
-    document.addEventListener('pointermove', onPointerMove, { capture:true, passive:false });
-    document.addEventListener('pointerup', ev => onPointerUp(ev, handlers), { capture:true, passive:false });
-    document.addEventListener('pointercancel', onPointerCancel, { capture:true, passive:false });
+    document.addEventListener('pointermove', ev => {
+      if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+      if (Math.hypot(ev.clientX - tapGesture.startX, ev.clientY - tapGesture.startY) > TAP_SLOP_PX) { tapGesture.moved = true; clearPressedSlot(); }
+      stopBackdropGesture(ev);
+    }, { capture:true, passive:false });
+    document.addEventListener('pointerup', ev => {
+      if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+      const gesture = tapGesture; tapGesture = null; clearPressedSlot(); stopBackdropGesture(ev);
+      if (gesture.moved) return;
+      const stage = potionStage();
+      if (stage.key !== gesture.stageKey) return;
+      commitTap(stage, ev.clientX, ev.clientY, movePointer, scrollEntries, releaseSelection, close);
+    }, { capture:true, passive:false });
+    document.addEventListener('pointercancel', ev => {
+      if (!tapGesture || ev.pointerId !== tapGesture.pointerId) return;
+      tapGesture = null; clearPressedSlot(); stopBackdropGesture(ev);
+    }, { capture:true, passive:false });
 
     const style = document.createElement('style');
     style.id = 'mobilePotionTapStyles';
     style.textContent = `.arc-slot.mobile-potion-tap-pressed:not(.arc-arrow){filter:brightness(1.24)!important;outline:2px solid rgba(255,255,255,.72);outline-offset:2px;}`;
     document.head.appendChild(style);
 
-    window.MobilePotionCategoryDrag = Object.freeze({
-      diagnostics: () => ({ installed, mode:'tap-only', mobilePointerMode:mobilePointerMode(), stage:potionStage().type, tapGesture:tapGesture ? { ...tapGesture } : null, tapSlopPx:TAP_SLOP_PX, hitPadPx:HIT_PAD_PX }),
-    });
+    window.MobilePotionTapNavigation = Object.freeze({ diagnostics: () => ({ installed, mode:'tap-only', mobilePointerMode:mobilePointerMode(), stage:potionStage().type, tapGesture:tapGesture ? { ...tapGesture } : null, tapSlopPx:TAP_SLOP_PX, hitPadPx:HIT_PAD_PX }) });
+    window.MobilePotionCategoryDrag = window.MobilePotionTapNavigation; // Temporary compatibility alias for existing diagnostics/bookmarks.
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once:true });
