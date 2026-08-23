@@ -46,7 +46,8 @@
   });
 
   const COMBO_ROTATION_DEG = Object.freeze({ 1: -90, 2: -45, 3: 0 });
-  const COMBAT_BUTTON_IDS = Object.freeze({ 1: 'btnAction1', 2: 'btnAction2' });
+  const COMBAT_ACTION_BY_SLOT = Object.freeze({ 1: 'cut', 2: 'slash' }); // Maps Combat.input slots to the semantic weapon actions game.js places on the arch.
+  const ACTION_BUTTON_IDS = Object.freeze(['btnAction1', 'btnAction2', 'btnAction3']); // Buttons world context can repopulate/reorder.
 
   function injectStyles() {
     if (document.getElementById('actionArchIconStyles')) return;
@@ -355,8 +356,6 @@
     ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
 
-    // Convert whatever dark/antialiased pixels the source carries to a clean
-    // white silhouette while preserving source alpha.
     ctx.globalCompositeOperation = 'source-in';
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, size, size);
@@ -368,9 +367,6 @@
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // Punch a soft transparent channel through the melee symbol behind the
-    // numeral, then clear a crisp inner channel too. This creates the
-    // disconnected-overlap/celtic-knot read instead of letting lines cross.
     ctx.globalCompositeOperation = 'destination-out';
     ctx.save();
     ctx.filter = 'blur(1.6px)';
@@ -384,7 +380,6 @@
     ctx.strokeText(numeral, size / 2, size / 2 + 2);
     ctx.fillText(numeral, size / 2, size / 2 + 2);
 
-    // Draw the numeral itself after the transparent moat has been cut.
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = 'none';
     ctx.fillStyle = '#fff';
@@ -421,36 +416,45 @@
     return { node: createX(), key: `x:${slotId}:${abilityId || 'empty'}:${type || 'unknown'}`, label: abilityId ? `${def?.label || abilityId} icon unavailable` : 'No ability slotted' };
   }
 
-  function combatActionBarActive() {
-    const first = document.getElementById('btnAction1');
-    const second = document.getElementById('btnAction2');
-    if (!first || !second || !window.Combat?.loadout) return false;
-    const firstAction = String(first.dataset.action || '').toLowerCase();
-    const secondAction = String(second.dataset.action || '').toLowerCase();
-    if ((firstAction === 'cut' && secondAction === 'slash') || (firstAction === 'slash' && secondAction === 'cut')) return true;
-    const meleeTarget = document.getElementById('btnMeleeAutoTarget');
-    return Boolean(meleeTarget && !meleeTarget.classList.contains('abt-hidden') && firstAction && secondAction);
+  function actionButtons() {
+    return ACTION_BUTTON_IDS.map(id => document.getElementById(id)).filter(Boolean);
   }
 
-  function renderCombatButton(slotIndex) {
-    const button = document.getElementById(COMBAT_BUTTON_IDS[slotIndex]);
-    if (!button) return;
+  function combatButtonForSlot(slotIndex) {
+    const action = COMBAT_ACTION_BY_SLOT[slotIndex];
+    if (!action || !window.Combat?.loadout) return null;
+    return actionButtons().find(button => !button.classList.contains('abt-hidden') && String(button.dataset.action || '').toLowerCase() === action) || null;
+  }
 
-    if (!combatActionBarActive()) {
+  function clearStaleCombatOwnership(activeButtons) {
+    actionButtons().forEach(button => {
+      if (activeButtons.has(button)) return;
       button.classList.remove('combat-dual-input', 'combat-hold-flipped');
       button.removeAttribute('data-combat-icon-signature');
-      return;
-    }
+      button.removeAttribute('data-combat-slot');
+      const contextLabel = button.querySelector('.abt-label')?.textContent?.trim(); // Restores the world action's accessible name after combat previously owned this physical button.
+      if (contextLabel) button.setAttribute('aria-label', contextLabel);
+      [...button.children].forEach(child => {
+        if (child.classList?.contains('combat-hold-exponent')) child.remove();
+      });
+      const host = button.querySelector('.abt-icon');
+      if (host) host.style.visibility = '';
+    });
+  }
 
+  function renderCombatButton(slotIndex, button) {
+    if (!button) return;
     const host = button.querySelector('.abt-icon');
     if (!host) return;
+
     const tap = mainSymbolFor(`tap${slotIndex}`);
     const hold = mainSymbolFor(`hold${slotIndex}`);
     const holding = Boolean(window.Combat?.input?.getState?.(slotIndex)?.holding);
-    const signature = `${tap.key}|${hold.key}|${holding ? 1 : 0}`;
+    const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}|${holding ? 1 : 0}`;
 
     button.classList.add('combat-dual-input');
     button.classList.toggle('combat-hold-flipped', holding);
+    button.dataset.combatSlot = String(slotIndex);
     const accessibleLabel = `${tap.label}; hold: ${hold.label}`;
     if (button.getAttribute('aria-label') !== accessibleLabel) button.setAttribute('aria-label', accessibleLabel);
     if (button.dataset.combatIconSignature === signature && host.querySelector('.combat-coin')) return;
@@ -469,8 +473,6 @@
     frontMain.appendChild(tap.node);
     const exponent = document.createElement('span');
     exponent.className = 'combat-hold-exponent';
-    // mainSymbolFor already returns an X if a hold slot is empty or if its
-    // purpose-built image (including future defensive_attack.png) is absent.
     exponent.appendChild(hold.node.cloneNode(true));
     front.append(frontMain, exponent);
 
@@ -484,12 +486,18 @@
     inner.append(front, back);
     coin.appendChild(inner);
     host.replaceChildren(coin);
+    host.style.visibility = 'visible';
   }
 
   function refreshCombatButtons() {
     installCombatActionTracker();
-    renderCombatButton(1);
-    renderCombatButton(2);
+    const assignments = new Map(); // slot -> current physical button after world-context ordering.
+    [1, 2].forEach(slotIndex => {
+      const button = combatButtonForSlot(slotIndex);
+      if (button) assignments.set(slotIndex, button);
+    });
+    clearStaleCombatOwnership(new Set(assignments.values()));
+    assignments.forEach((button, slotIndex) => renderCombatButton(slotIndex, button));
   }
 
   function refreshStaticIcons() {
@@ -510,11 +518,17 @@
 
   function debugSnapshot() {
     const combat = window.Combat;
+    const assignments = Object.fromEntries([1, 2].map(slotIndex => [
+      `slot${slotIndex}`,
+      combatButtonForSlot(slotIndex)?.id || null,
+    ]));
     return {
       installed: Boolean(observer),
       iconBase: ICON_BASE,
       icons: Object.fromEntries(ICON_FILES.map(file => [file, iconLoadState.get(file)?.state || 'not-requested'])),
-      combatActive: combatActionBarActive(),
+      combatActive: Boolean(assignments.slot1 || assignments.slot2),
+      assignments,
+      actions: Object.fromEntries(actionButtons().map(button => [button.id, button.dataset.action || null])),
       loadout: combat?.loadout?.get?.() || null,
       input1: combat?.input?.getState?.(1) || null,
       input2: combat?.input?.getState?.(2) || null,
@@ -553,6 +567,7 @@
     refresh: queueRefresh,
     debugSnapshot,
     files: ICON_FILES,
+    combatButtonForSlot,
     get iconBase() { return ICON_BASE; },
   };
 
