@@ -1,6 +1,6 @@
 // Color-code the four melee combat bindings without changing attack logic.
-// Loaded after the action-arch artwork/fix modules so it can tint whatever
-// symbol each slot currently owns, including rebuilt DOM during movement.
+// Loaded after the action-arch artwork/fix modules so it can tint whichever
+// physical buttons currently own Cut/Slash, including context-driven reordering.
 (() => {
   'use strict';
   if (window.ActionArchSlotColors?.installed) return;
@@ -33,23 +33,26 @@
     root.style.setProperty('--combat-slot-color', color);
 
     // Combo uses a separate white numeral overlay; tint only its symbol image.
-    root.querySelectorAll('img.action-arch-png, img.combat-combo-raster, img.action-arch-numbered-raster, .action-arch-combo-fallback > img, .action-arch-combo-layered > img').forEach(image => {
+    root.querySelectorAll('img.action-arch-png, img.combat-combo-raster, img.action-arch-numbered-raster, .action-arch-combo-layered > img').forEach(image => {
       image.style.filter = filter;
       image.dataset.combatSlotColor = slotId;
     });
 
-    // Keep the combo count white; tint only true empty-slot X text and the
-    // legacy fallback numeral path if that path is ever used.
-    root.querySelectorAll('.combat-slot-x, .action-arch-combo-fallback > span').forEach(text => {
+    // Keep the combo count white; tint only true empty-slot X text.
+    root.querySelectorAll('.combat-slot-x').forEach(text => {
       text.style.color = color;
       text.dataset.combatSlotColor = slotId;
     });
   }
 
+  function combatButton(slotIndex) {
+    return window.ActionArchIcons?.combatButtonForSlot?.(slotIndex)
+      || document.querySelector(`#actionStack button[data-combat-slot="${slotIndex}"]`)
+      || null;
+  }
+
   function colorCombatButton(slotIndex) {
-    const button = document.getElementById(`btnAction${slotIndex}`);
-    // Ranged Action 2 can temporarily be the quiver selector; only tint the
-    // actual two-sided combat coin, never potion/ammo utility controls.
+    const button = combatButton(slotIndex);
     const coin = button?.querySelector?.('.combat-coin');
     if (!button?.classList?.contains('combat-dual-input') || !coin) return;
 
@@ -70,15 +73,15 @@
   function install() {
     applySlotColors();
 
-    // Both the game and the arch decorators rebuild button children while the
-    // player moves or changes loadout. Mutation observers run before paint, so
-    // tinting here keeps those rebuilds from flashing white between frames.
+    // Both the game and the arch decorators rebuild/reorder buttons while the
+    // player moves. Mutation observers run before paint, so tint the semantic
+    // combat slots rather than assuming they still occupy physical buttons 1/2.
     observer = new MutationObserver(applySlotColors);
     observer.observe(document.body, {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ['class'],
+      attributeFilter: ['class', 'data-action', 'data-combat-slot'],
     });
 
     window.addEventListener('hobunji-combat-input-state', applySlotColors);
@@ -93,8 +96,9 @@
     debugSnapshot: () => ({
       colors: { ...SLOT_COLORS },
       observing: Boolean(observer),
-      action1Combat: Boolean(document.getElementById('btnAction1')?.querySelector('.combat-coin')),
-      action2Combat: Boolean(document.getElementById('btnAction2')?.querySelector('.combat-coin')),
+      slot1Button: combatButton(1)?.id || null,
+      slot2Button: combatButton(2)?.id || null,
+      actions: Object.fromEntries(['btnAction1','btnAction2','btnAction3'].map(id => [id, document.getElementById(id)?.dataset?.action || null])),
     }),
   };
 
