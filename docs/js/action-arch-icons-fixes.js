@@ -309,7 +309,9 @@
     window.addEventListener('hobunji-combat-input-state', queueRefresh);
     window.addEventListener('hobunjiPlayerReady', queueRefresh);
     document.addEventListener('hobunji-ranged-ammo-change', queueRefresh);
-    document.fonts?.ready?.then?.(() => { rasterCache.clear(); queueRefresh(); }).catch?.(() => {});
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(() => { rasterCache.clear(); queueRefresh(); }).catch(() => {});
+    }
     observer = new MutationObserver(queueRefresh);
     observer.observe(document.body, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['data-action','data-label','aria-label','class','title'] });
     window.setInterval(queueRefresh, 100); // Mirrors the base module's cheap dynamic-loadout watcher.
