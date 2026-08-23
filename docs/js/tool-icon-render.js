@@ -65,7 +65,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIconFixes?.installed || document.querySelector('script[data-action-arch-icon-fixes]')) return;
-  const src = 'js/action-arch-icons-fixes.js?v=20260823d';
+  const src = 'js/action-arch-icons-fixes.js?v=20260823e';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icon-fixes="1" src="${src}"><\/script>`);
     return;
@@ -84,7 +84,7 @@
 (() => {
   'use strict';
   if (window.ActionArchSlotColors?.installed || document.querySelector('script[data-action-arch-slot-colors]')) return;
-  const src = 'js/action-arch-slot-colors.js?v=20260823a';
+  const src = 'js/action-arch-slot-colors.js?v=20260823b';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-slot-colors="1" src="${src}"><\/script>`);
     return;
