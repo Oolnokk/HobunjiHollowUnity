@@ -217,7 +217,6 @@
     }
     return `<img src="${dataURL}" class="tool-sprite-icon" alt="${altText || ''}" style="width:${size};height:${size};display:inline-block;vertical-align:middle;object-fit:contain;">`;
   }
-
   // Kicks off loading for a batch of sprite paths so icons are ready by the
   // time the UI first asks for them, instead of showing one frame of the
   // emoji fallback. Safe to call repeatedly with overlapping paths.
@@ -246,4 +245,146 @@
   script.async = false;
   script.onerror = () => window.__farmLog?.('[held-layer] render-order module failed to load', 'error');
   document.head.appendChild(script);
+})();
+
+// Named HUD action icons. Keep this at the existing pre-game.js bootstrap so
+// static arch buttons and game.js-rebuilt action buttons share one resolver.
+(() => {
+  'use strict';
+
+  const ACTION_ICON_BASE = '/assets/hud/action_icons/'; // Prefix used when the resolver builds each named PNG URL.
+  const ACTION_ICON_BY_ID = Object.freeze({ // Stable outer-arch IDs use this map before any label matching.
+    btnAmmoSelect: 'ammo_select.png',
+    potionBtn: 'potion_select.png',
+    toolBtn: 'tool_select.png',
+    btnUnequipHeld: 'unequip.png',
+  });
+  const ACTION_ICON_RULES = Object.freeze([ // Dynamic/rebuilt arch actions use these filename-derived label aliases.
+    [/(^|\s)(ammo select|select ammo)(\s|$)/i, 'ammo_select.png'],
+    [/(^|\s)(potion select|select potion)(\s|$)/i, 'potion_select.png'],
+    [/(^|\s)(tool select|select tool)(\s|$)/i, 'tool_select.png'],
+    [/(^|\s)(put away|unequip)(\s|$)/i, 'unequip.png'],
+    [/(^|\s)(melee draw|draw melee)(\s|$)/i, 'draw_melee.png'],
+    [/(^|\s)(ranged draw|draw ranged)(\s|$)/i, 'draw_ranged.png'],
+    [/(^|\s)(pick draw|draw pick)(\s|$)/i, 'draw_pick.png'],
+    [/(^|\s)(shovel draw|draw shovel)(\s|$)/i, 'draw_shovel.png'],
+  ]);
+  const ACTION_ICON_SELECTOR = '.archAction, #btnAmmoSelect, #potionBtn, #toolBtn, #btnUnequipHeld'; // Elements rechecked after HUD mutations.
+  let refreshQueued = false; // Coalesces game.js HUD rebuild bursts into one icon pass.
+  let observer = null; // Holds the arch observer so the debug API can report installation state.
+
+  function normalizeDescriptor(value) {
+    return String(value || '')
+      .replace(/[_&/\\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function archLabel(element) {
+    const explicit = [
+      element?.dataset?.action,
+      element?.dataset?.label,
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+    ].filter(Boolean).join(' ');
+    const directLabels = [...(element?.children || [])]
+      .filter(child => !child.classList?.contains('abt'))
+      .map(child => child.textContent || '')
+      .join(' ');
+    return normalizeDescriptor(`${explicit} ${directLabels || element?.textContent || ''}`);
+  }
+
+  function resolveActionIcon(element) {
+    const byId = ACTION_ICON_BY_ID[element?.id];
+    if (byId) return byId;
+    const descriptor = archLabel(element);
+    for (const [pattern, file] of ACTION_ICON_RULES) {
+      if (pattern.test(descriptor)) return file;
+    }
+    return null;
+  }
+
+  function iconHost(element) {
+    if (!element) return null;
+    if (element.id === 'toolBtn') return element.querySelector('#toolBtnIcon') || element.querySelector('.abt');
+    return element.querySelector('.abt') || element;
+  }
+
+  function reportLoadFailure(file, element) {
+    const message = `[action-arch-icons] Failed to load ${file} for ${element?.id || archLabel(element) || 'unknown action'}.`;
+    if (typeof window.__farmLog === 'function') window.__farmLog(message, 'error');
+  }
+
+  function applyActionIcon(element) {
+    const file = resolveActionIcon(element);
+    if (!file) return false;
+    const host = iconHost(element);
+    if (!host) return false;
+    const existing = host.querySelector?.(`img[data-action-arch-icon="${file}"]`);
+    if (existing) return true;
+
+    const image = document.createElement('img');
+    image.src = `${ACTION_ICON_BASE}${file}`;
+    image.alt = archLabel(element) || file.replace(/\.png$/i, '').replace(/_/g, ' ');
+    image.className = 'action-arch-png';
+    image.dataset.actionArchIcon = file;
+    image.draggable = false;
+    image.style.cssText = 'width:78%;height:78%;display:block;margin:auto;object-fit:contain;pointer-events:none;';
+    image.addEventListener('error', () => reportLoadFailure(file, element), { once: true });
+
+    host.replaceChildren(image);
+    if (host.id === 'toolBtnIcon') {
+      host.style.display = 'inline-flex';
+      host.style.alignItems = 'center';
+      host.style.justifyContent = 'center';
+      host.style.width = '100%';
+      host.style.height = '100%';
+    }
+    element.dataset.actionArchIcon = file;
+    return true;
+  }
+
+  function refresh() {
+    refreshQueued = false;
+    document.querySelectorAll(ACTION_ICON_SELECTOR).forEach(applyActionIcon);
+  }
+
+  function queueRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    requestAnimationFrame(refresh);
+  }
+
+  function debugSnapshot() {
+    return [...document.querySelectorAll(ACTION_ICON_SELECTOR)].map(element => ({
+      id: element.id || null,
+      label: archLabel(element),
+      resolvedIcon: resolveActionIcon(element),
+      appliedIcon: element.dataset.actionArchIcon || null,
+    }));
+  }
+
+  function install() {
+    if (observer) return;
+    refresh();
+    observer = new MutationObserver(queueRefresh);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['data-action', 'data-label', 'aria-label', 'title'],
+    });
+  }
+
+  window.ActionArchIcons = Object.freeze({
+    refresh,
+    resolve: resolveActionIcon,
+    debugSnapshot,
+    get installed() { return Boolean(observer); },
+    files: Object.freeze([...new Set([...Object.values(ACTION_ICON_BY_ID), ...ACTION_ICON_RULES.map(([, file]) => file)])]),
+  });
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+  else install();
 })();
