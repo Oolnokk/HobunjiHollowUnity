@@ -17,7 +17,7 @@
     FLIP_S: 0.10,
     SPRAY_S: 0.16,
     RECOVER_S: 0.18,
-    RANGE_TILES: 1.8,
+    RANGE_TILES: 2.7,
     HALF_CONE_DEG: 36,
     REAR_OFFSET_TILES: 0.36,
     CHOKED_STAMINA_AMOUNT: 24, // Legacy tuning name; Choked Stamina is the old name for today's Winded Stamina.
@@ -52,6 +52,14 @@
     const key = creature?.creatureKey; // Used to include normal/Den-Mother Grehlrs and migrated label-only actors.
     const label = creature?.def?.label;
     return key === 'grehlr' || key === 'grehlr-den-mother' || label === 'Grehlr' || label === 'Grehlr Den-Mother';
+  }
+
+  function isMediumCompanionGrehlr(creature) {
+    if (!creature?.isCompanion || !isGrehlr(creature)) return false;
+    const followupHelper = window.HobunjiGrehlrDrenkirraFollowup?.isMediumCompanion; // Used to share the companion module's exact Medium-size rule when available.
+    if (typeof followupHelper === 'function') return followupHelper(creature);
+    const sizeClass = window.CreatureGenetics?.creatureSizeClass?.('grehlr', creature.genotype); // Used as a fallback if stink selection runs before the follow-up helper is available.
+    return !sizeClass || sizeClass === 'medium';
   }
 
   function isBurrowProtected(entity) {
@@ -105,8 +113,8 @@
   }
 
   function sprayWorldY(creature) {
-    const groupY = creature.avatarRef?.group?.position?.y ?? 0; // Used as a body-height spray origin rather than a ground-level puff.
-    return groupY + Math.max(0.08, (creature.halfHeight || 0.5) * 0.15);
+    const groupY = creature.avatarRef?.group?.position?.y ?? 0; // Used as the creature-root reference for the rear spray origin.
+    return groupY + Math.max(0.03, (creature.halfHeight || 0.5) * 0.05); // Lowered from 15% of half-height / 0.08 minimum so the spray leaves near the Grehlr's rear instead of mid-body.
   }
 
   function spawnParticle(creature, state, deps) {
@@ -188,7 +196,7 @@
   }
 
   function resolveSpray(creature, state, deps) {
-    const rangePx = tuning.RANGE_TILES * deps.TILE; // Used as the gameplay cone's short forward reach from the Grehlr's rear.
+    const rangePx = tuning.RANGE_TILES * deps.TILE; // Used as the gameplay cone's authored reach; now 2.7 tiles (150% of the original 1.8).
     const halfConeRad = tuning.HALF_CONE_DEG * Math.PI / 180;
     state.hitCount = 0;
     state.windedApplied = 0;
@@ -222,7 +230,8 @@
     const phaseDuration = state.stage === 'flip' ? tuning.FLIP_S : state.stage === 'spray' ? tuning.SPRAY_S : tuning.RECOVER_S;
     const remaining = Math.max(0, phaseDuration - state.t);
     const status = state.hitCount > 0 ? `Winded Stamina +${state.windedApplied || 0}` : 'no cone hit';
-    const text = `Grehlr Stink: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.particles.length}\nhits ${state.hitCount || 0} | ${status}\nburrow protected ${isBurrowProtected(creature) ? 'YES' : 'no'} | color #8A9A3D`;
+    const actorKind = creature?.isCompanion ? (isMediumCompanionGrehlr(creature) ? 'medium companion' : 'companion') : 'wild';
+    const text = `Grehlr Stink: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.particles.length}\nhits ${state.hitCount || 0} | ${status}\n${actorKind} | range ${tuning.RANGE_TILES.toFixed(2)} tiles\nburrow protected ${isBurrowProtected(creature) ? 'YES' : 'no'} | color #8A9A3D`;
     if (text === lastDebugText) return;
     const element = ensureDebugElement();
     if (!element) return;
@@ -301,6 +310,7 @@
 
   function shouldUseStink(creature, attackId, context, deps) {
     if (!isGrehlr(creature) || (attackId !== 'pounce' && attackId !== 'grehlrBurrow')) return false;
+    if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return false; // Medium animal companions share the wild Grehlr stink selector; other companion sizes keep their normal behavior.
     const target = context?.target;
     if (!targetIsUsable(creature, target) || !deps?.TILE) return false;
     const distanceTiles = Math.hypot(target.x - creature.x, target.y - creature.y) / deps.TILE;
@@ -415,6 +425,7 @@
     tuning,
     STINK_OIL_COLOR,
     isBurrowProtected,
+    isMediumCompanionGrehlr,
     staminaAfflictionId: 'windedStamina',
   }; // Used by mobile/manual diagnostics and the compatibility loader's already-loaded check.
 
