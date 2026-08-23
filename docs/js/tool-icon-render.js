@@ -65,7 +65,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIconFixes?.installed || document.querySelector('script[data-action-arch-icon-fixes]')) return;
-  const src = 'js/action-arch-icons-fixes.js?v=20260823b';
+  const src = 'js/action-arch-icons-fixes.js?v=20260823c';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icon-fixes="1" src="${src}"><\/script>`);
     return;
