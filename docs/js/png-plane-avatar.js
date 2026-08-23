@@ -364,76 +364,26 @@
       centroidPx: { ...headMask.centroidPx },
       boundsPx: { top: headMask.top, bottom: coherentBottom, left: headMask.left, right: headMask.right },
       method: 'head-sprite-alpha-centroid',
-      headMask,
     };
   }
 
-  // Classifies EVERY pixel of the (width x height) canvas — including ones
-  // fully transparent in both source masks — as head-bone-owned or
-  // torso-bone-owned, by nearest-pixel proximity to the real painted
-  // anatomy, via a multi-source BFS ("brushfire") flood fill seeded
-  // simultaneously from every opaque head-mask pixel (label 1) and every
-  // opaque avatar pixel NOT already claimed by the head mask (label 2,
-  // "body"). Expanding both seed sets in lockstep one ring at a time is
-  // exactly a nearest-neighbor Voronoi partition in grid-step distance:
-  // every pixel ends up owned by whichever real, painted anatomy is
-  // actually closest to it, following the real silhouette's contour
-  // instead of an arbitrary straight line.
-  //
-  // This exists because skin weight used to come from a smoothstep over Y
-  // position alone: shared by every vertex regardless of which texture
-  // layer (base body vs. a hood/hat cosmetic drawn on top of it at the
-  // same pixel) contributed that pixel, and blurred into fractional (0,1)
-  // weights near the neck. Linear blend skinning only looks right when the
-  // two blended bones are close in orientation — this rig's neck bone can
-  // land 90°+ off from the torso bone in some poses (a weapon idle
-  // stance's body-yaw stacking with head-aim, confirmed live with the
-  // Pixel Probe), and any vertex with partial weight at that kind of angle
-  // mismatch collapses into scattered "floating pixel" garbage instead of
-  // a sensible in-between pose — the actual "ragged floating pixels" bug.
-  // A binary label per pixel (not a gradient) removes every fractional
-  // weight in the mesh, and running it from the real silhouette rather
-  // than a flat Y cutoff means a cosmetic that curves or extends past the
-  // bare head (a draping hood, a tall fin) still partitions along its own
-  // shape instead of tearing wherever a straight line happens to cross it.
-  function computeHeadBodyLabelMap(headMask, bodyMask) {
-    const width = bodyMask.width, height = bodyMask.height;
-    const size = width * height;
-    const label = new Uint8Array(size); // 0 = unowned (yet), 1 = head, 2 = body
-    const queue = new Int32Array(size);
-    let queueLength = 0;
-    // headMask is rendered from its own (typically same-sized) canvas — a
-    // mismatched size would only happen if a caller passed differently
-    // configured canvases, in which case nearest-index sampling still
-    // degrades gracefully rather than reading out of bounds.
-    const seed = (mask, value, skipIfLabeled) => {
-      if (!mask?.data) return;
-      const mw = mask.width, mh = mask.height, threshold = mask.alphaThreshold;
-      for (let y = 0; y < height; y++) {
-        const my = mh === height ? y : Math.min(mh - 1, Math.round(y * mh / height));
-        for (let x = 0; x < width; x++) {
-          const mx = mw === width ? x : Math.min(mw - 1, Math.round(x * mw / width));
-          const idx = y * width + x;
-          if (skipIfLabeled && label[idx]) continue;
-          if (mask.data[(my * mw + mx) * 4 + 3] > threshold) {
-            label[idx] = value;
-            queue[queueLength++] = idx;
-          }
-        }
-      }
-    };
-    seed(headMask, 1, false);
-    seed(bodyMask, 2, true); // "body" seeds are every opaque bare-body/clothing pixel not already claimed by the head
-    for (let read = 0; read < queueLength; read++) {
-      const idx = queue[read];
-      const value = label[idx];
-      const x = idx % width, y = (idx / width) | 0;
-      if (x > 0 && !label[idx - 1]) { label[idx - 1] = value; queue[queueLength++] = idx - 1; }
-      if (x < width - 1 && !label[idx + 1]) { label[idx + 1] = value; queue[queueLength++] = idx + 1; }
-      if (y > 0 && !label[idx - width]) { label[idx - width] = value; queue[queueLength++] = idx - width; }
-      if (y < height - 1 && !label[idx + width]) { label[idx + width] = value; queue[queueLength++] = idx + width; }
-    }
-    return { data: label, width, height };
+  // The optional head-cosmetics canvas is rendered from the base head PLUS
+  // hair/hood/hat (see game.js's headCosmeticsCanvas / portrait-utils.js's
+  // onlyHeadAndCosmetics) — everything that should rotate rigidly with the
+  // head. Its coherent bottom edge is how far DOWN a tall/draping cosmetic
+  // (a fin-shaped hood, a long mantle) actually extends, which can reach
+  // well past the bare head sprite alone. Returns null (meaning "no
+  // adjustment, use the default blend band") if the canvas is missing or
+  // unreadable — this is a pure enhancement, never required.
+  function detectHeadCosmeticsBottomPx(headCosmeticsCanvas, alphaThreshold) {
+    const mask = scanOpaquePixelMask(headCosmeticsCanvas, alphaThreshold);
+    if (!mask) return null;
+    return coherentBottomOf(mask) + .5;
+  }
+
+  function smoothstep01(value) {
+    const t = Math.max(0, Math.min(1, Number(value) || 0));
+    return t * t * (3 - 2 * t);
   }
 
   // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
@@ -443,6 +393,10 @@
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
+    // A broad 30%-of-height falloff suits the painted cutout style better
+    // than a narrow neck hinge: shoulders and upper torso share a diminishing
+    // amount of head rotation instead of stopping abruptly at one rigid seam.
+    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
     const mask = options.opaqueMask;
     const left = mask?.left ?? 0, right = mask?.right ?? ((mask?.width || 1) - 1);
     const top = mask?.top ?? 0, bottom = mask?.bottom ?? ((mask?.height || 1) - 1);
@@ -450,48 +404,29 @@
     const cropWidthPx = Math.max(1, right - left + 1), cropHeightPx = Math.max(1, bottom - top + 1);
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
-    // Per-pixel head(1)/body(2) ownership — see computeHeadBodyLabelMap.
-    // No gradient: every cell is 100% one bone or the other. Cells are
-    // "quad soup" (each cell's 6 vertices below are its own, never shared
-    // with a neighboring cell), so a hard cut at a CELL boundary just
-    // hinges — the two rigid pieces separate cleanly when the bones
-    // rotate apart, no stretching. Sampling weight per *vertex* instead
-    // (one corner head, the opposite corner body) would keep that stretch
-    // trapped inside a single still-rigid quad, which is exactly the
-    // "torn pixel" artifact this is avoiding: every corner of a cell must
-    // agree, so the weight is decided once per cell (majority vote over
-    // the label map, like cellHasOpaquePixel) rather than per corner.
-    // Falls back to "everything is torso except a small margin above the
-    // neck pivot" only if no label map was supplied at all (shouldn't
-    // happen via buildSkinnedSinglePlaneAssembly, which always builds
-    // one, but keeps this function safe to call directly).
-    const labelMap = options.headBodyLabelMap;
+    // Default ramp: weight 0 at neckLocal.y - .55*blendHeight, saturating to
+    // weight 1 at neckLocal.y + .45*blendHeight. A tall/draping head cosmetic
+    // (fin-shaped hood, long mantle) can extend further down than that
+    // default saturation point — options.headWeightFloorY (from
+    // detectHeadCosmeticsBottomPx, the measured bottom of head+hair+hood+hat
+    // combined) shifts the WHOLE ramp down by just enough that its 1.0 point
+    // covers that real extent instead, same width, so a character whose
+    // cosmetics fit inside the default reach gets pixel-identical behavior
+    // to before this existed.
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
     const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
-    const cellHeadWeight = (column, row) => {
-      if (!labelMap?.data) {
-        const centerY = top + (row + 0.5) / segmentsY * cropHeightPx;
-        return toModelY(centerY) >= neckLocal.y ? 1 : 0;
-      }
-      const x0 = Math.max(0, Math.floor(left + column / segmentsX * cropWidthPx));
-      const x1 = Math.min(labelMap.width - 1, Math.ceil(left + (column + 1) / segmentsX * cropWidthPx));
-      const y0 = Math.max(0, Math.floor(top + row / segmentsY * cropHeightPx));
-      const y1 = Math.min(labelMap.height - 1, Math.ceil(top + (row + 1) / segmentsY * cropHeightPx));
-      let headVotes = 0, bodyVotes = 0;
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          if (labelMap.data[y * labelMap.width + x] === 1) headVotes++;
-          else bodyVotes++;
-        }
-      }
-      return headVotes >= bodyVotes ? 1 : 0;
-    };
-    const appendVertex = (pixelX, pixelY, normalZ, headWeight) => {
+    const defaultRampEndY = neckLocal.y + blendHeight * .45;
+    const rampEndY = (Number.isFinite(options.headWeightFloorY) && options.headWeightFloorY < defaultRampEndY)
+      ? options.headWeightFloorY
+      : defaultRampEndY;
+    const rampStartY = rampEndY - blendHeight;
+    const appendVertex = (pixelX, pixelY, normalZ) => {
       const x = toModelX(pixelX);
       const y = toModelY(pixelY);
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
+      const headWeight = smoothstep01((y - rampStartY) / blendHeight);
       skinIndices.push(0, 1, 0, 0);
       skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
@@ -524,8 +459,7 @@
       const y1 = top + (row + 1) / segmentsY * cropHeightPx;
       const front = [[x0, y1], [x1, y1], [x0, y0], [x1, y1], [x1, y0], [x0, y0]];
       const vertices = normalZ > 0 ? front : [...front].reverse();
-      const headWeight = cellHeadWeight(column, row);
-      for (const [pixelX, pixelY] of vertices) appendVertex(pixelX, pixelY, normalZ, headWeight);
+      for (const [pixelX, pixelY] of vertices) appendVertex(pixelX, pixelY, normalZ);
     };
     for (const cell of visibleCells) appendCell(cell, 1);
     const frontVertexCount = positions.length / 3;
@@ -547,9 +481,9 @@
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData = {
-      segmentsX, segmentsY, neckLocal: { ...neckLocal },
+      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
       opaqueBoundsPx: { left, right, top, bottom }, visibleCellCount: visibleCells.length,
-      hasHeadBodyLabelMap: !!labelMap?.data,
+      headWeightFloorY: options.headWeightFloorY ?? null, rampStartY, rampEndY,
     };
     return geometry;
   }
@@ -581,20 +515,18 @@
       y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
       z: 0,
     };
-    // Per-pixel head/body ownership map (see computeHeadBodyLabelMap) —
-    // seeded from the head mask detectHeadRigPixels already scanned
-    // (detectedHead.headMask) and, separately, config.bodyCanvas — a bare
-    // torso/arms (+ actual clothing, but no head/hair/hood/hat) render.
-    // Using that instead of the full composite opaqueMask for the body
-    // seed matters: a hood/hat/hair pixel that extends past the bare
-    // head's own silhouette is opaque in the full composite too, so it
-    // would immediately self-seed as "body" rather than being left
-    // unlabeled to inherit head-ness from its neighbors via the flood
-    // fill. Falls back to opaqueMask (the old behavior) if no
-    // config.bodyCanvas was supplied.
-    const bodyMask = config.bodyCanvas ? scanOpaquePixelMask(config.bodyCanvas, config.alphaThreshold) : opaqueMask;
-    const headBodyLabelMap = detectedHead.headMask ? computeHeadBodyLabelMap(detectedHead.headMask, bodyMask) : null;
-    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask, headBodyLabelMap });
+    // Optional: how far down hair/hood/hat combined actually extend (see
+    // detectHeadCosmeticsBottomPx) — widens the neck rig's full-head-weight
+    // zone to cover a tall/draping cosmetic instead of tearing partway down
+    // it. null (no config.headCosmeticsCanvas, or nothing readable in it)
+    // just falls back to the original fixed-fraction blend band untouched.
+    const headCosmeticsBottomPx = config.headCosmeticsCanvas
+      ? detectHeadCosmeticsBottomPx(config.headCosmeticsCanvas, config.alphaThreshold)
+      : null;
+    const headWeightFloorY = Number.isFinite(headCosmeticsBottomPx)
+      ? modelHeight / 2 - (headCosmeticsBottomPx / pxH) * modelHeight
+      : null;
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask, headWeightFloorY });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
@@ -629,6 +561,7 @@
       group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
       detectionMethod: detectedHead.method, opaqueBoundsPx: geometry.userData.opaqueBoundsPx,
+      headWeightFloorY,
     };
   }
 
@@ -748,8 +681,7 @@
       ? buildSkinnedSinglePlaneAssembly(THREE, {
           planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY,
           sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
-          headCanvas: options.headCanvas,
-          bodyCanvas: options.bodyCanvas,
+          headCanvas: options.headCanvas, headCosmeticsCanvas: options.headCosmeticsCanvas,
           alphaThreshold: options.neckAlphaThreshold,
           name: `${root.name}_skinned_plane_assembly`,
         })

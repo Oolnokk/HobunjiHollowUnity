@@ -8985,22 +8985,21 @@
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
-        // Bare torso/arms (+ actual clothing, but no head/hair/hood/hat) —
-        // the neck rig's OTHER anchor. Without this, a hood/hat/hair pixel
-        // that extends past the bare head's own silhouette would seed
-        // itself as "body" just by being opaque in the full composite,
-        // instead of inheriting head-ness from its neighbors (see
-        // computeHeadBodyLabelMap in png-plane-avatar.js).
-        const bodyCanvas = document.createElement('canvas');
-        bodyCanvas.width = bodyCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(bodyCanvas, profile, { omitHeadSpriteAndCosmetics: true, forceEyesOpen: true });
+        // Same idea, but including hair/hood/hat — lets the neck rig widen
+        // its full-head-weight zone to cover a tall/draping cosmetic (see
+        // buildSkinnedSinglePlaneAssembly's headCosmeticsCanvas handling in
+        // png-plane-avatar.js) instead of tearing where a fixed-fraction
+        // blend band would otherwise cut it off partway down.
+        const headCosmeticsCanvas = document.createElement('canvas');
+        headCosmeticsCanvas.width = headCosmeticsCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCosmeticsCanvas, profile, { onlyHeadAndCosmetics: true, forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, bodyCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, headCosmeticsCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -12628,11 +12627,12 @@
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
-        // Bare torso/arms (+ actual clothing, but no head/hair/hood/hat) —
-        // see makeNpcWalker's own bodyCanvas comment.
-        const bodyCanvas = document.createElement('canvas');
-        bodyCanvas.width = bodyCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(bodyCanvas, profile, { omitHeadSpriteAndCosmetics: true, forceEyesOpen: true });
+        // Same idea, but including hair/hood/hat — see makeNpcWalker's own
+        // headCosmeticsCanvas comment; lets the neck rig cover a tall/
+        // draping cosmetic instead of tearing partway down it.
+        const headCosmeticsCanvas = document.createElement('canvas');
+        headCosmeticsCanvas.width = headCosmeticsCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCosmeticsCanvas, profile, { onlyHeadAndCosmetics: true, forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
@@ -12640,7 +12640,7 @@
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, bodyCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, headCosmeticsCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
