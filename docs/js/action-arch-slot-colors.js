@@ -32,11 +32,14 @@
     root.dataset.combatSlotColor = slotId;
     root.style.setProperty('--combat-slot-color', color);
 
-    root.querySelectorAll('img.action-arch-png, img.combat-combo-raster, img.action-arch-numbered-raster, .action-arch-combo-fallback > img').forEach(image => {
+    // Combo uses a separate white numeral overlay; tint only its symbol image.
+    root.querySelectorAll('img.action-arch-png, img.combat-combo-raster, img.action-arch-numbered-raster, .action-arch-combo-fallback > img, .action-arch-combo-layered > img').forEach(image => {
       image.style.filter = filter;
       image.dataset.combatSlotColor = slotId;
     });
 
+    // Keep the combo count white; tint only true empty-slot X text and the
+    // legacy fallback numeral path if that path is ever used.
     root.querySelectorAll('.combat-slot-x, .action-arch-combo-fallback > span').forEach(text => {
       text.style.color = color;
       text.dataset.combatSlotColor = slotId;
