@@ -23,6 +23,8 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
   let debugWeatherOverride = null; // Read by updateRainState while Testing Arena weather buttons are active.
+  let _lastAtmosphereDebugKey = ''; // Used to suppress duplicate sky/weather entries in the mobile Debug log.
+  const thunderDebug = { triggers: 0, lastTriggerMs: 0, lastPitch: 1 }; // Exposed by getAtmosphereDebugState for thunder QA.
 
   const STORM_NAMES = [
     'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
@@ -169,6 +171,69 @@
     }
   }
 
+  // Time-of-day sky palette used by the outdoor overlay; RGB values are deliberately
+  // cooler than the existing warm scene-light tint so terrain stays readable beneath it.
+  const SKY_STOPS = [
+    [6.0,  24,  35,  65],  // pre-dawn blue
+    [6.5,  196, 98,  88],  // sunrise rose
+    [7.5,  126, 171, 207], // cool early morning
+    [9.0,  96,  165, 218], // blue morning
+    [12.0, 86,  176, 232], // bright noon
+    [15.0, 105, 174, 220], // late-day blue
+    [17.5, 210, 154, 101], // amber evening
+    [18.5, 215, 101, 88],  // sunset red-orange
+    [19.5, 101, 82, 132],  // purple dusk
+    [20.5, 40,  54,  88],  // early night
+    [22.0, 15,  25,  47],  // deep night
+  ];
+
+  function _mixChannel(value, target, amount) {
+    return value + (target - value) * amount;
+  }
+
+  function _computeRawSkyState() {
+    const calendar = deps.calendar;
+    const hour = window.CalendarSystem.getHour();
+    let r = SKY_STOPS[0][1], g = SKY_STOPS[0][2], b = SKY_STOPS[0][3];
+    for (let i = 0; i < SKY_STOPS.length - 1; i++) {
+      const [h0, r0, g0, b0] = SKY_STOPS[i];
+      const [h1, r1, g1, b1] = SKY_STOPS[i + 1];
+      if (hour >= h0 && hour <= h1) {
+        const t = (hour - h0) / (h1 - h0);
+        r = r0 + (r1 - r0) * t;
+        g = g0 + (g1 - g0) * t;
+        b = b0 + (b1 - b0) * t;
+        break;
+      }
+    }
+    if (hour >= SKY_STOPS[SKY_STOPS.length - 1][0]) {
+      [, r, g, b] = SKY_STOPS[SKY_STOPS.length - 1];
+    }
+
+    const activeRain = calendar.isRaining;
+    const activeStorm = activeRain && calendar.rainStrength >= 3;
+    const forecast = String(calendar.weather || 'clear').toLowerCase();
+    let kind = 'clear';
+    let weatherMix = 0;
+    let wr = 112, wg = 128, wb = 139;
+    if (activeStorm) {
+      kind = 'storm'; weatherMix = 0.72; wr = 48; wg = 65; wb = 84;
+    } else if (activeRain) {
+      kind = 'rain'; weatherMix = 0.48; wr = 89; wg = 108; wb = 124;
+    } else if (forecast === 'storm') {
+      kind = 'storm-clouds'; weatherMix = 0.22; wr = 77; wg = 94; wb = 110;
+    } else if (forecast === 'rain') {
+      kind = 'clouds'; weatherMix = 0.10;
+    }
+    r = _mixChannel(r, wr, weatherMix);
+    g = _mixChannel(g, wg, weatherMix);
+    b = _mixChannel(b, wb, weatherMix);
+
+    const phase = hour < 7.4 ? 'dawn' : hour < 17 ? 'day' : hour < 19.6 ? 'sunset' : 'night';
+    const alpha = activeStorm ? 0.58 : activeRain ? 0.50 : forecast === 'storm' ? 0.46 : 0.42;
+    return { r, g, b, a: alpha, kind, phase, hour };
+  }
+
   let _lastLightingOverlayTime = 0;
   function drawLightingOverlay() {
     const lctx = deps.lctx;
@@ -195,18 +260,27 @@
     }
 
     const { r, g, b, a } = getLightingState();
+    const sky = getSkyState();
     const W = rect.width;
     const H = rect.height;
 
-    // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
-    // screen-blend at low opacity adds warmth/brightness on clear days,
-    // multiply-blend once opacity climbs darkens normally toward dusk/night.
-    // The opacity transitions through near-zero at phase boundaries, hiding
-    // the blend-mode switch.
+    // Existing whole-frame lighting tint: warm at sunrise/sunset and dark at night.
     lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
     lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
     lctx.fillRect(0, 0, W, H);
     lctx.globalCompositeOperation = 'source-over';
+
+    // A separate sky-weighted layer makes the actual upper view visibly track
+    // dawn/day/sunset/night instead of leaving the static scene background in charge.
+    // It fades out before the lower frame so ground/character colors still come from
+    // Three.js lighting rather than being painted blue by the sky treatment.
+    const skyHeight = H * 0.74;
+    const skyGradient = lctx.createLinearGradient(0, 0, 0, skyHeight);
+    skyGradient.addColorStop(0, `rgba(${sky.r},${sky.g},${sky.b},${sky.a})`);
+    skyGradient.addColorStop(0.48, `rgba(${sky.r},${sky.g},${sky.b},${sky.a * 0.34})`);
+    skyGradient.addColorStop(1, `rgba(${sky.r},${sky.g},${sky.b},0)`);
+    lctx.fillStyle = skyGradient;
+    lctx.fillRect(0, 0, W, skyHeight);
 
     drawLanternMasks();
     drawFurnitureLightMasks();
@@ -273,24 +347,54 @@
   // gradually instead of snapping, most noticeably at the day-rollover
   // instant when getHour() jumps straight from ~22 back to 6.
   let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
+  let _skyR = 15, _skyG = 25, _skyB = 47, _skyA = 0.42; // Smoothed values read by drawLightingOverlay's sky gradient.
+  let _skyKind = 'clear', _skyPhase = 'night'; // Labels exposed through getAtmosphereDebugState for mobile QA.
   let _lightingInitialized = false;
   function _advanceSmoothedLighting(dt) {
     const raw = _computeRawLightingState();
+    const rawSky = _computeRawSkyState();
     if (!_lightingInitialized) {
       _lightR = raw.r; _lightG = raw.g; _lightB = raw.b; _lightA = raw.a;
+      _skyR = rawSky.r; _skyG = rawSky.g; _skyB = rawSky.b; _skyA = rawSky.a;
+      _skyKind = rawSky.kind; _skyPhase = rawSky.phase;
       _lightingInitialized = true;
-      return;
+    } else {
+      const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
+      const k = 1 - Math.exp(-dt / tc);
+      _lightR += (raw.r - _lightR) * k;
+      _lightG += (raw.g - _lightG) * k;
+      _lightB += (raw.b - _lightB) * k;
+      _lightA += (raw.a - _lightA) * k;
+      _skyR += (rawSky.r - _skyR) * k;
+      _skyG += (rawSky.g - _skyG) * k;
+      _skyB += (rawSky.b - _skyB) * k;
+      _skyA += (rawSky.a - _skyA) * k;
+      _skyKind = rawSky.kind; _skyPhase = rawSky.phase;
     }
-    const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
-    const k = 1 - Math.exp(-dt / tc);
-    _lightR += (raw.r - _lightR) * k;
-    _lightG += (raw.g - _lightG) * k;
-    _lightB += (raw.b - _lightB) * k;
-    _lightA += (raw.a - _lightA) * k;
+
+    const debugKey = `${rawSky.phase}:${rawSky.kind}`;
+    if (debugKey !== _lastAtmosphereDebugKey) {
+      _lastAtmosphereDebugKey = debugKey;
+      deps.debugLog?.(`atmosphere: ${rawSky.phase} / ${rawSky.kind} sky rgb(${Math.round(rawSky.r)},${Math.round(rawSky.g)},${Math.round(rawSky.b)})`);
+    }
   }
 
   function getLightingState() {
     return { r: Math.round(_lightR), g: Math.round(_lightG), b: Math.round(_lightB), a: _lightA };
+  }
+
+  function getSkyState() {
+    return { r: Math.round(_skyR), g: Math.round(_skyG), b: Math.round(_skyB), a: _skyA, kind: _skyKind, phase: _skyPhase };
+  }
+
+  function getAtmosphereDebugState() {
+    return {
+      sky: getSkyState(),
+      weather: deps?.calendar?.weather || 'unknown',
+      isRaining: Boolean(deps?.calendar?.isRaining),
+      rainStrength: Number(deps?.calendar?.rainStrength) || 0,
+      thunder: { ...thunderDebug },
+    };
   }
 
   const waterParticles = [];
@@ -370,6 +474,24 @@
     }
   }
 
+  // Uses the game's existing one-shot player so thunder follows the same
+  // master SFX volume and browser audio-unlock behavior as combat/object sounds.
+  const THUNDER_SFX = Object.freeze({ url: 'assets/audio/sfx/sfx_thunder1.mp3', volume: 0.92 });
+  function playThunderSfx() {
+    const playOneShot = window.AudioSystem?.playOneShotSfx;
+    const pitch = 0.94 + Math.random() * 0.08;
+    thunderDebug.triggers += 1;
+    thunderDebug.lastTriggerMs = performance.now();
+    thunderDebug.lastPitch = pitch;
+    if (typeof playOneShot !== 'function') {
+      deps.debugLog?.('weather thunder sfx unavailable: AudioSystem.playOneShotSfx missing');
+      return false;
+    }
+    playOneShot(THUNDER_SFX, 1, pitch);
+    deps.debugLog?.(`weather thunder sfx triggered #${thunderDebug.triggers} pitch=${pitch.toFixed(2)}`);
+    return true;
+  }
+
   // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is 1
   // flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
   // strike that cuts to a brief dark gap, then a dimmer second flash.
@@ -388,6 +510,7 @@
         deps.setLightningAlpha(0.72);
         lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
         lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
+        playThunderSfx();
       }
     }
     if (lightningStrikesRemaining > 0) {
@@ -469,6 +592,8 @@
     checkForMajorStorm,
     drawLightingOverlay,
     getLightingState,
+    getSkyState,
+    getAtmosphereDebugState,
     _advanceSmoothedLighting,
     updateWaterParticles,
     updateRipples,
