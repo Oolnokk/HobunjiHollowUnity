@@ -51,21 +51,35 @@
   // Lazily creates/resizes a barn's troughs array to match its tier's
   // slot count — barns built before this feature (or a tier whose slot
   // count later changed) just grow/shrink to fit instead of erroring.
+  // Each trough is itself TROUGH_CAPACITY (7) individual feed slots —
+  // "akin to farm storage" but non-stacking, one fodder unit per slot —
+  // rather than a flat {plantFodder,meatFodder} count, so a trough can
+  // genuinely be picked apart/refilled slot by slot from its panel.
   function _ensureBarnTroughs(barn) {
     const slots = deps.getBarnTiers()[barn.tier]?.slots || 0;
     if (!Array.isArray(barn.troughs)) barn.troughs = [];
-    while (barn.troughs.length < slots) barn.troughs.push({ plantFodder: 0, meatFodder: 0 });
+    while (barn.troughs.length < slots) barn.troughs.push({ slots: Array(TROUGH_CAPACITY).fill(null) });
     if (barn.troughs.length > slots) barn.troughs.length = slots;
+    for (const trough of barn.troughs) {
+      if (Array.isArray(trough.slots)) continue;
+      // Migrate a pre-slot-inventory trough ({plantFodder,meatFodder}
+      // counts) into filled slots instead of just dropping its contents.
+      const migrated = [];
+      for (let i = 0; i < (trough.plantFodder || 0) && migrated.length < TROUGH_CAPACITY; i++) migrated.push('plantFodder');
+      for (let i = 0; i < (trough.meatFodder || 0) && migrated.length < TROUGH_CAPACITY; i++) migrated.push('meatFodder');
+      while (migrated.length < TROUGH_CAPACITY) migrated.push(null);
+      trough.slots = migrated;
+      delete trough.plantFodder; delete trough.meatFodder;
+    }
     return barn.troughs;
   }
   function troughTotal(trough) {
-    return (trough?.plantFodder || 0) + (trough?.meatFodder || 0);
+    return trough?.slots ? trough.slots.filter(Boolean).length : 0;
   }
 
-  // Deposits held Plant/Meat Fodder into a specific barn trough, up to
-  // TROUGH_CAPACITY total units — called from the trough's in-world
-  // interaction (see game.js's troughFurniture BUILDING_FIXTURE_INTERACTABLES
-  // factory).
+  // Deposits up to `amount` held Plant/Meat Fodder into a specific barn
+  // trough's empty slots (one unit per slot, never stacked) — called from
+  // the trough's in-world panel (see game.js's openTroughPanel).
   function depositFeedToTrough(barnId, troughIndex, itemKey, amount = 1) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
     if (itemKey !== 'plantFodder' && itemKey !== 'meatFodder') return { ok: false, message: 'Troughs only hold Plant Fodder or Meat Fodder.' };
@@ -76,14 +90,34 @@
     const trough = troughs[troughIndex];
     if (!trough) return { ok: false, message: 'No trough there.' };
     const held = deps.inventory[itemKey] || 0;
-    const room = TROUGH_CAPACITY - troughTotal(trough);
-    const move = Math.max(0, Math.min(amount, held, room));
-    if (move <= 0) return { ok: false, message: room <= 0 ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
-    trough[itemKey] = (trough[itemKey] || 0) + move;
-    deps.inventory[itemKey] -= move;
+    let moved = 0;
+    for (let i = 0; i < trough.slots.length && moved < amount && moved < held; i++) {
+      if (trough.slots[i] == null) { trough.slots[i] = itemKey; moved++; }
+    }
+    if (moved <= 0) return { ok: false, message: troughTotal(trough) >= TROUGH_CAPACITY ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
+    deps.inventory[itemKey] -= moved;
     deps.clampInventoryStack(itemKey);
     deps.saveFarmLayout();
-    return { ok: true, message: `Added ${move} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
+    deps.refreshTroughVisual?.(barnId, troughIndex);
+    return { ok: true, message: `Added ${moved} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
+  }
+
+  // Takes one specific slot's fodder back out of a trough and returns it
+  // to the player's bag — called from the trough panel's "Take" button.
+  function withdrawFeedFromTrough(barnId, troughIndex, slotIndex) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    const trough = troughs[troughIndex];
+    const itemKey = trough?.slots?.[slotIndex];
+    if (!itemKey) return { ok: false, message: 'That slot is empty.' };
+    trough.slots[slotIndex] = null;
+    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + 1);
+    deps.saveFarmLayout();
+    deps.refreshTroughVisual?.(barnId, troughIndex);
+    return { ok: true, message: `Took 1 ${deps.ITEM_DEFS[itemKey]?.label || itemKey} from the trough.` };
   }
 
   // Re-homes a housed animal to a different trough within its own barn
@@ -841,18 +875,19 @@
     const list = deps.loadWorldLivestock();
     const farmBuildings = deps.getFarmBuildings();
     const barnsById = new Map(farmBuildings.filter(b => b.kind === 'barn').map(b => [b.id, b]));
-    let changed = false, troughsChanged = false;
+    let changed = false;
+    const troughsToRefresh = []; // [{barnId, troughIndex}] — visuals refreshed once after saveFarmLayout below.
     list.forEach(l => {
       if (!l.barnId) return; // stasis — no upkeep, no decay
       const barn = barnsById.get(l.barnId);
       const troughs = barn ? _ensureBarnTroughs(barn) : null;
       const trough = troughs && l.troughIndex != null ? troughs[l.troughIndex] : null;
       const eatableKeys = feedKeysForDiet(dietFor(l.kind));
-      const fedKey = trough && eatableKeys.find(key => (trough[key] || 0) > 0);
+      const eatenSlot = trough?.slots ? trough.slots.findIndex(s => s && eatableKeys.includes(s)) : -1;
       if (l.heartLevel == null) l.heartLevel = HEART_DEFAULT;
-      if (fedKey) {
-        trough[fedKey]--;
-        troughsChanged = true;
+      if (eatenSlot >= 0) {
+        trough.slots[eatenSlot] = null;
+        troughsToRefresh.push({ barnId: l.barnId, troughIndex: l.troughIndex });
         l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
       } else {
         l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
@@ -860,7 +895,10 @@
       changed = true;
     });
     if (changed) deps.saveWorldLivestock(list);
-    if (troughsChanged) deps.saveFarmLayout();
+    if (troughsToRefresh.length) {
+      deps.saveFarmLayout();
+      for (const { barnId, troughIndex } of troughsToRefresh) deps.refreshTroughVisual?.(barnId, troughIndex);
+    }
   }
 
   // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
@@ -1243,6 +1281,8 @@
     unassignFromBarn,
     assignToTrough,
     depositFeedToTrough,
+    withdrawFeedFromTrough,
+    ensureBarnTroughs: _ensureBarnTroughs,
     dietFor,
     feedKeysForDiet,
     tickResources,
