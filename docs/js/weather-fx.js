@@ -2,29 +2,14 @@
   'use strict';
   const THREE = window.THREE;
 
-  // Weather rolling (daily forecast + rain-window scheduling), the outdoor
-  // day/night + weather lighting overlay (sky tint, lantern masks, lightning
-  // flash), and the trench-flow water particle / paddy ripple FX. Extracted
-  // out of game.js following the same window.<Namespace> + init(deps)
-  // pattern as its sibling systems.
-  //
-  // lightningAlpha and sceneTransAlpha stay in game.js on purpose — both
-  // are read by drawOverlays()/the scene-transition system, code well
-  // outside this module's scope — and come in through deps (lightningAlpha
-  // as a getter/setter pair, since updateLightningFlash both reads and
-  // writes it; sceneTransAlpha as a getter only). _flowingTrenchTiles/
-  // _townFlowingTrenchTiles likewise stay behind — reassigned wholesale by
-  // the terrain-tick code — threaded as getters. grid/camX/camY are `let`s
-  // reassigned elsewhere in game.js too, so they're getters as well, even
-  // though a scan found camX/camY are never actually reassigned in
-  // practice (rain-ripple placement always centers on the initial farm
-  // camera position — likely stale/vestigial pre-existing behavior,
-  // preserved as-is rather than "fixed" here).
+  // Weather rolling (daily forecast + rain-window scheduling), outdoor
+  // day/night + weather lighting, lightning, and water/ripple FX.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
-  let debugWeatherOverride = null; // Read by updateRainState while Testing Arena weather buttons are active.
-  let _lastAtmosphereDebugKey = ''; // Used to suppress duplicate sky/weather entries in the mobile Debug log.
-  const thunderDebug = { triggers: 0, lastTriggerMs: 0, lastPitch: 1 }; // Exposed by getAtmosphereDebugState for thunder QA.
+  let debugWeatherOverride = null;
+  let _lastAtmosphereDebugKey = '';
+  let _lastMaskProjectionWarningMs = 0; // Used by _safeLightScreenRadius to rate-limit mobile debug output.
+  const thunderDebug = { triggers: 0, lastTriggerMs: 0, lastPitch: 1 };
 
   const STORM_NAMES = [
     'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
@@ -32,11 +17,11 @@
     'Tempest Sootveil', 'Gale Bramblegust', 'Squall Wraithrain', 'Storm Emberfall',
   ];
   let lastStormDay = 0;
+
   function checkForMajorStorm() {
     const calendar = deps.calendar;
     if (calendar.weather !== 'storm') return;
     if (calendar.day === lastStormDay) return;
-    // ~30% of storm days trigger a major event
     const roll = deps.seededRandom(calendar.day * 6173 + 41);
     if (roll > 0.30) return;
     lastStormDay = calendar.day;
@@ -48,10 +33,13 @@
         const tile = grid[row][col];
         const hitRoll = deps.seededRandom(col * 17 + row * 31 + calendar.day * 7);
         if (tile.type === deps.TileType.TRENCH && hitRoll < 0.22) {
-          tile.type = deps.TileType.GRASS; tile.water = 0.6; tile.flow = false;
+          tile.type = deps.TileType.GRASS;
+          tile.water = 0.6;
+          tile.flow = false;
           trenchesHit++;
         } else if (tile.type === deps.TileType.RAISED && hitRoll < 0.18) {
-          tile.type = deps.TileType.TILLED; tile.water = deps.clamp(tile.water + 0.3, 0, 1);
+          tile.type = deps.TileType.TILLED;
+          tile.water = deps.clamp(tile.water + 0.3, 0, 1);
           raisedHit++;
         }
       }
@@ -60,65 +48,86 @@
     const name = STORM_NAMES[calendar.day % STORM_NAMES.length];
     const dmgText = [
       trenchesHit > 0 ? `${trenchesHit} trench${trenchesHit > 1 ? 'es' : ''} collapsed` : null,
-      raisedHit   > 0 ? `${raisedHit} raised bed${raisedHit > 1 ? 's' : ''} flattened` : null,
+      raisedHit > 0 ? `${raisedHit} raised bed${raisedHit > 1 ? 's' : ''} flattened` : null,
     ].filter(Boolean).join(', ');
     deps.showToast(`⚡ ${name}! ${dmgText || 'No structural damage.'}`, false);
     deps.debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
   }
 
-  // ── Lantern light masks ────────────────────────────────────────────
-  // Carried by the player and any NPC tagged "watch" (the Watch). Punches
-  // a soft hole through the day/night darkness tint: a short inner ring
-  // where the tint is almost fully cleared (actual clarity), surrounded by
-  // a much larger, dim halo (the lantern "shines" further than it actually
-  // reveals detail).
-  const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
-  const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
-
-  // Measures a world-space distance in screen pixels, but along the
-  // CAMERA's own screen-horizontal axis rather than the fixed world-X axis
-  // the old version used. World-X only reads as "screen-horizontal" for a
-  // steep, near-overhead camera (the original default follow cam) — once
-  // shoulder-surf's close, near-eye-level camera can face any azimuth, a
-  // fixed world-X offset from the light is sometimes nearly along the
-  // camera's own view axis (collapsing to a near-zero radius — the "can't
-  // see anything" direction) and sometimes nearly full-lateral (blowing up
-  // to a huge radius — the "looks like daytime" direction), with an
-  // arbitrary stretched-ellipse mask in between (the "flashlight cone"
-  // that only looked right facing one particular way). Projecting along
-  // the camera's actual right vector instead gives the same screen radius
-  // no matter which way the camera is yawed, by construction.
+  // ── Lantern/furniture light masks ────────────────────────────────
+  const LANTERN_CLARITY_TILES = 1.3;
+  const LANTERN_SHINE_TILES = 5.0;
   const _camRightVec = new THREE.Vector3();
-  function _lightScreenRadius(tx, tz, worldY, tiles) {
+
+  function _warnBadMaskProjection(message) {
+    const now = performance.now();
+    if (now - _lastMaskProjectionWarningMs < 3000) return;
+    _lastMaskProjectionWarningMs = now;
+    deps.debugLog?.(`lighting mask guard: ${message}`);
+  }
+
+  // Seated/close cameras can put one of the projection samples extremely near
+  // the camera plane. That can yield a gigantic screen radius; Canvas2D then
+  // attempts an enormous radial gradient/arc and can stall the main thread.
+  // Clamp to a screen-relative maximum and reject non-finite projections.
+  function _safeLightScreenRadius(tx, tz, worldY, tiles) {
     _camRightVec.setFromMatrixColumn(deps.camera.matrixWorld, 0);
     const c = deps.worldToOverlay(tx, worldY, tz);
-    const e = deps.worldToOverlay(tx + _camRightVec.x * tiles, worldY + _camRightVec.y * tiles, tz + _camRightVec.z * tiles);
-    return Math.hypot(e.x - c.x, e.y - c.y);
+    const e = deps.worldToOverlay(
+      tx + _camRightVec.x * tiles,
+      worldY + _camRightVec.y * tiles,
+      tz + _camRightVec.z * tiles,
+    );
+    const coords = [c?.x, c?.y, e?.x, e?.y];
+    if (!coords.every(Number.isFinite)) {
+      _warnBadMaskProjection('skipped non-finite camera projection');
+      return 0;
+    }
+
+    const rawRadius = Math.hypot(e.x - c.x, e.y - c.y);
+    if (!Number.isFinite(rawRadius) || rawRadius <= 0) {
+      _warnBadMaskProjection('skipped invalid projected radius');
+      return 0;
+    }
+
+    const rect = deps.getThreeRect?.();
+    const width = Number(rect?.width) || 0;
+    const height = Number(rect?.height) || 0;
+    const screenDiagonal = Math.hypot(width, height);
+    const maxRadius = Math.max(128, screenDiagonal * 1.35);
+    if (rawRadius > maxRadius) {
+      _warnBadMaskProjection(`clamped ${Math.round(rawRadius)}px radius to ${Math.round(maxRadius)}px`);
+      return maxRadius;
+    }
+    return rawRadius;
   }
 
   function drawLanternMasks() {
     const lctx = deps.lctx;
-    // Each carrier's y is used below to project its mask at avatar height;
-    // player/NPC movement code already keeps these world positions grounded.
-    const carriers = [{ x: deps.player.x / deps.TILE, y: deps.getPlayerWorldY() + 0.5, z: deps.player.y / deps.TILE }];
+    const carriers = [{
+      x: deps.player.x / deps.TILE,
+      y: deps.getPlayerWorldY() + 0.5,
+      z: deps.player.y / deps.TILE,
+    }];
     const currentArea = deps.getCurrentArea();
     for (const w of deps.npcWalkers) {
       if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
         carriers.push({ x: w.root.position.x, y: w.root.position.y + 0.5, z: w.root.position.z });
       }
     }
+
     lctx.globalCompositeOperation = 'destination-out';
     for (const c of carriers) {
       const center = deps.worldToOverlay(c.x, c.y, c.z);
-      if (!center.visible) continue;
-      const shineR = _lightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES);
+      if (!center?.visible || !Number.isFinite(center.x) || !Number.isFinite(center.y)) continue;
+      const shineR = _safeLightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES);
       if (!(shineR > 0)) continue;
       const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
       const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
-      grad.addColorStop(clarityFrac,                     'rgba(0,0,0,0.80)');
+      grad.addColorStop(0, 'rgba(0,0,0,0.92)');
+      grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
       grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
-      grad.addColorStop(1,                               'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
       lctx.fillStyle = grad;
       lctx.beginPath();
       lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
@@ -127,15 +136,13 @@
     lctx.globalCompositeOperation = 'source-over';
   }
 
-  // Furniture uses the lantern mask technique, scaled by each real Three.js
-  // light's range/intensity, plus a restrained warm glow near the source.
   function drawFurnitureLightMasks() {
     const lctx = deps.lctx;
     const visibleLights = [];
     for (const light of deps.getFurnitureLightSources()) {
       const center = deps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
-      const shineR = _lightScreenRadius(light.x, light.z, light.y, light.distance);
+      if (!center?.visible || !Number.isFinite(center.x) || !Number.isFinite(center.y)) continue;
+      const shineR = _safeLightScreenRadius(light.x, light.z, light.y, light.distance);
       if (!(shineR > 0)) continue;
       visibleLights.push({ light, center, shineR });
     }
@@ -145,10 +152,10 @@
       const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
       const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
       const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0,                              `rgba(0,0,0,${strength})`);
-      grad.addColorStop(clarityFrac,                    `rgba(0,0,0,${strength * 0.78})`);
+      grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
       grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
-      grad.addColorStop(1,                              'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
       lctx.fillStyle = grad;
       lctx.beginPath();
       lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
@@ -161,9 +168,9 @@
       const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
       const { r, g, b } = light.color;
       const glow = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
-      glow.addColorStop(0,   `rgba(${r},${g},${b},${glowAlpha})`);
+      glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
       glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
-      glow.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       lctx.fillStyle = glow;
       lctx.beginPath();
       lctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
@@ -171,20 +178,19 @@
     }
   }
 
-  // Time-of-day sky palette used by the outdoor overlay; RGB values are deliberately
-  // cooler than the existing warm scene-light tint so terrain stays readable beneath it.
+  // ── Time/weather sky ─────────────────────────────────────────────
   const SKY_STOPS = [
-    [6.0,  24,  35,  65],  // pre-dawn blue
-    [6.5,  196, 98,  88],  // sunrise rose
-    [7.5,  126, 171, 207], // cool early morning
-    [9.0,  96,  165, 218], // blue morning
-    [12.0, 86,  176, 232], // bright noon
-    [15.0, 105, 174, 220], // late-day blue
-    [17.5, 210, 154, 101], // amber evening
-    [18.5, 215, 101, 88],  // sunset red-orange
-    [19.5, 101, 82, 132],  // purple dusk
-    [20.5, 40,  54,  88],  // early night
-    [22.0, 15,  25,  47],  // deep night
+    [6.0, 24, 35, 65],
+    [6.5, 196, 98, 88],
+    [7.5, 126, 171, 207],
+    [9.0, 96, 165, 218],
+    [12.0, 86, 176, 232],
+    [15.0, 105, 174, 220],
+    [17.5, 210, 154, 101],
+    [18.5, 215, 101, 88],
+    [19.5, 101, 82, 132],
+    [20.5, 40, 54, 88],
+    [22.0, 15, 25, 47],
   ];
 
   function _mixChannel(value, target, amount) {
@@ -242,56 +248,52 @@
     const sceneTransAlpha = deps.getSceneTransAlpha();
     if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
     _lastLightingOverlayTime = now;
+
     const rect = deps.getThreeRect();
-    lctx.clearRect(0, 0, rect.width, rect.height);
+    const W = Number(rect?.width) || 0;
+    const H = Number(rect?.height) || 0;
+    if (!(W > 0 && H > 0)) return;
+    lctx.clearRect(0, 0, W, H);
 
     const currentArea = deps.getCurrentArea();
     if (currentArea === 'interior' || deps._isBuildingArea(currentArea)) {
-      // A warm dim layer gives furniture masks something visible to clear,
-      // while the underlying Three.js PointLights still shade nearby models.
       lctx.fillStyle = 'rgba(32,20,10,0.28)';
-      lctx.fillRect(0, 0, rect.width, rect.height);
+      lctx.fillRect(0, 0, W, H);
       drawFurnitureLightMasks();
       if (sceneTransAlpha > 0) {
         lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-        lctx.fillRect(0, 0, rect.width, rect.height);
+        lctx.fillRect(0, 0, W, H);
       }
       return;
     }
 
     const { r, g, b, a } = getLightingState();
     const sky = getSkyState();
-    const W = rect.width;
-    const H = rect.height;
 
-    // Existing whole-frame lighting tint: warm at sunrise/sunset and dark at night.
     lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
     lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
     lctx.fillRect(0, 0, W, H);
     lctx.globalCompositeOperation = 'source-over';
 
-    // A separate sky-weighted layer makes the actual upper view visibly track
-    // dawn/day/sunset/night instead of leaving the static scene background in charge.
-    // It fades out before the lower frame so ground/character colors still come from
-    // Three.js lighting rather than being painted blue by the sky treatment.
-    const skyHeight = H * 0.74;
-    const skyGradient = lctx.createLinearGradient(0, 0, 0, skyHeight);
+    // This sky layer is deliberately rendered AFTER the Three.js frame, so
+    // Fog/FogExp2 can haze world geometry but can never cover the sky itself.
+    // Keep a little sky color through the horizon/lower frame instead of
+    // fading to zero early (which exposed the static fog-colored background).
+    const skyGradient = lctx.createLinearGradient(0, 0, 0, H);
     skyGradient.addColorStop(0, `rgba(${sky.r},${sky.g},${sky.b},${sky.a})`);
     skyGradient.addColorStop(0.48, `rgba(${sky.r},${sky.g},${sky.b},${sky.a * 0.34})`);
-    skyGradient.addColorStop(1, `rgba(${sky.r},${sky.g},${sky.b},0)`);
+    skyGradient.addColorStop(0.72, `rgba(${sky.r},${sky.g},${sky.b},${sky.a * 0.14})`);
+    skyGradient.addColorStop(1, `rgba(${sky.r},${sky.g},${sky.b},${sky.a * 0.025})`);
     lctx.fillStyle = skyGradient;
-    lctx.fillRect(0, 0, W, skyHeight);
+    lctx.fillRect(0, 0, W, H);
 
     drawLanternMasks();
     drawFurnitureLightMasks();
 
-    // Lightning flash on lighting canvas too
     if (lightningAlpha > 0) {
       lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
       lctx.fillRect(0, 0, W, H);
     }
-
-    // Scene transition fade-to-black
     if (sceneTransAlpha > 0) {
       lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
       lctx.fillRect(0, 0, W, H);
@@ -300,27 +302,23 @@
 
   function _computeRawLightingState() {
     const calendar = deps.calendar;
-    const hour = window.CalendarSystem.getHour(); // 6..22
-    const season = window.CalendarSystem.currentSeason();
+    const hour = window.CalendarSystem.getHour();
     const isRaining = calendar.isRaining;
     const isStorm = isRaining && calendar.rainStrength >= 3;
-
-    // Keyframe stops: [hour, r, g, b, alpha]
     const stops = [
-      [6.0,  40,  30, 80, 0.55],  // pre-dawn: deep blue-purple
-      [6.5,  220, 100, 40, 0.38], // sunrise: warm orange-red
-      [7.5,  240, 160, 60, 0.22], // early morning: golden
-      [9.0,  255, 230, 180, 0.08],// morning: near-clear
-      [12.0, 255, 245, 210, 0.04],// noon: very clear, slight warm
-      [15.0, 255, 225, 160, 0.10],// afternoon: slight golden
-      [17.5, 255, 160, 60, 0.28], // late afternoon: amber
-      [18.5, 220, 90,  30, 0.42], // sunset: deep orange
-      [19.5, 130, 50,  80, 0.52], // dusk: purple-red
-      [20.5, 30,  30,  80, 0.62], // early night: dark blue
-      [22.0, 10,  10,  40, 0.72], // full night
+      [6.0, 40, 30, 80, 0.55],
+      [6.5, 220, 100, 40, 0.38],
+      [7.5, 240, 160, 60, 0.22],
+      [9.0, 255, 230, 180, 0.08],
+      [12.0, 255, 245, 210, 0.04],
+      [15.0, 255, 225, 160, 0.10],
+      [17.5, 255, 160, 60, 0.28],
+      [18.5, 220, 90, 30, 0.42],
+      [19.5, 130, 50, 80, 0.52],
+      [20.5, 30, 30, 80, 0.62],
+      [22.0, 10, 10, 40, 0.72],
     ];
 
-    // Interpolate between stops
     let r = 10, g = 10, b = 40, a = 0.72;
     for (let i = 0; i < stops.length - 1; i++) {
       const [h0, r0, g0, b0, a0] = stops[i];
@@ -335,21 +333,25 @@
       }
     }
 
-    // Overcast weather tint on top
-    if (isStorm) { r = r * 0.5 + 30 * 0.5; g = g * 0.5 + 45 * 0.5; b = b * 0.5 + 70 * 0.5; a = Math.min(0.85, a + 0.25); }
-    else if (isRaining) { r = r * 0.7 + 50 * 0.3; g = g * 0.7 + 65 * 0.3; b = b * 0.7 + 90 * 0.3; a = Math.min(0.78, a + 0.12); }
-
+    if (isStorm) {
+      r = r * 0.5 + 30 * 0.5;
+      g = g * 0.5 + 45 * 0.5;
+      b = b * 0.5 + 70 * 0.5;
+      a = Math.min(0.85, a + 0.25);
+    } else if (isRaining) {
+      r = r * 0.7 + 50 * 0.3;
+      g = g * 0.7 + 65 * 0.3;
+      b = b * 0.7 + 90 * 0.3;
+      a = Math.min(0.78, a + 0.12);
+    }
     return { r, g, b, a };
   }
 
-  // Smoothed lighting state — eases toward the raw target each frame so the
-  // lantern's punched-through clarity (and the sky/ambient tint) fade
-  // gradually instead of snapping, most noticeably at the day-rollover
-  // instant when getHour() jumps straight from ~22 back to 6.
   let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
-  let _skyR = 15, _skyG = 25, _skyB = 47, _skyA = 0.42; // Smoothed values read by drawLightingOverlay's sky gradient.
-  let _skyKind = 'clear', _skyPhase = 'night'; // Labels exposed through getAtmosphereDebugState for mobile QA.
+  let _skyR = 15, _skyG = 25, _skyB = 47, _skyA = 0.42;
+  let _skyKind = 'clear', _skyPhase = 'night';
   let _lightingInitialized = false;
+
   function _advanceSmoothedLighting(dt) {
     const raw = _computeRawLightingState();
     const rawSky = _computeRawSkyState();
@@ -359,7 +361,7 @@
       _skyKind = rawSky.kind; _skyPhase = rawSky.phase;
       _lightingInitialized = true;
     } else {
-      const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
+      const tc = 1.5;
       const k = 1 - Math.exp(-dt / tc);
       _lightR += (raw.r - _lightR) * k;
       _lightG += (raw.g - _lightG) * k;
@@ -384,7 +386,10 @@
   }
 
   function getSkyState() {
-    return { r: Math.round(_skyR), g: Math.round(_skyG), b: Math.round(_skyB), a: _skyA, kind: _skyKind, phase: _skyPhase };
+    return {
+      r: Math.round(_skyR), g: Math.round(_skyG), b: Math.round(_skyB), a: _skyA,
+      kind: _skyKind, phase: _skyPhase,
+    };
   }
 
   function getAtmosphereDebugState() {
@@ -397,13 +402,13 @@
     };
   }
 
+  // ── Water/ripple FX ──────────────────────────────────────────────
   const waterParticles = [];
   const MAX_PARTICLES = 120;
   function updateWaterParticles(dt) {
-    // Spawn particles on flowing trench tiles.
-    // _flowingTrenchTiles is rebuilt each sim tick (game.js) so no full
-    // grid scan is needed.
-    const flowingTiles = deps.getCurrentArea() === 'town' ? deps.getTownFlowingTrenchTiles() : deps.getFlowingTrenchTiles();
+    const flowingTiles = deps.getCurrentArea() === 'town'
+      ? deps.getTownFlowingTrenchTiles()
+      : deps.getFlowingTrenchTiles();
     for (const { col, row } of flowingTiles) {
       if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
         const tx = col * deps.TILE + 10 + Math.random() * (deps.TILE - 20);
@@ -416,21 +421,21 @@
           radius: 1 + Math.random() * 2.5,
           life: 0,
           maxLife: 0.4 + Math.random() * 0.6,
-          type: Math.random() < 0.6 ? 'bubble' : 'foam'
+          type: Math.random() < 0.6 ? 'bubble' : 'foam',
         });
       }
     }
-    // Update existing particles
     for (let i = waterParticles.length - 1; i >= 0; i--) {
       const p = waterParticles[i];
       p.wx += p.vx * dt;
       p.wy += p.vy * dt;
       p.life += dt;
       p.alpha = (1 - p.life / p.maxLife) * 0.85;
-      // Kill if out of life or off a flowing trench
       const pc = Math.floor(p.wx / deps.TILE);
       const pr = Math.floor(p.wy / deps.TILE);
-      const aGrid = deps.getActiveGrid(), aC = deps.getActiveCols(), aR = deps.getActiveRows();
+      const aGrid = deps.getActiveGrid();
+      const aC = deps.getActiveCols();
+      const aR = deps.getActiveRows();
       const onFlow = pc >= 0 && pc < aC && pr >= 0 && pr < aR
         && aGrid[pr][pc].type === deps.TileType.TRENCH && aGrid[pr][pc].flow;
       if (p.life >= p.maxLife || !onFlow) waterParticles.splice(i, 1);
@@ -446,7 +451,9 @@
   }
 
   function spawnRipples() {
-    const aGrid = deps.getActiveGrid(), aC = deps.getActiveCols(), aR = deps.getActiveRows();
+    const aGrid = deps.getActiveGrid();
+    const aC = deps.getActiveCols();
+    const aR = deps.getActiveRows();
     for (let row = 0; row < aR; row++) {
       for (let col = 0; col < aC; col++) {
         const tile = aGrid[row][col];
@@ -460,7 +467,7 @@
         }
       }
     }
-    // Rain ripples: spawn within the visible viewport region
+
     const calendar = deps.calendar;
     if (calendar.isRaining) {
       const rect = deps.threeContainer.getBoundingClientRect();
@@ -474,8 +481,7 @@
     }
   }
 
-  // Uses the game's existing one-shot player so thunder follows the same
-  // master SFX volume and browser audio-unlock behavior as combat/object sounds.
+  // ── Lightning/thunder ────────────────────────────────────────────
   const THUNDER_SFX = Object.freeze({ url: 'assets/audio/sfx/sfx_thunder1.mp3', volume: 0.92 });
   function playThunderSfx() {
     const playOneShot = window.AudioSystem?.playOneShotSfx;
@@ -492,10 +498,7 @@
     return true;
   }
 
-  // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is 1
-  // flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
-  // strike that cuts to a brief dark gap, then a dimmer second flash.
-  const LIGHTNING_AVG_INTERVAL_S = 28; // average seconds between strike sequences during a storm
+  const LIGHTNING_AVG_INTERVAL_S = 28;
   let lightningStrikesRemaining = 0;
   let lightningTimer = 6 + Math.random() * 8;
   let lightningDecayRate = 0;
@@ -533,6 +536,7 @@
     }
   }
 
+  // ── Daily weather ────────────────────────────────────────────────
   function chooseWeatherForDay() {
     const calendar = deps.calendar;
     const season = window.CalendarSystem.currentSeason();
@@ -546,16 +550,13 @@
     calendar.nextRainWindows = [];
 
     if (hasStorm) {
+      // A storm-labelled day should never visibly claim "Storm" while the
+      // world is dry. The core 11–17 window remains the thunder/lightning
+      // storm; the shoulders of the day are ordinary rain.
+      calendar.nextRainWindows.push({ start: 6, end: 11, strength: 2 });
       calendar.nextRainWindows.push({ start: 11, end: 17, strength: 3 });
-      calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
+      calendar.nextRainWindows.push({ start: 17, end: 22, strength: 2 });
     } else if (hasRain) {
-      // A fixed 5-hour window meant even a 'rain' day in the wettest season
-      // (Longpour, 70% daily chance) only actually had it raining ~5/24 =
-      // 21% of the time — the season label reads "wet" but the
-      // moment-to-moment odds of catching rain stayed low. Scale the
-      // window length with how rainy the season is so Longpour/Stormtide
-      // days visibly rain for a large chunk of the day, while a Deadgrass
-      // pity-timer shower stays a brief, isolated event.
       const windowHours = Math.round(4 + season.rainChance * 8);
       const start = 8 + Math.floor(deps.seededRandom(calendar.day * 157) * 6);
       calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
@@ -572,10 +573,27 @@
       calendar.rainStrength = debugWeatherOverride === 'storm' ? 3 : debugWeatherOverride === 'rain' ? 2 : 0;
       return;
     }
+
     const hour = window.CalendarSystem.getHour();
-    const activeWindow = calendar.nextRainWindows.find((window) => hour >= window.start && hour < window.end);
-    calendar.isRaining = Boolean(activeWindow);
-    calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
+    const windows = Array.isArray(calendar.nextRainWindows) ? calendar.nextRainWindows : [];
+    const activeWindow = windows.find((window) => hour >= window.start && hour < window.end);
+    if (activeWindow) {
+      calendar.isRaining = true;
+      calendar.rainStrength = activeWindow.strength;
+      return;
+    }
+
+    // Backward compatibility for saves made before storm days received
+    // full-day rain shoulders: keep old saved storm forecasts wet rather
+    // than displaying Storm over a dry world until the next day reroll.
+    if (calendar.weather === 'storm' && hour >= 6 && hour < 22) {
+      calendar.isRaining = true;
+      calendar.rainStrength = 2;
+      return;
+    }
+
+    calendar.isRaining = false;
+    calendar.rainStrength = 0;
   }
 
   function setDebugWeather(mode = null) {
@@ -603,9 +621,11 @@
     updateRainState,
     setDebugWeather,
     getDebugWeather,
-    // Debug/QA only — the player lantern's current on-screen shine radius,
-    // to verify it stays roughly constant across camera azimuths instead of
-    // collapsing/ballooning with view direction (see _lightScreenRadius).
-    debugLanternShineR: () => _lightScreenRadius(deps.player.x / deps.TILE, deps.player.y / deps.TILE, deps.getPlayerWorldY() + 0.5, LANTERN_SHINE_TILES),
+    debugLanternShineR: () => _safeLightScreenRadius(
+      deps.player.x / deps.TILE,
+      deps.player.y / deps.TILE,
+      deps.getPlayerWorldY() + 0.5,
+      LANTERN_SHINE_TILES,
+    ),
   };
 })();
