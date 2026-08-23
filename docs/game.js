@@ -8985,21 +8985,13 @@
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
-        // Same idea, but including hair/hood/hat — lets the neck rig widen
-        // its full-head-weight zone to cover a tall/draping cosmetic (see
-        // buildSkinnedSinglePlaneAssembly's headCosmeticsCanvas handling in
-        // png-plane-avatar.js) instead of tearing where a fixed-fraction
-        // blend band would otherwise cut it off partway down.
-        const headCosmeticsCanvas = document.createElement('canvas');
-        headCosmeticsCanvas.width = headCosmeticsCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(headCosmeticsCanvas, profile, { onlyHeadAndCosmetics: true, forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, headCosmeticsCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -12627,20 +12619,13 @@
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
-        // Same idea, but including hair/hood/hat — see makeNpcWalker's own
-        // headCosmeticsCanvas comment; lets the neck rig cover a tall/
-        // draping cosmetic instead of tearing partway down it.
-        const headCosmeticsCanvas = document.createElement('canvas');
-        headCosmeticsCanvas.width = headCosmeticsCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(headCosmeticsCanvas, profile, { onlyHeadAndCosmetics: true, forceEyesOpen: true });
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, headCosmeticsCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
