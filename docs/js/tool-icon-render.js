@@ -77,3 +77,22 @@
   script.onerror = () => window.__farmLog?.('[action-arch-fixes] module failed to load', 'error');
   document.head.appendChild(script);
 })();
+
+// Slot-color presentation is intentionally last: it tints whichever attack
+// artwork the two arch modules resolved, but leaves potion/ammo utility buttons
+// white and never changes the underlying combat/loadout state.
+(() => {
+  'use strict';
+  if (window.ActionArchSlotColors?.installed || document.querySelector('script[data-action-arch-slot-colors]')) return;
+  const src = 'js/action-arch-slot-colors.js?v=20260823a';
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-action-arch-slot-colors="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script');
+  script.dataset.actionArchSlotColors = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[action-arch-slot-colors] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
