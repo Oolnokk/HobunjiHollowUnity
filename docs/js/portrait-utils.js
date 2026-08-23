@@ -995,13 +995,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const bodyColors = profile.bodyColors || {};
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
-  // Like onlyHeadSprite, but also includes every layer that's conceptually
-  // attached to and should rotate rigidly with the head — hair, hood, hat —
-  // deliberately excluding torso/arm/pauldron. See its render block below
-  // for why: the neck rig needs to know how far DOWN these can extend for a
-  // tall cosmetic (a draping hood, a tall fin/crest), not just the bare
-  // head's own bounds.
-  const onlyHeadAndCosmetics = renderOptions?.onlyHeadAndCosmetics === true;
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
@@ -1335,29 +1328,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (headUrl) {
       const image = imgMap.get(headUrl);
       if (image) drawLayerWithEmote(image, getPortraitXformPreset('B'), tintA, 1, headUrl);
-    }
-    if (_needsScale) ctx.restore();
-    return;
-  }
-
-  // Same idea as onlyHeadSprite above, but deliberately CONTAMINATED with
-  // hair/hood/hat — the neck rig's caller uses this one to measure how far
-  // down those specific layers extend (e.g. a draping hood/fin cosmetic
-  // that reaches well past the bare head), separately from the clean
-  // pivot centroid onlyHeadSprite provides. Neutral pose (no breathing/
-  // emote warp) since this is a one-shot bounds measurement, not something
-  // meant to look right on screen — a stable, un-deformed mask is what the
-  // caller actually wants to measure against.
-  if (onlyHeadAndCosmetics) {
-    if (headUrl) {
-      const image = imgMap.get(headUrl);
-      if (image) drawPortraitLayer(ctx, image, getPortraitXformPreset('B'), tintA, headUrl);
-    }
-    for (const layerList of [preBackLayers, sideLeftLayers, rightSideHairLayers, frontHairLayers, hatUnderLayers, hoodLayers, hatOverLayers]) {
-      for (const { layer, tint } of layerList) {
-        const img = imgMap.get(layer.url);
-        if (img) drawPortraitLayer(ctx, img, resolveXform(layer), tint, layer.url);
-      }
     }
     if (_needsScale) ctx.restore();
     return;
