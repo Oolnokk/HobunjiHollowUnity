@@ -502,6 +502,24 @@
     disc(0, .66, 0, .3, .04, .3, 1.2, { segments: 14 }),
   ];
 
+  // -- Barn-interior fixtures (see game.js's synthesizeBarnInteriorMapData) --
+  // Same hand-mill silhouette as CATALOG.handMill, tipped on its side (the
+  // grinding face now points +X, toward the right wall) with a small catch
+  // bowl on top — the real look comes from feedGrinder.json (authored) once
+  // that loads; this is only the fallback before/if it doesn't.
+  CATALOG.feedGrinder = [
+    box(0, .14, 0, .5, .28, .42, .85),
+    cyl(0, .34, 0, .22, .55, .22, 1, { rz: 90, segments: 14 }),
+    disc(.26, .34, 0, .24, .07, .24, 1.1, { rz: 90, segments: 18 }),
+    cyl(-.06, .34, -.3, .045, .16, .045, .7, { rx: 90, segments: 8 }),
+    cyl(.34, .5, 0, .2, .18, .2, .9, { segments: 12, topScaleX: 1.1, topScaleZ: 1.1, bottomScaleX: .7, bottomScaleZ: .7 }),
+  ];
+
+  CATALOG.trough = [
+    box(0, .07, 0, .7, .14, .26, .85),
+    cyl(0, .2, 0, .76, .22, .32, 1, { segments: 16, topScaleX: 1.1, topScaleZ: 1.1, bottomScaleX: .82, bottomScaleZ: .82 }),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

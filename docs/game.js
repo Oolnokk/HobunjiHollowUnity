@@ -2111,7 +2111,7 @@
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
-        feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop or raw meat into Plant/Meat Fodder for barn troughs.', fixture: true },
+        feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop, raw meat, or fish into Plant/Meat Fodder for barn troughs.', fixture: true },
         trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
       };
 
@@ -7459,7 +7459,7 @@
           getButtons() {
             const active = getActiveInventoryItem();
             const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
-            if (!outputs) return [{ icon: '⚙️', label: 'Hold a crop or raw meat to grind', action: 'obj_feed_grind', style: 'secondary', allowed: false }];
+            if (!outputs) return [{ icon: '⚙️', label: 'Hold a crop, raw meat, or fish to grind', action: 'obj_feed_grind', style: 'secondary', allowed: false }];
             return [{ icon: '⚙️', label: `Grind → ${outputs[0].label}`, action: 'obj_feed_grind', style: 'primary', allowed: true }];
           },
           onAction(action) {
@@ -7467,7 +7467,7 @@
             if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can use the feed grinder." };
             const active = getActiveInventoryItem();
             const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
-            if (!active || !outputs) return { ok: false, message: 'Hold a crop or raw meat to grind it into feed.' };
+            if (!active || !outputs) return { ok: false, message: 'Hold a crop, raw meat, or fish to grind it into feed.' };
             inventory[active.key] = Math.max(0, (inventory[active.key] || 0) - 1);
             clampInventoryStack(active.key);
             const out = outputs[0];
@@ -11475,14 +11475,19 @@
         if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
         if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
         if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
-        // Feed Grinder (barn interior fixture) — crops/mulch grind into
-        // Plant Fodder, raw meat into Meat Fodder. Reuses this same generic
-        // "hold a valid item, interact" processing pipeline rather than a
-        // one-off — see PROCESSING_FURNITURE_DEFS.feedGrinder.
-        if (methodId === 'grindingFeed' && FEED_GRINDER_PLANT_INPUTS.has(inputKey)) {
+        // Feed Grinder (barn interior fixture) — harvested crops grind into
+        // Plant Fodder, raw meat and fish grind into Meat Fodder. Mulch is
+        // deliberately not a valid input (it's clearing waste, not feed).
+        // Checked live off cropData/ITEM_DEFS tags rather than a Set
+        // snapshotted at load — fish items in particular only get merged
+        // into ITEM_DEFS asynchronously (see fish-catalog.js's
+        // registerItems), well after this file's own top-level code runs.
+        // Reuses this same generic "hold a valid item, interact" processing
+        // pipeline rather than a one-off — see PROCESSING_FURNITURE_DEFS.feedGrinder.
+        if (methodId === 'grindingFeed' && cropData[inputKey]) {
           return { key: 'plantFodder', icon: ITEM_DEFS.plantFodder.icon, label: ITEM_DEFS.plantFodder.label, cat: 'material', sellPrice: ITEM_DEFS.plantFodder.sellPrice, tags: ITEM_DEFS.plantFodder.tags, desc: ITEM_DEFS.plantFodder.desc };
         }
-        if (methodId === 'grindingFeed' && FEED_GRINDER_MEAT_INPUTS.has(inputKey)) {
+        if (methodId === 'grindingFeed' && (input.tags?.includes('Meat') || input.tags?.includes('Fish'))) {
           return { key: 'meatFodder', icon: ITEM_DEFS.meatFodder.icon, label: ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: ITEM_DEFS.meatFodder.sellPrice, tags: ITEM_DEFS.meatFodder.tags, desc: ITEM_DEFS.meatFodder.desc };
         }
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
@@ -11974,12 +11979,6 @@
         plantFodder: { icon: '🌿', label: 'Plant Fodder', cat: 'material', sellPrice: 2, tags: ['Material', 'Feed'], desc: 'Coarsely ground crop matter. Feeds plant-eating livestock from a barn trough.' },
         meatFodder: { icon: '🍖', label: 'Meat Fodder', cat: 'material', sellPrice: 3, tags: ['Material', 'Feed'], desc: 'Ground and cured raw meat. Feeds meat-eating livestock from a barn trough.' },
       };
-
-      // Valid Feed Grinder inputs (see getProcessingOutput's 'grindingFeed'
-      // branch) — every harvestable crop plus mulch grinds into Plant
-      // Fodder, every raw butchered meat grinds into Meat Fodder.
-      const FEED_GRINDER_PLANT_INPUTS = new Set([...Object.keys(cropData), 'mulch']);
-      const FEED_GRINDER_MEAT_INPUTS = new Set(Object.keys(ITEM_DEFS).filter(key => ITEM_DEFS[key].tags?.includes('Meat')));
 
       // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
       // Found in treasure chests (see rollTreasureDyeItemKeys), used from the
