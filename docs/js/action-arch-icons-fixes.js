@@ -66,7 +66,7 @@
       }
       .action-arch-combo-fallback > span {
         position:relative; z-index:2; color:#fff;
-        font:700 1.12em/1 'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;
+        font:700 1.68em/1 'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;
         text-shadow:0 0 4px #111,0 0 4px #111;
       }
       @media (prefers-reduced-motion: reduce) {
@@ -116,6 +116,33 @@
     return button?.querySelector?.('.abt-icon') || null;
   }
 
+  function isDedicatedHost(host) {
+    return Boolean(host?.querySelector?.('.combat-coin, .action-arch-fix-icon, .action-arch-numbered-raster'));
+  }
+
+  function hideLegacyHost(button) {
+    const host = actionIconHost(button);
+    if (!host || isDedicatedHost(host)) return;
+    host.style.visibility = 'hidden'; // MutationObservers run before paint, preventing one-frame emoji flashes.
+  }
+
+  function revealDedicatedHost(button) {
+    const host = actionIconHost(button);
+    if (host && isDedicatedHost(host)) host.style.visibility = 'visible';
+  }
+
+  // Movement/action refreshes rebuild the old emoji markup before the normal
+  // requestAnimationFrame decorators run. Hide only the icon hosts we know are
+  // currently owned by the dedicated HUD so the legacy glyph cannot paint.
+  function suppressFreshLegacyGlyphs() {
+    const action1 = document.getElementById('btnAction1');
+    const action2 = document.getElementById('btnAction2');
+    const action3 = document.getElementById('btnAction3');
+    if (action1?.classList?.contains('combat-dual-input')) hideLegacyHost(action1);
+    if (action2?.classList?.contains('combat-dual-input') || rangedAmmoSelector(action2)) hideLegacyHost(action2);
+    if (weaponAction3IsPotion(action3)) hideLegacyHost(action3);
+  }
+
   function moveExponentOutside(button) {
     if (!button?.classList?.contains('combat-dual-input')) return;
     const nested = button.querySelector('.combat-coin-front .combat-hold-exponent');
@@ -143,7 +170,7 @@
   function composeNumbered(file, number, rotationDeg = 0, cachePrefix = 'numbered') {
     const record = preload(file);
     if (record.state !== 'loaded' || !record.image?.naturalWidth) return null;
-    const key = `${cachePrefix}:${file}:${number}:${rotationDeg}`;
+    const key = `${cachePrefix}:v2:${file}:${number}:${rotationDeg}`;
     if (rasterCache.has(key)) return rasterCache.get(key);
 
     const size = 160;
@@ -168,25 +195,26 @@
     ctx.fillRect(0, 0, size, size);
 
     const text = String(Math.max(0, Math.floor(Number(number) || 0)));
-    const px = text.length >= 2 ? 56 : 70;
+    // 150% of the previous 56/70px numeral scale, for both combo and ammo counts.
+    const px = text.length >= 2 ? 84 : 105;
     const font = `700 ${px}px "KhymeryyanRomanLetters+Numbers", "DM Mono", monospace`;
     ctx.font = font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // Soft transparent moat + crisp inner cutout: same disconnected-overlap
-    // treatment as the combo-number motif, so icon lines never cross the numeral.
+    // Scale the transparent moat with the larger numeral so the Celtic-knot
+    // cutout keeps the same visual weight instead of crowding the icon lines.
     ctx.globalCompositeOperation = 'destination-out';
     ctx.save();
-    ctx.filter = 'blur(2px)';
-    ctx.lineWidth = text.length >= 2 ? 13 : 15;
+    ctx.filter = 'blur(3px)';
+    ctx.lineWidth = text.length >= 2 ? 20 : 23;
     ctx.strokeStyle = '#000';
     ctx.strokeText(text, size / 2, size / 2 + 3);
     ctx.fillText(text, size / 2, size / 2 + 3);
     ctx.restore();
     ctx.filter = 'none';
-    ctx.lineWidth = text.length >= 2 ? 7 : 8;
+    ctx.lineWidth = text.length >= 2 ? 11 : 12;
     ctx.strokeStyle = '#000';
     ctx.strokeText(text, size / 2, size / 2 + 3);
     ctx.fillText(text, size / 2, size / 2 + 3);
@@ -219,7 +247,7 @@
     const main = button.querySelector('.combat-coin-front .combat-main-symbol');
     if (!main) return;
     const step = comboStep();
-    const signature = `${comboAbilityId()}:${step}`;
+    const signature = `${comboAbilityId()}:${step}:number150`;
     if (main.dataset.comboFixSignature === signature && !main.querySelector('.combat-slot-x')) return;
 
     const rotations = { 1:-90, 2:-45, 3:0 };
@@ -260,8 +288,8 @@
     const host = actionIconHost(button);
     const image = plainIcon('potion_select.png', button.getAttribute('aria-label') || 'Potion select');
     if (!host || !image) return;
-    if (host.querySelector('img[data-action-arch-fix-icon="potion_select.png"]')) return;
-    host.replaceChildren(image);
+    if (!host.querySelector('img[data-action-arch-fix-icon="potion_select.png"]')) host.replaceChildren(image);
+    host.style.visibility = 'visible';
   }
 
   function rangedAmmoSelector(button) {
@@ -278,12 +306,14 @@
     const host = actionIconHost(button);
     if (!host) return;
     const count = Math.max(0, Math.floor(Number(window.RangedWeapons.specialAmmoCount()) || 0));
-    const signature = String(count);
-    if (host.dataset.quiverCountSignature === signature && host.querySelector('.action-arch-numbered-raster')) return;
-    const image = numberedImage('ammo_select.png', count, 0, 'special-ammo', `Special ammo: ${count}`);
-    if (!image) return;
-    host.replaceChildren(image);
-    host.dataset.quiverCountSignature = signature;
+    const signature = `${count}:number150`;
+    if (!(host.dataset.quiverCountSignature === signature && host.querySelector('.action-arch-numbered-raster'))) {
+      const image = numberedImage('ammo_select.png', count, 0, 'special-ammo', `Special ammo: ${count}`);
+      if (!image) return;
+      host.replaceChildren(image);
+      host.dataset.quiverCountSignature = signature;
+    }
+    host.style.visibility = 'visible';
   }
 
   function refresh() {
@@ -293,6 +323,9 @@
     fixComboButton();
     fixPotionShortcut();
     fixRangedAmmoShortcut();
+    revealDedicatedHost(document.getElementById('btnAction1'));
+    revealDedicatedHost(document.getElementById('btnAction2'));
+    revealDedicatedHost(document.getElementById('btnAction3'));
   }
 
   function queueRefresh() {
@@ -312,9 +345,13 @@
     if (document.fonts?.ready) {
       document.fonts.ready.then(() => { rasterCache.clear(); queueRefresh(); }).catch(() => {});
     }
-    observer = new MutationObserver(queueRefresh);
+    observer = new MutationObserver(() => {
+      suppressFreshLegacyGlyphs(); // Runs in the mutation microtask, before the browser can paint the rebuilt emoji.
+      queueRefresh();
+    });
     observer.observe(document.body, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['data-action','data-label','aria-label','class','title'] });
     window.setInterval(queueRefresh, 100); // Mirrors the base module's cheap dynamic-loadout watcher.
+    suppressFreshLegacyGlyphs();
     queueRefresh();
   }
 
@@ -327,6 +364,7 @@
       specialAmmo: window.RangedWeapons?.specialAmmoCount?.() ?? null,
       action2: descriptor(document.getElementById('btnAction2')),
       action3: descriptor(document.getElementById('btnAction3')),
+      hiddenHosts: [1,2,3].filter(i => actionIconHost(document.getElementById(`btnAction${i}`))?.style?.visibility === 'hidden'),
       images: Object.fromEntries([...imageState].map(([file, record]) => [file, record.state])),
       observing: Boolean(observer),
     }),
