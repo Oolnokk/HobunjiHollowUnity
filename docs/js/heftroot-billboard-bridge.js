@@ -66,7 +66,17 @@
     plane.position.set(0, 0, 0); // Used to retain game.js's legacy per-member triangle offsets instead of cancelling the first one back to tile center.
     plane.castShadow = false;
     plane.receiveShadow = false;
-    plane.layers?.enable?.(1);
+    // Deliberately NOT enrolled in the outline layer (no plane.layers.enable(1)):
+    // this is a flat, camera-facing, alpha-cutout billboard with no computed
+    // normals — shellOutlineMat's inverted-hull technique needs real volume to
+    // produce a thin border, and on a flat plane instead paints the entire
+    // alpha-transparent remainder of the quad solid black (the exact "black
+    // leaf rectangles" failure game.js's _markOutline already documents and
+    // that foliage-generator.js's leaf cards opt out of the same way). game.js
+    // still calls _markOutline(group) on this billboard's wrapper group for
+    // every foliage crop uniformly, so noOutline must be set too or that call
+    // would just re-enable layer 1 on this plane.
+    plane.userData.noOutline = true;
     plane.userData.hobunjiCropSpriteKey = 'heftroot';
     plane.userData.hobunjiCropRootKey = 'heftroot'; // Used by the shared crop presentation layer to anchor the outer crop wrapper to soil instead of flood-water height.
     plane.userData.hobunjiHeftrootBillboard = true;
