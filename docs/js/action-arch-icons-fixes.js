@@ -5,8 +5,8 @@
   'use strict';
   if (window.ActionArchIconFixes?.installed) return;
 
-  const ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used for the potion/quiver/combo artwork below.
-  const imageState = new Map(); // filename -> preload record used by the canvas compositor and plain PNG renderer.
+  const ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used for potion/quiver/combo artwork below.
+  const imageState = new Map(); // filename -> preload record used by canvas/plain PNG renderers.
   const rasterCache = new Map(); // composite key -> data URL for combo/ammo numbered symbols.
   let queued = false; // Coalesces action-bar rebuilds into one presentation pass.
   let observer = null; // Stored for debug/duplicate-install status.
@@ -47,7 +47,6 @@
         width:100% !important;
         height:100% !important;
       }
-
       .action-arch-fix-icon {
         width:78%; height:78%; object-fit:contain; display:block; margin:auto;
         pointer-events:none; filter:brightness(0) invert(1);
@@ -63,19 +62,6 @@
         position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
       }
       .action-arch-combo-layered > span {
-        position:relative; z-index:2; color:#fff;
-        font:700 1.68em/1 'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;
-        text-shadow:0 0 4px #111,0 0 4px #111;
-      }
-      .action-arch-combo-fallback {
-        position:relative; width:100%; height:100%; display:grid; place-items:center;
-      }
-      .action-arch-combo-fallback > img {
-        position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
-        filter:brightness(0) invert(1);
-        transform:rotate(var(--combo-rotation, 0deg));
-      }
-      .action-arch-combo-fallback > span {
         position:relative; z-index:2; color:#fff;
         font:700 1.68em/1 'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;
         text-shadow:0 0 4px #111,0 0 4px #111;
@@ -112,19 +98,22 @@
     return image;
   }
 
-  function descriptor(element) {
-    return [
-      element?.dataset?.action,
-      element?.dataset?.label,
-      element?.getAttribute?.('aria-label'),
-      element?.title,
-      element?.querySelector?.('.abt-label')?.textContent,
-      element?.textContent,
-    ].filter(Boolean).join(' ').replace(/[_&/\\-]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-  }
-
   function actionIconHost(button) {
     return button?.querySelector?.('.abt-icon') || null;
+  }
+
+  function actionButtons() {
+    return [...document.querySelectorAll('#actionStack button[data-action]')];
+  }
+
+  function actionButton(action) {
+    return actionButtons().find(button => !button.classList.contains('abt-hidden') && button.dataset.action === action) || null;
+  }
+
+  function combatButton(slotIndex) {
+    return window.ActionArchIcons?.combatButtonForSlot?.(slotIndex)
+      || document.querySelector(`#actionStack button[data-combat-slot="${slotIndex}"]`)
+      || null;
   }
 
   function isDedicatedHost(host) {
@@ -134,24 +123,17 @@
   function hideLegacyHost(button) {
     const host = actionIconHost(button);
     if (!host || isDedicatedHost(host)) return;
-    host.style.visibility = 'hidden'; // MutationObservers run before paint, preventing one-frame emoji flashes.
+    host.style.visibility = 'hidden'; // MutationObservers run before paint, preventing one-frame legacy glyph flashes.
   }
 
-  function revealDedicatedHost(button) {
-    const host = actionIconHost(button);
-    if (host && isDedicatedHost(host)) host.style.visibility = 'visible';
-  }
-
-  // Movement/action refreshes rebuild the old emoji markup before the normal
-  // requestAnimationFrame decorators run. Hide only the icon hosts we know are
-  // currently owned by the dedicated HUD so the legacy glyph cannot paint.
   function suppressFreshLegacyGlyphs() {
-    const action1 = document.getElementById('btnAction1');
-    const action2 = document.getElementById('btnAction2');
-    const action3 = document.getElementById('btnAction3');
-    if (action1?.classList?.contains('combat-dual-input')) hideLegacyHost(action1);
-    if (action2?.classList?.contains('combat-dual-input') || rangedAmmoSelector(action2)) hideLegacyHost(action2);
-    if (weaponAction3IsPotion(action3)) hideLegacyHost(action3);
+    const dedicatedActions = new Set(['cut', 'slash', 'potion_select', 'ammo_select']);
+    actionButtons().forEach(button => {
+      const host = actionIconHost(button);
+      if (!host) return;
+      if (dedicatedActions.has(button.dataset.action)) hideLegacyHost(button);
+      else host.style.visibility = ''; // World-context actions must immediately reclaim their own icon host.
+    });
   }
 
   function moveExponentOutside(button) {
@@ -182,7 +164,7 @@
     const { drawNumeral = true } = options;
     const record = preload(file);
     if (record.state !== 'loaded' || !record.image?.naturalWidth) return null;
-    const key = `${cachePrefix}:v3:${file}:${number}:${rotationDeg}:${drawNumeral ? 'with-text' : 'cutout-only'}`;
+    const key = `${cachePrefix}:v4:${file}:${number}:${rotationDeg}:${drawNumeral ? 'with-text' : 'cutout-only'}`;
     if (rasterCache.has(key)) return rasterCache.get(key);
 
     const size = 160;
@@ -201,13 +183,11 @@
     ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
 
-    // Purpose-built PNGs are authored black; turn the preserved alpha into white.
     ctx.globalCompositeOperation = 'source-in';
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, size, size);
 
     const text = String(Math.max(0, Math.floor(Number(number) || 0)));
-    // 150% of the previous 56/70px numeral scale, for both combo and ammo counts.
     const px = text.length >= 2 ? 84 : 105;
     const font = `700 ${px}px "KhymeryyanRomanLetters+Numbers", "DM Mono", monospace`;
     ctx.font = font;
@@ -215,8 +195,6 @@
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // Scale the transparent moat with the larger numeral so the Celtic-knot
-    // cutout keeps the same visual weight instead of crowding the icon lines.
     ctx.globalCompositeOperation = 'destination-out';
     ctx.save();
     ctx.filter = 'blur(3px)';
@@ -273,7 +251,7 @@
   }
 
   function fixComboButton() {
-    const button = document.getElementById('btnAction1');
+    const button = combatButton(1);
     if (!button?.classList?.contains('combat-dual-input')) return;
     const main = button.querySelector('.combat-coin-front .combat-main-symbol');
     if (!main) return;
@@ -286,7 +264,6 @@
     if (layered) {
       main.replaceChildren(layered);
     } else {
-      // Avoid showing an "unslotted" X while draw_melee.png is still decoding.
       const record = preload('draw_melee.png');
       if (record.state !== 'failed') {
         const wrap = document.createElement('span');
@@ -304,39 +281,19 @@
     main.dataset.comboFixSignature = signature;
   }
 
-  function weaponAction3IsPotion(button) {
-    if (!button) return false;
-    const own = descriptor(button);
-    if (own.includes('potion')) return true;
-    // On the weapon/ranged action layouts Action 3 is reserved for quick potion
-    // selection; use neighboring combat/ranged actions as a fallback when the
-    // legacy button only exposes its emoji and no useful label.
-    const a1 = descriptor(document.getElementById('btnAction1'));
-    const a2 = descriptor(document.getElementById('btnAction2'));
-    return /\b(cut|slash|shoot|fire|load|reload|ammo|ranged)\b/.test(`${a1} ${a2}`);
-  }
-
   function fixPotionShortcut() {
-    const button = document.getElementById('btnAction3');
-    if (!weaponAction3IsPotion(button)) return;
+    const button = actionButton('potion_select');
+    if (!button) return;
     const host = actionIconHost(button);
-    const image = plainIcon('potion_select.png', button.getAttribute('aria-label') || 'Potion select');
+    const image = plainIcon('potion_select.png', button.querySelector('.abt-label')?.textContent || 'Potion select');
     if (!host || !image) return;
     if (!host.querySelector('img[data-action-arch-fix-icon="potion_select.png"]')) host.replaceChildren(image);
     host.style.visibility = 'visible';
   }
 
-  function rangedAmmoSelector(button) {
-    if (!button) return false;
-    const own = descriptor(button);
-    if (/\b(ammo|quiver)\b/.test(own)) return true;
-    const a1 = descriptor(document.getElementById('btnAction1'));
-    return /\b(shoot|fire|reload|load|ranged|crossbow|scatterbow)\b/.test(a1) && !/\b(cut|slash)\b/.test(a1);
-  }
-
   function fixRangedAmmoShortcut() {
-    const button = document.getElementById('btnAction2');
-    if (!rangedAmmoSelector(button) || !window.RangedWeapons?.specialAmmoCount) return;
+    const button = actionButton('ammo_select');
+    if (!button || !window.RangedWeapons?.specialAmmoCount) return;
     const host = actionIconHost(button);
     if (!host) return;
     const count = Math.max(0, Math.floor(Number(window.RangedWeapons.specialAmmoCount()) || 0));
@@ -352,14 +309,16 @@
 
   function refresh() {
     queued = false;
-    moveExponentOutside(document.getElementById('btnAction1'));
-    moveExponentOutside(document.getElementById('btnAction2'));
+    [1, 2].forEach(slotIndex => moveExponentOutside(combatButton(slotIndex)));
     fixComboButton();
     fixPotionShortcut();
     fixRangedAmmoShortcut();
-    revealDedicatedHost(document.getElementById('btnAction1'));
-    revealDedicatedHost(document.getElementById('btnAction2'));
-    revealDedicatedHost(document.getElementById('btnAction3'));
+    actionButtons().forEach(button => {
+      const host = actionIconHost(button);
+      if (!host) return;
+      if (isDedicatedHost(host)) host.style.visibility = 'visible';
+      else if (!['cut', 'slash', 'potion_select', 'ammo_select'].includes(button.dataset.action)) host.style.visibility = '';
+    });
   }
 
   function queueRefresh() {
@@ -380,11 +339,17 @@
       document.fonts.ready.then(() => { rasterCache.clear(); queueRefresh(); }).catch(() => {});
     }
     observer = new MutationObserver(() => {
-      suppressFreshLegacyGlyphs(); // Runs in the mutation microtask, before the browser can paint the rebuilt emoji.
+      suppressFreshLegacyGlyphs();
       queueRefresh();
     });
-    observer.observe(document.body, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['data-action','data-label','aria-label','class','title'] });
-    window.setInterval(queueRefresh, 100); // Mirrors the base module's cheap dynamic-loadout watcher.
+    observer.observe(document.body, {
+      subtree:true,
+      childList:true,
+      characterData:true,
+      attributes:true,
+      attributeFilter:['data-action','data-combat-slot','aria-label','class','title'],
+    });
+    window.setInterval(queueRefresh, 100);
     suppressFreshLegacyGlyphs();
     queueRefresh();
   }
@@ -395,10 +360,12 @@
     debugSnapshot: () => ({
       comboAbilityId: comboAbilityId(),
       comboStep: comboStep(),
-      specialAmmo: window.RangedWeapons?.specialAmmoCount?.() ?? null,
-      action2: descriptor(document.getElementById('btnAction2')),
-      action3: descriptor(document.getElementById('btnAction3')),
-      hiddenHosts: [1,2,3].filter(i => actionIconHost(document.getElementById(`btnAction${i}`))?.style?.visibility === 'hidden'),
+      combat1: combatButton(1)?.id || null,
+      combat2: combatButton(2)?.id || null,
+      potion: actionButton('potion_select')?.id || null,
+      ammo: actionButton('ammo_select')?.id || null,
+      actions: Object.fromEntries(actionButtons().map(button => [button.id, button.dataset.action || null])),
+      hiddenHosts: actionButtons().filter(button => actionIconHost(button)?.style?.visibility === 'hidden').map(button => button.id),
       images: Object.fromEntries([...imageState].map(([file, record]) => [file, record.state])),
       observing: Boolean(observer),
     }),
