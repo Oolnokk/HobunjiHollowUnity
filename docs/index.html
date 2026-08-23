@@ -355,6 +355,10 @@
   <script src="js/weather-fx.js?v=20260809b"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
+  <!-- Player-centered white mist cylinders, shown only in the Southern
+       Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
+       fogDensity/vegCullRadiusTiles comments in game.js for why. -->
+  <script src="js/cloud-forest-fog.js?v=20260822a"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -1246,7 +1250,7 @@
           </label>
           <label class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Shoulder Cam (Experimental)</div>
+              <div class="settings-name">Shoulder Cam</div>
               <div class="settings-desc">Close, over-the-shoulder camera — mouse looks around, WASD moves relative to where you're looking</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingShoulderSurf" checked><span class="toggle-slider"></span></span>

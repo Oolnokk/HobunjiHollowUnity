@@ -315,6 +315,18 @@
       inputStrength = usingKeyboard ? 1 : deps.clamp(inputLen, 0, 1);
       ix /= inputLen; iy /= inputLen;
     }
+    // Same camera-relative rotation game.js's on-foot updateMovement applies
+    // to its own ix/iy in Shoulder Cam — otherwise mounted WASD stayed on
+    // world-fixed axes (pre-dating Shoulder Cam becoming the default) while
+    // on-foot movement went camera-relative, a jarring inconsistency the
+    // instant you mount up or dismount.
+    if (deps.isShoulderSurfMode() && (ix !== 0 || iy !== 0)) {
+      const aim = deps.cameraFacingAngleRad();
+      const s = Math.sin(aim), c = Math.cos(aim);
+      const rIx = -ix * s - iy * c;
+      const rIy =  ix * c - iy * s;
+      ix = rIx; iy = rIy;
+    }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul();

@@ -42,6 +42,82 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
 
+## Camera: Shoulder Cam is the default
+
+The over-the-shoulder camera (`Settings → Camera → Shoulder Cam`, `docs/game.js`'s
+`s_shoulderSurf`/`SHOULDER_SURF_MODE`) shipped as an experimental toggle and has
+graduated to the standard camera — it now ships on by default and is no longer
+labeled experimental in Settings. It's a close, near-eye-level view: mouse looks
+around freely (Pointer Lock on desktop), WASD moves relative to where you're
+looking rather than the camera's fixed azimuth, and separate horizontal/vertical
+framing offsets (also in Settings) ease between a default and a combat stance so
+a drawn weapon/tool doesn't sit in the middle of the screen. The plain fixed
+follow camera is still reachable by unchecking the toggle.
+
+## Southern Cloud Forest fog
+
+The Southern Cloud Forest (`map_southern_cloud_forest`) sets its own zone
+config in `EXTERIOR_ZONES` (`docs/game.js`) to make the fog both thicker and
+actually present, and to make its vegetation cull radial instead of
+directional:
+
+- **`fogDensity: 0.055`** vs. every other zone's shared `0.018`, read by
+  `buildZoneScene`. Thematically, a *cloud* forest with no clouds in it was an
+  obvious gap. `fogColor` is white (`0xffffff`) instead of every other zone's
+  dark tint, so the mist reads as bright overcast weather rather than gloom.
+- **`vegCullRadiusTiles: 34`** — `updateZoneVegetationCulling` uses its
+  presence to swap the other zones' camera-forward/rear/width box for a plain
+  circle centered on the *player*. Shoulder Cam lets the camera actually look
+  down the length of the forest now, which had made that box's forward pop-in
+  edge (`VEG_CULL_FORWARD_TILES`, 42 tiles) visible; 34 tiles is where
+  `fogDensity` above has already made `FogExp2` ~97% opaque, so the (now
+  uniform-in-every-direction) pop-in ring stays hidden in the mist. A full
+  circle that size does mean more renders behind/beside the player than the
+  old forward-biased box did — an acceptable trade since the fog is now doing
+  the work that box used to.
+- **`docs/js/cloud-forest-fog.js`** (`window.CloudForestFog`) adds three
+  large, translucent white cylinders centered on the player — scaled to
+  0.42×/0.70×/1.00× `vegCullRadiusTiles` — that the camera always renders from
+  the inside (`THREE.BackSide`). A flat per-pixel `FogExp2` alone reads as
+  computed haze; real geometry the camera sits inside of gives the mist actual
+  visual presence, drifting and layered on top of (not replacing) the
+  ordinary fog. Each layer is textured with a procedurally-painted white
+  "spray paint" `CanvasTexture` (soft random blotches, wrap-seamless) used as
+  a fallback — the module also tries `assets/textures/cloud_forest_mist.png`
+  first and upgrades to it transparently if that asset ever shows up. Follows
+  the same self-contained `window.<Namespace>` + `init(deps)`/`update(dt)`
+  module shape as `docs/js/rain-planes.js`, and is wired into the same
+  per-frame update tick in `docs/game.js`.
+
+## Outlines are fog-aware; the furniture seam pass is off
+
+`shellOutlineMat` (`docs/game.js`, the inverted-hull "Shell Outlines" pass —
+the dark border on rocks/crops/terrain steps) now declares `fog: true` and
+merges in `THREE.UniformsLib.fog`, so it mixes its black line toward whichever
+scene's actual `fogColor`/`fogDensity` is active based on distance, by hand in
+its own vertex/fragment shaders (the built-in `fog_vertex`/`fog_fragment`
+chunks assume a view-space variable named `mvPosition`, which this shader
+calls `viewPos`, so the same math is written out explicitly instead of using
+`#include`). In the Cloud Forest specifically, this means an outline far
+enough away to already be swallowed by the white mist now actually fades
+into it instead of staying a crisp black line poking through.
+
+Two other, separate outline sources existed alongside the shell pass:
+
+- **Depth-edge outlines** (`s_depthOutlines`, Settings → Visual Effects →
+  "Depth Outlines") — already off by default; unchanged.
+- **Furniture material-seam outlines** (`_markFurnitureEdgeId`/the
+  composite shader's `idEdge` — catches boundaries between two touching
+  parts of the same furniture group, e.g. a chair leg against its seat) had
+  no Settings toggle at all and simply ran unconditionally whenever Shell
+  Outlines was on. It's now gated behind a new `s_furnitureSeamOutlines`
+  flag (`docs/game.js`), defaulted to `false`: it isn't fog-aware like the
+  shell pass above, so leaving it on would keep drawing crisp seam lines
+  straight through the Cloud Forest's mist. The render pass that builds its
+  source buffer is skipped entirely while off (not just hidden), and a new
+  `uSeamOutlinesOn` uniform zeroes its contribution in the composite shader
+  regardless of that buffer's contents.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining

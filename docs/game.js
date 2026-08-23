@@ -1291,7 +1291,29 @@
         map_southern_cloud_forest: {
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
-          groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          groundColor: 0x2d4a3a, fogColor: 0xffffff,
+          // It's a *cloud* forest — thicker than the 0.018 every other zone
+          // shares (see buildZoneScene's fogDensity fallback), and white
+          // rather than every other zone's dark tint, so the mist itself
+          // reads as part of the biome rather than an oversight. Layered on
+          // top by CloudForestFog's player-centered mist cylinders (see
+          // docs/js/cloud-forest-fog.js) for something with actual visual
+          // presence, since a flat per-pixel exponential fog alone reads as
+          // computed haze rather than something with real volume.
+          fogDensity: 0.055,
+          // updateZoneVegetationCulling uses this zone's presence here to
+          // switch from the other zones' camera-forward/rear/width box to a
+          // simple circle around the player — it pairs with CloudForestFog's
+          // outer mist cylinder, which is scaled to this same radius, so the
+          // ring where vegetation pops in/out sits inside the mist in every
+          // direction rather than just character-forward. 34 tiles is where
+          // fogDensity above has already made FogExp2 ~97% opaque, so the
+          // pop-in itself stays hidden without changing how much actually
+          // renders at once (a full circle this size does mean more gets
+          // drawn behind/beside the player than the old forward-biased box
+          // did — the fog now doing the work that box previously did makes
+          // that an acceptable trade, not a free one).
+          vegCullRadiusTiles: 34,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -7249,7 +7271,8 @@
       let playerItemHoldY = 0.64;
 
       let npcDialogueStaging = null;
-      // Experimental over-the-shoulder camera (Settings → Camera). See
+      // Over-the-shoulder camera (Settings → Camera) — the default camera
+      // mode as of this build, no longer experimental. See
       // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
       // that already resolves "back to the ordinary gameplay camera" (initial
       // load, dialogue close, standing up, cutscene end) goes through those,
@@ -7847,7 +7870,7 @@
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(fogColor);
-        zScene.fog = new THREE.FogExp2(fogColor, 0.018); // match town/farm fog density
+        zScene.fog = new THREE.FogExp2(fogColor, zdef?.fogDensity ?? 0.018); // match town/farm fog density unless the zone overrides it (see map_southern_cloud_forest)
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -15110,9 +15133,20 @@
       // targets or screen-space sampling required.
       const shellOutlineMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: {
-          uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
-        },
+        // fog:true + the merged UniformsLib.fog entries below are the
+        // standard (only) way three.js feeds a raw ShaderMaterial the
+        // active scene's actual fog uniforms — refreshed automatically from
+        // whichever scene is being rendered (farm's light 0.018 fog, a
+        // wilderness zone's own, or the Cloud Forest's dense white one).
+        // The shader below does the actual color-mix by hand rather than
+        // relying on the built-in fog_vertex/fog_fragment #include chunks,
+        // since those assume a varying named exactly `mvPosition`, which
+        // this shader computes as `viewPos` instead.
+        fog: true,
+        uniforms: THREE.UniformsUtils.merge([
+          THREE.UniformsLib.fog,
+          { uThickness: { value: 0.006 } },  // NDC units → constant screen-pixel width
+        ]),
         vertexShader: `
           // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
           // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
@@ -15121,6 +15155,7 @@
           // attribute and fails to compile/link, which silently dropped the
           // outline for every InstancedMesh (wall bricks) using this material.
           uniform float uThickness;
+          varying float vFogDepth;
           void main() {
             #ifdef USE_INSTANCING
               mat4 mvMatrix = modelViewMatrix * instanceMatrix;
@@ -15153,11 +15188,33 @@
             dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
             clip.xy    += dir * uThickness * clip.w;
             gl_Position = clip;
+            // Same depth convention THREE's own fog_vertex chunk uses (the
+            // view-space position's negated Z), computed here by hand since
+            // this shader's view-space variable is named viewPos, not the
+            // mvPosition that chunk expects.
+            vFogDepth = -viewPos.z;
           }
         `,
         fragmentShader: `
+          uniform vec3 fogColor;
+          #ifdef FOG_EXP2
+            uniform float fogDensity;
+          #else
+            uniform float fogNear;
+            uniform float fogFar;
+          #endif
+          varying float vFogDepth;
           void main() {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            vec3 outlineColor = vec3(0.0);
+            #ifdef USE_FOG
+              #ifdef FOG_EXP2
+                float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
+              #else
+                float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+              #endif
+              outlineColor = mix(outlineColor, fogColor, fogFactor);
+            #endif
+            gl_FragColor = vec4(outlineColor, 1.0);
           }
         `,
         // depthWrite off: shell only reads the scene depth, never corrupts it.
@@ -15438,6 +15495,7 @@
           uTexel: { value: new THREE.Vector2(1, 1) },
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
           uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
+          uSeamOutlinesOn: { value: 0 },
         },
         depthTest: false, depthWrite: false,
         vertexShader: `
@@ -15449,6 +15507,7 @@
           uniform vec2 uTexel;
           uniform float uCameraNear, uCameraFar;
           uniform float uDepthOutlinesOn, uDepthThreshScale;
+          uniform float uSeamOutlinesOn;
           varying vec2 vUv;
           float linearDepth(float z) {
             float zNdc = z * 2.0 - 1.0;
@@ -15495,7 +15554,7 @@
             // if something closer to the camera is actually there.
             float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
             float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
-            idEdge *= step(idDepth, sceneDepth + 0.05);
+            idEdge *= step(idDepth, sceneDepth + 0.05) * uSeamOutlinesOn;
 
             float edge = max(depthEdge, idEdge);
             gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
@@ -16008,15 +16067,27 @@
         const cullables = zi?.cullables;
         if (!cullables || !cullables.length) return;
         const camX = camera.position.x, camZ = camera.position.z;
-        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
-        let viewLen = Math.hypot(viewX, viewZ);
-        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
-        viewX /= viewLen; viewZ /= viewLen;
-        const rightX = viewZ, rightZ = -viewX;
-        const forwardRange = VEG_CULL_FORWARD_TILES;
-        const rearRange = VEG_CULL_REAR_TILES;
-        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const px = player.x / TILE, pz = player.y / TILE;
+        // A handful of zones (currently just the Southern Cloud Forest, via
+        // vegCullRadiusTiles — see its EXTERIOR_ZONES comment) swap the
+        // camera-forward/rear/width box every other zone uses below for a
+        // plain circle centered on the PLAYER, not the camera — pairing with
+        // CloudForestFog's own player-centered mist cylinders so the ring
+        // where vegetation pops in/out sits inside the mist uniformly in
+        // every direction instead of only character-forward.
+        const radialCullRadius = EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles;
+        let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
+        if (!radialCullRadius) {
+          let vx = camTargetX - camX, vz = camTargetZ - camZ;
+          let viewLen = Math.hypot(vx, vz);
+          if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
+          viewX = vx / viewLen; viewZ = vz / viewLen;
+          rightX = viewZ; rightZ = -viewX;
+          forwardRange = VEG_CULL_FORWARD_TILES;
+          rearRange = VEG_CULL_REAR_TILES;
+          halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        }
         // Every character worth revealing an occluder for, not just the
         // player -- a tree that only fades for the player would leave a
         // companion standing behind the SAME tree fully hidden by it, since
@@ -16025,19 +16096,24 @@
         // without also sitting on the camera-to-player line (they're rarely
         // standing on exactly the same spot), so this needs its own check
         // per target rather than reusing the player's.
-        const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
+        const revealTargets = [{ x: px, z: pz }];
         for (const c of companionObjects) {
           if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
         }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
-          const dx = s.x - camX, dz = s.z - camZ;
-          const along = dx * viewX + dz * viewZ;
-          const side = Math.abs(dx * rightX + dz * rightZ);
           const sticky = obj.visible ? hysteresis : 0;
           const expandedRadius = s.radius + sticky;
-          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
-            && side <= halfWidth + expandedRadius;
+          let show;
+          if (radialCullRadius) {
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + expandedRadius;
+          } else {
+            const dx = s.x - camX, dz = s.z - camZ;
+            const along = dx * viewX + dz * viewZ;
+            const side = Math.abs(dx * rightX + dz * rightZ);
+            show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+              && side <= halfWidth + expandedRadius;
+          }
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
@@ -18997,6 +19073,13 @@
         uniform float uStrength;
         varying vec2 vUv;
         varying float vRandom;
+        // See shellOutlineMat's own vFogDepth comment — same by-hand fog
+        // depth instead of the built-in fog_vertex chunk (which expects a
+        // view-space variable literally named mvPosition). Computed
+        // unconditionally (cheap, one varying) so this one vertex shader
+        // keeps serving both grassBillboardMat (fog: true) and
+        // cuttableBillboardGlowMat (no fog) without needing two copies.
+        varying float vFogDepth;
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -19015,7 +19098,9 @@
           float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
           worldPos.x += sway;
           worldPos.z += sway2;
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
+          vec4 mvPosition = viewMatrix * worldPos;
+          vFogDepth = -mvPosition.z;
+          gl_Position = projectionMatrix * mvPosition;
         }
       `;
 
@@ -19023,8 +19108,16 @@
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
         uniform float uDensity;
+        uniform vec3 fogColor;
+        #ifdef FOG_EXP2
+          uniform float fogDensity;
+        #else
+          uniform float fogNear;
+          uniform float fogFar;
+        #endif
         varying vec2 vUv;
         varying float vRandom;
+        varying float vFogDepth;
         void main() {
           if (vRandom > uDensity) discard;
           vec4 texel = texture2D(uGrassTex, vUv);
@@ -19039,6 +19132,14 @@
           vec3 tinted = uTint * (0.7 + lum * 0.8);
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
+          #ifdef USE_FOG
+            #ifdef FOG_EXP2
+              float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
+            #else
+              float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+            #endif
+            col = mix(col, fogColor, fogFactor);
+          #endif
           gl_FragColor = vec4(col, texel.a);
         }
       `;
@@ -19061,8 +19162,21 @@
           uTime:       { value: 0 },
           uStrength:   { value: 0.04 },
           uDensity:    { value: 1 },
+          // Fog uniform slots _grassBillFrag's USE_FOG block reads, refreshed
+          // every frame from whichever scene is active — declared directly
+          // here rather than via THREE.UniformsUtils.merge(UniformsLib.fog):
+          // merge() deep-clones every merged uniform, and cloning uGrassTex
+          // (a real Texture, not a Color/number) here somehow left the
+          // resulting InstancedMesh instances rendering nothing at all —
+          // confirmed live (every farm grass tuft vanished) and isolated to
+          // this specific clone call, not fog itself or the shader changes.
+          fogColor:    { value: new THREE.Color() },
+          fogDensity:  { value: 0 },
+          fogNear:     { value: 1 },
+          fogFar:      { value: 1000 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
+          fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
           uniforms:       sharedUniforms(),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
@@ -19921,6 +20035,16 @@
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
+      // Furniture "material ID" seam outline (see _markFurnitureEdgeId/
+      // idEdge in the composite shader) — unlike the shell and depth-edge
+      // passes above, this one never had a Settings toggle of its own; it
+      // just always ran whenever s_outlines was on. Off by default now: the
+      // shell pass alone (see shellOutlineMat's fog handling) is the
+      // intended outline style, and this extra seam layer isn't fog-aware
+      // (it always draws a solid line regardless of distance), so leaving it
+      // on would keep punching crisp lines through the Cloud Forest's mist
+      // that the fogged shell outline is specifically meant to fade into.
+      let s_furnitureSeamOutlines = false;
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
@@ -20722,6 +20846,7 @@
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
+        window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
@@ -20759,14 +20884,19 @@
 
           // Furniture material-ID buffer (layer-3 objects only) — feeds the
           // material-seam edge detection in the composite shader below.
-          renderer.setRenderTarget(_edgeIdRT);
-          renderer.setClearColor(0x000000, 0);
-          renderer.clear(true, true, false);
-          camera.layers.set(3);
-          activeScene.overrideMaterial = _furnitureIdMat;
-          renderer.render(activeScene, camera);
-          activeScene.overrideMaterial = null;
-          camera.layers.enableAll();
+          // Skipped entirely while s_furnitureSeamOutlines is off — the
+          // composite's uSeamOutlinesOn uniform also zeroes its contribution
+          // regardless, so leaving _edgeIdRT's contents stale here is safe.
+          if (s_furnitureSeamOutlines) {
+            renderer.setRenderTarget(_edgeIdRT);
+            renderer.setClearColor(0x000000, 0);
+            renderer.clear(true, true, false);
+            camera.layers.set(3);
+            activeScene.overrideMaterial = _furnitureIdMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            camera.layers.enableAll();
+          }
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
           // (see _markPngPlane) and grass billboards (userData.isBillboard,
@@ -20802,6 +20932,7 @@
           _postMat.uniforms.uCameraFar.value       = camera.far;
           _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
           _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
+          _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
         } else {
           renderer.setRenderTarget(null);
@@ -24132,6 +24263,8 @@
         getControllerLookAngle: () => controllerLookAngle,
         getLastMouseMoveTime: () => lastMouseMoveTime,
         getMouseLookAngle: () => mouseLookAngle,
+        isShoulderSurfMode: () => activeCameraMode === SHOULDER_SURF_MODE,
+        cameraFacingAngleRad,
       });
 
       window.Fishing?.init({
@@ -24487,6 +24620,16 @@
         getActiveScene,
         getCurrentArea: () => currentArea,
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
+      });
+
+      window.CloudForestFog?.init({
+        THREE,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+        getCloudForestFogRadiusTiles: () => EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles,
       });
 
       window.FarmPanel?.init({
