@@ -381,11 +381,6 @@
     return coherentBottomOf(mask) + .5;
   }
 
-  function smoothstep01(value) {
-    const t = Math.max(0, Math.min(1, Number(value) || 0));
-    return t * t * (3 - 2 * t);
-  }
-
   // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
   // two rigid Mesh objects. The regular grid is fitted to the avatar alpha
   // bounds and cells containing no opaque pixels are omitted, concentrating
@@ -393,10 +388,6 @@
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
-    // A broad 30%-of-height falloff suits the painted cutout style better
-    // than a narrow neck hinge: shoulders and upper torso share a diminishing
-    // amount of head rotation instead of stopping abruptly at one rigid seam.
-    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
     const mask = options.opaqueMask;
     const left = mask?.left ?? 0, right = mask?.right ?? ((mask?.width || 1) - 1);
     const top = mask?.top ?? 0, bottom = mask?.bottom ?? ((mask?.height || 1) - 1);
@@ -404,29 +395,38 @@
     const cropWidthPx = Math.max(1, right - left + 1), cropHeightPx = Math.max(1, bottom - top + 1);
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
-    // Default ramp: weight 0 at neckLocal.y - .55*blendHeight, saturating to
-    // weight 1 at neckLocal.y + .45*blendHeight. A tall/draping head cosmetic
-    // (fin-shaped hood, long mantle) can extend further down than that
-    // default saturation point — options.headWeightFloorY (from
-    // detectHeadCosmeticsBottomPx, the measured bottom of head+hair+hood+hat
-    // combined) shifts the WHOLE ramp down by just enough that its 1.0 point
-    // covers that real extent instead, same width, so a character whose
-    // cosmetics fit inside the default reach gets pixel-identical behavior
-    // to before this existed.
+    // Hard boundary, no gradient: a vertex is either 100% head-bone or 100%
+    // torso-bone, never a blend of the two. This used to be a smoothstep
+    // ramp (a broad 30%-of-height falloff, meant to let shoulders/upper
+    // torso share a diminishing amount of head rotation instead of a rigid
+    // seam) — but linear blend skinning only looks right when the two
+    // bones it's averaging are close in orientation. This rig's neck bone
+    // can end up 90°+ off from the torso bone in some poses (a weapon
+    // idle stance's body-yaw stacking with head-aim, confirmed live with
+    // the Pixel Probe), and ANY vertex with partial weight at that kind of
+    // angle mismatch collapses into scattered "floating pixel" garbage —
+    // exactly the Fine Hood tearing this was chasing. The head itself
+    // never showed this because every one of its vertices already sits
+    // fully on the head-bone side of the old ramp; cosmetics need that
+    // same all-or-nothing treatment, not a smoothed one.
+    // headWeightFloorY (from detectHeadCosmeticsBottomPx, the measured
+    // bottom of head+hair+hood+hat combined) pushes the boundary down far
+    // enough to cover a tall/draping cosmetic that extends below the bare
+    // neck line; clamped so it only ever moves the boundary DOWN (never
+    // reclassifies actual head pixels as body if a hat sits entirely above
+    // the neck).
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
     const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
-    const defaultRampEndY = neckLocal.y + blendHeight * .45;
-    const rampEndY = (Number.isFinite(options.headWeightFloorY) && options.headWeightFloorY < defaultRampEndY)
-      ? options.headWeightFloorY
-      : defaultRampEndY;
-    const rampStartY = rampEndY - blendHeight;
+    const boundaryY = Number.isFinite(options.headWeightFloorY)
+      ? Math.min(options.headWeightFloorY, neckLocal.y)
+      : neckLocal.y;
     const appendVertex = (pixelX, pixelY, normalZ) => {
       const x = toModelX(pixelX);
       const y = toModelY(pixelY);
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const headWeight = smoothstep01((y - rampStartY) / blendHeight);
+      const headWeight = y >= boundaryY ? 1 : 0;
       skinIndices.push(0, 1, 0, 0);
       skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
@@ -481,9 +481,9 @@
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData = {
-      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
+      segmentsX, segmentsY, neckLocal: { ...neckLocal },
       opaqueBoundsPx: { left, right, top, bottom }, visibleCellCount: visibleCells.length,
-      headWeightFloorY: options.headWeightFloorY ?? null, rampStartY, rampEndY,
+      headWeightFloorY: options.headWeightFloorY ?? null, boundaryY,
     };
     return geometry;
   }
