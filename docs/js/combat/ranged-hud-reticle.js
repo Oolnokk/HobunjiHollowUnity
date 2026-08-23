@@ -4,8 +4,8 @@
   window.RangedHudReticle?.dispose?.();
 
   const RETICLE_URL = 'assets/hud/hud_reticle.png';
-  const RETICLE_SCALE = 0.75;
-  const RETICLE_OPACITY = 0.75;
+  const RETICLE_SCALE = 0.5;
+  const RETICLE_OPACITY = 0.5;
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
 
@@ -105,7 +105,7 @@
       opacity: RETICLE_OPACITY,
       sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX],
       centeredOn: '#canvasWrap',
-      latestChange: 'Centered screen-space reticle at 75% scale and 75% opacity; visible only while a ranged weapon is drawn.',
+      latestChange: 'Centered screen-space reticle at 50% scale and 50% opacity; visible only while a ranged weapon is drawn.',
     }),
   };
 
