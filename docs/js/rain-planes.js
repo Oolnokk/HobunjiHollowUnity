@@ -311,3 +311,16 @@
 
   window.RainPlanes = { init, update, setSettings, getSettings, getDebugState };
 })();
+
+// sky-dome.js must wrap CalendarSystem/WeatherFX/RainPlanes before game.js initializes them.
+// rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
+// synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
+if (!window.HobunjiSkyDome) {
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20260823a"><\\/script>');
+  else {
+    const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
+    skyScript.src = 'js/sky-dome.js?v=20260823a';
+    skyScript.async = false;
+    document.head.appendChild(skyScript);
+  }
+}
