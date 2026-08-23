@@ -20,7 +20,7 @@
     RANGE_TILES: 1.8,
     HALF_CONE_DEG: 36,
     REAR_OFFSET_TILES: 0.36,
-    CHOKED_STAMINA_AMOUNT: 24,
+    CHOKED_STAMINA_AMOUNT: 24, // Legacy tuning name; Choked Stamina is the old name for today's Winded Stamina.
     PARTICLES_PER_S: 96,
     PARTICLE_SPEED_MIN_TILES_S: 4.2,
     PARTICLE_SPEED_MAX_TILES_S: 7.2,
@@ -179,27 +179,24 @@
     return targets;
   }
 
-  function applyChokedStamina(target) {
-    const resourceSystem = window.ResourceSystem; // Used to apply the requested status only when that affliction actually exists.
-    if (!resourceSystem?.AFFLICTIONS?.chokedStamina) return { applied: false, missing: true, amount: 0 };
-    const amount = resourceSystem.addAffliction?.(target, 'chokedStamina', tuning.CHOKED_STAMINA_AMOUNT) || 0;
+  function applyWindedStamina(target) {
+    const resourceSystem = window.ResourceSystem; // Used to apply the live affliction that replaced the older Choked Stamina name.
+    if (!resourceSystem?.AFFLICTIONS?.windedStamina) return 0;
+    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT) || 0;
     resourceSystem.enforceCaps?.(target);
-    return { applied: amount > 0, missing: false, amount };
+    return amount;
   }
 
   function resolveSpray(creature, state, deps) {
     const rangePx = tuning.RANGE_TILES * deps.TILE; // Used as the gameplay cone's short forward reach from the Grehlr's rear.
     const halfConeRad = tuning.HALF_CONE_DEG * Math.PI / 180;
     state.hitCount = 0;
-    state.chokedApplied = 0;
-    state.chokedMissing = false;
+    state.windedApplied = 0;
 
     for (const target of gatherTargets(creature, deps)) {
       if (!deps.inCone(creature.x, creature.y, state.sprayAngle, target.x, target.y, rangePx, halfConeRad)) continue;
       state.hitCount += 1;
-      const result = applyChokedStamina(target); // Used to keep missing-Choked behavior explicit instead of silently substituting Winded Stamina.
-      state.chokedApplied += result.amount;
-      state.chokedMissing ||= result.missing;
+      state.windedApplied += applyWindedStamina(target);
     }
     updateDebug(creature, state, true);
   }
@@ -224,11 +221,7 @@
     lastDebugAt = now;
     const phaseDuration = state.stage === 'flip' ? tuning.FLIP_S : state.stage === 'spray' ? tuning.SPRAY_S : tuning.RECOVER_S;
     const remaining = Math.max(0, phaseDuration - state.t);
-    const status = state.chokedMissing
-      ? 'Choked Stamina MISSING'
-      : state.hitCount > 0
-        ? `Choked +${state.chokedApplied || 0}`
-        : 'no cone hit';
+    const status = state.hitCount > 0 ? `Winded Stamina +${state.windedApplied || 0}` : 'no cone hit';
     const text = `Grehlr Stink: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.particles.length}\nhits ${state.hitCount || 0} | ${status}\nburrow protected ${isBurrowProtected(creature) ? 'YES' : 'no'} | color #8A9A3D`;
     if (text === lastDebugText) return;
     const element = ensureDebugElement();
@@ -253,8 +246,7 @@
     state.particleCarry = 0;
     state.sprayResolved = false;
     state.hitCount = 0;
-    state.chokedApplied = 0;
-    state.chokedMissing = false;
+    state.windedApplied = 0;
     updateDebug(creature, state, true);
   }
 
@@ -423,7 +415,7 @@
     tuning,
     STINK_OIL_COLOR,
     isBurrowProtected,
-    isChokedStaminaAvailable: () => !!window.ResourceSystem?.AFFLICTIONS?.chokedStamina,
+    staminaAfflictionId: 'windedStamina',
   }; // Used by mobile/manual diagnostics and the compatibility loader's already-loaded check.
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.grehlrStink; // Used when authored combat config finished loading before this module executed.
