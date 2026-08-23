@@ -6207,11 +6207,11 @@
       }
 
       // ── Breeding pairs (world-scoped, same rationale as livestock) ─────
-      // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are
+      // [{ id, parentA, parentB, startedDay, progress }] — parentA/B are
       // { source: 'world'|'stable', id, characterId? } refs (see
-      // js/farm-animals.js's resolveBreedingParent). Resolved by
-      // window.FarmAnimals.tickBreeding() on the day-tick, same cadence as
-      // crop growth.
+      // js/farm-animals.js's resolveBreedingParent). Resolved hourly by
+      // window.FarmAnimals.tickBreedingProgress() (see updateCalendar/
+      // sleepInBed) — finer-grained than crop growth's once-a-morning tick.
       function _loadWorldBreedingPairs() {
         const worldId = _tothalWorldId();
         if (!worldId) return [];
@@ -21297,6 +21297,12 @@
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           window.WeatherFX.updateRainState();
           if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
+          // Breeding progress ticks per in-game hour crossed (rather than
+          // once per day) so a pair's bar visibly creeps forward through
+          // the day and can complete the moment it fills, not just at the
+          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
+          // covers whatever fraction of the day this real-time path skips.
+          window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
           // rollovers still only loses a few minutes of in-game time
@@ -21309,7 +21315,9 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
-        window.FarmAnimals.tickBreeding();
+        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // here — by the time a day naturally rolls over, every one of its
+        // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
         window.FarmAnimals.tickHearts();
         window.ProceduralTasks.maybeRefreshBoardTask();
@@ -21334,11 +21342,17 @@
       // clock itself and restoring the player, which advanceDay() doesn't
       // need to do since it only ever fires from a real elapsed-time wrap.
       function sleepInBed() {
+        // Whatever fraction of today's waking hours hadn't been played
+        // through yet (and so never got an hourly breeding tick from
+        // updateCalendar) gets credited here in one lump, so a pair
+        // progresses the same one day's worth whether that day was played
+        // out in real time or slept through.
+        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
         calendar.day += 1;
         calendar.time01 = 0; // wake at MORNING_HOUR
         window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
-        window.FarmAnimals.tickBreeding();
+        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
         window.FarmAnimals.tickResources();
         window.FarmAnimals.tickHearts();
         window.ProceduralTasks.maybeRefreshBoardTask();

@@ -32,7 +32,7 @@
   // A housed animal's heart level rises or falls by one step per day
   // depending on whether its assigned trough held feed it actually eats
   // (see tickHearts) — see collectResource for the quality/cooldown
-  // payoff and tickBreeding for the offspring-rarity/gestation-speed one.
+  // payoff and tickBreedingProgress for the offspring-rarity/gestation-speed one.
   const HEART_MAX = 5;
   const HEART_STEP = 1 / 5;
   const HEART_DEFAULT = 2; // Starting point for newly released/born livestock — neither neglected nor doted on yet.
@@ -864,7 +864,8 @@
   }
 
   // Daily feed consumption + heart-level tick — called from game.js's
-  // advanceDay()/sleepInBed() alongside tickResources()/tickBreeding().
+  // advanceDay()/sleepInBed() alongside tickResources() (breeding is now
+  // hourly — see tickBreedingProgress).
   // Every housed animal assigned to a trough eats 1 unit/day of whichever
   // fodder type(s) its diet allows (see feedKeysForDiet); eating raises
   // its heart level by one 1/5 step (capped at HEART_MAX), no food it can
@@ -1059,14 +1060,9 @@
   }
 
   // Gestation length for a set breeding pair, in in-game days — resolved
-  // by tickBreeding() on the same day-tick crops use.
+  // hourly by tickBreedingProgress() (see GESTATION_HOURS_PER_DAY below).
   const LIVESTOCK_GESTATION_DAYS = 3;
 
-  // Resolves every breeding pair whose gestation has elapsed: crosses
-  // the parents' genotypes (crossOffspring), spawns the offspring on an
-  // open tile, and appends it to world.livestock. Pairs are consumed on
-  // resolution — a farmhand must re-pair to breed again. Called from
-  // game.js's advanceDay()/sleepInBed() alongside tickCropDay().
   // A breeding-pair parent ref is { source: 'world'|'stable', id, characterId? }
   // — 'world' points into this farm's own livestock, 'stable' points into
   // a specific character's personal stable (characterId required so the
@@ -1124,18 +1120,30 @@
     return Number.isFinite(parent?.heartLevel) ? parent.heartLevel : HEART_DEFAULT; // Stable pets/legacy records carry no heart level — treat as the neutral default rather than penalizing them as starved.
   }
 
-  // Resolves every breeding pair's daily progress (see setBreedingPair's
-  // {startedDay, progress: 0} — replaces the old fixed readyDay day-count
-  // with a bar so the Farm tab can show partial progress, sped up by the
-  // parents' average heart level) and completes any pair that just filled:
-  // crosses the parents' genotypes (crossOffspring, itself heart-boosted
-  // toward rarer traits), spawns the offspring on an open tile, and
-  // appends it to world.livestock. Pairs are consumed on resolution — a
-  // farmhand must re-pair to breed again. Called from game.js's
-  // advanceDay()/sleepInBed() alongside tickCropDay().
-  function tickBreeding() {
+  // The game's "day" only actually models its waking hours (calendar's
+  // MORNING_HOUR..NIGHT_HOUR span, see CalendarSystem.getHour) — night is
+  // skipped straight through by sleeping rather than simulated — so that's
+  // the unit hourly breeding progress is denominated in.
+  const GESTATION_HOURS_PER_DAY = 16;
+
+  // Resolves every breeding pair's progress by `dayFraction` (a fraction
+  // of one full gestation *day*, not a whole day — see the two call
+  // sites: game.js's updateCalendar ticks 1/GESTATION_HOURS_PER_DAY per
+  // real in-game hour crossed during normal play, so a pair's bar visibly
+  // creeps forward through the day instead of only jumping once at
+  // morning; sleepInBed() instead passes whatever fraction of the day's
+  // waking hours sleeping skipped over, so the two paths always sum to
+  // the same one-day's-worth of progress regardless of how it was spent).
+  // Sped up by the parents' average heart level (see setBreedingPair's
+  // {startedDay, progress: 0} bar) and completes any pair that just
+  // filled, the moment it crosses 100% rather than waiting for the next
+  // morning: crosses the parents' genotypes (crossOffspring, itself
+  // heart-boosted toward rarer traits), spawns the offspring on an open
+  // tile, and appends it to world.livestock. Pairs are consumed on
+  // resolution — a farmhand must re-pair to breed again.
+  function tickBreedingProgress(dayFraction = 1 / GESTATION_HOURS_PER_DAY) {
     const pairs = deps._loadWorldBreedingPairs();
-    if (!pairs.length) return;
+    if (!pairs.length || dayFraction <= 0) return;
     const livestock = deps.loadWorldLivestock();
     const stableCache = new Map(); // Persists pending modifiers for stable parents too.
     const remainingPairs = [];
@@ -1152,7 +1160,7 @@
         pair.progress = Math.min(0.999, elapsedDays / totalDays);
       }
       const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
-      pair.progress += (1 / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
+      pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
       changed = true;
       if (pair.progress < 1) { remainingPairs.push(pair); continue; }
       const kind = parentA.kind;
@@ -1296,7 +1304,8 @@
     currentCharacterId,
     resolveBreedingParent,
     shiftedSizeClass,
-    tickBreeding,
+    tickBreedingProgress,
+    GESTATION_HOURS_PER_DAY,
     clearAnimalObjects,
     updateAnimalMeshes,
     setVatWorkerPose,
