@@ -19177,10 +19177,22 @@
           uTime:       { value: 0 },
           uStrength:   { value: 0.04 },
           uDensity:    { value: 1 },
+          // Fog uniform slots _grassBillFrag's USE_FOG block reads, refreshed
+          // every frame from whichever scene is active — declared directly
+          // here rather than via THREE.UniformsUtils.merge(UniformsLib.fog):
+          // merge() deep-clones every merged uniform, and cloning uGrassTex
+          // (a real Texture, not a Color/number) here somehow left the
+          // resulting InstancedMesh instances rendering nothing at all —
+          // confirmed live (every farm grass tuft vanished) and isolated to
+          // this specific clone call, not fog itself or the shader changes.
+          fogColor:    { value: new THREE.Color() },
+          fogDensity:  { value: 0 },
+          fogNear:     { value: 1 },
+          fogFar:      { value: 1000 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
           fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
-          uniforms:       THREE.UniformsUtils.merge([THREE.UniformsLib.fog, sharedUniforms()]),
+          uniforms:       sharedUniforms(),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
