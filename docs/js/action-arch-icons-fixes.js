@@ -56,6 +56,17 @@
         width:82%; height:82%; object-fit:contain; display:block; margin:auto;
         pointer-events:none;
       }
+      .action-arch-combo-layered {
+        position:relative; width:100%; height:100%; display:grid; place-items:center;
+      }
+      .action-arch-combo-layered > img {
+        position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+      }
+      .action-arch-combo-layered > span {
+        position:relative; z-index:2; color:#fff;
+        font:700 1.68em/1 'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;
+        text-shadow:0 0 4px #111,0 0 4px #111;
+      }
       .action-arch-combo-fallback {
         position:relative; width:100%; height:100%; display:grid; place-items:center;
       }
@@ -117,7 +128,7 @@
   }
 
   function isDedicatedHost(host) {
-    return Boolean(host?.querySelector?.('.combat-coin, .action-arch-fix-icon, .action-arch-numbered-raster'));
+    return Boolean(host?.querySelector?.('.combat-coin, .action-arch-fix-icon, .action-arch-numbered-raster, .action-arch-combo-layered'));
   }
 
   function hideLegacyHost(button) {
@@ -167,10 +178,11 @@
     return 1;
   }
 
-  function composeNumbered(file, number, rotationDeg = 0, cachePrefix = 'numbered') {
+  function composeNumbered(file, number, rotationDeg = 0, cachePrefix = 'numbered', options = {}) {
+    const { drawNumeral = true } = options;
     const record = preload(file);
     if (record.state !== 'loaded' || !record.image?.naturalWidth) return null;
-    const key = `${cachePrefix}:v2:${file}:${number}:${rotationDeg}`;
+    const key = `${cachePrefix}:v3:${file}:${number}:${rotationDeg}:${drawNumeral ? 'with-text' : 'cutout-only'}`;
     if (rasterCache.has(key)) return rasterCache.get(key);
 
     const size = 160;
@@ -219,10 +231,12 @@
     ctx.strokeText(text, size / 2, size / 2 + 3);
     ctx.fillText(text, size / 2, size / 2 + 3);
 
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#fff';
-    ctx.font = font;
-    ctx.fillText(text, size / 2, size / 2 + 3);
+    if (drawNumeral) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#fff';
+      ctx.font = font;
+      ctx.fillText(text, size / 2, size / 2 + 3);
+    }
 
     let url = null;
     try { url = canvas.toDataURL('image/png'); } catch (_) {}
@@ -230,8 +244,8 @@
     return url;
   }
 
-  function numberedImage(file, number, rotationDeg, cachePrefix, alt) {
-    const url = composeNumbered(file, number, rotationDeg, cachePrefix);
+  function numberedImage(file, number, rotationDeg, cachePrefix, alt, options = {}) {
+    const url = composeNumbered(file, number, rotationDeg, cachePrefix, options);
     if (!url) return null;
     const image = document.createElement('img');
     image.src = url;
@@ -241,28 +255,48 @@
     return image;
   }
 
+  function comboLayeredContent(file, number, rotationDeg, cachePrefix, alt) {
+    const url = composeNumbered(file, number, rotationDeg, cachePrefix, { drawNumeral: false });
+    if (!url) return null;
+    const wrap = document.createElement('span');
+    wrap.className = 'action-arch-combo-layered';
+    wrap.setAttribute('aria-label', alt);
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = '';
+    image.draggable = false;
+    image.className = 'action-arch-numbered-raster';
+    const numeral = document.createElement('span');
+    numeral.textContent = String(number);
+    wrap.append(image, numeral);
+    return wrap;
+  }
+
   function fixComboButton() {
     const button = document.getElementById('btnAction1');
     if (!button?.classList?.contains('combat-dual-input')) return;
     const main = button.querySelector('.combat-coin-front .combat-main-symbol');
     if (!main) return;
     const step = comboStep();
-    const signature = `${comboAbilityId()}:${step}:number150`;
+    const signature = `${comboAbilityId()}:${step}:number150:white-count`;
     if (main.dataset.comboFixSignature === signature && !main.querySelector('.combat-slot-x')) return;
 
     const rotations = { 1:-90, 2:-45, 3:0 };
-    const image = numberedImage('draw_melee.png', step, rotations[step] ?? 0, 'combo-fix', `Combo — next attack ${step}`);
-    if (image) {
-      main.replaceChildren(image);
+    const layered = comboLayeredContent('draw_melee.png', step, rotations[step] ?? 0, 'combo-fix', `Combo — next attack ${step}`);
+    if (layered) {
+      main.replaceChildren(layered);
     } else {
       // Avoid showing an "unslotted" X while draw_melee.png is still decoding.
       const record = preload('draw_melee.png');
       if (record.state !== 'failed') {
         const wrap = document.createElement('span');
-        wrap.className = 'action-arch-combo-fallback';
-        wrap.style.setProperty('--combo-rotation', `${rotations[step] ?? 0}deg`);
-        const raw = document.createElement('img'); raw.src = record.url; raw.alt = '';
-        const numeral = document.createElement('span'); numeral.textContent = String(step);
+        wrap.className = 'action-arch-combo-layered';
+        const raw = document.createElement('img');
+        raw.src = record.url;
+        raw.alt = '';
+        raw.draggable = false;
+        const numeral = document.createElement('span');
+        numeral.textContent = String(step);
         wrap.append(raw, numeral);
         main.replaceChildren(wrap);
       }
