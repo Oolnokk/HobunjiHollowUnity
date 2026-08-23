@@ -28,6 +28,86 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // ── Heart levels (0-5, in 1/5-heart steps) ──────────────────────────
+  // A housed animal's heart level rises or falls by one step per day
+  // depending on whether its assigned trough held feed it actually eats
+  // (see tickHearts) — see collectResource for the quality/cooldown
+  // payoff and tickBreeding for the offspring-rarity/gestation-speed one.
+  const HEART_MAX = 5;
+  const HEART_STEP = 1 / 5;
+  const HEART_DEFAULT = 2; // Starting point for newly released/born livestock — neither neglected nor doted on yet.
+
+  function dietFor(kind) {
+    return deps.LIVESTOCK_DIET?.[kind] || 'omnivore';
+  }
+  // Which barn-trough feed item keys a given diet will actually eat.
+  function feedKeysForDiet(diet) {
+    if (diet === 'predator') return ['meatFodder'];
+    if (diet === 'prey') return ['plantFodder'];
+    return ['plantFodder', 'meatFodder'];
+  }
+  const TROUGH_CAPACITY = 7; // "up to a week's feed in advance"
+
+  // Lazily creates/resizes a barn's troughs array to match its tier's
+  // slot count — barns built before this feature (or a tier whose slot
+  // count later changed) just grow/shrink to fit instead of erroring.
+  function _ensureBarnTroughs(barn) {
+    const slots = deps.getBarnTiers()[barn.tier]?.slots || 0;
+    if (!Array.isArray(barn.troughs)) barn.troughs = [];
+    while (barn.troughs.length < slots) barn.troughs.push({ plantFodder: 0, meatFodder: 0 });
+    if (barn.troughs.length > slots) barn.troughs.length = slots;
+    return barn.troughs;
+  }
+  function troughTotal(trough) {
+    return (trough?.plantFodder || 0) + (trough?.meatFodder || 0);
+  }
+
+  // Deposits held Plant/Meat Fodder into a specific barn trough, up to
+  // TROUGH_CAPACITY total units — called from the trough's in-world
+  // interaction (see game.js's troughFurniture BUILDING_FIXTURE_INTERACTABLES
+  // factory).
+  function depositFeedToTrough(barnId, troughIndex, itemKey, amount = 1) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    if (itemKey !== 'plantFodder' && itemKey !== 'meatFodder') return { ok: false, message: 'Troughs only hold Plant Fodder or Meat Fodder.' };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    const trough = troughs[troughIndex];
+    if (!trough) return { ok: false, message: 'No trough there.' };
+    const held = deps.inventory[itemKey] || 0;
+    const room = TROUGH_CAPACITY - troughTotal(trough);
+    const move = Math.max(0, Math.min(amount, held, room));
+    if (move <= 0) return { ok: false, message: room <= 0 ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
+    trough[itemKey] = (trough[itemKey] || 0) + move;
+    deps.inventory[itemKey] -= move;
+    deps.clampInventoryStack(itemKey);
+    deps.saveFarmLayout();
+    return { ok: true, message: `Added ${move} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
+  }
+
+  // Re-homes a housed animal to a different trough within its own barn
+  // (or clears its assignment with troughIndex null) — separate from
+  // assignToBarn, which only auto-picks the first free trough.
+  function assignToTrough(livestockId, troughIndex) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    const list = deps.loadWorldLivestock();
+    const rec = list.find(l => l.id === livestockId);
+    if (!rec || !rec.barnId) return { ok: false, message: 'That animal is not housed in a barn.' };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    if (troughIndex != null) {
+      if (!troughs[troughIndex]) return { ok: false, message: 'No trough there.' };
+      const takenBy = list.find(l => l.barnId === rec.barnId && l.troughIndex === troughIndex && l.id !== livestockId);
+      if (takenBy) return { ok: false, message: `That trough is already ${takenBy.name}'s.` };
+    }
+    rec.troughIndex = troughIndex;
+    deps.saveWorldLivestock(list);
+    return { ok: true, message: troughIndex != null ? `${rec.name} assigned to trough ${troughIndex + 1}.` : `${rec.name} unassigned from its trough.` };
+  }
+
   function canSpawnAt(col, row) {
     const grid = deps.getGrid();
     const tile = grid[row]?.[col];
@@ -568,9 +648,10 @@
     const livestock = deps.loadWorldLivestock();
     const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
     livestock.push({
-      id, kind, barnId: null, releasedAt: Date.now(),
+      id, kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
       name: window.CreatureGenetics.defaultLivestockName(kind), genotype,
       daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+      heartLevel: HEART_DEFAULT,
       ...(kind === 'uumkaoii' ? { dewColor: deps.UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: deps.UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
     });
     deps.saveWorldLivestock(livestock);
@@ -594,7 +675,16 @@
     const occupants = list.filter(l => l.barnId === barnId).length;
     if (occupants >= tier.slots) return { ok: false, message: `${tier.label} is full (${tier.slots} slots).` };
     const wasAssigned = !!rec.barnId;
+    const prevBarn = wasAssigned ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
+    if (prevBarn) { const prevTroughs = _ensureBarnTroughs(prevBarn); if (rec.troughIndex != null && prevTroughs[rec.troughIndex]) rec.troughIndex = null; }
     rec.barnId = barnId;
+    if (rec.heartLevel == null) rec.heartLevel = HEART_DEFAULT;
+    // Auto-pick the first trough in this barn no other housed animal has
+    // claimed — a farmhand can move it later via assignToTrough.
+    const troughs = _ensureBarnTroughs(barn);
+    const takenIndices = new Set(list.filter(l => l.barnId === barnId && l.id !== rec.id && l.troughIndex != null).map(l => l.troughIndex));
+    rec.troughIndex = troughs.findIndex((_, i) => !takenIndices.has(i));
+    if (rec.troughIndex < 0) rec.troughIndex = null;
     if (rec.daysUntilResource == null) rec.daysUntilResource = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
     if (rec.kind === 'uumkaoii' && rec.dewDaysUntil == null) {
       rec.dewColor = rec.dewColor || deps.UUMKAOII_DEFAULT_DEW_COLOR;
@@ -602,6 +692,7 @@
       rec.dewReady = false;
     }
     deps.saveWorldLivestock(list);
+    deps.saveFarmLayout();
     if (!wasAssigned) {
       const spot = deps.findOpenTileNearBarn(barn);
       if (spot) {
@@ -622,7 +713,16 @@
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     rec.barnId = null;
+    rec.troughIndex = null;
     rec.assignedVatId = null; // can't work a vat while unhoused — same gate as dew/egg cooldowns
+    if (rec.kind === 'uumkaoii') {
+      // Re-arm the dew cooldown so a ready-but-unclaimed dew doesn't fire
+      // on the very next tick after being re-housed — stasis should pause
+      // dew progress, not just delay collection of an already-armed drop.
+      rec.dewReady = false;
+      rec.dewDaysUntil = deps.UUMKAOII_DEW_COOLDOWN_DAYS;
+      rec.dewReadyStaleDays = 0;
+    }
     deps.saveWorldLivestock(list);
     const animal = [...deps.animalObjects].find(a => a.livestockId === livestockId);
     if (animal) { deps.worldObjects.delete(animal.col + ',' + animal.row); deps.animalObjects.delete(animal); animal.reset && animal.reset(); }
@@ -638,11 +738,19 @@
     const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
     if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
     deps.inventory[resDef.itemKey] = Math.min(99, (deps.inventory[resDef.itemKey] || 0) + 1);
-    const stars = deps.rollItemStars?.('farming') || 3; // Used for Farming's animal-good quality bonus.
+    const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
+    // A well-cared-for (well-fed, high-heart) animal nudges its own
+    // product quality up on top of whatever Farming rolls — every full
+    // heart above 2.5 (the "content" midpoint) is one extra guaranteed
+    // star, every full heart below it is one fewer, clamped to 1-5.
+    const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2));
+    const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
     deps.awardFarmingXp?.();
     rec.resourceReady = false;
-    rec.daysUntilResource = resDef.cooldownDays;
+    // Higher hearts also shorten the regen cooldown — up to 40% faster at
+    // a full 5 hearts, never below 1 day.
+    rec.daysUntilResource = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08)));
     deps.saveWorldLivestock(list);
     return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
@@ -719,6 +827,40 @@
       }
     });
     if (changed) deps.saveWorldLivestock(list);
+  }
+
+  // Daily feed consumption + heart-level tick — called from game.js's
+  // advanceDay()/sleepInBed() alongside tickResources()/tickBreeding().
+  // Every housed animal assigned to a trough eats 1 unit/day of whichever
+  // fodder type(s) its diet allows (see feedKeysForDiet); eating raises
+  // its heart level by one 1/5 step (capped at HEART_MAX), no food it can
+  // eat in its trough drops it by one step (floored at 0). An animal with
+  // no trough assignment at all (e.g. a barn built before this feature)
+  // counts as unfed, same as an empty trough.
+  function tickHearts() {
+    const list = deps.loadWorldLivestock();
+    const farmBuildings = deps.getFarmBuildings();
+    const barnsById = new Map(farmBuildings.filter(b => b.kind === 'barn').map(b => [b.id, b]));
+    let changed = false, troughsChanged = false;
+    list.forEach(l => {
+      if (!l.barnId) return; // stasis — no upkeep, no decay
+      const barn = barnsById.get(l.barnId);
+      const troughs = barn ? _ensureBarnTroughs(barn) : null;
+      const trough = troughs && l.troughIndex != null ? troughs[l.troughIndex] : null;
+      const eatableKeys = feedKeysForDiet(dietFor(l.kind));
+      const fedKey = trough && eatableKeys.find(key => (trough[key] || 0) > 0);
+      if (l.heartLevel == null) l.heartLevel = HEART_DEFAULT;
+      if (fedKey) {
+        trough[fedKey]--;
+        troughsChanged = true;
+        l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
+      } else {
+        l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
+      }
+      changed = true;
+    });
+    if (changed) deps.saveWorldLivestock(list);
+    if (troughsChanged) deps.saveFarmLayout();
   }
 
   // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
@@ -929,6 +1071,30 @@
     return classes[Math.max(0, Math.min(classes.length - 1, index + Math.sign(shift || 0)))];
   }
 
+  // A well-hearted pair breeds faster and throws rarer traits more often —
+  // 0 hearts (average of both parents) is the slow/plain end, 5 hearts the
+  // fast/lucky end. Both scale linearly off the same avgHeart input so
+  // "keep them fed" reads as one consistent payoff, not two unrelated dials.
+  function breedingSpeedMultiplier(avgHeart) {
+    return 0.6 + (avgHeart / HEART_MAX) * 0.9; // 0.6x .. 1.5x
+  }
+  function breedingMutationChance(avgHeart) {
+    const base = window.CreatureGenetics.MUTATION_CHANCE || 0.05;
+    return base * (1 + (avgHeart / HEART_MAX) * 2); // base .. 3x base
+  }
+  function parentHeartLevel(parent) {
+    return Number.isFinite(parent?.heartLevel) ? parent.heartLevel : HEART_DEFAULT; // Stable pets/legacy records carry no heart level — treat as the neutral default rather than penalizing them as starved.
+  }
+
+  // Resolves every breeding pair's daily progress (see setBreedingPair's
+  // {startedDay, progress: 0} — replaces the old fixed readyDay day-count
+  // with a bar so the Farm tab can show partial progress, sped up by the
+  // parents' average heart level) and completes any pair that just filled:
+  // crosses the parents' genotypes (crossOffspring, itself heart-boosted
+  // toward rarer traits), spawns the offspring on an open tile, and
+  // appends it to world.livestock. Pairs are consumed on resolution — a
+  // farmhand must re-pair to breed again. Called from game.js's
+  // advanceDay()/sleepInBed() alongside tickCropDay().
   function tickBreeding() {
     const pairs = deps._loadWorldBreedingPairs();
     if (!pairs.length) return;
@@ -937,13 +1103,22 @@
     const remainingPairs = [];
     let changed = false;
     for (const pair of pairs) {
-      if (deps.calendar.day < pair.readyDay) { remainingPairs.push(pair); continue; }
       const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
       const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
+      if (!parentA || !parentB) { changed = true; continue; } // a parent was sold/removed/stable-emptied — pair quietly lapses
+      // Migrate a pre-heart-level pair (readyDay, no progress field yet)
+      // to an equivalent starting progress instead of losing its head start.
+      if (pair.progress == null) {
+        const totalDays = Math.max(1, Number(pair.readyDay) - Number(pair.startedDay));
+        const elapsedDays = Math.max(0, Number(deps.calendar.day) - Number(pair.startedDay));
+        pair.progress = Math.min(0.999, elapsedDays / totalDays);
+      }
+      const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
+      pair.progress += (1 / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
       changed = true;
-      if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
+      if (pair.progress < 1) { remainingPairs.push(pair); continue; }
       const kind = parentA.kind;
-      const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind);
+      const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind, breedingMutationChance(avgHeart));
       const shiftA = Math.sign(Number(parentA.pendingOffspringSizeShift) || 0); // Pending one-off parent A modifier.
       const shiftB = Math.sign(Number(parentB.pendingOffspringSizeShift) || 0); // Pending one-off parent B modifier.
       const resolvedShift = shiftA && shiftB ? (shiftA === shiftB ? shiftA : 0) : (shiftA || shiftB); // Same applies once; opposites cancel.
@@ -954,9 +1129,10 @@
       // animal — the owner assigns them to a barn from the Farm tab
       // when there's room, same as any other unhoused livestock.
       livestock.push({
-        id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, releasedAt: Date.now(),
+        id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
         name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
         daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+        heartLevel: HEART_DEFAULT,
       });
       deps.showToast(`🐣 A new ${window.CreatureGenetics.defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
     }
@@ -1065,7 +1241,12 @@
     addFromItem,
     assignToBarn,
     unassignFromBarn,
+    assignToTrough,
+    depositFeedToTrough,
+    dietFor,
+    feedKeysForDiet,
     tickResources,
+    tickHearts,
     isHarvesting,
     updateHarvestInteraction,
     addToStable,
@@ -1081,5 +1262,9 @@
     setVatWorkerPose,
     clearVatWorkerPose,
     GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,
+    HEART_MAX,
+    HEART_STEP,
+    HEART_DEFAULT,
+    TROUGH_CAPACITY,
   };
 })();

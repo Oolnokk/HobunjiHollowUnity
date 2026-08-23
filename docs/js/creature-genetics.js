@@ -295,12 +295,12 @@
   // to the species default for a parent with no sizeClass on record, e.g.
   // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
   // crossOffspring's coat genes use to instead step it by one.
-  function inheritedSizeClass(genotypeA, genotypeB, kind) {
+  function inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance = LIVESTOCK_MUTATION_CHANCE) {
     const fallback = deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium';
     const parentSize = Math.random() < 0.5
       ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
       : normalizeCreatureSizeClass(genotypeB?.sizeClass || fallback);
-    return Math.random() < LIVESTOCK_MUTATION_CHANCE ? mutateSizeClassStep(parentSize) : parentSize;
+    return Math.random() < mutationChance ? mutateSizeClassStep(parentSize) : parentSize;
   }
 
   // Fresh (non-bred) livestock gets two independently random fur colors —
@@ -410,17 +410,23 @@
     const copies = deps.clamp(Number(layer?.copies) || 0, 0, 2);
     return Math.random() < copies / 2 ? { color: layer.color } : null;
   }
-  function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
+  // mutationChance overrides the flat LIVESTOCK_MUTATION_CHANCE de-novo-
+  // trait roll used throughout this function (rarer colors, new pattern
+  // layers, a size-class step) — callers with a notion of parent quality
+  // (see farm-animals.js's tickBreeding, which scales this with the
+  // parents' average heart level) can raise the odds of a rarer offspring
+  // without duplicating this function's own trait math.
+  function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii', mutationChance = LIVESTOCK_MUTATION_CHANCE) {
     if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
       const child = {};
       for (const layerId of ['fur', 'plates']) {
         const la = genotypeA?.[layerId] || { color: randomFurColor(kind) };
         const lb = genotypeB?.[layerId] || { color: randomFurColor(kind) };
         let color = blendFurHex(la.color, lb.color, kind);
-        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
+        if (Math.random() < mutationChance) color = mutateFurColor(color, kind);
         child[layerId] = { color, copies: 2, inheritance: 'dominant' };
       }
-      child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
+      child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
       return child;
     }
     const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -428,21 +434,21 @@
     const child = {};
     const baseA = genotypeA?.base || { color: randomFurColor(kind) }, baseB = genotypeB?.base || { color: randomFurColor(kind) };
     let baseColor = blendFurHex(baseA.color, baseB.color, kind);
-    if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor, kind);
+    if (Math.random() < mutationChance) baseColor = mutateFurColor(baseColor, kind);
     child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
     for (const id of patterns) {
       const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
       const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
       const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
       let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
-      if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
+      if (copies === 0 && Math.random() < mutationChance) { copies = 1; mutated = true; }
       const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
       const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
       let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomFurColor(kind));
       if (mutated) color = mutateFurColor(color, kind);
       child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
     }
-    child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
+    child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
     const childEnabledIds = patterns.filter(id => child[id].enabled);
     window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
     return child;
@@ -463,5 +469,6 @@
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
     SPECIES_ALIAS: GENOTYPE_SPECIES_ALIAS,
+    MUTATION_CHANCE: LIVESTOCK_MUTATION_CHANCE,
   };
 })();

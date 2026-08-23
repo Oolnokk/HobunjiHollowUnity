@@ -2108,6 +2108,11 @@
         // duplicateable in the Interior Editor like anything else.
         alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
+        // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
+        // procedurally placed the same way alchemyTable/bulletinBoard are
+        // placed by an authored map, just synthesized instead of authored.
+        feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop or raw meat into Plant/Meat Fodder for barn troughs.', fixture: true },
+        trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS)
@@ -2132,6 +2137,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
+        'feedGrinder', 'trough',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -3109,7 +3115,9 @@
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
               if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
-                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '' });
+                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
+                  cropAge: t.crop && t.crop !== CropType.NONE ? t.cropAge : undefined,
+                  cropReady: t.crop && t.crop !== CropType.NONE ? !!t.cropReady : undefined });
               }
             }
           }
@@ -3140,7 +3148,7 @@
           const fixtureInventory = window.HousePieces.getFixtureInventory();
           if (fixtureInventory.length) layout.architecturalInventory = fixtureInventory;
           if (farmBuildings.length) {
-            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage }));
+            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage, ...(b.troughs ? { troughs: b.troughs } : {}) }));
           }
           // Preserve map-editor-authored travel data through in-game saves
           if (worldRoutes.length)      layout.routes      = worldRoutes;
@@ -3164,7 +3172,7 @@
 
       function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
         if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile }) => {
+        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady }) => {
           if (grid[r]?.[c]) {
             const previousType = grid[r][c].type; // Used below to skip visual refreshes for non-terrain save data.
             const previousDepth = grid[r][c].depth; // Used below to detect restored trench-depth changes.
@@ -3174,7 +3182,18 @@
               ? (Number.isFinite(depth) ? clamp(depth, 0, 1) : 1)
               : 0;
             grid[r][c].crop = crop || CropType.NONE;
-            if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
+            if (crop) {
+              // Older layouts (and any other caller that omits cropAge) predate
+              // persisting real growth progress — fall back to the previous
+              // "fully grown but not yet flagged ready" placeholder, which
+              // self-corrects at the next morning's tickCropDay(). A layout
+              // that does carry real progress must restore it as-is: forcing
+              // cropReady=false here regardless of actual state used to demote
+              // an already-ripe, uncollected crop back to "growing" on every
+              // reload/re-entry, silently blocking harvest until the next day.
+              grid[r][c].cropAge = Number.isFinite(cropAge) ? cropAge : 50;
+              grid[r][c].cropReady = Number.isFinite(cropAge) ? !!cropReady : false;
+            }
             grid[r][c].dewPile = dewPile || null;
             if (refreshVisuals && (previousType !== grid[r][c].type || previousDepth !== grid[r][c].depth)) {
               markTileDirty(c, r);
@@ -3286,7 +3305,7 @@
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
           if (farmBuildings.some(b => b.id === saved.id)) return;
-          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
           farmBuildings.push(entry);
           window.FarmBuildings.spawnEntry(entry);
         });
@@ -7432,6 +7451,58 @@
             return { ok: true, message: 'Opened the alchemy table.' };
           },
         }),
+        // Barn-interior fixtures — synthesizeBarnInteriorMapData bakes
+        // barnId/troughIndex right onto the furniture record so these
+        // factories (called with that record as their one argument) don't
+        // need to re-derive which barn/trough they belong to.
+        feedGrinderFurniture: () => ({
+          getButtons() {
+            const active = getActiveInventoryItem();
+            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            if (!outputs) return [{ icon: '⚙️', label: 'Hold a crop or raw meat to grind', action: 'obj_feed_grind', style: 'secondary', allowed: false }];
+            return [{ icon: '⚙️', label: `Grind → ${outputs[0].label}`, action: 'obj_feed_grind', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_feed_grind') return { ok: false, message: 'Unknown action.' };
+            if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can use the feed grinder." };
+            const active = getActiveInventoryItem();
+            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            if (!active || !outputs) return { ok: false, message: 'Hold a crop or raw meat to grind it into feed.' };
+            inventory[active.key] = Math.max(0, (inventory[active.key] || 0) - 1);
+            clampInventoryStack(active.key);
+            const out = outputs[0];
+            inventory[out.key] = Math.min(99, (inventory[out.key] || 0) + 1);
+            refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+            saveMemberWorldData();
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processHandmill);
+            return { ok: true, message: `⚙️ Ground 1 ${ITEM_DEFS[out.key]?.label || out.key}.` };
+          },
+        }),
+        troughFurniture: (f) => ({
+          getButtons() {
+            const list = _loadWorldLivestock();
+            const barn = farmBuildings.find(b => b.id === f.barnId && b.kind === 'barn');
+            const trough = barn?.troughs?.[f.troughIndex] || { plantFodder: 0, meatFodder: 0 };
+            const total = (trough.plantFodder || 0) + (trough.meatFodder || 0);
+            const assigned = list.find(l => l.barnId === f.barnId && l.troughIndex === f.troughIndex);
+            const cap = window.FarmAnimals.TROUGH_CAPACITY;
+            const btns = [{ icon: '🪣', label: `${assigned ? assigned.name : 'Unassigned'} — 🌿${trough.plantFodder || 0} 🍖${trough.meatFodder || 0} (${total}/${cap})`, action: 'obj_trough_status', style: 'secondary', allowed: false }];
+            const active = getActiveInventoryItem();
+            if (active && (active.key === 'plantFodder' || active.key === 'meatFodder') && total < cap) {
+              btns.unshift({ icon: '➕', label: `Add ${ITEM_DEFS[active.key].label}`, action: 'obj_trough_fill', style: 'primary', allowed: true });
+            }
+            return btns;
+          },
+          onAction(action) {
+            if (action === 'obj_trough_status') return { ok: false, message: 'Nothing to do.' };
+            if (action !== 'obj_trough_fill') return { ok: false, message: 'Unknown action.' };
+            const active = getActiveInventoryItem();
+            if (!active) return { ok: false, message: 'Hold Plant Fodder or Meat Fodder to fill this trough.' };
+            const res = window.FarmAnimals.depositFeedToTrough(f.barnId, f.troughIndex, active.key, 1);
+            if (res.ok) { refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); }
+            return res;
+          },
+        }),
         bulletinBoardFurniture: () => ({
           getButtons() {
             return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
@@ -10061,6 +10132,40 @@
       // pickDenMotherKind/synthesizeCavernMapData) now lives in
       // js/cavern-generator.js — call via window.CavernGenerator.*.
 
+      // Synthesizes a hobunji_building_interior.v1-shaped mapData for a
+      // barn's interior, entirely in-memory — never authored/persisted,
+      // same reasoning as a den's cavern (see synthesizeCavernMapData).
+      // Interior dimensions follow the same 2-interior-cells-per-exterior-
+      // tile ratio the player's own house uses (see house-pieces-core.js's
+      // computeInteriorLayout): a small barn (4x3 exterior) gets an 8x6
+      // room, and so on. One Feed Grinder goes in the back-right corner
+      // (against the top wall, one cell shy of the right wall so it
+      // doesn't touch it — see feedGrinder.json's own baked orientation
+      // for why it's *placed* rather than rotated to face that way), and
+      // one trough per barn tier slot lines the west wall, spilling onto
+      // the east wall (below the grinder) if a tier has more slots than
+      // the west wall has rows for.
+      function synthesizeBarnInteriorMapData(mapId) {
+        const barnId = mapId.slice('map_i_barn_'.length);
+        const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
+        if (!barn) return null;
+        const cols = Math.max(4, barn.w * 2), rows = Math.max(4, barn.h * 2);
+        const floor = [];
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) floor.push([c, r]);
+        const doorCenter = Math.floor(cols / 2);
+        const doorCols = [doorCenter - 1, doorCenter, doorCenter + 1].filter(c => c > 0 && c < cols - 1);
+        const exits = [{ id: 'exit_barn_front', label: 'Barn Door', tiles: doorCols.map(c => [c, rows - 1]), targetMap: '', spawnCol: 0, spawnRow: 0 }];
+        const furniture = [{ id: 'f_barn_grinder', itemKey: 'feedGrinderFurniture', col: cols - 2, row: 0, rotY: 0, barnId, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 }];
+        const slots = BARN_TIERS[barn.tier]?.slots || 0;
+        const troughPositions = [];
+        for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: 1, row: r });
+        for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: cols - 2, row: r });
+        troughPositions.forEach((pos, i) => {
+          furniture.push({ id: 'f_barn_trough_' + i, itemKey: 'troughFurniture', col: pos.col, row: pos.row, rotY: 0, barnId, troughIndex: i, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+        });
+        return { schema: 'hobunji_building_interior.v1', id: mapId, name: (BARN_TIERS[barn.tier]?.label || 'Barn') + ' Interior', cols, rows, exits, colliders: [], vendorZones: [], floor, furniture, npcStations: [] };
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -10083,6 +10188,13 @@
           mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
           loadSource = 'cavern';
           if (denLoadingLabel) denLoadingLabel.style.display = 'none';
+        } else if (mapId.startsWith('map_i_barn_')) {
+          // A barn's interior is generated in-memory from its own exterior
+          // record (see synthesizeBarnInteriorMapData) — never fetched/
+          // persisted, same reasoning as a den's cavern above, just
+          // synchronous (no SDF carve, no loading-label needed).
+          mapData = synthesizeBarnInteriorMapData(mapId);
+          loadSource = 'barn';
         } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
@@ -10280,7 +10392,7 @@
               const footprint = decorativeFurnitureSize(furnitureKey, f.rotY || 0); // Used so every occupied tile of a multi-cell fixture shares its interaction.
               for (let rowOffset = 0; rowOffset < footprint.fd; rowOffset++) {
                 for (let colOffset = 0; colOffset < footprint.fw; colOffset++) {
-                  _buildingInteractables.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), interactableFactory());
+                  _buildingInteractables.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), interactableFactory(f));
                 }
               }
             } else if (def?.sit) {
@@ -11363,6 +11475,16 @@
         if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
         if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
         if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
+        // Feed Grinder (barn interior fixture) — crops/mulch grind into
+        // Plant Fodder, raw meat into Meat Fodder. Reuses this same generic
+        // "hold a valid item, interact" processing pipeline rather than a
+        // one-off — see PROCESSING_FURNITURE_DEFS.feedGrinder.
+        if (methodId === 'grindingFeed' && FEED_GRINDER_PLANT_INPUTS.has(inputKey)) {
+          return { key: 'plantFodder', icon: ITEM_DEFS.plantFodder.icon, label: ITEM_DEFS.plantFodder.label, cat: 'material', sellPrice: ITEM_DEFS.plantFodder.sellPrice, tags: ITEM_DEFS.plantFodder.tags, desc: ITEM_DEFS.plantFodder.desc };
+        }
+        if (methodId === 'grindingFeed' && FEED_GRINDER_MEAT_INPUTS.has(inputKey)) {
+          return { key: 'meatFodder', icon: ITEM_DEFS.meatFodder.icon, label: ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: ITEM_DEFS.meatFodder.sellPrice, tags: ITEM_DEFS.meatFodder.tags, desc: ITEM_DEFS.meatFodder.desc };
+        }
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
         if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
           const berryKey = inputKey.replace(/Juice$/, '');
@@ -11508,6 +11630,10 @@
       // days the cooldown takes. A kind with no entry here can be housed but
       // won't produce anything yet.
       const LIVESTOCK_RESOURCE_DEFS = window.SCRATCHBONES_CONFIG?.game?.livestock?.resources || {};
+
+      // Predator/prey/omnivore diet per kind, used by barn troughs to gate
+      // which fodder type (plantFodder/meatFodder) a housed animal eats.
+      const LIVESTOCK_DIET = window.SCRATCHBONES_CONFIG?.game?.livestock?.diet || {};
 
       // Which action verb the in-world "Collect" button shows, per kind —
       // gar-wolf/dabinggi-hound's resource is milked out of them rather than
@@ -11843,7 +11969,17 @@
         garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
         grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
+
+        // ── Livestock feed (ground at the Feed Grinder, stored in barn troughs) ─
+        plantFodder: { icon: '🌿', label: 'Plant Fodder', cat: 'material', sellPrice: 2, tags: ['Material', 'Feed'], desc: 'Coarsely ground crop matter. Feeds plant-eating livestock from a barn trough.' },
+        meatFodder: { icon: '🍖', label: 'Meat Fodder', cat: 'material', sellPrice: 3, tags: ['Material', 'Feed'], desc: 'Ground and cured raw meat. Feeds meat-eating livestock from a barn trough.' },
       };
+
+      // Valid Feed Grinder inputs (see getProcessingOutput's 'grindingFeed'
+      // branch) — every harvestable crop plus mulch grinds into Plant
+      // Fodder, every raw butchered meat grinds into Meat Fodder.
+      const FEED_GRINDER_PLANT_INPUTS = new Set([...Object.keys(cropData), 'mulch']);
+      const FEED_GRINDER_MEAT_INPUTS = new Set(Object.keys(ITEM_DEFS).filter(key => ITEM_DEFS[key].tags?.includes('Meat')));
 
       // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
       // Found in treasure chests (see rollTreasureDyeItemKeys), used from the
@@ -21035,6 +21171,7 @@
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
+        window.FarmAnimals.tickHearts();
         window.ProceduralTasks.maybeRefreshBoardTask();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
@@ -21063,6 +21200,7 @@
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
+        window.FarmAnimals.tickHearts();
         window.ProceduralTasks.maybeRefreshBoardTask();
         checkTothalShift();
         window.WildlifeSpawn.clearPendingDenRespawn();
@@ -22729,7 +22867,7 @@
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
-              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
               farmBuildings.push(entry);
               window.FarmBuildings.spawnEntry(entry);
             });
@@ -25194,6 +25332,7 @@
         LIVESTOCK_RESOURCE_DEFS,
         LIVESTOCK_RESOURCE_VERB,
         LIVESTOCK_ITEM_KINDS,
+        LIVESTOCK_DIET,
         UUMKAOII_DEFAULT_DEW_COLOR,
         UUMKAOII_DEW_COOLDOWN_DAYS,
         animalObjects,
@@ -25231,6 +25370,7 @@
         _saveWorldBreedingPairs,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
         getBarnTiers: () => BARN_TIERS,
         getPlayerData: () => _playerData,
         getGrid: () => grid,
@@ -25266,12 +25406,14 @@
         houseWallBuilder,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
+        enterBuilding: (mapId) => enterBuilding(mapId),
         getBarnTiers: () => BARN_TIERS,
         getGrid: () => grid,
         getHousePieceRects: () => window.HousePieces.getPieceRects(),
         getFarmBuildings: () => farmBuildings,
         setFarmBuildings: (v) => { farmBuildings = v; },
         setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
+        UUMKAOII_DEW_COOLDOWN_DAYS,
       });
 
       window.HousePieces?.init({
