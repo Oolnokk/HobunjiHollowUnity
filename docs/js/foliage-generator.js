@@ -1630,7 +1630,7 @@ window.FoliageGenerator = (() => {
     return variants;
   }
 
-  function buildTreeInstance(presetKey, preset, seedU32) {
+  function buildTreeInstance(presetKey, preset, seedU32, opts) {
     const variants = getTreeVariants(presetKey, preset);
     const rand = mulberry32(seedU32);
     const variantIndex = Math.floor(rand() * variants.length) % variants.length;
@@ -1657,10 +1657,21 @@ window.FoliageGenerator = (() => {
       // to explicitly delete it back off, not just skip setting it, or
       // every instance would register a climb branch regardless of the
       // roll (only the mesh's own visibility would differ).
-      if (rand() >= (preset.climbBranchChance ?? 0)) {
+      const keep = opts?.forceClimbBranch || rand() < (preset.climbBranchChance ?? 0);
+      if (!keep) {
         delete inst.userData.climbBranchLocal;
         const branchMesh = inst.getObjectByName?.('climbBranch');
         if (branchMesh) branchMesh.visible = false;
+      } else {
+        // Tags the branch mesh itself (not just the group) with where it
+        // is, in local pre-instance-transform space (a/b endpoints, radius)
+        // — this is what the tree GLB exporter tool reads to mark the node
+        // as a recognizable climb branch in the exported asset's extras
+        // (glTF exporters serialize mesh.userData as node "extras").
+        const branchMesh = inst.getObjectByName?.('climbBranch');
+        if (branchMesh) {
+          branchMesh.userData = { ...(branchMesh.userData || {}), isClimbBranch: true, climbBranchLocal: variant.userData.climbBranchLocal };
+        }
       }
     }
     return inst;
@@ -1719,9 +1730,13 @@ window.FoliageGenerator = (() => {
       const seedU32 = xfnv1a(`cp_${col}_${row}`);
       return buildTreeInstance('crownedPine', TREE_PRESETS.crownedPine, seedU32);
     },
-    buildShadewoodMesh(col, row) {
+    // opts.forceClimbBranch bypasses climbBranchChance's per-instance roll
+    // and always shows/registers the climb branch — used by the tree GLB
+    // exporter tool so an exported reference asset deterministically
+    // includes it instead of a ~1-in-6 chance per export.
+    buildShadewoodMesh(col, row, opts) {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
-      return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32);
+      return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32, opts);
     },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);

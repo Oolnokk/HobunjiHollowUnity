@@ -34,7 +34,15 @@
   }
 
   function buildSource(entry) {
-    const object = builderFor(entry)(entry.seed);
+    // forceClimbBranch: shadewood's climb branch is normally a per-tile-
+    // instance coin flip (~1 in 6 — see foliage-generator.js's
+    // climbBranchChance), which would make an exported reference GLB
+    // randomly include or omit it depending on nothing the exporter
+    // controls. Forcing it on here makes every exported shadewood
+    // deterministically carry the branch, tagged for downstream tools to
+    // recognize (see the traverse below).
+    const opts = entry.builder === 'buildShadewoodMesh' ? { forceClimbBranch: true } : undefined;
+    const object = builderFor(entry)(entry.seed, undefined, opts);
     if (!object) throw new Error(`${entry.builder}(${entry.seed}) returned no object`);
     object.name = `${entry.species}_${String(entry.variant).padStart(2, '0')}`;
     object.updateMatrixWorld?.(true);
@@ -42,7 +50,14 @@
       if (!child?.isMesh) return;
       child.userData = { ...(child.userData || {}), treeSpecies: entry.species, treeVariant: entry.variant };
       // GLTFExporter serializes userData as glTF extras, preserving noOutline
-      // on flat leaf-card meshes for the runtime's selective outline pass.
+      // on flat leaf-card meshes for the runtime's selective outline pass,
+      // and isClimbBranch/climbBranchLocal (set on the "climbBranch" mesh
+      // by buildTreeInstance when forceClimbBranch is set above) so a
+      // consumer of the exported GLB can find the climb branch node by
+      // name ("climbBranch") or by its extras.isClimbBranch flag, and read
+      // exactly where it is (extras.climbBranchLocal: local-space a/b
+      // endpoints + radius, same convention FoliageGenerator.
+      // getClimbBranchWorld expects).
     });
     return object;
   }
@@ -51,9 +66,15 @@
     listEl.innerHTML = ASSETS.map(entry => {
       const selectedClass = selected === entry ? ' selected' : '';
       const icon = entry.species === 'shadewood' ? '🌳' : '🌲';
+      // Every exported shadewood carries a climb branch (buildSource forces
+      // it — see forceClimbBranch above), so this is a straight species
+      // check, not a per-variant lookup — flagged here so the tool itself
+      // makes it visible which exports include one, not just the extras
+      // embedded in the GLB.
+      const branchBadge = entry.species === 'shadewood' ? '<span class="branch-badge" title="Exports with a climbable branch (see extras.isClimbBranch)">🪵 branch</span>' : '';
       return `<div class="asset-row${selectedClass}" data-species="${entry.species}" data-variant="${entry.variant}">
         <div class="tree-icon">${icon}</div>
-        <div><div class="asset-name">${prettySpecies(entry.species)} · variant ${entry.variant}</div><div class="asset-file">${entry.filename}</div></div>
+        <div><div class="asset-name">${prettySpecies(entry.species)} · variant ${entry.variant}${branchBadge}</div><div class="asset-file">${entry.filename}</div></div>
         <div class="seed">seed ${entry.seed}</div>
       </div>`;
     }).join('');
