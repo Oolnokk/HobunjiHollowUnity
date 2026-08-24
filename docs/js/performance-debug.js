@@ -279,6 +279,229 @@
     return { row, input };
   }
 
+  // Live Southern Cloud Forest tuning lives entirely inside the Debug pane.
+  // Nothing is persisted: a reload always returns to the authored game values.
+  const CLOUD_FOREST_FALLBACKS = Object.freeze({
+    cullRadius: 34,
+    fogDensity: 0.055,
+    mistRadius: 34,
+    innerOpacity: 0.14,
+    middleOpacity: 0.26,
+    outerOpacity: 0.46,
+  });
+  const cloudForestDev = {
+    enabled: false,
+    originals: null,
+    values: { ...CLOUD_FOREST_FALLBACKS }, // Used by the live override hook and slider labels.
+    hookRetries: 0,
+  };
+
+  function getCloudForestZone() {
+    try {
+      if (typeof EXTERIOR_ZONES !== 'undefined') return EXTERIOR_ZONES?.map_southern_cloud_forest || null;
+    } catch (_) {}
+    return root.EXTERIOR_ZONES?.map_southern_cloud_forest || null;
+  }
+
+  function getDevActiveScene() {
+    try {
+      if (typeof getActiveScene === 'function') return getActiveScene();
+    } catch (_) {}
+    return perfState.scene || null;
+  }
+
+  function getCloudForestMistLayers(scene = getDevActiveScene()) {
+    const group = scene?.getObjectByName?.('cloud_forest_mist_cylinders');
+    if (!group) return [];
+    return [...group.children]
+      .filter(child => /^cloud_forest_mist_\d+$/.test(child?.name || ''))
+      .sort((a, b) => Number(a.name.split('_').pop()) - Number(b.name.split('_').pop()));
+  }
+
+  function captureCloudForestOriginals() {
+    if (cloudForestDev.originals) return cloudForestDev.originals;
+    const zone = getCloudForestZone();
+    const cullRadius = Number(zone?.vegCullRadiusTiles);
+    const fogDensity = Number(zone?.fogDensity);
+    cloudForestDev.originals = {
+      cullRadius: Number.isFinite(cullRadius) ? cullRadius : CLOUD_FOREST_FALLBACKS.cullRadius,
+      fogDensity: Number.isFinite(fogDensity) ? fogDensity : CLOUD_FOREST_FALLBACKS.fogDensity,
+      mistRadius: Number.isFinite(cullRadius) ? cullRadius : CLOUD_FOREST_FALLBACKS.mistRadius,
+      innerOpacity: CLOUD_FOREST_FALLBACKS.innerOpacity,
+      middleOpacity: CLOUD_FOREST_FALLBACKS.middleOpacity,
+      outerOpacity: CLOUD_FOREST_FALLBACKS.outerOpacity,
+    };
+    cloudForestDev.values = { ...cloudForestDev.originals };
+    return cloudForestDev.originals;
+  }
+
+  function cloudForestIsActive() {
+    try { return root.CloudForestFog?.getDebugState?.().active === true; }
+    catch (_) { return false; }
+  }
+
+  function applyCloudForestDevOverrides() {
+    if (!cloudForestDev.enabled) return;
+    const values = cloudForestDev.values;
+    const zone = getCloudForestZone();
+    if (zone) {
+      zone.vegCullRadiusTiles = values.cullRadius;
+      zone.fogDensity = values.fogDensity;
+    }
+    if (!cloudForestIsActive()) return;
+    const scene = getDevActiveScene();
+    if (scene?.fog?.isFogExp2) scene.fog.density = values.fogDensity;
+    const layers = getCloudForestMistLayers(scene);
+    if (layers[0]?.material) layers[0].material.opacity = values.innerOpacity;
+    if (layers[1]?.material) layers[1].material.opacity = values.middleOpacity;
+    if (layers[2]?.material) {
+      layers[2].material.opacity = values.outerOpacity;
+      layers[2].scale.x = values.mistRadius;
+      layers[2].scale.z = values.mistRadius;
+    }
+  }
+
+  function installCloudForestFogHook() {
+    const api = root.CloudForestFog;
+    if (!api || typeof api.update !== 'function') {
+      if (cloudForestDev.hookRetries++ < 40) setTimeout(installCloudForestFogHook, 250);
+      return false;
+    }
+    if (api.update.__hobunjiCloudForestDevOriginal) return true;
+    const original = api.update;
+    api.update = function hobunjiCloudForestDevUpdate(...args) {
+      const result = original.apply(this, args);
+      applyCloudForestDevOverrides();
+      return result;
+    };
+    api.update.__hobunjiCloudForestDevOriginal = original;
+    return true;
+  }
+
+  function cloudForestValueText(key, value) {
+    if (key === 'fogDensity') return Number(value).toFixed(3);
+    if (key.endsWith('Opacity')) return Number(value).toFixed(2);
+    return `${Number(value).toFixed(0)} tiles`;
+  }
+
+  function updateCloudForestDevStatus() {
+    const status = document.getElementById('cloudForestDevStatus');
+    if (!status) return;
+    if (!cloudForestDev.enabled) {
+      status.textContent = 'Using authored game values. Move any slider to enable a temporary live override.';
+      return;
+    }
+    const originalRadius = Math.max(0.001, cloudForestDev.originals?.cullRadius || CLOUD_FOREST_FALLBACKS.cullRadius);
+    const areaPct = Math.round((cloudForestDev.values.cullRadius ** 2) / (originalRadius ** 2) * 100);
+    status.textContent = `Live override active · tree-load circle ≈ ${areaPct}% of the authored area.`;
+  }
+
+  function makeCloudForestRangeRow(key, labelText, min, max, step) {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:grid;grid-template-columns:minmax(112px,1fr) minmax(120px,1.5fr) 62px;align-items:center;gap:8px;padding:5px 0;font-size:11px';
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(cloudForestDev.values[key]);
+    input.id = `cloudForestDev_${key}`;
+    input.style.cssText = 'width:100%;min-width:0;touch-action:pan-y';
+    const value = document.createElement('span');
+    value.id = `cloudForestDev_${key}_value`;
+    value.style.cssText = 'text-align:right;font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;opacity:.82';
+    value.textContent = cloudForestValueText(key, cloudForestDev.values[key]);
+    input.addEventListener('input', () => {
+      cloudForestDev.values[key] = Number(input.value); // Read by applyCloudForestDevOverrides after each fog update.
+      cloudForestDev.enabled = true;
+      value.textContent = cloudForestValueText(key, cloudForestDev.values[key]);
+      installCloudForestFogHook();
+      applyCloudForestDevOverrides();
+      updateCloudForestDevStatus();
+    });
+    row.append(label, input, value);
+    return row;
+  }
+
+  function syncCloudForestDevInputs() {
+    for (const key of Object.keys(cloudForestDev.values)) {
+      const input = document.getElementById(`cloudForestDev_${key}`);
+      const value = document.getElementById(`cloudForestDev_${key}_value`);
+      if (input) input.value = String(cloudForestDev.values[key]);
+      if (value) value.textContent = cloudForestValueText(key, cloudForestDev.values[key]);
+    }
+    updateCloudForestDevStatus();
+  }
+
+  function resetCloudForestDevOverrides() {
+    const originals = captureCloudForestOriginals();
+    cloudForestDev.enabled = false;
+    cloudForestDev.values = { ...originals };
+    const zone = getCloudForestZone();
+    if (zone) {
+      zone.vegCullRadiusTiles = originals.cullRadius;
+      zone.fogDensity = originals.fogDensity;
+    }
+    if (cloudForestIsActive()) {
+      const scene = getDevActiveScene();
+      if (scene?.fog?.isFogExp2) scene.fog.density = originals.fogDensity;
+      const layers = getCloudForestMistLayers(scene);
+      if (layers[0]?.material) layers[0].material.opacity = originals.innerOpacity;
+      if (layers[1]?.material) layers[1].material.opacity = originals.middleOpacity;
+      if (layers[2]?.material) {
+        layers[2].material.opacity = originals.outerOpacity;
+        layers[2].scale.x = originals.mistRadius;
+        layers[2].scale.z = originals.mistRadius;
+      }
+    }
+    syncCloudForestDevInputs();
+    log('[CloudForestDev] Restored authored fog and vegetation-cull values.', 'info', 'foliage');
+  }
+
+  function installCloudForestTuningUI() {
+    if (document.getElementById('cloudForestDevTuning')) return;
+    const pane = document.getElementById('mpDebug');
+    const column = pane?.firstElementChild;
+    if (!column) return;
+    captureCloudForestOriginals();
+
+    const details = document.createElement('details');
+    details.id = 'cloudForestDevTuning';
+    details.style.cssText = 'flex:0 0 auto;margin:0 12px 6px;padding:7px 10px;border:1px solid rgba(125,211,252,.24);border-radius:8px;background:rgba(2,10,18,.34);max-height:42vh;overflow:auto';
+    const summary = document.createElement('summary');
+    summary.textContent = '☁ Cloud Forest performance tuning';
+    summary.style.cssText = 'cursor:pointer;font-size:11px;font-weight:800;color:#bae6fd;user-select:none';
+    details.appendChild(summary);
+
+    const status = document.createElement('div');
+    status.id = 'cloudForestDevStatus';
+    status.style.cssText = 'font-size:10px;line-height:1.35;opacity:.68;margin:7px 0 4px';
+    details.appendChild(status);
+    details.appendChild(makeCloudForestRangeRow('cullRadius', 'Vegetation load radius', 10, 40, 1));
+    details.appendChild(makeCloudForestRangeRow('fogDensity', 'FogExp2 density', 0.015, 0.120, 0.001));
+    details.appendChild(makeCloudForestRangeRow('mistRadius', 'Outer mist radius', 8, 40, 1));
+    details.appendChild(makeCloudForestRangeRow('innerOpacity', 'Inner mist opacity', 0, 1, 0.01));
+    details.appendChild(makeCloudForestRangeRow('middleOpacity', 'Middle mist opacity', 0, 1, 0.01));
+    details.appendChild(makeCloudForestRangeRow('outerOpacity', 'Outer mist opacity', 0, 1, 0.01));
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;margin-top:6px';
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset authored values';
+    reset.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#d1d5db;cursor:pointer';
+    reset.addEventListener('click', resetCloudForestDevOverrides);
+    actions.appendChild(reset);
+    details.appendChild(actions);
+
+    const header = column.firstElementChild;
+    if (header?.nextSibling) column.insertBefore(details, header.nextSibling);
+    else column.appendChild(details);
+    updateCloudForestDevStatus();
+  }
+
   function syncDebugSettingsUI() {
     const state = root.DebugCategories?.getState?.();
     if (!state) return;
@@ -410,6 +633,8 @@
   function install() {
     installRendererProfiler();
     installSettingsUI();
+    installCloudForestTuningUI();
+    installCloudForestFogHook();
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
     setTimeout(checkBakedTreeHealth, 4000);
