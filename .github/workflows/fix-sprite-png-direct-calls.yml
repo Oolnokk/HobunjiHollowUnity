@@ -1,0 +1,42 @@
+name: Fix sprite PNG direct calls
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-sprite-png-direct-calls.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+      - name: Apply cleanup
+        run: python .github/fix-sprite-png-direct-calls.py
+      - name: Validate source
+        run: |
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/natural-surface-materials.js
+          git diff --check
+          ! grep -q '? window.HobunjiPngPlaneUnlit\.' docs/js/procedural-leg-animation.js
+          ! grep -q '? window.HobunjiPngPlaneUnlit\.' docs/js/natural-surface-materials.js
+          grep -q 'spritePngSurface.configureTexture' docs/js/procedural-hand-attachments.js
+          grep -q 'spritePngSurface.makeMaterial' docs/js/procedural-hand-attachments.js
+          grep -q 'spritePngSurface.configureTexture' docs/js/procedural-leg-animation.js
+          grep -q 'spritePngSurface.makeMaterial' docs/js/procedural-leg-animation.js
+          grep -q 'spritePngSurface.configureTexture' docs/js/natural-surface-materials.js
+          grep -q 'spritePngSurface.makeMaterial' docs/js/natural-surface-materials.js
+      - name: Commit cleanup and remove patch machinery
+        run: |
+          rm .github/fix-sprite-png-direct-calls.py .github/workflows/fix-sprite-png-direct-calls.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/procedural-hand-attachments.js docs/js/procedural-leg-animation.js docs/js/natural-surface-materials.js .github
+          git commit -m 'Route textured surfaces directly through sprite PNG pipeline'
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
