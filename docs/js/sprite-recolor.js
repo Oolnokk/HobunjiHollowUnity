@@ -173,6 +173,24 @@
     document.head.appendChild(script);
   }
 
+  // fishing-events must run after fish-catalog (so it layers on the catalog's
+  // Fishing accessor) but before fishing-minigame.js/game.js assign/init Fishing.
+  function loadFishingEventsForGame() {
+    if (typeof document === 'undefined') return;
+    if (!document.getElementById('fishingOverlay') || document.querySelector('script[data-fishing-events]')) return;
+    const ownSrc = document.currentScript?.src;
+    const src = ownSrc ? new URL('fishing-events.js?v=20260824a', ownSrc).href : 'js/fishing-events.js?v=20260824a';
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-fishing-events="true"></script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.fishingEvents = 'true';
+    script.onerror = () => console.warn('[sprite-recolor] failed to load fishing-events.js');
+    document.head.appendChild(script);
+  }
+
   window.SpriteRecolor = {
     getRecoloredCanvas,
     recolorImageData, relativeLuminance, shadeFillConfig,
@@ -180,4 +198,5 @@
   };
 
   loadFishCatalogForGame();
+  loadFishingEventsForGame();
 })();
