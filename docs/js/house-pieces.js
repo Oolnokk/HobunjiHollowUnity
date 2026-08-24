@@ -19,9 +19,10 @@
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
+    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823a'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260815d'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }
