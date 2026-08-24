@@ -188,6 +188,35 @@
     return tint;
   }
 
+  let _spritePngParityTemplate = null;
+  function applySpritePngRenderParity(material, spritePngSurface) {
+    if (!material) return material;
+    // Natural surfaces and character sprites intentionally differ in geometry-
+    // specific state (opaque vs alpha-cutout queue, occasional source-side
+    // culling/polygon offset), but NOT in their light/color model. Derive these
+    // flags from a real material produced by the canonical character PNG
+    // factory instead of hardcoding Three.js defaults, so future changes to the
+    // sprite path automatically carry over here too.
+    if (!_spritePngParityTemplate && spritePngSurface?.makeMaterial) {
+      _spritePngParityTemplate = spritePngSurface.makeMaterial(THREE, null, '__natural_surface_sprite_parity_template');
+    }
+    const template = _spritePngParityTemplate;
+    if (template) {
+      for (const key of ['lights', 'fog', 'toneMapped', 'dithering', 'premultipliedAlpha']) {
+        if (key in template && key in material) material[key] = template[key];
+      }
+    } else {
+      // Fallback path is still the same unlit material class as the character
+      // plane's own fallback; never fall back to Lambert/Phong/PBR lighting.
+      if ('lights' in material) material.lights = false;
+    }
+    material.userData = Object.assign({}, material.userData, {
+      naturalSurfaceSpritePngParity: true,
+      naturalSurfaceLightModel: 'character-png-unlit',
+    });
+    return material;
+  }
+
   function basicMaterial(surface, sourceMaterial, texture, tint) {
     const key = [
       surface,
@@ -225,8 +254,9 @@
     mat = spritePngSurface?.makeMaterial
       ? spritePngSurface.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
       : new THREE.MeshBasicMaterial({ map: texture || null, ...overrides });
+    applySpritePngRenderParity(mat, spritePngSurface);
     mat.name = `natural_${surface}_${tint}`;
-    mat.userData = Object.assign({}, sourceMaterial?.userData, {
+    mat.userData = Object.assign({}, sourceMaterial?.userData, mat.userData, {
       naturalSurface: surface,
       naturalSurfaceUnlit: true,
     });

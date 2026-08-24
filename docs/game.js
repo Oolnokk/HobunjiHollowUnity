@@ -19783,7 +19783,9 @@
           const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
           vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
           vegGroup._windAmp   = 0.06;
-          vegGroup.scale.set(2, 2, 2);
+          // buildShrubMesh now returns TREE_PRESETS.bush, so its native scale
+          // is already the regular wilderness-bush size. Do not apply the old
+          // generic shrub x2 farm boost here.
           vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
           scene.add(vegGroup);
           setVegFoliageMesh(i, vegGroup);
