@@ -291,11 +291,17 @@
     const sourcePositions = position.array instanceof Float32Array
       ? position.array
       : Float32Array.from(position.array);
+    // MeshoptSimplifier expects vertex stride in BYTES, not float components.
+    // Tree geometry uses tightly packed Float32 XYZ positions, so itemSize 3 = 12 bytes.
+    const positionStrideBytes = position.itemSize * sourcePositions.BYTES_PER_ELEMENT;
+    if (position.itemSize < 3 || positionStrideBytes < 12 || positionStrideBytes % 4 !== 0) {
+      throw new Error(`Unsupported position layout: itemSize=${position.itemSize}, stride=${positionStrideBytes} bytes`);
+    }
 
     const [simplifiedIndices, error] = window.MeshoptSimplifier.simplify(
       sourceIndices,
       sourcePositions,
-      position.itemSize,
+      positionStrideBytes,
       targetIndexCount,
       1,
       ['Prune'],
@@ -335,12 +341,22 @@
 
     let leafCardsRemoved = 0;
     let skippedMeshes = 0;
-    for (const mesh of meshes) {
-      if (isLeafCardMesh(mesh)) {
-        leafCardsRemoved += thinLeafCards(mesh, requested).cardsRemoved;
-      } else {
-        const result = simplifySolidMesh(mesh, requested);
-        if (result.skipped) skippedMeshes++;
+    for (let meshIndex = 0; meshIndex < meshes.length; meshIndex++) {
+      const mesh = meshes[meshIndex];
+      try {
+        if (isLeafCardMesh(mesh)) {
+          leafCardsRemoved += thinLeafCards(mesh, requested).cardsRemoved;
+        } else {
+          const result = simplifySolidMesh(mesh, requested);
+          if (result.skipped) skippedMeshes++;
+        }
+      } catch (error) {
+        const geometry = mesh.geometry;
+        const position = geometry?.getAttribute?.('position');
+        const index = geometry?.index;
+        const meshLabel = mesh.name || `mesh ${meshIndex + 1}/${meshes.length}`;
+        const detail = `vertices=${position?.count ?? 0}, indices=${index?.count ?? 0}, itemSize=${position?.itemSize ?? 0}`;
+        throw new Error(`LOD decimation failed for ${meshLabel} (${detail}): ${error?.message || error}`);
       }
     }
 
