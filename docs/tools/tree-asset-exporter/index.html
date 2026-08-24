@@ -10,21 +10,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
-  <script>
-    // meshoptimizer v0.22 JS compatibility guard for the tree exporter.
-    // v0.22 expects position stride in Float32 components, not bytes, and its
-    // Prune flag asserts unless experimental features are explicitly enabled.
-    (() => {
-      const simplifier = window.MeshoptSimplifier;
-      if (!simplifier || typeof simplifier.simplify !== 'function') return;
-      const simplify = simplifier.simplify;
-      simplifier.simplify = function(indices, positions, stride, targetCount, targetError, flags) {
-        const strideFloats = stride >= 12 && stride % 4 === 0 ? stride / 4 : stride;
-        const stableFlags = Array.isArray(flags) ? flags.filter(flag => flag !== 'Prune') : flags;
-        return simplify.call(this, indices, positions, strideFloats, targetCount, targetError, stableFlags);
-      };
-    })();
-  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="js/foliage-generator.js?v=20260818-tree-export"></script>
   <script src="js/tree-asset-library.js?v=20260818a"></script>
@@ -33,7 +18,7 @@
   <header>
     <div>
       <h1>🌲 Wilderness Tree Asset Exporter</h1>
-      <p>Build the six fixed full-size tree variants used by wilderness generation, bake them to GLB, or generate decimated LOD copies without damaging leaf-card UVs.</p>
+      <p>Build the six fixed full-size tree variants used by wilderness generation, bake them to GLB, or generate decimated LOD copies while preserving every leaf card.</p>
     </div>
     <button id="export-all" class="primary">Export all 6 as ZIP</button>
   </header>
@@ -53,7 +38,7 @@
         <div class="lod-control-head">
           <div>
             <strong>LOD decimation</strong>
-            <p class="muted">Triangle reduction applied to exported GLBs. Solid tree geometry is simplified; foliage is thinned by removing complete textured leaf cards.</p>
+            <p class="muted">Triangle reduction applies only to solid tree geometry. Leaf-card meshes are always preserved unchanged at full detail.</p>
           </div>
           <output id="decimate-value" for="decimate-percent">0%</output>
         </div>
@@ -84,6 +69,6 @@
     </section>
   </main>
 
-  <script src="tools/tree-asset-exporter/exporter.js?v=20260824-lod-decimate-fix2"></script>
+  <script src="tools/tree-asset-exporter/exporter.js?v=20260824-lod-decimate-leaves-preserved"></script>
 </body>
 </html>
