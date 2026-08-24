@@ -350,12 +350,38 @@
   }
 
   function movementInput() {
-    if (!mountDeps) return { active: false, x: 0, y: 0, strength: 0, keyboard: false };
+    if (!mountDeps) return { active: false, x: 0, y: 0, strength: 0, keyboard: false, rawX: 0, rawY: 0, cameraRelative: false, cameraFacingRad: null };
     const keyboard = mountDeps.getKeyboardVector?.() || { active: false, x: 0, y: 0 };
-    const x = Number(keyboard.active ? keyboard.x : mountDeps.input?.x) || 0;
-    const y = Number(keyboard.active ? keyboard.y : mountDeps.input?.y) || 0;
-    const strength = Math.min(1, Math.hypot(x, y));
-    return { active: strength > 0.001, x, y, strength, keyboard: !!keyboard.active };
+    const rawX = Number(keyboard.active ? keyboard.x : mountDeps.input?.x) || 0; // Kept for debug so raw input can be compared with the resolved world vector.
+    const rawY = Number(keyboard.active ? keyboard.y : mountDeps.input?.y) || 0; // Kept for debug so raw input can be compared with the resolved world vector.
+    let x = rawX; // Resolved below into the same world-space direction used by ordinary movement.
+    let y = rawY; // Resolved below into the same world-space direction used by ordinary movement.
+    const strength = Math.min(1, Math.hypot(rawX, rawY));
+    let cameraRelative = false; // Exposed in getDebug() to verify Shoulder Cam used the camera basis.
+    let cameraFacingRad = null; // Exposed in getDebug() alongside the resolved movement vector.
+    if (strength > 0.001 && mountDeps.isShoulderSurfMode?.()) {
+      const aim = Number(mountDeps.cameraFacingAngleRad?.()); // Same camera-facing basis used by on-foot and mounted movement.
+      if (Number.isFinite(aim)) {
+        const s = Math.sin(aim), c = Math.cos(aim); // Used by the shared Shoulder Cam input rotation formula.
+        const resolvedX = -x * s - y * c; // Camera-relative input converted to the game's world X axis.
+        const resolvedY = x * c - y * s; // Camera-relative input converted to the game's world Y axis.
+        x = resolvedX;
+        y = resolvedY;
+        cameraRelative = true;
+        cameraFacingRad = aim;
+      }
+    }
+    return {
+      active: strength > 0.001,
+      x,
+      y,
+      strength,
+      keyboard: !!keyboard.active,
+      rawX,
+      rawY,
+      cameraRelative,
+      cameraFacingRad,
+    };
   }
 
   function terrainSpeedMul(player) {
@@ -693,6 +719,7 @@
         desiredFootingSpeedMul: muls.desired,
         inertiaVX,
         inertiaVY,
+        movementInput: movementInput(),
         blackoutSettling: blackoutSettling(),
         blackoutTravelHoldUntil: Number(window.__hobunjiBlackoutTravelHoldUntil) || 0,
         hasDevDeps: !!devDeps,
