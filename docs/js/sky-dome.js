@@ -215,30 +215,34 @@
     if (maxX < minX) return source;
     const cx = (minX + maxX) * 0.5, cy = (minY + maxY) * 0.5, rx = Math.max(1, (maxX - minX + 1) * 0.5), ry = Math.max(1, (maxY - minY + 1) * 0.5);
     const angle = lunarProgress(day) * Math.PI * 2, sx = Math.sin(angle), sz = -Math.cos(angle);
-    const opaque = new Uint8Array(width * height), lit = new Uint8Array(width * height);
-    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) { const i = y * width + x, a = rgba[i * 4 + 3]; if (a <= 8) continue; opaque[i] = 1; const nx = (x - cx) / rx, ny = (y - cy) / ry, r2 = nx * nx + ny * ny; if (r2 > 1) continue; const nz = Math.sqrt(Math.max(0, 1 - r2)); if (nx * sx + nz * sz > 0) lit[i] = 1; }
+    const lit = new Uint8Array(width * height);
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) { const i = y * width + x, a = rgba[i * 4 + 3]; if (a <= 8) continue; const nx = (x - cx) / rx, ny = (y - cy) / ry, r2 = nx * nx + ny * ny; if (r2 > 1) continue; const nz = Math.sqrt(Math.max(0, 1 - r2)); if (nx * sx + nz * sz > 0) lit[i] = 1; }
     const output = document.createElement('canvas'); output.width = width; output.height = height; const octx = output.getContext('2d', { willReadFrequently: true }), out = octx.createImageData(width, height), dst = out.data;
     for (let i = 0; i < width * height; i++) if (lit[i]) { const p = i * 4; dst[p] = rgba[p]; dst[p + 1] = rgba[p + 1]; dst[p + 2] = rgba[p + 2]; dst[p + 3] = rgba[p + 3]; }
-    const boundary = new Uint8Array(width * height), dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
-    for (let y = minY + 1; y < maxY; y++) for (let x = minX + 1; x < maxX; x++) { const i = y * width + x; if (!lit[i]) continue; for (const [dx, dy] of dirs) { const ni = (y + dy) * width + x + dx; if (opaque[ni] && !lit[ni]) { boundary[i] = 1; break; } } }
-    const outlinePx = Math.max(2, Math.round(Math.min(rx, ry) * 0.035)); // Used to cap each phase cut with the source art's thick black outline language.
-    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) { const i = y * width + x; if (!boundary[i]) continue; for (let oy = -outlinePx; oy <= outlinePx; oy++) for (let ox = -outlinePx; ox <= outlinePx; ox++) { if (ox * ox + oy * oy > outlinePx * outlinePx) continue; const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue; const ii = yy * width + xx; if (!lit[ii]) continue; const p = ii * 4; dst[p] = dst[p + 1] = dst[p + 2] = 0; dst[p + 3] = Math.max(dst[p + 3], rgba[p + 3]); } }
+    // Deliberately no black phase-edge stroke: the moon is a luminous body,
+    // not part of the game's ink-outline language.
     octx.putImageData(out, 0, 0); return output;
   }
 
   function glowTexture(moon = false) {
     const THREE = deps.THREE, size = 512, canvas = document.createElement('canvas'); canvas.width = canvas.height = size; const ctx = canvas.getContext('2d');
     const rgb = moon ? [169, 201, 255] : [255, 216, 137], radial = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * 0.49);
-    radial.addColorStop(0, `rgba(${rgb.join(',')},.26)`); radial.addColorStop(.18, `rgba(${rgb.join(',')},.14)`); radial.addColorStop(.52, `rgba(${rgb.join(',')},.035)`); radial.addColorStop(1, `rgba(${rgb.join(',')},0)`); ctx.fillStyle = radial; ctx.fillRect(0, 0, size, size);
+    radial.addColorStop(0, `rgba(${rgb.join(',')},.34)`); radial.addColorStop(.16, `rgba(${rgb.join(',')},.19)`); radial.addColorStop(.48, `rgba(${rgb.join(',')},.045)`); radial.addColorStop(1, `rgba(${rgb.join(',')},0)`); ctx.fillStyle = radial; ctx.fillRect(0, 0, size, size);
     const texture = new THREE.CanvasTexture(canvas); texture.needsUpdate = true; return texture;
   }
 
   function makeCelestialPack(image, kind) {
     const THREE = deps.THREE, displayImage = kind === 'moon' ? buildMoonPhaseCanvas(image, lunarDay()) : image;
     const texture = displayImage instanceof HTMLCanvasElement ? new THREE.CanvasTexture(displayImage) : new THREE.Texture(displayImage); texture.needsUpdate = true;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false }));
-    const selfLight = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(kind === 'moon'), transparent: true, depthTest: false, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+    const baseOptions = { map: texture, transparent: true, alphaTest: 0.015, depthTest: true, depthWrite: false, fog: false, toneMapped: false };
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial(baseOptions));
+    const selfLight = new THREE.Sprite(new THREE.SpriteMaterial({ ...baseOptions, blending: THREE.AdditiveBlending }));
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(kind === 'moon'), transparent: true, depthTest: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+    for (const node of [sprite, selfLight, glow]) {
+      node.layers.set(0); // Explicitly exclude shell/material-ID/PNG-occluder outline passes.
+      node.userData.hobunjiNoOutline = true;
+      node.frustumCulled = false;
+    }
     sprite.renderOrder = -900; selfLight.renderOrder = -899; glow.renderOrder = -901; celestialGroup.add(glow, sprite, selfLight); return { image: displayImage, sprite, selfLight, glow };
   }
 
@@ -274,7 +278,7 @@
     try {
       const [sun, moon, ...clouds] = await Promise.all([loadImage(`${ASSET_BASE}sun.png`), loadImage(`${ASSET_BASE}moon.png`), ...CLOUD_NAMES.map(name => loadImage(`${ASSET_BASE}${name}`))]);
       sourceMoonImage = moon; sunPack = makeCelestialPack(sun, 'sun'); moonPack = makeCelestialPack(moon, 'moon'); lastMoonDay = lunarDay(); rebuildClouds(clouds); root.userData.cloudImages = clouds; assetsReady = true;
-      debugLog('runtime skydome assets ready: 3 cloud bands, sun, phase-masked moon, dense halo stars');
+      debugLog('runtime skydome assets ready: 3 cloud bands, luminous unoutlined sun, phase-masked luminous moon, dense halo stars');
     } catch (error) { debugLog(`asset load failed: ${error?.message || error}`, 'warn'); }
     finally { assetsLoading = false; }
   }
@@ -295,12 +299,16 @@
   function updateCelestialPack(pack, kind, uv, opacity, illumination = 1) {
     if (!pack) return;
     const pos = uvToSphere(uv.u, uv.v, CELESTIAL_RADIUS), image = pack.image, ratio = (image.naturalWidth || image.width) / Math.max(1, image.naturalHeight || image.height);
-    const h = kind === 'sun' ? SUN_SIZE : MOON_SIZE, w = h * ratio, light = (kind === 'sun' ? 1.75 : 0.58) * opacity * illumination;
-    pack.sprite.position.copy(pos); pack.selfLight.position.copy(pos); pack.glow.position.copy(pos); pack.sprite.scale.set(w, h, 1); pack.selfLight.scale.set(w, h, 1); pack.glow.scale.set(w * (kind === 'sun' ? 5.2 : 5.8), h * (kind === 'sun' ? 5.2 : 5.8), 1);
-    pack.sprite.material.opacity = opacity; pack.selfLight.material.opacity = clamp(light * (kind === 'sun' ? 0.24 : 0.38), 0, 0.95);
-    // Keep the prior diagnostic suppression until the far-clip artifact is confirmed gone.
-    pack.glow.material.opacity = 0;
-    if (kind === 'sun') pack.selfLight.material.color.setRGB(1, 0.74, 0.34); else pack.selfLight.material.color.setRGB(0.55, 0.72, 1);
+    const h = kind === 'sun' ? SUN_SIZE : MOON_SIZE, w = h * ratio;
+    const bodyLight = kind === 'sun' ? 0.72 : 0.82;
+    const glowStrength = kind === 'sun' ? 0.58 : 0.52;
+    const visibleIllumination = kind === 'sun' ? 1 : illumination;
+    pack.sprite.position.copy(pos); pack.selfLight.position.copy(pos); pack.glow.position.copy(pos);
+    pack.sprite.scale.set(w, h, 1); pack.selfLight.scale.set(w, h, 1); pack.glow.scale.set(w * (kind === 'sun' ? 5.2 : 5.8), h * (kind === 'sun' ? 5.2 : 5.8), 1);
+    pack.sprite.material.opacity = opacity;
+    pack.selfLight.material.opacity = clamp(opacity * visibleIllumination * bodyLight, 0, 0.96);
+    pack.glow.material.opacity = clamp(opacity * visibleIllumination * glowStrength, 0, 0.78);
+    if (kind === 'sun') pack.selfLight.material.color.setRGB(1, 0.88, 0.58); else pack.selfLight.material.color.setRGB(0.72, 0.84, 1);
   }
 
   function updateClouds(dt, sunUv, moonUv, sunOpacity, moonOpacity, moonIllumination) {
@@ -328,8 +336,8 @@
 
   function installWeatherHook() {
     if (!window.WeatherFX || window.WeatherFX.__fullDaySkyHooked) return;
-    const originalInit = window.WeatherFX.init; // Existing WeatherFX init retained and wrapped only to expose its already-injected rendering deps to the sky correction.
-    const originalDraw = window.WeatherFX.drawLightingOverlay; // Existing lighting/lantern/lightning pass remains authoritative.
+    const originalInit = window.WeatherFX.init;
+    const originalDraw = window.WeatherFX.drawLightingOverlay;
     const originalGetLightingState = window.WeatherFX.getLightingState;
     window.WeatherFX.init = function (injectedDeps) { weatherDeps = injectedDeps; return originalInit.call(this, injectedDeps); };
     window.WeatherFX.drawLightingOverlay = function (...args) { const result = originalDraw.apply(this, args); applyPredawnLightingCorrection(); return result; };
@@ -339,16 +347,15 @@
 
   function wrapNaturalTimeAccessor(calendar) {
     const descriptor = Object.getOwnPropertyDescriptor(calendar, 'time01'); if (!descriptor?.get || !descriptor?.set || calendar.__fullDayTimeAccessor) return;
-    Object.defineProperty(calendar, 'time01', { configurable: true, enumerable: true, get() { return descriptor.get.call(calendar); }, set(nextValue) { const current = descriptor.get.call(calendar), numeric = Number(nextValue); // Used to distinguish natural frame ticks from loads/skips/rollovers.
-      if (!Number.isFinite(numeric)) return; const delta = numeric - current; const naturalFrameWrite = window.__hobunjiGameStarted === true && delta > 0 && delta <= 0.02; descriptor.set.call(calendar, naturalFrameWrite ? current + delta * EXTRA_NATURAL_TIME_SCALE : numeric); } });
+    Object.defineProperty(calendar, 'time01', { configurable: true, enumerable: true, get() { return descriptor.get.call(calendar); }, set(nextValue) { const current = descriptor.get.call(calendar), numeric = Number(nextValue); if (!Number.isFinite(numeric)) return; const delta = numeric - current; const naturalFrameWrite = window.__hobunjiGameStarted === true && delta > 0 && delta <= 0.02; descriptor.set.call(calendar, naturalFrameWrite ? current + delta * EXTRA_NATURAL_TIME_SCALE : numeric); } });
     Object.defineProperty(calendar, '__fullDayTimeAccessor', { value: true, configurable: true });
   }
 
   function installClockHook() {
     if (!window.CalendarSystem || window.CalendarSystem.__fullDaySkyHooked) return;
-    const originalInit = window.CalendarSystem.init; // Existing calendar initialization stays authoritative; this wrapper only expands its represented hour span.
+    const originalInit = window.CalendarSystem.init;
     window.CalendarSystem.init = function (injectedDeps) {
-      const morningHour = Number(injectedDeps.MORNING_HOUR) || DAY_ROLLOVER_HOUR; // Used to preserve the repo's existing 06:00 raw-day boundary.
+      const morningHour = Number(injectedDeps.MORNING_HOUR) || DAY_ROLLOVER_HOUR;
       injectedDeps.NIGHT_HOUR = morningHour + 24; const result = originalInit.call(this, injectedDeps); clockDeps = injectedDeps; wrapNaturalTimeAccessor(injectedDeps.calendar);
       window.CalendarSystem.getHour = function (time01 = injectedDeps.calendar.time01) { return mod(morningHour + Number(time01 || 0) * 24, 24); };
       const oldSnapshot = window.CalendarSystem.timeDebugSnapshot; if (typeof oldSnapshot === 'function') window.CalendarSystem.timeDebugSnapshot = function () { return { ...oldSnapshot.call(this), fullDayClock: true, representedHour: window.CalendarSystem.getHour(), dayRolloverHour: morningHour, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, naturalScale: 2 / 7 }; };
@@ -361,15 +368,15 @@
 
   function installRainHook() {
     if (!window.RainPlanes || window.RainPlanes.__skyDomeHooked) return;
-    const originalInit = window.RainPlanes.init; // Existing rain plane behavior retained; its injected scene/camera/calendar deps also initialize the skydome.
-    const originalUpdate = window.RainPlanes.update; // Existing game loop call remains the single per-frame integration point.
+    const originalInit = window.RainPlanes.init;
+    const originalUpdate = window.RainPlanes.update;
     window.RainPlanes.init = function (injectedDeps) { const result = originalInit.call(this, injectedDeps); init(injectedDeps); return result; };
     window.RainPlanes.update = function (dt) { const result = originalUpdate.call(this, dt); update(dt); return result; };
     window.RainPlanes.__skyDomeHooked = true;
   }
 
   function getDebugState() {
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: true };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
