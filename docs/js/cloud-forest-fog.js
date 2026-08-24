@@ -246,11 +246,8 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  // The old carried-lantern mask was a destination-out circle on the entire
-  // screen-space day/night canvas. Because that canvas also covers the sky,
-  // the circle was visible against the skydome in daylight and at night.
-  // Disable that screen-space player/Watch mask outdoors rather than trying
-  // to reshape it; furniture masks remain unchanged.
+  // Carried player/Watch masks are disabled outdoors because their screen-space
+  // destination-out circles cannot distinguish world geometry from the sky.
   function drawLanternMasksCompat() {}
 
   function drawFurnitureLightMasksCompat() {
@@ -329,8 +326,9 @@
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
+    // No screen-space local-light masks outdoors. They cannot distinguish
+    // terrain from skydome pixels and were producing the visible circular sky artifact.
     drawLanternMasksCompat();
-    drawFurnitureLightMasksCompat();
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
