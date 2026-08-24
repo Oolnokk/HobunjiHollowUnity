@@ -1,0 +1,85 @@
+name: Apply authored surface PNG tone fix
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/wavy-limbs-medium-gray-stone'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Apply surface PNG tonal normalization
+        run: python .github/fix-surface-png-tone.py
+      - name: Validate JavaScript
+        run: |
+          node --check docs/js/portrait-utils.js
+          node --check docs/js/png-plane-avatar.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/natural-surface-materials.js
+          git diff --check
+          grep -q 'tintSurfaceCanvas: getSurfaceTintedCanvas' docs/js/portrait-utils.js
+          grep -q 'spritePng?.tintSurfaceCanvas' docs/js/procedural-hand-attachments.js
+          grep -q 'spritePng?.tintSurfaceCanvas' docs/js/procedural-leg-animation.js
+          grep -q 'spritePng?.tintSurfaceCanvas' docs/js/natural-surface-materials.js
+      - name: Validate expected contrast expansion
+        run: |
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import math
+
+          def lum(r,g,b): return (0.2126*r+0.7152*g+0.0722*b)/255.0
+          def std(vals):
+              m=sum(vals)/len(vals); return (sum((v-m)**2 for v in vals)/len(vals))**0.5
+          def normalize(img, outline=.08, pl=.10, ph=.90, tl=.18, th=.80):
+              rgba=img.convert('RGBA'); data=list(rgba.getdata())
+              ls=sorted(lum(r,g,b) for r,g,b,a in data if a>8 and lum(r,g,b)>outline)
+              q=lambda p: ls[round((len(ls)-1)*p)]
+              lo,hi=q(pl),q(ph); span=hi-lo
+              out=[]
+              for r,g,b,a in data:
+                  L=lum(r,g,b)
+                  if a==0 or L<=outline or span<=.015: out.append((r,g,b,a)); continue
+                  t=max(0,min(1,(L-lo)/span)); target=tl+(th-tl)*t; s=target/max(.0001,L)
+                  out.append(tuple(max(0,min(255,round(c*s))) for c in (r,g,b))+(a,))
+              result=Image.new('RGBA',rgba.size); result.putdata(out); return result
+          def shade(img, target=128, outline=.08, neutral=.55):
+              out=[]
+              for r,g,b,a in img.convert('RGBA').getdata():
+                  L=lum(r,g,b)
+                  if a==0 or L<=outline: out.append((r,g,b,a)); continue
+                  s=max(.18,min(1.18,L/neutral)); v=round(target*s)
+                  out.append((v,v,v,a))
+              result=Image.new('RGBA',img.size); result.putdata(out); return result
+          def stats(img):
+              vals=[lum(r,g,b) for r,g,b,a in img.convert('RGBA').getdata() if a>8]
+              return sum(vals)/len(vals),std(vals)
+
+          w=Image.open('docs/assets/textures/wavy_surface.png')
+          c=Image.open('docs/assets/textures/carved_smooth.png')
+          wb=stats(shade(w)); wn=stats(shade(normalize(w)))
+          cb=stats(shade(c)); cn=stats(shade(normalize(c)))
+          print('wavy before/after',wb,wn)
+          print('carved before/after',cb,cn)
+          assert wn[1] > wb[1] * 2.0, (wb,wn)
+          assert cn[0] > cb[0] + 0.10, (cb,cn)
+          assert cn[1] >= cb[1] * 0.85, (cb,cn)
+          PY
+      - name: Commit runtime fix and remove temporary machinery
+        run: |
+          rm -f .github/fix-surface-png-tone.py
+          rm -f .github/workflows/fix-surface-png-tone.yml
+          rm -f .github/workflows/analyze-texture-visibility.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Preserve authored PNG texture contrast' || exit 0
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
