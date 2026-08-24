@@ -60,8 +60,8 @@
     return bodyColorHex(speciesId, bodyColors);
   }
 
-  const handBodyTextureCache = new Map(); // Reused by fallback and GLB body-hand materials so identical species/body colors share one wavy texture.
-  let handWavySourcePromise = null; // Shared wavy_surface.png image request used to populate every cached body-hand texture.
+  const handSurfaceTextureCache = new Map(); // role/species/color -> shared authored CanvasTexture
+  const handSurfaceSourcePromises = new Map(); // resolved PNG URL -> Promise<HTMLImageElement>
 
   function bodyReferenceHex(speciesId) {
     return typeof global._dyeReferenceHexForSlot === 'function'
@@ -113,68 +113,43 @@
     }
   }
 
-  function loadHandWavySource() {
-    if (handWavySourcePromise) return handWavySourcePromise;
-    handWavySourcePromise = new Promise((resolve, reject) => {
+  function loadHandSurfaceSource(sourcePath) {
+    const resolvedPath = resolveAssetPath(sourcePath);
+    if (handSurfaceSourcePromises.has(resolvedPath)) return handSurfaceSourcePromises.get(resolvedPath);
+    const promise = new Promise((resolve, reject) => {
       const image = new Image();
-      // Match portrait-utils/loadImg: opt into CORS before assigning src so the
-      // shared body-tint canvas can inspect wavy_surface.png without tainting.
+      // Must be set before src: tinting reads the decoded PNG through getImageData().
       image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('Failed to load wavy_surface.png for procedural hands'));
-      image.src = resolveAssetPath('assets/textures/wavy_surface.png');
+      image.onerror = () => reject(new Error(`Failed to load ${sourcePath} for procedural hands`));
+      image.src = resolvedPath;
     }).catch(error => {
-      handWavySourcePromise = null;
+      handSurfaceSourcePromises.delete(resolvedPath);
       throw error;
     });
-    return handWavySourcePromise;
+    handSurfaceSourcePromises.set(resolvedPath, promise);
+    return promise;
   }
 
-  function ensureHandSurfaceUvs(THREE, geometry) {
-    if (!geometry?.getAttribute || geometry.getAttribute('uv')) return;
-    const position = geometry.getAttribute('position');
-    if (!position?.count) return;
-    geometry.computeBoundingBox?.();
-    const box = geometry.boundingBox;
-    if (!box) return;
-    const sx = Math.max(1e-6, box.max.x - box.min.x);
-    const sy = Math.max(1e-6, box.max.y - box.min.y);
-    const sz = Math.max(1e-6, box.max.z - box.min.z);
-    const normal = geometry.getAttribute('normal');
-    const uvs = new Float32Array(position.count * 2); // Added to UV-less hand GLBs so the wavy body texture has coordinates to sample.
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
-      const nx = Math.abs(normal?.getX?.(i) || 0);
-      const ny = Math.abs(normal?.getY?.(i) || 0);
-      const nz = Math.abs(normal?.getZ?.(i) || 0);
-      let u, v;
-      if (nx >= ny && nx >= nz) {
-        u = (z - box.min.z) / sz;
-        v = (y - box.min.y) / sy;
-      } else if (ny >= nz) {
-        u = (x - box.min.x) / sx;
-        v = (z - box.min.z) / sz;
-      } else {
-        u = (x - box.min.x) / sx;
-        v = (y - box.min.y) / sy;
-      }
-      uvs[i * 2] = u;
-      uvs[i * 2 + 1] = v;
-    }
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-  }
-
-  function handBodySurfaceTexture(THREE, speciesId, bodyColors) {
+  function handSurfaceTexture(THREE, role, speciesId, bodyColors) {
+    if (role !== 'body' && role !== 'bone') return null;
     const referenceHex = bodyReferenceHex(speciesId);
-    const descriptor = bodyColors?.A || { hex: referenceHex };
-    const resolvedHex = bodyColorHex(speciesId, bodyColors);
-    const spriteTintMode = typeof global.bodyTintModeForSpecies === 'function'
+    const isBody = role === 'body';
+    const sourcePath = isBody
+      ? 'assets/textures/canvas.png'
+      : 'assets/textures/carved_smooth.png';
+    const descriptor = isBody
+      ? (bodyColors?.A || { hex: referenceHex })
+      : { hex: profiles.data?.colors?.bone || '#D8C7A3' };
+    const resolvedHex = isBody ? bodyColorHex(speciesId, bodyColors) : descriptor.hex;
+    const tintSpeciesId = isBody ? speciesId : '';
+    const spriteTintMode = isBody && typeof global.bodyTintModeForSpecies === 'function'
       ? global.bodyTintModeForSpecies(speciesId)
       : 'shadeFill';
-    const cacheKey = `${normalizeKey(speciesId)}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`; // Separates the exact sprite tint mode as well as the resolved body color.
-    if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
+    const cacheKey = `${role}:${normalizeKey(speciesId)}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`;
+    if (handSurfaceTextureCache.has(cacheKey)) return handSurfaceTextureCache.get(cacheKey);
 
-    const textureName = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
+    const textureName = `${normalizeKey(speciesId) || 'avatar'}_hand_${role}_${sourcePath.split('/').pop().replace(/\.png$/i, '')}`;
     const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
     const texture = spritePngSurface?.configureTexture
       ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(resolvedHex)), textureName)
@@ -188,14 +163,14 @@
     texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.repeat.set(1, 1);
     texture.userData = Object.assign({}, texture.userData, {
-      hobunjiAuthoredSurfacePath: 'assets/textures/wavy_surface.png',
+      hobunjiAuthoredSurfacePath: sourcePath,
       hobunjiAuthoredSurfaceState: 'flat-loading',
       hobunjiAuthoredSurfaceImageSize: 'none',
       hobunjiAuthoredSurfaceError: null,
     });
-    handBodyTextureCache.set(cacheKey, texture);
+    handSurfaceTextureCache.set(cacheKey, texture);
 
-    loadHandWavySource().then(image => {
+    loadHandSurfaceSource(sourcePath).then(image => {
       let source = null;
       let sourceState = 'authored-png-raw-fallback';
       let sourceError = null;
@@ -203,7 +178,7 @@
       const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
       if (typeof tintSurfaceCanvas === 'function') {
         try {
-          source = tintSurfaceCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || null;
+          source = tintSurfaceCanvas(image, sourcePath, descriptor, tintSpeciesId, 'A') || null;
           if (source) sourceState = 'authored-png-tinted';
         } catch (error) { sourceError = error; }
       }
@@ -223,11 +198,10 @@
         hobunjiAuthoredSurfaceState: 'flat-load-failure',
         hobunjiAuthoredSurfaceError: String(error?.message || error),
       });
-      console.warn('[ProceduralHandAttachments] wavy body surface PNG failed to load; flat fallback remains visible:', error);
+      console.warn('[ProceduralHandAttachments] authored hand surface PNG failed to load; flat fallback remains visible:', sourcePath, error);
     });
     return texture;
   }
-
   function markOutline(root) {
     root?.traverse?.(child => {
       if (!child.isMesh) return;
@@ -287,18 +261,18 @@
         if (remapped.has(material)) return remapped.get(material);
         const role = model?.materialRoles?.[material?.name] || 'body';
         const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
-        const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
+        const surfaceTexture = (role === 'body' || role === 'bone') ? handSurfaceTexture(THREE, role, speciesId, bodyColors) : null; // Body uses canvas.png; pachyderm/sloth bone-role claws/nails use carved_smooth.png.
         const materialName = material?.name || `${role}_hand_material`;
         const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
         const next = spritePngSurface?.makeMaterial
-          ? spritePngSurface.makeMaterial(THREE, bodyTexture, materialName, {
-              color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+          ? spritePngSurface.makeMaterial(THREE, surfaceTexture, materialName, {
+              color: surfaceTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
               side: THREE.DoubleSide, // closed/turned hand geometry needs both sides; all other plane flags stay canonical
               depthWrite: !isParrotWingLayer,
             })
           : new THREE.MeshBasicMaterial({
-              color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
-              map: bodyTexture,
+              color: surfaceTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+              map: surfaceTexture,
               transparent: true,
               alphaTest: 0.001,
               side: THREE.DoubleSide,
@@ -308,7 +282,7 @@
             });
         next.name = materialName;
         next.userData.hobunjiHandRole = role;
-        next.userData.hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png' : null;
+        next.userData.hobunjiHandSurfaceTexture = surfaceTexture ? (role === 'bone' ? 'carved_smooth.png' : 'canvas.png') : null;
         next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;

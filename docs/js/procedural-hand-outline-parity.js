@@ -15,7 +15,8 @@
   if (!THREE || !hands?.attach || hands.attach.__hobunjiHandOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
-  const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const MAX_SNAPSHOT_AGE_MS = 160;
+  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
@@ -86,6 +87,7 @@
       visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible hand draw.
       visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
       restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
+      thicknessRestoreStack: [], // Per-draw shell-uniform restore entries; keeps non-limb outlines at the global thickness.
     };
 
     mesh.onBeforeRender = function handOutlineParityBefore(...args) {
@@ -98,6 +100,7 @@
         state.visibleMatrixWorld.copy(this.matrixWorld);
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
         return;
@@ -106,7 +109,17 @@
       const passKind = outlinePassKind(scene, material);
       if (!passKind) {
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         return;
+      }
+
+      const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
+      const previousThickness = Number(thicknessUniform?.value);
+      if (thicknessUniform && Number.isFinite(previousThickness)) {
+        state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
+        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+      } else {
+        state.thicknessRestoreStack.push(null);
       }
 
       const ageMs = now - state.visibleCapturedAt;
@@ -135,6 +148,8 @@
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      const thicknessRestore = state.thicknessRestoreStack.pop();
+      if (thicknessRestore) thicknessRestore.uniform.value = thicknessRestore.value;
     };
 
     mesh.userData.__hobunjiHandOutlineParity = true;
@@ -206,6 +221,7 @@
           outlineLockedShellDraws: rigState.lockedShellDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
+          outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         };
       };
     }
@@ -234,6 +250,7 @@
         missedOutlineSnapshots,
         heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
     },

@@ -287,7 +287,7 @@
   // pipeline (the same one that colors clothing dyes and creature fur) — a
   // flat, untextured PBR color reads as visibly wrong next to that. These
   // feet reuse the exact same bundled surface PNGs and tint pipeline the
-  // reference authoring tool uses for its own fallback feet: wavy_surface.png for
+  // reference authoring tool uses for its own fallback feet: canvas.png for
   // ordinary "body color 1" skin, carved_smooth.png for the shared bone/claw
   // tint, boards.png for the Kenkari family's dark keratin.
 
@@ -390,7 +390,7 @@
       } else if (role === 'keratin') {
         promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`, '');
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`, speciesId);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1, `${speciesId}_foot_body`, speciesId);
       }
       promises.set(role, promise);
       return promise;
