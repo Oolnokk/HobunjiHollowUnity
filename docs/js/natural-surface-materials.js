@@ -70,6 +70,42 @@
     return canvas;
   }
 
+  function localNaturalPatternTintCanvas(img, targetHex) {
+    try {
+      const raw = String(targetHex || '#808080').replace(/^#/, '');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return img;
+      const tr = parseInt(raw.slice(0, 2), 16), tg = parseInt(raw.slice(2, 4), 16), tb = parseInt(raw.slice(4, 6), 16);
+      const width = img.naturalWidth || img.width, height = img.naturalHeight || img.height;
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height), data = imageData.data;
+      const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const values = [];
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 8) { const l = lum(data[i], data[i + 1], data[i + 2]); if (l > 0.08) values.push(l); }
+      if (values.length < 8) return img;
+      values.sort((a, b) => a - b);
+      const at = q => values[Math.max(0, Math.min(values.length - 1, Math.round((values.length - 1) * q)))];
+      const low = at(0.10), high = at(0.90), span = high - low;
+      if (!(span > 0.015)) return img;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l <= 0.08) continue;
+        const t = Math.max(0, Math.min(1, (l - low) / span));
+        const shade = Math.max(0.18, Math.min(1.18, (0.22 + 0.66 * t) / 0.55));
+        data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    } catch (error) {
+      console.warn('[natural-surface] local patterned tint fallback failed; using authored PNG unchanged:', error);
+      return img;
+    }
+  }
+
   function shouldUseBodySpriteTint(surfaceCfg, tint) {
     return surfaceCfg?.tintTreatment === 'body-sprite-tint' && isHexTint(tint);
   }
@@ -98,28 +134,46 @@
     tex.userData = Object.assign({}, tex.userData, {
       naturalSurfaceBodySpriteTint: true,
       naturalSurfaceBodySpriteTintTarget: String(tint).toLowerCase(),
+      hobunjiAuthoredSurfacePath: path,
+      hobunjiAuthoredSurfaceState: 'flat-loading',
+      hobunjiAuthoredSurfaceImageSize: 'none',
+      hobunjiAuthoredSurfaceError: null,
     });
     textureCache.set(cacheKey, tex);
 
     const image = new Image();
     image.crossOrigin = 'anonymous';
     image.onload = () => {
+      let canvas = null;
+      let state = 'authored-png-raw-fallback';
+      let surfaceError = null;
       const spritePng = window.HobunjiSpritePngSurface;
       const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
-      if (typeof tintSurfaceCanvas !== 'function') {
-        console.warn('[natural-surface] portrait surface PNG tint helper unavailable; keeping flat tint', path, tint);
-        return;
+      if (typeof tintSurfaceCanvas === 'function') {
+        try {
+          canvas = tintSurfaceCanvas(image, cacheKey, { hex: tint }, '', 'A') || null;
+          if (canvas) state = 'authored-png-tinted';
+        } catch (error) { surfaceError = error; }
       }
-      // carved_smooth is a complete texture swatch, so normalize its authored
-      // tonal range to the body-art envelope before the same #808080 shadeFill.
-      // This keeps black carving lines while making the body of the stone read
-      // as medium gray instead of multiplying the already-dark source twice.
-      const canvas = tintSurfaceCanvas(image, cacheKey, { hex: tint }, '', 'A');
-      if (!canvas) return;
+      if (!canvas) {
+        canvas = localNaturalPatternTintCanvas(image, tint);
+        state = canvas === image ? 'authored-png-raw-fallback' : 'authored-png-local-tint';
+      }
       tex.image = canvas;
+      tex.userData = Object.assign({}, tex.userData, {
+        hobunjiAuthoredSurfaceState: state,
+        hobunjiAuthoredSurfaceImageSize: `${image.naturalWidth || image.width}x${image.naturalHeight || image.height}`,
+        hobunjiAuthoredSurfaceError: surfaceError ? String(surfaceError?.message || surfaceError) : null,
+      });
       tex.needsUpdate = true;
     };
-    image.onerror = () => console.warn('[natural-surface] failed to load body-tinted surface texture', path);
+    image.onerror = (error) => {
+      tex.userData = Object.assign({}, tex.userData, {
+        hobunjiAuthoredSurfaceState: 'flat-load-failure',
+        hobunjiAuthoredSurfaceError: String(error?.message || 'image load failed'),
+      });
+      console.warn('[natural-surface] failed to load body-tinted surface texture', path);
+    };
     image.src = path;
     return tex;
   }

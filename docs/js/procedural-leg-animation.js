@@ -182,6 +182,53 @@
     return canvas;
   }
 
+  // Emergency fallback used only if the shared portrait surface-tint helper
+  // is unavailable or throws AFTER the authored PNG itself loaded. Never
+  // collapse a successfully loaded texture to a 4x4 flat color: preserve its
+  // luminance pattern and recolor it toward the requested body color locally.
+  function localPatternTintCanvas(img, targetHex) {
+    try {
+      const raw = String(targetHex || '#808080').replace(/^#/, '');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return img;
+      const tr = parseInt(raw.slice(0, 2), 16), tg = parseInt(raw.slice(2, 4), 16), tb = parseInt(raw.slice(4, 6), 16);
+      const width = img.naturalWidth || img.width, height = img.naturalHeight || img.height;
+      if (!width || !height) return img;
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const values = [];
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] <= 8) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l > 0.08) values.push(l);
+      }
+      if (values.length < 8) return img;
+      values.sort((a, b) => a - b);
+      const at = q => values[Math.max(0, Math.min(values.length - 1, Math.round((values.length - 1) * q)))];
+      const low = at(0.10), high = at(0.90), span = high - low;
+      if (!(span > 0.015)) return img;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l <= 0.08) continue;
+        const t = Math.max(0, Math.min(1, (l - low) / span));
+        const targetLum = 0.22 + 0.66 * t;
+        const shade = Math.max(0.18, Math.min(1.18, targetLum / 0.55));
+        data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    } catch (error) {
+      console.warn('[ProceduralFeet] local patterned tint fallback failed; using authored PNG unchanged:', error);
+      return img;
+    }
+  }
+
   // Opts every real mesh under `obj` into the game's inverted-shell outline
   // pass (see game.js's "Inverted shell outline" section / _markOutline) —
   // that pass renders layer-1 meshes a second time, back-side-only and
@@ -269,23 +316,42 @@
   // in the correctly resolved color instead of leaving the material white.
   async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName, tintSpeciesId = '') {
     let source = null;
+    let loadedImage = null;
+    let sourceState = 'flat-load-failure';
+    let sourceError = null;
+    const resolvedHex = resolveFlatColorHex(colorDescriptor, referenceHex);
     try {
-      const img = await loadSurfaceImage(sourcePath);
+      loadedImage = await loadSurfaceImage(sourcePath);
       const spritePng = window.HobunjiSpritePngSurface;
       const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
       if (typeof tintSurfaceCanvas === 'function') {
-        // Normalize the complete texture swatch to body-sprite tonal range,
-        // then use the exact descriptor -> species tint-mode -> _imageForTint path.
-        // Fixed bone/keratin descriptors keep the default shade-fill mode.
-        source = tintSurfaceCanvas(img, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
-      } else if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
-        const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
-        source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(img, sourcePath, tint) : null;
+        try {
+          // Preferred path: exactly the same authored-PNG tint pipeline as body art.
+          source = tintSurfaceCanvas(loadedImage, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
+          if (source) sourceState = 'authored-png-tinted';
+        } catch (error) {
+          sourceError = error;
+        }
+      }
+      if (!source && typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
+        try {
+          const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
+          source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(loadedImage, `${sourcePath}|legacy-fallback`, tint) : null;
+          if (source) sourceState = 'authored-png-legacy-tint';
+        } catch (error) {
+          sourceError ||= error;
+        }
+      }
+      // Critical invariant: once the PNG loaded, never replace its artwork with
+      // a flat 4x4 color just because a tint helper was missing or threw.
+      if (!source) {
+        source = localPatternTintCanvas(loadedImage, resolvedHex);
+        sourceState = source === loadedImage ? 'authored-png-raw-fallback' : 'authored-png-local-tint';
       }
     } catch (error) {
-      source = null;
+      sourceError = error;
     }
-    if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
+    if (!source) source = flatColorCanvas(resolvedHex);
     const textureName = debugName || sourcePath;
     const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
     const texture = spritePngSurface?.configureTexture
@@ -299,6 +365,13 @@
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX || 1.25, 1);
+    texture.userData = Object.assign({}, texture.userData, {
+      hobunjiAuthoredSurfacePath: sourcePath,
+      hobunjiAuthoredSurfaceState: sourceState,
+      hobunjiAuthoredSurfaceImageSize: loadedImage ? `${loadedImage.naturalWidth || loadedImage.width}x${loadedImage.naturalHeight || loadedImage.height}` : 'none',
+      hobunjiAuthoredSurfaceError: sourceError ? String(sourceError?.message || sourceError) : null,
+    });
+    if (sourceState === 'flat-load-failure') console.warn('[ProceduralFeet] authored surface PNG failed to load; flat fallback is visible:', sourcePath, sourceError);
     return texture;
   }
 

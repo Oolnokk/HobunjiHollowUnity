@@ -78,6 +78,42 @@
     return canvas;
   }
 
+  function localHandPatternTintCanvas(img, targetHex) {
+    try {
+      const raw = String(targetHex || '#808080').replace(/^#/, '');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return img;
+      const tr = parseInt(raw.slice(0, 2), 16), tg = parseInt(raw.slice(2, 4), 16), tb = parseInt(raw.slice(4, 6), 16);
+      const width = img.naturalWidth || img.width, height = img.naturalHeight || img.height;
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height), data = imageData.data;
+      const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const values = [];
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 8) { const l = lum(data[i], data[i + 1], data[i + 2]); if (l > 0.08) values.push(l); }
+      if (values.length < 8) return img;
+      values.sort((a, b) => a - b);
+      const at = q => values[Math.max(0, Math.min(values.length - 1, Math.round((values.length - 1) * q)))];
+      const low = at(0.10), high = at(0.90), span = high - low;
+      if (!(span > 0.015)) return img;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l <= 0.08) continue;
+        const t = Math.max(0, Math.min(1, (l - low) / span));
+        const shade = Math.max(0.18, Math.min(1.18, (0.22 + 0.66 * t) / 0.55));
+        data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    } catch (error) {
+      console.warn('[ProceduralHandAttachments] local patterned tint fallback failed; using authored PNG unchanged:', error);
+      return img;
+    }
+  }
+
   function loadHandWavySource() {
     if (handWavySourcePromise) return handWavySourcePromise;
     handWavySourcePromise = new Promise((resolve, reject) => {
@@ -149,34 +185,43 @@
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(1.25, 1);
+    texture.userData = Object.assign({}, texture.userData, {
+      hobunjiAuthoredSurfacePath: 'assets/textures/wavy_surface.png',
+      hobunjiAuthoredSurfaceState: 'flat-loading',
+      hobunjiAuthoredSurfaceImageSize: 'none',
+      hobunjiAuthoredSurfaceError: null,
+    });
     handBodyTextureCache.set(cacheKey, texture);
 
     loadHandWavySource().then(image => {
-      let source = image;
+      let source = null;
+      let sourceState = 'authored-png-raw-fallback';
+      let sourceError = null;
       const spritePng = global.HobunjiSpritePngSurface;
-      if (typeof spritePng?.tintSurfaceCanvas === 'function' || typeof spritePng?.tintBodyCanvas === 'function' || typeof global.getBodyTintedCanvas === 'function') {
-        // Expand this full-swatch PNG into the body sprite's tonal envelope,
-        // then run the exact same species-aware body recolor stage.
-        const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
-        source = tintSurfaceCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
-      } else {
-        // Standalone-tool fallback mirrors the same renderProfile branch exactly.
-        const mode = typeof global.bodyTintModeForSpecies === 'function'
-          ? global.bodyTintModeForSpecies(speciesId)
-          : 'shadeFill';
-        const tint = mode === 'shadeFill'
-          ? global.shadeFillTintForBodyColor?.(descriptor, referenceHex)
-          : global.tintForBodyColor?.(descriptor, referenceHex);
-        if (tint?.mode === 'shadeFill' && typeof global.getShadeFillCanvas === 'function') {
-          source = global.getShadeFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
-        } else if (tint?.mode === 'hueSatFill' && typeof global.getHueSatFillCanvas === 'function') {
-          source = global.getHueSatFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
-        }
+      const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
+      if (typeof tintSurfaceCanvas === 'function') {
+        try {
+          source = tintSurfaceCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || null;
+          if (source) sourceState = 'authored-png-tinted';
+        } catch (error) { sourceError = error; }
+      }
+      if (!source) {
+        source = localHandPatternTintCanvas(image, resolvedHex);
+        sourceState = source === image ? 'authored-png-raw-fallback' : 'authored-png-local-tint';
       }
       texture.image = source;
+      texture.userData = Object.assign({}, texture.userData, {
+        hobunjiAuthoredSurfaceState: sourceState,
+        hobunjiAuthoredSurfaceImageSize: `${image.naturalWidth || image.width}x${image.naturalHeight || image.height}`,
+        hobunjiAuthoredSurfaceError: sourceError ? String(sourceError?.message || sourceError) : null,
+      });
       texture.needsUpdate = true;
     }).catch(error => {
-      console.warn('[ProceduralHandAttachments] wavy body surface failed; keeping correctly tinted fallback:', error);
+      texture.userData = Object.assign({}, texture.userData, {
+        hobunjiAuthoredSurfaceState: 'flat-load-failure',
+        hobunjiAuthoredSurfaceError: String(error?.message || error),
+      });
+      console.warn('[ProceduralHandAttachments] wavy body surface PNG failed to load; flat fallback remains visible:', error);
     });
     return texture;
   }
