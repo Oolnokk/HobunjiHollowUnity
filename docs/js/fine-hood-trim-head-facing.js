@@ -2,12 +2,9 @@
 //
 // The Fine Hood trim is authored as a distinct `layerRole: "trim"`, but portrait
 // compositing flattens it into the same front texture as the rest of the hood/head.
-// npc-avatar-preview-utils therefore builds a matched trimless texture and blends
-// to it outside a head-on cone. That blend originally measured the SkinnedMesh's
-// matrixWorld, which only describes the body plane; neckJoint can rotate the head
-// region independently after skinning, so the trim could still remain visible while
-// the actual head pixels were turned away. This adapter makes the gate follow the
-// real rigged head orientation instead.
+// npc-avatar-preview-utils therefore builds a matched trimless texture. The trim
+// uses a hard front/back handoff at the rigged head's exact 90-degree boundary:
+// neck-to-camera dot > 0 is visible; dot <= 0 is hidden. No fade or early pop-in.
 (function (global) {
   'use strict';
 
@@ -63,10 +60,13 @@
           toCamera.copy(cameraWorld).sub(headWorld).normalize();
 
           const dot = Math.max(-1, Math.min(1, worldFront.dot(toCamera)));
-          uniform.value = dot;
+          // Binary on purpose. npc-avatar-preview-utils still contains the old
+          // smoothstep shader, but feeding it only 0/1 makes the result a true
+          // hard switch: exactly 90 degrees (dot === 0) is already hidden.
+          uniform.value = dot > 0 ? 1 : 0;
           lastFacingDot = dot;
           material.userData.hobunjiFineHoodTrimLastFacingDot = dot;
-          material.userData.hobunjiFineHoodTrimFacingSource = 'neck-bone';
+          material.userData.hobunjiFineHoodTrimFacingSource = 'neck-bone-hard90';
         };
 
         object.userData = object.userData || {};
@@ -79,6 +79,9 @@
         root.userData.fineHoodTrimHeadOn = {
           ...(root.userData.fineHoodTrimHeadOn || {}),
           facingSource: 'neck-bone',
+          cutoffDot: 0,
+          cutoffDegrees: 90,
+          transition: 'hard-step',
           neckFacingMeshes: attached,
         };
         correctedBuilds += 1;
@@ -110,6 +113,9 @@
         correctedBuilds,
         correctedMeshes,
         lastFacingDot,
+        cutoffDot: 0,
+        cutoffDegrees: 90,
+        transition: 'hard-step',
         facingSource: 'neck-bone',
       };
     },
