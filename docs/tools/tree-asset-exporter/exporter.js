@@ -4,7 +4,23 @@
   const THREE = window.THREE;
   const Foliage = window.FoliageGenerator;
   const Library = window.TreeAssetLibrary;
-  const ASSETS = Library?.ASSETS || [];
+  const BASE_ASSETS = Library?.ASSETS || [];
+  // Runtime has six base variants plus three dedicated perch-bearing
+  // shadewoods. Keep them as separate exporter rows/files so normal
+  // shadewood exports can never accidentally overwrite the branched family.
+  const ASSETS = BASE_ASSETS.flatMap(entry => {
+    const normal = { ...entry, branched: false };
+    if (!entry.branchedFilename) return [normal];
+    return [
+      normal,
+      {
+        ...entry,
+        branched: true,
+        filename: entry.branchedFilename,
+        lodFilename: entry.branchedLodFilename,
+      },
+    ];
+  });
   const listEl = document.getElementById('asset-list');
   const viewport = document.getElementById('viewport');
   const statusEl = document.getElementById('status');
@@ -65,20 +81,50 @@
   }
 
   function buildSource(entry) {
-    // Exported shadewood must always carry a gameplay perch. Runtime still
-    // decides per placed tree whether that branch is present; the asset is the
-    // complete source shape so downstream LODs have an authored branch to use.
-    const opts = entry.builder === 'buildShadewoodMesh' ? { forceClimbBranch: true } : undefined;
+    const isShadewood = entry.species === 'shadewood';
+    const wantsBranch = isShadewood && entry.branched === true;
+    const opts = wantsBranch ? { forceClimbBranch: true } : undefined;
     const object = builderFor(entry)(entry.seed, undefined, opts);
     if (!object) throw new Error(`${entry.builder}(${entry.seed}) returned no object`);
-    object.name = `${entry.species}_${String(entry.variant).padStart(2, '0')}`;
+
+    // buildShadewoodMesh normally rolls climbBranchChance per instance. The
+    // exporter needs deterministic files instead: regular shadewood must have
+    // NO perch, while shadewood-branched must ALWAYS have it.
+    if (isShadewood) {
+      const branch = object.getObjectByName?.('climbBranch');
+      if (wantsBranch) {
+        if (!branch) throw new Error(`${entry.filename} requested a climb branch but the builder produced none`);
+        branch.visible = true;
+        branch.userData = {
+          ...(branch.userData || {}),
+          isClimbBranch: true,
+          climbBranchLocal: object.userData?.climbBranchLocal || branch.userData?.climbBranchLocal || null,
+        };
+      } else {
+        branch?.parent?.remove?.(branch);
+        if (object.userData) delete object.userData.climbBranchLocal;
+      }
+    }
+
+    object.name = `${entry.species}${entry.branched ? '_branched' : ''}_${String(entry.variant).padStart(2, '0')}`;
     object.updateMatrixWorld?.(true);
     object.traverse?.(child => {
       if (!child?.isMesh) return;
-      child.userData = { ...(child.userData || {}), treeSpecies: entry.species, treeVariant: entry.variant };
+      child.userData = {
+        ...(child.userData || {}),
+        treeSpecies: entry.species,
+        treeVariant: entry.variant,
+        treeAssetBranched: !!entry.branched,
+      };
       // GLTFExporter serializes userData as extras. noOutline identifies leaf
-      // cards; isClimbBranch/climbBranchLocal identifies the persistent perch.
+      // cards; isClimbBranch/climbBranchLocal identifies the authored perch.
     });
+    object.userData = {
+      ...(object.userData || {}),
+      treeSpecies: entry.species,
+      treeVariant: entry.variant,
+      treeAssetBranched: !!entry.branched,
+    };
     return object;
   }
 
@@ -86,19 +132,21 @@
     listEl.innerHTML = ASSETS.map(entry => {
       const selectedClass = selected === entry ? ' selected' : '';
       const icon = entry.species === 'shadewood' ? '🌳' : '🌲';
-      const branchBadge = entry.species === 'shadewood'
-        ? '<span class="branch-badge" title="Export includes a full-detail climbable branch">🪵 branch</span>'
+      const branchBadge = entry.branched
+        ? '<span class="branch-badge" title="Dedicated perch-bearing shadewood export">🪵 branch</span>'
         : '';
-      return `<div class="asset-row${selectedClass}" data-species="${entry.species}" data-variant="${entry.variant}">
+      const branchLabel = entry.branched ? ' · branched' : '';
+      return `<div class="asset-row${selectedClass}" data-species="${entry.species}" data-variant="${entry.variant}" data-branched="${entry.branched ? '1' : '0'}">
         <div class="tree-icon">${icon}</div>
-        <div><div class="asset-name">${prettySpecies(entry.species)} · variant ${entry.variant}${branchBadge}</div><div class="asset-file">${entry.filename}</div></div>
+        <div><div class="asset-name">${prettySpecies(entry.species)} · variant ${entry.variant}${branchLabel}${branchBadge}</div><div class="asset-file">${entry.filename}</div></div>
         <div class="seed">seed ${entry.seed}</div>
       </div>`;
     }).join('');
     listEl.querySelectorAll('.asset-row').forEach(row => row.addEventListener('click', () => {
       const species = row.dataset.species;
       const variant = Number(row.dataset.variant);
-      selected = ASSETS.find(entry => entry.species === species && entry.variant === variant) || selected;
+      const branched = row.dataset.branched === '1';
+      selected = ASSETS.find(entry => entry.species === species && entry.variant === variant && !!entry.branched === branched) || selected;
       renderRows();
       showPreview(selected);
     }));
@@ -431,7 +479,7 @@
       previewObject = nextObject;
       scene.add(previewObject);
       fitCamera(previewObject);
-      titleEl.textContent = `${prettySpecies(entry.species)} · variant ${entry.variant}`;
+      titleEl.textContent = `${prettySpecies(entry.species)} · variant ${entry.variant}${entry.branched ? ' · branched' : ''}`;
       metaEl.textContent = reduction
         ? `${exportFilename(entry)} · generator seed ${entry.seed} · requested ${reduction}% solid decimation`
         : `${entry.filename} · generator seed ${entry.seed}`;
@@ -557,6 +605,7 @@
         lodFiles.push({
           species: entry.species,
           variant: entry.variant,
+          branched: !!entry.branched,
           filename,
           sourceTriangles: stats.before,
           outputTriangles: stats.after,
