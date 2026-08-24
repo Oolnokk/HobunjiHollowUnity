@@ -330,6 +330,7 @@
     state.nearTreeCount = nearTreeCount;
     state.batchedTreeCount = batchedTreeCount;
     state.culledChunkCount = culledChunkCount;
+    updateDevPanelStatus(state);
   }
 
   function ensureState(scene) {
@@ -347,6 +348,7 @@
     if (!state) return false;
     activeState = state;
     refreshState(state, Number(playerX), Number(playerZ), radius);
+    updateDevPanelStatus(state);
     return state.status === 'ready';
   }
 
@@ -437,6 +439,31 @@
       debug(`Could not arm CloudForestFog hook: ${error?.message || error}`, 'warn');
       return false;
     }
+  }
+
+  function updateDevPanelStatus(state = activeState) {
+    const panel = document.getElementById('cloudForestDevTuning');
+    const devMode = document.getElementById('settingDevMode');
+    if (!panel || !devMode?.checked) return;
+    let line = document.getElementById('cloudForestTreeBatchStatus');
+    if (!line) {
+      line = document.createElement('div');
+      line.id = 'cloudForestTreeBatchStatus';
+      line.style.cssText = 'font-size:10px;line-height:1.35;color:#bae6fd;opacity:.82;margin:4px 0 7px';
+      const anchor = document.getElementById('cloudForestDevStatus');
+      if (anchor?.nextSibling) panel.insertBefore(line, anchor.nextSibling);
+      else panel.appendChild(line);
+    }
+    if (!state) {
+      line.textContent = 'Tree batching: inactive';
+      return;
+    }
+    if (state.status !== 'ready') {
+      line.textContent = `Tree batching: ${state.status === 'no-baked-roots' ? 'waiting for baked tree roots / rebuild' : state.status}`;
+      return;
+    }
+    const visibleChunks = Math.max(0, (state.chunks?.length || 0) - (state.culledChunkCount || 0));
+    line.textContent = `Tree batching: ${state.batchedTreeCount} batched · ${state.nearTreeCount} near-original · ${visibleChunks}/${state.chunks.length} chunks visible · ${state.instancedMeshCount} instanced draws max`;
   }
 
   function getDebugState() {
