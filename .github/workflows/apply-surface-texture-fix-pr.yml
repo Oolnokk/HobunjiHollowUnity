@@ -1,0 +1,62 @@
+name: Apply surface texture fix from PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/wavy-limbs-medium-gray-stone'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+
+      - name: Execute validated one-shot patch payload
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/apply-surface-texture-fix.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n\n      - name: Validate patched surfaces"
+          start = workflow.find(start_marker)
+          end = workflow.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate the one-shot Python patch payload')
+          payload = textwrap.dedent(workflow[start + len(start_marker):end])
+          exec(compile(payload, 'surface-texture-patch', 'exec'), {})
+          PY
+
+      - name: Validate patched surfaces
+        shell: bash
+        run: |
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/natural-surface-materials.js
+          node --check docs/config/natural-surface-materials.js
+          git diff --check
+          test "$(grep -c "assets/textures/wavy_surface.png.*foot_body" docs/js/procedural-leg-animation.js)" -eq 1
+          test "$(grep -c "hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png'" docs/js/procedural-hand-attachments.js)" -eq 1
+          test "$(grep -c 'tint: \"#808080\"' docs/config/natural-surface-materials.js)" -eq 2
+          test "$(grep -c 'tint: \"#808080\"' docs/js/natural-surface-materials.js)" -eq 2
+          grep -q 'file: "carved_smooth.png"' docs/config/natural-surface-materials.js
+          grep -q 'file: "carved_smooth.png"' docs/js/natural-surface-materials.js
+
+      - name: Commit fix and remove temporary patch machinery
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/surface-fix-trigger .github/workflows/apply-surface-texture-fix.yml .github/workflows/apply-surface-texture-fix-pr.yml
+          git add docs/js/procedural-leg-animation.js docs/js/procedural-hand-attachments.js docs/js/natural-surface-materials.js docs/config/natural-surface-materials.js
+          git commit -m "Fix wavy limb and medium-gray carved stone surfaces"
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
