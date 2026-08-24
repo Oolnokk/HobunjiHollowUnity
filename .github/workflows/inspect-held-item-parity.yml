@@ -1,0 +1,51 @@
+name: Inspect held item parity
+on:
+  push:
+    branches:
+      - chatgpt/dew-rock-item-icons-two-hand
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print held item and icon seams
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('docs/game.js').read_text()
+          needles = [
+              'function applyItemSpriteIcon',
+              'function updateHeldItemHolder',
+              'function refreshItemScroll',
+              'function _openItemArc',
+              'heldItemHolder',
+          ]
+          for needle in needles:
+              print('\n' + '=' * 90)
+              print('NEEDLE:', needle)
+              start = 0
+              found = 0
+              while True:
+                  i = text.find(needle, start)
+                  if i < 0:
+                      break
+                  found += 1
+                  lo = max(0, i - 1800)
+                  hi = min(len(text), i + 7000)
+                  print(f'--- match {found} at {i} ---')
+                  print(text[lo:hi])
+                  start = i + len(needle)
+                  if found >= 4:
+                      break
+              if not found:
+                  print('NO MATCH')
+          print('\n' + '=' * 90)
+          print('OVERLAY LINES NEAR HELD/ITEM CODE')
+          lines = text.splitlines()
+          for n, line in enumerate(lines, 1):
+              low = line.lower()
+              if 'overlay' in low and ('item' in low or 'sprite' in low or 'held' in low):
+                  print(f'{n}: {line[:500]}')
+          PY
