@@ -3,9 +3,9 @@
 
   // Grass billboard tufts for a wilderness zone (mirrors the farm/town
   // grass billboard builders, sized to each zone's own grid) and rich
-  // foliage patches' own tightly-packed, tall billboard clusters (always
-  // visible regardless of the Settings > Grass toggle, since they're meant
-  // to read as a landmark rather than decorative ground cover). Extracted
+  // foliage patches' own tightly-packed, tall billboard clusters. Both obey
+  // the Settings > Grass toggle so it is a truthful visual/performance switch.
+  // Extracted
   // out of game.js following the same window.<Namespace> + init(deps)
   // pattern as its sibling systems, alongside js/zone-plateau-mesa.js,
   // js/zone-terrain-features.js, and js/zone-den-totem-features.js.
@@ -72,6 +72,17 @@
     mesh.userData.isBillboard = true;
     mesh.userData.isWildernessGrassChunk = true;
     mesh.userData.skipOcclusionFade = true;
+    // Used by game.js's zone culler to reject entire grass chunks before draw submission.
+    const bounds = geo.boundingBox;
+    mesh.userData.cullSphere = {
+      x: geo.boundingSphere.center.x,
+      z: geo.boundingSphere.center.z,
+      radius: geo.boundingSphere.radius,
+      xzRadius: Math.hypot(
+        (bounds.max.x - bounds.min.x) * 0.5,
+        (bounds.max.z - bounds.min.z) * 0.5
+      ),
+    };
     const dummy = new THREE.Object3D();
     let idx = 0;
     for (const tile of tiles) idx = fillTile(mesh, dummy, idx, tile);
@@ -128,10 +139,9 @@
   // the dense copse clusters the wildlife schedule AI's herbivores graze
   // in and predators patrol near) get their own tightly-packed, tall
   // billboard cluster instead of blending into the zone's ordinary grass
-  // tufts — always visible regardless of the Settings > Grass toggle
-  // (s_grass, see buildZoneGrassBillboards/settingGrass's handler,
-  // neither of which this mesh is wired to), since it's meant to read as
-  // a landmark, not decorative ground cover. Reuses the same blade
+  // tufts. It remains visually distinct as a landmark, but obeys the same
+  // Settings > Grass toggle so disabling grass removes every grass draw.
+  // Reuses the same blade
   // geometry/shader as ordinary grass — the visual distinction is
   // entirely density (more blades, tighter spread) and height (roughly
   // 2x), not a texture/color swap.
@@ -180,7 +190,7 @@
     if (!tiles.length) return null;
 
     const group = new THREE.Group();
-    group.visible = true;
+    group.visible = deps.getGrassEnabled();
     group.userData.isRichFoliageBillboard = true;
     let instances = 0;
     const buckets = chunkTileBuckets(tiles);
