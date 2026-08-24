@@ -77,7 +77,8 @@
   const modules = [
     ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
-    ['js/fine-hood-trim-head-facing.js?v=20260824a', () => !!window.HobunjiFineHoodTrimHeadFacing],
+    ['js/fine-hood-trim-head-facing.js?v=20260824b', () => !!window.HobunjiFineHoodTrimHeadFacing],
+    ['js/front-hat-head-facing.js?v=20260824a', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
     ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
