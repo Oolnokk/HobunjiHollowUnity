@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_attack_values.v1",
-  "note": "Single source of truth for every attack's tunable numbers - player weapon abilities, combo/quick-attack/charged-breaker/flurry/counter-shield tuning, ranged weapon tuning, creature named-attack constants (pounce/guard charge/Grehlr burrow/Caustic Pellet), territorial creature behavior tuning, per-species creature attack stats, and the bandit baseline melee bite. Authored via docs/tools/attack-animation-editor/ (Stats tab). Pose/timing animation data is a SEPARATE concern authored by the same tool's existing pose editor and is not duplicated here. Angles are authored in degrees and ranges in tiles for readability; game.js/combat-*.js convert to radians/pixels at load time using the same TILE constant weaponAbility() already uses.",
+  "note": "Single source of truth for every attack's tunable numbers - player weapon abilities, combo/quick-attack/charged-breaker/flurry/counter-shield tuning, ranged weapon tuning, creature named-attack constants (pounce/guard charge/Grehlr burrow/Grehlr stink spray/Caustic Pellet), territorial creature behavior tuning, per-species creature attack stats, and the bandit baseline melee bite. Authored via docs/tools/attack-animation-editor/ (Stats tab). Pose/timing animation data is a SEPARATE concern authored by the same tool's existing pose editor and is not duplicated here. Angles are authored in degrees and ranges in tiles for readability; game.js/combat-*.js convert to radians/pixels at load time using the same TILE constant weaponAbility() already uses.",
 
   "weaponAbilities": {
     "cut":   { "damage": 6,  "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720,  "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
@@ -13,11 +13,11 @@
     "swingCombo": [
       { "name": "Forehand Swing", "damageMul": 1.0,  "halfConeDeg": 26, "rangeMul": 1.0,  "knockbackMul": 0.45, "staminaCost": 16, "windupS": 0.23,  "strikeS": 0.07,  "anim": "sweep", "dirSign": 1,  "holdS": 1, "dmgTag": "blunt", "lungeMul": 2.0 },
       { "name": "Backhand Swing", "damageMul": 1.25, "halfConeDeg": 30, "rangeMul": 1.05, "knockbackMul": 0.55, "staminaCost": 19, "windupS": 0.23,  "strikeS": 0.07,  "anim": "sweep", "dirSign": -1, "holdS": 1, "dmgTag": "blunt", "lungeMul": 1.0 },
-      { "name": "Cleave",         "damageMul": 1.35, "halfConeDeg": 42, "rangeMul": 1.15, "knockbackMul": 2.4,  "staminaCost": 28, "windupS": 0.345, "strikeS": 0.105, "returnS": 0.30, "anim": "sweep", "dirSign": 1, "power": 1.3, "holdS": 1, "dmgTag": "blunt", "heavy": true, "lungeMul": 1.0 }
+      { "name": "Cleave",         "damageMul": 1.35, "halfConeDeg": 42, "rangeMul": 1.15, "knockbackMul": 2.4,  "staminaCost": 28, "windupS": 0.345, "strikeS": 0.105, "returnS": 0.30, "anim": "sweep", "dirSign": 1,  "power": 1.3, "holdS": 1, "dmgTag": "blunt", "heavy": true, "lungeMul": 1.0 }
     ],
     "pokeCombo": [
-      { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.12, "strikeS": 0.09, "anim": "thrust", "dirSign": 1, "holdS": 1, "dmgTag": "sharp", "lungeMul": 2.0 },
-      { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.16, "strikeS": 0.10, "anim": "thrust", "dirSign": 1, "holdS": 1, "dmgTag": "sharp", "lungeMul": 1.0 },
+      { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.12, "strikeS": 0.09, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 2.0 },
+      { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.16, "strikeS": 0.10, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 1.0 },
       { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.27, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1, "power": 1.35, "holdS": 1, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
     ]
   },
@@ -76,26 +76,42 @@
       "TARGET_ANGLE_WEIGHT": 0.55, "AWAY_FROM_MASTER_WEIGHT": 0.45
     },
     "grehlrBurrow": {
-      "DIVE_S": 0.5,
-      "BURROW_MIN_S": 3,
-      "BURROW_MAX_S": 8,
-      "TELEGRAPH_S": 2,
-      "EMERGE_S": 0.5,
+      "DIVE_S": 0.22,
+      "BURROW_MIN_S": 0.7,
+      "BURROW_MAX_S": 1.2,
+      "TELEGRAPH_S": 0.55,
+      "EMERGE_S": 0.24,
       "HIDDEN_SCALE_Y": 0.06,
       "DIVE_TILT_DEG": 66,
-      "BURROW_SPEED_MULTIPLIER": 1.2,
-      "MIN_RADIUS_TILES": 1.35,
-      "MODEL_RADIUS_MULTIPLIER": 0.55,
+      "BURROW_SPEED_MULTIPLIER": 1.85,
+      "MIN_RADIUS_TILES": 1.7,
+      "MODEL_RADIUS_MULTIPLIER": 0.62,
       "DAMAGE_MULTIPLIER": 2.5,
       "KNOCKBACK_PX_S": 980,
       "SELF_FOOTING_DRAIN_FRACTION": 0.8,
       "SELF_STAMINA_DRAIN_FRACTION": 0.9,
-      "TRAIL_PARTICLES_PER_S": 24,
-      "TELEGRAPH_PARTICLES_PER_S": 34,
-      "INITIAL_RING_PARTICLES": 28,
+      "TRAIL_PARTICLES_PER_S": 32,
+      "TELEGRAPH_PARTICLES_PER_S": 48,
+      "INITIAL_RING_PARTICLES": 32,
       "DIVE_BURST_PARTICLES": 18,
       "BURROW_BURST_PARTICLES": 24,
       "EMERGE_BURST_PARTICLES": 42
+    },
+    "grehlrStink": {
+      "SELECTION_CHANCE": 0.4,
+      "MAX_SELECTION_RANGE_TILES": 2.25,
+      "FLIP_S": 0.1,
+      "SPRAY_S": 0.16,
+      "RECOVER_S": 0.18,
+      "RANGE_TILES": 2.7,
+      "HALF_CONE_DEG": 36,
+      "REAR_OFFSET_TILES": 0.36,
+      "CHOKED_STAMINA_AMOUNT": 24,
+      "PARTICLES_PER_S": 96,
+      "PARTICLE_SPEED_MIN_TILES_S": 4.2,
+      "PARTICLE_SPEED_MAX_TILES_S": 7.2,
+      "PARTICLE_LIFE_MIN_S": 0.16,
+      "PARTICLE_LIFE_MAX_S": 0.32
     },
     "causticPellet": {
       "CHARGE_DURATION_S": 1.04,

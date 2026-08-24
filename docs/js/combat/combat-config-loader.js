@@ -93,6 +93,7 @@
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
     ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/combat-drenkirra-pellet.js?v=20260817a', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260817a', () => !!window.HobunjiGrehlrDrenkirraFollowup],
