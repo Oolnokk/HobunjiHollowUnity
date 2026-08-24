@@ -1,0 +1,44 @@
+name: Fix body sprite tint parity
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/wavy-limbs-medium-gray-stone'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+
+      - name: Apply exact body sprite tint parity patch
+        shell: bash
+        run: python .github/fix-body-sprite-tint-parity.py
+
+      - name: Validate tint parity patch
+        shell: bash
+        run: |
+          python -m py_compile .github/fix-body-sprite-tint-parity.py
+          node --check docs/js/portrait-utils.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/natural-surface-materials.js
+          node --check docs/config/natural-surface-materials.js
+          git diff --check
+
+      - name: Commit fix and remove temporary machinery
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/fix-body-sprite-tint-parity.py .github/workflows/fix-body-sprite-tint-parity.yml
+          rm -rf .github/__pycache__
+          git add docs/js/portrait-utils.js docs/js/procedural-hand-attachments.js docs/js/natural-surface-materials.js docs/config/natural-surface-materials.js
+          git commit -m "Match hand and stone tinting to body sprites"
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
