@@ -8042,7 +8042,13 @@
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(fogColor);
-        zScene.fog = new THREE.FogExp2(fogColor, zdef?.fogDensity ?? 0.018); // match town/farm fog density unless the zone overrides it (see map_southern_cloud_forest)
+        // match town/farm fog density unless the zone overrides it (see
+        // map_southern_cloud_forest) — but respect the Cloud Forest Mist
+        // toggle if it's already been switched off this session, so
+        // (re)entering the zone doesn't silently re-enable the mist the
+        // player just turned off.
+        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0.018 : (zdef?.fogDensity ?? 0.018);
+        zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -20460,6 +20466,15 @@
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
+      // renderer.info.render.calls/.triangles only reflect the LAST
+      // renderer.render() invocation of a frame under Three's default
+      // autoReset (each render() call resets the counter at its own start),
+      // which undercounts frames with extra passes (outline pass, post
+      // pass). While the counter is on, autoReset is disabled instead (see
+      // the settingFpsCounter listener) so info accumulates across every
+      // render() call in the frame; these hold the totals captured right
+      // before the manual reset at the end of each frame.
+      let _lastDrawCalls = 0, _lastTriangles = 0;
       let _minimapRedrawAccum = 0;
       let _pathBrickCullAccum = 0;
 
@@ -20546,6 +20561,17 @@
       document.getElementById('settingCloudForestFog')?.addEventListener('change', e => {
         s_cloudForestFog = e.target.checked;
         window.CloudForestFog?.setEnabled(s_cloudForestFog);
+        // CloudForestFog only owns the player-centered mist cylinders — the
+        // zone's own THREE.FogExp2 (density 0.055, vs. every other zone's
+        // 0.018 — see EXTERIOR_ZONES.map_southern_cloud_forest's fogDensity
+        // comment) is a second, independent haze source the toggle used to
+        // leave untouched, so turning it off didn't visibly remove the mist.
+        // Drop it to the normal baseline off, restore it on, live if the
+        // zone's already built this session.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        if (zi?.scene?.fog) {
+          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0.018;
+        }
       });
       document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
         s_cloudForestWideCull = e.target.checked;
@@ -20557,6 +20583,9 @@
         // toggle is instant instead of only affecting the next zone build.
         const zi = _zoneScenes.get('map_southern_cloud_forest');
         zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
+      });
+      document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
+        if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
       });
       // Shared by the cull-radius and all six fog-layer sliders below: wires
       // an <input type=range> to a live value getter/setter plus its
@@ -20603,6 +20632,11 @@
         s_fpsCounter = e.target.checked;
         fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
         _fpsFrames = 0; _fpsAccum = 0;
+        // See _lastDrawCalls' declaration comment: only disable Three's
+        // default per-render()-call autoReset while the counter is actually
+        // visible, so there's zero behavior/overhead change with it off.
+        renderer.info.autoReset = !s_fpsCounter;
+        if (!s_fpsCounter) renderer.info.reset();
       });
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
@@ -20971,7 +21005,9 @@
           _fpsFrames++;
           _fpsAccum += dt;
           if (_fpsAccum >= 0.5) {
-            fpsCounterEl.textContent = Math.round(_fpsFrames / _fpsAccum) + ' FPS';
+            const fps = Math.round(_fpsFrames / _fpsAccum);
+            const tris = _lastTriangles >= 1000 ? (_lastTriangles / 1000).toFixed(1) + 'k' : String(_lastTriangles);
+            fpsCounterEl.textContent = `${fps} FPS · ${_lastDrawCalls} calls · ${tris} tris`;
             _fpsFrames = 0;
             _fpsAccum  = 0;
           }
@@ -21407,6 +21443,16 @@
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
+        if (s_fpsCounter) {
+          // autoReset is off while the counter is on (see the
+          // settingFpsCounter listener), so info has accumulated every
+          // renderer.render() call made this frame (main pass, outline
+          // pass, post pass) rather than only the last one — capture the
+          // total, then reset by hand for the next frame.
+          _lastDrawCalls = renderer.info.render.calls;
+          _lastTriangles = renderer.info.render.triangles;
+          renderer.info.reset();
+        }
         requestAnimationFrame(gameLoop);
       }
 
