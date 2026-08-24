@@ -153,9 +153,11 @@
 
     loadHandWavySource().then(image => {
       let source = image;
-      if (typeof global.getBodyTintedCanvas === 'function') {
-        // This is the same function renderProfile uses for body sprite layers.
-        source = global.getBodyTintedCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
+      const spritePng = global.HobunjiSpritePngSurface;
+      if (typeof spritePng?.tintBodyCanvas === 'function' || typeof global.getBodyTintedCanvas === 'function') {
+        // Same authored-PNG recolor entry point used by the character body art.
+        const tintBodyCanvas = spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
+        source = tintBodyCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
       } else {
         // Standalone-tool fallback mirrors the same renderProfile branch exactly.
         const mode = typeof global.bodyTintModeForSpecies === 'function'
@@ -239,7 +241,7 @@
         const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
         const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
         const materialName = material?.name || `${role}_hand_material`;
-        const next = global.HobunjiPngPlaneUnlit?.makeMaterial
+        const next = (global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit)?.makeMaterial
           ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
               color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
               side: THREE.DoubleSide, // closed/turned hand geometry needs both sides; all other plane flags stay canonical
@@ -321,7 +323,7 @@
     geometry.scale(0.72, 1, 0.55);
     const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
     const materialName = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
-    const material = global.HobunjiPngPlaneUnlit?.makeMaterial
+    const material = (global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit)?.makeMaterial
       ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
           color: bodyTexture ? 0xffffff : color,
           side: THREE.DoubleSide,

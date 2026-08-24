@@ -83,10 +83,10 @@
     // loads. The decoded PNG later replaces this with the exact portrait body
     // recolor canvas, using {hex:tint} as the body-color descriptor.
     const textureName = `natural_${String(tint).toLowerCase()}_${wrapMode}`;
-    tex = window.HobunjiPngPlaneUnlit?.configureTexture
+    tex = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture
       ? window.HobunjiPngPlaneUnlit.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(tint)), textureName)
       : new THREE.CanvasTexture(flatTintCanvas(tint));
-    if (!window.HobunjiPngPlaneUnlit?.configureTexture) {
+    if (!(window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture) {
       tex.name = textureName;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.needsUpdate = true;
@@ -103,14 +103,15 @@
     const image = new Image();
     image.crossOrigin = 'anonymous';
     image.onload = () => {
-      if (typeof window.getBodyTintedCanvas !== 'function') {
-        console.warn('[natural-surface] portrait body tint helper unavailable; keeping flat tint', path, tint);
+      const tintBodyCanvas = window.HobunjiSpritePngSurface?.tintBodyCanvas || window.getBodyTintedCanvas;
+      if (typeof tintBodyCanvas !== 'function') {
+        console.warn('[natural-surface] portrait body PNG tint helper unavailable; keeping flat tint', path, tint);
         return;
       }
       // Empty species id intentionally follows bodyTintModeForSpecies(''), whose
       // default is the same shadeFill mode used by ordinary body sprites. A hex
       // descriptor is already absolute, so no species swatch conversion occurs.
-      const canvas = window.getBodyTintedCanvas(image, cacheKey, { hex: tint }, '', 'A');
+      const canvas = tintBodyCanvas(image, cacheKey, { hex: tint }, '', 'A');
       if (!canvas) return;
       tex.image = canvas;
       tex.needsUpdate = true;
@@ -164,7 +165,7 @@
       polygonOffsetFactor: sourceMaterial?.polygonOffsetFactor || 0,
       polygonOffsetUnits: sourceMaterial?.polygonOffsetUnits || 0,
     };
-    mat = window.HobunjiPngPlaneUnlit?.makeMaterial
+    mat = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.makeMaterial
       ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
       : new THREE.MeshBasicMaterial({ map: texture || null, ...overrides });
     mat.name = `natural_${surface}_${tint}`;

@@ -609,7 +609,55 @@ function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') 
   return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));
 }
 
-// Explicit exports for classic-script consumers that render Three.js textures.
+// Canonical authored-PNG appearance path. Character body sprites, the final
+// avatar plane, and same-style 3D surface PNGs all go through this one API:
+// source PNG -> body-style recolor canvas -> CanvasTexture -> MeshBasicMaterial.
+function configureSpritePngTexture(THREE, texture, debugName) {
+  if (!texture) return texture;
+  if (debugName) texture.name = debugName;
+  // Keep the exact color-management behavior used by the assembled character
+  // sprite texture. Do not give same-style surface PNGs a separate encoding path.
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function makeSpritePngCanvasTexture(THREE, imageOrCanvas, debugName) {
+  return configureSpritePngTexture(THREE, new THREE.CanvasTexture(imageOrCanvas), debugName);
+}
+
+function spritePngAlphaTest() {
+  return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.alphaTest ?? 0.001;
+}
+
+function spritePngMaterialOptions(THREE, texture, debugName, overrides = {}) {
+  return Object.assign({
+    name: debugName,
+    map: texture || null,
+    transparent: true,
+    alphaTest: spritePngAlphaTest(),
+    side: THREE.FrontSide,
+    depthTest: true,
+    depthWrite: true,
+    opacity: 1,
+  }, overrides);
+}
+
+function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
+  return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
+}
+
+window.HobunjiSpritePngSurface = {
+  tintForBodyColor: bodySpriteTintForColor,
+  tintBodyCanvas: getBodyTintedCanvas,
+  configureTexture: configureSpritePngTexture,
+  makeCanvasTexture: makeSpritePngCanvasTexture,
+  materialOptions: spritePngMaterialOptions,
+  makeMaterial: makeSpritePngUnlitMaterial,
+  alphaTest: spritePngAlphaTest,
+};
+
+// Legacy direct exports remain for editors and older consumers.
 window.bodySpriteTintForColor = bodySpriteTintForColor;
 window.getBodyTintedCanvas = getBodyTintedCanvas;
 
