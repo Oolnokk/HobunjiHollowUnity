@@ -15266,6 +15266,74 @@
       // otherwise; shared by every rebuildInteriorGeometry() floor tile.
       const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
 
+      // ── Outline rendering tuning (config/outline-rendering.json) ──────
+      // Every numeric/color knob across the three outline sources below
+      // (shell, colored target highlight, furniture material-seam) used to
+      // be baked into the shader/material literals directly. Pulled out
+      // the same way atmosphere-lighting.json tunes CloudForestFog: a
+      // frozen built-in default so rendering never blocks on the fetch,
+      // overwritten in place onto the already-created materials/uniforms
+      // once the config loads (see loadOutlineRenderingConfig below,
+      // called once these materials exist).
+      const OUTLINE_RENDERING_DEFAULTS = Object.freeze({
+        shell: Object.freeze({ thicknessNdc: 0.006 }),
+        targetHighlight: Object.freeze({ thicknessNdc: 0.009, allyColor: '#14f22e', hostileColor: '#f21f14' }),
+        materialSeam: Object.freeze({ hueStep: 0.6180339887, saturation: 0.85, lightness: 0.55, colorDistanceThreshold: 0.1, occlusionToleranceDepth: 0.05 }),
+        depthEdge: Object.freeze({ baseThreshold: 0.01, sensitivityMinThreshScale: 2.0, sensitivityMaxThreshScale: 0.25 }),
+      });
+      let _outlineRenderingConfig = {
+        shell: { ...OUTLINE_RENDERING_DEFAULTS.shell },
+        targetHighlight: { ...OUTLINE_RENDERING_DEFAULTS.targetHighlight },
+        materialSeam: { ...OUTLINE_RENDERING_DEFAULTS.materialSeam },
+        depthEdge: { ...OUTLINE_RENDERING_DEFAULTS.depthEdge },
+      };
+      function _applyOutlineRenderingConfig(raw) {
+        const finiteOr = (v, fb) => Number.isFinite(Number(v)) ? Number(v) : fb;
+        const hexOr = (v, fb) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) ? v.trim() : fb;
+        const shell = raw?.shell || {};
+        const target = raw?.targetHighlight || {};
+        const seam = raw?.materialSeam || {};
+        const depth = raw?.depthEdge || {};
+        _outlineRenderingConfig = {
+          shell: { thicknessNdc: finiteOr(shell.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.shell.thicknessNdc) },
+          targetHighlight: {
+            thicknessNdc: finiteOr(target.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.targetHighlight.thicknessNdc),
+            allyColor: hexOr(target.allyColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.allyColor),
+            hostileColor: hexOr(target.hostileColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.hostileColor),
+          },
+          materialSeam: {
+            hueStep: finiteOr(seam.hueStep, OUTLINE_RENDERING_DEFAULTS.materialSeam.hueStep),
+            saturation: finiteOr(seam.saturation, OUTLINE_RENDERING_DEFAULTS.materialSeam.saturation),
+            lightness: finiteOr(seam.lightness, OUTLINE_RENDERING_DEFAULTS.materialSeam.lightness),
+            colorDistanceThreshold: finiteOr(seam.colorDistanceThreshold, OUTLINE_RENDERING_DEFAULTS.materialSeam.colorDistanceThreshold),
+            occlusionToleranceDepth: finiteOr(seam.occlusionToleranceDepth, OUTLINE_RENDERING_DEFAULTS.materialSeam.occlusionToleranceDepth),
+          },
+          depthEdge: {
+            baseThreshold: finiteOr(depth.baseThreshold, OUTLINE_RENDERING_DEFAULTS.depthEdge.baseThreshold),
+            sensitivityMinThreshScale: finiteOr(depth.sensitivityMinThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMinThreshScale),
+            sensitivityMaxThreshScale: finiteOr(depth.sensitivityMaxThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMaxThreshScale),
+          },
+        };
+        // Re-apply onto whatever's already built — materials/uniforms exist
+        // by the time this ever runs (loadOutlineRenderingConfig is only
+        // called after them), shader source (the literals turned into
+        // uniforms above) never needs recompiling.
+        shellOutlineMat.uniforms.uThickness.value = _outlineRenderingConfig.shell.thicknessNdc;
+        targetOutlineGreenMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
+        targetOutlineRedMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
+        try { targetOutlineGreenMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.allyColor); } catch {}
+        try { targetOutlineRedMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.hostileColor); } catch {}
+        _postMat.uniforms.uBaseDepthThresh.value = _outlineRenderingConfig.depthEdge.baseThreshold;
+        _postMat.uniforms.uSeamColorDistThresh.value = _outlineRenderingConfig.materialSeam.colorDistanceThreshold;
+        _postMat.uniforms.uSeamOcclusionTolerance.value = _outlineRenderingConfig.materialSeam.occlusionToleranceDepth;
+      }
+      function loadOutlineRenderingConfig() {
+        fetch('config/outline-rendering.json')
+          .then(r => r.ok ? r.json() : null)
+          .then(cfg => { if (cfg) _applyOutlineRenderingConfig(cfg); })
+          .catch(() => {});
+      }
+
       // ── Inverted shell outline ────────────────────────────────────
       // Second render pass: back faces only, vertices extruded along
       // normals → solid black border on every mesh edge. No render
@@ -15414,18 +15482,26 @@
           gl_Position = clip;
         }
       `;
+      // Thickness/colors default from OUTLINE_RENDERING_DEFAULTS below and
+      // are overwritten in place once config/outline-rendering.json loads
+      // (see loadOutlineRenderingConfig) — created with the built-in
+      // defaults so rendering never blocks on that fetch.
+      const _targetOutlineFrag = `
+        uniform vec3 uColor;
+        void main() { gl_FragColor = vec4(uColor, 1.0); }
+      `;
       const targetOutlineGreenMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 } },
+        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0x14f22e) } },
         vertexShader: _targetOutlineVert,
-        fragmentShader: `void main() { gl_FragColor = vec4(0.08, 0.95, 0.18, 1.0); }`,
+        fragmentShader: _targetOutlineFrag,
         depthWrite: false, depthFunc: THREE.LessDepth,
       });
       const targetOutlineRedMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 } },
+        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0xf21f14) } },
         vertexShader: _targetOutlineVert,
-        fragmentShader: `void main() { gl_FragColor = vec4(0.95, 0.12, 0.08, 1.0); }`,
+        fragmentShader: _targetOutlineFrag,
         depthWrite: false, depthFunc: THREE.LessDepth,
       });
       let _targetOutlineMeshes = [];
@@ -15491,8 +15567,9 @@
         if (!obj) return;
         const apply = (m) => {
           m.layers.enable(3);
-          const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
-          const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          const seamCfg = _outlineRenderingConfig.materialSeam;
+          const hue = (_furnitureEdgeIdSeq++ * seamCfg.hueStep) % 1;
+          const idColor = new THREE.Color().setHSL(hue, seamCfg.saturation, seamCfg.lightness);
           m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
             if (material !== _furnitureIdMat) return;
             _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
@@ -15635,6 +15712,11 @@
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
           uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
           uSeamOutlinesOn: { value: 0 },
+          // Defaults from OUTLINE_RENDERING_DEFAULTS below, overwritten in
+          // place once config/outline-rendering.json loads.
+          uBaseDepthThresh: { value: 0.01 },
+          uSeamColorDistThresh: { value: 0.1 },
+          uSeamOcclusionTolerance: { value: 0.05 },
         },
         depthTest: false, depthWrite: false,
         vertexShader: `
@@ -15647,6 +15729,7 @@
           uniform float uCameraNear, uCameraFar;
           uniform float uDepthOutlinesOn, uDepthThreshScale;
           uniform float uSeamOutlinesOn;
+          uniform float uBaseDepthThresh, uSeamColorDistThresh, uSeamOcclusionTolerance;
           varying vec2 vUv;
           float linearDepth(float z) {
             float zNdc = z * 2.0 - 1.0;
@@ -15672,7 +15755,7 @@
             // depth) still triggers at any distance while a smooth receding
             // surface does not.
             float relDepthDelta = depthDelta / max(d0, uCameraNear);
-            float depthThresh   = 0.010 * uDepthThreshScale;
+            float depthThresh   = uBaseDepthThresh * uDepthThreshScale;
             float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
@@ -15681,10 +15764,10 @@
             vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
             vec4 idD = texture2D(tEdgeId, vUv - vec2(0.0, uTexel.y));
             float idEdge = 0.0;
-            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
 
             // Occlusion test — the ID buffer was rendered with only the
             // tagged objects in view, so it has no idea a wall or other
@@ -15693,7 +15776,7 @@
             // if something closer to the camera is actually there.
             float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
             float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
-            idEdge *= step(idDepth, sceneDepth + 0.05) * uSeamOutlinesOn;
+            idEdge *= step(idDepth, sceneDepth + uSeamOcclusionTolerance) * uSeamOutlinesOn;
 
             float edge = max(depthEdge, idEdge);
             gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
@@ -15701,6 +15784,7 @@
         `,
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
+      loadOutlineRenderingConfig();
 
       let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
       // Declared up here (rather than down by the rest of the Cutscene
@@ -20262,8 +20346,12 @@
       document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
         // Slider is "sensitivity" (higher = catches smaller depth gaps), so
         // invert it into the threshold-scale multiplier used by the shader.
+        // Bounds come from config/outline-rendering.json (read live off
+        // _outlineRenderingConfig, not captured at listener-setup time, so
+        // a config load that lands after this wiring still takes effect).
         const sensitivity = Number(e.target.value);
-        s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
+        const { sensitivityMinThreshScale: lo, sensitivityMaxThreshScale: hi } = _outlineRenderingConfig.depthEdge;
+        s_depthOutlineThreshScale = lo + (hi - lo) * sensitivity;
       });
       // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
       // so a headless/console toggle doesn't need to click through Settings —

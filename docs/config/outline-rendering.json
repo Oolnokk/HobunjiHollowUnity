@@ -1,0 +1,22 @@
+{
+  "shell": {
+    "thicknessNdc": 0.006
+  },
+  "targetHighlight": {
+    "thicknessNdc": 0.009,
+    "allyColor": "#14f22e",
+    "hostileColor": "#f21f14"
+  },
+  "materialSeam": {
+    "hueStep": 0.6180339887,
+    "saturation": 0.85,
+    "lightness": 0.55,
+    "colorDistanceThreshold": 0.1,
+    "occlusionToleranceDepth": 0.05
+  },
+  "depthEdge": {
+    "baseThreshold": 0.01,
+    "sensitivityMinThreshScale": 2.0,
+    "sensitivityMaxThreshScale": 0.25
+  }
+}
