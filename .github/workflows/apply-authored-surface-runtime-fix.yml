@@ -1,0 +1,39 @@
+name: Apply authored surface runtime fix
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/wavy-limbs-medium-gray-stone'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Apply runtime patch
+        run: python .github/fix-authored-surface-runtime.py
+      - name: Validate syntax and expected guards
+        run: |
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/natural-surface-materials.js
+          node --check docs/js/pixel-probe.js
+          git diff --check
+          grep -q "hobunjiAuthoredSurfaceState" docs/js/procedural-leg-animation.js
+          grep -q "authored-png-local-tint" docs/js/procedural-hand-attachments.js
+          grep -q "texture neighborhood:" docs/js/pixel-probe.js
+          grep -q "flat-load-failure" docs/js/natural-surface-materials.js
+      - name: Commit fix and remove temporary diagnostics
+        run: |
+          rm -f .github/fix-authored-surface-runtime.py
+          rm -f .github/workflows/apply-authored-surface-runtime-fix.yml
+          rm -f .github/workflows/diagnose-foot-texture.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Keep authored PNG surfaces from flattening' || exit 0
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
