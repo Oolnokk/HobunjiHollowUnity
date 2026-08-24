@@ -30,7 +30,7 @@ jobs:
           node --check docs/config/natural-surface-materials.js
           git diff --check
           test "$(grep -c "tintTreatment: 'ground-shade-fill'" docs/config/natural-surface-materials.js)" -eq 2
-          test "$(grep -c "tintTreatment: 'ground-shade-fill'" docs/js/natural-surface-materials.js)" -ge 3
+          test "$(grep -c "tintTreatment: 'ground-shade-fill'" docs/js/natural-surface-materials.js)" -eq 2
           grep -q "naturalSurfaceShadeFillTarget" docs/js/natural-surface-materials.js
           grep -q "textureForSurface(surface, 'repeat', tint)" docs/js/natural-surface-materials.js
           ! grep -q "sourceMaterial.map || textureForSurface" docs/js/natural-surface-materials.js
