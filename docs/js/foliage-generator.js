@@ -1716,7 +1716,9 @@ window.FoliageGenerator = (() => {
     },
     buildShrubMesh(col, row) {
       const seedU32 = xfnv1a(`sh_${col}_${row}`);
-      return buildShrubGroup(seedU32);
+      // Legacy farm/town SHRUB tiles now use the foliage-generator's proper
+      // Bush preset. Callers retain their existing placement and scale rules.
+      return buildConiferTreeGroup(TREE_PRESETS.bush, seedU32);
     },
     buildBoulderMesh(col, row) {
       const seedU32 = xfnv1a(`bld_${col}_${row}`);

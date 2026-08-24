@@ -158,7 +158,7 @@
 
   // Synchronous flat-color resolution (no image involved) — used both as the
   // immediate material color before the async textured surface resolves (so
-  // there's no stark-white flash/flicker while canvas.png decodes) and as
+  // there's no stark-white flash/flicker while wavy_surface.png decodes) and as
   // the last-resort fallback if that texture ever fails to load, so a
   // missing/blocked asset degrades to "flat but correctly tinted" instead
   // of silently staying untinted white.
@@ -180,6 +180,51 @@
     ctx.fillStyle = hex || '#808080';
     ctx.fillRect(0, 0, 4, 4);
     return canvas;
+  }
+
+  // Emergency fallback used only if the shared portrait surface-tint helper
+  // is unavailable or throws AFTER the authored PNG itself loaded. Never
+  // collapse a successfully loaded texture to a 4x4 flat color: preserve its
+  // luminance pattern and recolor it toward the requested body color locally.
+  function localPatternTintCanvas(img, targetHex) {
+    try {
+      const raw = String(targetHex || '#808080').replace(/^#/, '');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return img;
+      const tr = parseInt(raw.slice(0, 2), 16), tg = parseInt(raw.slice(2, 4), 16), tb = parseInt(raw.slice(4, 6), 16);
+      const width = img.naturalWidth || img.width, height = img.naturalHeight || img.height;
+      if (!width || !height) return img;
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const values = [];
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] <= 8) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l > 0.08) values.push(l);
+      }
+      if (values.length < 8) return img;
+      values.sort((a, b) => a - b);
+      const at = q => values[Math.max(0, Math.min(values.length - 1, Math.round((values.length - 1) * q)))];
+      const low = at(0.10), high = at(0.90), span = high - low;
+      if (!(span > 0.015)) return img;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l <= 0.08) continue;
+        const shade = Math.max(0.72, Math.min(1.18, l / 0.55));
+        data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    } catch (error) {
+      console.warn('[ProceduralFeet] local patterned tint fallback failed; using authored PNG unchanged:', error);
+      return img;
+    }
   }
 
   // Opts every real mesh under `obj` into the game's inverted-shell outline
@@ -252,6 +297,9 @@
     if (_imageCache.has(resolvedPath)) return _imageCache.get(resolvedPath);
     const promise = new Promise((resolve, reject) => {
       const img = new Image();
+      // These assets can be served through a different CDN origin under GitHack/raw previews.
+      // CORS mode MUST be selected before src so portrait-utils can legally read pixels via getImageData().
+      img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error(`Failed to load ${resolvedPath}`));
       img.src = resolvedPath;
@@ -267,27 +315,64 @@
   // throws and never silently falls back to the untinted source PNG — any
   // failure (asset 404, tint pipeline unavailable) degrades to a flat canvas
   // in the correctly resolved color instead of leaving the material white.
-  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName) {
+  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName, tintSpeciesId = '') {
     let source = null;
+    let loadedImage = null;
+    let sourceState = 'flat-load-failure';
+    let sourceError = null;
+    const resolvedHex = resolveFlatColorHex(colorDescriptor, referenceHex);
     try {
-      const img = await loadSurfaceImage(sourcePath);
-      if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
-        const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
-        source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(img, sourcePath, tint) : null;
+      loadedImage = await loadSurfaceImage(sourcePath);
+      const spritePng = window.HobunjiSpritePngSurface;
+      const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
+      if (typeof tintSurfaceCanvas === 'function') {
+        try {
+          // Preferred path: exactly the same authored-PNG tint pipeline as body art.
+          source = tintSurfaceCanvas(loadedImage, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
+          if (source) sourceState = 'authored-png-tinted';
+        } catch (error) {
+          sourceError = error;
+        }
+      }
+      if (!source && typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
+        try {
+          const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
+          source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(loadedImage, `${sourcePath}|legacy-fallback`, tint) : null;
+          if (source) sourceState = 'authored-png-legacy-tint';
+        } catch (error) {
+          sourceError ||= error;
+        }
+      }
+      // Critical invariant: once the PNG loaded, never replace its artwork with
+      // a flat 4x4 color just because a tint helper was missing or threw.
+      if (!source) {
+        source = localPatternTintCanvas(loadedImage, resolvedHex);
+        sourceState = source === loadedImage ? 'authored-png-raw-fallback' : 'authored-png-local-tint';
       }
     } catch (error) {
-      source = null;
+      sourceError = error;
     }
-    if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
-    const texture = new THREE.CanvasTexture(source);
-    // Named so debug tools (e.g. the Pixel Probe's material dump) show
-    // something identifiable instead of "(unnamed texture)".
-    texture.name = debugName || sourcePath;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(repeatX || 1.25, 1);
-    texture.needsUpdate = true;
+    if (!source) source = flatColorCanvas(resolvedHex);
+    const textureName = debugName || sourcePath;
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    const texture = spritePngSurface?.configureTexture
+      ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(source), textureName)
+      : new THREE.CanvasTexture(source);
+    if (!spritePngSurface?.configureTexture) {
+      texture.name = textureName;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+    }
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(1, 1);
+    texture.userData = Object.assign({}, texture.userData, {
+      hobunjiAuthoredSurfacePath: sourcePath,
+      hobunjiAuthoredSurfaceState: sourceState,
+      hobunjiAuthoredSurfaceImageSize: loadedImage ? `${loadedImage.naturalWidth || loadedImage.width}x${loadedImage.naturalHeight || loadedImage.height}` : 'none',
+      hobunjiAuthoredSurfaceError: sourceError ? String(sourceError?.message || sourceError) : null,
+    });
+    if (sourceState === 'flat-load-failure') console.warn('[ProceduralFeet] authored surface PNG failed to load; flat fallback is visible:', sourcePath, sourceError);
     return texture;
   }
 
@@ -295,19 +380,28 @@
   // the GLB path, however many materials share a role) reuse a single loaded
   // texture instead of re-decoding/re-tinting the same PNG repeatedly.
   function makeSurfaceRoleResolver(THREE, speciesId, bodyColors) {
-    const referenceHex = referenceHexForSpecies(speciesId);
+    const bodyReferenceHex = referenceHexForSpecies(speciesId);
     const promises = new Map();
-    return role => {
-      if (promises.has(role)) return promises.get(role);
+    return (role, originalMaterialHex = null) => {
+      const cleanOriginalHex = /^#[0-9a-f]{6}$/i.test(String(originalMaterialHex || ''))
+        ? String(originalMaterialHex).toUpperCase()
+        : null;
+      const cacheKey = role === 'body' ? 'body' : `${role}|${cleanOriginalHex || 'fallback'}`;
+      if (promises.has(cacheKey)) return promises.get(cacheKey);
       let promise;
       if (role === 'bone') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25, `${speciesId}_foot_bone`);
+        // The old flat GLB material is the color authority for claws/nails.
+        // Run carved_smooth.png through the SAME shade/body-fill method as body
+        // sprites, using that original bland material hex as both target and reference.
+        const baseHex = cleanOriginalHex || cfg().boneColorHex || '#D8C7A3';
+        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_bone_${baseHex.slice(1)}`, '');
       } else if (role === 'keratin') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`);
+        const baseHex = cleanOriginalHex || cfg().keratinColorHex || '#44484D';
+        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_keratin_${baseHex.slice(1)}`, '');
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), bodyReferenceHex, 1, `${speciesId}_foot_body`, speciesId);
       }
-      promises.set(role, promise);
+      promises.set(cacheKey, promise);
       return promise;
     };
   }
@@ -323,52 +417,30 @@
     return Boolean(position && uv && uv.count === position.count);
   }
 
+  // Historical name retained for callers, but this is now a true ONE-COPY
+  // stretch fit rather than a per-face box projection. The two largest object-
+  // space axes span 0..1 exactly once across the whole mesh.
   function generateBoxProjectedUvs(THREE, geometry) {
-    if (!geometry?.getAttribute?.('position') || hasUsableUvs(geometry)) return geometry;
-    const originalGroups = (geometry.groups || []).map(group => ({ ...group }));
-    const projected = geometry.index ? geometry.toNonIndexed() : geometry;
-    if (projected !== geometry && originalGroups.length) {
-      projected.clearGroups();
-      for (const group of originalGroups) projected.addGroup(group.start, group.count, group.materialIndex);
-    }
-    const position = projected.getAttribute('position');
-    projected.computeBoundingBox();
-    const box = projected.boundingBox;
-    const sizeX = Math.max(1e-6, box.max.x - box.min.x);
-    const sizeY = Math.max(1e-6, box.max.y - box.min.y);
-    const sizeZ = Math.max(1e-6, box.max.z - box.min.z);
+    const position = geometry?.getAttribute?.('position');
+    if (!position?.count) return geometry;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (!box) return geometry;
+    const axes = [
+      { key: 'x', min: box.min.x, size: Math.max(1e-6, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, size: Math.max(1e-6, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, size: Math.max(1e-6, box.max.z - box.min.z) },
+    ].sort((a, b) => b.size - a.size);
+    const uAxis = axes[0], vAxis = axes[1];
+    const read = (axis, i) => axis.key === 'x' ? position.getX(i) : axis.key === 'y' ? position.getY(i) : position.getZ(i);
     const uvArray = new Float32Array(position.count * 2);
-    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-    const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), normal = new THREE.Vector3();
-    for (let first = 0; first + 2 < position.count; first += 3) {
-      a.fromBufferAttribute(position, first);
-      b.fromBufferAttribute(position, first + 1);
-      c.fromBufferAttribute(position, first + 2);
-      edge1.subVectors(b, a);
-      edge2.subVectors(c, a);
-      normal.crossVectors(edge1, edge2).normalize();
-      const ax = Math.abs(normal.x), ay = Math.abs(normal.y), az = Math.abs(normal.z);
-      const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
-      for (let corner = 0; corner < 3; corner++) {
-        const vertex = corner === 0 ? a : corner === 1 ? b : c;
-        let u, v;
-        if (dominant === 'x') {
-          u = (vertex.z - box.min.z) / sizeZ; v = (vertex.y - box.min.y) / sizeY;
-          if (normal.x < 0) u = 1 - u;
-        } else if (dominant === 'y') {
-          u = (vertex.x - box.min.x) / sizeX; v = (vertex.z - box.min.z) / sizeZ;
-          if (normal.y > 0) v = 1 - v;
-        } else {
-          u = (vertex.x - box.min.x) / sizeX; v = (vertex.y - box.min.y) / sizeY;
-          if (normal.z > 0) u = 1 - u;
-        }
-        const target = (first + corner) * 2;
-        uvArray[target] = u;
-        uvArray[target + 1] = v;
-      }
+    for (let i = 0; i < position.count; i++) {
+      uvArray[i * 2] = Math.max(0, Math.min(1, (read(uAxis, i) - uAxis.min) / uAxis.size));
+      uvArray[i * 2 + 1] = Math.max(0, Math.min(1, (read(vAxis, i) - vAxis.min) / vAxis.size));
     }
-    projected.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
-    return projected;
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+    geometry.userData = { ...(geometry.userData || {}), hobunjiStretchFitUvAxes: `${uAxis.key}${vAxis.key}` };
+    return geometry;
   }
 
   // ── Placement width: scan the avatar's own torso silhouette ────────────
@@ -517,8 +589,20 @@
     // the textured surface decodes asynchronously; buildSurfaceTexture's
     // resolved map replaces this material's map (and resets color to white
     // so the two don't multiply together) once it's ready.
-    const material = new THREE.MeshBasicMaterial({ color: initialColorHex || 0xffffff });
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    const material = spritePngSurface?.makeMaterial
+      ? spritePngSurface.makeMaterial(THREE, null, `${speciesId}_fallback_foot`, { color: initialColorHex || 0xffffff })
+      : new THREE.MeshBasicMaterial({
+          color: initialColorHex || 0xffffff,
+          transparent: true,
+          alphaTest: 0.001,
+          side: THREE.FrontSide,
+          depthTest: true,
+          depthWrite: true,
+          opacity: 1,
+        });
+    const sphereGeometry = generateBoxProjectedUvs(THREE, new THREE.SphereGeometry(radius, 16, 12));
+    const sphere = new THREE.Mesh(sphereGeometry, material);
     sphere.scale.set(sphereScaleXZ, sphereScaleY, sphereScaleXZ);
     sphere.castShadow = true;
     sphere.receiveShadow = true;
@@ -526,7 +610,7 @@
     if (KENKARI_FAMILY.has(speciesId)) {
       const toeLength = radius * 2.2;
       const toeRadius = radius * 0.17;
-      const toeGeometry = new THREE.ConeGeometry(toeRadius, toeLength, 10);
+      const toeGeometry = generateBoxProjectedUvs(THREE, new THREE.ConeGeometry(toeRadius, toeLength, 10));
       const sets = [{ z: radius * 0.18, facing: 0 }, { z: -radius * 0.18, facing: Math.PI }];
       for (const set of sets) {
         for (const side of [-1, 1]) {
@@ -588,9 +672,17 @@
     const scene = await loadGlbScene(THREE, footConfig.glb);
     const clone = scene.clone(true);
     const roles = footConfig.materialRoles || {};
-    const roleTextures = new Map();
-    for (const role of new Set(Object.values(roles))) {
-      roleTextures.set(role, await surfaceForRole(role));
+    const sourceMaterials = new Set();
+    clone.traverse(child => {
+      if (!child.isMesh) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) if (material) sourceMaterials.add(material);
+    });
+    const textureForMaterial = new Map();
+    for (const material of sourceMaterials) {
+      const role = roles[material.name] || 'body';
+      const originalHex = material.color?.isColor ? `#${material.color.getHexString()}` : null;
+      textureForMaterial.set(material, await surfaceForRole(role, originalHex));
     }
     const defaultTexture = await surfaceForRole('body');
     const remapped = new Map();
@@ -601,11 +693,25 @@
       if (child.geometry) child.geometry = generateBoxProjectedUvs(THREE, child.geometry.clone());
       const applyOne = material => {
         if (remapped.has(material)) return remapped.get(material);
-        const role = roles[material.name];
-        const texture = roleTextures.get(role) || defaultTexture;
+        const role = roles[material.name] || 'body';
+        const originalHex = material.color?.isColor ? `#${material.color.getHexString()}` : null;
+        const texture = textureForMaterial.get(material) || defaultTexture;
         // See buildFallbackFoot's comment on unlit vs lit materials.
-        const cloned = new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff });
+        const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+        const cloned = spritePngSurface?.makeMaterial
+          ? spritePngSurface.makeMaterial(THREE, texture, material.name, { color: 0xffffff })
+          : new THREE.MeshBasicMaterial({
+              map: texture,
+              color: 0xffffff,
+              transparent: true,
+              alphaTest: 0.001,
+              side: THREE.FrontSide,
+              depthTest: true,
+              depthWrite: true,
+              opacity: 1,
+            });
         cloned.name = material.name;
+        cloned.userData = { ...(cloned.userData || {}), hobunjiFootRole: role, hobunjiOriginalMaterialHex: originalHex };
         remapped.set(material, cloned);
         return cloned;
       };

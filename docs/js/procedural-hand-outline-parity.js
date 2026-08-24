@@ -3,8 +3,9 @@
 // Hand placement has a deliberate late pre-render sync: an invisible sentinel updates
 // the hand sockets after toolHolder's render-time stance hook has produced its final
 // matrix. Outline rendering then uses separate shell and material-ID passes, often with
-// scene.autoUpdate=false. Capture each hand mesh's matrixWorld at its visible draw and
-// temporarily reuse that exact matrix for every outline override draw. The same meshes
+// scene.autoUpdate=false. Snapshot each hand mesh's already-final matrixWorld directly
+// in the visible draw's onBeforeRender (the same ordering used by feet), then temporarily
+// reuse that exact matrix for every outline override draw. The same meshes
 // are also registered with HeldObjectRenderOrder so hands x-ray grass/ground exactly
 // like held tool sprites while ordinary scene occluders still block them.
 (function (global) {
@@ -15,7 +16,8 @@
   if (!THREE || !hands?.attach || hands.attach.__hobunjiHandOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
-  const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const MAX_SNAPSHOT_AGE_MS = 160;
+  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
@@ -45,10 +47,15 @@
   }
 
   function isVisibleHandDraw(scene, material) {
-    // Any ordinary draw with the mesh's own material is a valid source matrix.
-    // This includes the held-object selective overlay, which is the actual visible
-    // hand draw once ground x-ray registration is active.
-    return !scene?.overrideMaterial && !isShellMaterial(material) && !isMaterialIdMaterial(material);
+    // Only a real COLOR-WRITING hand draw may become the outline transform source.
+    // game.js replays PNG-plane materials with colorWrite=false immediately before
+    // the shell pass to rebuild occluder depth. Treating that depth-only replay as
+    // visible overwrote the correctly gripped hand matrix with a hierarchy-only one,
+    // which produced a separate black hand-shaped shell.
+    return !scene?.overrideMaterial
+      && material?.colorWrite !== false
+      && !isShellMaterial(material)
+      && !isMaterialIdMaterial(material);
   }
 
   function markHeldXray(mesh, rigState, side) {
@@ -77,18 +84,23 @@
 
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
+    if (mesh.userData?.noOutline !== true) mesh.layers.enable(1); // Visual replacement/x-ray routing must never drop either hand from the shell layer.
     markHeldXray(mesh, rigState, side);
     if (mesh.userData?.__hobunjiHandOutlineParity) return false;
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
     const state = {
-      visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible hand draw.
-      visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
-      restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
+      visibleMatrixWorld: new THREE.Matrix4(), // Exact matrixWorld about to be used by the latest genuine color-writing hand draw.
+      visibleCapturedAt: -Infinity,
+      restoreStack: [], // Per-render temporary matrix restores for shell/material-ID passes.
+      thicknessRestoreStack: [], // Per-render shell-thickness restores so the shared uniform cannot leak.
     };
 
     mesh.onBeforeRender = function handOutlineParityBefore(...args) {
+      // Let any pre-existing hand/tool stance hook finish first. The snapshot below
+      // must observe the same final matrixWorld that Three.js is about to use for
+      // this color-writing draw — not a transform reconstructed after the fact.
       previousBefore?.apply(this, args);
       const scene = args[1];
       const material = args[4];
@@ -98,6 +110,7 @@
         state.visibleMatrixWorld.copy(this.matrixWorld);
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
         return;
@@ -106,7 +119,18 @@
       const passKind = outlinePassKind(scene, material);
       if (!passKind) {
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         return;
+      }
+
+      const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
+      const previousThickness = Number(thicknessUniform?.value);
+      if (thicknessUniform && Number.isFinite(previousThickness)) {
+        state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
+        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+        material.uniformsNeedUpdate = true;
+      } else {
+        state.thicknessRestoreStack.push(null);
       }
 
       const ageMs = now - state.visibleCapturedAt;
@@ -117,9 +141,11 @@
         return;
       }
 
-      // Object3D.onBeforeRender runs before WebGLRenderer derives modelViewMatrix
-      // and normalMatrix. Replacing matrixWorld here therefore freezes shell and
-      // material-ID rendering to the exact transform that produced the visible hand.
+      // Three r128 calls Object3D.onBeforeRender BEFORE deriving modelViewMatrix
+      // and normalMatrix. Copying the visible draw's direct matrixWorld here makes
+      // the shell use precisely that pose. Do not call updateMatrixWorld and do not
+      // reconstruct from modelViewMatrix after a draw; both alter the intended
+      // base->secondary render ordering used by outline-render-performance.js.
       state.restoreStack.push(this.matrixWorld.clone());
       this.matrixWorld.copy(state.visibleMatrixWorld);
       if (passKind === 'shell') {
@@ -132,13 +158,21 @@
     };
 
     mesh.onAfterRender = function handOutlineParityAfter(...args) {
+      // Delegate first, matching the feet parity adapter: any older callback gets
+      // to clean up its own temporary render state before we restore ours.
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      const thicknessRestore = state.thicknessRestoreStack.pop();
+      if (thicknessRestore) {
+        thicknessRestore.uniform.value = thicknessRestore.value;
+        const material = args[4];
+        if (material?.isShaderMaterial) material.uniformsNeedUpdate = true;
+      }
     };
 
     mesh.userData.__hobunjiHandOutlineParity = true;
-    mesh.userData.hobunjiOutlineMatrixSource = 'visible-hand-draw';
+    mesh.userData.hobunjiOutlineMatrixSource = 'visible-hand-pre-render';
     rigState.hookedMeshes++;
     return true;
   }
@@ -148,11 +182,19 @@
   }
 
   function scanRig(rig, rigState) {
-    const left = rig?.group?.getObjectByName?.('left_hand_visual') || null;
-    const right = rig?.group?.getObjectByName?.('right_hand_visual') || null;
-    if (left) scanVisual(left, rigState, 'left');
-    if (right) scanVisual(right, rigState, 'right');
-    if (!left && !right) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
+    let found = false;
+    for (const side of ['left', 'right']) {
+      const socket = rig?.group?.getObjectByName?.(`${side}_hand_socket`) || null;
+      if (!socket) continue;
+      found = true;
+      // The socket is authoritative. Do not depend on whether a fallback/GLB
+      // visual happened to have the expected child name at the instant it was installed.
+      for (const child of socket.children || []) {
+        if (child?.name === `${side}_hand_grip_axes`) continue;
+        scanVisual(child, rigState, side);
+      }
+    }
+    if (!found) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
   }
 
   function waitForInitialGlbs(rig, rigState, attempt = 0) {
@@ -199,13 +241,14 @@
         return {
           ...originalDebug(),
           outlineMatrixParity: true,
-          outlineMatrixSource: 'visible-hand-draw',
+          outlineMatrixSource: 'visible-hand-pre-render',
           outlineHookedMeshes: rigState.hookedMeshes,
           heldXrayMeshes: rigState.heldXrayMeshes,
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,
           outlineLockedShellDraws: rigState.lockedShellDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
+          outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         };
       };
     }
@@ -234,6 +277,7 @@
         missedOutlineSnapshots,
         heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
     },

@@ -19,7 +19,8 @@
   if (!THREE || !legs?.attach || legs.attach.__hobunjiFeetOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced foot meshes may need hooks.
-  const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const MAX_SNAPSHOT_AGE_MS = 160;
+  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   const RESCAN_INTERVAL_MS = 150; // Catches the async fallback->GLB foot swap without needing a dedicated signal.
   const RESCAN_ATTEMPTS = 20; // ~3s — generous relative to typical GLB load time.
   let baseMatrixCaptures = 0; // Diagnostic count of visible foot matrices captured by this adapter.
@@ -63,6 +64,7 @@
       visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible foot draw.
       visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
       restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
+      thicknessRestoreStack: [], // Per-draw shell-uniform restore entries; keeps non-limb outlines at the global thickness.
     };
 
     mesh.onBeforeRender = function feetOutlineParityBefore(...args) {
@@ -75,6 +77,7 @@
         state.visibleMatrixWorld.copy(this.matrixWorld);
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
         return;
@@ -83,7 +86,18 @@
       const passKind = outlinePassKind(scene, material);
       if (!passKind) {
         state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
         return;
+      }
+
+      const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
+      const previousThickness = Number(thicknessUniform?.value);
+      if (thicknessUniform && Number.isFinite(previousThickness)) {
+        state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
+        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+        material.uniformsNeedUpdate = true; // Shared ShaderMaterial is reused across meshes; force this per-limb value onto the GPU for this draw.
+      } else {
+        state.thicknessRestoreStack.push(null);
       }
 
       const ageMs = now - state.visibleCapturedAt;
@@ -112,6 +126,13 @@
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      const thicknessRestore = state.thicknessRestoreStack.pop();
+      if (thicknessRestore) {
+        thicknessRestore.uniform.value = thicknessRestore.value;
+        const scene = args[1];
+        const material = args[4];
+        if (material?.isShaderMaterial) material.uniformsNeedUpdate = true; // Ensure the restored global thickness is uploaded before the next non-limb shell draw.
+      }
     };
 
     mesh.userData.__hobunjiFeetOutlineParity = true;
@@ -176,6 +197,7 @@
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
       };
     },
   });

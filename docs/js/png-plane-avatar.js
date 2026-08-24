@@ -42,7 +42,15 @@
     return drawVariantCanvas(document.createElement('canvas'), image, options);
   }
 
+  // The plane is only a carrier for the authored character PNG composite.
+  // The actual source of truth lives with the sprite PNG/tint pipeline in
+  // portrait-utils.js so same-style PNGs used on 3D surfaces share it too.
+  const spritePngSurface = window.HobunjiSpritePngSurface;
+
   function makeTextureFromCanvas(THREE, canvasEl, debugName) {
+    if (spritePngSurface?.makeCanvasTexture) {
+      return spritePngSurface.makeCanvasTexture(THREE, canvasEl, debugName);
+    }
     const texture = new THREE.CanvasTexture(canvasEl);
     texture.name = debugName;
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -51,21 +59,19 @@
   }
 
   function makeSpriteMaterial(THREE, texture, debugName) {
+    if (spritePngSurface?.makeMaterial) {
+      return spritePngSurface.makeMaterial(THREE, texture, debugName);
+    }
     return new THREE.MeshBasicMaterial({
-      name: debugName,
-      map: texture,
-      transparent: true,
-      alphaTest: cfg().alphaTest ?? 0.001,
-      side: THREE.FrontSide,
-      // alphaTest already discards fully-transparent texels, so the opaque
-      // sprite silhouette can safely write depth — without this, the depth
-      // buffer behind the sprite still holds whatever was rendered before it
-      // (e.g. a building wall), so later passes that re-test depth (like the
-      // shell outline pass) draw straight through the sprite as if it weren't
-      // there.
-      depthWrite: true,
+      name: debugName, map: texture, transparent: true,
+      alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide,
+      depthTest: true, depthWrite: true, opacity: 1,
     });
   }
+
+  // Compatibility alias for older callers; this is now literally the sprite
+  // PNG surface API rather than an independently maintained plane-only copy.
+  window.HobunjiPngPlaneUnlit = spritePngSurface || window.HobunjiPngPlaneUnlit;
 
   function buildTextureSet(THREE, image, backImage) {
     const rearSource = backImage || image;

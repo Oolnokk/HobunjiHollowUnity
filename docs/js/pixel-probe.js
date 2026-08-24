@@ -145,6 +145,35 @@
     } catch (e) { return null; }
   }
 
+  function _pixelProbeTextureMeta(mat) {
+    const tex = mat?.map;
+    if (!tex?.image) return null;
+    const img = tex.image;
+    const w = img.width || img.naturalWidth || 0, h = img.height || img.naturalHeight || 0;
+    const ud = tex.userData || {};
+    return {
+      size: `${w || '?'}x${h || '?'}`,
+      repeat: `${Number(tex.repeat?.x ?? 1).toFixed(2)}x${Number(tex.repeat?.y ?? 1).toFixed(2)}`,
+      flipY: tex.flipY !== false,
+      state: ud.hobunjiAuthoredSurfaceState || '-',
+      path: ud.hobunjiAuthoredSurfacePath || '-',
+      sourceSize: ud.hobunjiAuthoredSurfaceImageSize || '-',
+      error: ud.hobunjiAuthoredSurfaceError || null,
+    };
+  }
+
+  function _pixelProbeTextureNeighborhood(mat, uv) {
+    if (!mat?.map?.image || !uv) return null;
+    const offsets = [[0, 0], [-0.035, 0], [0.035, 0], [0, -0.035], [0, 0.035], [-0.025, -0.025], [0.025, 0.025]];
+    const samples = offsets.map(([du, dv]) => _pixelProbeTextureSampleAtUv(mat, { x: uv.x + du, y: uv.y + dv })).filter(Boolean);
+    if (samples.length < 2) return null;
+    const colors = samples.map(sample => sample.rgba);
+    const mins = [0, 1, 2].map(channel => Math.min(...colors.map(color => color[channel])));
+    const maxs = [0, 1, 2].map(channel => Math.max(...colors.map(color => color[channel])));
+    const unique = new Set(colors.map(color => color.join(','))).size;
+    return { unique, mins, maxs, samples: colors.length };
+  }
+
   // Walks up from a raycast hit to find which avatar (if any) owns it —
   // the player, an NPC walker, or a companion/mount/livestock creature —
   // and reports that owner's own current body colors alongside whatever
@@ -723,6 +752,10 @@
         const sample = _pixelProbeTextureSampleAtUv(m, hit.uv);
         if (sample) lines.push(`     texture sample at this mesh's own UV (${sample.uv[0].toFixed(3)},${sample.uv[1].toFixed(3)}) — occlusion-independent: rgba(${sample.rgba.join(',')})`);
         else if (m.map) lines.push(`     texture sample: unavailable (no UV on this hit)`);
+        const texMeta = _pixelProbeTextureMeta(m);
+        if (texMeta) lines.push(`     texture meta: image=${texMeta.size} repeat=${texMeta.repeat} flipY=${texMeta.flipY} state=${texMeta.state} source=${texMeta.path} sourceImage=${texMeta.sourceSize}${texMeta.error ? ` error=${texMeta.error}` : ''}`);
+        const neighborhood = _pixelProbeTextureNeighborhood(m, hit.uv);
+        if (neighborhood) lines.push(`     texture neighborhood: ${neighborhood.samples} samples unique=${neighborhood.unique} rgbRange=R${neighborhood.mins[0]}-${neighborhood.maxs[0]} G${neighborhood.mins[1]}-${neighborhood.maxs[1]} B${neighborhood.mins[2]}-${neighborhood.maxs[2]}`);
       });
       const owner = _pixelProbeOwnerInfo(o);
       if (owner) {
