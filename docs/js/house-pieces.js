@@ -20,7 +20,7 @@
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
