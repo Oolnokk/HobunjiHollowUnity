@@ -118,6 +118,18 @@ Two other, separate outline sources existed alongside the shell pass:
   `uSeamOutlinesOn` uniform zeroes its contribution in the composite shader
   regardless of that buffer's contents.
 
+All three outline sources' numeric/color tuning — shell/target-highlight line
+thickness, the ally/hostile highlight colors, the furniture-seam ID palette
+(hue step/saturation/lightness), the seam color-distance and occlusion-depth
+thresholds, and the depth-edge base threshold plus the sensitivity slider's
+min/max threshold-scale bounds — now lives in
+`docs/config/outline-rendering.json` instead of being baked into the shader/
+material literals, following the same pattern `atmosphere-lighting.json`
+uses for `CloudForestFog`: `docs/game.js` creates every outline material with
+built-in defaults (`OUTLINE_RENDERING_DEFAULTS`) so rendering never blocks on
+the fetch, then `loadOutlineRenderingConfig()` overwrites the live uniforms/
+materials in place once the config loads.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining
