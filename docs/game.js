@@ -25162,6 +25162,13 @@
         getPlayerGroundY: _playerGroundY,
         getActiveScene,
         isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+        // cloud-forest-tree-batcher.js reads this to keep its own radial cull
+        // in sync with the same "Vegetation load radius" / wide-cull setting
+        // updateZoneVegetationCulling uses (s_cloudForestCullRadiusTiles) —
+        // it used to call a method of this name that was never defined here,
+        // silently falling back to a hardcoded 34 tiles regardless of the
+        // slider or the Wide Cull toggle.
+        getCloudForestFogRadiusTiles: () => s_cloudForestWideCull ? s_cloudForestCullRadiusTiles : (EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 34),
       });
 
       window.FarmPanel?.init({

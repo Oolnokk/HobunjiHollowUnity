@@ -128,46 +128,31 @@
     }
   }
 
+  // Density thinning (to DENSITY_KEEP) and outline-layer tagging both already
+  // happened in border-terrain.js's instanceDenseShadewoodForest, driven by
+  // treeWallEnabled() at build time — this used to redo both here, against
+  // per-tree InstancedMesh instances, but that only works when the wall is
+  // still built out of individually-addressable per-tree instances. It isn't
+  // any more: each material bucket is now one static merged Mesh (real
+  // draw-call reduction across genuinely-unique procedural tree geometry
+  // requires actually merging it, which forecloses truncating "instances"
+  // after the fact — see mergeTreeGeometriesWithTransform's comment). This
+  // just confirms the upstream build already did that work and reports it.
   function quarterAndOutlineForest(scene) {
     const collection = scene?.children || scene?.items || [];
-    let groups = 0, before = 0, after = 0, outlinedBuckets = 0;
+    let groups = 0, meshes = 0, outlinedBuckets = 0;
     for (const group of collection) {
       if (!group?.userData?.denseForestWall) continue;
       groups++;
       group.traverse?.(mesh => {
-        if (!mesh?.isInstancedMesh) return;
-        const n = Math.max(0, Number(mesh.count) || 0);
-        before += n;
-        if (!mesh.userData.cloudForestQuarterDensity) {
-          const matrix = new THREE.Matrix4();
-          let kept = 0;
-          for (let i = 0; i < n; i += 4) {
-            mesh.getMatrixAt(i, matrix);
-            if (kept !== i) mesh.setMatrixAt(kept, matrix);
-            kept++;
-          }
-          mesh.count = kept;
-          mesh.instanceMatrix.needsUpdate = true;
-          mesh.userData.cloudForestQuarterDensity = true;
-          mesh.userData.cloudForestOriginalCount = n;
-        }
-        after += Math.max(0, Number(mesh.count) || 0);
-
-        // The existing inverted-shell renderer draws layer 1. Keep transparent
-        // / alpha-cutout leaf-card materials out of that pass, matching the
-        // foliage generator's existing noOutline rule for flat cards.
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        const alphaCard = mats.some(m => m && (m.transparent || Number(m.alphaTest) > 0 || m.depthWrite === false));
-        if (!alphaCard) {
-          mesh.layers?.enable?.(OUTLINE_LAYER);
-          mesh.userData.cloudForestShellOutline = true;
-          outlinedBuckets++;
-        }
+        if (!mesh?.isMesh) return;
+        meshes++;
+        if (mesh.userData?.cloudForestShellOutline) outlinedBuckets++;
       });
       group.userData.cloudForestDensityScale = DENSITY_KEEP;
       group.userData.cloudForestShellOutlines = true;
     }
-    return { groups, before, after, outlinedBuckets };
+    return { groups, meshes, outlinedBuckets };
   }
 
   function clearForestWall(scene) {
@@ -315,7 +300,7 @@
       if (mapId !== CLOUD_ID || !scene) return result;
 
       const enabled = treeWallEnabled();
-      let stats = { groups: 0, before: 0, after: 0, outlinedBuckets: 0 };
+      let stats = { groups: 0, meshes: 0, outlinedBuckets: 0 };
       if (enabled) stats = quarterAndOutlineForest(scene);
       else clearForestWall(scene);
 
@@ -326,12 +311,11 @@
         boundaryMode: enabled ? 'outlined-tree-wall' : 'original-cliffs',
         densityScale: enabled ? DENSITY_KEEP : 0,
         shellOutlines: enabled,
-        treeWallInstanceBucketsBefore: stats.before,
-        treeWallInstanceBucketsAfter: stats.after,
+        treeWallMergedDrawCalls: stats.meshes,
         northBoundaryCliffsRemoved: enabled,
       };
       if (enabled && stats.groups) {
-        log(`[CloudForestScenery] North tree wall reduced to 25% density (${stats.before} → ${stats.after} component instances); shell outlines enabled on ${stats.outlinedBuckets} volumetric bucket(s).`, 'info', 'foliage');
+        log(`[CloudForestScenery] North tree wall built at 25% density, merged into ${stats.meshes} static draw call(s) across ${stats.groups} chunk(s); shell outlines enabled on ${stats.outlinedBuckets} of them.`, 'info', 'foliage');
       } else if (!enabled) {
         log('[CloudForestScenery] Tree wall disabled; original generated north cliff boundary retained with the entrance opening.', 'info', 'world');
       }
@@ -387,6 +371,7 @@
   root.CloudForestSceneryOptions = Object.freeze({
     TREE_WALL_KEY,
     DENSITY_KEEP,
+    OUTLINE_LAYER,
     treeWallEnabled,
     setTreeWallEnabled(enabled) { writeStorage(TREE_WALL_KEY, enabled ? '1' : '0'); },
     installGeneratorPatch,

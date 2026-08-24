@@ -632,9 +632,103 @@
     }
   }
 
-  function instanceDenseShadewoodForest(scene, entries) {
+  // Groups meshes that RENDER identically (same material class, color,
+  // emissive, texture, blend/side state) instead of by material object
+  // identity. FoliageGenerator's hexBarkMat() allocates a brand new
+  // MeshLambertMaterial on every call — even for the same authored bark/vine
+  // color — so every tree's trunk, climb branch, and vine mesh previously got
+  // its own unique material object, which alongside each tree's own uniquely-
+  // shaped procedural geometry (see mergeTreeGeometriesWithTransform below)
+  // meant no two trees' meshes could ever land in the same instancing bucket.
+  function _sceneryMaterialMergeKey(material) {
+    if (!material) return 'none';
+    return [
+      material.type,
+      material.color?.isColor ? material.color.getHexString() : '',
+      material.emissive?.isColor ? material.emissive.getHexString() : '',
+      material.map ? (material.map.uuid || material.map.id || material.map.name) : 'no-map',
+      material.transparent ? 1 : 0,
+      material.alphaTest || 0,
+      material.side ?? '',
+    ].join('|');
+  }
+
+  // Bakes each source mesh's world-space transform into its own vertex
+  // positions and concatenates them into one static BufferGeometry. Real
+  // GPU instancing (InstancedMesh) needs identical geometry across
+  // instances; these procedurally-varied trees never have that, so static
+  // merging — one draw call per material per chunk regardless of how many
+  // uniquely-shaped trees it holds — is the only merge that actually reduces
+  // draw calls here. Safe specifically because this scenery is static
+  // background dressing (no per-tree runtime transform, fade, or pick
+  // target) rather than a general-purpose utility.
+  function mergeTreeGeometriesWithTransform(entries) {
+    let totalV = 0, totalI = 0, anyUv = false;
+    for (const e of entries) {
+      const pos = e.geometry?.getAttribute?.('position');
+      if (!pos?.count || !e.geometry.index) continue;
+      totalV += pos.count;
+      totalI += e.geometry.index.count;
+      if (e.geometry.getAttribute('uv')) anyUv = true;
+    }
+    if (!totalV) return null;
+    const pos = new Float32Array(totalV * 3);
+    const uv = anyUv ? new Float32Array(totalV * 2) : null;
+    const idx = new (totalV > 65535 ? Uint32Array : Uint16Array)(totalI);
+    const v = new THREE.Vector3();
+    let vOff = 0, iOff = 0;
+    for (const e of entries) {
+      const srcPos = e.geometry?.getAttribute?.('position');
+      const srcIdx = e.geometry?.index;
+      if (!srcPos?.count || !srcIdx) continue;
+      for (let i = 0; i < srcPos.count; i++) {
+        v.set(srcPos.getX(i), srcPos.getY(i), srcPos.getZ(i)).applyMatrix4(e.matrix);
+        pos[(vOff + i) * 3] = v.x;
+        pos[(vOff + i) * 3 + 1] = v.y;
+        pos[(vOff + i) * 3 + 2] = v.z;
+      }
+      if (uv) {
+        const srcUv = e.geometry.getAttribute('uv');
+        for (let i = 0; i < srcPos.count; i++) {
+          uv[(vOff + i) * 2] = srcUv ? srcUv.getX(i) : 0;
+          uv[(vOff + i) * 2 + 1] = srcUv ? srcUv.getY(i) : 0;
+        }
+      }
+      const arr = srcIdx.array;
+      for (let i = 0; i < arr.length; i++) idx[iOff + i] = arr[i] + vOff;
+      vOff += srcPos.count;
+      iOff += arr.length;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (uv) out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    out.computeVertexNormals?.();
+    return out;
+  }
+
+  // Cloud Forest Tree Wall outline pass draws layer 1 as a solid inverted-hull
+  // silhouette (see game.js's shell-outline renderer / _markOutline) —
+  // opacity-independent, so a flat alpha-cutout leaf card would draw a fully
+  // opaque black outline over whatever it's supposed to let show through.
+  // Matches foliage-generator.js's own noOutline rule for the same reason.
+  function _isAlphaCardMaterial(material) {
+    const mats = Array.isArray(material) ? material : [material];
+    return mats.some(m => m && (m.transparent || Number(m.alphaTest) > 0 || m.depthWrite === false));
+  }
+
+  function instanceDenseShadewoodForest(scene, entries, options = {}) {
     const FG = window.FoliageGenerator;
     if (!FG?.buildShadewoodMesh || !entries.length || typeof THREE === 'undefined') return { chunks: 0, instances: 0 };
+    // Density has to be decided per source tree, before any geometry is
+    // merged — see the call site's comment for why. keepEvery=4 for a 0.25
+    // keepFraction reproduces the previous "quarter density" look via
+    // deterministic list-order thinning instead of post-hoc instance-count
+    // truncation (which needed a true InstancedMesh to exist in the first
+    // place).
+    const keepFraction = Math.max(0.0001, Math.min(1, Number(options.keepFraction) || 1));
+    const keepEvery = Math.max(1, Math.round(1 / keepFraction));
+    const tagOutlineLayer = options.tagOutlineLayer === true;
     const chunkMap = new Map();
     for (const e of entries) {
       const key = `${Math.floor(e.x / FOREST_CHUNK_WIDTH)},${Math.floor((-e.z) / FOREST_CHUNK_DEPTH)}`;
@@ -645,9 +739,11 @@
 
     let chunkCount = 0, instanceCount = 0;
     for (const list of chunkMap.values()) {
-      const buckets = new Map();
+      const buckets = new Map(); // materialMergeKey -> { material, parts: [{geometry, matrix}] }
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-      for (const e of list) {
+      for (let i = 0; i < list.length; i++) {
+        if (keepEvery > 1 && i % keepEvery !== 0) continue;
+        const e = list[i];
         minX = Math.min(minX, e.x); maxX = Math.max(maxX, e.x); minZ = Math.min(minZ, e.z); maxZ = Math.max(maxZ, e.z);
         const tree = FG.buildShadewoodMesh(e.seedA, e.seedB);
         if (!tree) continue;
@@ -659,32 +755,33 @@
           if (!o?.isMesh || !o.geometry || !o.material) return;
           const material = Array.isArray(o.material) ? o.material[0] : o.material;
           if (!material) return;
-          let byMaterial = buckets.get(o.geometry);
-          if (!byMaterial) buckets.set(o.geometry, byMaterial = new Map());
-          let matrices = byMaterial.get(material);
-          if (!matrices) byMaterial.set(material, matrices = []);
-          matrices.push(o.matrixWorld.clone());
+          const key = _sceneryMaterialMergeKey(material);
+          let bucket = buckets.get(key);
+          if (!bucket) buckets.set(key, bucket = { material, parts: [] });
+          bucket.parts.push({ geometry: o.geometry, matrix: o.matrixWorld.clone() });
         });
         instanceCount++;
       }
       if (!buckets.size) continue;
       const group = new THREE.Group();
       group.name = `AuthoredCloudForestDenseChunk_${chunkCount}`;
-      for (const [geometry, byMaterial] of buckets) {
-        for (const [material, matrices] of byMaterial) {
-          const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
-          for (let i = 0; i < matrices.length; i++) mesh.setMatrixAt(i, matrices[i]);
-          mesh.instanceMatrix.needsUpdate = true;
-          mesh.castShadow = false;
-          mesh.receiveShadow = true;
-          // Parent-level cullSphere participates in the existing ~7 Hz
-          // camera-aligned vegetation culler. Disable child frustum tests so a
-          // base geometry sphere at the origin cannot incorrectly reject a
-          // transformed instance cloud.
-          mesh.frustumCulled = false;
-          mesh.userData.backgroundScenery = true;
-          group.add(mesh);
+      for (const { material, parts } of buckets.values()) {
+        const merged = mergeTreeGeometriesWithTransform(parts);
+        if (!merged) continue;
+        const mesh = new THREE.Mesh(merged, material);
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        // Parent-level cullSphere participates in the existing ~7 Hz
+        // camera-aligned vegetation culler. Disable frustum testing so a base
+        // geometry sphere spanning the whole merged chunk cannot incorrectly
+        // reject part of it.
+        mesh.frustumCulled = false;
+        mesh.userData.backgroundScenery = true;
+        if (tagOutlineLayer && !_isAlphaCardMaterial(material)) {
+          mesh.layers?.enable?.(window.CloudForestSceneryOptions?.OUTLINE_LAYER ?? 1);
+          mesh.userData.cloudForestShellOutline = true;
         }
+        group.add(mesh);
       }
       const cx = (minX + maxX) * 0.5, cz = (minZ + maxZ) * 0.5;
       const pad = 3.2;
@@ -736,7 +833,23 @@
       const pathWidth = Math.max(3.25, Number(meta.pathWidth) || 0);
       const clearHalf = pathWidth * 0.5 + PATH_CLEARANCE;
       const layout = buildDenseCloudForestLayout(zcols, NORTH_DEPTH, pathCenter, clearHalf, heightAt);
-      const stats = instanceDenseShadewoodForest(scene, layout);
+      // Cloud Forest Tree Wall setting (cloud-forest-scenery-options.js, loaded
+      // earlier — see its own installGeneratorPatch/installBorderPatch guard
+      // comments for why this direction of coupling, rather than the reverse,
+      // is the one that's actually load-order-safe here) decides whether the
+      // wall renders sparse+outlined or not at all; "not at all" is handled by
+      // that module deleting this group afterward (see clearForestWall), so
+      // this only needs to decide the ON-mode density/outline treatment.
+      // Density has to be decided HERE, per source tree, before merging their
+      // geometry — once merged into one static mesh per material (see
+      // mergeTreeGeometriesWithTransform), there's no instance boundary left
+      // to selectively thin the way a true InstancedMesh could be post-hoc.
+      const sceneryOptions = window.CloudForestSceneryOptions;
+      const treeWallOn = sceneryOptions?.treeWallEnabled?.() !== false;
+      const stats = instanceDenseShadewoodForest(scene, layout, {
+        keepFraction: treeWallOn ? (sceneryOptions?.DENSITY_KEEP ?? 0.25) : 1,
+        tagOutlineLayer: treeWallOn,
+      });
       scene.userData = scene.userData || {};
       scene.userData.authoredCloudForestScenery = {
         ...meta,
