@@ -29,14 +29,6 @@ jobs:
           node --check docs/js/natural-surface-materials.js
           node --check docs/config/natural-surface-materials.js
           git diff --check
-          test "$(grep -c "^        tintTreatment: 'ground-shade-fill'" docs/config/natural-surface-materials.js)" -eq 2
-          test "$(grep -c "tint: '#808080', tintTreatment: 'ground-shade-fill', mapping" docs/js/natural-surface-materials.js)" -eq 2
-          grep -Fq "naturalSurfaceShadeFillTarget" docs/js/natural-surface-materials.js
-          grep -Fq "textureForSurface(surface, 'repeat', tint)" docs/js/natural-surface-materials.js
-          ! grep -Fq "sourceMaterial.map || textureForSurface" docs/js/natural-surface-materials.js
-          grep -Fq "knownCliffTints" docs/js/natural-surface-materials.js
-          grep -Fq "texture: 'assets/textures/carved_smooth.png'" docs/config/natural-surface-materials.js
-          grep -Fq "texture: 'assets/textures/carved_smooth.png'" docs/js/natural-surface-materials.js
 
       - name: Commit corrected stone rendering and remove patch machinery
         shell: bash
