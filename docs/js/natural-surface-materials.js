@@ -10,8 +10,8 @@
     surfaces: {
       trunks: { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
       vines:  { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      rocks:  { enabled: true, tint: '#808080', mapping: 'planar-stretch' },
-      cliffs: { enabled: true, tint: '#808080', mapping: 'world-stretch' },
+      rocks:  { enabled: true, tint: '#808080', tintTreatment: 'ground-shade-fill', mapping: 'planar-stretch' },
+      cliffs: { enabled: true, tint: '#808080', tintTreatment: 'ground-shade-fill', mapping: 'world-stretch' },
     },
   };
 
@@ -53,6 +53,51 @@
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.generateMipmaps = false;
+    textureCache.set(cacheKey, tex);
+    return tex;
+  }
+
+  function parseHexRgb(hex) {
+    const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!match) return null;
+    const value = parseInt(match[1], 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  }
+
+  function shouldBakeTint(surfaceCfg, tint) {
+    return surfaceCfg?.tintTreatment === 'ground-shade-fill'
+      && !!parseHexRgb(tint)
+      && typeof window.getShadeFillCanvas === 'function';
+  }
+
+  function loadShadeFillTexture(path, tint, wrapMode = 'clamp') {
+    const cacheKey = `${path}|${wrapMode}|shade-fill|${String(tint).toLowerCase()}`;
+    let tex = textureCache.get(cacheKey);
+    if (tex) return tex;
+    const rgb = parseHexRgb(tint);
+    tex = markTextureSrgb(new THREE.TextureLoader().load(path, loaded => {
+      if (!rgb || typeof window.getShadeFillCanvas !== 'function') return;
+      const canvas = window.getShadeFillCanvas(loaded.image, cacheKey, {
+        mode: 'shadeFill',
+        rgb,
+        options: typeof window.getPortraitTintingConfig === 'function'
+          ? window.getPortraitTintingConfig()
+          : undefined,
+      });
+      if (!canvas) return;
+      loaded.image = canvas;
+      loaded.needsUpdate = true;
+    }));
+    const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    tex.wrapS = wrapping;
+    tex.wrapT = wrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.userData = Object.assign({}, tex.userData, {
+      naturalSurfaceShadeFill: true,
+      naturalSurfaceShadeFillTarget: String(tint).toLowerCase(),
+    });
     textureCache.set(cacheKey, tex);
     return tex;
   }
@@ -206,8 +251,12 @@
     return true;
   }
 
-  function textureForSurface(surface, wrapMode = 'clamp') {
-    return loadBaseTexture(texturePath(cfgFor(surface)), wrapMode);
+  function textureForSurface(surface, wrapMode = 'clamp', resolvedTint = null) {
+    const surfaceCfg = cfgFor(surface);
+    const tint = resolvedTint || surfaceCfg.tint;
+    return shouldBakeTint(surfaceCfg, tint)
+      ? loadShadeFillTexture(texturePath(surfaceCfg), tint, wrapMode)
+      : loadBaseTexture(texturePath(surfaceCfg), wrapMode);
   }
 
   function noteApplied(surface) {
@@ -228,9 +277,10 @@
     const mapping = mappingOverride || surfaceCfg.mapping;
 
     prepareUv(mesh.geometry, mapping);
-    const tex = textureForSurface(surface);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
-    mesh.material = basicMaterial(surface, sourceMaterial, tex, tint);
+    const bakeTint = shouldBakeTint(surfaceCfg, tint); // Uses shade-fill so #808080 is the texture's target color instead of a second dark multiplier.
+    const tex = textureForSurface(surface, 'clamp', tint);
+    mesh.material = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurface: surface });
     noteApplied(surface);
     return mesh;
@@ -245,22 +295,21 @@
 
     // A multi-material plateau shares ONE uv attribute between its grass top
     // and stone cliff group. Normalizing that geometry for the cliff slot
-    // would also remap the grass material. Preserve the authored world UVs
-    // here and reuse the source texture when it already exists; otherwise use
-    // one shared repeating fallback texture. Single-material cliff meshes still
-    // use assignWorldStretchUv() through naturalizeMesh(), where changing the
-    // sole UV channel is safe.
+    // would also remap the grass material, so preserve the authored world UVs.
+    // The MATERIAL map is still forced to this surface's configured texture;
+    // otherwise an old source map can silently bypass carved_smooth.png.
+    const tint = resolveTint(surfaceCfg, sourceMaterial);
+    const bakeTint = shouldBakeTint(surfaceCfg, tint); // Baked target color keeps carved_smooth shading without multiplying it dark again.
     let tex;
     if (mapping === 'world-stretch') {
-      tex = sourceMaterial.map || textureForSurface(surface, 'repeat');
+      tex = textureForSurface(surface, 'repeat', tint);
     } else {
       prepareUv(mesh.geometry, mapping);
-      tex = textureForSurface(surface);
+      tex = textureForSurface(surface, 'clamp', tint);
     }
 
-    const tint = resolveTint(surfaceCfg, sourceMaterial);
     const materials = mesh.material.slice();
-    materials[slot] = basicMaterial(surface, sourceMaterial, tex, tint);
+    materials[slot] = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.material = materials;
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurfaceCliffSlot: slot });
     noteApplied(surface);
@@ -351,6 +400,7 @@
     const cliffCfg = cfgFor('cliffs');
     const basename = texturePath(cliffCfg).split('/').pop();
     const tintHex = String(cliffCfg.tint || '').replace('#', '').toLowerCase();
+    const knownCliffTints = new Set([tintHex, '5f5a56', '6a6460', '808080']); // Lets legacy border-cliff materials be upgraded even when they do not already carry carved_smooth.png.
     for (const mesh of newlyAddedMeshes(scene, beforeCount)) {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (let i = 0; i < mats.length; i++) {
@@ -360,7 +410,7 @@
           || mat?.map?.source?.data?.src
           || '';
         const colorHex = mat?.color?.isColor ? mat.color.getHexString().toLowerCase() : '';
-        if (!String(src).includes(basename) && (!tintHex || colorHex !== tintHex)) continue;
+        if (!String(src).includes(basename) && !knownCliffTints.has(colorHex)) continue;
         if (Array.isArray(mesh.material)) naturalizeMaterialSlot(mesh, i, 'cliffs');
         else naturalizeMesh(mesh, 'cliffs', 'world-stretch');
       }
