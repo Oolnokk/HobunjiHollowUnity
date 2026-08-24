@@ -383,7 +383,8 @@
         const tier = deps.getBarnTiers()[entry.tier];
         const occupants = deps.loadWorldLivestock().filter(l => l.barnId === entry.id).length;
         return [
-          { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('livestock') },
+          { icon: '🚪', label: 'Enter Barn', action: 'obj_barn_enter_' + entry.id, style: 'primary', allowed: true },
+          { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('livestock') },
           { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
         ];
       },
@@ -406,6 +407,11 @@
           deps.setFarmLivestockFocusBarnId(entry.id);
           deps.openMenu('farm');
           return { ok: true, message: 'Opened the Farm tab’s Livestock panel.' };
+        }
+        if (action === 'obj_barn_enter_' + entry.id) {
+          if (entry.stage !== 'built') return { ok: false, message: 'Build the barn first.' };
+          deps.enterBuilding('map_i_barn_' + entry.id);
+          return { ok: true, message: `Entered the ${label(entry)}.` };
         }
         return { ok: false, message: 'Unknown barn action.' };
       },
@@ -453,6 +459,16 @@
     livestock.forEach(l => {
       if (l.barnId !== id) return;
       l.barnId = null;
+      l.troughIndex = null;
+      if (l.kind === 'uumkaoii') {
+        // Re-arm the dew cooldown so stasis genuinely pauses dew progress
+        // instead of letting an already-armed drop fire the instant this
+        // animal is re-housed in a new barn — see farm-animals.js's
+        // unassignFromBarn for the same fix on manual unassignment.
+        l.dewReady = false;
+        l.dewDaysUntil = deps.UUMKAOII_DEW_COOLDOWN_DAYS;
+        l.dewReadyStaleDays = 0;
+      }
       const animal = [...deps.animalObjects].find(a => a.livestockId === l.id);
       if (animal) { deps.worldObjects.delete(animal.col + ',' + animal.row); deps.animalObjects.delete(animal); animal.reset && animal.reset(); }
     });
