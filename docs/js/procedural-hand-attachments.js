@@ -136,14 +136,19 @@
     const cacheKey = `${normalizeKey(speciesId)}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`; // Separates the exact sprite tint mode as well as the resolved body color.
     if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
 
-    const texture = new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
-    texture.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
+    const textureName = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
+    const planeUnlit = global.HobunjiPngPlaneUnlit;
+    const texture = planeUnlit?.configureTexture
+      ? planeUnlit.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(resolvedHex)), textureName)
+      : new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
+    if (!planeUnlit?.configureTexture) {
+      texture.name = textureName;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+    }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(1.25, 1);
-    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-    else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
-    texture.needsUpdate = true;
     handBodyTextureCache.set(cacheKey, texture);
 
     loadHandWavySource().then(image => {
@@ -233,13 +238,24 @@
         const role = model?.materialRoles?.[material?.name] || 'body';
         const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
         const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
-        const next = new THREE.MeshBasicMaterial({
-          color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
-          map: bodyTexture,
-          side: THREE.DoubleSide,
-          depthWrite: !isParrotWingLayer,
-        });
-        next.name = material?.name || `${role}_hand_material`;
+        const materialName = material?.name || `${role}_hand_material`;
+        const next = global.HobunjiPngPlaneUnlit?.makeMaterial
+          ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
+              color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+              side: THREE.DoubleSide, // closed/turned hand geometry needs both sides; all other plane flags stay canonical
+              depthWrite: !isParrotWingLayer,
+            })
+          : new THREE.MeshBasicMaterial({
+              color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+              map: bodyTexture,
+              transparent: true,
+              alphaTest: 0.001,
+              side: THREE.DoubleSide,
+              depthTest: true,
+              depthWrite: !isParrotWingLayer,
+              opacity: 1,
+            });
+        next.name = materialName;
         next.userData.hobunjiHandRole = role;
         next.userData.hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png' : null;
         next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
@@ -304,8 +320,23 @@
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
     const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
-    const material = new THREE.MeshBasicMaterial({ color: bodyTexture ? 0xffffff : color, map: bodyTexture, side: THREE.DoubleSide });
-    material.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
+    const materialName = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
+    const material = global.HobunjiPngPlaneUnlit?.makeMaterial
+      ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
+          color: bodyTexture ? 0xffffff : color,
+          side: THREE.DoubleSide,
+        })
+      : new THREE.MeshBasicMaterial({
+          color: bodyTexture ? 0xffffff : color,
+          map: bodyTexture,
+          transparent: true,
+          alphaTest: 0.001,
+          side: THREE.DoubleSide,
+          depthTest: true,
+          depthWrite: true,
+          opacity: 1,
+        });
+    material.name = materialName;
     material.userData.hobunjiHandRole = 'body';
     material.userData.hobunjiHandSurfaceTexture = 'wavy_surface.png';
     const mesh = new THREE.Mesh(geometry, material);

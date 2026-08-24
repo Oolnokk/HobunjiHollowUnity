@@ -267,11 +267,16 @@
   // throws and never silently falls back to the untinted source PNG — any
   // failure (asset 404, tint pipeline unavailable) degrades to a flat canvas
   // in the correctly resolved color instead of leaving the material white.
-  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName) {
+  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName, tintSpeciesId = '') {
     let source = null;
     try {
       const img = await loadSurfaceImage(sourcePath);
-      if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
+      if (typeof window.getBodyTintedCanvas === 'function') {
+        // Same descriptor -> species tint-mode -> _imageForTint path used by
+        // the portrait body sprite itself. Fixed bone/keratin hex descriptors
+        // pass an empty species id so they retain the default shade-fill mode.
+        source = window.getBodyTintedCanvas(img, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
+      } else if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
         const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
         source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(img, sourcePath, tint) : null;
       }
@@ -279,15 +284,18 @@
       source = null;
     }
     if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
-    const texture = new THREE.CanvasTexture(source);
-    // Named so debug tools (e.g. the Pixel Probe's material dump) show
-    // something identifiable instead of "(unnamed texture)".
-    texture.name = debugName || sourcePath;
-    texture.colorSpace = THREE.SRGBColorSpace;
+    const textureName = debugName || sourcePath;
+    const texture = window.HobunjiPngPlaneUnlit?.configureTexture
+      ? window.HobunjiPngPlaneUnlit.configureTexture(THREE, new THREE.CanvasTexture(source), textureName)
+      : new THREE.CanvasTexture(source);
+    if (!window.HobunjiPngPlaneUnlit?.configureTexture) {
+      texture.name = textureName;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+    }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX || 1.25, 1);
-    texture.needsUpdate = true;
     return texture;
   }
 
@@ -301,11 +309,11 @@
       if (promises.has(role)) return promises.get(role);
       let promise;
       if (role === 'bone') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25, `${speciesId}_foot_bone`);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25, `${speciesId}_foot_bone`, '');
       } else if (role === 'keratin') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`, '');
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`, speciesId);
       }
       promises.set(role, promise);
       return promise;
@@ -517,7 +525,17 @@
     // the textured surface decodes asynchronously; buildSurfaceTexture's
     // resolved map replaces this material's map (and resets color to white
     // so the two don't multiply together) once it's ready.
-    const material = new THREE.MeshBasicMaterial({ color: initialColorHex || 0xffffff });
+    const material = window.HobunjiPngPlaneUnlit?.makeMaterial
+      ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, null, `${speciesId}_fallback_foot`, { color: initialColorHex || 0xffffff })
+      : new THREE.MeshBasicMaterial({
+          color: initialColorHex || 0xffffff,
+          transparent: true,
+          alphaTest: 0.001,
+          side: THREE.FrontSide,
+          depthTest: true,
+          depthWrite: true,
+          opacity: 1,
+        });
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
     sphere.scale.set(sphereScaleXZ, sphereScaleY, sphereScaleXZ);
     sphere.castShadow = true;
@@ -604,7 +622,18 @@
         const role = roles[material.name];
         const texture = roleTextures.get(role) || defaultTexture;
         // See buildFallbackFoot's comment on unlit vs lit materials.
-        const cloned = new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff });
+        const cloned = window.HobunjiPngPlaneUnlit?.makeMaterial
+          ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, texture, material.name, { color: 0xffffff })
+          : new THREE.MeshBasicMaterial({
+              map: texture,
+              color: 0xffffff,
+              transparent: true,
+              alphaTest: 0.001,
+              side: THREE.FrontSide,
+              depthTest: true,
+              depthWrite: true,
+              opacity: 1,
+            });
         cloned.name = material.name;
         remapped.set(material, cloned);
         return cloned;

@@ -82,13 +82,18 @@
     // Start at the requested medium gray instead of white while carved_smooth
     // loads. The decoded PNG later replaces this with the exact portrait body
     // recolor canvas, using {hex:tint} as the body-color descriptor.
-    tex = markTextureSrgb(new THREE.CanvasTexture(flatTintCanvas(tint)));
+    const textureName = `natural_${String(tint).toLowerCase()}_${wrapMode}`;
+    tex = window.HobunjiPngPlaneUnlit?.configureTexture
+      ? window.HobunjiPngPlaneUnlit.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(tint)), textureName)
+      : new THREE.CanvasTexture(flatTintCanvas(tint));
+    if (!window.HobunjiPngPlaneUnlit?.configureTexture) {
+      tex.name = textureName;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+    }
     const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     tex.wrapS = wrapping;
     tex.wrapT = wrapping;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
     tex.userData = Object.assign({}, tex.userData, {
       naturalSurfaceBodySpriteTint: true,
       naturalSurfaceBodySpriteTintTarget: String(tint).toLowerCase(),
@@ -143,9 +148,12 @@
     let mat = materialCache.get(key);
     if (mat) return mat;
 
-    mat = new THREE.MeshBasicMaterial({
-      map: texture || null,
+    const overrides = {
       color: new THREE.Color(tint),
+      // Geometry-specific state stays inherited so cliffs/rocks do not move
+      // into the transparent render queue or cull faces differently just to
+      // imitate a 2D sprite. Everything that controls the unlit appearance is
+      // provided by the PNG-plane builder.
       side: sourceMaterial?.side ?? THREE.FrontSide,
       transparent: !!sourceMaterial?.transparent,
       opacity: sourceMaterial?.opacity ?? 1,
@@ -155,7 +163,10 @@
       polygonOffset: !!sourceMaterial?.polygonOffset,
       polygonOffsetFactor: sourceMaterial?.polygonOffsetFactor || 0,
       polygonOffsetUnits: sourceMaterial?.polygonOffsetUnits || 0,
-    });
+    };
+    mat = window.HobunjiPngPlaneUnlit?.makeMaterial
+      ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
+      : new THREE.MeshBasicMaterial({ map: texture || null, ...overrides });
     mat.name = `natural_${surface}_${tint}`;
     mat.userData = Object.assign({}, sourceMaterial?.userData, {
       naturalSurface: surface,

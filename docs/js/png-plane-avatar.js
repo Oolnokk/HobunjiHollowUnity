@@ -42,21 +42,27 @@
     return drawVariantCanvas(document.createElement('canvas'), image, options);
   }
 
-  function makeTextureFromCanvas(THREE, canvasEl, debugName) {
-    const texture = new THREE.CanvasTexture(canvasEl);
-    texture.name = debugName;
+  // Canonical unlit appearance path for the PNG-plane avatar and any 3D
+  // surface that must visually match it. Keep the texture color-management
+  // behavior EXACTLY the same as the plane's long-standing CanvasTexture path:
+  // assign colorSpace directly (no separate r128 encoding fallback), leave the
+  // CanvasTexture's filter/mipmap defaults alone, and use MeshBasicMaterial.
+  function configurePngPlaneUnlitTexture(THREE, texture, debugName) {
+    if (!texture) return texture;
+    if (debugName) texture.name = debugName;
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.needsUpdate = true;
     return texture;
   }
 
-  function makeSpriteMaterial(THREE, texture, debugName) {
-    return new THREE.MeshBasicMaterial({
+  function pngPlaneUnlitMaterialOptions(THREE, texture, debugName, overrides = {}) {
+    return Object.assign({
       name: debugName,
-      map: texture,
+      map: texture || null,
       transparent: true,
       alphaTest: cfg().alphaTest ?? 0.001,
       side: THREE.FrontSide,
+      depthTest: true,
       // alphaTest already discards fully-transparent texels, so the opaque
       // sprite silhouette can safely write depth — without this, the depth
       // buffer behind the sprite still holds whatever was rendered before it
@@ -64,8 +70,31 @@
       // shell outline pass) draw straight through the sprite as if it weren't
       // there.
       depthWrite: true,
-    });
+      opacity: 1,
+    }, overrides);
   }
+
+  function makePngPlaneUnlitMaterial(THREE, texture, debugName, overrides = {}) {
+    return new THREE.MeshBasicMaterial(pngPlaneUnlitMaterialOptions(THREE, texture, debugName, overrides));
+  }
+
+  function makeTextureFromCanvas(THREE, canvasEl, debugName) {
+    return configurePngPlaneUnlitTexture(THREE, new THREE.CanvasTexture(canvasEl), debugName);
+  }
+
+  function makeSpriteMaterial(THREE, texture, debugName) {
+    return makePngPlaneUnlitMaterial(THREE, texture, debugName);
+  }
+
+  // Classic-script consumers (procedural hands/feet and natural surfaces) use
+  // this exact builder instead of maintaining their own interpretation of
+  // "unlit like the portrait plane".
+  window.HobunjiPngPlaneUnlit = {
+    configureTexture: configurePngPlaneUnlitTexture,
+    materialOptions: pngPlaneUnlitMaterialOptions,
+    makeMaterial: makePngPlaneUnlitMaterial,
+    alphaTest: () => cfg().alphaTest ?? 0.001,
+  };
 
   function buildTextureSet(THREE, image, backImage) {
     const rearSource = backImage || image;
