@@ -20,6 +20,22 @@
     document.head.appendChild(script);
   })();
 
+  // The Cloud Forest tree batcher must load before cloud-forest-fog.js so it
+  // can wrap that module's init() and capture the existing player/scene deps.
+  // Keep this parser-synchronous for the same reason as the scenery guard above.
+  (function loadCloudForestTreeBatcherEarly() {
+    const src = 'js/cloud-forest-tree-batcher.js?v=20260824a';
+    if (window.CloudForestTreeBatcher || document.querySelector('script[data-cloud-forest-tree-batcher]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-cloud-forest-tree-batcher="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.cloudForestTreeBatcher = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
