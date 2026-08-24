@@ -3,6 +3,8 @@
 
   // Loading-screen reason owned only by this bridge, so boot/Tothal coverage can overlap safely.
   const COVER_REASON = 'wilderness-scene-build';
+  // Every gameplay action that can execute the currently highlighted world-interaction/travel button.
+  const TRAVEL_ACTION_IDS = ['interact', 'dodge', 'action1', 'action2', 'action3', 'action4'];
   // Safety release if a requested travel never changes areas; prevents a bad transition from trapping input forever.
   const ENTRY_TIMEOUT_MS = 60000;
   // A frame gap at or above this threshold is useful evidence of the synchronous first-visit zone build on mobile.
@@ -16,8 +18,8 @@
   let coverActive = false;
   // Last requestAnimationFrame timestamp used to measure main-thread stalls without devtools.
   let lastFrameAt = performance.now();
-  // Last controller dodge state provides an edge trigger rather than retriggering every held frame.
-  let controllerDodgeWasDown = false;
+  // Tracks whether any controller input capable of executing travel was already down last frame.
+  let controllerTravelWasDown = false;
   // Last long-frame report time prevents one recovery from spamming the mobile Debug log.
   let lastLongFrameLogAt = 0;
 
@@ -111,6 +113,11 @@
     return savedInputBindings()?.[device]?.[actionId] || defaultActionBinding(actionId, device);
   }
 
+  function actionForBinding(binding, device) {
+    if (!binding) return null;
+    return TRAVEL_ACTION_IDS.find(actionId => actionBinding(actionId, device) === binding) || null;
+  }
+
   function controllerBindingDown(gamepad, binding) {
     if (!gamepad || !binding) return false;
     const threshold = Number(inputConfig().axisPressThreshold) || 0.55;
@@ -126,13 +133,18 @@
     return false;
   }
 
-  function controllerDodgeDown() {
-    const binding = actionBinding('dodge', 'controller');
-    if (!binding || !navigator.getGamepads) return false;
+  function controllerTravelDown() {
+    if (!navigator.getGamepads) return null;
+    const bindings = TRAVEL_ACTION_IDS
+      .map(actionId => ({ actionId, binding: actionBinding(actionId, 'controller') }))
+      .filter(entry => entry.binding);
     for (const gamepad of navigator.getGamepads()) {
-      if (controllerBindingDown(gamepad, binding)) return true;
+      if (!gamepad) continue;
+      for (const entry of bindings) {
+        if (controllerBindingDown(gamepad, entry.binding)) return entry;
+      }
     }
-    return false;
+    return null;
   }
 
   function frameWatch(now) {
@@ -144,23 +156,27 @@
       log(`Main-thread stall during wilderness scene build: ${Math.round(frameGap)} ms`, 'warn');
     }
 
-    const dodgeDown = controllerDodgeDown();
-    if (dodgeDown && !controllerDodgeWasDown && pendingZoneTransition()) beginCover('controller dodge');
-    controllerDodgeWasDown = dodgeDown;
+    const controllerTravel = controllerTravelDown();
+    if (controllerTravel && !controllerTravelWasDown && pendingZoneTransition()) {
+      beginCover(`controller ${controllerTravel.actionId}:${controllerTravel.binding}`);
+    }
+    controllerTravelWasDown = !!controllerTravel;
     requestAnimationFrame(frameWatch);
   }
 
-  // Mobile's dodge/context button is the actual transition input when standing on a travel spot.
+  // Mobile travel can be fired by the context/dodge control or by whichever arch action slot currently owns use_spot.
   document.addEventListener('pointerdown', event => {
+    if (!pendingZoneTransition()) return;
     const button = event.target instanceof Element ? event.target.closest('button') : null;
-    if (button?.id === 'dodgeBtn') beginCover('mobile context');
+    if (!button) return;
+    if (button.id === 'dodgeBtn' || /^btnAction\d+$/.test(button.id)) beginCover(`pointer ${button.id}`);
   }, true);
 
-  // Desktop bindings are user-remappable; consult the same saved binding data as game.js instead of hardcoding X.
+  // Desktop input is remappable. Cover every binding that can dispatch Interact/context or an active action slot.
   window.addEventListener('keydown', event => {
     if (event.repeat || !pendingZoneTransition()) return;
-    const dodgeBinding = actionBinding('dodge', 'desktop');
-    if (dodgeBinding && event.code === dodgeBinding) beginCover(`desktop ${event.code}`);
+    const actionId = actionForBinding(event.code, 'desktop');
+    if (actionId) beginCover(`desktop ${actionId}:${event.code}`);
   }, true);
 
   requestAnimationFrame(frameWatch);
@@ -173,10 +189,10 @@
       coverActive,
       currentArea: currentArea(),
       pendingTransition: pendingZoneTransition(),
-      desktopDodgeBinding: actionBinding('dodge', 'desktop'),
-      controllerDodgeBinding: actionBinding('dodge', 'controller'),
+      desktopBindings: Object.fromEntries(TRAVEL_ACTION_IDS.map(id => [id, actionBinding(id, 'desktop')])),
+      controllerBindings: Object.fromEntries(TRAVEL_ACTION_IDS.map(id => [id, actionBinding(id, 'controller')])),
     }),
   };
 
-  log('Wilderness loading bridge initialized; recent change: cover the real context/dodge transition before first-visit zone scene construction.');
+  log('Wilderness loading bridge initialized; recent change: cover Interact, Dodge/context, action-slot, mobile, and controller wilderness travel inputs.');
 })();
