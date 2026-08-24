@@ -18,7 +18,7 @@
   <header>
     <div>
       <h1>🌲 Wilderness Tree Asset Exporter</h1>
-      <p>Build the six base wilderness tree variants plus three dedicated perch-bearing shadewoods, bake canonical GLBs or decimated LOD copies, and package them at their exact runtime paths.</p>
+      <p>Build the six base wilderness tree variants plus three dedicated perch-bearing shadewoods, bake full-detail GLBs or decimated LOD copies, and package them at their exact runtime paths.</p>
     </div>
     <button id="export-all" class="primary">Export all 9 as ZIP</button>
   </header>
@@ -50,7 +50,7 @@
       </div>
       <div class="help">
         <strong>Upload workflow</strong>
-        <p>At 0%, the ZIP mirrors <code>docs/assets/models/trees/</code> with all nine GLBs plus <code>index.json</code>. At nonzero decimation, filenames gain an <code>_lod-decimate-N</code> suffix and the ZIP includes <code>lod-decimation.json</code> instead, so an LOD batch cannot overwrite the canonical assets. Regular shadewoods never contain the perch; <code>shadewood-branched</code> exports always do.</p>
+        <p>At 0%, the ZIP mirrors <code>docs/assets/models/trees/</code> with all nine full-detail GLBs plus <code>index.json</code>. At nonzero decimation, filenames gain an <code>_lod-decimate-N</code> suffix and the ZIP includes <code>lod-decimation.json</code> instead, so an LOD batch cannot overwrite the full-detail assets. Regular shadewoods never contain the perch; <code>shadewood-branched</code> exports always do.</p>
       </div>
     </section>
 
