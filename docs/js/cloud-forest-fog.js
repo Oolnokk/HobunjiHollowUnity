@@ -1,10 +1,8 @@
 (() => {
   'use strict';
 
-  // A handful of large translucent mist cylinders centered on the player,
-  // shown only in the Southern Cloud Forest. The cloud forest intentionally
-  // does not show the dynamic skydome; its FogExp2 + mist inherit the same
-  // 24-hour lighting state instead.
+  // Southern Cloud Forest mist + non-invasive sky/lighting integration.
+  // The original skydome/material rendering paths remain authoritative.
   let deps = null;
   let group = null;
   let texture = null;
@@ -23,7 +21,6 @@
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
   const FALLBACK_OUTER_RADIUS_TILES = 34;
-
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
 
   function debugLog(message, level = 'info') {
@@ -50,22 +47,25 @@
     const ctx = canvas.getContext('2d');
     const random = mulberry32(0x666f6721);
     ctx.clearRect(0, 0, size, size);
-    const stampBlob = (x, y, r, alpha) => {
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const stampBlob = (x, y, radius, alpha) => {
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
       grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
       grad.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     };
     for (let i = 0; i < 70; i++) {
-      const x = random() * size, y = random() * size;
-      const r = 18 + random() * 58;
+      const x = random() * size;
+      const y = random() * size;
+      const radius = 18 + random() * 58;
       const alpha = 0.12 + random() * 0.34;
       for (const dx of [-size, 0, size]) {
         for (const dy of [-size, 0, size]) {
-          if (x + dx > -r && x + dx < size + r && y + dy > -r && y + dy < size + r) stampBlob(x + dx, y + dy, r, alpha);
+          if (x + dx > -radius && x + dx < size + radius && y + dy > -radius && y + dy < size + radius) {
+            stampBlob(x + dx, y + dy, radius, alpha);
+          }
         }
       }
     }
@@ -114,8 +114,7 @@
       depthTest: true,
       fog: true,
     });
-    const geometry = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 28, 1, true), material);
     mesh.name = `cloud_forest_mist_${index}`;
     mesh.frustumCulled = false;
     mesh.renderOrder = 890 + index;
@@ -143,7 +142,7 @@
   }
 
   function updateFogLighting(activeScene) {
-    if (!fogTimeColor || !fogResultColor || !fogDayColor) return;
+    if (!fogDayColor || !fogTimeColor || !fogResultColor) return;
     const light = getFullDayLighting();
     fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
     const timeTintAmount = Math.max(0.18, Math.min(0.86, 0.18 + clamp01(light.a) * 0.82));
@@ -171,14 +170,13 @@
     group.visible = active;
     if (!active) return;
 
-    // Visibility policy only: do not alter the skydome's materials, textures,
-    // shader, render order, or geometry in the Cloud Forest.
     const skyRoot = activeScene?.getObjectByName?.('hobunji_dynamic_skydome');
     if (skyRoot) skyRoot.visible = false;
     updateFogLighting(activeScene);
 
     const outerRadius = deps.getCloudForestFogRadiusTiles?.() ?? FALLBACK_OUTER_RADIUS_TILES;
-    const px = deps.player.x / deps.TILE, pz = deps.player.y / deps.TILE;
+    const px = deps.player.x / deps.TILE;
+    const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
 
@@ -195,9 +193,6 @@
     }
   }
 
-  // Area-only skydome policy. This wraps the existing RainPlanes integration
-  // after sky-dome.js has installed itself, and only toggles root visibility.
-  // It does not change any sky/material rendering behavior.
   let skyPolicyDeps = null;
   function isNoSkyArea(area) {
     const id = String(area || '').toLowerCase();
@@ -225,11 +220,164 @@
         const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
         skyRoot.visible = outside && !isNoSkyArea(area);
       }
-      if (scene?.background?.isColor && isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()) && !deps?.isCloudForestArea?.()) {
-        scene.background.set(0x000000);
-      }
+      const area = skyPolicyDeps?.getCurrentArea?.();
+      if (scene?.background?.isColor && isNoSkyArea(area) && area !== 'map_southern_cloud_forest') scene.background.set(0x000000);
       return result;
     };
+  }
+
+  // WeatherFX originally owns the same 2D lighting/lantern canvas before and
+  // after this patch. The only change here is that its outdoor base tint now
+  // reads the exact same 24-hour state as the skydome. This removes the
+  // overnight 22:00-06:00 disagreement between WeatherFX's legacy stops and
+  // the full-day sky stops without changing the rendering architecture.
+  let lightingDeps = null;
+  let lastUnifiedLightingDraw = 0;
+  const lightCamRight = new window.THREE.Vector3();
+
+  function lightScreenRadius(x, z, y, tiles) {
+    lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
+    const c = lightingDeps.worldToOverlay(x, y, z);
+    const e = lightingDeps.worldToOverlay(
+      x + lightCamRight.x * tiles,
+      y + lightCamRight.y * tiles,
+      z + lightCamRight.z * tiles,
+    );
+    return Math.hypot(e.x - c.x, e.y - c.y);
+  }
+
+  function drawLanternMasksCompat() {
+    const ctx = lightingDeps.lctx;
+    const carriers = [{
+      x: lightingDeps.player.x / lightingDeps.TILE,
+      y: lightingDeps.getPlayerWorldY() + 0.5,
+      z: lightingDeps.player.y / lightingDeps.TILE,
+    }];
+    const currentArea = lightingDeps.getCurrentArea();
+    for (const walker of lightingDeps.npcWalkers) {
+      if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
+        carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
+      }
+    }
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const carrier of carriers) {
+      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
+      if (!center.visible) continue;
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, 5.0);
+      if (!(shineR > 0)) continue;
+      const clarityFrac = 1.3 / 5.0;
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0, 'rgba(0,0,0,0.92)');
+      grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
+      grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function drawFurnitureLightMasksCompat() {
+    const ctx = lightingDeps.lctx;
+    const visible = [];
+    for (const light of lightingDeps.getFurnitureLightSources()) {
+      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+      if (!center.visible) continue;
+      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
+      if (!(shineR > 0)) continue;
+      visible.push({ light, center, shineR });
+    }
+
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const { light, center, shineR } of visible) {
+      const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
+      grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    for (const { light, center, shineR } of visible) {
+      const glowR = shineR * 0.62;
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
+      const { r, g, b } = light.color;
+      const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
+      glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
+      glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawUnifiedLightingOverlay() {
+    if (!lightingDeps?.lctx) return;
+    const now = performance.now();
+    const lightningAlpha = lightingDeps.getLightningAlpha();
+    const sceneTransAlpha = lightingDeps.getSceneTransAlpha();
+    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+    lastUnifiedLightingDraw = now;
+
+    const ctx = lightingDeps.lctx;
+    const rect = lightingDeps.getThreeRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const currentArea = lightingDeps.getCurrentArea();
+    const enclosed = currentArea === 'interior'
+      || lightingDeps._isBuildingArea(currentArea)
+      || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
+
+    if (enclosed) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawFurnitureLightMasksCompat();
+      if (sceneTransAlpha > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+        ctx.fillRect(0, 0, rect.width, rect.height);
+      }
+      return;
+    }
+
+    const { r, g, b, a } = getFullDayLighting();
+    ctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Same original local-light behavior; no horizon/depth masking or canvas proxy.
+    drawLanternMasksCompat();
+    drawFurnitureLightMasksCompat();
+
+    if (lightningAlpha > 0) {
+      ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+    if (sceneTransAlpha > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  if (window.WeatherFX && !window.WeatherFX.__singleFullDayLightingAuthority) {
+    const priorWeatherInit = window.WeatherFX.init;
+    window.WeatherFX.init = function (injectedDeps) {
+      lightingDeps = injectedDeps;
+      return priorWeatherInit.call(this, injectedDeps);
+    };
+    window.WeatherFX.drawLightingOverlay = drawUnifiedLightingOverlay;
+    window.WeatherFX.__singleFullDayLightingAuthority = true;
   }
 
   window.CloudForestFog = {
@@ -241,6 +389,7 @@
       fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
       skydomeSuppressed: !!isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()),
       renderingMode: 'original-skydome-visibility-only',
+      lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
     }),
   };
 })();
