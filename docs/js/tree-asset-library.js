@@ -478,17 +478,35 @@
     return true;
   }
 
+  function countStates(level, map) {
+    let count = 0;
+    for (const entry of ASSETS) if (map.has(stateKey(entry, level))) count++;
+    return count;
+  }
+
   function status() {
+    const failedNear = countStates('near', failures);
+    const failedFar = countStates('far', failures);
+    const pendingNear = countStates('near', pending);
+    const pendingFar = countStates('far', pending);
     return {
       mode,
       installed: !!installedFoliage,
       installMode,
       expected: ASSETS.length,
       lodSwitchDistance: LOD_SWITCH_DISTANCE,
+      // Legacy aliases keep the existing Performance & diagnostics UI intact:
+      // "loaded/failed/pending" continue to describe the canonical near GLBs.
+      loaded: loadedNear.size,
+      failed: failedNear,
+      pending: pendingNear,
       loadedNear: loadedNear.size,
       loadedFar: loadedFar.size,
-      failed: failures.size,
-      pending: pending.size,
+      failedNear,
+      failedFar,
+      pendingNear,
+      pendingFar,
+      proceduralGettersCaptured: !!originals,
       proceduralApiCaptured: !!originals,
       assets: ASSETS.map(entry => {
         const key = keyFor(entry);
