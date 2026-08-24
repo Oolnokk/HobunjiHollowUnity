@@ -1,18 +1,22 @@
 // Tool-local hand grip sockets shared by gameplay and the Attack Animation Editor.
-// Primary grip is always the toolHolder origin. Weapons/tools may optionally define
-// one secondary grip frame for the opposite hand. No arm reach or IK participates.
+// Primary/right and secondary/left grips may each use an authored transform or a
+// dynamic visible-sprite edge. No arm reach or IK participates.
 (function (global) {
   'use strict';
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
-  const SECONDARY_GRIP_PRESET = 'all-disabled-v1'; // One-time migration marker that clears every currently authored second-hand toggle.
+  const SECONDARY_GRIP_PRESET = 'all-disabled-v1'; // One-time migration marker that clears every pre-preset second-hand toggle.
 
   function identityTransform() {
     return {
       position: { x: 0, y: 0, z: 0 },
       rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
     };
+  }
+
+  function emptyGrip() {
+    return { enabled: false, edge: null, ...identityTransform() };
   }
 
   const DEFAULT_DATA = {
@@ -22,15 +26,19 @@
       // Retain the old draft coordinates for later reauthoring, but no existing
       // tool/animation starts with its secondary hand attached.
       hatchet: {
+        primaryGrip: emptyGrip(),
         secondaryGrip: {
           enabled: false,
+          edge: null,
           position: { x: 0, y: -0.28, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
       },
       hoe: {
+        primaryGrip: emptyGrip(),
         secondaryGrip: {
           enabled: false,
+          edge: null,
           position: { x: 0, y: -0.32, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
@@ -75,6 +83,19 @@
     };
   }
 
+  function normalizeEdge(value) {
+    const edge = String(value || '').trim().toLowerCase();
+    return edge === 'left' || edge === 'right' ? edge : null;
+  }
+
+  function normalizeGrip(raw, enabled = raw?.enabled === true) {
+    return {
+      enabled: enabled === true,
+      edge: normalizeEdge(raw?.edge),
+      ...normalizeTransform(raw),
+    };
+  }
+
   function normalizeGripMode(raw) {
     const key = String(raw || '').trim();
     return key || null;
@@ -88,11 +109,8 @@
     if (!next.tools || typeof next.tools !== 'object') next.tools = {};
     for (const entry of Object.values(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
-      const secondary = entry.secondaryGrip || {};
-      entry.secondaryGrip = {
-        enabled: disableExistingSecondaryGrips ? false : secondary.enabled === true,
-        ...normalizeTransform(secondary),
-      };
+      entry.primaryGrip = normalizeGrip(entry.primaryGrip || emptyGrip());
+      entry.secondaryGrip = normalizeGrip(entry.secondaryGrip || emptyGrip(), disableExistingSecondaryGrips ? false : entry.secondaryGrip?.enabled === true);
       entry.gripMode = normalizeGripMode(entry.gripMode);
     }
     return next;
@@ -124,16 +142,25 @@
   function ensureTool(value) {
     const key = toolKeyFor(value);
     if (!key) return null;
-    if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, ...identityTransform() } };
-    if (!data.tools[key].secondaryGrip) data.tools[key].secondaryGrip = { enabled: false, ...identityTransform() };
+    if (!data.tools[key]) data.tools[key] = { primaryGrip: emptyGrip(), secondaryGrip: emptyGrip() };
+    if (!data.tools[key].primaryGrip) data.tools[key].primaryGrip = emptyGrip();
+    if (!data.tools[key].secondaryGrip) data.tools[key].secondaryGrip = emptyGrip();
     return data.tools[key];
   }
 
-  function secondaryGripForTool(value) {
+  function gripForTool(value, side) {
     const key = toolKeyFor(value);
-    const raw = data.tools?.[key]?.secondaryGrip;
+    const raw = data.tools?.[key]?.[side];
     if (!raw?.enabled) return null;
-    return { enabled: true, ...normalizeTransform(raw) };
+    return normalizeGrip(raw, true);
+  }
+
+  function primaryGripForTool(value) {
+    return gripForTool(value, 'primaryGrip');
+  }
+
+  function secondaryGripForTool(value) {
+    return gripForTool(value, 'secondaryGrip');
   }
 
   // Explicit per-tool grip-mode override authored in the Attack Animation Editor.
@@ -148,10 +175,10 @@
   function setGripMode(value, modeKey) {
     const key = toolKeyFor(value);
     if (!key) return null;
-    if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, ...identityTransform() } };
-    data.tools[key].gripMode = normalizeGripMode(modeKey);
+    const entry = ensureTool(key);
+    entry.gripMode = normalizeGripMode(modeKey);
     notify();
-    return data.tools[key].gripMode;
+    return entry.gripMode;
   }
 
   function saveLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(data)); }
@@ -174,6 +201,7 @@
     clone: () => clone(data),
     toolKeyFor,
     ensureTool,
+    primaryGripForTool,
     secondaryGripForTool,
     gripModeForTool,
     setGripMode,
