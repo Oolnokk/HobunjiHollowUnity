@@ -11149,10 +11149,22 @@ async function buildLazyHatOverlayV1521(carrier) {
       const texture = makeRigTexture(THREE, canvas, `${model.name}_${facingBack ? 'back' : 'front'}_lazy_hat_texture`);
       const material = makeRigMaterial(THREE, texture, `${model.name}_${facingBack ? 'back' : 'front'}_lazy_hat_material`);
       material.depthWrite = true;
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+      material.skinning = true;
+      const overlayGeometry = rig.skinnedPlane.geometry.clone(); // Used by this overlay face so its topology and skin attributes exactly match the composed portrait.
+      const sourceGroup = rig.skinnedPlane.geometry.groups[facingBack ? 1 : 0]; // Selects the corresponding rear/front face from the two-sided source geometry.
+      if (!sourceGroup) {
+        overlayGeometry.dispose();
+        material.map?.dispose();
+        material.dispose();
+        return;
+      }
+      overlayGeometry.clearGroups();
+      overlayGeometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
+      const mesh = new THREE.SkinnedMesh(overlayGeometry, material);
       mesh.name = `${model.name}_${facingBack ? 'back' : 'front'}_lazy_hat_plane`;
-      mesh.position.set(-rig.neckJoint.position.x, -rig.neckJoint.position.y, facingBack ? -.008 : .008);
-      if (facingBack) mesh.rotation.y = Math.PI;
+      mesh.position.copy(rig.skinnedPlane.position);
+      mesh.position.z += facingBack ? -.008 : .008;
+      mesh.bind(rig.skeleton, rig.skinnedPlane.bindMatrix);
       mesh.renderOrder = 4;
       mesh.frustumCulled = false;
       group.add(mesh);
@@ -11161,11 +11173,11 @@ async function buildLazyHatOverlayV1521(carrier) {
     };
     addPlane(hatFront, false);
     addPlane(hatBack, true);
-    rig.neckJoint.add(group);
-    const overlay = { group, materials, meshes, enabledForShoulderPet: false, policy: 'hat-slot-only-lazy' };
+    rig.rigRoot.add(group);
+    const overlay = { group, materials, meshes, enabledForShoulderPet: false, policy: 'hat-slot-only-lazy-skinned' };
     rig.hatXrayOverlay = overlay;
     model.userData.hatXrayOverlay = overlay;
-    log(`Built ${source.npcName}'s hat-only shoulder-pet overlay lazily after attachment.`);
+    log(`Built ${source.npcName}'s hat-only shoulder-pet overlay with the portrait's shared skin weights and skeleton.`);
     return overlay;
   })().catch(error => {
     log(`Lazy hat-only shoulder-pet overlay failed for ${source.npcName}: ${error.message}`, 'warn');
@@ -11261,7 +11273,7 @@ serializeAnimationProject = function() {
       initialization: 'lazy-on-shoulder-pet-attachment',
       xrayLayer: 'character portrait hat slot only',
       bodyOcclusion: 'normal depth-tested',
-      runtimeRule: 'separate the literal hat slot into a neck-following overlay only when needed; disable hat depthWrite while rendering the shoulder pet immediately afterward',
+      runtimeRule: 'separate the literal hat slot into a weight-matched skinned overlay only when needed; disable hat depthWrite while rendering the shoulder pet immediately afterward',
     };
     for (const record of data.actors || []) {
       const actor = actorById(record.id);
@@ -11271,7 +11283,7 @@ serializeAnimationProject = function() {
       }
       if (record.attachment?.carrierAnchor === 'shoulderPerch' && record.attachment?.riderAnchor === 'shoulderGrip') {
         record.rendering ||= {};
-        record.rendering.shoulderPetHatXray = 'hat-slot-only-lazy';
+        record.rendering.shoulderPetHatXray = 'hat-slot-only-lazy-skinned';
       }
     }
   }
