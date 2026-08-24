@@ -6,7 +6,21 @@
 
   const FPS_PREF_KEY = 'hobunji_fps_counter_v1';
   const PROFILER_PREF_KEY = 'hobunji_perf_profiler_v1';
+  const WATCHDOG_PREF_KEY = 'hobunji_perf_watchdog_v1';
   const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1';
+
+  // Freeze watchdog tuning. Unlike the Performance Profiler (opt-in, has real
+  // per-call overhead from its measure()/begin()/end() instrumentation), this
+  // is meant to run always: a renderer-stat readout, a native `longtask`
+  // observer, and a frame-delta check are all effectively free until a freeze
+  // actually happens, so there's no reason to gate freeze detection behind a
+  // toggle most players will never enable.
+  const LONGTASK_DUMP_MS = 150; // Below this, still counted (perfState.longTasks) but not worth a full dump.
+  const HARD_FREEZE_MS = 1000; // A single frame gap this large is a freeze on its own, dumped immediately.
+  const SUSTAINED_SLOW_MS = 200; // ~5fps or worse.
+  const SUSTAINED_SLOW_FRAMES = 8; // ...for this many consecutive frames counts as a freeze even without one giant gap.
+  const MIN_DUMP_INTERVAL_MS = 2000; // Rate limit so a prolonged stall/recovery doesn't spam dozens of near-identical dumps.
+  const MAX_FREEZE_DUMPS = 20;
 
   const readStorage = (key, fallback = null) => {
     try {
@@ -24,6 +38,7 @@
 
   let fpsEnabled = readStorage(FPS_PREF_KEY, '0') === '1';
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
+  let watchdogEnabled = readStorage(WATCHDOG_PREF_KEY, '1') === '1';
   const perfState = {
     raf: 0,
     lastFrameTs: 0,
@@ -31,8 +46,6 @@
     sampleFrames: 0,
     fps: 0,
     frameMs: 0,
-    renderCpuMs: 0,
-    renderSamples: 0,
     renderer: null,
     scene: null,
     calls: 0,
@@ -47,6 +60,10 @@
     subsystem: new Map(),
     longTasks: 0,
     longTaskObserver: null,
+    slowFrameStreak: 0,
+    lastDumpTs: 0,
+    dumpSeq: 0,
+    freezeDumps: [],
   };
 
   function formatCount(value) {
@@ -111,44 +128,99 @@
     perfState.scanMs = performance.now() - start;
   }
 
-  function installRendererProfiler() {
-    const proto = root.THREE?.WebGLRenderer?.prototype;
-    if (!proto || proto.__hobunjiPerfWrapped) return false;
-    const original = proto.render;
-    if (typeof original !== 'function') return false;
-    Object.defineProperty(proto, '__hobunjiPerfWrapped', { value: true, configurable: true });
-    proto.render = function hobunjiProfiledRender(scene, camera) {
-      if (!profilerEnabled) return original.call(this, scene, camera);
-      const start = performance.now();
-      const result = original.call(this, scene, camera);
-      const elapsed = performance.now() - start;
-      perfState.renderCpuMs += elapsed;
-      perfState.renderSamples += 1;
-      perfState.renderer = this;
-      perfState.scene = scene;
-      const info = this.info;
-      if (info) {
-        perfState.calls = Number(info.render?.calls) || 0;
-        perfState.triangles = Number(info.render?.triangles) || 0;
-        perfState.points = Number(info.render?.points) || 0;
-        perfState.lines = Number(info.render?.lines) || 0;
-        perfState.geometries = Number(info.memory?.geometries) || 0;
-        perfState.textures = Number(info.memory?.textures) || 0;
-      }
-      return result;
+  // Captures a snapshot of what the game was doing right around a detected
+  // freeze — draw calls/triangles, a one-off visible-geometry breakdown (the
+  // expensive full-scene traversal that only makes sense to pay for right
+  // here, at dump time, not every frame), whatever per-subsystem timings the
+  // Performance Profiler has recorded (empty unless that's also enabled —
+  // measure()/begin()/end() stay opt-in since those DO have real per-call
+  // overhead at hot instrumented sites), and Cloud Forest's own debug state
+  // when present, since that's the zone most reports of freezing point to.
+  // Rate-limited so a prolonged stall/recovery doesn't produce a dozen
+  // near-identical dumps.
+  function captureFreezeDump(reason, extra = {}) {
+    if (!watchdogEnabled) return null;
+    const now = performance.now();
+    if (now - perfState.lastDumpTs < MIN_DUMP_INTERVAL_MS) return null;
+    perfState.lastDumpTs = now;
+
+    const scene = perfState.scene || getDevActiveScene();
+    if (scene) scanVisibleGeometry(scene);
+    const geom = Object.entries(perfState.geometryCategories).sort((a, b) => b[1] - a[1]);
+
+    const dump = {
+      id: ++perfState.dumpSeq,
+      atMs: now,
+      atIso: new Date().toISOString(),
+      reason: String(reason || 'unknown'),
+      fps: perfState.fps,
+      frameMs: perfState.frameMs,
+      calls: perfState.calls,
+      triangles: perfState.triangles,
+      geometries: perfState.geometries,
+      textures: perfState.textures,
+      topGeometry: geom[0] || null,
+      geometryCategories: { ...perfState.geometryCategories },
+      subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key, value]) => [key, { ...value }])),
+      ...extra,
     };
-    // held-object-render-order.js's internal depth-replay passes look for the
-    // TRUE, undecorated render() by walking a chain of __hobunji*Original
-    // markers (see its unwrapRendererRender) — without this marker those
-    // replay passes stop unwrapping here instead of reaching the real render.
-    proto.render.__hobunjiPerfDebugOriginal = original;
-    return true;
+    try {
+      dump.cloudForest = {
+        batcher: root.CloudForestTreeBatcher?.getDebugState?.() || null,
+        fog: root.CloudForestFog?.getDebugState?.() || null,
+        treeAssets: root.TreeAssetLibrary?.status?.() || null,
+      };
+    } catch (_) {}
+
+    perfState.freezeDumps.push(dump);
+    if (perfState.freezeDumps.length > MAX_FREEZE_DUMPS) perfState.freezeDumps.shift();
+
+    const topLine = dump.topGeometry ? `${dump.topGeometry[0]} ${formatCount(dump.topGeometry[1])} tris` : 'no scene to scan';
+    log(`[PerfWatchdog] ${dump.reason} — dump #${dump.id} (draw calls ${formatCount(dump.calls)}, top geometry: ${topLine})`, 'warn', 'render');
+    updateWatchdogStatusUI();
+    return dump;
   }
 
+  // Renderer stats are polled directly off the live renderer's own `.info`
+  // (which three.js maintains internally regardless of who reads it) rather
+  // than by wrapping render() to time it. Wrapping doesn't work here: this
+  // script is injected lazily/async by debug.js, long after game.js has
+  // already constructed the one WebGLRenderer instance it ever will — a
+  // prototype patch is a no-op in this game's vendored r128 (render() is set
+  // as an own property inside the constructor closure, not on the prototype;
+  // held-object-render-order.js hits the same wall and disables itself for
+  // exactly this reason), and a constructor patch is simply too late to catch
+  // an instance that already exists. Polling `.info` sidesteps the timing
+  // problem entirely and needs no game.js render-loop changes beyond the
+  // one-line `window.__hobunjiRenderer` exposure added alongside it.
+  function pollRendererStats() {
+    const renderer = root.__hobunjiRenderer;
+    const info = renderer?.info;
+    if (!info) return;
+    perfState.renderer = renderer;
+    perfState.scene = getDevActiveScene();
+    perfState.calls = Number(info.render?.calls) || 0;
+    perfState.triangles = Number(info.render?.triangles) || 0;
+    perfState.points = Number(info.render?.points) || 0;
+    perfState.lines = Number(info.render?.lines) || 0;
+    perfState.geometries = Number(info.memory?.geometries) || 0;
+    perfState.textures = Number(info.memory?.textures) || 0;
+  }
+
+  // The `longtask` observer runs independent of the Performance Profiler
+  // toggle: it's what actually catches a freeze as it happens (any task
+  // >=50ms fires it), while the profiler overlay is just a display of
+  // already-cheap-to-collect numbers. Below LONGTASK_DUMP_MS it only feeds
+  // the profiler overlay's counter; at/above it, it's worth a full dump.
   function ensureLongTaskObserver() {
-    if (!profilerEnabled || perfState.longTaskObserver || !root.PerformanceObserver) return;
+    if (!watchdogEnabled || perfState.longTaskObserver || !root.PerformanceObserver) return;
     try {
-      const observer = new root.PerformanceObserver(list => { perfState.longTasks += list.getEntries().length; });
+      const observer = new root.PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          perfState.longTasks += 1;
+          if (entry.duration >= LONGTASK_DUMP_MS) captureFreezeDump(`Long task ${entry.duration.toFixed(0)}ms`, { longTaskMs: entry.duration });
+        }
+      });
       observer.observe({ entryTypes: ['longtask'] });
       perfState.longTaskObserver = observer;
     } catch (_) {}
@@ -160,7 +232,6 @@
   }
 
   function profilerText() {
-    const avgRender = perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0;
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
     const totalGeom = geom.reduce((sum, pair) => sum + pair[1], 0);
     const topGeom = geom[0];
@@ -168,14 +239,15 @@
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
       : 'not scanned yet';
+    const lastDump = perfState.freezeDumps[perfState.freezeDumps.length - 1];
     return [
       `FPS ${perfState.fps.toFixed(1)}   frame ${perfState.frameMs.toFixed(2)} ms`,
-      `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
       subsystem ? `Top timed subsystem: ${subsystem[0]} ${subsystem[1].avg.toFixed(2)} ms` : 'Timed subsystems: none instrumented',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      lastDump ? `Freeze dumps: ${perfState.freezeDumps.length} (latest: ${lastDump.reason})` : 'Freeze dumps: none',
     ].join('\n');
   }
 
@@ -194,19 +266,38 @@
       const target = overlay || ensureProfilerOverlay();
       target.style.display = 'block';
       target.textContent = profilerText();
-      perfState.renderCpuMs = 0;
-      perfState.renderSamples = 0;
       perfState.longTasks = 0;
     } else if (overlay) overlay.style.display = 'none';
   }
 
   function frameLoop(ts) {
     perfState.raf = 0;
-    if (!fpsEnabled && !profilerEnabled) return;
+    if (!fpsEnabled && !profilerEnabled && !watchdogEnabled) return;
+    pollRendererStats();
     if (!perfState.lastFrameTs) perfState.lastFrameTs = ts;
     const delta = Math.max(0, ts - perfState.lastFrameTs);
     perfState.lastFrameTs = ts;
     if (delta > 0 && delta < 1000) perfState.frameMs = perfState.frameMs ? perfState.frameMs * 0.9 + delta * 0.1 : delta;
+
+    if (watchdogEnabled) {
+      if (delta >= HARD_FREEZE_MS) {
+        captureFreezeDump(`Frame stall ${delta.toFixed(0)}ms`, { frameStallMs: delta });
+        perfState.slowFrameStreak = 0;
+      } else if (delta >= SUSTAINED_SLOW_MS) {
+        perfState.slowFrameStreak += 1;
+        if (perfState.slowFrameStreak >= SUSTAINED_SLOW_FRAMES) {
+          // Reset on every attempt (not just a successful one) so a slowdown
+          // that lasts many seconds retries roughly every SUSTAINED_SLOW_FRAMES
+          // frames instead of calling captureFreezeDump (and its rate-limit
+          // check) on literally every frame while it's ongoing.
+          perfState.slowFrameStreak = 0;
+          captureFreezeDump(`Sustained slow frames (~${(1000 / delta).toFixed(1)}fps over ${SUSTAINED_SLOW_FRAMES}+ frames)`, { frameMs: delta });
+        }
+      } else {
+        perfState.slowFrameStreak = 0;
+      }
+    }
+
     if (!perfState.sampleStart) perfState.sampleStart = ts;
     perfState.sampleFrames += 1;
     const elapsed = ts - perfState.sampleStart;
@@ -220,10 +311,11 @@
   }
 
   function startFrameLoopIfNeeded() {
-    if ((!fpsEnabled && !profilerEnabled) || perfState.raf) return;
+    if ((!fpsEnabled && !profilerEnabled && !watchdogEnabled) || perfState.raf) return;
     perfState.lastFrameTs = 0;
     perfState.sampleStart = 0;
     perfState.sampleFrames = 0;
+    perfState.slowFrameStreak = 0;
     perfState.raf = requestAnimationFrame(frameLoop);
   }
 
@@ -243,15 +335,23 @@
     const input = document.getElementById('settingPerfProfiler');
     if (input) input.checked = profilerEnabled;
     if (profilerEnabled) {
-      installRendererProfiler();
-      ensureLongTaskObserver();
       ensureProfilerOverlay();
     } else {
-      stopLongTaskObserver();
       const overlay = document.getElementById('perfProfilerOverlay');
       if (overlay) overlay.style.display = 'none';
     }
     startFrameLoopIfNeeded();
+  }
+
+  function setWatchdogEnabled(enabled) {
+    watchdogEnabled = !!enabled;
+    writeStorage(WATCHDOG_PREF_KEY, watchdogEnabled ? '1' : '0');
+    const input = document.getElementById('settingPerfWatchdog');
+    if (input) input.checked = watchdogEnabled;
+    if (watchdogEnabled) ensureLongTaskObserver();
+    else stopLongTaskObserver();
+    startFrameLoopIfNeeded();
+    updateWatchdogStatusUI();
   }
 
   function recordSubsystem(name, elapsedMs) {
@@ -304,8 +404,14 @@
   }
 
   function getDevActiveScene() {
+    // `getActiveScene` itself lives inside game.js's own IIFE closure — a bare
+    // reference to it from this separately-loaded script would throw (always
+    // fell through to the perfState.scene fallback below, which was in turn
+    // never populated until pollRendererStats started setting it). game.js
+    // exposes it explicitly as window.__hobunjiGetActiveScene for exactly
+    // this kind of tooling.
     try {
-      if (typeof getActiveScene === 'function') return getActiveScene();
+      if (typeof root.__hobunjiGetActiveScene === 'function') return root.__hobunjiGetActiveScene();
     } catch (_) {}
     return perfState.scene || null;
   }
@@ -535,9 +641,17 @@
     box.appendChild(title);
 
     const perf = makeCheckboxRow('settingPerfProfiler', 'Performance Profiler', profilerEnabled,
-      'Renderer CPU time, draw calls, triangles, resource counts, long tasks, and a once-per-second visible-geometry breakdown. Profiling has overhead, so this is off by default.');
+      'Draw calls, triangles, resource counts, long tasks, and a once-per-second visible-geometry breakdown. The overlay text and manual measure()/begin()/end() instrumentation have real overhead, so this stays off by default.');
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
+
+    const watchdog = makeCheckboxRow('settingPerfWatchdog', 'Freeze Watchdog', watchdogEnabled,
+      'Watches for browser long-tasks and stalled/sustained-slow frames and captures a diagnostic snapshot (draw calls, top visible geometry, Cloud Forest state) the moment one happens — independent of the Performance Profiler overlay above, and cheap enough to leave on. Read captured dumps via window.PerfProfiler.getFreezeDumps() in the console.');
+    watchdog.input.addEventListener('change', () => setWatchdogEnabled(watchdog.input.checked));
+    const watchdogStatus = document.createElement('span');
+    watchdogStatus.id = 'settingPerfWatchdogStatus';
+    watchdogStatus.style.cssText = 'display:block;font-size:10px;opacity:.65;margin:-2px 0 5px';
+    box.append(watchdog.row, watchdogStatus);
 
     const baked = readStorage(TREE_MODE_KEY, 'baked') !== 'procedural';
     const tree = makeCheckboxRow('settingBakedTrees', 'Baked GLB Trees', baked,
@@ -582,6 +696,17 @@
 
     anchor.insertAdjacentElement('afterend', box);
     syncDebugSettingsUI();
+    updateWatchdogStatusUI();
+  }
+
+  function updateWatchdogStatusUI() {
+    const el = document.getElementById('settingPerfWatchdogStatus');
+    if (!el) return;
+    if (!watchdogEnabled) { el.textContent = 'Disabled.'; return; }
+    const count = perfState.freezeDumps.length;
+    if (!count) { el.textContent = 'Watching — no freezes captured yet.'; return; }
+    const last = perfState.freezeDumps[count - 1];
+    el.textContent = `${count} freeze(s) captured · latest: ${last.reason}`;
   }
 
   function checkBakedTreeHealth() {
@@ -605,6 +730,10 @@
     isEnabled: () => profilerEnabled,
     setEnabled: setProfilerEnabled,
     setFpsEnabled,
+    isWatchdogEnabled: () => watchdogEnabled,
+    setWatchdogEnabled,
+    getFreezeDumps: () => perfState.freezeDumps.map(dump => ({ ...dump })),
+    clearFreezeDumps: () => { perfState.freezeDumps.length = 0; updateWatchdogStatusUI(); },
     begin(name) { return profilerEnabled ? { name: String(name || 'unnamed'), t: performance.now() } : null; },
     end(token) { return token ? recordSubsystem(token.name, performance.now() - token.t) : 0; },
     measure(name, fn) {
@@ -618,25 +747,25 @@
       return {
         fps: perfState.fps,
         frameMs: perfState.frameMs,
-        renderCpuMs: perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0,
         calls: perfState.calls,
         triangles: perfState.triangles,
         geometries: perfState.geometries,
         textures: perfState.textures,
         geometryCategories: { ...perfState.geometryCategories },
         scanMs: perfState.scanMs,
-        subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))
+        subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}])),
+        freezeDumpCount: perfState.freezeDumps.length,
       };
     }
   });
 
   function install() {
-    installRendererProfiler();
     installSettingsUI();
     installCloudForestTuningUI();
     installCloudForestFogHook();
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
+    setWatchdogEnabled(watchdogEnabled);
     setTimeout(checkBakedTreeHealth, 4000);
   }
 

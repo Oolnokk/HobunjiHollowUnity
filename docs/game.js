@@ -12986,6 +12986,11 @@
       function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.rows || EXTERIOR_ZONES[currentArea]?.rows || _zoneLayouts.get(currentArea)?.rows) : ROWS; }
       function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.grid || buildZoneScene(currentArea).grid) : grid; }
       function getActiveScene() { return _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.scene || buildZoneScene(currentArea).scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene; }
+      // Exposed for external diagnostics only (performance-debug.js's freeze
+      // watchdog and Cloud Forest dev-tuning panel, both loaded lazily as
+      // separate scripts — a bare `getActiveScene` reference from outside this
+      // IIFE's closure would throw, not silently resolve to this function).
+      window.__hobunjiGetActiveScene = getActiveScene;
       function getActiveTileAt(col, row) {
         const g = getActiveGrid();
         return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
@@ -15203,6 +15208,10 @@
       // especially on a tile-based mobile GPU. Keeping the buffer around
       // lets the probe read back the literal frame the user actually saw.
       const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+      // Exposed for external diagnostics only (performance-debug.js's freeze
+      // watchdog, loaded lazily as a separate script with no other way to
+      // reach this closure's renderer reference) — nothing here reads it back.
+      window.__hobunjiRenderer = renderer;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
       renderer.shadowMap.enabled = true;
