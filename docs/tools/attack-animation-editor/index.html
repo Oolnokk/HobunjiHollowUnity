@@ -496,10 +496,11 @@ function applyPreviewNeckWeights() {
   weights.needsUpdate = true;
   const centroid = neckRig.headCentroidPx; // Used in the mobile-visible diagnostic to verify the base-head alpha scan landed on the sprite.
   const centroidSummary = centroid ? ` · head centroid ${centroid.x.toFixed(1)},${centroid.y.toFixed(1)} px` : '';
-  const visibleCellCount = Number(geometry.userData?.visibleCellCount) || 0; // Used to confirm alpha-mask fitting without requiring desktop developer tools.
+  const planeCellCount = Number(geometry.userData?.planeCellCount) || 0; // Used to confirm that the mobile-visible preview is weighting the complete PNG plane.
+  const coverageMode = geometry.userData?.coverageMode || 'unknown coverage'; // Used in the visible diagnostic to catch a regression to alpha-cropped skinning.
   const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material]; // Used to expose the r128 skin-shader flag in the visible diagnostic.
   const skinShaderSummary = `${materials.filter(material => material?.skinning === true).length}/${materials.length} skin shaders`;
-  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${visibleCellCount} opaque grid cells · ${skinShaderSummary} · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${planeCellCount} whole-plane grid cells · ${coverageMode} · ${skinShaderSummary} · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
   rebuildHeadSkinVertexOverlay();
   refreshPreviewDebug();
   return true;
@@ -508,7 +509,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: neck deformation now defaults to a broad 30%-height shoulder/body falloff at 100% strength.',
+    'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -543,7 +544,7 @@ async function rebuildAvatar(speciesId, gender) {
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
-  const headCanvas = document.createElement('canvas'); // Used by the shared neck rig to place its pivot from the base head sprite's opaque-pixel centroid.
+  const headCanvas = document.createElement('canvas'); // Used only to locate the neck pivot; mesh coverage and weights come from the complete composed PNG plane.
   headCanvas.width = size; headCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
   const backCanvas = document.createElement('canvas');
