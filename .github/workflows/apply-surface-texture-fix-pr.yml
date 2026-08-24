@@ -18,31 +18,201 @@ jobs:
           ref: fix/wavy-limbs-medium-gray-stone
           fetch-depth: 0
 
-      - name: Execute validated one-shot patch payload
+      - name: Patch limb and natural-surface materials
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          workflow = Path('.github/workflows/apply-surface-texture-fix.yml').read_text(encoding='utf-8')
-          start_marker = "          python - <<'PY'\n"
-          end_marker = "\n          PY\n\n      - name: Validate patched surfaces"
-          start = workflow.find(start_marker)
-          end = workflow.find(end_marker, start + len(start_marker))
-          if start < 0 or end < 0:
-              raise SystemExit('Could not locate the one-shot Python patch payload')
+          def replace_exact(path, old, new, expected=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} occurrences, found {count}: {old!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
 
-          raw_payload = workflow[start + len(start_marker):end]
-          yaml_indent = '          '
-          payload_lines = []
-          for line in raw_payload.splitlines():
-              # Python statements in the YAML block carry this ten-space wrapper.
-              # Embedded multiline JS literals may intentionally drop below it
-              # (notably their column-zero triple-quote terminators), so only
-              # remove the wrapper when it is actually present.
-              payload_lines.append(line[len(yaml_indent):] if line.startswith(yaml_indent) else line)
-          payload = '\n'.join(payload_lines) + '\n'
-          exec(compile(payload, 'surface-texture-patch', 'exec'), {})
+          # Feet: body-color surface should use the same wavy painted PNG as other soft surfaces.
+          foot_path = Path('docs/js/procedural-leg-animation.js')
+          foot_text = foot_path.read_text(encoding='utf-8')
+          canvas_count = foot_text.count('canvas.png')
+          if canvas_count != 3:
+              raise SystemExit(f'procedural-leg-animation.js: expected 3 canvas.png body-surface references, found {canvas_count}')
+          foot_path.write_text(foot_text.replace('canvas.png', 'wavy_surface.png'), encoding='utf-8')
+
+          # Hands: body roles currently get rebuilt as flat-color MeshBasicMaterial, losing all surface texture.
+          hand_path = Path('docs/js/procedural-hand-attachments.js')
+          hand_text = hand_path.read_text(encoding='utf-8')
+          helper_marker = "  function markOutline(root) {\n"
+          if hand_text.count(helper_marker) != 1:
+              raise SystemExit('procedural-hand-attachments.js: markOutline insertion marker is not unique')
+          helpers = r'''  const handBodyTextureCache = new Map(); // Reused by fallback and GLB body-hand materials so identical species/body colors share one wavy texture.
+  let handWavySourcePromise = null; // Shared wavy_surface.png image request used to populate every cached body-hand texture.
+
+  function bodyReferenceHex(speciesId) {
+    return typeof global._dyeReferenceHexForSlot === 'function'
+      ? global._dyeReferenceHexForSlot('A', speciesId)
+      : '#7dc89a';
+  }
+
+  function flatTintCanvas(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 4;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = hex || '#808080';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function loadHandWavySource() {
+    if (handWavySourcePromise) return handWavySourcePromise;
+    handWavySourcePromise = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Failed to load wavy_surface.png for procedural hands'));
+      image.src = resolveAssetPath('assets/textures/wavy_surface.png');
+    }).catch(error => {
+      handWavySourcePromise = null;
+      throw error;
+    });
+    return handWavySourcePromise;
+  }
+
+  function ensureHandSurfaceUvs(THREE, geometry) {
+    if (!geometry?.getAttribute || geometry.getAttribute('uv')) return;
+    const position = geometry.getAttribute('position');
+    if (!position?.count) return;
+    geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) return;
+    const sx = Math.max(1e-6, box.max.x - box.min.x);
+    const sy = Math.max(1e-6, box.max.y - box.min.y);
+    const sz = Math.max(1e-6, box.max.z - box.min.z);
+    const normal = geometry.getAttribute('normal');
+    const uvs = new Float32Array(position.count * 2); // Added to UV-less hand GLBs so the wavy body texture has coordinates to sample.
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+      const nx = Math.abs(normal?.getX?.(i) || 0);
+      const ny = Math.abs(normal?.getY?.(i) || 0);
+      const nz = Math.abs(normal?.getZ?.(i) || 0);
+      let u, v;
+      if (nx >= ny && nx >= nz) {
+        u = (z - box.min.z) / sz;
+        v = (y - box.min.y) / sy;
+      } else if (ny >= nz) {
+        u = (x - box.min.x) / sx;
+        v = (z - box.min.z) / sz;
+      } else {
+        u = (x - box.min.x) / sx;
+        v = (y - box.min.y) / sy;
+      }
+      uvs[i * 2] = u;
+      uvs[i * 2 + 1] = v;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  }
+
+  function handBodySurfaceTexture(THREE, speciesId, bodyColors) {
+    const referenceHex = bodyReferenceHex(speciesId);
+    const descriptor = bodyColors?.A || { hex: referenceHex };
+    const resolvedHex = bodyColorHex(speciesId, bodyColors);
+    const cacheKey = `${normalizeKey(speciesId)}:${String(resolvedHex).toLowerCase()}`; // Identifies the tint-specific wavy texture shared by both hands of one appearance.
+    if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
+
+    const texture = new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
+    texture.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1.25, 1);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+    texture.needsUpdate = true;
+    handBodyTextureCache.set(cacheKey, texture);
+
+    loadHandWavySource().then(image => {
+      let source = image;
+      if (typeof global.shadeFillTintForBodyColor === 'function' && typeof global.getShadeFillCanvas === 'function') {
+        const tint = global.shadeFillTintForBodyColor(descriptor, referenceHex);
+        if (tint?.mode === 'shadeFill') {
+          source = global.getShadeFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
+        }
+      }
+      texture.image = source;
+      texture.needsUpdate = true;
+    }).catch(error => {
+      console.warn('[ProceduralHandAttachments] wavy body surface failed; keeping correctly tinted fallback:', error);
+    });
+    return texture;
+  }
+
+'''
+          hand_text = hand_text.replace(helper_marker, helpers + helper_marker)
+
+          old_geometry = "      if (child.geometry) child.geometry = child.geometry.clone();\n"
+          new_geometry = "      if (child.geometry) {\n        child.geometry = child.geometry.clone();\n        ensureHandSurfaceUvs(THREE, child.geometry);\n      }\n"
+          if hand_text.count(old_geometry) != 1:
+              raise SystemExit('procedural-hand-attachments.js: geometry clone marker changed')
+          hand_text = hand_text.replace(old_geometry, new_geometry)
+
+          old_material = r'''        const next = new THREE.MeshBasicMaterial({
+          color: roleColor(role, speciesId, bodyColors),
+          side: THREE.DoubleSide,
+          depthWrite: !isParrotWingLayer,
+        });
+        next.name = material?.name || `${role}_hand_material`;
+        next.userData.hobunjiHandRole = role;
+        next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
+'''
+          new_material = r'''        const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
+        const next = new THREE.MeshBasicMaterial({
+          color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+          map: bodyTexture,
+          side: THREE.DoubleSide,
+          depthWrite: !isParrotWingLayer,
+        });
+        next.name = material?.name || `${role}_hand_material`;
+        next.userData.hobunjiHandRole = role;
+        next.userData.hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png' : null;
+        next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
+'''
+          if hand_text.count(old_material) != 1:
+              raise SystemExit('procedural-hand-attachments.js: imported-hand material block changed')
+          hand_text = hand_text.replace(old_material, new_material)
+
+          old_fallback = r'''  function buildFallbackHand(THREE, size, color, side, sourceIsLeft) {
+    const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
+    geometry.scale(0.72, 1, 0.55);
+    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+'''
+          new_fallback = r'''  function buildFallbackHand(THREE, size, color, side, sourceIsLeft, speciesId, bodyColors) {
+    const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
+    geometry.scale(0.72, 1, 0.55);
+    const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
+    const material = new THREE.MeshBasicMaterial({ color: bodyTexture ? 0xffffff : color, map: bodyTexture, side: THREE.DoubleSide });
+    material.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
+    material.userData.hobunjiHandRole = 'body';
+    material.userData.hobunjiHandSurfaceTexture = 'wavy_surface.png';
+'''
+          if hand_text.count(old_fallback) != 1:
+              raise SystemExit('procedural-hand-attachments.js: fallback material block changed')
+          hand_text = hand_text.replace(old_fallback, new_fallback)
+
+          old_fallback_call = "        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft));\n"
+          new_fallback_call = "        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft, speciesId, options.bodyColors));\n"
+          if hand_text.count(old_fallback_call) != 1:
+              raise SystemExit('procedural-hand-attachments.js: fallback call marker changed')
+          hand_text = hand_text.replace(old_fallback_call, new_fallback_call)
+
+          debug_marker = "          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',\n"
+          if hand_text.count(debug_marker) != 1:
+              raise SystemExit('procedural-hand-attachments.js: debug marker changed')
+          hand_text = hand_text.replace(debug_marker, debug_marker + "          bodySurfaceTexture: 'wavy_surface.png',\n")
+          hand_path.write_text(hand_text, encoding='utf-8')
+
+          # Rocks/cliffs already reference carved_smooth.png; neutralize the overly dark tint multiplier.
+          for path in ('docs/config/natural-surface-materials.js', 'docs/js/natural-surface-materials.js'):
+              replace_exact(path, 'tint: "#5f5a56"', 'tint: "#808080"')
+              replace_exact(path, 'tint: "#6a6460"', 'tint: "#808080"')
           PY
 
       - name: Validate patched surfaces
