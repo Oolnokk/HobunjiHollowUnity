@@ -8,8 +8,8 @@
   const DEFAULTS = {
     texture: 'assets/textures/carved_smooth.png',
     surfaces: {
-      trunks: { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      vines:  { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
+      trunks: { enabled: true, texture: 'assets/textures/wavy_surface.png', tint: 'source', tintTreatment: 'body-sprite-tint', mapping: 'cylindrical-stretch' },
+      vines:  { enabled: true, texture: 'assets/textures/carved_smooth.png', tint: 'source', tintTreatment: 'body-sprite-tint', mapping: 'cylindrical-stretch' },
       rocks:  { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'planar-stretch' },
       cliffs: { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'world-stretch' },
     },
@@ -418,6 +418,7 @@
       buildJungleTreeMesh: true,
       buildCrownedPineMesh: false,
       buildShadewoodMesh: false,
+      buildShrubMesh: false,
       buildWildernessBushMesh: false,
       buildStumpMesh: false,
     };

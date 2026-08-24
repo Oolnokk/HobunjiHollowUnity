@@ -46,10 +46,15 @@
   }
 
   function isVisibleHandDraw(scene, material) {
-    // Any ordinary draw with the mesh's own material is a valid source matrix.
-    // This includes the held-object selective overlay, which is the actual visible
-    // hand draw once ground x-ray registration is active.
-    return !scene?.overrideMaterial && !isShellMaterial(material) && !isMaterialIdMaterial(material);
+    // Only a real COLOR-WRITING hand draw may become the outline transform source.
+    // game.js replays PNG-plane materials with colorWrite=false immediately before
+    // the shell pass to rebuild occluder depth. Treating that depth-only replay as
+    // visible overwrote the correctly gripped hand matrix with a hierarchy-only one,
+    // which produced a separate black hand-shaped shell.
+    return !scene?.overrideMaterial
+      && material?.colorWrite !== false
+      && !isShellMaterial(material)
+      && !isMaterialIdMaterial(material);
   }
 
   function markHeldXray(mesh, rigState, side) {
@@ -87,6 +92,8 @@
     const state = {
       visibleMatrixWorld: new THREE.Matrix4(), // Reconstructed from the exact modelViewMatrix used by the visible GPU draw.
       visibleCapturedAt: -Infinity,
+      visibleCaptureSerial: 0, // Increments only for genuine color-writing hand draws.
+      lastShellCaptureSerial: 0, // Prevents a second shell render from reusing an older visible-frame transform.
       drawStack: [], // One entry per renderer callback; supports visible/shell/material-ID replay without leaking state.
     };
 
@@ -97,7 +104,7 @@
       const now = performance.now();
       const visibleDraw = isVisibleHandDraw(scene, material);
       const passKind = visibleDraw ? 'visible' : outlinePassKind(scene, material);
-      const draw = { kind: passKind || 'other', restoreMatrix: null, thicknessRestore: null };
+      const draw = { kind: passKind || 'other', restoreMatrix: null, thicknessRestore: null, captureSerial: 0 };
 
       // Do NOT call updateWorldMatrix/updateMatrixWorld here. WeaponToolStances and
       // the direct-hand sentinel deliberately bake a final render-only transform and
@@ -113,8 +120,11 @@
         }
 
         const ageMs = now - state.visibleCapturedAt;
-        if (ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS) {
+        const captureIsFresh = passKind !== 'shell'
+          || state.visibleCaptureSerial !== state.lastShellCaptureSerial;
+        if (ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS && captureIsFresh) {
           draw.restoreMatrix = this.matrixWorld.clone();
+          draw.captureSerial = state.visibleCaptureSerial;
           this.matrixWorld.copy(state.visibleMatrixWorld);
           if (passKind === 'shell') {
             rigState.lockedShellDraws++;
@@ -147,6 +157,7 @@
           state.visibleMatrixWorld.copy(this.matrixWorld);
         }
         state.visibleCapturedAt = performance.now();
+        state.visibleCaptureSerial++;
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
       }
@@ -156,6 +167,9 @@
       // but the exact visible GPU matrix above must survive as our snapshot.
       previousAfter?.apply(this, args);
 
+      if (draw.kind === 'shell' && draw.captureSerial) {
+        state.lastShellCaptureSerial = draw.captureSerial;
+      }
       if (draw.restoreMatrix) this.matrixWorld.copy(draw.restoreMatrix);
       if (draw.thicknessRestore) {
         draw.thicknessRestore.uniform.value = draw.thicknessRestore.value;

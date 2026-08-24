@@ -11,24 +11,25 @@
   //                         across each generated cliff/mesa mesh
   //
   // tint: 'source' preserves the generator's authored color family; '#rrggbb'
-  // supplies a fixed family. ground-shade-fill is the same PNG recolor path as
-  // textured terrain grass: getShadeFillCanvas() bakes the target color into a
-  // CanvasTexture while preserving the PNG's grain/shading, then the unlit
-  // material renders white so there is no second color multiplication.
+  // supplies a fixed family. body-sprite-tint sends the authored PNG through
+  // the same per-pixel body fill path used by character art and the rock/cliff
+  // surfaces, then renders it unlit/white so there is no second multiplication.
   window.NaturalSurfaceMaterialConfig = {
     schema: 'hobunji_natural_surface_materials.v1',
     texture: 'assets/textures/carved_smooth.png',
     surfaces: {
       trunks: {
         enabled: true,
+        texture: 'assets/textures/wavy_surface.png',
         tint: 'source',
-        tintTreatment: 'ground-shade-fill',
+        tintTreatment: 'body-sprite-tint',
         mapping: 'cylindrical-stretch'
       },
       vines: {
         enabled: true,
+        texture: 'assets/textures/carved_smooth.png',
         tint: 'source',
-        tintTreatment: 'ground-shade-fill',
+        tintTreatment: 'body-sprite-tint',
         mapping: 'cylindrical-stretch'
       },
       rocks: {
