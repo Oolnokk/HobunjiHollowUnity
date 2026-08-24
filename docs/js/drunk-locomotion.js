@@ -75,11 +75,10 @@
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'additive',
-      preserveFacingSide: true,
-      // Facing/dead-zone code owns Y rotation. Adding a second body-yaw here
-      // can push the PNG plane across its north-facing front/back boundary
-      // after facing has already resolved, producing a rapid flip-flop. Drunk
-      // sway therefore contributes tilt only; foot yaw remains independent.
+      // Facing/dead-zone code owns Y rotation, so drunk sway contributes only
+      // pitch/roll. The compositor no longer freezes a pre-tilt portrait side:
+      // after this transform, the avatar's normal FrontSide materials decide
+      // which face is visible through ordinary GPU backface culling.
       rotation: {
         pitch: state.pitch,
         roll: state.roll,
