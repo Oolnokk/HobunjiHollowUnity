@@ -3202,6 +3202,38 @@
         });
       }
 
+      // Cleans up a legacy bug: createInitialGrid() used to stamp a hardcoded
+      // 3x5 raw-tile "north exit to town" road onto every brand-new farm,
+      // duplicating the real farm<->town connector (which is authored as a
+      // proper route with its own paved brick surface — see worldRoutes).
+      // That raw stub got persisted into every save the first time it ran
+      // (its tile.type differs from createDayOneTile's own default, so
+      // saveFarmLayout always wrote it out explicitly), so simply removing
+      // the stamp from createInitialGrid doesn't clear it from saves that
+      // already have it — applyFarmLayoutToGrid would just restore it from
+      // layout.tiles again. Revert each of those exact tiles back to a
+      // fresh default, but only if it still looks untouched (still a bare
+      // path tile, never tilled/planted/dug), so a player who deliberately
+      // built or farmed over that spot keeps whatever they made there.
+      const LEGACY_FARM_ENTRANCE_PATH_TILES = [
+        [16,0],[17,0],[18,0],
+        [16,1],[17,1],[18,1],
+        [16,2],[17,2],[18,2],
+        [16,3],[17,3],[18,3],
+        [16,4],[17,4],[18,4],
+      ];
+      function cleanupLegacyFarmEntranceRoad() {
+        for (const [c, r] of LEGACY_FARM_ENTRANCE_PATH_TILES) {
+          const t = grid[r]?.[c];
+          if (!t || t.type !== TileType.PATH) continue;
+          if (t.crop && t.crop !== CropType.NONE) continue;
+          if (t.dewPile || t.depth) continue;
+          const def = createDayOneTile(c, r);
+          t.type = def.type;
+          t.variation = def.variation;
+        }
+      }
+
       function applyFarmLayoutObjects(layout) {
         if (!layout || layout.version !== 3) return;
         if (layout.objects?.sellCrate) {
@@ -13003,6 +13035,7 @@
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
+      cleanupLegacyFarmEntranceRoad();
 
       // ── Area-switching state ───────────────────────────────────────
       let currentArea     = 'farm';   // 'farm' | 'interior'
@@ -13258,15 +13291,15 @@
         const farmPondTiles = [[1,1],[2,1],[1,2],[2,2],[3,2],[2,3]];
         farmPondTiles.forEach(([col, row]) => { nextGrid[row][col].type = TileType.RIVER; nextGrid[row][col].water = MAX_WATER; });
 
-        // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
-        const farmPathTiles = [
-          [16,0],[17,0],[18,0],
-          [16,1],[17,1],[18,1],
-          [16,2],[17,2],[18,2],
-          [16,3],[17,3],[18,3],
-          [16,4],[17,4],[18,4],
-        ];
-        farmPathTiles.forEach(([c, r]) => { nextGrid[r][c].type = TileType.PATH; });
+        // NOTE: a hardcoded 3x5 raw-tile stub used to be stamped here as a
+        // "north exit to town" road (col 17, row 0 going south). It duplicated
+        // the real farm<->town connector, which is authored as a proper
+        // route (see worldRoutes/preparePathSplineData) with its own paved
+        // brick surface — the raw stub just showed up as a second, unpaved
+        // dirt road wherever it happened to sit, including straight through
+        // any house piece built near the farm's north entrance. Removed; see
+        // LEGACY_FARM_ENTRANCE_PATH_TILES below for the save-migration that
+        // cleans up already-persisted copies of it.
 
         // Used as a tiny player-spawn clearing so movement and the reticle are immediately readable.
         [[8, 9], [9, 9], [8, 10], [9, 10], [10, 10]].forEach(([col, row]) => {
