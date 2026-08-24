@@ -1008,7 +1008,12 @@ window.FoliageGenerator = (() => {
       // the canopy. Rolled once per shared tree variant (not per instance),
       // so climbBranchChance is the fraction of the cached tree shapes that
       // end up with one, not a per-tree-instance probability.
-      climbBranchChance: 0.5, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
+      // Rolled once per shared tree shape (see getTreeVariants/
+      // TREE_VARIANT_COUNT), not per tile — 0.5 meant a coin-flip chance
+      // that 2 or all 3 of the zone's shadewood shapes got a branch, so a
+      // large majority of every shadewood tree in the whole forest ended up
+      // climbable. Lowered so "sometimes" stays a minority of trees.
+      climbBranchChance: 0.34, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
       // Calibrated (not guessed) against the tool's own "canopy influence
       // radius"/"canopy underside height" species properties — 2.75 / 6
       // world units respectively — by building this preset unscaled in a

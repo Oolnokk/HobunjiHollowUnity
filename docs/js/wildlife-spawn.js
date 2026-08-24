@@ -223,6 +223,7 @@
     for (const key of nestTreeEverSpawned) if (key.startsWith(prefix)) nestTreeEverSpawned.delete(key);
     for (const key of pendingNestTreeRespawn) if (key.startsWith(prefix)) pendingNestTreeRespawn.delete(key);
     for (const key of [...nestTreeLastKnownAlive.keys()]) if (key.startsWith(prefix)) nestTreeLastKnownAlive.delete(key);
+    _nestTreeSelectionCache.delete(zoneId);
     // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
     // generation, so a fresh Tothal Shift very likely reuses an old
     // den's exact id — without this, that den's cavern would keep
@@ -368,9 +369,19 @@
   const pendingNestTreeRespawn = new Set();
   const nestTreeLastKnownAlive = new Map();
   const NEST_TREE_ZONE_ID = 'map_southern_cloud_forest';
-  const NEST_TREE_CHANCE = 0.4; // Fraction of registered climbable branches that host a nest — "sometimes", not every eligible tree.
+  // A HARD CAP on how many nest trees a zone can ever have, not a fraction
+  // of however many climbable branches happen to exist — a dense shadewood
+  // forest can easily carry hundreds of registered branches (see
+  // foliage-generator.js's climbBranchChance, rolled per shared tree shape,
+  // so it's common for most trees in the zone to have one), and spawning a
+  // full pack + Nestmother at every one of them independently blew up
+  // hostileObjects into the hundreds the moment the zone loaded — the cause
+  // of the severe slowdown entering this zone. Capped to roughly the same
+  // scale a zone's normal den count already runs at.
+  const NEST_TREE_MAX_PER_ZONE = 5;
   const NEST_PACK_SIZE_MIN = 2;
   const NEST_PACK_SIZE_MAX = 4;
+  const _nestTreeSelectionCache = new Map(); // zoneId -> capped branch[], computed once (deterministic, so recomputing would pick the same trees anyway).
 
   function nestTreeKeyFor(zoneId, branch) { return `${zoneId}:nesttree:${branch.col},${branch.row}`; }
 
@@ -379,15 +390,23 @@
     return false;
   }
 
-  // Deterministic per-tree roll (not the general mutable RNG stream) so the
-  // same trees host a nest across a session/save rather than reshuffling
-  // whenever this check happens to run.
+  // Deterministic per-tree score (not the general mutable RNG stream) so
+  // the same handful of trees hosts a nest across a session/save rather
+  // than reshuffling whenever this check happens to run — sorted and
+  // capped to NEST_TREE_MAX_PER_ZONE regardless of how many climbable
+  // branches this zone actually has registered.
   function eligibleNestBranches(zoneId) {
+    const cached = _nestTreeSelectionCache.get(zoneId);
+    if (cached) return cached;
     const branches = window.ClimbSystem?.debugBranchesFor?.(zoneId) || [];
-    return branches.filter(b => {
+    const scored = branches.map(b => {
       const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${b.col}_${b.row}`);
-      return (rng ? rng() : deps.rnd()) < NEST_TREE_CHANCE;
+      return { b, score: rng ? rng() : deps.rnd() };
     });
+    scored.sort((x, y) => x.score - y.score);
+    const selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE).map(s => s.b);
+    _nestTreeSelectionCache.set(zoneId, selected);
+    return selected;
   }
 
   function spawnNestAtBranch(zoneId, branch, key) {
