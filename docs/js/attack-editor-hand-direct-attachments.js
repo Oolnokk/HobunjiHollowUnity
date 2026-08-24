@@ -1,4 +1,4 @@
-// Attack Editor UI for direct hand attachments and optional secondary tool grips.
+// Attack Editor UI for direct hand attachments and optional two-hand sprite-edge grips.
 (function (global) {
   'use strict';
 
@@ -19,7 +19,7 @@
   if (tag) tag.textContent = 'direct tool sockets + species scale';
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
-    topHelp.innerHTML = 'Hands are <b>direct attachments</b>: the right hand follows the tool attach frame exactly; an optional secondary tool-local grip frame can attach the left hand. There are no arm bones, elbows, reach limits, or IK.';
+    topHelp.innerHTML = 'Hands are <b>direct attachments</b>: the right hand follows the primary grip and an optional secondary tool-local grip can attach the left hand. Use <b>Grip sprite edges</b> for chest-held item sprites so both hands sit on the visible far sides without moving the item itself.';
   }
 
   const inverseHelp = $('handFromToolRotationGroup')?.querySelector('.help');
@@ -29,8 +29,11 @@
   section.className = 'poseGroup';
   section.id = 'handSecondaryGripGroup';
   section.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Optional second hand grip</div>
-    <div class="help" style="margin-bottom:6px">Primary/right hand = the tool's existing attach origin. This secondary frame is tool-local and, when enabled, places the left hand. Hatchet and hoe start enabled; other tools start one-handed.</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Two-hand / secondary grip</div>
+    <div class="help" style="margin-bottom:6px">Primary/right hand normally uses the tool origin. The edge preset makes the primary hand follow the visible sprite's far right edge and the secondary/left hand follow its far left edge, preserving the authored item pose.</div>
+    <div class="row" style="margin-bottom:8px">
+      <button id="handGripSpriteEdges" class="good" style="font-size:11px">↔ Grip sprite edges</button>
+    </div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryGripEnabled" style="width:auto;margin-right:6px">Attach left hand to secondary grip</label></div>
     <div id="handSecondaryGripPositionFields"></div>
     <div id="handSecondaryGripRotationFields"></div>
@@ -66,6 +69,7 @@
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
   function currentEntry() { return toolGrips.ensureTool(currentToolKey()); }
+  function currentPrimary() { return currentEntry()?.primaryGrip || null; }
   function currentSecondary() { return currentEntry()?.secondaryGrip || null; }
 
   function setPair(range, number, value) {
@@ -84,33 +88,43 @@
       || global.ProceduralHandFrameDriver?.getDebug?.().find(entry => entry?.speciesId === species)
       || null;
     if (effectiveStatus) {
-      const second = debug?.secondaryActive ? `left→${debug.toolKey || currentToolKey()} secondary` : 'left→idle';
-      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · direct attachment · right→primary · ${second} · NO ARM IK`;
+      const primary = debug?.primaryGrip?.edge ? `right→sprite ${debug.primaryGrip.edge} edge` : 'right→primary';
+      const second = debug?.secondaryActive ? `left→${debug.secondaryGrip?.edge ? `sprite ${debug.secondaryGrip.edge} edge` : `${debug.toolKey || currentToolKey()} secondary`}` : 'left→idle';
+      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · direct attachment · ${primary} · ${second} · NO ARM IK`;
       effectiveStatus.style.color = debug?.hand?.loadError ? '#fb7185' : '';
     }
   }
 
   function syncFields() {
     const key = currentToolKey();
+    const primary = currentPrimary();
     const secondary = currentSecondary();
     if (!secondary) return;
     $('handSecondaryGripEnabled').checked = secondary.enabled === true;
     for (const field of positionFields) setPair($(`handSecondaryPos_${field.key}`), $(`handSecondaryPos_${field.key}_n`), secondary.position?.[field.key]);
     for (const field of rotationFields) setPair($(`handSecondaryRot_${field.key}`), $(`handSecondaryRot_${field.key}_n`), secondary.rotationDeg?.[field.key]);
-    $('handSecondaryGripStatus').textContent = secondary.enabled
-      ? `${key || 'tool'}: TWO-HAND · right at primary origin · left at authored secondary frame.`
-      : `${key || 'tool'}: ONE-HAND · left hand stays at its avatar idle attachment.`;
+    if (primary?.enabled && primary.edge === 'right' && secondary.enabled && secondary.edge === 'left') {
+      $('handSecondaryGripStatus').textContent = `${key || 'tool'}: TWO-HAND SPRITE EDGES · right→far right · left→far left · item pose unchanged.`;
+    } else if (secondary.enabled) {
+      $('handSecondaryGripStatus').textContent = `${key || 'tool'}: TWO-HAND · right→${primary?.enabled ? (primary.edge ? `sprite ${primary.edge} edge` : 'authored primary frame') : 'origin'} · left→${secondary.edge ? `sprite ${secondary.edge} edge` : 'authored secondary frame'}.`;
+    } else {
+      $('handSecondaryGripStatus').textContent = `${key || 'tool'}: ONE-HAND · left hand stays at its avatar idle attachment.`;
+    }
     refreshDirectStatus();
     global.ProceduralHandFrameDriver?.syncNow?.();
+  }
+
+  function ensureGripEntry(data, key) {
+    if (!data.tools[key]) data.tools[key] = {};
+    if (!data.tools[key].primaryGrip) data.tools[key].primaryGrip = { enabled: false, edge: null, position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } };
+    if (!data.tools[key].secondaryGrip) data.tools[key].secondaryGrip = { enabled: false, edge: null, position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } };
+    return data.tools[key];
   }
 
   function mutateSecondary(mutator) {
     const key = currentToolKey();
     if (!key) return;
-    toolGrips.mutate(data => {
-      if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } } };
-      mutator(data.tools[key].secondaryGrip);
-    });
+    toolGrips.mutate(data => mutator(ensureGripEntry(data, key).secondaryGrip));
     syncFields();
   }
 
@@ -124,6 +138,17 @@
     range.addEventListener('input', () => apply(range));
     number.addEventListener('input', () => apply(number));
   }
+
+  $('handGripSpriteEdges').addEventListener('click', () => {
+    const key = currentToolKey();
+    if (!key) return;
+    toolGrips.mutate(data => {
+      const entry = ensureGripEntry(data, key);
+      Object.assign(entry.primaryGrip, { enabled: true, edge: 'right', position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } });
+      Object.assign(entry.secondaryGrip, { enabled: true, edge: 'left', position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } });
+    });
+    syncFields();
+  });
 
   $('handSecondaryGripEnabled').addEventListener('change', event => {
     mutateSecondary(secondary => { secondary.enabled = event.target.checked; });
