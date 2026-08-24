@@ -246,9 +246,38 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  // Carried player/Watch masks are disabled outdoors because their screen-space
-  // destination-out circles cannot distinguish world geometry from the sky.
-  function drawLanternMasksCompat() {}
+  function drawLanternMasksCompat() {
+    const ctx = lightingDeps.lctx;
+    const carriers = [{
+      x: lightingDeps.player.x / lightingDeps.TILE,
+      y: lightingDeps.getPlayerWorldY() + 0.5,
+      z: lightingDeps.player.y / lightingDeps.TILE,
+    }];
+    const currentArea = lightingDeps.getCurrentArea();
+    for (const walker of lightingDeps.npcWalkers) {
+      if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
+        carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
+      }
+    }
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const carrier of carriers) {
+      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
+      if (!center.visible) continue;
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, 5.0);
+      if (!(shineR > 0)) continue;
+      const clarityFrac = 1.3 / 5.0;
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0, 'rgba(0,0,0,0.92)');
+      grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
+      grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
 
   function drawFurnitureLightMasksCompat() {
     const ctx = lightingDeps.lctx;
@@ -326,9 +355,9 @@
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    // No screen-space local-light masks outdoors. They cannot distinguish
-    // terrain from skydome pixels and were producing the visible circular sky artifact.
+    // Same original local-light behavior; no horizon/depth masking or canvas proxy.
     drawLanternMasksCompat();
+    drawFurnitureLightMasksCompat();
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
