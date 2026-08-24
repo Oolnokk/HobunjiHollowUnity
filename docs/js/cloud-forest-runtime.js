@@ -577,7 +577,12 @@
       const pathWidth = Math.max(3.25, Math.min(4, run?.width || existingMeta.pathWidth || 3.25));
       const clearHalf = pathWidth * 0.5 + PATH_CLEARANCE;
       const layout = buildForestLayout(zcols, NORTH_DEPTH, pathCenter, clearHalf, heightAt);
-      const stats = instanceForest(scene, layout);
+      // api.bgForestEnabled — Settings tab's Cloud Forest Background Forest
+      // toggle (game.js) sets this directly; game.js also live-hides
+      // whatever's already built via the cloudForestScenery userData tag,
+      // so unlike this flag (which only affects future zone builds) that
+      // part of the toggle is instant.
+      const stats = api.bgForestEnabled !== false ? instanceForest(scene, layout) : { chunks: 0, instances: 0 };
 
       const ribbon = collection.find(obj => obj?.name === 'AuthoredCloudForestTownPath');
       buildCloudPathBricks(scene, pathCenter, pathWidth, NORTH_DEPTH, heightAt, ribbon);
@@ -633,6 +638,9 @@
     edgePathRuns, findEntryRun, repairGeneratedEntryWorkspace,
     removeCloudForestNorthCliffs, makeSteepNorthProfile, buildForestLayout,
     patchGenerator, patchBorderTerrain,
+    // Settings tab's Cloud Forest Background Forest toggle (game.js) writes
+    // this directly — read at the next zone build (see patchBorderTerrain).
+    bgForestEnabled: true,
   };
   root.CloudForestRuntimeV2 = api;
 

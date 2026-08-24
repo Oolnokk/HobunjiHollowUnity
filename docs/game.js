@@ -16378,7 +16378,7 @@
         // CloudForestFog's own player-centered mist cylinders so the ring
         // where vegetation pops in/out sits inside the mist uniformly in
         // every direction instead of only character-forward.
-        const radialCullRadius = EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles;
+        const radialCullRadius = s_cloudForestWideCull ? EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles : null;
         let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
         if (!radialCullRadius) {
           let vx = camTargetX - camX, vz = camTargetZ - camZ;
@@ -20335,6 +20335,17 @@
       }
 
       // ── Visual feature toggles (Settings tab) ────────────────────
+      // Southern Cloud Forest-specific effects added in the same window as
+      // Shoulder Cam's promotion out of experimental (mist cylinders, the
+      // zone's wide player-centered vegetation cull radius, and its dense
+      // instanced background forest along the north town-entrance edge) —
+      // off switches for isolating which one (if any) is behind reported
+      // choppiness/hitching specifically in that zone. Default on (no
+      // change from current behavior); each is meant to be flipped off one
+      // at a time to A/B test.
+      let s_cloudForestFog = true;
+      let s_cloudForestWideCull = true;
+      let s_cloudForestBgForest = true;
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
@@ -20455,6 +20466,24 @@
       document.getElementById('settingWeed3D').addEventListener('change', e => {
         s_weed3D = e.target.checked;
         _rebuildWeedTiles();
+      });
+      // Cloud Forest perf-testing toggles — each takes effect immediately,
+      // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
+      // declaration comment).
+      document.getElementById('settingCloudForestFog')?.addEventListener('change', e => {
+        s_cloudForestFog = e.target.checked;
+        window.CloudForestFog?.setEnabled(s_cloudForestFog);
+      });
+      document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
+        s_cloudForestWideCull = e.target.checked;
+      });
+      document.getElementById('settingCloudForestBgForest')?.addEventListener('change', e => {
+        s_cloudForestBgForest = e.target.checked;
+        if (window.CloudForestRuntimeV2) window.CloudForestRuntimeV2.bgForestEnabled = s_cloudForestBgForest;
+        // Also hide/show whatever's already built this session, so the
+        // toggle is instant instead of only affecting the next zone build.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
       });
       document.getElementById('settingFpsCounter').addEventListener('change', e => {
         s_fpsCounter = e.target.checked;
@@ -21153,7 +21182,7 @@
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
-        window.CloudForestFog?.update(dt);
+        if (s_cloudForestFog) window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();

@@ -485,6 +485,13 @@
   window.CloudForestFog = {
     init,
     update,
+    // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
+    // is simply not called at all while disabled (see game.js's per-frame
+    // call site), which freezes the mist mid-animation rather than hiding
+    // it — this force-hides the group immediately so turning the toggle off
+    // is instant. Re-enabling needs no counterpart: the very next update()
+    // call sets group.visible from isCloudForestArea() itself.
+    setEnabled: (enabled) => { if (!enabled && group) group.visible = false; },
     getDebugState: () => ({
       active: !!deps?.isCloudForestArea?.(),
       area: skyPolicyDeps?.getCurrentArea?.() ?? null,
