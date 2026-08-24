@@ -1,9 +1,9 @@
 name: Apply head turn fix
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/head-turn-65-camera-facing
+      - main
 
 permissions:
   contents: write
