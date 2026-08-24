@@ -5,9 +5,9 @@
 // head-weighted pixels independently. A front hat can otherwise linger visibly
 // through the skull after the head itself has crossed to its rear-facing side.
 //
-// This module gives every hat a hard 90-degree neck-facing handoff:
-//   neck-to-camera dot > 0  -> normal front portrait, hat visible
-//   neck-to-camera dot <= 0 -> matched portrait with the hat removed
+// Two independent binary gates are used:
+//   camera/head yaw: hard handoff at exactly 90 degrees (no orbit fade/pop)
+//   attack/body pitch+roll: hard safety cutoff at 35 degrees from upright
 // The rear portrait/material remains responsible for whatever should be visible
 // from behind. Hats authored with a real `pos: "back"` layer keep that rear art;
 // front-only hats (e.g. the basic/leather headbands) are omitted from the rear
@@ -20,11 +20,16 @@
   const avatarApi = global.PNGPlaneAvatar;
   if (!THREE || !preview?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
 
+  const TILT_CUTOFF_DEG = 35;
+  const TILT_CUTOFF_DOT = Math.cos(TILT_CUTOFF_DEG * Math.PI / 180);
+
   let pairedRenders = 0;
   let correctedBuilds = 0;
   let correctedMeshes = 0;
   let rearFrontOnlyHatsHidden = 0;
   let lastFacingDot = null;
+  let lastYawDot = null;
+  let lastUprightDot = null;
 
   const NONE_HAT = Object.freeze({ id: 'none', label: 'No Hat', tintSlot: null, layers: [] });
 
@@ -127,8 +132,10 @@
       material.userData.hobunjiFrontHatFacingUniform = facingUniform;
       material.userData.hobunjiFrontHatFacing = {
         enabled: true,
-        cutoffDot: 0,
-        cutoffDegrees: 90,
+        yawCutoffDot: 0,
+        yawCutoffDegrees: 90,
+        tiltCutoffDot: TILT_CUTOFF_DOT,
+        tiltCutoffDegrees: TILT_CUTOFF_DEG,
         transition: 'hard-step',
         facingSource: 'neck-bone',
       };
@@ -147,15 +154,20 @@
             `vec4 hobunjiFrontHatlessTexel = mapTexelToLinear(texture2D(hobunjiFrontHatlessMap, vUv));\nvec4 hobunjiFrontHatlessDiffuse = vec4(diffuse, opacity) * hobunjiFrontHatlessTexel;\nfloat hobunjiFrontHatVisibility = hobunjiFrontHatFacing > 0.0 ? 1.0 : 0.0;\ndiffuseColor = mix(hobunjiFrontHatlessDiffuse, diffuseColor, hobunjiFrontHatVisibility);\n#include <alphatest_fragment>`
           );
       };
-      material.customProgramCacheKey = () => `${previousProgramKey ? previousProgramKey() : ''}|hobunji-front-hat-hard90-v1`;
+      material.customProgramCacheKey = () => `${previousProgramKey ? previousProgramKey() : ''}|hobunji-front-hat-hard90-yaw-tiltguard-v2`;
       material.needsUpdate = true;
 
       const previousOnBeforeRender = typeof object.onBeforeRender === 'function' ? object.onBeforeRender : null;
       const localFront = new THREE.Vector3(0, 0, 1);
+      const localUp = new THREE.Vector3(0, 1, 0);
       const worldFront = new THREE.Vector3();
+      const worldUp = new THREE.Vector3();
       const headWorld = new THREE.Vector3();
       const cameraWorld = new THREE.Vector3();
       const toCamera = new THREE.Vector3();
+      const horizontalFront = new THREE.Vector3();
+      const horizontalToCamera = new THREE.Vector3();
+      const worldVertical = new THREE.Vector3(0, 1, 0);
 
       object.onBeforeRender = function frontHatFacingBeforeRender(renderer, scene, camera, geometry, currentMaterial, group) {
         previousOnBeforeRender?.call(this, renderer, scene, camera, geometry, currentMaterial, group);
@@ -164,16 +176,32 @@
 
         neckJoint.updateWorldMatrix?.(true, false);
         worldFront.copy(localFront).transformDirection(neckJoint.matrixWorld).normalize();
+        worldUp.copy(localUp).transformDirection(neckJoint.matrixWorld).normalize();
         neckJoint.getWorldPosition(headWorld);
         camera.getWorldPosition(cameraWorld);
         toCamera.copy(cameraWorld).sub(headWorld).normalize();
 
-        const dot = Math.max(-1, Math.min(1, worldFront.dot(toCamera)));
-        // Binary value on purpose: no smoothstep/fade. Exactly at 90 degrees
-        // (dot === 0) the front hat is already gone.
-        uniform.value = dot > 0 ? 1 : 0;
-        lastFacingDot = dot;
-        currentMaterial.userData.hobunjiFrontHatLastFacingDot = dot;
+        horizontalFront.set(worldFront.x, 0, worldFront.z);
+        horizontalToCamera.set(toCamera.x, 0, toCamera.z);
+        const horizontalFrontLenSq = horizontalFront.lengthSq();
+        const horizontalCameraLenSq = horizontalToCamera.lengthSq();
+        let yawDot = worldFront.dot(toCamera);
+        if (horizontalFrontLenSq > 1e-8 && horizontalCameraLenSq > 1e-8) {
+          horizontalFront.multiplyScalar(1 / Math.sqrt(horizontalFrontLenSq));
+          horizontalToCamera.multiplyScalar(1 / Math.sqrt(horizontalCameraLenSq));
+          yawDot = horizontalFront.dot(horizontalToCamera);
+        }
+
+        const uprightDot = worldUp.dot(worldVertical);
+        const visible = yawDot > 0 && uprightDot >= TILT_CUTOFF_DOT;
+        uniform.value = visible ? 1 : 0;
+
+        lastFacingDot = worldFront.dot(toCamera);
+        lastYawDot = yawDot;
+        lastUprightDot = uprightDot;
+        currentMaterial.userData.hobunjiFrontHatLastFacingDot = lastFacingDot;
+        currentMaterial.userData.hobunjiFrontHatLastYawDot = yawDot;
+        currentMaterial.userData.hobunjiFrontHatLastUprightDot = uprightDot;
       };
       return true;
     };
@@ -202,8 +230,10 @@
         root.userData.frontHatFacing = {
           enabled: true,
           attachedMaterials: attached,
-          cutoffDot: 0,
-          cutoffDegrees: 90,
+          yawCutoffDot: 0,
+          yawCutoffDegrees: 90,
+          tiltCutoffDot: TILT_CUTOFF_DOT,
+          tiltCutoffDegrees: TILT_CUTOFF_DEG,
           transition: 'hard-step',
           facingSource: 'neck-bone',
           render: sourceCanvas.__hobunjiFrontHatFacingDebug || null,
@@ -270,9 +300,9 @@
     const frontOnlyRemovedProfile = {
       ...profile,
       hat: NONE_HAT,
-      // If Fine Hood is also equipped, its face-opening trim obeys the same
-      // front/back boundary. Removing it here prevents the hatless fallback
-      // texture from reintroducing the trim after Fine Hood's own gate ran.
+      // If Fine Hood is also equipped, its face-opening trim is front-only too.
+      // Removing it here prevents the hatless fallback texture from ever
+      // reintroducing that trim when the hat gate switches off.
       hood: stripFineHoodTrim(profile),
     };
     await global.renderPortraitProfile(hatlessCanvas, frontOnlyRemovedProfile, pairedOptions);
@@ -281,8 +311,10 @@
     canvas.__hobunjiFrontHatFacingDebug = {
       enabled: true,
       hatId: profile.hat?.id || null,
-      cutoffDot: 0,
-      cutoffDegrees: 90,
+      yawCutoffDot: 0,
+      yawCutoffDegrees: 90,
+      tiltCutoffDot: TILT_CUTOFF_DOT,
+      tiltCutoffDegrees: TILT_CUTOFF_DEG,
       transition: 'hard-step',
       facingSource: 'neck-bone',
       rearMode: hatHasRearLayer(profile) ? 'authored-back-layer' : 'front-only-hidden-behind',
@@ -300,8 +332,12 @@
         correctedMeshes,
         rearFrontOnlyHatsHidden,
         lastFacingDot,
-        cutoffDot: 0,
-        cutoffDegrees: 90,
+        lastYawDot,
+        lastUprightDot,
+        yawCutoffDot: 0,
+        yawCutoffDegrees: 90,
+        tiltCutoffDot: TILT_CUTOFF_DOT,
+        tiltCutoffDegrees: TILT_CUTOFF_DEG,
         transition: 'hard-step',
         facingSource: 'neck-bone',
       };
