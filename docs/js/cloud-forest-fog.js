@@ -288,14 +288,18 @@
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
+      // Used to skip both draw submission and animation work for a disabled mist layer.
+      const opacity = clamp01(live.opacity);
+      material.opacity = opacity;
+      mesh.visible = opacity > 0;
+      if (!mesh.visible) continue;
+
       const radius = Math.max(0.1, live.radiusTiles);
       mesh.position.set(px, groundY + config.height * 0.5, pz);
       mesh.scale.set(radius, config.height, radius);
       mesh.rotation.y = t * config.spinSpeed;
-      material.opacity = clamp01(live.opacity);
       material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed) % 1;
       material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6) % 1;
-      mesh.visible = true;
     }
   }
 
