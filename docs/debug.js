@@ -204,12 +204,40 @@
     controls.insertBefore(btn, anchor);
   }
 
+  function _syncCloudForestDevTuningVisibility() {
+    const devModeToggle = document.getElementById('settingDevMode'); // Authoritative Dev Mode checkbox used to gate the Cloud Forest tuning panel.
+    const tuningPanel = document.getElementById('cloudForestDevTuning'); // Injected by performance-debug.js and hidden outside Dev Mode.
+    if (!devModeToggle || !tuningPanel) return;
+    const devModeEnabled = !!devModeToggle.checked;
+    tuningPanel.style.display = devModeEnabled ? '' : 'none';
+    if (!devModeEnabled) {
+      // Do not leave an invisible performance override active after Dev Mode is disabled.
+      const resetButton = [...tuningPanel.querySelectorAll('button')]
+        .find(button => button.textContent?.trim() === 'Reset authored values');
+      resetButton?.click();
+    }
+  }
+
+  function _installCloudForestDevModeGate() {
+    const devModeToggle = document.getElementById('settingDevMode');
+    if (!devModeToggle) return;
+    if (!devModeToggle.dataset.cloudForestTuningBound) {
+      devModeToggle.dataset.cloudForestTuningBound = '1';
+      devModeToggle.addEventListener('change', _syncCloudForestDevTuningVisibility);
+    }
+    _syncCloudForestDevTuningVisibility();
+  }
+
   function _loadPerformanceDebug() {
-    if (window.PerfProfiler || document.querySelector('script[data-hobunji-performance-debug]')) return;
+    if (window.PerfProfiler || document.querySelector('script[data-hobunji-performance-debug]')) {
+      _installCloudForestDevModeGate();
+      return;
+    }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20260818a';
+    script.src = 'js/performance-debug.js?v=20260824a';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
+    script.onload = _installCloudForestDevModeGate;
     script.onerror = () => window.__farmLog('Performance diagnostics module failed to load.', 'warn', 'assets');
     document.head.appendChild(script);
   }
