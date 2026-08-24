@@ -739,6 +739,11 @@
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
+        // Standing on a climbable tree branch (see climb-system.js's
+        // beginOnBranch) — onBranch holds the branch descriptor, branchT is
+        // the 0..1 position along it, branchSurfaceY is that branch's own
+        // height (used instead of terrain-follow while onBranch is set).
+        onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
       // All players present in this session — just the local `player` today
@@ -807,6 +812,22 @@
       const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        if (target.onBranch) {
+          // Knockback while standing on a branch is resolved along the
+          // branch's own 1D axis instead of the usual free-plane impulse —
+          // if it doesn't push the target past either end, that's the whole
+          // effect (see resolveBranchKnockback). Pushed past an end, the
+          // target falls to the ground and lands hard rather than sliding —
+          // a flat Footing hit instead of the velocity impulse below.
+          const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
+          if (result?.fell) {
+            // footing-damage-recovery-bridge.js doubles every spendFooting
+            // call, so 47.5 here nets the intended 95 Footing damage.
+            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+          }
+          return;
+        }
         const ang = Math.atan2(target.y - fromY, target.x - fromX);
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
@@ -7751,6 +7772,7 @@
         const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
+        window.ClimbSystem?.resetAreaBranches(mapId); // This zone's shadewood instances (below) re-register their climbable branches fresh on every (re)build.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -7925,6 +7947,22 @@
                     x: cx, z: cz, radius: canopyLocal.radius * scaleTotal,
                     undersideY: groundY + canopyLocal.undersideY * scaleTotal,
                   };
+                }
+                // This instance's tree shape may have rolled a climbable
+                // mid-trunk branch (see foliage-generator.js's
+                // climbBranchChance) — register it with ClimbSystem in world
+                // px (matching player.x/y), keyed by this zone's mapId.
+                const branchWorld = window.FoliageGenerator.getClimbBranchWorld(vegGroup);
+                if (branchWorld) {
+                  const baseX = branchWorld.a.x * TILE, baseY = branchWorld.a.z * TILE;
+                  const tipX = branchWorld.b.x * TILE, tipY = branchWorld.b.z * TILE;
+                  window.ClimbSystem?.registerBranch(mapId, {
+                    col: c, row: r,
+                    baseX, baseY, tipX, tipY,
+                    baseWorldY: branchWorld.a.y, tipWorldY: branchWorld.b.y,
+                    length: Math.max(1, Math.hypot(tipX - baseX, tipY - baseY)),
+                    radius: branchWorld.radius,
+                  });
                 }
               }
               if (isNativeBuild) {
@@ -13252,6 +13290,11 @@
 
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
+          return;
+        }
+
+        if (player.onBranch) {
+          window.ClimbSystem.updateBranchMovement(dt);
           return;
         }
 
@@ -19947,7 +19990,8 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const standY = player.climbing ? player.climbSurfaceY
+        const standY = player.onBranch ? player.branchSurfaceY
+          : player.climbing ? player.climbSurfaceY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
 
         // Riding a mount lifts the rider up so their posterior anchor
@@ -22121,7 +22165,8 @@
         const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
         if (climbTarget) {
           const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
-          return [{ icon: '🧗', label: climbAllowed ? 'Climb' : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
+          const climbLabel = climbTarget.type === 'branchDescend' ? 'Climb Down' : 'Climb';
+          return [{ icon: '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
         }
 
         const tile    = getActiveGrid()[reticle.row][reticle.col];

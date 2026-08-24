@@ -1002,6 +1002,13 @@ window.FoliageGenerator = (() => {
       vineTubeRadius: 0.06, vineTubeTaper: 0.55, vineRadialSegments: 5,
       vineNoise: 0.35, vineNoiseScale: 1.4, vineNoiseOctaves: 2,
       vineColorHex: 0x3a5f3a,
+      // Sideways mid-trunk climbing branch — see buildConiferTreeGroup's
+      // climbBranchLocal block. climbBranchAt sits well below the knot tier
+      // (knotAt 0.8) so it reads as a bare branch on open trunk, not part of
+      // the canopy. Rolled once per shared tree variant (not per instance),
+      // so climbBranchChance is the fraction of the cached tree shapes that
+      // end up with one, not a per-tree-instance probability.
+      climbBranchChance: 0.5, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
       // Calibrated (not guessed) against the tool's own "canopy influence
       // radius"/"canopy underside height" species properties — 2.75 / 6
       // world units respectively — by building this preset unscaled in a
@@ -1082,6 +1089,7 @@ window.FoliageGenerator = (() => {
     const woodGeoms = [];
     const leafGeoms = [];
     const vineGeoms = [];
+    let climbBranchLocal = null; // Populated below for presets that opt into climbBranchChance (shadewood).
     const unitLeaf = new T.PlaneGeometry(1, 1, 1, 1);
 
     // Trunk
@@ -1461,6 +1469,52 @@ window.FoliageGenerator = (() => {
       }
     }
 
+    // Sideways mid-trunk climbing branch (opt-in via preset.climbBranchChance
+    // — shadewood only). Distinct from the knot/canopy branches above: those
+    // attach high (knotAt ~0.8) and carry leaf cards, this is a single bare
+    // branch lower on the bark, thick and roughly horizontal, that reads as
+    // something a player or drenkirra could climb onto the same way
+    // ClimbSystem already treats plateau walls. Rolled once per shared tree
+    // variant (not per tile instance — see getTreeVariants), so roughly this
+    // fraction of the handful of cached shapes ends up with one, which reads
+    // as "sometimes" as those shapes recur across many placed trees. Local
+    // (pre-instance-transform) endpoints are cached on the group so
+    // buildTreeInstance can carry them through — see getClimbBranchWorld.
+    if (preset.climbBranchChance > 0 && rand() < preset.climbBranchChance) {
+      const at = clamp01(preset.climbBranchAt ?? 0.45);
+      const f = at * (trunk.spine.pts.length - 1);
+      const i0 = Math.max(0, Math.min(trunk.spine.pts.length - 2, Math.floor(f)));
+      const alpha = f - i0;
+      const anchor = trunk.spine.pts[i0].clone().lerp(trunk.spine.pts[i0 + 1], alpha);
+      const tan = trunk.spine.tangents[i0].clone().lerp(trunk.spine.tangents[i0 + 1], alpha).normalize();
+      let right = new T.Vector3().copy(tan).cross(UP);
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      right.normalize();
+      if (rand() < 0.5) right.negate(); // Which side of the trunk the branch sticks out from.
+      const attachR = Math.max(1e-4, trunkRad * Math.pow(taper, at * RINGS));
+      const dir = right.clone().addScaledVector(tan, 0.08).addScaledVector(UP, 0.05).normalize();
+      const origin = anchor.clone().addScaledVector(right, attachR);
+      const branchLen = Math.max(1e-4, (preset.climbBranchLength ?? 7) * (0.85 + 0.3 * rand()));
+      const branchRad = Math.max(1e-4, preset.climbBranchRadius ?? 0.55);
+      const climbBranch = buildWonkyChain({
+        seedU32: seedU32 ^ 0xC1113B,
+        length: branchLen, ringSegments: Math.max(4, Math.floor(RINGS * 0.75)), radialSegments: RADIAL,
+        origin, direction: dir,
+        bend: clamp(preset.trunkBend * 0.15, 0, 2), wonk: clamp((preset.knotWonk ?? 0.5) * 0.4, 0, 2),
+        wonkScale: Math.max(0.05, preset.trunkWonkScale), twist: 0,
+        noiseAmt: clamp((preset.trunkNoise ?? 0.5) * 0.3, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale),
+        noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: 0,
+        radiusFn: (t01, ringIdx) => Math.max(1e-4, branchRad * Math.pow(0.9, ringIdx))
+      });
+      woodGeoms.push(climbBranch.geom);
+      const tip = climbBranch.spine.pts[climbBranch.spine.pts.length - 1];
+      climbBranchLocal = {
+        a: { x: origin.x, y: origin.y, z: origin.z },
+        b: { x: tip.x, y: tip.y, z: tip.z },
+        radius: branchRad,
+      };
+    }
+
     const group = new T.Group();
     if (woodGeoms.length) {
       const merged = mergeGeoms(woodGeoms);
@@ -1489,6 +1543,7 @@ window.FoliageGenerator = (() => {
 
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
+    if (climbBranchLocal) group.userData.climbBranchLocal = climbBranchLocal;
     return group;
   }
 
@@ -1558,13 +1613,35 @@ window.FoliageGenerator = (() => {
     inst.rotation.y = instYaw;
     inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
+    if (variant.userData.climbBranchLocal) inst.userData.climbBranchLocal = variant.userData.climbBranchLocal;
     return inst;
+  }
+
+  // Converts a placed tree instance's cached local-space climb-branch
+  // endpoints (see buildConiferTreeGroup's climbBranchLocal block) into
+  // world space, using the instance's own position/rotation.y/uniform scale
+  // — the only transforms buildTreeInstance/its caller ever apply. Called by
+  // game.js once a shadewood instance has been positioned, to register the
+  // branch (if this instance has one) with ClimbSystem. Returns null when
+  // this instance's tree shape rolled no climbable branch.
+  function getClimbBranchWorld(inst) {
+    const local = inst.userData?.climbBranchLocal;
+    if (!local) return null;
+    const yaw = inst.rotation.y, scale = inst.scale.x;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const toWorld = (p) => ({
+      x: inst.position.x + (p.x * cos + p.z * sin) * scale,
+      y: inst.position.y + p.y * scale,
+      z: inst.position.z + (-p.x * sin + p.z * cos) * scale,
+    });
+    return { a: toWorld(local.a), b: toWorld(local.b), radius: local.radius * scale };
   }
 
   function degToRad(d) { return d * Math.PI / 180; }
 
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
+    getClimbBranchWorld,
     buildNeedlegrainMesh(growth01, col, row) {
       const seedU32 = xfnv1a(`ng_${col}_${row}`);
       return buildNeedlegrainGroup(growth01, seedU32);
