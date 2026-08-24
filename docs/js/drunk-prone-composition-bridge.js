@@ -185,61 +185,7 @@
     banditApi.__proneMotionExclusiveInstalled = true;
   }
 
-  function firstRenderableMesh(root) {
-    if (!root?.isObject3D) return null;
-    let found = null;
-    root.traverse?.(object => {
-      if (!found && object?.isMesh) found = object;
-    });
-    return found;
-  }
-
-  function preserveBanditFacingSide(state, camera, undo) {
-    const entity = state.entity;
-    const visualRoot = state.visualRoot;
-    const avatarRoot = state.avatarRoot;
-    if (!entity || !visualRoot?.quaternion || !avatarRoot?.isObject3D || !camera?.isObject3D) return;
-
-    // The visible sway root is normally identity outside the render call. Base
-    // front/back choice is therefore measured from the already-resolved hostile
-    // yaw/dead-zone state, before low-Footing pitch/roll can cross a culling
-    // boundary. This mirrors the player's preserveFacingSide render behavior.
-    visualRoot.quaternion.identity();
-    avatarRoot.updateWorldMatrix?.(true, true);
-    camera.updateWorldMatrix?.(true, false);
-
-    const frontPlane = entity.avatarRef?.frontPlane;
-    const backPlane = entity.avatarRef?.backPlane;
-    const frontMesh = firstRenderableMesh(frontPlane);
-    if (!frontPlane || !backPlane || !frontMesh) return;
-
-    const cameraWorldPosition = camera.getWorldPosition(new THREE.Vector3());
-    const objectWorldPosition = frontMesh.getWorldPosition(new THREE.Vector3());
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(frontMesh.matrixWorld);
-    const frontNormal = new THREE.Vector3(0, 0, 1).applyMatrix3(normalMatrix).normalize();
-    const viewDirection = cameraWorldPosition.clone().sub(objectWorldPosition).normalize();
-    const showFront = frontNormal.dot(viewDirection) >= 0;
-    const oldFrontVisible = frontPlane.visible;
-    const oldBackVisible = backPlane.visible;
-    const selectedPlane = showFront ? frontPlane : backPlane;
-    const selectedMesh = firstRenderableMesh(selectedPlane);
-    const selectedMaterials = Array.isArray(selectedMesh?.material)
-      ? selectedMesh.material
-      : (selectedMesh?.material ? [selectedMesh.material] : []);
-    const oldSides = selectedMaterials.map(material => material.side);
-
-    frontPlane.visible = showFront;
-    backPlane.visible = !showFront;
-    for (const material of selectedMaterials) material.side = THREE.DoubleSide;
-
-    undo.push(() => {
-      frontPlane.visible = oldFrontVisible;
-      backPlane.visible = oldBackVisible;
-      selectedMaterials.forEach((material, index) => { material.side = oldSides[index]; });
-    });
-  }
-
-  function prepareBanditSwayForRender(camera, undo) {
+  function prepareBanditSwayForRender(undo) {
     for (const state of Array.from(banditStates)) {
       const entity = state.entity;
       const visualRoot = state.visualRoot;
@@ -254,7 +200,10 @@
       const loss = banditFootingLoss(entity);
       if (!(loss > 0)) continue;
 
-      preserveBanditFacingSide(state, camera, undo);
+      // The sway transform moves the portrait geometry only. Do not lock a
+      // pre-sway front/back choice or mutate material.side: the portrait's
+      // existing THREE.FrontSide materials must keep ordinary backface culling
+      // authoritative after the final transformed orientation is known.
       const previousRotation = visualRoot.rotation?.clone?.() || null;
       visualRoot.quaternion.copy(state.driverRoot.quaternion);
       undo.push(() => {
@@ -290,7 +239,6 @@
     composer.setChannel(DRUNK_CHANNEL, {
       priority: DRUNK_PRIORITY,
       mode: 'additive',
-      preserveFacingSide: true,
       rotation: { pitch, roll },
     });
   }
@@ -306,7 +254,7 @@
     rendererProto.render = function drunkProneCompositionRender(scene, camera, ...rest) {
       syncDrunkComposerChannel();
       const undo = [];
-      prepareBanditSwayForRender(camera, undo);
+      prepareBanditSwayForRender(undo);
       try {
         return previousRender.call(this, scene, camera, ...rest);
       } finally {
@@ -335,6 +283,8 @@
         effectiveFootingMax: player ? Number(RS.getEffectiveMax(player, 'footing')) || 0 : 0,
         drunkenFooting: Number(player?.afflictions?.drunkenFooting) || 0,
         activeBanditSwayStates: banditStates.size,
+        portraitFaceCulling: 'material-frontside',
+        forcedPortraitDoubleSide: false,
         drunkWalk: window.HobunjiDrunkWalk?.getDebug?.() || null,
         composer: composer.getDebug?.() || null,
       };
