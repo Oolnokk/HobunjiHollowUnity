@@ -299,6 +299,9 @@
     if (_imageCache.has(resolvedPath)) return _imageCache.get(resolvedPath);
     const promise = new Promise((resolve, reject) => {
       const img = new Image();
+      // These assets can be served through a different CDN origin under GitHack/raw previews.
+      // CORS mode MUST be selected before src so portrait-utils can legally read pixels via getImageData().
+      img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error(`Failed to load ${resolvedPath}`));
       img.src = resolvedPath;

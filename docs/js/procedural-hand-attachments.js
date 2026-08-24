@@ -118,6 +118,9 @@
     if (handWavySourcePromise) return handWavySourcePromise;
     handWavySourcePromise = new Promise((resolve, reject) => {
       const image = new Image();
+      // Match portrait-utils/loadImg: opt into CORS before assigning src so the
+      // shared body-tint canvas can inspect wavy_surface.png without tainting.
+      image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Failed to load wavy_surface.png for procedural hands'));
       image.src = resolveAssetPath('assets/textures/wavy_surface.png');
