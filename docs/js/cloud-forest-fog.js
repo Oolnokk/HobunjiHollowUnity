@@ -246,38 +246,12 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  function drawLanternMasksCompat() {
-    const ctx = lightingDeps.lctx;
-    const carriers = [{
-      x: lightingDeps.player.x / lightingDeps.TILE,
-      y: lightingDeps.getPlayerWorldY() + 0.5,
-      z: lightingDeps.player.y / lightingDeps.TILE,
-    }];
-    const currentArea = lightingDeps.getCurrentArea();
-    for (const walker of lightingDeps.npcWalkers) {
-      if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
-        carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
-      }
-    }
-    ctx.globalCompositeOperation = 'destination-out';
-    for (const carrier of carriers) {
-      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, 5.0);
-      if (!(shineR > 0)) continue;
-      const clarityFrac = 1.3 / 5.0;
-      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0, 'rgba(0,0,0,0.92)');
-      grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
-      grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }
+  // The old carried-lantern mask was a destination-out circle on the entire
+  // screen-space day/night canvas. Because that canvas also covers the sky,
+  // the circle was visible against the skydome in daylight and at night.
+  // Disable that screen-space player/Watch mask outdoors rather than trying
+  // to reshape it; furniture masks remain unchanged.
+  function drawLanternMasksCompat() {}
 
   function drawFurnitureLightMasksCompat() {
     const ctx = lightingDeps.lctx;
@@ -355,7 +329,6 @@
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Same original local-light behavior; no horizon/depth masking or canvas proxy.
     drawLanternMasksCompat();
     drawFurnitureLightMasksCompat();
 
