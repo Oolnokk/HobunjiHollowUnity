@@ -276,7 +276,7 @@
   };
   if (root.TreeAssetLibrary) { activate(); return; }
   const script = root.document.createElement('script');
-  script.src = 'js/tree-asset-library.js?v=20260824-lod-perch-runtime';
+  script.src = 'js/tree-asset-library.js?v=20260824-branched-lod-runtime';
   script.async = true;
   script.onload = activate;
   script.onerror = () => { /* optional runtime optimization; procedural fallback remains */ };
