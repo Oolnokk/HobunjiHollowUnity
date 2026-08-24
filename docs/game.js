@@ -7300,7 +7300,7 @@
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
-      let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
+      let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
@@ -12669,6 +12669,8 @@
 
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
+          const neckRig = avatarGroup.userData?.neckRig; // Used below to give the separated hat overlay the portrait plane's exact skin weights.
+          const skinnedSource = neckRig?.available ? neckRig.skinnedPlane : null; // Used below as the overlay's geometry/skeleton source instead of an unrigged card.
           const backOffsetZ = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.backPlaneOffsetZ ?? 0.001;
           const materials = [], meshes = [];
           const addPlane = (canvas, facingBack) => {
@@ -12681,14 +12683,33 @@
               side: THREE.FrontSide, depthWrite: true, depthTest: true,
               name: `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_material`,
             });
-            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+            let mesh; // Becomes a weight-matched SkinnedMesh when the avatar has a neck rig, with a rigid fallback for legacy avatars.
+            if (skinnedSource?.geometry && skinnedSource?.skeleton) {
+              const overlayGeometry = skinnedSource.geometry.clone(); // Used only by this face-specific overlay, so normal avatar disposal remains ownership-safe.
+              const sourceGroup = skinnedSource.geometry.groups[facingBack ? 1 : 0]; // Selects the already-authored rear or front face without duplicating the opposite face.
+              if (!sourceGroup) {
+                overlayGeometry.dispose();
+                material.map?.dispose();
+                material.dispose();
+                return;
+              }
+              overlayGeometry.clearGroups();
+              overlayGeometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
+              material.skinning = true;
+              mesh = new THREE.SkinnedMesh(overlayGeometry, material);
+              mesh.position.copy(skinnedSource.position);
+              mesh.position.z += facingBack ? -0.0015 : 0.0015;
+              mesh.bind(skinnedSource.skeleton, skinnedSource.bindMatrix);
+            } else {
+              mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+              mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
+              if (facingBack) mesh.rotation.y = Math.PI;
+            }
             mesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_plane`;
             // Nudged a hair closer to camera than its sibling body plane (in
             // the SAME outward direction that plane already leans relative to
             // anchorZ) so the hat consistently draws on top instead of
             // z-fighting with the now-hatless body layer underneath it.
-            mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
-            if (facingBack) mesh.rotation.y = Math.PI;
             // Front stays at the body planes' shared default (2) — resolved
             // against the front body plane by the Z-nudge above, same as
             // always. Back has to explicitly out-rank the body's own back
@@ -12697,6 +12718,7 @@
             // updatePetLayering), since renderOrder is compared before the
             // Z-nudge ever comes into play.
             mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
+            mesh.frustumCulled = false;
             assembly.add(mesh);
             materials.push(material);
             meshes.push(mesh);
@@ -12709,8 +12731,9 @@
             for (const m of materials) { m.map?.dispose(); m.dispose(); }
             return;
           }
-          _playerHatXrayOverlay = { materials, meshes };
+          _playerHatXrayOverlay = { materials, meshes, skinningMode: skinnedSource ? 'shared-portrait-skeleton' : 'rigid-fallback' };
           _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
+          window.__farmLog?.(`[avatar] hat-xray overlay uses ${_playerHatXrayOverlay.skinningMode}`, 'info');
         } catch (err) {
           window.__farmLog?.(`[avatar] hat-xray overlay build failed: ${err.message}`, 'warn');
         }
