@@ -1,0 +1,88 @@
+name: Apply surface stretch and lighten
+on:
+  push:
+    branches: [fix/wavy-limbs-medium-gray-stone]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+      - name: Patch authored surface mapping and tone
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected block not found in {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # The earlier 0.22->0.88 remap was introduced while we thought low
+          # contrast was the root cause. The Pixel Probe later proved the real
+          # failure was a CORS-tainted flat fallback. Use the authored PNG's
+          # actual luminance directly, exactly like ordinary body sprite art.
+          replace_once(
+              'docs/js/portrait-utils.js',
+              "function getSurfaceTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {\n  const normalized = normalizeAuthoredSurfacePngTone(img, sourceKey);\n  return _imageForTint(normalized, `${sourceKey}|surface-tone`, bodySpriteTintForColor(color, speciesId, slot));\n}",
+              "function getSurfaceTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {\n  // Same-style surface PNGs now use their authored luminance directly, just\n  // like body sprite PNGs. The earlier aggressive 0.22->0.88 normalization\n  // darkened shadow pixels unnecessarily; the actual missing-texture bug was\n  // the CORS-tainted flat fallback, not insufficient source contrast.\n  return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));\n}"
+          )
+
+          # Hands: one copy of the PNG stretched across normalized/generated UVs.
+          replace_once(
+              'docs/js/procedural-hand-attachments.js',
+              "    texture.wrapS = THREE.RepeatWrapping;\n    texture.wrapT = THREE.RepeatWrapping;\n    texture.repeat.set(1.25, 1);",
+              "    texture.wrapS = THREE.ClampToEdgeWrapping;\n    texture.wrapT = THREE.ClampToEdgeWrapping;\n    texture.repeat.set(1, 1);"
+          )
+
+          # Feet: same stretch-to-fit behavior. repeatX remains in the call
+          # signature for compatibility with older callers but no longer tiles.
+          replace_once(
+              'docs/js/procedural-leg-animation.js',
+              "    texture.wrapS = THREE.RepeatWrapping;\n    texture.wrapT = THREE.RepeatWrapping;\n    texture.repeat.set(repeatX || 1.25, 1);",
+              "    texture.wrapS = THREE.ClampToEdgeWrapping;\n    texture.wrapT = THREE.ClampToEdgeWrapping;\n    texture.repeat.set(1, 1);"
+          )
+
+          # Emergency local fallbacks should also avoid recreating the old deep
+          # shadow bias if the shared portrait helper ever fails. Preserve source
+          # luminance but keep shaded pixels substantially lighter.
+          for path in [
+              'docs/js/procedural-hand-attachments.js',
+              'docs/js/procedural-leg-animation.js',
+              'docs/js/natural-surface-materials.js',
+          ]:
+              p = Path(path)
+              text = p.read_text()
+              old = "const shade = Math.max(0.18, Math.min(1.18, (0.22 + 0.66 * t) / 0.55));"
+              new = "const shade = Math.max(0.72, Math.min(1.18, l / 0.55));"
+              if old not in text:
+                  raise SystemExit(f'expected fallback shade line not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          print('patched stretch-fit mapping and removed dark surface normalization')
+      - name: Validate
+        run: |
+          node --check docs/js/portrait-utils.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/natural-surface-materials.js
+          git diff --check
+          grep -q "texture.wrapS = THREE.ClampToEdgeWrapping" docs/js/procedural-hand-attachments.js
+          grep -q "texture.repeat.set(1, 1)" docs/js/procedural-leg-animation.js
+          grep -q "return _imageForTint(img, sourceKey" docs/js/portrait-utils.js
+          ! grep -A5 "function getSurfaceTintedCanvas" docs/js/portrait-utils.js | grep -q "normalizeAuthoredSurfacePngTone"
+      - name: Commit source fix and remove workflow
+        run: |
+          rm -f .github/workflows/apply-surface-stretch-lighten.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Stretch authored PNG surfaces and lighten shading'
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
