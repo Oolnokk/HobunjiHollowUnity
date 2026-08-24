@@ -137,11 +137,11 @@
     if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
 
     const textureName = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
-    const planeUnlit = global.HobunjiPngPlaneUnlit;
-    const texture = planeUnlit?.configureTexture
-      ? planeUnlit.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(resolvedHex)), textureName)
+    const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
+    const texture = spritePngSurface?.configureTexture
+      ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(resolvedHex)), textureName)
       : new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
-    if (!planeUnlit?.configureTexture) {
+    if (!spritePngSurface?.configureTexture) {
       texture.name = textureName;
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.needsUpdate = true;
@@ -241,8 +241,9 @@
         const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
         const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
         const materialName = material?.name || `${role}_hand_material`;
-        const next = (global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit)?.makeMaterial
-          ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
+        const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
+        const next = spritePngSurface?.makeMaterial
+          ? spritePngSurface.makeMaterial(THREE, bodyTexture, materialName, {
               color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
               side: THREE.DoubleSide, // closed/turned hand geometry needs both sides; all other plane flags stay canonical
               depthWrite: !isParrotWingLayer,
@@ -323,8 +324,9 @@
     geometry.scale(0.72, 1, 0.55);
     const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
     const materialName = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
-    const material = (global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit)?.makeMaterial
-      ? global.HobunjiPngPlaneUnlit.makeMaterial(THREE, bodyTexture, materialName, {
+    const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
+    const material = spritePngSurface?.makeMaterial
+      ? spritePngSurface.makeMaterial(THREE, bodyTexture, materialName, {
           color: bodyTexture ? 0xffffff : color,
           side: THREE.DoubleSide,
         })

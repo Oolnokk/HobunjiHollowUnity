@@ -83,10 +83,11 @@
     // loads. The decoded PNG later replaces this with the exact portrait body
     // recolor canvas, using {hex:tint} as the body-color descriptor.
     const textureName = `natural_${String(tint).toLowerCase()}_${wrapMode}`;
-    tex = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture
-      ? window.HobunjiPngPlaneUnlit.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(tint)), textureName)
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    tex = spritePngSurface?.configureTexture
+      ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(tint)), textureName)
       : new THREE.CanvasTexture(flatTintCanvas(tint));
-    if (!(window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture) {
+    if (!spritePngSurface?.configureTexture) {
       tex.name = textureName;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.needsUpdate = true;
@@ -153,8 +154,8 @@
       color: new THREE.Color(tint),
       // Geometry-specific state stays inherited so cliffs/rocks do not move
       // into the transparent render queue or cull faces differently just to
-      // imitate a 2D sprite. Everything that controls the unlit appearance is
-      // provided by the PNG-plane builder.
+      // imitate a 2D sprite. Everything that controls the authored-PNG unlit
+      // appearance is provided by the same sprite surface builder as body art.
       side: sourceMaterial?.side ?? THREE.FrontSide,
       transparent: !!sourceMaterial?.transparent,
       opacity: sourceMaterial?.opacity ?? 1,
@@ -165,8 +166,9 @@
       polygonOffsetFactor: sourceMaterial?.polygonOffsetFactor || 0,
       polygonOffsetUnits: sourceMaterial?.polygonOffsetUnits || 0,
     };
-    mat = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.makeMaterial
-      ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    mat = spritePngSurface?.makeMaterial
+      ? spritePngSurface.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
       : new THREE.MeshBasicMaterial({ map: texture || null, ...overrides });
     mat.name = `natural_${surface}_${tint}`;
     mat.userData = Object.assign({}, sourceMaterial?.userData, {

@@ -286,10 +286,11 @@
     }
     if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
     const textureName = debugName || sourcePath;
-    const texture = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture
-      ? window.HobunjiPngPlaneUnlit.configureTexture(THREE, new THREE.CanvasTexture(source), textureName)
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    const texture = spritePngSurface?.configureTexture
+      ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(source), textureName)
       : new THREE.CanvasTexture(source);
-    if (!(window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.configureTexture) {
+    if (!spritePngSurface?.configureTexture) {
       texture.name = textureName;
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.needsUpdate = true;
@@ -526,8 +527,9 @@
     // the textured surface decodes asynchronously; buildSurfaceTexture's
     // resolved map replaces this material's map (and resets color to white
     // so the two don't multiply together) once it's ready.
-    const material = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.makeMaterial
-      ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, null, `${speciesId}_fallback_foot`, { color: initialColorHex || 0xffffff })
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    const material = spritePngSurface?.makeMaterial
+      ? spritePngSurface.makeMaterial(THREE, null, `${speciesId}_fallback_foot`, { color: initialColorHex || 0xffffff })
       : new THREE.MeshBasicMaterial({
           color: initialColorHex || 0xffffff,
           transparent: true,
@@ -623,8 +625,9 @@
         const role = roles[material.name];
         const texture = roleTextures.get(role) || defaultTexture;
         // See buildFallbackFoot's comment on unlit vs lit materials.
-        const cloned = (window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit)?.makeMaterial
-          ? window.HobunjiPngPlaneUnlit.makeMaterial(THREE, texture, material.name, { color: 0xffffff })
+        const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+        const cloned = spritePngSurface?.makeMaterial
+          ? spritePngSurface.makeMaterial(THREE, texture, material.name, { color: 0xffffff })
           : new THREE.MeshBasicMaterial({
               map: texture,
               color: 0xffffff,
