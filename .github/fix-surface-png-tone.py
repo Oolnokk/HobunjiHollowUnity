@@ -37,8 +37,8 @@ function _surfaceToneConfig() {
   return {
     sourceLowPercentile: Number.isFinite(Number(cfg.surfaceSourceLowPercentile)) ? Number(cfg.surfaceSourceLowPercentile) : 0.10,
     sourceHighPercentile: Number.isFinite(Number(cfg.surfaceSourceHighPercentile)) ? Number(cfg.surfaceSourceHighPercentile) : 0.90,
-    targetLow: Number.isFinite(Number(cfg.surfaceToneLow)) ? Number(cfg.surfaceToneLow) : 0.18,
-    targetHigh: Number.isFinite(Number(cfg.surfaceToneHigh)) ? Number(cfg.surfaceToneHigh) : 0.80,
+    targetLow: Number.isFinite(Number(cfg.surfaceToneLow)) ? Number(cfg.surfaceToneLow) : 0.22,
+    targetHigh: Number.isFinite(Number(cfg.surfaceToneHigh)) ? Number(cfg.surfaceToneHigh) : 0.88,
   };
 }
 
