@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const sharedSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Guards gameplay and attack-editor portrait rigs.
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards the player's post-rig hat/hood overlap overlay.
 const authorSource = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Guards the standalone multi-avatar author rig.
 const attackEditorSource = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Guards the mobile-visible rig diagnostic.
 
@@ -36,5 +37,29 @@ assert.doesNotMatch(authorGeometry, /scanOpaque|alphaThreshold|cellHasOpaquePixe
   'animation-author mesh coverage is independent of portrait opacity');
 assert.match(attackEditorSource, /whole-plane grid cells · \$\{coverageMode\}/,
   'attack editor exposes whole-plane skin coverage without requiring developer tools');
+
+const gameHatOverlayStart = gameSource.indexOf('async function buildPlayerHatXrayOverlay'); // Used below to isolate the gameplay overlay builder.
+const gameHatOverlayEnd = gameSource.indexOf('async function refreshPlayerAvatar', gameHatOverlayStart);
+assert.ok(gameHatOverlayStart >= 0 && gameHatOverlayEnd > gameHatOverlayStart, 'gameplay hat overlay builder is present');
+const gameHatOverlay = gameSource.slice(gameHatOverlayStart, gameHatOverlayEnd); // Used below to prevent post-rig cosmetics returning to rigid planes.
+assert.match(gameHatOverlay, /new THREE\.SkinnedMesh\(overlayGeometry, material\)/,
+  'gameplay hat overlap pixels use a skinned overlay when the portrait has a neck rig');
+assert.match(gameHatOverlay, /mesh\.bind\(skinnedSource\.skeleton, skinnedSource\.bindMatrix\)/,
+  'gameplay overlay shares the portrait skeleton and bind space');
+assert.match(gameHatOverlay, /material\.skinning = true/,
+  'gameplay overlay enables the legacy Three.js skinning shader path');
+
+const authorHatOverlayStart = authorSource.indexOf('async function buildLazyHatOverlayV1521'); // Used below to isolate the Animation Author overlay builder.
+const authorHatOverlayEnd = authorSource.indexOf('function restoreMeshRenderOrderV1521', authorHatOverlayStart);
+assert.ok(authorHatOverlayStart >= 0 && authorHatOverlayEnd > authorHatOverlayStart, 'animation-author hat overlay builder is present');
+const authorHatOverlay = authorSource.slice(authorHatOverlayStart, authorHatOverlayEnd); // Used below to keep x-ray pixels on the weighted portrait surface.
+assert.match(authorHatOverlay, /new THREE\.SkinnedMesh\(overlayGeometry, material\)/,
+  'animation-author overlap pixels use the portrait skin topology');
+assert.match(authorHatOverlay, /mesh\.bind\(rig\.skeleton, rig\.skinnedPlane\.bindMatrix\)/,
+  'animation-author overlay shares the portrait skeleton and bind space');
+assert.match(authorHatOverlay, /rig\.rigRoot\.add\(group\)/,
+  'animation-author overlay lives beside the skinned portrait instead of rigidly beneath the neck bone');
+assert.doesNotMatch(authorHatOverlay, /rig\.neckJoint\.add\(group\)/,
+  'animation-author no longer attaches a rigid cosmetic card under the neck bone');
 
 console.log('portrait full-plane skinning tests passed');
