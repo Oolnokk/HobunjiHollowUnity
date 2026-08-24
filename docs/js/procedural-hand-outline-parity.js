@@ -15,14 +15,15 @@
   const hands = global.ProceduralHandAttachments;
   if (!THREE || !hands?.attach || hands.attach.__hobunjiHandOutlineParityWrapped) return;
 
-  const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
+  const activeRigs = new Set(); // Rigs whose current hand visuals are checked by the live-hook diagnostics below.
   const MAX_SNAPSHOT_AGE_MS = 160;
-  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
   let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
   let heldXrayTaggedMeshes = 0; // Current-or-former procedural hand meshes registered with the selective ground x-ray system.
+  let reflectedShellDraws = 0; // Shell draws whose extrusion sign was reversed for a mirrored hand transform.
 
   function isShellMaterial(material) {
     return !!(
@@ -123,22 +124,32 @@
         return;
       }
 
+      const ageMs = now - state.visibleCapturedAt;
+      if (!(ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS)) {
+        state.restoreStack.push(null);
+        state.thicknessRestoreStack.push(null);
+        rigState.missedOutlineSnapshots++;
+        missedOutlineSnapshots++;
+        return;
+      }
+
+      // Mirroring one hand with a negative X scale reverses transformed winding.
+      // The inverted-shell extrusion therefore needs the opposite thickness sign
+      // on that draw; this was the original hand-outline fix and must coexist with
+      // the later matrix lock rather than being replaced by it.
+      const reflected = passKind === 'shell' && state.visibleMatrixWorld.determinant() < 0;
       const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
       const previousThickness = Number(thicknessUniform?.value);
       if (thicknessUniform && Number.isFinite(previousThickness)) {
         state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
-        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER * (reflected ? -1 : 1);
         material.uniformsNeedUpdate = true;
+        if (reflected) {
+          rigState.reflectedShellDraws++;
+          reflectedShellDraws++;
+        }
       } else {
         state.thicknessRestoreStack.push(null);
-      }
-
-      const ageMs = now - state.visibleCapturedAt;
-      if (!(ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS)) {
-        state.restoreStack.push(null);
-        rigState.missedOutlineSnapshots++;
-        missedOutlineSnapshots++;
-        return;
       }
 
       // Three r128 calls Object3D.onBeforeRender BEFORE deriving modelViewMatrix
@@ -173,6 +184,7 @@
 
     mesh.userData.__hobunjiHandOutlineParity = true;
     mesh.userData.hobunjiOutlineMatrixSource = 'visible-hand-pre-render';
+    mesh.userData.hobunjiOutlineReflectionParity = true;
     rigState.hookedMeshes++;
     return true;
   }
@@ -197,13 +209,41 @@
     if (!found) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
   }
 
+  function currentVisualStatus(rig) {
+    const result = { left: null, right: null, allCurrentOutlineMeshesHooked: true, glbVisualsReady: true }; // Report consumed by rig.getDebug() and the mobile Pixel Probe.
+    for (const side of ['left', 'right']) {
+      const socket = rig?.group?.getObjectByName?.(`${side}_hand_socket`) || null;
+      const visuals = (socket?.children || []).filter(child => child?.name !== `${side}_hand_grip_axes`); // Current replacement visuals only; disposed fallbacks are no longer children.
+      let outlineMeshes = 0; // Number of current meshes that should participate in the shell outline pass.
+      let hookedMeshes = 0; // Number of those current meshes carrying this parity adapter's live hook.
+      let glbVisual = false; // buildGlbHand stamps handModelKey on the visual root; fallback hands intentionally do not.
+      for (const visual of visuals) {
+        if (visual?.userData?.handModelKey) glbVisual = true;
+        visual?.traverse?.(child => {
+          if (!child?.isMesh || child.userData?.noOutline === true) return;
+          outlineMeshes++;
+          if (child.userData?.__hobunjiHandOutlineParity === true) hookedMeshes++;
+        });
+      }
+      const allHooked = outlineMeshes > 0 && hookedMeshes === outlineMeshes; // False is intentionally loud when a visual exists but was never adopted.
+      result[side] = { visualCount: visuals.length, glbVisual, outlineMeshes, hookedMeshes, allHooked };
+      result.allCurrentOutlineMeshesHooked = result.allCurrentOutlineMeshesHooked && allHooked;
+      result.glbVisualsReady = result.glbVisualsReady && glbVisual;
+    }
+    return result;
+  }
+
   function waitForInitialGlbs(rig, rigState, attempt = 0) {
     if (!activeRigs.has(rig)) return;
     scanRig(rig, rigState);
-    const leftLoaded = !!rig.group?.getObjectByName?.('left_hand_visual');
-    const rightLoaded = !!rig.group?.getObjectByName?.('right_hand_visual');
-    const failed = !!rig.getDebug?.()?.loadError;
-    if ((leftLoaded && rightLoaded) || failed || attempt >= 150) return;
+    const debug = rig.getDebug?.() || {}; // `glb` tells us whether this species is expected to replace its fallback visuals asynchronously.
+    const live = currentVisualStatus(rig); // Unlike the old name check, this inspects the actual current visual identity.
+    const expectsGlb = !!debug.glb;
+    if (!expectsGlb || live.glbVisualsReady) return;
+    if (attempt >= 150) {
+      console.warn('[HobunjiHandOutlineParity] timed out waiting for current GLB hand visuals; live status:', live);
+      return;
+    }
     global.setTimeout?.(() => waitForInitialGlbs(rig, rigState, attempt + 1), 100);
   }
 
@@ -219,6 +259,7 @@
       lockedShellDraws: 0, // Shell draws that reused the exact visible hand matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible hand matrix.
       missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
+      reflectedShellDraws: 0, // Mirrored shell draws whose extrusion sign was corrected.
     };
     activeRigs.add(rig);
     scanRig(rig, rigState);
@@ -238,6 +279,7 @@
     const originalDebug = typeof rig.getDebug === 'function' ? rig.getDebug.bind(rig) : null;
     if (originalDebug) {
       rig.getDebug = function handOutlineParityDebug() {
+        const live = currentVisualStatus(rig); // Computed on demand so diagnostics can never report disposed fallback meshes as current.
         return {
           ...originalDebug(),
           outlineMatrixParity: true,
@@ -248,7 +290,11 @@
           outlineLockedShellDraws: rigState.lockedShellDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
+          outlineReflectedShellDraws: rigState.reflectedShellDraws,
           outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
+          currentOutlineVisuals: live,
+          currentOutlineMeshesHooked: live.allCurrentOutlineMeshesHooked,
+          currentGlbVisualsReady: live.glbVisualsReady,
         };
       };
     }
@@ -269,12 +315,16 @@
 
   global.HobunjiHandOutlineParity = Object.freeze({
     getDebug() {
+      let currentRigsHooked = 0; // Aggregate live status lets global diagnostics distinguish current GLBs from historical hook counters.
+      for (const rig of activeRigs) if (currentVisualStatus(rig).allCurrentOutlineMeshesHooked) currentRigsHooked++;
       return {
         activeRigs: activeRigs.size,
+        currentRigsHooked,
         baseMatrixCaptures,
         lockedShellDraws,
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
+        reflectedShellDraws,
         heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
