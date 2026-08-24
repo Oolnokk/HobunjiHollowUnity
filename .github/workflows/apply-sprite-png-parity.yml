@@ -1,0 +1,41 @@
+name: Apply sprite PNG parity
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-sprite-png-parity.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+      - name: Apply sprite PNG parity
+        run: python .github/patch-sprite-png-parity.py
+      - name: Validate source
+        run: |
+          node --check docs/js/portrait-utils.js
+          node --check docs/js/png-plane-avatar.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/natural-surface-materials.js
+          git diff --check
+          grep -q 'window.HobunjiSpritePngSurface' docs/js/portrait-utils.js
+          grep -q 'spritePngSurface.makeCanvasTexture' docs/js/png-plane-avatar.js
+          grep -q 'HobunjiSpritePngSurface' docs/js/procedural-hand-attachments.js
+          grep -q 'HobunjiSpritePngSurface' docs/js/procedural-leg-animation.js
+          grep -q 'HobunjiSpritePngSurface' docs/js/natural-surface-materials.js
+      - name: Commit runtime changes and remove patch machinery
+        run: |
+          rm .github/patch-sprite-png-parity.py .github/workflows/apply-sprite-png-parity.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/portrait-utils.js docs/js/png-plane-avatar.js docs/js/procedural-hand-attachments.js docs/js/procedural-leg-animation.js docs/js/natural-surface-materials.js .github
+          git commit -m 'Share body sprite PNG rendering with 3D surfaces'
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
