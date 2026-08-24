@@ -201,6 +201,14 @@
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
   <script src="js/farm-buildings.js?v=20260807a"></script>
+  <!-- Barn trough system: barn-interior map synthesis, the live fill-level
+       mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
+       — self-contained aside from deps injected via init(), and reads
+       window.FarmAnimals/window.AuthoredFurniture at call time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.FarmTroughs.init(...) during its own setup. -->
+  <script src="js/farm-troughs.js?v=20260824a"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
