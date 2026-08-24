@@ -145,7 +145,8 @@
   function _patchTownZoneBuildings(api) {
     if (!api || api.__hobunjiBuildingGrassPatched) return;
     const originalInit = api.init; // Captured to preserve TownZoneBuildings' existing initialization behavior.
-    const originalSpawnTown = api.spawnTownBuildings; // Captured so grass filtering is an additive post-step.
+    const originalSpawnTown = api.spawnTownBuildings; // Captured so town grass filtering is an additive post-step.
+    const originalSpawnZone = api.spawnZoneBuildings; // Captured so zone grass is filtered once an authored building map is known.
     if (typeof originalInit === 'function') {
       api.init = function (injectedDeps) {
         townDeps = injectedDeps;
@@ -157,6 +158,20 @@
         const result = originalSpawnTown.apply(this, args);
         const stats = _refreshTown(); // Building metadata is synchronous even though mesh GLBs finish later.
         if (stats.suppressed) townDeps?.debugLog?.(`Building footprints suppressed ${stats.suppressed} town grass instance(s).`);
+        return result;
+      };
+    }
+    if (typeof originalSpawnZone === 'function') {
+      api.spawnZoneBuildings = function (mapId, ...args) {
+        const result = originalSpawnZone.call(this, mapId, ...args);
+        const mapData = townDeps?.zoneLayouts?.get?.(mapId); // Same authored zone layout consumed by TownZoneBuildings itself.
+        const sceneRecord = townDeps?.zoneScenes?.get?.(mapId); // Existing zone scene registry supplies the grass-bearing scene.
+        const scene = sceneRecord?.scene || sceneRecord;
+        if (scene && mapData) {
+          const blocked = authoredBuildingFootprintKeys(mapData); // Exact rotated footprint cells, without the subtle-elevation halo.
+          const stats = filterScene(scene, blocked, 'hobunjiZoneBuildingGrass');
+          if (stats.suppressed) townDeps?.debugLog?.(`Building footprints suppressed ${stats.suppressed} grass instance(s) in ${mapId}.`);
+        }
         return result;
       };
     }
