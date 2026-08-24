@@ -18,6 +18,21 @@ jobs:
           ref: fix/wavy-limbs-medium-gray-stone
           fetch-depth: 0
 
+      - name: Scope config rename to rocks and cliffs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/fix-body-sprite-tint-parity.py')
+          text = path.read_text(encoding='utf-8')
+          old = "replace_exact(config, \"tintTreatment: 'ground-shade-fill'\", \"tintTreatment: 'body-sprite-tint'\", count=2)"
+          new = """replace_exact(config, "    rocks: {\n        enabled: true,\n        tint: '#808080',\n        tintTreatment: 'ground-shade-fill',", "    rocks: {\n        enabled: true,\n        tint: '#808080',\n        tintTreatment: 'body-sprite-tint',")
+          replace_exact(config, "    cliffs: {\n        enabled: true,\n        tint: '#808080',\n        tintTreatment: 'ground-shade-fill',", "    cliffs: {\n        enabled: true,\n        tint: '#808080',\n        tintTreatment: 'body-sprite-tint',")"""
+          if text.count(old) != 1:
+              raise SystemExit('Expected one config treatment patch marker')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
       - name: Apply exact body sprite tint parity patch
         shell: bash
         run: python .github/fix-body-sprite-tint-parity.py
