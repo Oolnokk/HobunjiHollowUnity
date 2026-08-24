@@ -18,6 +18,24 @@ jobs:
           ref: fix/wavy-limbs-medium-gray-stone
           fetch-depth: 0
 
+      - name: Align patch script with current natural-surface quote style
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/apply-surface-texture-fix.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              "    replace_exact(path, 'tint: \"#5f5a56\"', 'tint: \"#808080\"')": "    replace_exact(path, \"tint: '#5f5a56'\", \"tint: '#808080'\")",
+              "    replace_exact(path, 'tint: \"#6a6460\"', 'tint: \"#808080\"')": "    replace_exact(path, \"tint: '#6a6460'\", \"tint: '#808080'\")",
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one patch-script quote-style marker: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Apply validated surface patch
         shell: bash
         run: python .github/apply-surface-texture-fix.py
@@ -33,10 +51,10 @@ jobs:
           git diff --check
           test "$(grep -c "assets/textures/wavy_surface.png.*foot_body" docs/js/procedural-leg-animation.js)" -eq 1
           test "$(grep -c "hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png'" docs/js/procedural-hand-attachments.js)" -eq 1
-          test "$(grep -c 'tint: \"#808080\"' docs/config/natural-surface-materials.js)" -eq 2
-          test "$(grep -c 'tint: \"#808080\"' docs/js/natural-surface-materials.js)" -eq 2
-          grep -q 'file: "carved_smooth.png"' docs/config/natural-surface-materials.js
-          grep -q 'file: "carved_smooth.png"' docs/js/natural-surface-materials.js
+          test "$(grep -c "tint: '#808080'" docs/config/natural-surface-materials.js)" -eq 2
+          test "$(grep -c "tint: '#808080'" docs/js/natural-surface-materials.js)" -eq 2
+          grep -q "texture: 'assets/textures/carved_smooth.png'" docs/config/natural-surface-materials.js
+          grep -q "texture: 'assets/textures/carved_smooth.png'" docs/js/natural-surface-materials.js
 
       - name: Commit fix and remove temporary patch machinery
         shell: bash
