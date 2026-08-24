@@ -14,6 +14,8 @@
   const worldPos = new THREE.Vector3(); // Reused to convert billboard instance centers into footprint tile keys.
   let townDeps = null; // Captured TownZoneBuildings dependencies; supplies the active town scene/layout.
   let zoneDeps = null; // Captured ZoneGrassBillboards dependencies; resolves wilderness scenes back to layouts.
+  const pieceShapeCache = new Map(); // pieceFile -> exact source-piece footprint including porch/step/railing extensions.
+  const pieceShapePromises = new Map(); // pieceFile -> in-flight fetch so repeated scene refreshes share one request.
 
   const keyOf = (c, r) => `${c},${r}`;
 
@@ -32,10 +34,60 @@
     return keys;
   }
 
+  function _derivePieceShape(piece) {
+    const elevation = window.BuildingSubtleElevation; // Shared authoring parser includes porches, stairs, railings, tunnels, and chimneys.
+    if (typeof elevation?.deriveFootprintShape !== 'function') return null;
+    return elevation.deriveFootprintShape(piece) || null;
+  }
+
+  function _loadPieceShape(pieceFile) {
+    const path = String(pieceFile || '').trim();
+    if (!path) return Promise.resolve(null);
+    if (pieceShapeCache.has(path)) return Promise.resolve(pieceShapeCache.get(path));
+    if (pieceShapePromises.has(path)) return pieceShapePromises.get(path);
+
+    const promise = fetch(path)
+      .then(response => {
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        return response.json();
+      })
+      .then(piece => {
+        const shape = _derivePieceShape(piece);
+        if (shape) pieceShapeCache.set(path, shape);
+        return shape;
+      })
+      .catch(error => {
+        townDeps?.debugLog?.(`Building grass footprint load failed (${path}): ${error?.message || error}`, 'warn');
+        return null;
+      })
+      .finally(() => pieceShapePromises.delete(path));
+    pieceShapePromises.set(path, promise);
+    return promise;
+  }
+
+  function ensureAuthoredPieceShapes(mapData) {
+    const files = new Set(); // Source piece files whose extension cells may be richer than the map's placement bbox.
+    for (const building of (Array.isArray(mapData?.buildings) ? mapData.buildings : [])) {
+      if (building?.pieceFile) files.add(String(building.pieceFile));
+    }
+    if (!files.size) return Promise.resolve(false);
+    const before = pieceShapeCache.size;
+    return Promise.all([...files].map(_loadPieceShape)).then(() => pieceShapeCache.size !== before);
+  }
+
+  function _buildingWithExactPieceShape(building) {
+    const shape = building?.pieceFile ? pieceShapeCache.get(String(building.pieceFile)) : null;
+    if (!shape) return building;
+    // Runtime-only replacement: keep placement/rotation metadata from the map,
+    // but use source-piece cells so porch decks/stairs/railings are footprint.
+    return { ...building, footprintShape: shape };
+  }
+
   function authoredBuildingFootprintKeys(mapData) {
     const keys = new Set(); // Rotated authored building footprint cells filtered from town/zone grass.
     const elevation = window.BuildingSubtleElevation; // Existing footprint math keeps grass and collision/elevation shapes identical.
-    for (const building of (Array.isArray(mapData?.buildings) ? mapData.buildings : [])) {
+    for (const rawBuilding of (Array.isArray(mapData?.buildings) ? mapData.buildings : [])) {
+      const building = _buildingWithExactPieceShape(rawBuilding);
       if (typeof elevation?.worldFootprintCells === 'function') {
         for (const cell of elevation.worldFootprintCells(building)) keys.add(keyOf(cell.c, cell.r));
         continue;
@@ -139,7 +191,18 @@
     if (!scene || !mapData) return { meshes: 0, source: 0, visible: 0, suppressed: 0 };
     const blocked = authoredBuildingFootprintKeys(mapData); // Exact, unexpanded building footprints; elevation falloff remains grassy.
     _patchSceneAdd(scene, () => authoredBuildingFootprintKeys(townDeps?.getTownZone?.()), 'hobunjiTownBuildingGrass');
-    return filterScene(scene, blocked, 'hobunjiTownBuildingGrass');
+    const stats = filterScene(scene, blocked, 'hobunjiTownBuildingGrass');
+    // Placement metadata may only contain the body bbox. Source piece JSON is
+    // authoritative for porch/step/railing extension cells; refilter once those
+    // async shapes are cached, restoring from immutable base matrices first.
+    ensureAuthoredPieceShapes(mapData).then(() => {
+      const liveScene = townDeps?.getTownScene?.();
+      const liveMap = townDeps?.getTownZone?.();
+      if (!liveScene || liveMap !== mapData) return;
+      const exact = filterScene(liveScene, authoredBuildingFootprintKeys(liveMap), 'hobunjiTownBuildingGrass');
+      if (exact.suppressed) townDeps?.debugLog?.(`Building piece footprints suppressed ${exact.suppressed} town grass instance(s), including extensions.`);
+    });
+    return stats;
   }
 
   function _patchTownZoneBuildings(api) {
@@ -156,7 +219,7 @@
     if (typeof originalSpawnTown === 'function') {
       api.spawnTownBuildings = function (...args) {
         const result = originalSpawnTown.apply(this, args);
-        const stats = _refreshTown(); // Building metadata is synchronous even though mesh GLBs finish later.
+        const stats = _refreshTown(); // Building metadata is synchronous even though exact piece extension shapes may finish just after it.
         if (stats.suppressed) townDeps?.debugLog?.(`Building footprints suppressed ${stats.suppressed} town grass instance(s).`);
         return result;
       };
@@ -171,6 +234,12 @@
           const blocked = authoredBuildingFootprintKeys(mapData); // Exact rotated footprint cells, without the subtle-elevation halo.
           const stats = filterScene(scene, blocked, 'hobunjiZoneBuildingGrass');
           if (stats.suppressed) townDeps?.debugLog?.(`Building footprints suppressed ${stats.suppressed} grass instance(s) in ${mapId}.`);
+          ensureAuthoredPieceShapes(mapData).then(() => {
+            const liveRecord = townDeps?.zoneScenes?.get?.(mapId);
+            const liveScene = liveRecord?.scene || liveRecord;
+            if (!liveScene) return;
+            filterScene(liveScene, authoredBuildingFootprintKeys(mapData), 'hobunjiZoneBuildingGrass');
+          });
         }
         return result;
       };
@@ -213,6 +282,10 @@
         if (!result || !mapData) return result;
         const blocked = authoredBuildingFootprintKeys(mapData); // Exact zone building cells removed from both ordinary and rich grass.
         filterObject(result, blocked, 'hobunjiZoneBuildingGrass');
+        ensureAuthoredPieceShapes(mapData).then(() => {
+          if (!result.parent) return;
+          filterObject(result, authoredBuildingFootprintKeys(mapData), 'hobunjiZoneBuildingGrass');
+        });
         return result;
       };
     }
@@ -242,6 +315,7 @@
   const api = { // Public helper reused by PlayerHouseElevation for dynamic farmhouse/barn footprints.
     rectFootprintKeys,
     authoredBuildingFootprintKeys,
+    ensureAuthoredPieceShapes,
     filterBillboardMesh,
     filterObject,
     filterScene,
