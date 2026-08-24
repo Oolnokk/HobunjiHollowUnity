@@ -2,8 +2,8 @@
   "schema": "hobunji_tree_assets.v1",
   "basePath": "assets/models/trees/",
   "generatedBy": "docs/tools/tree-asset-exporter/index.html",
-  "note": "Near GLBs are preferred when baked mode is selected. lodFilename is the far-distance copy; missing files fall back safely to the near GLB or procedural tree. Shadewood climb branches remain separate from LOD switching.",
-  "lodSwitchDistance": 7.5,
+  "note": "Near GLBs are used only within the immediate player vicinity. Far 90% LODs take over at lodSwitchDistance. Shadewoods that rolled a climbable perch use branchedFilename/branchedLodFilename while gameplay branch coordinates remain procedural.",
+  "lodSwitchDistance": 3,
   "assets": [
     {
       "species": "crowned_pine",
@@ -34,6 +34,8 @@
       "variant": 1,
       "filename": "shadewood_01.glb",
       "lodFilename": "shadewood_01_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_01.glb",
+      "branchedLodFilename": "shadewood-branched_01_lod-decimate-90.glb",
       "builder": "buildShadewoodMesh",
       "seed": 1
     },
@@ -42,6 +44,8 @@
       "variant": 2,
       "filename": "shadewood_02.glb",
       "lodFilename": "shadewood_02_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_02.glb",
+      "branchedLodFilename": "shadewood-branched_02_lod-decimate-90.glb",
       "builder": "buildShadewoodMesh",
       "seed": 2
     },
@@ -50,6 +54,8 @@
       "variant": 3,
       "filename": "shadewood_03.glb",
       "lodFilename": "shadewood_03_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_03.glb",
+      "branchedLodFilename": "shadewood-branched_03_lod-decimate-90.glb",
       "builder": "buildShadewoodMesh",
       "seed": 3
     }
