@@ -1,9 +1,10 @@
 name: Diagnose foot texture sample
 on:
-  push:
-    branches: [fix/wavy-limbs-medium-gray-stone]
+  pull_request:
+    branches: [main]
 jobs:
   diagnose:
+    if: github.event.pull_request.head.ref == 'fix/wavy-limbs-medium-gray-stone'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,8 +13,6 @@ jobs:
         shell: python
         run: |
           from PIL import Image
-          import math
-
           img = Image.open('docs/assets/textures/wavy_surface.png').convert('RGBA')
           def lum(px):
               r,g,b,a=px; return (0.2126*r+0.7152*g+0.0722*b)/255.0
@@ -28,30 +27,24 @@ jobs:
               if a==0 or L<=outline: return px
               t=max(0,min(1,(L-slo)/max(.0001,shi-slo)))
               targetL=.22+(.88-.22)*t
-              s=targetL/max(.0001,L)
-              nr=max(0,min(255,round(r*s))); ng=max(0,min(255,round(g*s))); nb=max(0,min(255,round(b*s)))
+              scale=targetL/max(.0001,L)
+              nr=max(0,min(255,round(r*scale))); ng=max(0,min(255,round(g*scale))); nb=max(0,min(255,round(b*scale)))
               L2=(0.2126*nr+0.7152*ng+0.0722*nb)/255.0
               shade=max(.18,min(1.18,L2/.55))
               return tuple(max(0,min(255,round(c*shade))) for c in target_rgb)+(a,)
-
           def sample(u,v, flip=False):
-              # CanvasTexture has repeat.x = 1.25; repeat.y = 1.
-              u=(u*1.25)%1.0
-              v=v%1.0
+              u=(u*1.25)%1.0; v=v%1.0
               if flip: v=1-v
               x=min(img.width-1,max(0,int(u*img.width)))
               y=min(img.height-1,max(0,int(v*img.height)))
               src=img.getpixel((x,y)); out=processed(src)
               return x,y,src,out
-
           print('source size', img.size, 'p10/p90 luminance', slo, shi)
           for flip in [False, True]:
               print('\nflipY=', flip)
               for du,dv in [(0,0),(-.08,0),(.08,0),(0,-.08),(0,.08),(-.04,-.04),(.04,.04)]:
                   u=.468+du; v=.790+dv
                   print((round(u,3),round(v,3)), sample(u,v,flip))
-
-          # Whole processed-image uniqueness/contrast, and how many pixels are exactly base color.
           outs=[processed(px) for px in data]
           uniq=len(set(outs))
           exact=sum(1 for p in outs if p[:3]==target_rgb)
