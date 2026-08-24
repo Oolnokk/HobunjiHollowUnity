@@ -16327,9 +16327,20 @@
       // Re-enabled the instant a tree stops blocking, same as depthWrite.
       function setTreeBlocking(vegGroup, mats, blocking) {
         for (const m of mats || []) m.depthWrite = !blocking;
+      }
+      // Split out of setTreeBlocking so the Cloud Forest's distance-based
+      // Outline Radius (independent of occlusion blocking — see
+      // updateZoneVegetationCulling's radialCullRadius branch) can toggle
+      // just the outline layer without also touching depthWrite/occlusion
+      // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
+      // toggle only actually runs on a real transition, not every frame for
+      // every visible tree.
+      function setTreeOutlineEnabled(vegGroup, enabled) {
+        if (vegGroup.userData._outlineEnabled === enabled) return;
+        vegGroup.userData._outlineEnabled = enabled;
         vegGroup.traverse(child => {
           if (!child.isMesh || child.userData.noOutline) return;
-          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+          if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
       function updateTreeFadeAnimation(dt) {
@@ -16428,18 +16439,35 @@
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
             const blocking = !obj.userData.skipOcclusionFade
               && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
-            const target = blocking ? TREE_FADE_OPACITY : 1;
+            let target = blocking ? TREE_FADE_OPACITY : 1;
+            let outlineAllowed = true;
+            // Cloud Forest only (radialCullRadius implies it — see above):
+            // ramp opacity in over the outer band of the cull radius
+            // instead of popping a tree in solid the instant it crosses the
+            // cull sphere, and keep the (pricier) outline pass off outside
+            // its own closer radius regardless of the tree's own opacity.
+            if (radialCullRadius) {
+              const distFromPlayer = Math.hypot(s.x - px, s.z - pz);
+              const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
+              if (distFromPlayer > fadeStartAt) {
+                const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
+                target = Math.min(target, clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+              }
+              outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
+            }
             if (target !== 1 || obj.userData._fadeMaterials) {
               const mats = ensureTreeFadeMaterials(obj);
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
               setTreeBlocking(obj, mats, blocking);
             }
+            setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
           } else if (obj.userData._fadeMaterials) {
             obj.userData._fadeTarget = 1;
             obj.userData._fadeOpacity = 1;
             for (const m of obj.userData._fadeMaterials) m.opacity = 1;
             setTreeBlocking(obj, obj.userData._fadeMaterials, false);
+            setTreeOutlineEnabled(obj, true);
             _treeFadeActive.delete(obj);
           }
         }
@@ -20357,6 +20385,16 @@
       // vegCullRadiusTiles default (15) but is independently adjustable
       // without touching that config.
       let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
+      // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
+      // beyond this fraction of the radius a tree ramps from opaque (at the
+      // fraction) down to fully transparent (at the radius) instead of
+      // popping in solid the instant it enters the cull sphere. Outline:
+      // the (cheaper-to-skip, pricier-to-draw) shell outline pass only
+      // draws within this closer fraction, independent of the tree's own
+      // opacity fade.
+      let s_cloudForestFadeStartFrac = 0.70;
+      let s_cloudForestOutlineFrac = 0.40;
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
@@ -20510,6 +20548,27 @@
         });
       }
       wireSlider('settingCloudForestCullRadius', 'settingCloudForestCullRadiusValue', v => { s_cloudForestCullRadiusTiles = v; });
+      // These two show a "%" suffix instead of the raw slider number, so
+      // they can't share wireSlider's plain String(v) display — wired by
+      // hand instead, same underlying pattern.
+      (() => {
+        const input = document.getElementById('settingCloudForestFadeStart');
+        const valueEl = document.getElementById('settingCloudForestFadeStartValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestFadeStartFrac = v / 100;
+        });
+      })();
+      (() => {
+        const input = document.getElementById('settingCloudForestOutlineRadius');
+        const valueEl = document.getElementById('settingCloudForestOutlineRadiusValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestOutlineFrac = v / 100;
+        });
+      })();
       wireSlider('settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerRadiusValue', v => window.CloudForestFog?.setLayerRadius(0, v));
       wireSlider('settingCloudForestFogInnerOpacity', 'settingCloudForestFogInnerOpacityValue', v => window.CloudForestFog?.setLayerOpacity(0, v));
       wireSlider('settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleRadiusValue', v => window.CloudForestFog?.setLayerRadius(1, v));
@@ -22241,8 +22300,9 @@
         const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
         if (climbTarget) {
           const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
-          const climbLabel = climbTarget.type === 'branchDescend' ? 'Climb Down' : 'Climb';
-          return [{ icon: '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
+          const isJumpDown = climbTarget.type === 'branchJumpDown';
+          const climbLabel = isJumpDown ? 'Jump Down' : 'Climb';
+          return [{ icon: isJumpDown ? '🤸' : '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
         }
 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
@@ -25395,6 +25455,14 @@
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
+        // Raw movement-intent vector, read fresh each call rather than off
+        // player.inputX/Y — those are written later in updateMovement than
+        // the onBranch early-return that leads into updateBranchMovement,
+        // so they'd still hold last frame's value when read from there.
+        getMovementInput: () => {
+          const kb = getKeyboardVector();
+          return kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        },
       });
 
       window.BanditCombatLog?.init({

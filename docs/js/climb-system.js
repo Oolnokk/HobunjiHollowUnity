@@ -83,10 +83,27 @@
     return best ? { type: 'branch', branch: best } : null;
   }
 
+  // Jump-down prompt: only offered once the player has walked out to (near)
+  // the branch's tip AND is facing beyond it (roughly along the branch's
+  // own outward axis) — reaching the tip mid-branch while still facing back
+  // toward the trunk (e.g. after being pushed there) doesn't count. Walking
+  // to the tip under normal branch movement naturally faces the player
+  // outward already (see updateBranchMovement), so in practice this is just
+  // "walk to the end."
+  const BRANCH_TIP_T_THRESHOLD = 0.85;
+  const BRANCH_JUMP_FACING_COS = 0.7; // ~45 degrees either side of dead-on outward.
   function getClimbTarget() {
     if (!deps._isZoneArea(deps.getCurrentArea())) return null;
     const player = deps.player;
-    if (player.onBranch) return player.branchT <= 0.18 ? { type: 'branchDescend' } : null;
+    if (player.onBranch) {
+      const branch = player.onBranch;
+      if ((player.branchT ?? 0) < BRANCH_TIP_T_THRESHOLD) return null;
+      const axisX = (branch.tipX - branch.baseX) / branch.length;
+      const axisY = (branch.tipY - branch.baseY) / branch.length;
+      const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
+      if (axisX * facingX + axisY * facingY < BRANCH_JUMP_FACING_COS) return null;
+      return { type: 'branchJumpDown' };
+    }
     return getWallClimbTarget() || getBranchClimbTarget();
   }
 
@@ -104,7 +121,7 @@
       return false;
     }
     if (climb.type === 'branch') return startBranchClimb(climb.branch);
-    if (climb.type === 'branchDescend') return startBranchDescend();
+    if (climb.type === 'branchJumpDown') return startBranchJumpDown();
 
     const player = deps.player;
     const currentArea = deps.getCurrentArea();
@@ -173,32 +190,39 @@
     return true;
   }
 
-  // The reverse trip — vertical-only (climbStart/EndX/Y stay put), since the
-  // player is already standing right at the branch's base directly above
-  // where they climbed up from. Only reachable near the trunk (branchT <=
-  // 0.18, enforced by getClimbTarget) so there's no long walk back first.
-  function startBranchDescend() {
+  // Jump down from the tip: a quick single drop (climbHopCount=1, versus 3
+  // for a careful climb) straight down to the tip's own ground projection —
+  // same X/Y, branch height to terrain height — and then, on landing,
+  // updateClimb hands off into a dodge-roll (player._climbJumpDownAxis)
+  // instead of just standing. Safe: unlike being knocked off (see
+  // resolveBranchKnockback/game.js's applyKnockback), this never deals
+  // footing damage.
+  const BRANCH_JUMP_LAND_ROLL_S = 0.32;
+  function startBranchJumpDown() {
     const player = deps.player;
     const branch = player.onBranch;
     if (!branch) return false;
     const currentArea = deps.getCurrentArea();
     const grid = deps.getActiveGrid();
-    const col = Math.floor(player.x / deps.TILE), row = Math.floor(player.y / deps.TILE);
+    const col = Math.floor(branch.tipX / deps.TILE), row = Math.floor(branch.tipY / deps.TILE);
     const groundTile = grid[row]?.[col];
+    const axisX = (branch.tipX - branch.baseX) / branch.length;
+    const axisY = (branch.tipY - branch.baseY) / branch.length;
     player.onBranch = null;
     player.climbing = true;
     player.climbElapsed = 0;
-    player.climbHopCount = 3;
-    player.climbStartX = player.x;
-    player.climbStartY = player.y;
-    player.climbEndX = player.x;
-    player.climbEndY = player.y;
-    player.climbSurfaceStartY = player.branchSurfaceY ?? branch.baseWorldY;
+    player.climbHopCount = 1;
+    player.climbStartX = branch.tipX;
+    player.climbStartY = branch.tipY;
+    player.climbEndX = branch.tipX;
+    player.climbEndY = branch.tipY;
+    player.climbSurfaceStartY = player.branchSurfaceY ?? branch.tipWorldY;
     player.climbSurfaceEndY = groundTile ? deps.tileSurfaceYInArea(groundTile, currentArea) : 0;
     player.climbSurfaceY = player.climbSurfaceStartY;
     player.climbHopBounce = 0;
     player.vx = 0; player.vy = 0;
     player._climbTargetBranch = null;
+    player._climbJumpDownAxis = { x: axisX, y: axisY };
     player._climbLastHopIndex = -1;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
@@ -219,6 +243,13 @@
   // branch's own axis moves the player, and branchT is clamped to [0,1] —
   // there is no way to walk off the end by accident, only get knocked off
   // (see resolveBranchKnockback, driven from game.js's applyKnockback).
+  //
+  // Reads deps.getMovementInput() rather than player.inputX/Y: those are
+  // written later in game.js's updateMovement than the onBranch early-return
+  // that reaches here, so by the time this runs this frame they're still
+  // last frame's values (stale, often still zero from before the player
+  // ever climbed up) — getMovementInput reads the same raw keyboard/stick
+  // vector fresh, independent of that write order.
   const BRANCH_WALK_SPEED_PX_S = 90;
   function updateBranchMovement(dt) {
     const player = deps.player;
@@ -226,7 +257,13 @@
     if (!branch) return;
     const axisX = (branch.tipX - branch.baseX) / branch.length;
     const axisY = (branch.tipY - branch.baseY) / branch.length;
-    const inputAlong = (player.inputX || 0) * axisX + (player.inputY || 0) * axisY;
+    const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+    const rawLen = Math.hypot(raw.x, raw.y);
+    const nx = rawLen > 0.001 ? raw.x / rawLen : 0, ny = rawLen > 0.001 ? raw.y / rawLen : 0;
+    player.inputX = nx;
+    player.inputY = ny;
+    player.inputStrength = Math.min(1, rawLen);
+    const inputAlong = nx * axisX + ny * axisY;
     if (Math.abs(inputAlong) > 0.001) {
       player.branchT = deps.clamp(player.branchT + (inputAlong * BRANCH_WALK_SPEED_PX_S * dt) / branch.length, 0, 1);
       const dirSign = Math.sign(inputAlong);
@@ -308,6 +345,22 @@
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
         beginOnBranch(player, branch, 0);
+      }
+      if (player._climbJumpDownAxis) {
+        // Reuses the same tumble/roll movement state an evasive combat
+        // dodge uses (see game.js's performDodge), just without its
+        // stamina cost, cooldown, or invulnerability window — this is a
+        // landing flourish, not an evasive action.
+        const axis = player._climbJumpDownAxis;
+        player._climbJumpDownAxis = null;
+        player.dodging = true;
+        player.dodgeT = BRANCH_JUMP_LAND_ROLL_S;
+        player.dodgeDirX = axis.x;
+        player.dodgeDirY = axis.y;
+        player.angle = Math.atan2(axis.y, axis.x);
+        deps.setFacingAngle(player.angle);
+        deps.setTargetAimAngle(player.angle);
+        deps.setLastMoveAngle(player.angle);
       }
     }
   }

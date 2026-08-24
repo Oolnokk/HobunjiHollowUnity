@@ -1013,7 +1013,7 @@ window.FoliageGenerator = (() => {
       // that 2 or all 3 of the zone's shadewood shapes got a branch, so a
       // large majority of every shadewood tree in the whole forest ended up
       // climbable. Lowered so "sometimes" stays a minority of trees.
-      climbBranchChance: 0.34, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
+      climbBranchChance: 0.17, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
       // Calibrated (not guessed) against the tool's own "canopy influence
       // radius"/"canopy underside height" species properties — 2.75 / 6
       // world units respectively — by building this preset unscaled in a
