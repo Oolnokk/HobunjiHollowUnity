@@ -85,22 +85,23 @@
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
     const state = {
-      visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible hand draw.
-      visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
-      restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
       thicknessRestoreStack: [], // Per-draw shell-uniform restore entries; keeps non-limb outlines at the global thickness.
     };
 
     mesh.onBeforeRender = function handOutlineParityBefore(...args) {
       previousBefore?.apply(this, args);
+
+      // The held-object replay and the outline optimization both intentionally
+      // render with scene.autoUpdate=false. Rebuild this hand mesh from its live
+      // socket -> visual -> GLB hierarchy here instead of reusing a matrix copied
+      // from another render pass. This makes visible GLB, shell and material-ID
+      // draws consume the same current transform, including left/right mirroring.
+      this.updateWorldMatrix?.(true, false);
+
       const scene = args[1];
       const material = args[4];
-      const now = performance.now();
 
       if (isVisibleHandDraw(scene, material)) {
-        state.visibleMatrixWorld.copy(this.matrixWorld);
-        state.visibleCapturedAt = now;
-        state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
@@ -109,7 +110,6 @@
 
       const passKind = outlinePassKind(scene, material);
       if (!passKind) {
-        state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
         return;
       }
@@ -119,24 +119,11 @@
       if (thicknessUniform && Number.isFinite(previousThickness)) {
         state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
         thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
-        material.uniformsNeedUpdate = true; // Shared ShaderMaterial is reused across meshes; force this per-limb value onto the GPU for this draw.
+        material.uniformsNeedUpdate = true;
       } else {
         state.thicknessRestoreStack.push(null);
       }
 
-      const ageMs = now - state.visibleCapturedAt;
-      if (!(ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS)) {
-        state.restoreStack.push(null);
-        rigState.missedOutlineSnapshots++;
-        missedOutlineSnapshots++;
-        return;
-      }
-
-      // Object3D.onBeforeRender runs before WebGLRenderer derives modelViewMatrix
-      // and normalMatrix. Replacing matrixWorld here therefore freezes shell and
-      // material-ID rendering to the exact transform that produced the visible hand.
-      state.restoreStack.push(this.matrixWorld.clone());
-      this.matrixWorld.copy(state.visibleMatrixWorld);
       if (passKind === 'shell') {
         rigState.lockedShellDraws++;
         lockedShellDraws++;
@@ -148,19 +135,16 @@
 
     mesh.onAfterRender = function handOutlineParityAfter(...args) {
       previousAfter?.apply(this, args);
-      const restoreMatrix = state.restoreStack.pop();
-      if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
       const thicknessRestore = state.thicknessRestoreStack.pop();
       if (thicknessRestore) {
         thicknessRestore.uniform.value = thicknessRestore.value;
-        const scene = args[1];
         const material = args[4];
-        if (material?.isShaderMaterial) material.uniformsNeedUpdate = true; // Ensure the restored global thickness is uploaded before the next non-limb shell draw.
+        if (material?.isShaderMaterial) material.uniformsNeedUpdate = true;
       }
     };
 
     mesh.userData.__hobunjiHandOutlineParity = true;
-    mesh.userData.hobunjiOutlineMatrixSource = 'visible-hand-draw';
+    mesh.userData.hobunjiOutlineMatrixSource = 'live-hand-hierarchy';
     rigState.hookedMeshes++;
     return true;
   }
@@ -229,7 +213,7 @@
         return {
           ...originalDebug(),
           outlineMatrixParity: true,
-          outlineMatrixSource: 'visible-hand-draw',
+          outlineMatrixSource: 'live-hand-hierarchy',
           outlineHookedMeshes: rigState.hookedMeshes,
           heldXrayMeshes: rigState.heldXrayMeshes,
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,

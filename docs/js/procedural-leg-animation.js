@@ -399,7 +399,7 @@
         const baseHex = cleanOriginalHex || cfg().keratinColorHex || '#44484D';
         promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_keratin_${baseHex.slice(1)}`, '');
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), bodyReferenceHex, 1, `${speciesId}_foot_body`, speciesId);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), bodyReferenceHex, 1, `${speciesId}_foot_body`, speciesId);
       }
       promises.set(cacheKey, promise);
       return promise;

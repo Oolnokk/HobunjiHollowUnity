@@ -163,7 +163,7 @@
     const referenceHex = bodyReferenceHex(speciesId);
     const isBody = role === 'body';
     const sourcePath = isBody
-      ? 'assets/textures/canvas.png'
+      ? 'assets/textures/wavy_surface.png'
       : 'assets/textures/carved_smooth.png';
     const descriptor = isBody
       ? (bodyColors?.A || { hex: referenceHex })
@@ -615,7 +615,7 @@
           fallbackPoseInput: 'per-side-local-offset',
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
           parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
-          bodySurfaceTexture: 'canvas.png',
+          bodySurfaceTexture: 'wavy_surface.png',
         };
       },
     };
