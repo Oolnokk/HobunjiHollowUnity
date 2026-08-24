@@ -45,14 +45,10 @@ assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix s
 assert.ok(composer.includes('const oldRotation = root.rotation.clone()'), 'render restoration preserves the authored Euler representation');
 assert.ok(composer.includes('root.rotation.copy(oldRotation)'), 'temporary composition cannot leave equivalent 180-degree X/Z Euler values behind');
 assert.doesNotMatch(composer, /root\.quaternion\.copy\(oldQuaternion\)/, 'render restoration cannot rewrite the next frame\'s yaw basis through quaternion decomposition');
-assert.ok(composer.includes('preserveSkinnedPortraitFacingSide'), 'composer can preserve the pre-delta front/back portrait choice');
-assert.ok(composer.includes('selectedMaterial.side = THREE.DoubleSide'), 'selected portrait remains renderable through additive tilt');
-assert.ok(composer.includes('frontMaterial.visible = showFront'), 'mirrored rear portrait cannot render over the selected front side');
+assert.doesNotMatch(composer, /preserveSkinnedPortraitFacingSide|preserveFacingSide|THREE\.DoubleSide/, 'composer never overrides normal portrait face culling');
+assert.ok(composer.includes("portraitFaceCulling: 'material-frontside'"), 'composer diagnostics state that material backface culling remains authoritative');
+assert.ok(composer.includes('forcedPortraitDoubleSide: false'), 'composer diagnostics expose that it never forces two-sided portrait rendering');
 assert.ok(composer.includes('lastRenderDebug'), 'composer preserves temporary render state for post-render diagnostics');
-assert.ok(composer.includes('portraitSelections'), 'composer diagnostics expose the selected portrait side and boundary dot');
-assert.ok(composer.includes('quaternionFacingDot'), 'composer diagnostics compare matrix and scale-free quaternion facing bases');
-assert.ok(composer.includes('worldMatrixDeterminant'), 'composer diagnostics expose mirrored world matrices');
-assert.ok(composer.includes('basisDisagrees'), 'composer diagnostics identify reflected-basis side disagreement directly');
 assert.ok(composer.includes('baseWorldEulerDeg'), 'composer diagnostics expose the pre-delta quaternion-only orientation');
 assert.ok(composer.includes('composedWorldEulerDeg'), 'composer diagnostics expose orientation while the channel delta is applied');
 
@@ -76,7 +72,7 @@ assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet do not cache and r
 assert.doesNotMatch(drunk, /yaw:\s*state\.yaw/, 'drunk body channel never competes with the player facing yaw');
 assert.doesNotMatch(drunk, /DRUNK_MAX_YAW_DEG|yawTarget/, 'drunk gait does not synthesize a second whole-body yaw target');
 assert.ok(drunk.includes('bodyYawOwnedByFacing: true'), 'debug output exposes that facing exclusively owns body yaw');
-assert.ok(drunk.includes('preserveFacingSide: true'), 'drunk tilt preserves the front/back side selected by ordinary facing');
+assert.doesNotMatch(drunk, /preserveFacingSide/, 'drunk tilt does not request a culling override');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');
