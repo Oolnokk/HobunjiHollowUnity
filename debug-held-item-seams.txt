@@ -1,0 +1,1354 @@
+
+==========================================================================================
+NEEDLE: function applyItemSpriteIcon
+--- match 1 at 753680 ---
+ish.key]) {
+            ITEM_DEFS[fish.key] = {
+              icon: fish.icon, label: fish.label, cat: 'material', sellPrice: fish.sellPrice,
+              tags: ['Fish', fish.rarity, FISH_ZONE_LABELS[zoneKey]],
+              desc: `A ${fish.rarity} fish speared in the ${FISH_ZONE_LABELS[zoneKey]}.`,
+            };
+          }
+        });
+      });
+
+      function itemIconForKey(key) {
+        return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+      }
+
+      // Upgrades an already-rendered emoji icon element to a recolored PNG
+      // once it's ready (async — canvas recolor + data URL), for items whose
+      // def carries spriteIcon/spriteColor/spriteMode (see sprite-recolor.js).
+      // The emoji textContent set by the caller is left in place underneath
+      // as the instant, zero-risk fallback — el.color is only hidden once
+      // the background-image actually lands, and never touched at all for
+      // plain items or if the recolor fails.
+      function clearItemSpriteIcon(el, preserveBadge = false) {
+        if (!el) return;
+        if (!preserveBadge) window.AlcoholInventoryUI?.clearSwigBadge?.(el);
+        el.style.backgroundImage = '';
+        el.classList.remove('sprited-icon');
+        delete el.dataset.itemSpriteRequest;
+        delete el.dataset.itemSpriteState;
+        delete el.dataset.itemSpriteError;
+      }
+
+      // Tracks one success message per resolved sprite/color combination for
+      // the in-game debug log without logging every DOM icon instance.
+      const _itemSpriteReadyLogged = new Set();
+
+      window.AlcoholInventoryUI?.init?.({
+        getInventory: () => inventory,
+        getBottleSwigStatus: (...args) => window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(...args),
+      });
+
+      function applyItemSpriteIcon(el, def, key) {
+        if (!el || !def) return;
+        normalizeAlcoholItemDef(def);
+        window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
+        if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
+        // The source PNG replaces the emoji immediately; the recolored canvas
+        // upgrades it below without leaving alcohol as an emoji while loading.
+        const spritePath = 'assets/objectsprites/' + def.spriteIcon;
+        const targetColor = def.spriteColor ?? 0xFFFFFF;
+        const spriteMode = def.spriteMode || 'direct';
+        const requestKey = `${def.spriteIcon}|${targetColor}|${spriteMode}`;
+        // updateHud refreshes the item strip every frame. Keep an identical
+        // pending/ready request intact instead of resetting it to the source
+        // green PNG before the asynchronous recolor can be painted.
+        if (el.dataset.itemSpriteRequest === requestKey
+          && (el.dataset.itemSpriteState === 'pending' || el.dataset.itemSpriteState === 'ready')) return;
+        clearItemSpriteIcon(el);
+        el.dataset.itemSpriteRequest = requestKey;
+        el.dataset.itemSpriteState = 'pending';
+        el.style.backgroundImage = `url("${spritePath}")`;
+        el.classList.add('sprited-icon');
+        if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
+        window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
+          .then(canvas => {
+            if (el.dataset.itemSpriteRequest !== requestKey) return;
+            el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            el.dataset.itemSpriteState = 'ready';
+            if (!_itemSpriteReadyLogged.has(requestKey)) {
+              _itemSpriteReadyLogged.add(requestKey);
+              window.__farmLog?.(`[item-icon] ready ${def.label || def.spriteIcon}: #${targetColor.toString(16).padStart(6, '0')} mode=${spriteMode}`, 'items');
+            }
+          })
+          .catch(error => {
+            if (el.dataset.itemSpriteRequest === requestKey) {
+              el.dataset.itemSpriteState = 'fallback';
+              // Pixel Probe reports this on mobile when the source image or canvas fails.
+              el.dataset.itemSpriteError = String(error?.message || error || 'unknown recolor error');
+            }
+            window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn');
+          });
+      }
+
+      // Pixel Probe reads the active icon states so a mobile report can show
+      // whether color generation is pending, ready, or using its fallback.
+      function getItemSpriteIconDebug() {
+        const active = getActiveInventoryItem();
+        const def = active ? ITEM_DEFS[active.key] : null;
+        const inspect = el => el ? {
+          request: el.dataset.itemSpriteRequest || null,
+          state: el.dataset.itemSpriteState || 'emoji',
+          hasBackground: !!el.style.backgroundImage,
+          error: el.dataset.itemSpriteError || null,
+        } : null;
+        return {
+          key: active?.key || null,
+          spriteIcon: def?.spriteIcon || null,
+          targetColor: def?.spriteColor ?? null,
+          swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
+          nearbyNpcAlcohol: nearbyNpcWalker?.rec?.id ? {
+            id: nearbyNpcWalker.rec.id,
+            ...(window.HobunjiDrunkGameplayBridge?.getDebug?.()?.npcAlcoholState?.[nearbyNpcWalker.rec.id] || { sobriety: 100, blackoutUntilMinute: 0 }),
+          } : null,
+          strip: inspect(itemIcon),
+          button: inspect(document.getElementById('itemBtn')),
+          keyboard: inspect(keyHudEl?.querySelector('.kh-item-icon')),
+        };
+      }
+
+      // ── Inventory panel state ──────────────────────────────────────
+      let invSelectedKey = null;
+      let invActiveCat   = 'all';
+      const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
+
+      function getKnownItemRank(key) {
+        const idx = inventoryItems.findIndex(item => item.key === key);
+        return idx === -1 ? 9999 : idx;
+      }
+
+      function getInventoryStackKeys(cat = 'all') {
+        // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
+        return Object.keys(inventory)
+          .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
+          .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
+          .sort((a, b) => getKnownItemRank(a) - getKnownItemRank(b) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
+      }
+
+      function getInventoryStackItems() {
+        // Used by the active item scroll; only stacks the player actually owns are selectable.
+        return getInventoryStackKeys('all').map(key => inventoryItems.find(item => item.key === key) || {
+          key,
+          icon: ITEM_DEFS[key].icon,
+          label: ITEM_DEFS[key].label.toUpperCase(),
+          max: 99,
+        });
+      }
+
+      function getActiveInventoryItem(stacks = getInventoryStackItems()) {
+        // Used by planting, shipping-box quick deposit, HUD, and item scroll.
+        if (stacks.length === 0) { activeItemIndex = 0; return null; }
+        if (activeItemIndex >= stacks.length) activeItemIndex = 0;
+        if (activeItemIndex < 0) activeItemIndex = stacks.length - 1;
+        return stacks[activeItemIndex];
+      }
+
+      function cycleActiveInventoryItem(delta) {
+        const stacks = getInventoryStackItems();
+        if (stacks.length === 0) { activeItemIndex = 0; return null; }
+        activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
+        return stacks[activeItemIndex];
+      }
+
+      function clampInventoryStack(key) {
+        // Used after transfers/sales so zero-count stacks stop occupying item boxes.
+        if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
+      }
+
+      // Shipping tab (player bag <-> shipping-box transfer UI) now lives
+      // in js/shipping-panel.js — call via window.ShippingPanel.build().
+
+      function clearInventoryDetail(message = '← Select an item') {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = message; }
+        if (detailEl) detailEl.style.display = 'none';
+      }
+
+      function buildInventoryGrid() {
+        const grid = document.getElementById('invGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        const keys = getInventoryStackKeys(invActiveCat);
+        const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length
+
+==========================================================================================
+NEEDLE: function updateHeldItemHolder
+--- match 1 at 1111363 ---
+tils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
+        sourceObject.updateWorldMatrix(true, false);
+        const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
+          position: sourceObject.getWorldPosition(new THREE.Vector3()),
+          quaternion: sourceObject.getWorldQuaternion(new THREE.Quaternion()),
+          scale: sourceObject.getWorldScale(new THREE.Vector3()),
+        };
+        playerMesh.remove(sourceProbe);
+        return transform;
+      }
+
+      function cancelPlayerToolAnimationForInteraction() {
+        toolSwingT = 0;
+        combatSwingHeld = false;
+        combatSwingAnim = null;
+        combatSwingPose = null;
+        pendingAction = null;
+      }
+
+      window.NpcDrinkInteraction?.init?.({
+        THREE,
+        actionLocks: window.CharacterActionLocks,
+        playerParticipantId: PLAYER_ACTION_LOCK_ID,
+        npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
+        clamp,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getDrinkAnimation: () => window.HeldActionAnimations?.drink,
+        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        poseAt: heldActionPoseAt,
+        makeBottlePlane: makeHeldItemPlaneMesh,
+        disposeBottlePlane: disposeHeldItemPlaneMesh,
+        getPlayerDrinkSourceTransform,
+        setPlayerHeldItemVisible: visible => { heldItemHolder.visible = !!visible; },
+        cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction,
+        refreshActionBar,
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+
+      function updateHeldItemHolder(dt = 0) {
+        const item = getActiveInventoryItem();
+        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
+        if (drinkAnimating) {
+          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
+          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnimations?.throwFlask;
+        if (_heldThrowAimT && throwAnimation && _heldItemPlane) {
+          if (_heldThrowAimT === 1) _heldThrowAnimProgress = throwAnimation.windupFrac || 0.44;
+          else {
+            _heldThrowAnimProgress = Math.min(1, _heldThrowAnimProgress + Math.max(0, dt) / Math.max(0.1, throwAnimation.durationS || 0.62));
+            if (_heldThrowAnimProgress >= 1) _heldThrowAimT = 0;
+          }
+          applyHeldDrinkPose(throwAnimation, _heldThrowAnimProgress);
+          heldItemHolder.visible = true;
+          return;
+        }
+        if (!item) { heldItemHolder.visible = false; return; }
+        const isKurraya = item.key === 'kurraya';
+        if (item.key !== _heldItemKey) {
+          disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
+          // The Kurraya's real art lives at assets/toolsprites (the same
+          // sprite/texture Foroji's NPC station prop uses — see
+          // TOOL_ITEM_DEFS.kurraya) rather than assets/objectsprites, and
+          // it's a finished painted asset, not a dye-tintable template —
+          // makeHeldItemPlaneMesh's spriteIcon path assumes the latter
+          // (recolors through window.SpriteRecolor). Uses the authored
+          // crossed front+top plane assembly (see buildKurrayaAssembly)
+          // instead of a single flat billboard.
+          _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
+          _heldItemKey = item.key;
+          _playerKurrayaTwitch = newKurrayaTwitchState();
+          if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
+          window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
+        }
+        if (isKurraya) {
+          // Cradled across the chest at its authored rest tilt (see
+          // buildKurrayaAssembly) — the assembly itself carries that tilt
+          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
+          // called from js/music-minigame.js on each 'sounded-note'
+          // relay); only position/scale belong to the outer holder.
+          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
+          heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(0.85);
+          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        } else if (usesThrustHeldPose(item)) {
+          heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
+          heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
+          // Potion/alcohol sprites stay on the same hand pivot, but render
+          // half-size and end-for-end relative to the previous flat hold.
+          heldItemHolder.scale.setScalar(0.5);
+          if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        } else {
+          heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
+          heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(1);
+          if (_heldItemPlane) _heldItemPlane.rotation.x = 0;
+        }
+        heldItemHolder.visible = !!_heldItemPlane;
+      }
+
+      // Pixel Probe reads this snapshot so interior attachment failures can
+      // be diagnosed from its mobile-friendly copied report.
+      function getHeldObjectDebug() {
+        const activeScene = getActiveScene();
+        // Captures the five mobile arch slots after refreshActionBar populates them.
+        const actionArch = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']
+          .map(id => document.getElementById(id))
+          .filter(Boolean)
+          .map(button => ({
+            id: button.id,
+            action: button.dataset.action || null,
+            hidden: button.classList.contains('abt-hidden'),
+            blocked: button.classList.contains('blocked'),
+          }));
+        return {
+          area: currentArea,
+          mode: heldMode,
+          toolParent: toolHolder.parent === activeScene ? 'active-scene' : (toolHolder.parent ? 'wrong-scene' : 'detached'),
+          toolVisible: !!toolHolder.visible,
+          heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
+          heldItemVisible: !!heldItemHolder.visible,
+          heldItemKey: _heldItemKey,
+          drinkAnimating: _heldDrinkAnimT > 0,
+          drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
+          npcDrinkInteractions: window.NpcDrinkInteraction?.getDebug?.() || [],
+          actionArch,
+        };
+      }
+
+      // Pre-allocated objects to avoid per-frame GC in updateToolMesh
+      const _tUp      = new THREE.Vector3(0, 1, 0);
+      const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
+      const _zAxis    = new THREE.Vector3(0, 0, 1); // tool-local roll axis (pose-driven only)
+      const _qFac     = new THREE.Quaternion();  // facing (+ bodyYaw) rotation
+      const _qAnim    = new THREE.Quaternion();  // animation rotation
+      const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
+      const _qRoll    = new THREE.Quaternion();  // tool's own local roll twist (pose-driven only)
+      const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
+
+      // Resolve anim style for the active tool from equipped item or fallback
+      const _animStyleFallbackLogged = new Set();
+      function activeAnimStyle() {
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        const style = TOOL_ITEM_DEFS[itemKey]?.animStyle;
+        if (!style && !_animStyleFallbackLogged.has(itemKey)) {
+          _animStyleFallbackLogged.add(itemKey);
+          window.__farmLog?.(`[combat] ${itemKey || '(no item)'}: no animStyle defined → fal
+
+==========================================================================================
+NEEDLE: function refreshItemScroll
+--- match 1 at 1333900 ---
+? ` · ${obj.label}` : '') +
+          ` · 💧${waterPct}%</span>` +
+          `</div>`
+        );
+
+        parts.push('<div class="kh-div"></div>');
+        parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
+
+        keyHudEl.innerHTML = parts.join('');
+        if (item) {
+          applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key], item.key);
+        }
+      }
+
+      function contextualActionLabel(action, tile) {
+        if (action === 'dig')   return tile.type === TileType.TRENCH ? 'Redig' : 'Dig';
+        if (action === 'fill')  return 'Fill';
+        if (action === 'raise') return tile.type === TileType.RAISED ? 'Lower' : 'Raise';
+        if (action === 'till')  return tile.type === TileType.TILLED ? 'Untill' : 'Till';
+        if (action === 'smooth') return 'Smooth';
+        if (action === 'cut')   return 'Cut';
+        if (action === 'slash') return 'Slash 3×';
+        if (action === 'chop')  return 'Chop';
+        if (action === 'hack')  return 'Hack 3×';
+        if (action === 'mine')  return 'Mine';
+        if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
+        if (action === 'fish') return 'Fish';
+        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
+        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
+        if (action === 'potion_select') return 'Potions';
+        if (action.startsWith('place_')) return 'Place';
+        if (action.startsWith('obj_process_')) return 'Process';
+        return action;
+      }
+
+      // ── Item scroll ────────────────────────────────────────
+      let _lastItemScrollKey = null;
+      function refreshItemScroll(stacks = getInventoryStackItems()) {
+        const n = stacks.length;
+        const iBtnEl = itemBtnEl;
+        if (n === 0) {
+          if (_lastItemScrollKey === 'empty') return;
+          _lastItemScrollKey = 'empty';
+          itemIcon.textContent  = '□';
+          itemName.textContent  = 'EMPTY';
+          itemCount.textContent = '×0';
+          itemCount.className   = 'is-count empty';
+          if (iBtnEl) iBtnEl.textContent = '□';
+          const prevEl = isPrevIconEl;
+          const nextEl = isNextIconEl;
+          clearItemSpriteIcon(itemIcon);
+          clearItemSpriteIcon(iBtnEl);
+          if (prevEl) prevEl.textContent = '□';
+          if (nextEl) nextEl.textContent = '□';
+          clearItemSpriteIcon(prevEl);
+          clearItemSpriteIcon(nextEl);
+          return;
+        }
+        if (activeItemIndex >= n) activeItemIndex = 0;
+        if (activeItemIndex < 0) activeItemIndex = n - 1;
+        const curr = stacks[activeItemIndex];
+        const prev = stacks[(activeItemIndex - 1 + n) % n];
+        const next = stacks[(activeItemIndex + 1) % n];
+        const count = inventory[curr.key] || 0;
+        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
+        if (key === _lastItemScrollKey) return;
+        _lastItemScrollKey = key;
+        // Current item
+        itemIcon.textContent  = curr.icon;
+        itemName.textContent  = curr.label;
+        if (iBtnEl) iBtnEl.textContent = curr.icon;
+        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key], curr.key);
+        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key], curr.key);
+        itemCount.textContent = `×${count}`;
+        itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
+        // Peek icons (prev/next previews)
+        const prevEl = isPrevIconEl;
+        const nextEl = isNextIconEl;
+        if (prevEl) {
+          prevEl.textContent = prev.icon;
+          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
+        }
+        if (nextEl) {
+          nextEl.textContent = next.icon;
+          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key], next.key);
+        }
+      }
+      itemPrev.addEventListener('click', () => {
+        cycleActiveInventoryItem(-1);
+        refreshItemScroll();
+        refreshActionBar();
+      });
+      itemNext.addEventListener('click', () => {
+        cycleActiveInventoryItem(1);
+        refreshItemScroll();
+        refreshActionBar();
+      });
+
+      // Status-pill fields only actually change a few times a (real) second
+      // at most (season/weather/day/gold on world-state events, time once a
+      // simulated minute, tool/tile/water on reticle or equip changes) —
+      // updateHud runs every frame, so each field caches its last-written
+      // string/color and skips the DOM write (and, for spTile/spWater,
+      // the string-building) when nothing changed.
+      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
+
+      function updateHud() {
+        const season = window.CalendarSystem.currentSeason();
+        const clock  = formatClock(window.CalendarSystem.getHour());
+
+        // Season (changes slowly)
+        const seasonText = season.emoji + ' ' + season.name;
+        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
+
+        // Current weather + precipitation rate
+        let weatherText, precipText;
+        if (calendar.isRaining) {
+          const str = calendar.rainStrength;
+          if (str >= 3) {
+            weatherText = '⛈️ Storm';
+            precipText  = '⬇️ heavy';
+          } else {
+            weatherText = '🌧️ Rain';
+            // RAIN_RATE * str * ticks/hr ≈ mm equivalent display
+            const mmEq  = (RAIN_RATE * str * 51).toFixed(1); // ~51 ticks/hr at 0.7s/tick
+            precipText  = `⬇️ ${mmEq}mm/hr`;
+          }
+        } else {
+          weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
+          precipText  = '⬇️ none';
+        }
+        const weatherFull = weatherText + ' ' + precipText;
+        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
+
+        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
+        if (spDay) {
+          const dayText = window.CalendarSystem.formatCalendarDate();
+          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
+        }
+        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
+
+        // Reticle tile info
+        const reticle  = getReticleTile();
+        const tile     = getActiveTileAt(reticle.col, reticle.row);
+        const tStyle   = tileStyles[tile.type] || tileStyles.grass;
+        const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
+        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
+
+        const waterPct = Math.round((tile.water / MAX_WATER) * 100);
+        const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
+        const waterText = '💧 ' + depthStr;
+        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
+        const waterColor = waterPct > 80 ? '#4488ff'
+                          : waterPct > 40 ? '#6ec6f0'
+                          : waterPct > 10 ? '#aaddee' : '#888';
+        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
+        if (spGold) {
+          const goldText = '💰 ' + inventory.gold + 'g';
+          if (goldText !== _hud.gold) { _hud.gold = goldText; spGold.textContent = goldText; }
+        }
+
+        // Computed once and threaded through below instead of letting
+        // refreshItemScroll/refreshActionBar (and the desktop item pill)
+        // each re-filter-and-sort the whole inventory from scratch — this
+        // runs every frame, and inventory contents don't change nearly
+        // that often.
+        const stacks = getInventoryStackItems();
+
+        // Desktop: show active item in status pill (item scroll is hidden)
+        if (isDesktop) {
+          const item = getActiveInventoryItem(stacks);
+          if (spItem && item) {
+            spItem.style.display = '';
+            spItemDiv.style.display = '';
+            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
+          }
+        }
+
+        refreshItemScroll(stacks);
+        // refreshActionBar is called after actions and on tool/item change;
+        // the dirty-key check makes it cheap to call here 
+
+==========================================================================================
+NEEDLE: function _openItemArc
+--- match 1 at 1285384 ---
+      const old = oldByKey.get(k); kept.add(k);
+              old.el.style.left = pt.x + 'px'; old.el.style.top = pt.y + 'px';
+              old.el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              newSlots.push({ angle: deg, el: old.el, data: s });
+            } else {
+              const el = document.createElement('div');
+              el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;opacity:0;`;
+              el.innerHTML = `<span class="arc-icon">${s.icon}</span>`
+                           + (s.label ? `<span class="arc-label">${s.label}</span>` : '');
+              document.body.appendChild(el);
+              _arcEls.push(el);
+              requestAnimationFrame(() => { el.style.opacity = '1'; });
+              newSlots.push({ angle: deg, el, data: s });
+            }
+            const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
+            if (s.type === 'item') {
+              applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key], s.key);
+            }
+            else clearItemSpriteIcon(iconEl);
+          });
+
+          _arcSlots.forEach(s => {
+            const k = s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`;
+            if (!kept.has(k)) {
+              s.el.style.opacity = '0';
+              _arcEls = _arcEls.filter(e => e !== s.el);
+              _fadingEls.push(s.el);
+              const _el = s.el;
+              setTimeout(() => { _el.remove(); _fadingEls = _fadingEls.filter(f => f !== _el); }, 150);
+            }
+          });
+
+          _arcSlots = newSlots;
+          _arcActive = newSlots.findIndex(s => s.data.type === 'item' && s.data.index === activeItemIndex);
+        }
+
+        function _openItemArc() {
+          _clearArc(); _arcOpen = 'item';
+          toolBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          _iScroll = Math.max(0, activeItemIndex - Math.floor(ITEM_VIS / 2));
+          _iScrollDir = 0;
+          _buildItemSlots();
+        }
+
+        function _arcMove(px, py) {
+          if (!_arcOpen || !_arcSlots.length) return;
+          const ang = Math.max(ARC_E, Math.min(ARC_S, _cornerAng(px, py)));
+          let best = 0, bd = Infinity;
+          _arcSlots.forEach((s, i) => { const d = Math.abs(s.angle - ang); if (d < bd) { bd = d; best = i; } });
+          if (_arcOpen === 'item') {
+            const newDir = _arcSlots[best]?.data.type === 'arrow' ? _arcSlots[best].data.dir : 0;
+            if (newDir !== _iScrollDir) {
+              _iScrollDir = newDir;
+              if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+              if (newDir !== 0) {
+                _iScrollT = setInterval(() => {
+                  _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, _iScroll + _iScrollDir));
+                  _buildItemSlots();
+                }, 200);
+              }
+            }
+          }
+          _setActive(best);
+          if (_arcOpen === 'entries:potion-root') {
+            const branch = _arcSlots[best]?.data.id;
+            if (branch === 'medicine' || branch === 'utility') {
+              _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+              _arcMove(px, py); // Re-evaluate the same continuous drag against the newly populated category arch.
+            }
+          } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+            const category = _arcSlots[best]?.data;
+            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) {
+              _openPotionItems(category.id);
+              _arcMove(px, py); // The replacement Cancel button becomes selected immediately under the uninterrupted drag.
+            }
+          }
+        }
+
+        function _arcUp() {
+          if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+          if (!_arcOpen) return;
+          const slot = _arcSlots[_arcActive];
+          if (_arcOpen === 'tool' && slot) {
+            heldMode = 'tool'; lastHeldFarmTool = slot.data;
+            setActiveTool(slot.data); // calls refreshActionBar internally
+          } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
+            heldMode = 'item';
+            activeItemIndex = slot.data.index;
+            refreshItemScroll(); refreshActionBar();
+          } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
+            const select = slot.data.onSelect;
+            if (typeof select === 'function') {
+              const previousMode = _arcOpen; // Branch callbacks replace the current arch; item callbacks do not.
+              select();
+              if (_arcOpen !== previousMode) return;
+            }
+          }
+          _clearArc();
+        }
+
+        window._desktopSelectionArc = {
+          openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+          openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
+          openPotions() { _openPotionRoot(); },
+          openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
+          recallLastTool() {
+            const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
+            const recalled = WHEEL_SLOTS.includes(lastHeldFarmTool) && equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
+            lastHeldFarmTool = recalled;
+            heldMode = 'tool';
+            setActiveTool(recalled);
+            return recalled;
+          },
+          scrollTool(dir) {
+            if (_arcOpen !== 'tool') _openToolArc();
+            const idx = WHEEL_SLOTS.indexOf(activeTool);
+            const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+            heldMode = 'tool';
+            lastHeldFarmTool = WHEEL_SLOTS[next];
+            setActiveTool(WHEEL_SLOTS[next]);
+            _arcSlots.forEach((s, i) => {
+              const active = s.data === activeTool;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollItem(dir) {
+            if (_arcOpen !== 'item') _openItemArc();
+            heldMode = 'item';
+            cycleActiveInventoryItem(dir);
+            refreshItemScroll(); refreshActionBar();
+            _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
+            _buildItemSlots();
+            _arcSlots.forEach((s, i) => {
+              const active = s.data.type === 'item' && s.data.index === activeItemIndex;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollAmmo(dir) {
+            if (_arcOpen !== 'entries:ammo') _openAmmoArc();
+            const available = _arcSlots.map((slot, index) => ({ slot, index })).filter(entry => !entry.slot.data.disabled);
+            if (!available.length) return false;
+            let position = available.findIndex(entry => entry.index === _arcActive);
+            position = (position + (dir < 0 ? -1 : 1) + available.length) % available.length;
+            _setActive(available[position].index); // Highlight only; the held input's release commits setActiveAmmo.
+            return true;
+          },
+          scrollEntries(dir) {
+            if (!_arcOpen?.startsWith('entries:') || !_arcSlots.length) return false;
+            if (_arcOpen === 'entries:potion-root') {
+              _openPotionBranch(dir < 0 ? 'medicine' : 'utility'); // Direction itself chooses the first hierarchical branch.
+              return true;
+            }
+            if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+              const categoryId = _arcOpen.endsWith('medicine') ? (dir < 0 ? 'healing' : 'cures') : (dir < 0 ? 'buffs' : 'flasks');
+              const category = _arcSlots.find(slot => slot.data.id === categoryId);
+              if (category && !category.data.disabled) _openPotionItems(categoryId);
+              else if (category) _setActive(_arcSlots.indexOf(category));
+              return true;
+            }
+            const nextIndex = _arcActive + (dir < 0 ? -1 : 1);
+            if (_arcOpen.startsWith('entries:potion-items-')) {
+              _setActive(Math.max(0, Math.min(_arcSlots.length - 1, nextIndex))); // Final lists stop at Cancel instead of wrapping past i
+
+==========================================================================================
+NEEDLE: heldItemHolder
+--- match 1 at 440478 ---
+/procedural-leg-animation.js.
+      let playerLegs = null;
+      // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
+      // (null if no neck pivot could be detected for the player's current
+      // portrait) — same mechanism the animation-author tool/NPC dialogue
+      // staging uses (see faceNpcDialogueParticipants), driven here for the
+      // player aim tracking (see updatePlayerHeadAim).
+      let playerNeckJoint = null;
+      // Shoulder-pet hat xray (ported from the animation-author tool's
+      // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
+      // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
+      let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
+      let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
+      // Direct references to the player's own front/back plane materials —
+      // set in refreshPlayerAvatar. Used by updatePetLayering (near
+      // updateCompanions) to toggle the front plane's depthWrite without
+      // disturbing the back plane's, which _playerAvatarBodyMaterials()'s
+      // combined front+back traversal can't do on its own.
+      let _playerAvatarFrontMaterial = null;
+      let _playerAvatarBackMaterial = null;
+      // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
+      // cleared in refreshPlayerAvatar (the only place the avatar's mesh
+      // hierarchy is rebuilt), so a stable hierarchy isn't re-traversed
+      // every frame just to find the same handful of materials again.
+      let _playerAvatarBodyMaterialsCache = null;
+      // Chest-height anchor for a bag item held statically in front of the body
+      // (see heldItemHolder near the tool meshes below) — higher than
+      // playerToolBaseY, which targets hand height near the bottom of these
+      // cropped bust-style portraits. Recomputed per-species in
+      // refreshPlayerAvatar() alongside playerToolBaseX/Y, as playerToolBaseY + 0.19.
+      let playerItemHoldY = 0.64;
+
+      let npcDialogueStaging = null;
+      // Over-the-shoulder camera (Settings → Camera) — the default camera
+      // mode as of this build, no longer experimental. See
+      // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
+      // that already resolves "back to the ordinary gameplay camera" (initial
+      // load, dialogue close, standing up, cutscene end) goes through those,
+      // so this substitutes for the normal follow camera without needing any
+      // special-casing in the other camera modes (seated/fishing/music/etc.
+      // all restore whatever mode they captured on entry, unaffected).
+      let s_shoulderSurf = true;
+      // Shoulder-surf's over-the-shoulder framing offsets (Settings →
+      // Camera), in tiles, applied relative to the camera's own right/up
+      // axes — see updateCameraPosition. Positive H = shift camera/framing
+      // to the head's right; positive V = raise the framing. Kept as two
+      // separate presets rather than one flat value — a weapon/ranged tool
+      // actually being drawn (see shoulderSurfCombatStanceActive()) wants a
+      // wider H offset to clear the weapon out of the middle of the screen
+      // than plain movement/farming does — and the settings sliders read
+      // and write whichever preset is currently active (see their input
+      // handlers and the per-frame sync below) rather than a single value.
+      let s_shoulderSurfOffsetH_default = 0.35;
+      let s_shoulderSurfOffsetV_default = -0.05;
+      let s_shoulderSurfOffsetH_combat = 0.60;
+      let s_shoulderSurfOffsetV_combat = -0.05;
+      // What the camera actually reads (see updateCameraPosition) — eased
+      // toward whichever preset is active every frame (see the per-frame
+      // sync below) rather than snapping the instant a weapon is drawn/
+      // sheathed, so swapping stances reads as a smooth push-in/pull-back
+      // instead of a jump-cut. Slider input handlers set these directly
+      // instead of letting them ease, since a live drag should track the
+      // mouse immediately.
+      let s_shoulderSurfOffsetH_current = s_shoulderSurfOffsetH_default;
+      let s_shoulderSurfOffsetV_current = s_shoulderSurfOffsetV_default;
+      const SHOULDER_SURF_OFFSET_LERP = 6;
+      let _shoulderSurfOffsetSliderCombat = false; // last-synced stance, for the slider UI sync below
+      // One-shot azimuth snap for whenever shoulder-surf is already the
+      // active mode the very first time the camera-follow code below runs
+      // (i.e. it's the default) — mirrors the snap the settingShoulderSurf
+      // checkbox handler does when toggling it on mid-session, since the
+      // module-level activeCameraMode init just above can't call it itself
+      // (facingAngle/player aren't real yet at that point in the script).
+      let _shoulderSurfBootSnapped = false;
+      // Mode key substituted for the ordinary gameplay camera by the
+      // shoulder-surf toggle above. Kept as its own constant rather than
+      // reading cameraConfig().defaultMode so a modder renaming/removing
+      // "default" in scratchbones-config.js can't silently break the
+      // toggle. Declared here (not next to cameraModeConfig() below, where
+      // it conceptually belongs) because defaultCameraModeKey() reads it
+      // eagerly on the very next line — a const only reads as declared
+      // once its own declaration has actually run, and s_shoulderSurf now
+      // defaulting to true means that ternary branch is hit immediately.
+      const SHOULDER_SURF_MODE = 'shoulderSurf';
+      let activeCameraMode   = defaultCameraModeKey();
+      let activeCameraTarget = null;
+      // Mobile drag-to-look offsets, layered on top of the active mode's base
+      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
+      // not a free-orbit camera.
+      let cameraAzimuthOffsetDeg = 0;
+      let cameraAngleOffsetDeg   = 0;
+      // Reused every frame by occlusionSafeCameraPosition — a fresh
+      // THREE.Raycaster per call would just be needless per-frame garbage.
+      const _cameraOcclusionRaycaster = new THREE.Raycaster();
+      // Camera azimuth (radians, rotated from due-south toward east) for the active
+      // mode. Everything except "fishing" stays at 0 (camera due south, as before).
+      function activeCameraAzimuthRad() {
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+      }
+      // The world direction the camera is actually looking (as opposed to
+      // activeCameraAzimuthRad(), which is where the camera SITS relative to
+      // its target) — used by shoulder-surf to make WASD relative to
+      // wherever the mouse has turned the camera. updateCameraPosition
+      // places the camera at world offset (sin(az), cos(az))*distance from
+      // its look-at target and then looks back at that target, so the
+      // camera's own view direction is the negation of that offset;
+      // converting (-sin(az), -cos(az)) into this game's atan2(y,x) facing
+      // convention (matching facingAngle/lastMoveAngle elsewhere) reduces to
+      // -az - 90°. Cross-checked against beginSitInteraction's "camera sits
+      // opposite the character's facing" azimuth (270 - facingDeg): feeding
+      // that back through this gives exactly facingAngle again.
+      function cameraFacingAngleRad() {
+        return angleDiff(-activeCameraAzimuthRad() - Math.PI / 2, 0);
+      }
+      // Billboard sprites go edge-on (and effectively disappear) when rotated
+      // perpendicular to the camera's current viewing axis. perpClamp's dead zones
+      // need to rotate along with the camera's azimuth so this still works once the
+      // camera isn't pointed due north (e.g. the "fishing" mode's diagonal framing).
+      function cameraRelativePerps() {
+        const az = activeCameraAzimuthRad();
+        return [Math.PI / 2 + az, -Math.PI / 2 + az];
+      }
+      // Creatures (buildAnimalPlaneAvatarModel) use a side-view two-plane sprite, the
+      // opposite convention from the front-facing player/NPC sprite: they go edge-on
+      // when facing straight toward/away from the camera (group rotation 0/PI), not
+      // when broadside to it. So their dead zones center on those angles instead.
+      function cameraRelativeCreaturePerps() {
+        const az = activeCameraAzimuthRad();
+        return [0 + az, Math.PI + az];
+      }
+      function nearestAngleAmong(current, candidates) {
+        let best = candidates[0], bestAbs = Infinity;
+        for (const c of candidates) {
+          const a = Math.abs(angleDiff(c, current));
+          if (a < bestAbs) { bestAb
+--- match 2 at 1105306 ---
+ane.scale.y = canvas.height / Math.max(1, canvas.width);
+              plane.userData.ownsTexture = true;
+              sourceTexture?.dispose();
+            })
+            .catch(error => window.__farmLog?.(`[held-item] ${item.key} sprite failed: ${error.message}`, 'warn'));
+        }
+        return plane;
+      }
+
+      function disposeHeldItemPlaneMesh(plane, parent) {
+        if (!plane) return;
+        plane.userData.disposed = true;
+        const ownedTexture = plane.userData.ownsTexture ? plane.material?.map : null;
+        parent?.remove?.(plane);
+        plane.geometry?.dispose?.();
+        plane.material?.dispose?.();
+        ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
+      }
+
+      function usesThrustHeldPose(item) {
+        if (!item) return false;
+        // Definition is checked for both procedural potion identity and alcohol tags.
+        const def = ITEM_DEFS[item.key] || item;
+        return item.key.startsWith('potion_')
+          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
+          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
+          || isAlcoholItemDef(def);
+      }
+
+      // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
+      // animation, so it can just ride along with the player's position and
+      // facing at a fixed local offset instead of being repositioned in world
+      // space every frame.
+      const heldItemHolder = new THREE.Group();
+      heldItemHolder.visible = false;
+      playerMesh.add(heldItemHolder);
+      _markPngPlane(heldItemHolder);
+
+      let _heldItemPlane = null, _heldItemKey = null;
+      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
+      let _heldDrinkAnimT = 0;
+      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
+      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
+      let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
+      // Full duration used to normalize the drink countdown into animation progress.
+      let _heldDrinkAnimDuration = 0;
+
+      function heldActionPoseAt(animation, progress) {
+        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const neutral = animation.poses?.neutral || {};
+        const windup = animation.poses?.windup || neutral;
+        const strike = animation.poses?.strike || windup;
+        const channel = key => fourPhaseLerp(progress, windupFrac, strikeFrac, holdFrac,
+          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0);
+        return {
+          x: channel('x'), y: channel('y'), z: channel('z'),
+          pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
+          bodyYaw: channel('bodyYaw'),
+        };
+      }
+
+      function applyHeldDrinkPose(animation, progress) {
+        const pose = heldActionPoseAt(animation, progress);
+        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        heldItemHolder.scale.setScalar(0.5);
+        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+      }
+
+      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
+        const animation = window.HeldActionAnimations?.drink;
+        if (!animation) {
+          window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
+          return 0;
+        }
+        // Consumption calls this before the next render update, so retain the
+        // plane that was visibly held instead of rebuilding from a newly
+        // selected stack after the consumed item reaches zero.
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
+        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
+        _heldDrinkApplied = false;
+        heldItemHolder.visible = true;
+        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return Math.round(_heldDrinkAnimDuration * 1000);
+      }
+
+      function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
+        const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
+        playerMesh.add(sourceProbe);
+        sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
+        sourceProbe.scale.setScalar(0.5);
+        sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
+        sourceObject.updateWorldMatrix(true, false);
+        const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
+          position: sourceObject.getWorldPosition(new THREE.Vector3()),
+          quaternion: sourceObject.getWorldQuaternion(new THREE.Quaternion()),
+          scale: sourceObject.getWorldScale(new THREE.Vector3()),
+        };
+        playerMesh.remove(sourceProbe);
+        return transform;
+      }
+
+      function cancelPlayerToolAnimationForInteraction() {
+        toolSwingT = 0;
+        combatSwingHeld = false;
+        combatSwingAnim = null;
+        combatSwingPose = null;
+        pendingAction = null;
+      }
+
+      window.NpcDrinkInteraction?.init?.({
+        THREE,
+        actionLocks: window.CharacterActionLocks,
+        playerParticipantId: PLAYER_ACTION_LOCK_ID,
+        npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
+        clamp,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getDrinkAnimation: () => window.HeldActionAnimations?.drink,
+        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        poseAt: heldActionPoseAt,
+        makeBottlePlane: makeHeldItemPlaneMesh,
+        disposeBottlePlane: disposeHeldItemPlaneMesh,
+        getPlayerDrinkSourceTransform,
+        setPlayerHeldItemVisible: visible => { heldItemHolder.visible = !!visible; },
+        cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction,
+        refreshActionBar,
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+
+      function updateHeldItemHolder(dt = 0) {
+        const item = getActiveInventoryItem();
+        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
+        if (drinkAnimating) {
+          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
+          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnim
+--- match 3 at 1105348 ---
+canvas.width);
+              plane.userData.ownsTexture = true;
+              sourceTexture?.dispose();
+            })
+            .catch(error => window.__farmLog?.(`[held-item] ${item.key} sprite failed: ${error.message}`, 'warn'));
+        }
+        return plane;
+      }
+
+      function disposeHeldItemPlaneMesh(plane, parent) {
+        if (!plane) return;
+        plane.userData.disposed = true;
+        const ownedTexture = plane.userData.ownsTexture ? plane.material?.map : null;
+        parent?.remove?.(plane);
+        plane.geometry?.dispose?.();
+        plane.material?.dispose?.();
+        ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
+      }
+
+      function usesThrustHeldPose(item) {
+        if (!item) return false;
+        // Definition is checked for both procedural potion identity and alcohol tags.
+        const def = ITEM_DEFS[item.key] || item;
+        return item.key.startsWith('potion_')
+          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
+          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
+          || isAlcoholItemDef(def);
+      }
+
+      // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
+      // animation, so it can just ride along with the player's position and
+      // facing at a fixed local offset instead of being repositioned in world
+      // space every frame.
+      const heldItemHolder = new THREE.Group();
+      heldItemHolder.visible = false;
+      playerMesh.add(heldItemHolder);
+      _markPngPlane(heldItemHolder);
+
+      let _heldItemPlane = null, _heldItemKey = null;
+      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
+      let _heldDrinkAnimT = 0;
+      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
+      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
+      let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
+      // Full duration used to normalize the drink countdown into animation progress.
+      let _heldDrinkAnimDuration = 0;
+
+      function heldActionPoseAt(animation, progress) {
+        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const neutral = animation.poses?.neutral || {};
+        const windup = animation.poses?.windup || neutral;
+        const strike = animation.poses?.strike || windup;
+        const channel = key => fourPhaseLerp(progress, windupFrac, strikeFrac, holdFrac,
+          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0);
+        return {
+          x: channel('x'), y: channel('y'), z: channel('z'),
+          pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
+          bodyYaw: channel('bodyYaw'),
+        };
+      }
+
+      function applyHeldDrinkPose(animation, progress) {
+        const pose = heldActionPoseAt(animation, progress);
+        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        heldItemHolder.scale.setScalar(0.5);
+        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+      }
+
+      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
+        const animation = window.HeldActionAnimations?.drink;
+        if (!animation) {
+          window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
+          return 0;
+        }
+        // Consumption calls this before the next render update, so retain the
+        // plane that was visibly held instead of rebuilding from a newly
+        // selected stack after the consumed item reaches zero.
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
+        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
+        _heldDrinkApplied = false;
+        heldItemHolder.visible = true;
+        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return Math.round(_heldDrinkAnimDuration * 1000);
+      }
+
+      function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
+        const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
+        playerMesh.add(sourceProbe);
+        sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
+        sourceProbe.scale.setScalar(0.5);
+        sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
+        sourceObject.updateWorldMatrix(true, false);
+        const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
+          position: sourceObject.getWorldPosition(new THREE.Vector3()),
+          quaternion: sourceObject.getWorldQuaternion(new THREE.Quaternion()),
+          scale: sourceObject.getWorldScale(new THREE.Vector3()),
+        };
+        playerMesh.remove(sourceProbe);
+        return transform;
+      }
+
+      function cancelPlayerToolAnimationForInteraction() {
+        toolSwingT = 0;
+        combatSwingHeld = false;
+        combatSwingAnim = null;
+        combatSwingPose = null;
+        pendingAction = null;
+      }
+
+      window.NpcDrinkInteraction?.init?.({
+        THREE,
+        actionLocks: window.CharacterActionLocks,
+        playerParticipantId: PLAYER_ACTION_LOCK_ID,
+        npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
+        clamp,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getDrinkAnimation: () => window.HeldActionAnimations?.drink,
+        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        poseAt: heldActionPoseAt,
+        makeBottlePlane: makeHeldItemPlaneMesh,
+        disposeBottlePlane: disposeHeldItemPlaneMesh,
+        getPlayerDrinkSourceTransform,
+        setPlayerHeldItemVisible: visible => { heldItemHolder.visible = !!visible; },
+        cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction,
+        refreshActionBar,
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+
+      function updateHeldItemHolder(dt = 0) {
+        const item = getActiveInventoryItem();
+        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
+        if (drinkAnimating) {
+          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
+          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnimations?.throwFlask;
+        if (_heldThrow
+--- match 4 at 1105401 ---
+re = true;
+              sourceTexture?.dispose();
+            })
+            .catch(error => window.__farmLog?.(`[held-item] ${item.key} sprite failed: ${error.message}`, 'warn'));
+        }
+        return plane;
+      }
+
+      function disposeHeldItemPlaneMesh(plane, parent) {
+        if (!plane) return;
+        plane.userData.disposed = true;
+        const ownedTexture = plane.userData.ownsTexture ? plane.material?.map : null;
+        parent?.remove?.(plane);
+        plane.geometry?.dispose?.();
+        plane.material?.dispose?.();
+        ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
+      }
+
+      function usesThrustHeldPose(item) {
+        if (!item) return false;
+        // Definition is checked for both procedural potion identity and alcohol tags.
+        const def = ITEM_DEFS[item.key] || item;
+        return item.key.startsWith('potion_')
+          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
+          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
+          || isAlcoholItemDef(def);
+      }
+
+      // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
+      // animation, so it can just ride along with the player's position and
+      // facing at a fixed local offset instead of being repositioned in world
+      // space every frame.
+      const heldItemHolder = new THREE.Group();
+      heldItemHolder.visible = false;
+      playerMesh.add(heldItemHolder);
+      _markPngPlane(heldItemHolder);
+
+      let _heldItemPlane = null, _heldItemKey = null;
+      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
+      let _heldDrinkAnimT = 0;
+      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
+      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
+      let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
+      // Full duration used to normalize the drink countdown into animation progress.
+      let _heldDrinkAnimDuration = 0;
+
+      function heldActionPoseAt(animation, progress) {
+        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const neutral = animation.poses?.neutral || {};
+        const windup = animation.poses?.windup || neutral;
+        const strike = animation.poses?.strike || windup;
+        const channel = key => fourPhaseLerp(progress, windupFrac, strikeFrac, holdFrac,
+          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0);
+        return {
+          x: channel('x'), y: channel('y'), z: channel('z'),
+          pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
+          bodyYaw: channel('bodyYaw'),
+        };
+      }
+
+      function applyHeldDrinkPose(animation, progress) {
+        const pose = heldActionPoseAt(animation, progress);
+        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        heldItemHolder.scale.setScalar(0.5);
+        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+      }
+
+      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
+        const animation = window.HeldActionAnimations?.drink;
+        if (!animation) {
+          window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
+          return 0;
+        }
+        // Consumption calls this before the next render update, so retain the
+        // plane that was visibly held instead of rebuilding from a newly
+        // selected stack after the consumed item reaches zero.
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
+        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
+        _heldDrinkApplied = false;
+        heldItemHolder.visible = true;
+        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return Math.round(_heldDrinkAnimDuration * 1000);
+      }
+
+      function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
+        const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
+        playerMesh.add(sourceProbe);
+        sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
+        sourceProbe.scale.setScalar(0.5);
+        sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
+        sourceObject.updateWorldMatrix(true, false);
+        const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
+          position: sourceObject.getWorldPosition(new THREE.Vector3()),
+          quaternion: sourceObject.getWorldQuaternion(new THREE.Quaternion()),
+          scale: sourceObject.getWorldScale(new THREE.Vector3()),
+        };
+        playerMesh.remove(sourceProbe);
+        return transform;
+      }
+
+      function cancelPlayerToolAnimationForInteraction() {
+        toolSwingT = 0;
+        combatSwingHeld = false;
+        combatSwingAnim = null;
+        combatSwingPose = null;
+        pendingAction = null;
+      }
+
+      window.NpcDrinkInteraction?.init?.({
+        THREE,
+        actionLocks: window.CharacterActionLocks,
+        playerParticipantId: PLAYER_ACTION_LOCK_ID,
+        npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
+        clamp,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getDrinkAnimation: () => window.HeldActionAnimations?.drink,
+        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        poseAt: heldActionPoseAt,
+        makeBottlePlane: makeHeldItemPlaneMesh,
+        disposeBottlePlane: disposeHeldItemPlaneMesh,
+        getPlayerDrinkSourceTransform,
+        setPlayerHeldItemVisible: visible => { heldItemHolder.visible = !!visible; },
+        cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction,
+        refreshActionBar,
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+
+      function updateHeldItemHolder(dt = 0) {
+        const item = getActiveInventoryItem();
+        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
+        if (drinkAnimating) {
+          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
+          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnimations?.throwFlask;
+        if (_heldThrowAimT && throwAnimation && _heldItemPlane) {
+         
+
+==========================================================================================
+OVERLAY LINES NEAR HELD/ITEM CODE
+1887:       // overlay, matching that item's own animStyle (or a fixed 'chop' for
