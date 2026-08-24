@@ -4393,6 +4393,26 @@
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
       }
 
+      // Vertical companion to currentPlayerAimAngle(), passed to RangedWeapons
+      // as getPlayerAimPitch. An auto-target lock assists elevation the same
+      // way it already assists heading — aiming at the target's actual
+      // rendered height rather than just its ground tile. With no lock,
+      // pitch reuses the existing camera-tilt input (shift-drag or
+      // shoulder-surf drag write cameraAngleOffsetDeg already) as manual
+      // up/down aim, rather than inventing a second control scheme.
+      const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
+      function currentPlayerAimPitch() {
+        const target = activeCameraMode === SHOULDER_SURF_MODE ? null : findAutoTarget();
+        if (target) {
+          const originY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55;
+          const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
+          const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
+          if (horizDist < 0.05) return 0;
+          return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+        }
+        return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+      }
+
       // Used by updateAmbientCues() to duck exploration/dawn music during a
       // fight — true whenever any live hostile in the player's current area
       // is actively chasing/attacking (state === 'chase'), regardless of
@@ -24436,6 +24456,7 @@
         getCurrentArea: () => currentArea,
         getActiveScene,
         getPlayerAimAngle: currentPlayerAimAngle,
+        getPlayerAimPitch: currentPlayerAimPitch,
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);

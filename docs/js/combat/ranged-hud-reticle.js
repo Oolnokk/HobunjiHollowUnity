@@ -8,10 +8,17 @@
   const RETICLE_OPACITY = 0.5;
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
+  // brightness(0) first flattens the source art to solid black regardless of
+  // its original colors, then each recipe recolors that black silhouette —
+  // the white recipe is the reticle's original look, the red recipe is a
+  // standard black-to-red CSS filter chain used only while a shot would hit.
+  const FILTER_WHITE = 'brightness(0) invert(1)';
+  const FILTER_RED = 'brightness(0) saturate(100%) invert(21%) sepia(89%) saturate(6510%) hue-rotate(357deg) brightness(94%) contrast(119%)';
 
   let reticleEl = null;
   let frameRequest = 0;
   let lastVisible = false;
+  let lastWouldHit = false;
 
   function equippedRangedKey() {
     return window.RangedWeapons?.equippedRangedKey?.() || null;
@@ -54,7 +61,7 @@
       zIndex: '10',
       display: 'none',
       opacity: String(RETICLE_OPACITY),
-      filter: 'brightness(0) invert(1)',
+      filter: FILTER_WHITE,
     });
     image.addEventListener('error', () => console.error(`Ranged HUD reticle failed to load: ${RETICLE_URL}`));
 
@@ -69,6 +76,9 @@
 
     const visible = rangedWeaponDrawn();
     image.style.display = visible ? 'block' : 'none';
+    const wouldHit = visible && !!window.RangedWeapons?.wouldHitHostile?.();
+    if (wouldHit !== lastWouldHit) image.style.filter = wouldHit ? FILTER_RED : FILTER_WHITE;
+    lastWouldHit = wouldHit;
     lastVisible = visible;
     return visible;
   }
@@ -90,6 +100,7 @@
     reticleEl?.remove?.();
     reticleEl = null;
     lastVisible = false;
+    lastWouldHit = false;
   }
 
   window.RangedHudReticle = {
@@ -100,6 +111,7 @@
       equippedRanged: equippedRangedKey(),
       drawn: rangedWeaponDrawn(),
       visible: lastVisible,
+      wouldHit: lastWouldHit,
       screenSpace: true,
       scaleFactor: RETICLE_SCALE,
       opacity: RETICLE_OPACITY,
