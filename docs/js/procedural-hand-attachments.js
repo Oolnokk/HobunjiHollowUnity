@@ -154,10 +154,11 @@
     loadHandWavySource().then(image => {
       let source = image;
       const spritePng = global.HobunjiSpritePngSurface;
-      if (typeof spritePng?.tintBodyCanvas === 'function' || typeof global.getBodyTintedCanvas === 'function') {
-        // Same authored-PNG recolor entry point used by the character body art.
-        const tintBodyCanvas = spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
-        source = tintBodyCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
+      if (typeof spritePng?.tintSurfaceCanvas === 'function' || typeof spritePng?.tintBodyCanvas === 'function' || typeof global.getBodyTintedCanvas === 'function') {
+        // Expand this full-swatch PNG into the body sprite's tonal envelope,
+        // then run the exact same species-aware body recolor stage.
+        const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || global.getBodyTintedCanvas;
+        source = tintSurfaceCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
       } else {
         // Standalone-tool fallback mirrors the same renderProfile branch exactly.
         const mode = typeof global.bodyTintModeForSpecies === 'function'

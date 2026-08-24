@@ -104,15 +104,17 @@
     const image = new Image();
     image.crossOrigin = 'anonymous';
     image.onload = () => {
-      const tintBodyCanvas = window.HobunjiSpritePngSurface?.tintBodyCanvas || window.getBodyTintedCanvas;
-      if (typeof tintBodyCanvas !== 'function') {
-        console.warn('[natural-surface] portrait body PNG tint helper unavailable; keeping flat tint', path, tint);
+      const spritePng = window.HobunjiSpritePngSurface;
+      const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
+      if (typeof tintSurfaceCanvas !== 'function') {
+        console.warn('[natural-surface] portrait surface PNG tint helper unavailable; keeping flat tint', path, tint);
         return;
       }
-      // Empty species id intentionally follows bodyTintModeForSpecies(''), whose
-      // default is the same shadeFill mode used by ordinary body sprites. A hex
-      // descriptor is already absolute, so no species swatch conversion occurs.
-      const canvas = tintBodyCanvas(image, cacheKey, { hex: tint }, '', 'A');
+      // carved_smooth is a complete texture swatch, so normalize its authored
+      // tonal range to the body-art envelope before the same #808080 shadeFill.
+      // This keeps black carving lines while making the body of the stone read
+      // as medium gray instead of multiplying the already-dark source twice.
+      const canvas = tintSurfaceCanvas(image, cacheKey, { hex: tint }, '', 'A');
       if (!canvas) return;
       tex.image = canvas;
       tex.needsUpdate = true;

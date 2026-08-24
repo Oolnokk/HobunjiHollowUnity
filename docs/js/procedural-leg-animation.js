@@ -271,12 +271,13 @@
     let source = null;
     try {
       const img = await loadSurfaceImage(sourcePath);
-      const tintBodyCanvas = window.HobunjiSpritePngSurface?.tintBodyCanvas || window.getBodyTintedCanvas;
-      if (typeof tintBodyCanvas === 'function') {
-        // Same descriptor -> species tint-mode -> _imageForTint path used by
-        // the portrait body sprite itself. Fixed bone/keratin hex descriptors
-        // pass an empty species id so they retain the default shade-fill mode.
-        source = tintBodyCanvas(img, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
+      const spritePng = window.HobunjiSpritePngSurface;
+      const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
+      if (typeof tintSurfaceCanvas === 'function') {
+        // Normalize the complete texture swatch to body-sprite tonal range,
+        // then use the exact descriptor -> species tint-mode -> _imageForTint path.
+        // Fixed bone/keratin descriptors keep the default shade-fill mode.
+        source = tintSurfaceCanvas(img, sourcePath, colorDescriptor, tintSpeciesId, 'A') || null;
       } else if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
         const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
         source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(img, sourcePath, tint) : null;
