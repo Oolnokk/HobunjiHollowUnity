@@ -158,7 +158,7 @@
 
   // Synchronous flat-color resolution (no image involved) — used both as the
   // immediate material color before the async textured surface resolves (so
-  // there's no stark-white flash/flicker while canvas.png decodes) and as
+  // there's no stark-white flash/flicker while wavy_surface.png decodes) and as
   // the last-resort fallback if that texture ever fails to load, so a
   // missing/blocked asset degrades to "flat but correctly tinted" instead
   // of silently staying untinted white.
@@ -242,7 +242,7 @@
   // pipeline (the same one that colors clothing dyes and creature fur) — a
   // flat, untextured PBR color reads as visibly wrong next to that. These
   // feet reuse the exact same bundled surface PNGs and tint pipeline the
-  // reference authoring tool uses for its own fallback feet: canvas.png for
+  // reference authoring tool uses for its own fallback feet: wavy_surface.png for
   // ordinary "body color 1" skin, carved_smooth.png for the shared bone/claw
   // tint, boards.png for the Kenkari family's dark keratin.
 
@@ -305,7 +305,7 @@
       } else if (role === 'keratin') {
         promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`);
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/wavy_surface.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`);
       }
       promises.set(role, promise);
       return promise;

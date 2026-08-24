@@ -60,6 +60,105 @@
     return bodyColorHex(speciesId, bodyColors);
   }
 
+  const handBodyTextureCache = new Map(); // Reused by fallback and GLB body-hand materials so identical species/body colors share one wavy texture.
+  let handWavySourcePromise = null; // Shared wavy_surface.png image request used to populate every cached body-hand texture.
+
+  function bodyReferenceHex(speciesId) {
+    return typeof global._dyeReferenceHexForSlot === 'function'
+      ? global._dyeReferenceHexForSlot('A', speciesId)
+      : '#7dc89a';
+  }
+
+  function flatTintCanvas(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 4;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = hex || '#808080';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function loadHandWavySource() {
+    if (handWavySourcePromise) return handWavySourcePromise;
+    handWavySourcePromise = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Failed to load wavy_surface.png for procedural hands'));
+      image.src = resolveAssetPath('assets/textures/wavy_surface.png');
+    }).catch(error => {
+      handWavySourcePromise = null;
+      throw error;
+    });
+    return handWavySourcePromise;
+  }
+
+  function ensureHandSurfaceUvs(THREE, geometry) {
+    if (!geometry?.getAttribute || geometry.getAttribute('uv')) return;
+    const position = geometry.getAttribute('position');
+    if (!position?.count) return;
+    geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) return;
+    const sx = Math.max(1e-6, box.max.x - box.min.x);
+    const sy = Math.max(1e-6, box.max.y - box.min.y);
+    const sz = Math.max(1e-6, box.max.z - box.min.z);
+    const normal = geometry.getAttribute('normal');
+    const uvs = new Float32Array(position.count * 2); // Added to UV-less hand GLBs so the wavy body texture has coordinates to sample.
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+      const nx = Math.abs(normal?.getX?.(i) || 0);
+      const ny = Math.abs(normal?.getY?.(i) || 0);
+      const nz = Math.abs(normal?.getZ?.(i) || 0);
+      let u, v;
+      if (nx >= ny && nx >= nz) {
+        u = (z - box.min.z) / sz;
+        v = (y - box.min.y) / sy;
+      } else if (ny >= nz) {
+        u = (x - box.min.x) / sx;
+        v = (z - box.min.z) / sz;
+      } else {
+        u = (x - box.min.x) / sx;
+        v = (y - box.min.y) / sy;
+      }
+      uvs[i * 2] = u;
+      uvs[i * 2 + 1] = v;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  }
+
+  function handBodySurfaceTexture(THREE, speciesId, bodyColors) {
+    const referenceHex = bodyReferenceHex(speciesId);
+    const descriptor = bodyColors?.A || { hex: referenceHex };
+    const resolvedHex = bodyColorHex(speciesId, bodyColors);
+    const cacheKey = `${normalizeKey(speciesId)}:${String(resolvedHex).toLowerCase()}`; // Identifies the tint-specific wavy texture shared by both hands of one appearance.
+    if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
+
+    const texture = new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
+    texture.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body_wavy_surface`;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1.25, 1);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+    texture.needsUpdate = true;
+    handBodyTextureCache.set(cacheKey, texture);
+
+    loadHandWavySource().then(image => {
+      let source = image;
+      if (typeof global.shadeFillTintForBodyColor === 'function' && typeof global.getShadeFillCanvas === 'function') {
+        const tint = global.shadeFillTintForBodyColor(descriptor, referenceHex);
+        if (tint?.mode === 'shadeFill') {
+          source = global.getShadeFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
+        }
+      }
+      texture.image = source;
+      texture.needsUpdate = true;
+    }).catch(error => {
+      console.warn('[ProceduralHandAttachments] wavy body surface failed; keeping correctly tinted fallback:', error);
+    });
+    return texture;
+  }
+
   function markOutline(root) {
     root?.traverse?.(child => {
       if (!child.isMesh) return;
@@ -111,18 +210,24 @@
     const remapped = new Map();
     clone.traverse(child => {
       if (!child.isMesh) return;
-      if (child.geometry) child.geometry = child.geometry.clone();
+      if (child.geometry) {
+        child.geometry = child.geometry.clone();
+        ensureHandSurfaceUvs(THREE, child.geometry);
+      }
       const replaceMaterial = material => {
         if (remapped.has(material)) return remapped.get(material);
         const role = model?.materialRoles?.[material?.name] || 'body';
         const isParrotWingLayer = modelKey === 'parrot' && role === 'body'; // Lets the portrait's opaque wing/clothing pixels cover the modeled wing continuation.
+        const bodyTexture = role === 'body' ? handBodySurfaceTexture(THREE, speciesId, bodyColors) : null; // Applied only to skin/body slots; bone and keratin retain their authored role colors.
         const next = new THREE.MeshBasicMaterial({
-          color: roleColor(role, speciesId, bodyColors),
+          color: bodyTexture ? 0xffffff : roleColor(role, speciesId, bodyColors),
+          map: bodyTexture,
           side: THREE.DoubleSide,
           depthWrite: !isParrotWingLayer,
         });
         next.name = material?.name || `${role}_hand_material`;
         next.userData.hobunjiHandRole = role;
+        next.userData.hobunjiHandSurfaceTexture = bodyTexture ? 'wavy_surface.png' : null;
         next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;
@@ -181,10 +286,14 @@
     return group;
   }
 
-  function buildFallbackHand(THREE, size, color, side, sourceIsLeft) {
+  function buildFallbackHand(THREE, size, color, side, sourceIsLeft, speciesId, bodyColors) {
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
-    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+    const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
+    const material = new THREE.MeshBasicMaterial({ color: bodyTexture ? 0xffffff : color, map: bodyTexture, side: THREE.DoubleSide });
+    material.name = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
+    material.userData.hobunjiHandRole = 'body';
+    material.userData.hobunjiHandSurfaceTexture = 'wavy_surface.png';
     const mesh = new THREE.Mesh(geometry, material);
     const sign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1);
     mesh.scale.x = sign;
@@ -300,7 +409,7 @@
       const sourceIsLeft = values.model?.mirrorX !== false;
       const color = bodyColorHex(speciesId, options.bodyColors);
       for (const side of ['left', 'right']) {
-        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft));
+        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft, speciesId, options.bodyColors));
       }
     }
 
@@ -402,6 +511,7 @@
           fallbackPoseInput: 'per-side-local-offset',
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
           parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
+          bodySurfaceTexture: 'wavy_surface.png',
         };
       },
     };

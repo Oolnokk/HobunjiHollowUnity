@@ -33,13 +33,13 @@
       },
       rocks: {
         enabled: true,
-        tint: '#5f5a56',
+        tint: '#808080',
         tintTreatment: 'grass-luminance',
         mapping: 'planar-stretch'
       },
       cliffs: {
         enabled: true,
-        tint: '#6a6460',
+        tint: '#808080',
         tintTreatment: 'grass-luminance',
         mapping: 'world-stretch'
       }

@@ -10,8 +10,8 @@
     surfaces: {
       trunks: { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
       vines:  { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      rocks:  { enabled: true, tint: '#5f5a56', mapping: 'planar-stretch' },
-      cliffs: { enabled: true, tint: '#6a6460', mapping: 'world-stretch' },
+      rocks:  { enabled: true, tint: '#808080', mapping: 'planar-stretch' },
+      cliffs: { enabled: true, tint: '#808080', mapping: 'world-stretch' },
     },
   };
 
