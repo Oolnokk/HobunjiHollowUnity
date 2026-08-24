@@ -235,8 +235,10 @@
   }
 
   // Reads a canvas into an alpha mask with full bounds and centroid data.
-  // buildSkinnedPlaneGeometry() uses the same mask to omit empty grid cells,
-  // so the expensive pixel read happens only once when an avatar is rebuilt.
+  // This is used only to locate portrait landmarks such as the neck pivot.
+  // Skin geometry deliberately ignores opacity and always covers the complete
+  // rectangular PNG plane, so detached cosmetics and transparent gaps remain
+  // part of the same continuously weighted surface.
   function scanOpaquePixelMask(canvas, alphaThreshold, additionalCanvas) {
     const width = canvas?.width, height = canvas?.height;
     if (!canvas || !width || !height) return null;
@@ -360,10 +362,11 @@
     return t * t * (3 - 2 * t);
   }
 
-  // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
-  // two rigid Mesh objects. The regular grid is fitted to the avatar alpha
-  // bounds and cells containing no opaque pixels are omitted, concentrating
-  // the available vertices on the visible portrait instead of empty canvas.
+  // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
+  // Every grid vertex receives root/head weights regardless of the texel alpha
+  // beneath it. Cosmetics, separated silhouettes, and transparent space are
+  // therefore deformed by one coherent rig instead of becoming disconnected
+  // alpha-shaped islands.
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
@@ -371,11 +374,8 @@
     // than a narrow neck hinge: shoulders and upper torso share a diminishing
     // amount of head rotation instead of stopping abruptly at one rigid seam.
     const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
-    const mask = options.opaqueMask;
-    const left = mask?.left ?? 0, right = mask?.right ?? ((mask?.width || 1) - 1);
-    const top = mask?.top ?? 0, bottom = mask?.bottom ?? ((mask?.height || 1) - 1);
-    const pixelWidth = Math.max(1, mask?.width || 1), pixelHeight = Math.max(1, mask?.height || 1);
-    const cropWidthPx = Math.max(1, right - left + 1), cropHeightPx = Math.max(1, bottom - top + 1);
+    const pixelWidth = Math.max(1, Number(options.pixelWidth) || 1); // Used below to map the overall PNG plane into model/UV space.
+    const pixelHeight = Math.max(1, Number(options.pixelHeight) || 1); // Used below to map the overall PNG plane into model/UV space.
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
@@ -391,39 +391,22 @@
       skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
 
-    const cellHasOpaquePixel = (column, row) => {
-      if (!mask?.data) return true;
-      const x0 = Math.max(0, Math.floor(left + column / segmentsX * cropWidthPx));
-      const x1 = Math.min(pixelWidth - 1, Math.ceil(left + (column + 1) / segmentsX * cropWidthPx));
-      const y0 = Math.max(0, Math.floor(top + row / segmentsY * cropHeightPx));
-      const y1 = Math.min(pixelHeight - 1, Math.ceil(top + (row + 1) / segmentsY * cropHeightPx));
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          if (mask.data[(y * pixelWidth + x) * 4 + 3] > mask.alphaThreshold) return true;
-        }
-      }
-      return false;
-    };
-
-    const visibleCells = [];
-    for (let row = 0; row < segmentsY; row++) {
-      for (let column = 0; column < segmentsX; column++) {
-        if (cellHasOpaquePixel(column, row)) visibleCells.push({ column, row });
-      }
-    }
-
     const appendCell = ({ column, row }, normalZ) => {
-      const x0 = left + column / segmentsX * cropWidthPx;
-      const x1 = left + (column + 1) / segmentsX * cropWidthPx;
-      const y0 = top + row / segmentsY * cropHeightPx;
-      const y1 = top + (row + 1) / segmentsY * cropHeightPx;
+      const x0 = column / segmentsX * pixelWidth;
+      const x1 = (column + 1) / segmentsX * pixelWidth;
+      const y0 = row / segmentsY * pixelHeight;
+      const y1 = (row + 1) / segmentsY * pixelHeight;
       const front = [[x0, y1], [x1, y1], [x0, y0], [x1, y1], [x1, y0], [x0, y0]];
       const vertices = normalZ > 0 ? front : [...front].reverse();
       for (const [pixelX, pixelY] of vertices) appendVertex(pixelX, pixelY, normalZ);
     };
-    for (const cell of visibleCells) appendCell(cell, 1);
+    for (let row = 0; row < segmentsY; row++) {
+      for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, 1);
+    }
     const frontVertexCount = positions.length / 3;
-    for (const cell of visibleCells) appendCell(cell, -1);
+    for (let row = 0; row < segmentsY; row++) {
+      for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, -1);
+    }
 
     if (!frontVertexCount) {
       return null;
@@ -442,7 +425,9 @@
     geometry.computeBoundingSphere();
     geometry.userData = {
       segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
-      opaqueBoundsPx: { left, right, top, bottom }, visibleCellCount: visibleCells.length,
+      coverageMode: 'full-png-plane',
+      planeBoundsPx: { left: 0, right: pixelWidth, top: 0, bottom: pixelHeight },
+      planeCellCount: segmentsX * segmentsY,
     };
     return geometry;
   }
@@ -455,8 +440,7 @@
   // fall back to the plain rigid assembly in that case.
   function buildSkinnedSinglePlaneAssembly(THREE, config) {
     const detectedHead = detectHeadRigPixels(config.headCanvas, config.sourceCanvas, config.alphaThreshold);
-    const opaqueMask = scanOpaquePixelMask(config.sourceCanvas, config.alphaThreshold, config.backCanvas);
-    if (!detectedHead || !opaqueMask) return null;
+    if (!detectedHead) return null;
     const { pivotPx, centroidPx: headCentroidPx } = detectedHead;
     const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures } = config;
     const pxW = config.sourceCanvas.width, pxH = config.sourceCanvas.height;
@@ -474,7 +458,10 @@
       y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
       z: 0,
     };
-    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask });
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, {
+      pixelWidth: pxW,
+      pixelHeight: pxH,
+    });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
@@ -508,7 +495,8 @@
     return {
       group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
-      detectionMethod: detectedHead.method, opaqueBoundsPx: geometry.userData.opaqueBoundsPx,
+      detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
+      planeBoundsPx: geometry.userData.planeBoundsPx,
     };
   }
 
@@ -646,7 +634,8 @@
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,
-          detectionMethod: skinnedRig.detectionMethod, opaqueBoundsPx: skinnedRig.opaqueBoundsPx,
+          detectionMethod: skinnedRig.detectionMethod, coverageMode: skinnedRig.coverageMode,
+          planeBoundsPx: skinnedRig.planeBoundsPx,
         }
       : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
