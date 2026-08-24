@@ -51,7 +51,7 @@
     if (decimateValue) decimateValue.textContent = `${reduction}%`;
     if (decimateStats && !busy) {
       decimateStats.textContent = reduction
-        ? `Target: keep ${100 - reduction}% of triangles`
+        ? `Target: keep ${100 - reduction}% of solid-geometry triangles · leaf cards preserved`
         : 'Original geometry';
     }
     exportAllBtn.textContent = reduction ? 'Export all 6 LODs as ZIP' : 'Export all 6 as ZIP';
@@ -241,31 +241,6 @@
     return output;
   }
 
-  function thinLeafCards(mesh, reductionPercent) {
-    const geometry = mesh.geometry;
-    const cardCount = geometry.index.count / 6;
-    const targetCards = Math.max(1, Math.min(cardCount, Math.round(cardCount * (1 - reductionPercent / 100))));
-    if (targetCards >= cardCount) return { before: cardCount * 2, after: cardCount * 2, cardsRemoved: 0 };
-
-    const source = geometry.index.array;
-    const selectedIndices = new Uint32Array(targetCards * 6);
-    let write = 0;
-    for (let i = 0; i < targetCards; i++) {
-      const cardIndex = Math.min(cardCount - 1, Math.floor((i + 0.5) * cardCount / targetCards));
-      const sourceOffset = cardIndex * 6;
-      for (let j = 0; j < 6; j++) selectedIndices[write++] = source[sourceOffset + j];
-    }
-
-    const previous = mesh.geometry;
-    mesh.geometry = compactGeometry(previous, selectedIndices);
-    previous.dispose?.();
-    return {
-      before: cardCount * 2,
-      after: targetCards * 2,
-      cardsRemoved: cardCount - targetCards,
-    };
-  }
-
   function simplifySolidMesh(mesh, reductionPercent) {
     const geometry = mesh.geometry;
     const position = geometry?.getAttribute?.('position');
@@ -291,20 +266,16 @@
     const sourcePositions = position.array instanceof Float32Array
       ? position.array
       : Float32Array.from(position.array);
-    // MeshoptSimplifier expects vertex stride in BYTES, not float components.
-    // Tree geometry uses tightly packed Float32 XYZ positions, so itemSize 3 = 12 bytes.
-    const positionStrideBytes = position.itemSize * sourcePositions.BYTES_PER_ELEMENT;
-    if (position.itemSize < 3 || positionStrideBytes < 12 || positionStrideBytes % 4 !== 0) {
-      throw new Error(`Unsupported position layout: itemSize=${position.itemSize}, stride=${positionStrideBytes} bytes`);
+    if (position.itemSize < 3) {
+      throw new Error(`Unsupported position layout: itemSize=${position.itemSize}`);
     }
 
     const [simplifiedIndices, error] = window.MeshoptSimplifier.simplify(
       sourceIndices,
       sourcePositions,
-      positionStrideBytes,
+      position.itemSize,
       targetIndexCount,
       1,
-      ['Prune'],
     );
 
     if (!simplifiedIndices?.length || simplifiedIndices.length > sourceIndices.length) {
@@ -326,7 +297,7 @@
     const requested = clampPercent(reductionPercent);
     const before = triangleCount(object);
     if (!requested || !before) {
-      return { requested, before, after: before, actualReduction: 0, leafCardsRemoved: 0, skippedMeshes: 0 };
+      return { requested, before, after: before, actualReduction: 0, leafCardsPreserved: 0, skippedMeshes: 0 };
     }
 
     if (!window.MeshoptSimplifier?.supported) {
@@ -339,17 +310,19 @@
       if (child?.isMesh) meshes.push(child);
     });
 
-    let leafCardsRemoved = 0;
+    let leafCardsPreserved = 0; // Used in preview/export stats to verify foliage is untouched.
     let skippedMeshes = 0;
     for (let meshIndex = 0; meshIndex < meshes.length; meshIndex++) {
       const mesh = meshes[meshIndex];
       try {
         if (isLeafCardMesh(mesh)) {
-          leafCardsRemoved += thinLeafCards(mesh, requested).cardsRemoved;
-        } else {
-          const result = simplifySolidMesh(mesh, requested);
-          if (result.skipped) skippedMeshes++;
+          // Leaf cards are intentionally NEVER decimated or removed for LOD.
+          leafCardsPreserved += Math.floor((mesh.geometry?.index?.count || 0) / 6);
+          continue;
         }
+
+        const result = simplifySolidMesh(mesh, requested);
+        if (result.skipped) skippedMeshes++;
       } catch (error) {
         const geometry = mesh.geometry;
         const position = geometry?.getAttribute?.('position');
@@ -370,16 +343,17 @@
         sourceTriangles: before,
         outputTriangles: after,
         actualReductionPercent: Number(actualReduction.toFixed(2)),
+        leafCardsPreserved,
       },
     };
-    return { requested, before, after, actualReduction, leafCardsRemoved, skippedMeshes };
+    return { requested, before, after, actualReduction, leafCardsPreserved, skippedMeshes };
   }
 
   function formatStats(stats) {
     if (!stats?.requested) return `${stats?.after ?? 0} triangles · original geometry`;
     const skipped = stats.skippedMeshes ? ` · ${stats.skippedMeshes} mesh(es) skipped` : '';
-    const cards = stats.leafCardsRemoved ? ` · ${stats.leafCardsRemoved} leaf cards removed` : '';
-    return `${stats.before.toLocaleString()} → ${stats.after.toLocaleString()} triangles · ${stats.actualReduction.toFixed(1)}% actual reduction${cards}${skipped}`;
+    const leaves = stats.leafCardsPreserved ? ` · ${stats.leafCardsPreserved} leaf cards preserved` : '';
+    return `${stats.before.toLocaleString()} → ${stats.after.toLocaleString()} triangles · ${stats.actualReduction.toFixed(1)}% actual reduction${leaves}${skipped}`;
   }
 
   function disposeObjectGeometry(object) {
@@ -416,7 +390,7 @@
       if (decimateStats) decimateStats.textContent = formatStats(stats);
       setStatus(
         reduction
-          ? `LOD preview ready. ${formatStats(stats)}. Leaf planes are removed whole so their UVs stay intact.`
+          ? `LOD preview ready. ${formatStats(stats)}. Leaf cards are preserved at full detail.`
           : 'Preview is the same procedural source object that will be baked into this GLB.',
         'status-ok',
       );
@@ -538,6 +512,7 @@
           filename,
           sourceTriangles: stats.before,
           outputTriangles: stats.after,
+          leafCardsPreserved: stats.leafCardsPreserved,
         });
         folder.file(filename, buffer, { binary: true });
       }
@@ -545,6 +520,7 @@
       if (reduction) {
         folder.file('lod-decimation.json', JSON.stringify({
           requestedReductionPercent: reduction,
+          leafCardsPreservedAtFullDetail: true,
           generatedAt: new Date().toISOString(),
           files: lodFiles,
         }, null, 2) + '\n');
@@ -567,7 +543,7 @@
       const actualReduction = sourceTriangles > 0 ? (1 - outputTriangles / sourceTriangles) * 100 : 0;
       setStatus(
         reduction
-          ? `LOD ZIP complete: 6 GLBs + lod-decimation.json. ${sourceTriangles.toLocaleString()} → ${outputTriangles.toLocaleString()} triangles (${actualReduction.toFixed(1)}% actual reduction). ZIP ${(blob.size / 1024 / 1024).toFixed(2)} MiB.`
+          ? `LOD ZIP complete: 6 GLBs + lod-decimation.json. ${sourceTriangles.toLocaleString()} → ${outputTriangles.toLocaleString()} triangles (${actualReduction.toFixed(1)}% actual reduction); all leaf cards preserved. ZIP ${(blob.size / 1024 / 1024).toFixed(2)} MiB.`
           : `ZIP complete: 6 GLBs + index.json. Raw GLBs ${(totalBytes / 1024 / 1024).toFixed(2)} MiB; ZIP ${(blob.size / 1024 / 1024).toFixed(2)} MiB.`,
         'status-ok',
       );
