@@ -4,17 +4,21 @@ on:
     branches:
       - chatgpt/dew-rock-item-icons-two-hand
 permissions:
-  contents: read
+  contents: write
 jobs:
   inspect:
+    if: ${{ !contains(github.event.head_commit.message, 'inspection output') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print held item and icon seams
+        with:
+          ref: chatgpt/dew-rock-item-icons-two-hand
+      - name: Capture held item and icon seams
         run: |
           python - <<'PY'
           from pathlib import Path
           text = Path('docs/game.js').read_text()
+          out = []
           needles = [
               'function applyItemSpriteIcon',
               'function updateHeldItemHolder',
@@ -23,8 +27,8 @@ jobs:
               'heldItemHolder',
           ]
           for needle in needles:
-              print('\n' + '=' * 90)
-              print('NEEDLE:', needle)
+              out.append('\n' + '=' * 90)
+              out.append('NEEDLE: ' + needle)
               start = 0
               found = 0
               while True:
@@ -34,18 +38,23 @@ jobs:
                   found += 1
                   lo = max(0, i - 1800)
                   hi = min(len(text), i + 7000)
-                  print(f'--- match {found} at {i} ---')
-                  print(text[lo:hi])
+                  out.append(f'--- match {found} at {i} ---')
+                  out.append(text[lo:hi])
                   start = i + len(needle)
                   if found >= 4:
                       break
               if not found:
-                  print('NO MATCH')
-          print('\n' + '=' * 90)
-          print('OVERLAY LINES NEAR HELD/ITEM CODE')
-          lines = text.splitlines()
-          for n, line in enumerate(lines, 1):
+                  out.append('NO MATCH')
+          out.append('\n' + '=' * 90)
+          out.append('OVERLAY LINES NEAR HELD/ITEM CODE')
+          for n, line in enumerate(text.splitlines(), 1):
               low = line.lower()
               if 'overlay' in low and ('item' in low or 'sprite' in low or 'held' in low):
-                  print(f'{n}: {line[:500]}')
+                  out.append(f'{n}: {line[:500]}')
+          Path('debug-held-item-seams.txt').write_text('\n'.join(out))
           PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add debug-held-item-seams.txt
+          git commit -m "chore: inspection output"
+          git push origin HEAD:chatgpt/dew-rock-item-icons-two-hand
