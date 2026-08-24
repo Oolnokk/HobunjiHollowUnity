@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <base href="../../">
   <title>Hobunji Hollow — Tree Asset Exporter</title>
-  <link rel="stylesheet" href="tools/tree-asset-exporter/exporter.css">
+  <link rel="stylesheet" href="tools/tree-asset-exporter/exporter.css?v=20260824-lod-decimate">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="js/foliage-generator.js?v=20260818-tree-export"></script>
   <script src="js/tree-asset-library.js?v=20260818a"></script>
@@ -17,7 +18,7 @@
   <header>
     <div>
       <h1>🌲 Wilderness Tree Asset Exporter</h1>
-      <p>Build the six fixed full-size tree variants used by wilderness generation, bake them to GLB, and package them at their exact runtime paths.</p>
+      <p>Build the six fixed full-size tree variants used by wilderness generation, bake them to GLB, or generate decimated LOD copies without damaging leaf-card UVs.</p>
     </div>
     <button id="export-all" class="primary">Export all 6 as ZIP</button>
   </header>
@@ -32,9 +33,26 @@
         <span id="ready-pill" class="pill">Preparing…</span>
       </div>
       <div id="asset-list" class="asset-list"></div>
+
+      <div class="lod-control">
+        <div class="lod-control-head">
+          <div>
+            <strong>LOD decimation</strong>
+            <p class="muted">Triangle reduction applied to exported GLBs. Solid tree geometry is simplified; foliage is thinned by removing complete textured leaf cards.</p>
+          </div>
+          <output id="decimate-value" for="decimate-percent">0%</output>
+        </div>
+        <input id="decimate-percent" type="range" min="0" max="95" step="5" value="0" aria-label="LOD decimation percentage">
+        <div class="lod-scale">
+          <span>Full detail</span>
+          <span id="decimate-stats">Original geometry</span>
+          <span>95% reduction</span>
+        </div>
+      </div>
+
       <div class="help">
         <strong>Upload workflow</strong>
-        <p>The ZIP mirrors the repository path. Extract it at repo root, or open <code>docs/assets/models/trees/</code> on GitHub and upload the six GLBs together. The committed <code>index.json</code> already keeps that folder present.</p>
+        <p>At 0% decimation the ZIP mirrors the canonical repository path and includes <code>index.json</code>. LOD exports get <code>_lod-decimate-N</code> filenames plus a <code>lod-decimation.json</code> manifest, so extracting an LOD ZIP cannot accidentally overwrite the full-detail GLBs.</p>
       </div>
     </section>
 
@@ -51,6 +69,6 @@
     </section>
   </main>
 
-  <script src="tools/tree-asset-exporter/exporter.js?v=20260818a"></script>
+  <script src="tools/tree-asset-exporter/exporter.js?v=20260824-lod-decimate"></script>
 </body>
 </html>
