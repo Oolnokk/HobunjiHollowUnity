@@ -10,6 +10,7 @@
     const deps = injectedDeps || {};
     const elevation = window.BuildingSubtleElevation;
     const terrain = window.TerrainPreview;
+    const grassSuppression = window.BuildingGrassSuppression; // Shared footprint filter used for house + barn grass removal.
     if (!elevation || !terrain || typeof terrain.sampleVisualHeight !== 'function') {
       throw new Error('PlayerHouseElevation requires BuildingSubtleElevation and TerrainPreview.');
     }
@@ -18,6 +19,7 @@
     const rows = Math.max(1, Number(deps.rows) || 1);
     const getGrid = typeof deps.getGrid === 'function' ? deps.getGrid : () => [];
     const getPieces = typeof deps.getPieces === 'function' ? deps.getPieces : () => [];
+    const getFarmBuildings = typeof deps.getFarmBuildings === 'function' ? deps.getFarmBuildings : () => []; // Barn rectangles joined with house pieces for grass suppression only.
     const markTileDirty = typeof deps.markTileDirty === 'function' ? deps.markTileDirty : () => {};
     const recomputeWater = typeof deps.recomputeWater === 'function' ? deps.recomputeWater : () => {};
     const debugLog = typeof deps.debugLog === 'function' ? deps.debugLog : () => {};
@@ -30,7 +32,10 @@
     let visualMeshKeys = new Set(); // A one-cell halo around affected centers, where bilinear interpolation can still move vertices.
     let baseElevTiers = new Map(); // Original per-tile elevTier values restored when the modular footprint moves away.
     let lastDebug = null; // Most recent recalculation summary, exposed for the in-game/mobile debug surface.
-    let sceneAddOriginal = null; // Scene.add hook keeps later shovel/tile refreshes deformed while this controller is active.
+    let sceneAddOriginal = null; // Scene.add hook keeps later shovel/tile refreshes deformed and footprint-filtered while active.
+    let currentGrassBlockedKeys = new Set(); // Exact house + barn cells currently excluded from grass billboard instances.
+    let lastGrassStats = { meshes: 0, source: 0, visible: 0, suppressed: 0 }; // Latest grass compaction counts for debug output.
+    let lastDeformedTerrainMeshes = 0; // Number of terrain meshes touched by the most recent elevation sync.
 
     const keyOf = (c, r) => `${c},${r}`;
     const parseKey = key => key.split(',').map(Number);
@@ -48,6 +53,15 @@
           for (let c = col; c < col + w; c++) if (inBounds(c, r)) keys.add(keyOf(c, r));
         }
       }
+      return keys;
+    }
+
+    function _grassFootprintKeys(houseKeys = _pieceFootprintKeys()) {
+      const keys = new Set(houseKeys); // House module cells plus barn rectangles form the farm's no-grass footprint mask.
+      const barnKeys = typeof grassSuppression?.rectFootprintKeys === 'function'
+        ? grassSuppression.rectFootprintKeys(getFarmBuildings() || [])
+        : new Set();
+      for (const key of barnKeys) keys.add(key);
       return keys;
     }
 
@@ -137,28 +151,48 @@
       }
     }
 
-    function _isFarmTerrainMesh(obj, keySet) {
-      if (!obj?.isMesh || obj.parent !== scene || !obj.geometry?.attributes?.position) return false;
-      if (!obj.layers?.isEnabled?.(3)) return false;
-      const c = Math.floor(Number(obj.position.x));
-      const r = Math.floor(Number(obj.position.z));
-      if (!inBounds(c, r) || !keySet.has(keyOf(c, r))) return false;
-      return Math.abs(obj.position.x - (c + 0.5)) < 0.02 && Math.abs(obj.position.z - (r + 0.5)) < 0.02;
+    function _terrainMeshWorldAnchor(obj) {
+      if (!obj?.isMesh || obj.isInstancedMesh || !obj.geometry?.attributes?.position) return null;
+      if (!obj.layers?.isEnabled?.(3)) return null;
+      if (obj.userData?.isBillboard || obj.userData?.terrainRenderChunkSource) return null;
+      obj.updateMatrixWorld?.(true);
+      const anchor = new THREE.Vector3(); // World-space tile center allows terrain nested under renderer groups to match the footprint.
+      obj.getWorldPosition(anchor);
+      const c = Math.floor(anchor.x);
+      const r = Math.floor(anchor.z);
+      if (!inBounds(c, r) || !visualMeshKeys.has(keyOf(c, r))) return null;
+      // Ordinary farm tile meshes are centered at n+0.5. The old direct-parent
+      // check broke as soon as terrain wrappers/groups were introduced; world
+      // coordinates preserve the same narrow identification without assuming
+      // the mesh is a direct scene child.
+      if (Math.abs(anchor.x - (c + 0.5)) > 0.08 || Math.abs(anchor.z - (r + 0.5)) > 0.08) return null;
+      return { c, r };
+    }
+
+    function _isFarmTerrainMesh(obj) {
+      return !!_terrainMeshWorldAnchor(obj);
     }
 
     function _deformTerrainMesh(obj) {
-      if (!_isFarmTerrainMesh(obj, visualMeshKeys)) return false;
+      if (!_isFarmTerrainMesh(obj)) return false;
       const stamp = footprintFingerprint || '__pending__';
       if (obj.userData?.playerHouseElevationStamp === stamp) return false;
       // Some farm tile types reuse template geometry. Clone before writing
       // vertex Y so one elevated house tile cannot deform every instance of
       // that geometry elsewhere on the farm.
       obj.geometry = obj.geometry.clone();
+      obj.updateMatrixWorld?.(true);
+      const meshWorld = obj.matrixWorld.clone(); // Converts local terrain vertices into the same world coordinates sampled by the heightfield.
+      const worldToLocal = meshWorld.clone().invert(); // Converts the lifted world vertex back into this mesh's local geometry space.
+      const localPoint = new THREE.Vector3(); // Reused local vertex while applying the subtle-height field.
+      const worldPoint = new THREE.Vector3(); // Reused world vertex where the bilinear heightfield is sampled.
       const pos = obj.geometry.attributes.position;
       for (let i = 0; i < pos.count; i++) {
-        const wx = obj.position.x + pos.getX(i);
-        const wz = obj.position.z + pos.getZ(i);
-        pos.setY(i, pos.getY(i) + sampleWorldY(wx, wz));
+        localPoint.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+        worldPoint.copy(localPoint).applyMatrix4(meshWorld);
+        worldPoint.y += sampleWorldY(worldPoint.x, worldPoint.z);
+        localPoint.copy(worldPoint).applyMatrix4(worldToLocal);
+        pos.setXYZ(i, localPoint.x, localPoint.y, localPoint.z);
       }
       pos.needsUpdate = true;
       if (obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
@@ -169,11 +203,22 @@
       return true;
     }
 
-    function _deformTerrainMeshes(keySet) {
-      if (!scene || !keySet.size) return;
-      for (const obj of [...scene.children]) {
-        if (_isFarmTerrainMesh(obj, keySet)) _deformTerrainMesh(obj);
+    function _deformTerrainMeshes() {
+      if (!scene || !visualMeshKeys.size) return 0;
+      let moved = 0; // Count of nested/direct terrain meshes deformed by this pass for the debug snapshot.
+      scene.updateMatrixWorld?.(true);
+      scene.traverse?.(obj => { if (_deformTerrainMesh(obj)) moved++; });
+      return moved;
+    }
+
+    function refreshGrassSuppression(houseKeys = _pieceFootprintKeys()) {
+      currentGrassBlockedKeys = _grassFootprintKeys(houseKeys);
+      if (!scene || typeof grassSuppression?.filterScene !== 'function') {
+        lastGrassStats = { meshes: 0, source: 0, visible: 0, suppressed: 0 };
+        return lastGrassStats;
       }
+      lastGrassStats = grassSuppression.filterScene(scene, currentGrassBlockedKeys, 'hobunjiFarmBuildingGrass');
+      return lastGrassStats;
     }
 
     function _installSceneAddHook() {
@@ -182,10 +227,16 @@
       scene.add = function (...objects) {
         const result = sceneAddOriginal.apply(this, objects);
         // _markTerrainEdgeId runs immediately after scene.add in game.js, so
-        // defer one microtask before checking layer 3. This catches every later
-        // shovel/weather tile rebuild without coupling game.js back to houses.
+        // defer one microtask before checking layer 3. Traverse each added root
+        // because terrain may now be nested under renderer wrapper groups.
         queueMicrotask(() => {
-          for (const obj of objects) _deformTerrainMesh(obj);
+          for (const root of objects) {
+            if (typeof root?.traverse === 'function') root.traverse(obj => _deformTerrainMesh(obj));
+            else _deformTerrainMesh(root);
+            if (typeof grassSuppression?.filterObject === 'function') {
+              grassSuppression.filterObject(root, currentGrassBlockedKeys, 'hobunjiFarmBuildingGrass');
+            }
+          }
         });
         return result;
       };
@@ -196,7 +247,10 @@
     function sync(force = false) {
       const footprintKeys = _pieceFootprintKeys();
       const nextFingerprint = [...footprintKeys].sort().join('|');
-      if (!force && nextFingerprint === footprintFingerprint) return false;
+      if (!force && nextFingerprint === footprintFingerprint) {
+        refreshGrassSuppression(footprintKeys);
+        return false;
+      }
 
       const oldVisualKeys = new Set(visualMeshKeys);
       _restoreBaseElevTiers();
@@ -214,18 +268,22 @@
         const [c, r] = parseKey(key);
         markTileDirty(c, r);
       }
-      _deformTerrainMeshes(visualMeshKeys);
+      lastDeformedTerrainMeshes = _deformTerrainMeshes();
+      refreshGrassSuppression(footprintKeys);
       if (rebuildKeys.size) recomputeWater(false);
 
       lastDebug = {
         footprintCells: footprintKeys.size,
         affectedCenters: affectedKeys.size,
         deformedTileCells: visualMeshKeys.size,
+        deformedTerrainMeshes: lastDeformedTerrainMeshes,
+        grassBlockedCells: currentGrassBlockedKeys.size,
+        suppressedGrassInstances: lastGrassStats.suppressed,
         worldY: worldY(),
         logicalValue: PLAYER_HOUSE_LOGICAL_HEIGHT,
         radius: elevation.DEFAULT_RADIUS ?? null,
       };
-      debugLog(`Player house subtle elevation: ${lastDebug.footprintCells} footprint tile(s), ${lastDebug.affectedCenters} stamped center(s), Y +${lastDebug.worldY.toFixed(3)}.`);
+      debugLog(`Player house subtle elevation: ${lastDebug.footprintCells} footprint tile(s), ${lastDebug.affectedCenters} stamped center(s), ${lastDebug.deformedTerrainMeshes} terrain mesh(es), Y +${lastDebug.worldY.toFixed(3)}; grass suppressed in ${lastDebug.grassBlockedCells} building tile(s).`);
       return true;
     }
 
@@ -236,6 +294,8 @@
       affectedKeys = new Set();
       visualMeshKeys = new Set();
       footprintFingerprint = '';
+      currentGrassBlockedKeys = new Set();
+      refreshGrassSuppression(new Set());
       for (const key of old) {
         const [c, r] = parseKey(key);
         markTileDirty(c, r);
@@ -249,13 +309,21 @@
 
     function debugSnapshot() {
       return {
-        ...(lastDebug || { footprintCells: 0, affectedCenters: 0, deformedTileCells: 0, worldY: 0 }),
+        ...(lastDebug || {
+          footprintCells: 0,
+          affectedCenters: 0,
+          deformedTileCells: 0,
+          deformedTerrainMeshes: lastDeformedTerrainMeshes,
+          grassBlockedCells: currentGrassBlockedKeys.size,
+          suppressedGrassInstances: lastGrassStats.suppressed,
+          worldY: 0,
+        }),
         fingerprint: footprintFingerprint,
         affectedKeys: [...affectedKeys],
       };
     }
 
-    return { sync, dispose, sampleWorldY, worldY, debugSnapshot };
+    return { sync, dispose, sampleWorldY, worldY, refreshGrassSuppression, debugSnapshot };
   }
 
   window.PlayerHouseElevation = { create };
