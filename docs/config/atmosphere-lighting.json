@@ -1,0 +1,18 @@
+{
+  "cloudForest": {
+    "dayFogColor": "#ffffff",
+    "nightTintStartOverlayAlpha": 0.12,
+    "nightTintFullOverlayAlpha": 0.8,
+    "dayTintAmount": 0.18,
+    "nightTintAmount": 0.97,
+    "matchBackgroundToFog": true
+  },
+  "lantern": {
+    "radiusTiles": 3.6,
+    "clarityRadiusTiles": 0.95,
+    "centerMaskAlpha": 0.92,
+    "clarityMaskAlpha": 0.8,
+    "softMaskAlpha": 0.28,
+    "softTransitionFraction": 0.18
+  }
+}

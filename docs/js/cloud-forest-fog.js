@@ -1,43 +1,118 @@
 (() => {
   'use strict';
 
-  // A handful of large, translucent white cylinders centered on the player,
-  // shown only in the Southern Cloud Forest. That zone's own FogExp2 (see
-  // game.js's buildZoneScene, EXTERIOR_ZONES.map_southern_cloud_forest's
-  // fogDensity) already fades the whole scene toward white well before its
-  // vegCullRadiusTiles — but a per-pixel exponential fog reads as flat,
-  // computed haze with no real presence. These cylinders are actual
-  // geometry the camera sits inside of (BackSide material, so the inward-
-  // facing surface is what's lit), layered on top of the ordinary fog
-  // rather than replacing it, so drifting mist patches occlude things the
-  // way ground fog with real volume would. Same self-contained
-  // window.<Namespace> + init(deps)/update(dt) shape as rain-planes.js.
+  // Southern Cloud Forest mist + non-invasive sky/lighting integration.
+  // The original skydome/material rendering paths remain authoritative.
   let deps = null;
   let group = null;
   let texture = null;
   const layers = [];
+  let attachedScene = null;
+  let fogDayColor = null;
+  let fogTimeColor = null;
+  let fogResultColor = null;
+  let lastFogLightingBucket = '';
 
-  // The innermost shell is pinned to an absolute, close-to-the-player
-  // distance rather than a fraction of the outer (cull-radius-matched) one
-  // below — 5 tiles puts real, textured mist geometry well inside the
-  // player's immediate surroundings instead of only appearing well out
-  // toward the cull edge. The middle shell keeps the same closer-in ratio
-  // to the inner one it held back when both were fractions of the outer
-  // radius (0.70 / 0.42 = 5/3), just re-anchored to the new inner distance.
   const INNER_RADIUS_TILES = 5;
-  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42); // = 25/3 ≈ 8.33
-  // radiusFrac scales the outer (cull-radius-matched) distance for the
-  // outermost shell only, so it stays tied to wherever
-  // updateZoneVegetationCulling's vegetation cull actually pops trees in/out
-  // even if that radius is ever retuned.
+  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42);
   const LAYER_CONFIG = [
     { radiusTiles: INNER_RADIUS_TILES, height: 6.5, opacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
     { radiusTiles: MIDDLE_RADIUS_TILES, height: 8.5, opacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
-  // Matches map_southern_cloud_forest's vegCullRadiusTiles — used only if a
-  // real value can't be read from deps for some reason.
   const FALLBACK_OUTER_RADIUS_TILES = 34;
+  const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
+  const DEFAULT_TUNING = Object.freeze({
+    cloudForest: Object.freeze({
+      dayFogColor: '#ffffff',
+      nightTintStartOverlayAlpha: 0.12,
+      nightTintFullOverlayAlpha: 0.80,
+      dayTintAmount: 0.18,
+      nightTintAmount: 0.97,
+      matchBackgroundToFog: true,
+    }),
+    lantern: Object.freeze({
+      radiusTiles: 3.6,
+      clarityRadiusTiles: 0.95,
+      centerMaskAlpha: 0.92,
+      clarityMaskAlpha: 0.80,
+      softMaskAlpha: 0.28,
+      softTransitionFraction: 0.18,
+    }),
+  });
+  let tuning = {
+    cloudForest: { ...DEFAULT_TUNING.cloudForest },
+    lantern: { ...DEFAULT_TUNING.lantern },
+  };
+
+  const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+
+  function debugLog(message, level = 'info') {
+    const logger = window.__farmLog || console.log;
+    try { logger(`[cloud-forest-fog] ${message}`, level); }
+    catch { console.log(`[cloud-forest-fog] ${message}`); }
+  }
+
+  function applyAtmosphereTuning(raw) {
+    const cloud = raw?.cloudForest || {};
+    const lantern = raw?.lantern || {};
+
+    const radiusTiles = Math.max(0.1, finiteOr(lantern.radiusTiles, DEFAULT_TUNING.lantern.radiusTiles));
+    const clarityRadiusTiles = Math.max(0, Math.min(
+      radiusTiles,
+      finiteOr(lantern.clarityRadiusTiles, DEFAULT_TUNING.lantern.clarityRadiusTiles),
+    ));
+
+    tuning = {
+      cloudForest: {
+        dayFogColor: typeof cloud.dayFogColor === 'string' && cloud.dayFogColor.trim()
+          ? cloud.dayFogColor.trim()
+          : DEFAULT_TUNING.cloudForest.dayFogColor,
+        nightTintStartOverlayAlpha: clamp01(finiteOr(
+          cloud.nightTintStartOverlayAlpha,
+          DEFAULT_TUNING.cloudForest.nightTintStartOverlayAlpha,
+        )),
+        nightTintFullOverlayAlpha: clamp01(finiteOr(
+          cloud.nightTintFullOverlayAlpha,
+          DEFAULT_TUNING.cloudForest.nightTintFullOverlayAlpha,
+        )),
+        dayTintAmount: clamp01(finiteOr(cloud.dayTintAmount, DEFAULT_TUNING.cloudForest.dayTintAmount)),
+        nightTintAmount: clamp01(finiteOr(cloud.nightTintAmount, DEFAULT_TUNING.cloudForest.nightTintAmount)),
+        matchBackgroundToFog: cloud.matchBackgroundToFog !== false,
+      },
+      lantern: {
+        radiusTiles,
+        clarityRadiusTiles,
+        centerMaskAlpha: clamp01(finiteOr(lantern.centerMaskAlpha, DEFAULT_TUNING.lantern.centerMaskAlpha)),
+        clarityMaskAlpha: clamp01(finiteOr(lantern.clarityMaskAlpha, DEFAULT_TUNING.lantern.clarityMaskAlpha)),
+        softMaskAlpha: clamp01(finiteOr(lantern.softMaskAlpha, DEFAULT_TUNING.lantern.softMaskAlpha)),
+        softTransitionFraction: clamp01(finiteOr(
+          lantern.softTransitionFraction,
+          DEFAULT_TUNING.lantern.softTransitionFraction,
+        )),
+      },
+    };
+
+    if (fogDayColor) {
+      try { fogDayColor.set(tuning.cloudForest.dayFogColor); }
+      catch {
+        tuning.cloudForest.dayFogColor = DEFAULT_TUNING.cloudForest.dayFogColor;
+        fogDayColor.set(DEFAULT_TUNING.cloudForest.dayFogColor);
+      }
+    }
+  }
+
+  async function loadAtmosphereTuning() {
+    try {
+      const response = await fetch(ATMOSPHERE_CONFIG_PATH, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      applyAtmosphereTuning(await response.json());
+      debugLog(`loaded tweakable lighting settings from ${ATMOSPHERE_CONFIG_PATH}`);
+    } catch (error) {
+      debugLog(`using built-in atmosphere defaults; ${ATMOSPHERE_CONFIG_PATH} failed: ${error?.message || error}`, 'warn');
+    }
+  }
 
   function mulberry32(seed) {
     return () => {
@@ -49,9 +124,6 @@
     };
   }
 
-  // Fallback "spray paint" mist texture: soft white blotches at random
-  // size/alpha. Each blob is also stamped at its wrap-around offsets so
-  // RepeatWrapping tiles it around the cylinder without a hard seam.
   function createSprayTexture() {
     const THREE = deps.THREE;
     const size = 256;
@@ -60,22 +132,25 @@
     const ctx = canvas.getContext('2d');
     const random = mulberry32(0x666f6721);
     ctx.clearRect(0, 0, size, size);
-    const stampBlob = (x, y, r, alpha) => {
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const stampBlob = (x, y, radius, alpha) => {
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
       grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
       grad.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     };
     for (let i = 0; i < 70; i++) {
-      const x = random() * size, y = random() * size;
-      const r = 18 + random() * 58;
+      const x = random() * size;
+      const y = random() * size;
+      const radius = 18 + random() * 58;
       const alpha = 0.12 + random() * 0.34;
       for (const dx of [-size, 0, size]) {
         for (const dy of [-size, 0, size]) {
-          if (x + dx > -r && x + dx < size + r && y + dy > -r && y + dy < size + r) stampBlob(x + dx, y + dy, r, alpha);
+          if (x + dx > -radius && x + dx < size + radius && y + dy > -radius && y + dy < size + radius) {
+            stampBlob(x + dx, y + dy, radius, alpha);
+          }
         }
       }
     }
@@ -88,10 +163,6 @@
     return tex;
   }
 
-  // Quietly upgrades every already-built layer to a real authored asset if
-  // one shows up at this path later — a 404/parse error just leaves the
-  // procedural fallback in place. Called only after `layers` is populated
-  // (see init) so a same-tick/cached resolve can't find it still empty.
   function upgradeTextureIfAvailable() {
     const THREE = deps.THREE;
     new THREE.TextureLoader().load(
@@ -123,16 +194,12 @@
       color: 0xffffff,
       transparent: true,
       opacity: 0,
-      side: THREE.BackSide, // camera sits inside the shell — light the inward face
+      side: THREE.BackSide,
       depthWrite: false,
       depthTest: true,
       fog: true,
     });
-    // Unit cylinder, open-ended (no caps) — scaled per-frame to the current
-    // outer radius so a live radius change (e.g. tuning vegCullRadiusTiles)
-    // doesn't need geometry rebuilt.
-    const geometry = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 28, 1, true), material);
     mesh.name = `cloud_forest_mist_${index}`;
     mesh.frustumCulled = false;
     mesh.renderOrder = 890 + index;
@@ -144,14 +211,51 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     const THREE = deps.THREE;
+    fogDayColor = new THREE.Color(tuning.cloudForest.dayFogColor);
+    fogTimeColor = new THREE.Color();
+    fogResultColor = new THREE.Color();
     texture = createSprayTexture();
     group = new THREE.Group();
     group.name = 'cloud_forest_mist_cylinders';
     for (let i = 0; i < LAYER_CONFIG.length; i++) layers.push(makeLayer(LAYER_CONFIG[i], i));
     upgradeTextureIfAvailable();
+    loadAtmosphereTuning();
   }
 
-  let attachedScene = null;
+  function getFullDayLighting() {
+    const state = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.();
+    return state && Number.isFinite(state.r) ? state : { r: 255, g: 255, b: 255, a: 0 };
+  }
+
+  function updateFogLighting(activeScene) {
+    if (!fogDayColor || !fogTimeColor || !fogResultColor) return;
+    const light = getFullDayLighting();
+    fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
+
+    const cloudTuning = tuning.cloudForest;
+    const startAlpha = cloudTuning.nightTintStartOverlayAlpha;
+    const fullAlpha = cloudTuning.nightTintFullOverlayAlpha;
+    const alphaSpan = Math.max(0.000001, fullAlpha - startAlpha);
+    const nightStrength = clamp01((clamp01(light.a) - startAlpha) / alphaSpan);
+    const timeTintAmount = cloudTuning.dayTintAmount
+      + nightStrength * (cloudTuning.nightTintAmount - cloudTuning.dayTintAmount);
+    fogResultColor.copy(fogDayColor).lerp(fogTimeColor, clamp01(timeTintAmount));
+
+    for (const layer of layers) layer.material.color.copy(fogResultColor);
+    if (activeScene?.fog?.color) activeScene.fog.color.copy(fogResultColor);
+
+    if (cloudTuning.matchBackgroundToFog && activeScene?.background?.isColor) {
+      activeScene.background.copy(fogResultColor);
+    }
+
+    const hour = window.CalendarSystem?.getHour?.() ?? 12;
+    const bucket = `${Math.floor(hour)}:${fogResultColor.getHexString()}`;
+    if (bucket !== lastFogLightingBucket && [0, 6, 12, 18, 22].includes(Math.floor(hour))) {
+      lastFogLightingBucket = bucket;
+      debugLog(`fog lighting ${String(Math.floor(hour)).padStart(2, '0')}:00 -> #${fogResultColor.getHexString()}`);
+    }
+  }
+
   function update(dt) {
     if (!deps || !group) return;
     const active = deps.isCloudForestArea();
@@ -164,8 +268,13 @@
     group.visible = active;
     if (!active) return;
 
+    const skyRoot = activeScene?.getObjectByName?.('hobunji_dynamic_skydome');
+    if (skyRoot) skyRoot.visible = false;
+    updateFogLighting(activeScene);
+
     const outerRadius = deps.getCloudForestFogRadiusTiles?.() ?? FALLBACK_OUTER_RADIUS_TILES;
-    const px = deps.player.x / deps.TILE, pz = deps.player.y / deps.TILE;
+    const px = deps.player.x / deps.TILE;
+    const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
 
@@ -182,5 +291,212 @@
     }
   }
 
-  window.CloudForestFog = { init, update };
+  let skyPolicyDeps = null;
+  function isNoSkyArea(area) {
+    const id = String(area || '').toLowerCase();
+    return id === 'map_southern_cloud_forest'
+      || id === 'interior'
+      || id.includes('map_i_den_')
+      || id.includes('den')
+      || id.includes('cavern')
+      || id.includes('burrow');
+  }
+
+  if (window.RainPlanes) {
+    const priorRainInit = window.RainPlanes.init;
+    const priorRainUpdate = window.RainPlanes.update;
+    window.RainPlanes.init = function (injectedDeps) {
+      skyPolicyDeps = injectedDeps;
+      return priorRainInit.call(this, injectedDeps);
+    };
+    window.RainPlanes.update = function (dt) {
+      const result = priorRainUpdate.call(this, dt);
+      const scene = skyPolicyDeps?.getActiveScene?.();
+      const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome');
+      if (skyRoot) {
+        const area = skyPolicyDeps?.getCurrentArea?.();
+        const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
+        skyRoot.visible = outside && !isNoSkyArea(area);
+      }
+      const area = skyPolicyDeps?.getCurrentArea?.();
+      if (scene?.background?.isColor && isNoSkyArea(area) && area !== 'map_southern_cloud_forest') scene.background.set(0x000000);
+      return result;
+    };
+  }
+
+  // WeatherFX originally owns the same 2D lighting/lantern canvas before and
+  // after this patch. The only change here is that its outdoor base tint now
+  // reads the exact same 24-hour state as the skydome. This removes the
+  // overnight 22:00-06:00 disagreement between WeatherFX's legacy stops and
+  // the full-day sky stops without changing the rendering architecture.
+  let lightingDeps = null;
+  let lastUnifiedLightingDraw = 0;
+  const lightCamRight = new window.THREE.Vector3();
+
+  function lightScreenRadius(x, z, y, tiles) {
+    lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
+    const c = lightingDeps.worldToOverlay(x, y, z);
+    const e = lightingDeps.worldToOverlay(
+      x + lightCamRight.x * tiles,
+      y + lightCamRight.y * tiles,
+      z + lightCamRight.z * tiles,
+    );
+    return Math.hypot(e.x - c.x, e.y - c.y);
+  }
+
+  function drawLanternMasksCompat() {
+    const ctx = lightingDeps.lctx;
+    const carriers = [{
+      x: lightingDeps.player.x / lightingDeps.TILE,
+      y: lightingDeps.getPlayerWorldY() + 0.5,
+      z: lightingDeps.player.y / lightingDeps.TILE,
+    }];
+    const currentArea = lightingDeps.getCurrentArea();
+    for (const walker of lightingDeps.npcWalkers) {
+      if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
+        carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
+      }
+    }
+    ctx.globalCompositeOperation = 'destination-out';
+    const lanternTuning = tuning.lantern;
+    for (const carrier of carriers) {
+      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
+      if (!center.visible) continue;
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
+      if (!(shineR > 0)) continue;
+      const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha})`);
+      grad.addColorStop(
+        Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
+        `rgba(0,0,0,${lanternTuning.softMaskAlpha})`,
+      );
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function drawFurnitureLightMasksCompat() {
+    const ctx = lightingDeps.lctx;
+    const visible = [];
+    for (const light of lightingDeps.getFurnitureLightSources()) {
+      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+      if (!center.visible) continue;
+      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
+      if (!(shineR > 0)) continue;
+      visible.push({ light, center, shineR });
+    }
+
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const { light, center, shineR } of visible) {
+      const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
+      grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    for (const { light, center, shineR } of visible) {
+      const glowR = shineR * 0.62;
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
+      const { r, g, b } = light.color;
+      const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
+      glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
+      glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawUnifiedLightingOverlay() {
+    if (!lightingDeps?.lctx) return;
+    const now = performance.now();
+    const lightningAlpha = lightingDeps.getLightningAlpha();
+    const sceneTransAlpha = lightingDeps.getSceneTransAlpha();
+    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+    lastUnifiedLightingDraw = now;
+
+    const ctx = lightingDeps.lctx;
+    const rect = lightingDeps.getThreeRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const currentArea = lightingDeps.getCurrentArea();
+    const enclosed = currentArea === 'interior'
+      || lightingDeps._isBuildingArea(currentArea)
+      || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
+
+    if (enclosed) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawFurnitureLightMasksCompat();
+      if (sceneTransAlpha > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+        ctx.fillRect(0, 0, rect.width, rect.height);
+      }
+      return;
+    }
+
+    const { r, g, b, a } = getFullDayLighting();
+    ctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Same original local-light behavior; no horizon/depth masking or canvas proxy.
+    drawLanternMasksCompat();
+    drawFurnitureLightMasksCompat();
+
+    if (lightningAlpha > 0) {
+      ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+    if (sceneTransAlpha > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  if (window.WeatherFX && !window.WeatherFX.__singleFullDayLightingAuthority) {
+    const priorWeatherInit = window.WeatherFX.init;
+    window.WeatherFX.init = function (injectedDeps) {
+      lightingDeps = injectedDeps;
+      return priorWeatherInit.call(this, injectedDeps);
+    };
+    window.WeatherFX.drawLightingOverlay = drawUnifiedLightingOverlay;
+    window.WeatherFX.__singleFullDayLightingAuthority = true;
+  }
+
+  window.CloudForestFog = {
+    init,
+    update,
+    getDebugState: () => ({
+      active: !!deps?.isCloudForestArea?.(),
+      area: skyPolicyDeps?.getCurrentArea?.() ?? null,
+      fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
+      skydomeSuppressed: !!isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()),
+      renderingMode: 'original-skydome-visibility-only',
+      lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
+      configPath: ATMOSPHERE_CONFIG_PATH,
+      tuning: {
+        cloudForest: { ...tuning.cloudForest },
+        lantern: { ...tuning.lantern },
+      },
+    }),
+  };
 })();
