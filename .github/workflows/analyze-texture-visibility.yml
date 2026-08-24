@@ -1,5 +1,7 @@
 name: Analyze texture visibility
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [fix/wavy-limbs-medium-gray-stone]
 jobs:
@@ -12,9 +14,8 @@ jobs:
       - name: Measure PNG contrast and minification
         shell: python
         run: |
-          from PIL import Image, ImageStat
+          from PIL import Image
           from pathlib import Path
-          import math
 
           roots = [Path('docs/assets'), Path('assets')]
           def find_one(name):
