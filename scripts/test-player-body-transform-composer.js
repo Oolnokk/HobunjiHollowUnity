@@ -63,7 +63,7 @@ assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*rotation/, 'impact never write
 assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*position/, 'impact never writes playerMesh position');
 
 assert.ok(drunk.includes("BODY_CHANNEL = 'drunk'"), 'drunk gait publishes a drunk body channel');
-assert.ok(drunk.includes("DRUNK_FOOTING_ID = 'drunkenFooting'"), 'drunk gait keys off the alcohol affliction, not generic Footing loss');
+assert.ok(drunk.includes('const footing = Math.max(0, Number(player.footing) || 0);'), 'drunk gait derives sway from current Footing loss');
 assert.ok(drunk.includes('removeTrackedFootTwist'), 'drunk gait removes its previous foot delta before the base solver runs');
 assert.ok(drunk.includes('applyTrackedFootTwist'), 'drunk gait composes one tracked foot delta onto the resolved base pose');
 assert.ok(drunk.includes('FOOT_TWIST_LIMIT'), 'drunk foot twist has a hard shortest-arc bound below 180 degrees');
