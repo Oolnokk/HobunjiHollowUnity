@@ -20441,7 +20441,6 @@
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
-      let s_fpsCounter = false;
       let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
       // Debug hitbox overlay — unlike the other visual toggles above, its
       // state is cached across sessions (it's a dev tool you flip on once
@@ -20464,17 +20463,6 @@
       // contributing to the reported translucency.
       let s_disableHatXray = false;
 
-      const fpsCounterEl = document.getElementById('fpsCounter');
-      let _fpsFrames = 0, _fpsAccum = 0;
-      // renderer.info.render.calls/.triangles only reflect the LAST
-      // renderer.render() invocation of a frame under Three's default
-      // autoReset (each render() call resets the counter at its own start),
-      // which undercounts frames with extra passes (outline pass, post
-      // pass). While the counter is on, autoReset is disabled instead (see
-      // the settingFpsCounter listener) so info accumulates across every
-      // render() call in the frame; these hold the totals captured right
-      // before the manual reset at the end of each frame.
-      let _lastDrawCalls = 0, _lastTriangles = 0;
       let _minimapRedrawAccum = 0;
       let _pathBrickCullAccum = 0;
 
@@ -20628,16 +20616,13 @@
       wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
       wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
       wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
-      document.getElementById('settingFpsCounter').addEventListener('change', e => {
-        s_fpsCounter = e.target.checked;
-        fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
-        _fpsFrames = 0; _fpsAccum = 0;
-        // See _lastDrawCalls' declaration comment: only disable Three's
-        // default per-render()-call autoReset while the counter is actually
-        // visible, so there's zero behavior/overhead change with it off.
-        renderer.info.autoReset = !s_fpsCounter;
-        if (!s_fpsCounter) renderer.info.reset();
-      });
+      // FPS Counter's checkbox is owned entirely by js/performance-debug.js
+      // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
+      // it used to also be independently wired up right here, which meant
+      // two separate frame loops fought over the same #fpsCounter element's
+      // text every half second. Draw calls/triangles/GPU memory/render CPU
+      // time are already available too, via the adjacent "Performance
+      // Profiler" checkbox and its overlay (perfState in that file).
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
@@ -21000,18 +20985,6 @@
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
-
-        if (s_fpsCounter) {
-          _fpsFrames++;
-          _fpsAccum += dt;
-          if (_fpsAccum >= 0.5) {
-            const fps = Math.round(_fpsFrames / _fpsAccum);
-            const tris = _lastTriangles >= 1000 ? (_lastTriangles / 1000).toFixed(1) + 'k' : String(_lastTriangles);
-            fpsCounterEl.textContent = `${fps} FPS · ${_lastDrawCalls} calls · ${tris} tris`;
-            _fpsFrames = 0;
-            _fpsAccum  = 0;
-          }
-        }
 
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
@@ -21443,16 +21416,6 @@
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
-        if (s_fpsCounter) {
-          // autoReset is off while the counter is on (see the
-          // settingFpsCounter listener), so info has accumulated every
-          // renderer.render() call made this frame (main pass, outline
-          // pass, post pass) rather than only the last one — capture the
-          // total, then reset by hand for the next frame.
-          _lastDrawCalls = renderer.info.render.calls;
-          _lastTriangles = renderer.info.render.triangles;
-          renderer.info.reset();
-        }
         requestAnimationFrame(gameLoop);
       }
 
