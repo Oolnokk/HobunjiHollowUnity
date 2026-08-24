@@ -20,9 +20,12 @@
 
   const channels = new Map();
   const externalRootProviders = new Map();
+  const PLAYER_HEAD_MAX_YAW_DEG = 65; // Shared body-relative neck limit used by ordinary aim, animation-composed body yaw, and seated camera look.
+  const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
   let playerMesh = null;
   let playerLegRoot = null;
   let playerPosteriorY = 0;
+  let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
   let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
@@ -90,6 +93,52 @@
       cursor = cursor.parent;
     }
     return false;
+  }
+
+  function wrapSignedAngle(angle) {
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  }
+
+  function currentPlayerNeckJoint() {
+    if (playerNeckJointCache?.isBone && isDescendantOf(playerNeckJointCache, playerMesh)) return playerNeckJointCache;
+    playerNeckJointCache = null;
+    playerMesh?.traverse?.(object => {
+      if (playerNeckJointCache) return;
+      const rig = object?.userData?.neckRig; // Used here to find the current rebuilt player portrait without depending on generated bone names.
+      if (rig?.available && rig.neckJoint?.isBone) playerNeckJointCache = rig.neckJoint;
+    });
+    return playerNeckJointCache;
+  }
+
+  // game.js authors the player's local neck yaw before render, already
+  // subtracting PlayerBodyTransformComposer's pending body-yaw channels. That
+  // makes this renderer boundary the one place where the REAL body-relative
+  // result can be physically limited after ordinary aiming, combat/idle body
+  // animation, and seated free-look have all contributed.
+  //
+  // Seated free-look is special: game.js's raw yaw points the head TOWARD the
+  // camera because the camera sits at activeCameraAzimuthRad(). Once that
+  // direction is outside the neck range, adding PI reverses it to the
+  // direction the camera itself is FACING. The same ±65° hard limit is then
+  // applied to that fallback as well, so neither branch can overtwist.
+  function applyPlayerNeckYawLimit(renderDebug) {
+    const neckJoint = currentPlayerNeckJoint();
+    if (!neckJoint) return;
+    const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
+    const sitState = window.__hobunjiFurnitureDebug?.sitInteraction; // Used only to distinguish the seated camera-look fallback from normal aim clamping.
+    const seated = sitState?.phase === 'active';
+    const outsideLookRange = seated && Math.abs(rawYaw) > PLAYER_HEAD_MAX_YAW_RAD; // Used below to switch from looking at the camera to following its facing direction.
+    const requestedYaw = outsideLookRange ? wrapSignedAngle(rawYaw + Math.PI) : rawYaw; // Seated out-of-range target is the camera-facing direction, not the camera position.
+    const renderedYaw = THREE.MathUtils.clamp(requestedYaw, -PLAYER_HEAD_MAX_YAW_RAD, PLAYER_HEAD_MAX_YAW_RAD); // Final physical limit shared by every head-turn source.
+    neckJoint.rotation.y = renderedYaw;
+    renderDebug.neckYaw = {
+      rawDeg: THREE.MathUtils.radToDeg(rawYaw),
+      requestedDeg: THREE.MathUtils.radToDeg(requestedYaw),
+      renderedDeg: THREE.MathUtils.radToDeg(renderedYaw),
+      maxDeg: PLAYER_HEAD_MAX_YAW_DEG,
+      seated,
+      usedCameraFacingFallback: outsideLookRange,
+    };
   }
 
   // Diagnostics only. Runtime composition deliberately does not depend on
@@ -306,6 +355,7 @@
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
     playerPosteriorY = finite(handle?.standingPosteriorY);
+    playerNeckJointCache = null;
   }
 
   function unregisterPlayerRig(parent, handle) {
@@ -314,6 +364,7 @@
     playerMesh = null;
     playerLegRoot = null;
     playerPosteriorY = 0;
+    playerNeckJointCache = null;
     clearAllChannels();
   }
 
@@ -347,8 +398,10 @@
         portraitSelections: [],
         baseWorldEulerDeg: null,
         composedWorldEulerDeg: null,
+        neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
+        applyPlayerNeckYawLimit(renderDebug);
         const delta = resolveDelta();
         renderDebug.appliedOrder = delta.applied.slice();
         renderDebug.preserveFacingSideRequested = delta.preserveFacingSide;
@@ -448,9 +501,12 @@
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
     getDebug() {
       const delta = resolveDelta();
+      const neckJoint = currentPlayerNeckJoint(); // Used below so the mobile/debug report can show the currently clamped local neck yaw without console access.
       return {
         playerAttached: !!playerMesh,
         posteriorY: playerPosteriorY,
+        headMaxYawDeg: PLAYER_HEAD_MAX_YAW_DEG,
+        currentNeckYawDeg: neckJoint ? THREE.MathUtils.radToDeg(neckJoint.rotation.y) : null,
         renderRoot: playerMesh?.name || playerMesh?.type || null,
         avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
@@ -471,6 +527,7 @@
           portraitSelections: lastRenderDebug.portraitSelections.map(selection => ({ ...selection })),
           baseWorldEulerDeg: lastRenderDebug.baseWorldEulerDeg ? { ...lastRenderDebug.baseWorldEulerDeg } : null,
           composedWorldEulerDeg: lastRenderDebug.composedWorldEulerDeg ? { ...lastRenderDebug.composedWorldEulerDeg } : null,
+          neckYaw: lastRenderDebug.neckYaw ? { ...lastRenderDebug.neckYaw } : null,
         } : null,
       };
     },
