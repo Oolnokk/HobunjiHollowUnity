@@ -22168,6 +22168,22 @@
           objBtns.forEach(b => btns.push(b));
         }
 
+        // 0b. Harvest, same priority tier as a world object (a ready crop
+        // should behave exactly like picking a wild herb/berry: available
+        // as Action 1 regardless of what's in your hand, not just while an
+        // inventory item happens to be selected) — previously this only
+        // ever appeared down in the item-mode-only section below, so aiming
+        // at a ready crop while holding a tool showed no pick button at all.
+        if (tile.crop) {
+          const data = cropData[tile.crop];
+          btns.push({
+            icon: tile.cropReady ? data.emoji : '🌱',
+            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
+            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            allowed: tile.cropReady,
+          });
+        }
+
         // 1. Tool's own actions (suppressed in item mode)
         if (heldMode === 'tool') {
           const actions = toolActions[activeTool] || [];
@@ -22233,17 +22249,6 @@
               allowed: count > 0 && areaOk && canPlaceDecorativeFurnitureAt(reticle.col, reticle.row),
             });
           }
-        }
-
-        // 3. Context: Harvest button if reticled tile has a ready crop
-        if (tile.crop) {
-          const data = cropData[tile.crop];
-          btns.push({
-            icon: tile.cropReady ? data.emoji : '🌱',
-            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
-            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
-            allowed: tile.cropReady,
-          });
         }
 
         return btns;
