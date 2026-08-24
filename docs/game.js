@@ -1324,17 +1324,21 @@
           fogDensity: 0.055,
           // updateZoneVegetationCulling uses this zone's presence here to
           // switch from the other zones' camera-forward/rear/width box to a
-          // simple circle around the player — it pairs with CloudForestFog's
-          // outer mist cylinder, which is scaled to this same radius, so the
-          // ring where vegetation pops in/out sits inside the mist in every
-          // direction rather than just character-forward. 34 tiles is where
-          // fogDensity above has already made FogExp2 ~97% opaque, so the
-          // pop-in itself stays hidden without changing how much actually
-          // renders at once (a full circle this size does mean more gets
-          // drawn behind/beside the player than the old forward-biased box
-          // did — the fog now doing the work that box previously did makes
-          // that an acceptable trade, not a free one).
-          vegCullRadiusTiles: 34,
+          // simple circle around the player — originally paired with
+          // CloudForestFog's outer mist cylinder so the ring where
+          // vegetation pops in/out sat inside the mist in every direction
+          // rather than just character-forward. This is now just the
+          // startup default: both the live cull radius and each fog layer's
+          // own radius/opacity are independently Settings-tab sliders (see
+          // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
+          // setLayerOpacity) — lowered from 34 to 15 by default since the
+          // full 34-tile radius was a real contributor to reported
+          // choppiness in this zone. At 34, fogDensity above had already
+          // made FogExp2 ~97% opaque out there, hiding the vegetation
+          // pop-in; at the smaller default the pop-in ring is more likely
+          // to be visible, tunable back up via the slider if that matters
+          // more than the performance it costs.
+          vegCullRadiusTiles: 15,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -16378,7 +16382,9 @@
         // CloudForestFog's own player-centered mist cylinders so the ring
         // where vegetation pops in/out sits inside the mist uniformly in
         // every direction instead of only character-forward.
-        const radialCullRadius = s_cloudForestWideCull ? EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles : null;
+        const radialCullRadius = s_cloudForestWideCull
+          ? (currentArea === 'map_southern_cloud_forest' ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
+          : null;
         let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
         if (!radialCullRadius) {
           let vx = camTargetX - camX, vz = camTargetZ - camZ;
@@ -20346,6 +20352,11 @@
       let s_cloudForestFog = true;
       let s_cloudForestWideCull = true;
       let s_cloudForestBgForest = true;
+      // Live Settings-tab slider value for the radial vegetation cull
+      // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
+      // vegCullRadiusTiles default (15) but is independently adjustable
+      // without touching that config.
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
@@ -20485,6 +20496,26 @@
         const zi = _zoneScenes.get('map_southern_cloud_forest');
         zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
       });
+      // Shared by the cull-radius and all six fog-layer sliders below: wires
+      // an <input type=range> to a live value getter/setter plus its
+      // paired display span, all taking effect on the very next frame.
+      function wireSlider(inputId, valueId, apply) {
+        const input = document.getElementById(inputId);
+        const valueEl = document.getElementById(valueId);
+        if (!input) return;
+        input.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = String(v);
+          apply(v);
+        });
+      }
+      wireSlider('settingCloudForestCullRadius', 'settingCloudForestCullRadiusValue', v => { s_cloudForestCullRadiusTiles = v; });
+      wireSlider('settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerRadiusValue', v => window.CloudForestFog?.setLayerRadius(0, v));
+      wireSlider('settingCloudForestFogInnerOpacity', 'settingCloudForestFogInnerOpacityValue', v => window.CloudForestFog?.setLayerOpacity(0, v));
+      wireSlider('settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleRadiusValue', v => window.CloudForestFog?.setLayerRadius(1, v));
+      wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
+      wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
+      wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
       document.getElementById('settingFpsCounter').addEventListener('change', e => {
         s_fpsCounter = e.target.checked;
         fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
@@ -24988,7 +25019,6 @@
         getPlayerGroundY: _playerGroundY,
         getActiveScene,
         isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
-        getCloudForestFogRadiusTiles: () => EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles,
       });
 
       window.FarmPanel?.init({

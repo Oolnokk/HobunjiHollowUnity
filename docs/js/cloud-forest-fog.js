@@ -13,14 +13,22 @@
   let fogResultColor = null;
   let lastFogLightingBucket = '';
 
-  const INNER_RADIUS_TILES = 5;
-  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42);
+  // Layer radii used to be 5 / 8.33 / (tied 1:1 to the vegetation cull
+  // radius, then 34) — scaled down here by the same ~0.44 ratio the cull
+  // radius default dropped by (34 -> 15), since the full-size mist was a
+  // real contributor to reported choppiness in this zone. Both radius and
+  // opacity are now independently live-adjustable per layer (see
+  // setLayerRadius/setLayerOpacity and their Settings-tab sliders) — these
+  // are just the startup defaults.
   const LAYER_CONFIG = [
-    { radiusTiles: INNER_RADIUS_TILES, height: 6.5, opacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
-    { radiusTiles: MIDDLE_RADIUS_TILES, height: 8.5, opacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
-    { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
+    { defaultRadiusTiles: 2.2, height: 6.5, defaultOpacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
+    { defaultRadiusTiles: 3.7, height: 8.5, defaultOpacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
+    { defaultRadiusTiles: 15, height: 10.5, defaultOpacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
-  const FALLBACK_OUTER_RADIUS_TILES = 34;
+  // Mutable per-layer live state, read every frame in update() — separate
+  // from LAYER_CONFIG (which stays the fixed startup defaults) so a
+  // Settings-tab slider can change these without touching the defaults.
+  const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
   const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
   const DEFAULT_TUNING = Object.freeze({
     cloudForest: Object.freeze({
@@ -272,19 +280,19 @@
     if (skyRoot) skyRoot.visible = false;
     updateFogLighting(activeScene);
 
-    const outerRadius = deps.getCloudForestFogRadiusTiles?.() ?? FALLBACK_OUTER_RADIUS_TILES;
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
 
-    for (const layer of layers) {
-      const { mesh, material, config } = layer;
-      const radius = config.radiusTiles ?? outerRadius * config.radiusFrac;
+    for (let i = 0; i < layers.length; i++) {
+      const { mesh, material, config } = layers[i];
+      const live = layerLive[i];
+      const radius = Math.max(0.1, live.radiusTiles);
       mesh.position.set(px, groundY + config.height * 0.5, pz);
       mesh.scale.set(radius, config.height, radius);
       mesh.rotation.y = t * config.spinSpeed;
-      material.opacity = config.opacity;
+      material.opacity = clamp01(live.opacity);
       material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed) % 1;
       material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6) % 1;
       mesh.visible = true;
@@ -482,9 +490,21 @@
     window.WeatherFX.__singleFullDayLightingAuthority = true;
   }
 
+  // Settings-tab sliders (game.js) call these directly, by layer index
+  // (0=inner, 1=middle, 2=outer, matching LAYER_CONFIG's order) — read live
+  // every frame in update(), so both take effect on the very next frame.
+  function setLayerRadius(index, tiles) {
+    if (layerLive[index]) layerLive[index].radiusTiles = Math.max(0.1, Number(tiles) || 0.1);
+  }
+  function setLayerOpacity(index, value) {
+    if (layerLive[index]) layerLive[index].opacity = clamp01(value);
+  }
+
   window.CloudForestFog = {
     init,
     update,
+    setLayerRadius,
+    setLayerOpacity,
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
     // call site), which freezes the mist mid-animation rather than hiding
@@ -504,6 +524,7 @@
         cloudForest: { ...tuning.cloudForest },
         lantern: { ...tuning.lantern },
       },
+      layers: layerLive.map(l => ({ ...l })),
     }),
   };
 })();
