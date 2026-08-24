@@ -32,13 +32,11 @@ jobs:
           python -m pip install --quiet pillow
           python - <<'PY'
           from PIL import Image
-          from pathlib import Path
-          import math
 
           def lum(r,g,b): return (0.2126*r+0.7152*g+0.0722*b)/255.0
           def std(vals):
               m=sum(vals)/len(vals); return (sum((v-m)**2 for v in vals)/len(vals))**0.5
-          def normalize(img, outline=.08, pl=.10, ph=.90, tl=.18, th=.80):
+          def normalize(img, outline=.08, pl=.10, ph=.90, tl=.22, th=.88):
               rgba=img.convert('RGBA'); data=list(rgba.getdata())
               ls=sorted(lum(r,g,b) for r,g,b,a in data if a>8 and lum(r,g,b)>outline)
               q=lambda p: ls[round((len(ls)-1)*p)]
