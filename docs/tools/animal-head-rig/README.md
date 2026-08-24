@@ -19,4 +19,10 @@ The brush and Expand radius sliders scale up to the larger source-image dimensio
 
 Legacy square rigs (`headRig.region`) still load as a compatibility fallback and are converted into painted Head cells when opened in the author.
 
-Browser game previews use the same-origin localStorage key `hobunji_animal_head_rigs_v1`. Reload or respawn an animal after saving a preview rig.
+## Species-wide inheritance
+
+Committed rigs are authored once in normalized sprite/UV space for the base species. The same weights therefore remain attached when the material texture changes: idle, both run frames, and every base-color/pattern genotype composite all deform through the same skinned geometry rather than carrying separate copies of the rig.
+
+Size-only variants inherit the base species rig through the same species-alias system used by creature genetics. This includes the Gar-wolf Alpha and current Den-Mother/Nestmother variants; scaling the animal changes the plane size but not its normalized weight coordinates or pivot proportions.
+
+Browser game previews use the same-origin localStorage key `hobunji_animal_head_rigs_v1`. A saved browser preview overrides the committed species rig for that species until it is cleared, then reload or respawn the animal to rebuild its skinned plane.
