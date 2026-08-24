@@ -684,8 +684,10 @@ function normalizeAuthoredSurfacePngTone(img, sourceKey) {
 }
 
 function getSurfaceTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {
-  const normalized = normalizeAuthoredSurfacePngTone(img, sourceKey);
-  return _imageForTint(normalized, `${sourceKey}|surface-tone`, bodySpriteTintForColor(color, speciesId, slot));
+  // Use the authored PNG's own luminance directly, exactly like ordinary body
+  // sprite art. The previous 0.22->0.88 surface remap was a workaround for a
+  // problem that turned out to be the CORS-tainted flat fallback instead.
+  return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));
 }
 
 // Canonical authored-PNG appearance path. Character body sprites, the final

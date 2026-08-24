@@ -100,8 +100,7 @@
         if (data[i + 3] === 0) continue;
         const l = lum(data[i], data[i + 1], data[i + 2]);
         if (l <= 0.08) continue;
-        const t = Math.max(0, Math.min(1, (l - low) / span));
-        const shade = Math.max(0.18, Math.min(1.18, (0.22 + 0.66 * t) / 0.55));
+        const shade = Math.max(0.72, Math.min(1.18, l / 0.55));
         data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
         data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
         data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
@@ -185,9 +184,9 @@
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.needsUpdate = true;
     }
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(1.25, 1);
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(1, 1);
     texture.userData = Object.assign({}, texture.userData, {
       hobunjiAuthoredSurfacePath: 'assets/textures/wavy_surface.png',
       hobunjiAuthoredSurfaceState: 'flat-loading',
