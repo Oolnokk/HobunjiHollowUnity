@@ -21,14 +21,97 @@
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
   const FALLBACK_OUTER_RADIUS_TILES = 34;
-  const LANTERN_RADIUS_TILES = 3.6;
-  const LANTERN_CLARITY_TILES = 0.95;
+  const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
+  const DEFAULT_TUNING = Object.freeze({
+    cloudForest: Object.freeze({
+      dayFogColor: '#ffffff',
+      nightTintStartOverlayAlpha: 0.12,
+      nightTintFullOverlayAlpha: 0.80,
+      dayTintAmount: 0.18,
+      nightTintAmount: 0.97,
+      matchBackgroundToFog: true,
+    }),
+    lantern: Object.freeze({
+      radiusTiles: 3.6,
+      clarityRadiusTiles: 0.95,
+      centerMaskAlpha: 0.92,
+      clarityMaskAlpha: 0.80,
+      softMaskAlpha: 0.28,
+      softTransitionFraction: 0.18,
+    }),
+  });
+  let tuning = {
+    cloudForest: { ...DEFAULT_TUNING.cloudForest },
+    lantern: { ...DEFAULT_TUNING.lantern },
+  };
+
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
   function debugLog(message, level = 'info') {
     const logger = window.__farmLog || console.log;
     try { logger(`[cloud-forest-fog] ${message}`, level); }
     catch { console.log(`[cloud-forest-fog] ${message}`); }
+  }
+
+  function applyAtmosphereTuning(raw) {
+    const cloud = raw?.cloudForest || {};
+    const lantern = raw?.lantern || {};
+
+    const radiusTiles = Math.max(0.1, finiteOr(lantern.radiusTiles, DEFAULT_TUNING.lantern.radiusTiles));
+    const clarityRadiusTiles = Math.max(0, Math.min(
+      radiusTiles,
+      finiteOr(lantern.clarityRadiusTiles, DEFAULT_TUNING.lantern.clarityRadiusTiles),
+    ));
+
+    tuning = {
+      cloudForest: {
+        dayFogColor: typeof cloud.dayFogColor === 'string' && cloud.dayFogColor.trim()
+          ? cloud.dayFogColor.trim()
+          : DEFAULT_TUNING.cloudForest.dayFogColor,
+        nightTintStartOverlayAlpha: clamp01(finiteOr(
+          cloud.nightTintStartOverlayAlpha,
+          DEFAULT_TUNING.cloudForest.nightTintStartOverlayAlpha,
+        )),
+        nightTintFullOverlayAlpha: clamp01(finiteOr(
+          cloud.nightTintFullOverlayAlpha,
+          DEFAULT_TUNING.cloudForest.nightTintFullOverlayAlpha,
+        )),
+        dayTintAmount: clamp01(finiteOr(cloud.dayTintAmount, DEFAULT_TUNING.cloudForest.dayTintAmount)),
+        nightTintAmount: clamp01(finiteOr(cloud.nightTintAmount, DEFAULT_TUNING.cloudForest.nightTintAmount)),
+        matchBackgroundToFog: cloud.matchBackgroundToFog !== false,
+      },
+      lantern: {
+        radiusTiles,
+        clarityRadiusTiles,
+        centerMaskAlpha: clamp01(finiteOr(lantern.centerMaskAlpha, DEFAULT_TUNING.lantern.centerMaskAlpha)),
+        clarityMaskAlpha: clamp01(finiteOr(lantern.clarityMaskAlpha, DEFAULT_TUNING.lantern.clarityMaskAlpha)),
+        softMaskAlpha: clamp01(finiteOr(lantern.softMaskAlpha, DEFAULT_TUNING.lantern.softMaskAlpha)),
+        softTransitionFraction: clamp01(finiteOr(
+          lantern.softTransitionFraction,
+          DEFAULT_TUNING.lantern.softTransitionFraction,
+        )),
+      },
+    };
+
+    if (fogDayColor) {
+      try { fogDayColor.set(tuning.cloudForest.dayFogColor); }
+      catch {
+        tuning.cloudForest.dayFogColor = DEFAULT_TUNING.cloudForest.dayFogColor;
+        fogDayColor.set(DEFAULT_TUNING.cloudForest.dayFogColor);
+      }
+    }
+  }
+
+  async function loadAtmosphereTuning() {
+    try {
+      const response = await fetch(ATMOSPHERE_CONFIG_PATH, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      applyAtmosphereTuning(await response.json());
+      debugLog(`loaded tweakable lighting settings from ${ATMOSPHERE_CONFIG_PATH}`);
+    } catch (error) {
+      debugLog(`using built-in atmosphere defaults; ${ATMOSPHERE_CONFIG_PATH} failed: ${error?.message || error}`, 'warn');
+    }
   }
 
   function mulberry32(seed) {
@@ -128,7 +211,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     const THREE = deps.THREE;
-    fogDayColor = new THREE.Color(0xffffff);
+    fogDayColor = new THREE.Color(tuning.cloudForest.dayFogColor);
     fogTimeColor = new THREE.Color();
     fogResultColor = new THREE.Color();
     texture = createSprayTexture();
@@ -136,6 +219,7 @@
     group.name = 'cloud_forest_mist_cylinders';
     for (let i = 0; i < LAYER_CONFIG.length; i++) layers.push(makeLayer(LAYER_CONFIG[i], i));
     upgradeTextureIfAvailable();
+    loadAtmosphereTuning();
   }
 
   function getFullDayLighting() {
@@ -148,20 +232,21 @@
     const light = getFullDayLighting();
     fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
 
-    // The previous blend always retained too much white in the fog. Once the
-    // full-day lighting reaches dusk/night, drive the actual fog scattering
-    // color almost completely toward the same dark atmospheric color.
-    const nightStrength = clamp01((clamp01(light.a) - 0.12) / 0.68);
-    const timeTintAmount = 0.18 + nightStrength * 0.79;
-    fogResultColor.copy(fogDayColor).lerp(fogTimeColor, timeTintAmount);
+    const cloudTuning = tuning.cloudForest;
+    const startAlpha = cloudTuning.nightTintStartOverlayAlpha;
+    const fullAlpha = cloudTuning.nightTintFullOverlayAlpha;
+    const alphaSpan = Math.max(0.000001, fullAlpha - startAlpha);
+    const nightStrength = clamp01((clamp01(light.a) - startAlpha) / alphaSpan);
+    const timeTintAmount = cloudTuning.dayTintAmount
+      + nightStrength * (cloudTuning.nightTintAmount - cloudTuning.dayTintAmount);
+    fogResultColor.copy(fogDayColor).lerp(fogTimeColor, clamp01(timeTintAmount));
 
     for (const layer of layers) layer.material.color.copy(fogResultColor);
     if (activeScene?.fog?.color) activeScene.fog.color.copy(fogResultColor);
 
-    // Cloud Forest intentionally has no skydome. Match the clear/background
-    // color to the fog itself so distant mist is not backlit by a daytime-white
-    // framebuffer at night.
-    if (activeScene?.background?.isColor) activeScene.background.copy(fogResultColor);
+    if (cloudTuning.matchBackgroundToFog && activeScene?.background?.isColor) {
+      activeScene.background.copy(fogResultColor);
+    }
 
     const hour = window.CalendarSystem?.getHour?.() ?? 12;
     const bucket = `${Math.floor(hour)}:${fogResultColor.getHexString()}`;
@@ -273,16 +358,20 @@
       }
     }
     ctx.globalCompositeOperation = 'destination-out';
+    const lanternTuning = tuning.lantern;
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, LANTERN_RADIUS_TILES);
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
       if (!(shineR > 0)) continue;
-      const clarityFrac = LANTERN_CLARITY_TILES / LANTERN_RADIUS_TILES;
+      const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0, 'rgba(0,0,0,0.92)');
-      grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
-      grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
+      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha})`);
+      grad.addColorStop(
+        Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
+        `rgba(0,0,0,${lanternTuning.softMaskAlpha})`,
+      );
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -403,6 +492,11 @@
       skydomeSuppressed: !!isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()),
       renderingMode: 'original-skydome-visibility-only',
       lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
+      configPath: ATMOSPHERE_CONFIG_PATH,
+      tuning: {
+        cloudForest: { ...tuning.cloudForest },
+        lantern: { ...tuning.lantern },
+      },
     }),
   };
 })();
