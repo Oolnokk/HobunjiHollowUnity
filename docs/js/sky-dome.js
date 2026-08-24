@@ -293,7 +293,11 @@
     const pos = uvToSphere(uv.u, uv.v, SKY_RADIUS - 8), image = pack.image, ratio = (image.naturalWidth || image.width) / Math.max(1, image.naturalHeight || image.height);
     const h = kind === 'sun' ? SUN_SIZE : MOON_SIZE, w = h * ratio, light = (kind === 'sun' ? 1.75 : 0.58) * opacity * illumination;
     pack.sprite.position.copy(pos); pack.selfLight.position.copy(pos); pack.glow.position.copy(pos); pack.sprite.scale.set(w, h, 1); pack.selfLight.scale.set(w, h, 1); pack.glow.scale.set(w * (kind === 'sun' ? 5.2 : 5.8), h * (kind === 'sun' ? 5.2 : 5.8), 1);
-    pack.sprite.material.opacity = opacity; pack.selfLight.material.opacity = clamp(light * (kind === 'sun' ? 0.24 : 0.38), 0, 0.95); pack.glow.material.opacity = opacity * (kind === 'sun' ? 0.25 : 0.13) * illumination;
+    pack.sprite.material.opacity = opacity; pack.selfLight.material.opacity = clamp(light * (kind === 'sun' ? 0.24 : 0.38), 0, 0.95);
+    // The giant procedural celestial halo is a camera-facing circular Sprite (5.2x/5.8x the body).
+    // On the live renderer it can resolve as a flat dark disk instead of a soft additive halo.
+    // Keep the actual sun/moon and their small self-light copy, but suppress only this oversized disk.
+    pack.glow.material.opacity = 0;
     if (kind === 'sun') pack.selfLight.material.color.setRGB(1, 0.74, 0.34); else pack.selfLight.material.color.setRGB(0.55, 0.72, 1);
   }
 
@@ -363,7 +367,7 @@
   }
 
   function getDebugState() {
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, oversizedCelestialGlowDisabled: true };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
