@@ -16,7 +16,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
-  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
+  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 0; // Right handedness already comes from the source-X mirror below; an extra 180° local-Y twist turns the palm/fingers backward.
   let showGripGuides = false;
   let gameDeps = null;
 
