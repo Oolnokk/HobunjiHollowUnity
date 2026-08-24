@@ -46,7 +46,7 @@
   function isDrenkirra(creature) {
     const key = creature?.creatureKey; // Used to identify regular and Den-Mother Drenkirra without label-only matching.
     const label = creature?.def?.label; // Used as a fallback for older/runtime-created creature objects.
-    return key === 'drenkirra' || key === 'drenkirra-den-mother' || label === 'Drenkirra' || label === 'Drenkirra Den-Mother';
+    return key === 'drenkirra' || key === 'drenkirra-den-mother' || label === 'Drenkirra' || label === 'Drenkirra Den-Mother' || label === 'Drenkirra Nestmother';
   }
 
   function targetKindFor(creature, target, deps) {

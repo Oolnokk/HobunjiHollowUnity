@@ -1340,7 +1340,12 @@
           // scratchbones-config.js's wildlife.denMothers) had no zone to
           // ever spawn from, anywhere.
           packSpecies: ['gar-wolf'],
-          herbivoreSpecies: ['drenkirra'],
+          // Drenkirra no longer den here — nativeSpeciesFor/spawnPackAtDen
+          // (via this pool) decide both a den's exterior pack and its
+          // cavern Den-Mother, and drenkirra now nest on shadewood branches
+          // instead (see wildlife-spawn.js's ensureCurrentZoneNestTrees),
+          // so every den in this zone is a gar-wolf den.
+          herbivoreSpecies: [],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -2121,6 +2126,14 @@
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
         counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
+        // Drenkirra nests — the bucket preset's shape, halved in height and
+        // colored yellow (see procedural-furniture.js's nestRecipe). Two
+        // footprints out of the same recipe: a small one for a nest lashed
+        // to a climbable branch, and the existing den-nest size (2x2, same
+        // as the marker _denNests previously placed by hand) for the ones
+        // still found in caverns/dens for other species.
+        nestBranch:    { itemKey: 'nestBranchFurniture',    icon: '🪺', name: 'Branch Nest',          modelFile: 'nest_branch.glb',              price: 0,  fw: 1, fd: 1, color: 0xc9a227, area: 'any',      desc: 'A woven nest lashed to a branch.', fixture: true },
+        nest:          { itemKey: 'nestFurniture',          icon: '🪺', name: 'Nest',                 modelFile: 'nest_den.glb',                 price: 0,  fw: 2, fd: 2, color: 0xc9a227, area: 'any',      desc: 'A large woven nest.', fixture: true },
         // Game-authored fixtures (fixture: true) — spawned by the game itself
         // inside specific building interiors (see BUILDING_FIXTURE_INTERACTABLES
         // below), never bought/carried by the player, so they're excluded from
@@ -4760,7 +4773,10 @@
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
-        const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+        // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
+        // spawn) uses that branch's own height instead of terrain-follow —
+        // same override the player gets while climbing/on a branch.
+        const surfY = c.onBranch ? c.branchSurfaceY : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const grp = c.avatarRef.group;
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
@@ -25222,6 +25238,9 @@
         denNests: _denNests,
         getCutscenePreviewActive: () => cutscenePreviewActive,
         buildZoneScene,
+        DEN_MOTHER_DEFS,
+        zoneScenes: _zoneScenes,
+        makeDecorativeFurnitureMesh,
       });
 
       window.CavernGenerator?.init({

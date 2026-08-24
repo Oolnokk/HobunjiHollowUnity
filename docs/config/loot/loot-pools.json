@@ -68,7 +68,7 @@
       ]
     },
     "creature_drenkirra-den-mother": {
-      "label": "Drenkirra Den-Mother",
+      "label": "Drenkirra Nestmother",
       "entries": [
         { "id": "meat", "itemKey": "drenkirraMeat", "min": 3, "max": 5, "chance": 1, "conditions": {} },
         { "id": "hide", "itemKey": "drenkirraHide", "min": 1, "max": 2, "chance": 1, "conditions": {} }
