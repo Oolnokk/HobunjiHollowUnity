@@ -122,6 +122,7 @@
         scene: deps.scene,
         getGrid: deps.getGrid,
         getPieces: deps.getHousePieces,
+        getFarmBuildings: deps.getFarmBuildings,
         markTileDirty: deps.markTileDirty,
         recomputeWater: deps.recomputeWater,
         debugLog: deps.debugLog,
@@ -173,16 +174,38 @@
     };
   }
 
+  // Barns use the same farm grass field but are owned by FarmBuildings rather
+  // than HousePieces. Their footprint mutations do not change the farmhouse
+  // elevation stamp, so refresh only the grass mask after those operations.
+  const farmBuildingOperations = ['spawnEntry', 'placePlan', 'demolish', 'move', 'clearAll']; // Operations that can add/remove/move barn footprint cells.
+  const farmBuildings = window.FarmBuildings; // Existing farm-building API wrapped only to refresh shared grass suppression after footprint changes.
+  if (farmBuildings && !farmBuildings.__hobunjiGrassFootprintRefreshPatched) {
+    for (const name of farmBuildingOperations) {
+      const original = farmBuildings[name];
+      if (typeof original !== 'function') continue;
+      farmBuildings[name] = function (...args) {
+        const result = original.apply(this, args);
+        controller?.refreshGrassSuppression?.();
+        return result;
+      };
+    }
+    farmBuildings.__hobunjiGrassFootprintRefreshPatched = true;
+  }
+
   function debugHouseElevation() {
     return controller?.debugSnapshot?.() || {
       footprintCells: 0,
       affectedCenters: 0,
       deformedTileCells: 0,
+      deformedTerrainMeshes: 0,
+      grassBlockedCells: 0,
+      suppressedGrassInstances: 0,
       worldY: 0,
       status: controller ? 'ready' : 'not-initialized',
     };
   }
 
+  housePieces.refreshGrassFootprints = () => controller?.refreshGrassSuppression?.();
   housePieces.debugHouseElevation = debugHouseElevation;
   window.__hobunjiHouseElevationDebug = debugHouseElevation;
 })();
