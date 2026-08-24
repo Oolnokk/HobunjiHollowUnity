@@ -55,14 +55,18 @@ assert.ok(composer.includes('composedWorldEulerDeg'), 'composer diagnostics expo
 
 // Fine Hood trim is flattened into the front portrait canvas, so ordinary
 // material backface culling cannot hide it at oblique-but-still-front-facing
-// attack angles. The preview adapter recovers a trim-only mask and gates just
-// those pixels by the live plane-to-camera facing dot product.
-assert.ok(avatarPreview.includes('prepareFineHoodTrimHeadOnMask'), 'Fine Hood trim gets its own recovered portrait mask');
+// attack angles. Render one matched trimless portrait and blend to it using
+// the live plane-to-camera facing dot product instead of punching alpha holes.
+assert.ok(avatarPreview.includes('renderFineHoodHeadOnPair'), 'Fine Hood gets a matched trimless portrait render');
+assert.ok(avatarPreview.includes('variantLayers: null'), 'trimless render uses the resolved species-specific hood layer list');
 assert.ok(avatarPreview.includes('fineHoodTrimHeadOnThresholds'), 'Fine Hood head-on cone has explicit thresholds');
+assert.ok(avatarPreview.includes('frozenBreathingComposer'), 'paired portraits freeze breathing and expressions to the same instant');
+assert.ok(avatarPreview.includes('hobunjiFineHoodTrimlessMap'), 'front material receives the trimless portrait texture');
 assert.ok(avatarPreview.includes("new THREE.Vector3(0, 0, 1)"), 'head-on gating starts from the portrait plane front normal');
 assert.ok(avatarPreview.includes('transformDirection(this.matrixWorld)'), 'head-on gating follows the live transformed portrait orientation');
 assert.ok(avatarPreview.includes('worldFront.dot(toCamera)'), 'head-on gating compares the portrait normal with the camera direction');
 assert.ok(avatarPreview.includes('smoothstep('), 'trim visibility fades through the configured head-on cone');
+assert.ok(avatarPreview.includes('diffuseColor = mix(hobunjiFineHoodTrimlessDiffuse, diffuseColor'), 'off-axis pixels reveal the trimless portrait rather than transparency');
 assert.ok(avatarPreview.includes('/front_material$/i'), 'trim shader attaches only to front portrait materials');
 assert.doesNotMatch(avatarPreview, /gl_FrontFacing|THREE\.DoubleSide/, 'Fine Hood gating does not fall back to backface-only or two-sided rendering hacks');
 
