@@ -19,8 +19,9 @@
 
     if (parity) {
       lines.push(
-        `Outline parity: rigs=${parity.activeRigs ?? '-'} captures=${parity.baseMatrixCaptures ?? '-'} `
-        + `shellLocks=${parity.lockedShellDraws ?? '-'} idLocks=${parity.lockedMaterialIdDraws ?? '-'} `
+        `Outline parity: rigs=${parity.activeRigs ?? '-'} liveRigs=${parity.currentRigsHooked ?? '-'} `
+        + `captures=${parity.baseMatrixCaptures ?? '-'} shellLocks=${parity.lockedShellDraws ?? '-'} `
+        + `idLocks=${parity.lockedMaterialIdDraws ?? '-'} reflected=${parity.reflectedShellDraws ?? '-'} `
         + `misses=${parity.missedOutlineSnapshots ?? '-'} xrayTagged=${parity.heldXrayTaggedMeshes ?? '-'}`
       );
     } else {
@@ -40,13 +41,18 @@
       for (const rec of frame) {
         const hand = rec?.hand || {};
         const fallback = rec?.fallback || {};
+        const live = hand.currentOutlineVisuals || {}; // Current socket children only; disposed fallback meshes are intentionally absent.
+        const left = live.left || {}; // Used below for a compact mobile-readable current-mesh hook count.
+        const right = live.right || {}; // Used below for the matching right-hand current-mesh hook count.
         lines.push(
           `Hand ${rec.speciesId || '?'} ${rec.gender || '-'} tool=${rec.toolKey || '-'} secondary=${rec.secondaryActive ? 'yes' : 'no'} `
           + `fallback=${fallback.mode || '-'} speed=${fallback.speed ?? '-'} strength=${fallback.gaitStrength ?? '-'} `
           + `owners=L:${fallback.owners?.left || '-'},R:${fallback.owners?.right || '-'} `
-          + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
+          + `LIVE=${hand.currentOutlineMeshesHooked ? 'OK' : 'BROKEN'} GLB=${hand.currentGlbVisualsReady ? 'ready' : 'fallback/loading'} `
+          + `current=L:${left.hookedMeshes ?? '-'}/${left.outlineMeshes ?? '-'},R:${right.hookedMeshes ?? '-'}/${right.outlineMeshes ?? '-'} `
+          + `hookedEver=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
           + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
-          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
+          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} reflected=${hand.outlineReflectedShellDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
         );
       }
     } else {
