@@ -1,43 +1,36 @@
 (() => {
   'use strict';
 
-  // A handful of large, translucent white cylinders centered on the player,
-  // shown only in the Southern Cloud Forest. That zone's own FogExp2 (see
-  // game.js's buildZoneScene, EXTERIOR_ZONES.map_southern_cloud_forest's
-  // fogDensity) already fades the whole scene toward white well before its
-  // vegCullRadiusTiles — but a per-pixel exponential fog reads as flat,
-  // computed haze with no real presence. These cylinders are actual
-  // geometry the camera sits inside of (BackSide material, so the inward-
-  // facing surface is what's lit), layered on top of the ordinary fog
-  // rather than replacing it, so drifting mist patches occlude things the
-  // way ground fog with real volume would. Same self-contained
-  // window.<Namespace> + init(deps)/update(dt) shape as rain-planes.js.
+  // A handful of large translucent mist cylinders centered on the player,
+  // shown only in the Southern Cloud Forest. The cloud forest intentionally
+  // does not show the dynamic skydome; its FogExp2 + mist inherit the same
+  // 24-hour lighting state instead.
   let deps = null;
   let group = null;
   let texture = null;
   const layers = [];
+  let attachedScene = null;
+  let fogDayColor = null;
+  let fogTimeColor = null;
+  let fogResultColor = null;
+  let lastFogLightingBucket = '';
 
-  // The innermost shell is pinned to an absolute, close-to-the-player
-  // distance rather than a fraction of the outer (cull-radius-matched) one
-  // below — 5 tiles puts real, textured mist geometry well inside the
-  // player's immediate surroundings instead of only appearing well out
-  // toward the cull edge. The middle shell keeps the same closer-in ratio
-  // to the inner one it held back when both were fractions of the outer
-  // radius (0.70 / 0.42 = 5/3), just re-anchored to the new inner distance.
   const INNER_RADIUS_TILES = 5;
-  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42); // = 25/3 ≈ 8.33
-  // radiusFrac scales the outer (cull-radius-matched) distance for the
-  // outermost shell only, so it stays tied to wherever
-  // updateZoneVegetationCulling's vegetation cull actually pops trees in/out
-  // even if that radius is ever retuned.
+  const MIDDLE_RADIUS_TILES = INNER_RADIUS_TILES * (0.70 / 0.42);
   const LAYER_CONFIG = [
     { radiusTiles: INNER_RADIUS_TILES, height: 6.5, opacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
     { radiusTiles: MIDDLE_RADIUS_TILES, height: 8.5, opacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
-  // Matches map_southern_cloud_forest's vegCullRadiusTiles — used only if a
-  // real value can't be read from deps for some reason.
   const FALLBACK_OUTER_RADIUS_TILES = 34;
+
+  const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+
+  function debugLog(message, level = 'info') {
+    const logger = window.__farmLog || console.log;
+    try { logger(`[cloud-forest-fog] ${message}`, level); }
+    catch { console.log(`[cloud-forest-fog] ${message}`); }
+  }
 
   function mulberry32(seed) {
     return () => {
@@ -49,9 +42,6 @@
     };
   }
 
-  // Fallback "spray paint" mist texture: soft white blotches at random
-  // size/alpha. Each blob is also stamped at its wrap-around offsets so
-  // RepeatWrapping tiles it around the cylinder without a hard seam.
   function createSprayTexture() {
     const THREE = deps.THREE;
     const size = 256;
@@ -88,10 +78,6 @@
     return tex;
   }
 
-  // Quietly upgrades every already-built layer to a real authored asset if
-  // one shows up at this path later — a 404/parse error just leaves the
-  // procedural fallback in place. Called only after `layers` is populated
-  // (see init) so a same-tick/cached resolve can't find it still empty.
   function upgradeTextureIfAvailable() {
     const THREE = deps.THREE;
     new THREE.TextureLoader().load(
@@ -123,14 +109,11 @@
       color: 0xffffff,
       transparent: true,
       opacity: 0,
-      side: THREE.BackSide, // camera sits inside the shell — light the inward face
+      side: THREE.BackSide,
       depthWrite: false,
       depthTest: true,
       fog: true,
     });
-    // Unit cylinder, open-ended (no caps) — scaled per-frame to the current
-    // outer radius so a live radius change (e.g. tuning vegCullRadiusTiles)
-    // doesn't need geometry rebuilt.
     const geometry = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `cloud_forest_mist_${index}`;
@@ -144,6 +127,9 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     const THREE = deps.THREE;
+    fogDayColor = new THREE.Color(0xffffff);
+    fogTimeColor = new THREE.Color();
+    fogResultColor = new THREE.Color();
     texture = createSprayTexture();
     group = new THREE.Group();
     group.name = 'cloud_forest_mist_cylinders';
@@ -151,7 +137,28 @@
     upgradeTextureIfAvailable();
   }
 
-  let attachedScene = null;
+  function getFullDayLighting() {
+    const state = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.();
+    return state && Number.isFinite(state.r) ? state : { r: 255, g: 255, b: 255, a: 0 };
+  }
+
+  function updateFogLighting(activeScene) {
+    if (!fogTimeColor || !fogResultColor || !fogDayColor) return;
+    const light = getFullDayLighting();
+    fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
+    const timeTintAmount = Math.max(0.18, Math.min(0.86, 0.18 + clamp01(light.a) * 0.82));
+    fogResultColor.copy(fogDayColor).lerp(fogTimeColor, timeTintAmount);
+    for (const layer of layers) layer.material.color.copy(fogResultColor);
+    if (activeScene?.fog?.color) activeScene.fog.color.copy(fogResultColor);
+
+    const hour = window.CalendarSystem?.getHour?.() ?? 12;
+    const bucket = `${Math.floor(hour)}:${fogResultColor.getHexString()}`;
+    if (bucket !== lastFogLightingBucket && [0, 6, 12, 18, 22].includes(Math.floor(hour))) {
+      lastFogLightingBucket = bucket;
+      debugLog(`fog lighting ${String(Math.floor(hour)).padStart(2, '0')}:00 -> #${fogResultColor.getHexString()}`);
+    }
+  }
+
   function update(dt) {
     if (!deps || !group) return;
     const active = deps.isCloudForestArea();
@@ -163,6 +170,12 @@
     }
     group.visible = active;
     if (!active) return;
+
+    // Visibility policy only: do not alter the skydome's materials, textures,
+    // shader, render order, or geometry in the Cloud Forest.
+    const skyRoot = activeScene?.getObjectByName?.('hobunji_dynamic_skydome');
+    if (skyRoot) skyRoot.visible = false;
+    updateFogLighting(activeScene);
 
     const outerRadius = deps.getCloudForestFogRadiusTiles?.() ?? FALLBACK_OUTER_RADIUS_TILES;
     const px = deps.player.x / deps.TILE, pz = deps.player.y / deps.TILE;
@@ -182,5 +195,52 @@
     }
   }
 
-  window.CloudForestFog = { init, update };
+  // Area-only skydome policy. This wraps the existing RainPlanes integration
+  // after sky-dome.js has installed itself, and only toggles root visibility.
+  // It does not change any sky/material rendering behavior.
+  let skyPolicyDeps = null;
+  function isNoSkyArea(area) {
+    const id = String(area || '').toLowerCase();
+    return id === 'map_southern_cloud_forest'
+      || id === 'interior'
+      || id.includes('map_i_den_')
+      || id.includes('den')
+      || id.includes('cavern')
+      || id.includes('burrow');
+  }
+
+  if (window.RainPlanes) {
+    const priorRainInit = window.RainPlanes.init;
+    const priorRainUpdate = window.RainPlanes.update;
+    window.RainPlanes.init = function (injectedDeps) {
+      skyPolicyDeps = injectedDeps;
+      return priorRainInit.call(this, injectedDeps);
+    };
+    window.RainPlanes.update = function (dt) {
+      const result = priorRainUpdate.call(this, dt);
+      const scene = skyPolicyDeps?.getActiveScene?.();
+      const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome');
+      if (skyRoot) {
+        const area = skyPolicyDeps?.getCurrentArea?.();
+        const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
+        skyRoot.visible = outside && !isNoSkyArea(area);
+      }
+      if (scene?.background?.isColor && isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()) && !deps?.isCloudForestArea?.()) {
+        scene.background.set(0x000000);
+      }
+      return result;
+    };
+  }
+
+  window.CloudForestFog = {
+    init,
+    update,
+    getDebugState: () => ({
+      active: !!deps?.isCloudForestArea?.(),
+      area: skyPolicyDeps?.getCurrentArea?.() ?? null,
+      fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
+      skydomeSuppressed: !!isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()),
+      renderingMode: 'original-skydome-visibility-only',
+    }),
+  };
 })();
