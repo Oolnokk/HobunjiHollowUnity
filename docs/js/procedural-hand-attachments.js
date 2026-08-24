@@ -130,7 +130,10 @@
     const referenceHex = bodyReferenceHex(speciesId);
     const descriptor = bodyColors?.A || { hex: referenceHex };
     const resolvedHex = bodyColorHex(speciesId, bodyColors);
-    const cacheKey = `${normalizeKey(speciesId)}:${String(resolvedHex).toLowerCase()}`; // Identifies the tint-specific wavy texture shared by both hands of one appearance.
+    const spriteTintMode = typeof global.bodyTintModeForSpecies === 'function'
+      ? global.bodyTintModeForSpecies(speciesId)
+      : 'shadeFill';
+    const cacheKey = `${normalizeKey(speciesId)}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`; // Separates the exact sprite tint mode as well as the resolved body color.
     if (handBodyTextureCache.has(cacheKey)) return handBodyTextureCache.get(cacheKey);
 
     const texture = new THREE.CanvasTexture(flatTintCanvas(resolvedHex));
@@ -145,10 +148,21 @@
 
     loadHandWavySource().then(image => {
       let source = image;
-      if (typeof global.shadeFillTintForBodyColor === 'function' && typeof global.getShadeFillCanvas === 'function') {
-        const tint = global.shadeFillTintForBodyColor(descriptor, referenceHex);
-        if (tint?.mode === 'shadeFill') {
+      if (typeof global.getBodyTintedCanvas === 'function') {
+        // This is the same function renderProfile uses for body sprite layers.
+        source = global.getBodyTintedCanvas(image, 'assets/textures/wavy_surface.png', descriptor, speciesId, 'A') || image;
+      } else {
+        // Standalone-tool fallback mirrors the same renderProfile branch exactly.
+        const mode = typeof global.bodyTintModeForSpecies === 'function'
+          ? global.bodyTintModeForSpecies(speciesId)
+          : 'shadeFill';
+        const tint = mode === 'shadeFill'
+          ? global.shadeFillTintForBodyColor?.(descriptor, referenceHex)
+          : global.tintForBodyColor?.(descriptor, referenceHex);
+        if (tint?.mode === 'shadeFill' && typeof global.getShadeFillCanvas === 'function') {
           source = global.getShadeFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
+        } else if (tint?.mode === 'hueSatFill' && typeof global.getHueSatFillCanvas === 'function') {
+          source = global.getHueSatFillCanvas(image, 'assets/textures/wavy_surface.png', tint) || image;
         }
       }
       texture.image = source;

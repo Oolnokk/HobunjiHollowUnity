@@ -595,6 +595,24 @@ function _imageForTint(img, sourceKey, tint) {
   return img;
 }
 
+// Canonical body-sprite tint path. renderProfile, procedural hands, rocks, and
+// cliffs all call this same helper so species tint-mode selection and per-pixel
+// recoloring cannot diverge between 2D character art and 3D surface textures.
+function bodySpriteTintForColor(color, speciesId, slot = 'A') {
+  const referenceHex = _dyeReferenceHexForSlot(slot, speciesId);
+  return bodyTintModeForSpecies(speciesId) === 'shadeFill'
+    ? shadeFillTintForBodyColor(color, referenceHex)
+    : tintForBodyColor(color, referenceHex);
+}
+
+function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {
+  return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));
+}
+
+// Explicit exports for classic-script consumers that render Three.js textures.
+window.bodySpriteTintForColor = bodySpriteTintForColor;
+window.getBodyTintedCanvas = getBodyTintedCanvas;
+
 // ── Canvas helpers ─────────────────────────────────────────
 
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
@@ -1027,14 +1045,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
-  const _bodyTintMode = bodyTintModeForSpecies(_tintSpeciesId);
   const _clothingTintMode = clothingTintMode();
   const tintFor = (slot) => {
     if (!slot) return { mode: 'none' };
-    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
     const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
-    const mode = isBodySlot ? _bodyTintMode : _clothingTintMode;
-    return mode === 'shadeFill'
+    if (isBodySlot) return bodySpriteTintForColor(bodyColors[slot], _tintSpeciesId, slot);
+    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
+    return _clothingTintMode === 'shadeFill'
       ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
       : tintForBodyColor(bodyColors[slot], referenceHex);
   };

@@ -10,8 +10,8 @@
     surfaces: {
       trunks: { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
       vines:  { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      rocks:  { enabled: true, tint: '#808080', tintTreatment: 'ground-shade-fill', mapping: 'planar-stretch' },
-      cliffs: { enabled: true, tint: '#808080', tintTreatment: 'ground-shade-fill', mapping: 'world-stretch' },
+      rocks:  { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'planar-stretch' },
+      cliffs: { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'world-stretch' },
     },
   };
 
@@ -57,37 +57,32 @@
     return tex;
   }
 
-  function parseHexRgb(hex) {
-    const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-    if (!match) return null;
-    const value = parseInt(match[1], 16);
-    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  function isHexTint(hex) {
+    return /^#?[0-9a-f]{6}$/i.test(String(hex || '').trim());
   }
 
-  function shouldBakeTint(surfaceCfg, tint) {
-    return surfaceCfg?.tintTreatment === 'ground-shade-fill'
-      && !!parseHexRgb(tint)
-      && typeof window.getShadeFillCanvas === 'function';
+  function flatTintCanvas(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 4;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = isHexTint(hex) ? hex : '#808080';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas;
   }
 
-  function loadShadeFillTexture(path, tint, wrapMode = 'clamp') {
-    const cacheKey = `${path}|${wrapMode}|shade-fill|${String(tint).toLowerCase()}`;
+  function shouldUseBodySpriteTint(surfaceCfg, tint) {
+    return surfaceCfg?.tintTreatment === 'body-sprite-tint' && isHexTint(tint);
+  }
+
+  function loadBodySpriteTintTexture(path, tint, wrapMode = 'clamp') {
+    const cacheKey = `${path}|${wrapMode}|body-sprite-tint|${String(tint).toLowerCase()}`;
     let tex = textureCache.get(cacheKey);
     if (tex) return tex;
-    const rgb = parseHexRgb(tint);
-    tex = markTextureSrgb(new THREE.TextureLoader().load(path, loaded => {
-      if (!rgb || typeof window.getShadeFillCanvas !== 'function') return;
-      const canvas = window.getShadeFillCanvas(loaded.image, cacheKey, {
-        mode: 'shadeFill',
-        rgb,
-        options: typeof window.getPortraitTintingConfig === 'function'
-          ? window.getPortraitTintingConfig()
-          : undefined,
-      });
-      if (!canvas) return;
-      loaded.image = canvas;
-      loaded.needsUpdate = true;
-    }));
+
+    // Start at the requested medium gray instead of white while carved_smooth
+    // loads. The decoded PNG later replaces this with the exact portrait body
+    // recolor canvas, using {hex:tint} as the body-color descriptor.
+    tex = markTextureSrgb(new THREE.CanvasTexture(flatTintCanvas(tint)));
     const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     tex.wrapS = wrapping;
     tex.wrapT = wrapping;
@@ -95,10 +90,28 @@
     tex.magFilter = THREE.LinearFilter;
     tex.generateMipmaps = false;
     tex.userData = Object.assign({}, tex.userData, {
-      naturalSurfaceShadeFill: true,
-      naturalSurfaceShadeFillTarget: String(tint).toLowerCase(),
+      naturalSurfaceBodySpriteTint: true,
+      naturalSurfaceBodySpriteTintTarget: String(tint).toLowerCase(),
     });
     textureCache.set(cacheKey, tex);
+
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      if (typeof window.getBodyTintedCanvas !== 'function') {
+        console.warn('[natural-surface] portrait body tint helper unavailable; keeping flat tint', path, tint);
+        return;
+      }
+      // Empty species id intentionally follows bodyTintModeForSpecies(''), whose
+      // default is the same shadeFill mode used by ordinary body sprites. A hex
+      // descriptor is already absolute, so no species swatch conversion occurs.
+      const canvas = window.getBodyTintedCanvas(image, cacheKey, { hex: tint }, '', 'A');
+      if (!canvas) return;
+      tex.image = canvas;
+      tex.needsUpdate = true;
+    };
+    image.onerror = () => console.warn('[natural-surface] failed to load body-tinted surface texture', path);
+    image.src = path;
     return tex;
   }
 
@@ -254,8 +267,8 @@
   function textureForSurface(surface, wrapMode = 'clamp', resolvedTint = null) {
     const surfaceCfg = cfgFor(surface);
     const tint = resolvedTint || surfaceCfg.tint;
-    return shouldBakeTint(surfaceCfg, tint)
-      ? loadShadeFillTexture(texturePath(surfaceCfg), tint, wrapMode)
+    return shouldUseBodySpriteTint(surfaceCfg, tint)
+      ? loadBodySpriteTintTexture(texturePath(surfaceCfg), tint, wrapMode)
       : loadBaseTexture(texturePath(surfaceCfg), wrapMode);
   }
 
@@ -278,7 +291,7 @@
 
     prepareUv(mesh.geometry, mapping);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
-    const bakeTint = shouldBakeTint(surfaceCfg, tint); // Uses shade-fill so #808080 is the texture's target color instead of a second dark multiplier.
+    const bakeTint = shouldUseBodySpriteTint(surfaceCfg, tint); // The PNG is recolored by the exact body-sprite canvas path, so the Three material stays white.
     const tex = textureForSurface(surface, 'clamp', tint);
     mesh.material = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurface: surface });
@@ -299,7 +312,7 @@
     // The MATERIAL map is still forced to this surface's configured texture;
     // otherwise an old source map can silently bypass carved_smooth.png.
     const tint = resolveTint(surfaceCfg, sourceMaterial);
-    const bakeTint = shouldBakeTint(surfaceCfg, tint); // Baked target color keeps carved_smooth shading without multiplying it dark again.
+    const bakeTint = shouldUseBodySpriteTint(surfaceCfg, tint); // Same body-sprite tint canvas as character art; material white avoids a second multiplier.
     let tex;
     if (mapping === 'world-stretch') {
       tex = textureForSurface(surface, 'repeat', tint);
