@@ -6,7 +6,7 @@
     { "id": "fmqf821dtft2z", "itemKey": "handMillFurniture", "col": 9, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0 },
     { "id": "fmqf949thrwvs", "itemKey": "stoolFurniture", "col": 4, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 0.5, "postSY": 0.5, "postSZ": 0.5 },
     { "id": "fmqf94qzpdvua", "itemKey": "bookshelfFurniture", "col": 2, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqg911qpldqz", "itemKey": "benchFurniture", "col": 1, "row": 7, "rotY": 0, "postX": 2.5, "postY": 0, "postZ": 0, "postSX": 3.9, "postSY": 1, "postSZ": 1.728 },
+    { "id": "fmqg911qpldqz", "itemKey": "tableSmallFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 7.503, "postSY": 1, "postSZ": 1 },
     { "id": "fmqz1alchtbl0", "itemKey": "alchemyTableFurniture", "col": 5, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
   ],
   "id": "map_i_kunjis_potions_F1",
