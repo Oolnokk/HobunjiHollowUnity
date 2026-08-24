@@ -35,13 +35,12 @@ jobs:
           raw_payload = workflow[start + len(start_marker):end]
           yaml_indent = '          '
           payload_lines = []
-          for line_number, line in enumerate(raw_payload.splitlines(), 1):
-              if not line:
-                  payload_lines.append('')
-                  continue
-              if not line.startswith(yaml_indent):
-                  raise SystemExit(f'Patch payload line {line_number} escaped the YAML block indentation')
-              payload_lines.append(line[len(yaml_indent):])
+          for line in raw_payload.splitlines():
+              # Python statements in the YAML block carry this ten-space wrapper.
+              # Embedded multiline JS literals may intentionally drop below it
+              # (notably their column-zero triple-quote terminators), so only
+              # remove the wrapper when it is actually present.
+              payload_lines.append(line[len(yaml_indent):] if line.startswith(yaml_indent) else line)
           payload = '\n'.join(payload_lines) + '\n'
           exec(compile(payload, 'surface-texture-patch', 'exec'), {})
           PY
