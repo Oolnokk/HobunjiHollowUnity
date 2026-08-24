@@ -12,13 +12,13 @@
   <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="js/foliage-generator.js?v=20260824-climb-branch"></script>
-  <script src="js/tree-asset-library.js?v=20260824-lod-runtime"></script>
+  <script src="js/tree-asset-library.js?v=20260824-branched-lod-runtime"></script>
 </head>
 <body>
   <header>
     <div>
       <h1>🌲 Wilderness Tree Asset Exporter</h1>
-      <p>Build the six fixed full-size tree variants used by wilderness generation, including shadewood climb branches, and generate decimated LOD copies without touching leaf cards or gameplay perch geometry.</p>
+      <p>Build the fixed full-size wilderness tree variants, bake canonical GLBs or decimated LOD copies, and package them at their exact runtime paths.</p>
     </div>
     <button id="export-all" class="primary">Export all 6 as ZIP</button>
   </header>
@@ -33,12 +33,11 @@
         <span id="ready-pill" class="pill">Preparing…</span>
       </div>
       <div id="asset-list" class="asset-list"></div>
-
       <div class="lod-control">
         <div class="lod-control-head">
           <div>
             <strong>LOD decimation</strong>
-            <p class="muted">Reduces only ordinary solid tree geometry. Every textured leaf card and the shadewood <code>climbBranch</code> mesh stay at full detail.</p>
+            <p class="muted">Triangle reduction applied to exported GLBs. Solid tree geometry is simplified; textured leaf cards and climbable perch branches always remain intact.</p>
           </div>
           <output id="decimate-value" for="decimate-percent">0%</output>
         </div>
@@ -46,13 +45,12 @@
         <div class="lod-scale">
           <span>Full detail</span>
           <span id="decimate-stats">Original geometry</span>
-          <span>95% solid reduction</span>
+          <span>95% reduction</span>
         </div>
       </div>
-
       <div class="help">
         <strong>Upload workflow</strong>
-        <p>At 0% the ZIP writes the canonical filenames plus <code>index.json</code>. Nonzero exports use <code>_lod-decimate-N.glb</code> filenames plus <code>lod-decimation.json</code>. Shadewood exports always force the climbable branch on, and LOD decimation never modifies that branch.</p>
+        <p>At 0%, the ZIP mirrors <code>docs/assets/models/trees/</code> with the canonical six GLBs plus <code>index.json</code>. At nonzero decimation, filenames gain an <code>_lod-decimate-N</code> suffix and the ZIP includes <code>lod-decimation.json</code> instead, so an LOD batch cannot overwrite the canonical assets.</p>
       </div>
     </section>
 
