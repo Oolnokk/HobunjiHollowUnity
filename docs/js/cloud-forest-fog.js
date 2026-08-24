@@ -21,6 +21,8 @@
     { radiusFrac: 1.00, height: 10.5, opacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
   const FALLBACK_OUTER_RADIUS_TILES = 34;
+  const LANTERN_RADIUS_TILES = 3.6;
+  const LANTERN_CLARITY_TILES = 0.95;
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
 
   function debugLog(message, level = 'info') {
@@ -145,10 +147,21 @@
     if (!fogDayColor || !fogTimeColor || !fogResultColor) return;
     const light = getFullDayLighting();
     fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
-    const timeTintAmount = Math.max(0.18, Math.min(0.86, 0.18 + clamp01(light.a) * 0.82));
+
+    // The previous blend always retained too much white in the fog. Once the
+    // full-day lighting reaches dusk/night, drive the actual fog scattering
+    // color almost completely toward the same dark atmospheric color.
+    const nightStrength = clamp01((clamp01(light.a) - 0.12) / 0.68);
+    const timeTintAmount = 0.18 + nightStrength * 0.79;
     fogResultColor.copy(fogDayColor).lerp(fogTimeColor, timeTintAmount);
+
     for (const layer of layers) layer.material.color.copy(fogResultColor);
     if (activeScene?.fog?.color) activeScene.fog.color.copy(fogResultColor);
+
+    // Cloud Forest intentionally has no skydome. Match the clear/background
+    // color to the fog itself so distant mist is not backlit by a daytime-white
+    // framebuffer at night.
+    if (activeScene?.background?.isColor) activeScene.background.copy(fogResultColor);
 
     const hour = window.CalendarSystem?.getHour?.() ?? 12;
     const bucket = `${Math.floor(hour)}:${fogResultColor.getHexString()}`;
@@ -263,9 +276,9 @@
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, 5.0);
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, LANTERN_RADIUS_TILES);
       if (!(shineR > 0)) continue;
-      const clarityFrac = 1.3 / 5.0;
+      const clarityFrac = LANTERN_CLARITY_TILES / LANTERN_RADIUS_TILES;
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, 'rgba(0,0,0,0.92)');
       grad.addColorStop(clarityFrac, 'rgba(0,0,0,0.80)');
