@@ -61,7 +61,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/apply-surface-texture-fix.py .github/surface-fix-trigger .github/workflows/apply-surface-texture-fix.yml .github/workflows/apply-surface-texture-fix-pr.yml
+          git rm -f .github/apply-surface-texture-fix.py .github/surface-fix-trigger .github/workflows/apply-surface-texture-fix.yml .github/workflows/apply-surface-texture-fix-pr.yml
           rm -rf .github/__pycache__
           git add docs/js/procedural-leg-animation.js docs/js/procedural-hand-attachments.js docs/js/natural-surface-materials.js docs/config/natural-surface-materials.js
           git commit -m "Fix wavy limb and medium-gray carved stone surfaces"
