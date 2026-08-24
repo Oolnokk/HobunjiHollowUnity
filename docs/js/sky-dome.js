@@ -7,7 +7,11 @@
   const CLOCK_FULL_DAY_TARGET_SECONDS = 1008; // Used by the outer time01 accessor to preserve the existing ~42 real seconds per represented game hour across all 24 hours.
   const EXTRA_NATURAL_TIME_SCALE = CLOCK_OLD_TARGET_SECONDS / CLOCK_FULL_DAY_TARGET_SECONDS; // Applied before CalendarSystem's existing 3/7 natural-time scale so the combined scale becomes 2/7.
   const DAY_ROLLOVER_HOUR = 6;
-  const SKY_RADIUS = 205;
+  // Gameplay camera far=200. A camera-centered sphere larger than that gets its
+  // forward cap clipped into a perfect screen-locked circle. Keep only the
+  // opaque sky shell safely inside the far plane; preserve celestial distance.
+  const SKY_RADIUS = 198;
+  const CELESTIAL_RADIUS = 197;
   const CLOUD_RADII = [176, 184, 192];
   const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055];
   const CLOUD_COUNTS = [24, 32, 42];
@@ -290,13 +294,11 @@
 
   function updateCelestialPack(pack, kind, uv, opacity, illumination = 1) {
     if (!pack) return;
-    const pos = uvToSphere(uv.u, uv.v, SKY_RADIUS - 8), image = pack.image, ratio = (image.naturalWidth || image.width) / Math.max(1, image.naturalHeight || image.height);
+    const pos = uvToSphere(uv.u, uv.v, CELESTIAL_RADIUS), image = pack.image, ratio = (image.naturalWidth || image.width) / Math.max(1, image.naturalHeight || image.height);
     const h = kind === 'sun' ? SUN_SIZE : MOON_SIZE, w = h * ratio, light = (kind === 'sun' ? 1.75 : 0.58) * opacity * illumination;
     pack.sprite.position.copy(pos); pack.selfLight.position.copy(pos); pack.glow.position.copy(pos); pack.sprite.scale.set(w, h, 1); pack.selfLight.scale.set(w, h, 1); pack.glow.scale.set(w * (kind === 'sun' ? 5.2 : 5.8), h * (kind === 'sun' ? 5.2 : 5.8), 1);
     pack.sprite.material.opacity = opacity; pack.selfLight.material.opacity = clamp(light * (kind === 'sun' ? 0.24 : 0.38), 0, 0.95);
-    // The giant procedural celestial halo is a camera-facing circular Sprite (5.2x/5.8x the body).
-    // On the live renderer it can resolve as a flat dark disk instead of a soft additive halo.
-    // Keep the actual sun/moon and their small self-light copy, but suppress only this oversized disk.
+    // Keep the prior diagnostic suppression until the far-clip artifact is confirmed gone.
     pack.glow.material.opacity = 0;
     if (kind === 'sun') pack.selfLight.material.color.setRGB(1, 0.74, 0.34); else pack.selfLight.material.color.setRGB(0.55, 0.72, 1);
   }
@@ -367,7 +369,7 @@
   }
 
   function getDebugState() {
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, oversizedCelestialGlowDisabled: true };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: true };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
