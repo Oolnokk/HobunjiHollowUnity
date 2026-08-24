@@ -1,0 +1,54 @@
+name: Fix authored surface CORS
+on:
+  push:
+    branches: [fix/wavy-limbs-medium-gray-stone]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wavy-limbs-medium-gray-stone
+          fetch-depth: 0
+      - name: Patch image loaders
+        shell: python
+        run: |
+          from pathlib import Path
+
+          patches = {
+            Path('docs/js/procedural-leg-animation.js'): (
+              "      const img = new Image();\n      img.onload = () => resolve(img);",
+              "      const img = new Image();\n      // These assets can be served through a different CDN origin under GitHack/raw previews.\n      // CORS mode MUST be selected before src so portrait-utils can legally read pixels via getImageData().\n      img.crossOrigin = 'anonymous';\n      img.onload = () => resolve(img);"
+            ),
+            Path('docs/js/procedural-hand-attachments.js'): (
+              "      const image = new Image();\n      image.onload = () => resolve(image);",
+              "      const image = new Image();\n      // Match portrait-utils/loadImg: opt into CORS before assigning src so the\n      // shared body-tint canvas can inspect wavy_surface.png without tainting.\n      image.crossOrigin = 'anonymous';\n      image.onload = () => resolve(image);"
+            ),
+          }
+
+          for path, (old, new) in patches.items():
+            text = path.read_text()
+            if old not in text:
+              raise SystemExit(f'expected loader block not found in {path}')
+            if "crossOrigin = 'anonymous'" in text[text.index(old):text.index(old)+300]:
+              raise SystemExit(f'CORS mode unexpectedly already present in target block: {path}')
+            path.write_text(text.replace(old, new, 1))
+            print('patched', path)
+      - name: Validate
+        run: |
+          node --check docs/js/procedural-leg-animation.js
+          node --check docs/js/procedural-hand-attachments.js
+          git diff --check
+          grep -A5 "const img = new Image" docs/js/procedural-leg-animation.js | grep -q "crossOrigin = 'anonymous'"
+          grep -A5 "const image = new Image" docs/js/procedural-hand-attachments.js | grep -q "crossOrigin = 'anonymous'"
+      - name: Commit source fix and remove workflow
+        run: |
+          rm -f .github/workflows/fix-authored-surface-cors.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Allow authored surface PNG pixel tinting'
+          git push origin HEAD:fix/wavy-limbs-medium-gray-stone
