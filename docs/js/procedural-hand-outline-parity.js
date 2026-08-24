@@ -78,6 +78,7 @@
 
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
+    if (mesh.userData?.noOutline !== true) mesh.layers.enable(1); // Visual replacement/x-ray routing must never drop either hand from the shell layer.
     markHeldXray(mesh, rigState, side);
     if (mesh.userData?.__hobunjiHandOutlineParity) return false;
 
@@ -169,11 +170,19 @@
   }
 
   function scanRig(rig, rigState) {
-    const left = rig?.group?.getObjectByName?.('left_hand_visual') || null;
-    const right = rig?.group?.getObjectByName?.('right_hand_visual') || null;
-    if (left) scanVisual(left, rigState, 'left');
-    if (right) scanVisual(right, rigState, 'right');
-    if (!left && !right) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
+    let found = false;
+    for (const side of ['left', 'right']) {
+      const socket = rig?.group?.getObjectByName?.(`${side}_hand_socket`) || null;
+      if (!socket) continue;
+      found = true;
+      // The socket is authoritative. Do not depend on whether a fallback/GLB
+      // visual happened to have the expected child name at the instant it was installed.
+      for (const child of socket.children || []) {
+        if (child?.name === `${side}_hand_grip_axes`) continue;
+        scanVisual(child, rigState, side);
+      }
+    }
+    if (!found) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
   }
 
   function waitForInitialGlbs(rig, rigState, attempt = 0) {

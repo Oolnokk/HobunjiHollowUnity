@@ -135,58 +135,27 @@
     if (!geometry?.getAttribute) return;
     const position = geometry.getAttribute('position');
     if (!position?.count) return;
-
-    const existingUv = geometry.getAttribute('uv');
-    if (existingUv?.count === position.count) {
-      // Normalize authored UV islands to exactly 0..1 so canvas.png is stretched
-      // once across the available hand UV extent instead of sampling only a sub-rect.
-      let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-      for (let i = 0; i < existingUv.count; i++) {
-        const u = existingUv.getX(i), v = existingUv.getY(i);
-        if (!Number.isFinite(u) || !Number.isFinite(v)) continue;
-        minU = Math.min(minU, u); minV = Math.min(minV, v);
-        maxU = Math.max(maxU, u); maxV = Math.max(maxV, v);
-      }
-      const du = maxU - minU, dv = maxV - minV;
-      if (Number.isFinite(du) && Number.isFinite(dv) && du > 1e-6 && dv > 1e-6) {
-        const normalized = new Float32Array(existingUv.count * 2);
-        for (let i = 0; i < existingUv.count; i++) {
-          normalized[i * 2] = Math.max(0, Math.min(1, (existingUv.getX(i) - minU) / du));
-          normalized[i * 2 + 1] = Math.max(0, Math.min(1, (existingUv.getY(i) - minV) / dv));
-        }
-        geometry.setAttribute('uv', new THREE.BufferAttribute(normalized, 2));
-      }
-      return;
-    }
-
     geometry.computeBoundingBox?.();
     const box = geometry.boundingBox;
     if (!box) return;
-    const sx = Math.max(1e-6, box.max.x - box.min.x);
-    const sy = Math.max(1e-6, box.max.y - box.min.y);
-    const sz = Math.max(1e-6, box.max.z - box.min.z);
-    const normal = geometry.getAttribute('normal');
+
+    // Stretch one copy of the authored PNG over the WHOLE mesh, rather than
+    // box-projecting a fresh 0..1 copy onto every face. Pick the two largest
+    // object-space dimensions so a thin hand/foot uses its broad silhouette.
+    const axes = [
+      { key: 'x', min: box.min.x, size: Math.max(1e-6, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, size: Math.max(1e-6, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, size: Math.max(1e-6, box.max.z - box.min.z) },
+    ].sort((a, b) => b.size - a.size);
+    const uAxis = axes[0], vAxis = axes[1];
+    const read = (axis, i) => axis.key === 'x' ? position.getX(i) : axis.key === 'y' ? position.getY(i) : position.getZ(i);
     const uvs = new Float32Array(position.count * 2);
     for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
-      const nx = Math.abs(normal?.getX?.(i) || 0);
-      const ny = Math.abs(normal?.getY?.(i) || 0);
-      const nz = Math.abs(normal?.getZ?.(i) || 0);
-      let u, v;
-      if (nx >= ny && nx >= nz) {
-        u = (z - box.min.z) / sz;
-        v = (y - box.min.y) / sy;
-      } else if (ny >= nz) {
-        u = (x - box.min.x) / sx;
-        v = (z - box.min.z) / sz;
-      } else {
-        u = (x - box.min.x) / sx;
-        v = (y - box.min.y) / sy;
-      }
-      uvs[i * 2] = Math.max(0, Math.min(1, u));
-      uvs[i * 2 + 1] = Math.max(0, Math.min(1, v));
+      uvs[i * 2] = Math.max(0, Math.min(1, (read(uAxis, i) - uAxis.min) / uAxis.size));
+      uvs[i * 2 + 1] = Math.max(0, Math.min(1, (read(vAxis, i) - vAxis.min) / vAxis.size));
     }
     geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.userData = { ...(geometry.userData || {}), hobunjiStretchFitUvAxes: `${uAxis.key}${vAxis.key}` };
   }
 
   function handSurfaceTexture(THREE, role, speciesId, bodyColors) {
@@ -403,6 +372,7 @@
   function buildFallbackHand(THREE, size, color, side, sourceIsLeft, speciesId, bodyColors) {
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
+    ensureHandSurfaceUvs(THREE, geometry); // Fallback hands use the same single-copy stretch projection as GLB hands.
     const bodyTexture = handSurfaceTexture(THREE, 'body', speciesId, bodyColors); // Generated fallback hands use the same canvas.png body surface as GLB hands.
     const materialName = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
     const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
@@ -522,7 +492,11 @@
         disposeObjectResources(rec.visual);
       }
       rec.visual = visual;
-      rec.socket.add(visual);
+      if (visual) {
+        visual.name = `${side}_hand_visual`; // Fallback and GLB visuals share the same stable name for outline rescans.
+        rec.socket.add(visual);
+        markOutline(visual); // Reassert layer 1 after every visual replacement, including the left hand.
+      }
       rec.guide.visible = showGripGuides;
     }
 
@@ -641,7 +615,7 @@
           fallbackPoseInput: 'per-side-local-offset',
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
           parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
-          bodySurfaceTexture: 'wavy_surface.png',
+          bodySurfaceTexture: 'canvas.png',
         };
       },
     };

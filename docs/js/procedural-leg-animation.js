@@ -380,19 +380,28 @@
   // the GLB path, however many materials share a role) reuse a single loaded
   // texture instead of re-decoding/re-tinting the same PNG repeatedly.
   function makeSurfaceRoleResolver(THREE, speciesId, bodyColors) {
-    const referenceHex = referenceHexForSpecies(speciesId);
+    const bodyReferenceHex = referenceHexForSpecies(speciesId);
     const promises = new Map();
-    return role => {
-      if (promises.has(role)) return promises.get(role);
+    return (role, originalMaterialHex = null) => {
+      const cleanOriginalHex = /^#[0-9a-f]{6}$/i.test(String(originalMaterialHex || ''))
+        ? String(originalMaterialHex).toUpperCase()
+        : null;
+      const cacheKey = role === 'body' ? 'body' : `${role}|${cleanOriginalHex || 'fallback'}`;
+      if (promises.has(cacheKey)) return promises.get(cacheKey);
       let promise;
       if (role === 'bone') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25, `${speciesId}_foot_bone`, '');
+        // The old flat GLB material is the color authority for claws/nails.
+        // Run carved_smooth.png through the SAME shade/body-fill method as body
+        // sprites, using that original bland material hex as both target and reference.
+        const baseHex = cleanOriginalHex || cfg().boneColorHex || '#D8C7A3';
+        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_bone_${baseHex.slice(1)}`, '');
       } else if (role === 'keratin') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`, '');
+        const baseHex = cleanOriginalHex || cfg().keratinColorHex || '#44484D';
+        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_keratin_${baseHex.slice(1)}`, '');
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1, `${speciesId}_foot_body`, speciesId);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), bodyReferenceHex, 1, `${speciesId}_foot_body`, speciesId);
       }
-      promises.set(role, promise);
+      promises.set(cacheKey, promise);
       return promise;
     };
   }
@@ -408,52 +417,30 @@
     return Boolean(position && uv && uv.count === position.count);
   }
 
+  // Historical name retained for callers, but this is now a true ONE-COPY
+  // stretch fit rather than a per-face box projection. The two largest object-
+  // space axes span 0..1 exactly once across the whole mesh.
   function generateBoxProjectedUvs(THREE, geometry) {
-    if (!geometry?.getAttribute?.('position') || hasUsableUvs(geometry)) return geometry;
-    const originalGroups = (geometry.groups || []).map(group => ({ ...group }));
-    const projected = geometry.index ? geometry.toNonIndexed() : geometry;
-    if (projected !== geometry && originalGroups.length) {
-      projected.clearGroups();
-      for (const group of originalGroups) projected.addGroup(group.start, group.count, group.materialIndex);
-    }
-    const position = projected.getAttribute('position');
-    projected.computeBoundingBox();
-    const box = projected.boundingBox;
-    const sizeX = Math.max(1e-6, box.max.x - box.min.x);
-    const sizeY = Math.max(1e-6, box.max.y - box.min.y);
-    const sizeZ = Math.max(1e-6, box.max.z - box.min.z);
+    const position = geometry?.getAttribute?.('position');
+    if (!position?.count) return geometry;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (!box) return geometry;
+    const axes = [
+      { key: 'x', min: box.min.x, size: Math.max(1e-6, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, size: Math.max(1e-6, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, size: Math.max(1e-6, box.max.z - box.min.z) },
+    ].sort((a, b) => b.size - a.size);
+    const uAxis = axes[0], vAxis = axes[1];
+    const read = (axis, i) => axis.key === 'x' ? position.getX(i) : axis.key === 'y' ? position.getY(i) : position.getZ(i);
     const uvArray = new Float32Array(position.count * 2);
-    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-    const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), normal = new THREE.Vector3();
-    for (let first = 0; first + 2 < position.count; first += 3) {
-      a.fromBufferAttribute(position, first);
-      b.fromBufferAttribute(position, first + 1);
-      c.fromBufferAttribute(position, first + 2);
-      edge1.subVectors(b, a);
-      edge2.subVectors(c, a);
-      normal.crossVectors(edge1, edge2).normalize();
-      const ax = Math.abs(normal.x), ay = Math.abs(normal.y), az = Math.abs(normal.z);
-      const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
-      for (let corner = 0; corner < 3; corner++) {
-        const vertex = corner === 0 ? a : corner === 1 ? b : c;
-        let u, v;
-        if (dominant === 'x') {
-          u = (vertex.z - box.min.z) / sizeZ; v = (vertex.y - box.min.y) / sizeY;
-          if (normal.x < 0) u = 1 - u;
-        } else if (dominant === 'y') {
-          u = (vertex.x - box.min.x) / sizeX; v = (vertex.z - box.min.z) / sizeZ;
-          if (normal.y > 0) v = 1 - v;
-        } else {
-          u = (vertex.x - box.min.x) / sizeX; v = (vertex.y - box.min.y) / sizeY;
-          if (normal.z > 0) u = 1 - u;
-        }
-        const target = (first + corner) * 2;
-        uvArray[target] = u;
-        uvArray[target + 1] = v;
-      }
+    for (let i = 0; i < position.count; i++) {
+      uvArray[i * 2] = Math.max(0, Math.min(1, (read(uAxis, i) - uAxis.min) / uAxis.size));
+      uvArray[i * 2 + 1] = Math.max(0, Math.min(1, (read(vAxis, i) - vAxis.min) / vAxis.size));
     }
-    projected.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
-    return projected;
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+    geometry.userData = { ...(geometry.userData || {}), hobunjiStretchFitUvAxes: `${uAxis.key}${vAxis.key}` };
+    return geometry;
   }
 
   // ── Placement width: scan the avatar's own torso silhouette ────────────
@@ -614,7 +601,8 @@
           depthWrite: true,
           opacity: 1,
         });
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
+    const sphereGeometry = generateBoxProjectedUvs(THREE, new THREE.SphereGeometry(radius, 16, 12));
+    const sphere = new THREE.Mesh(sphereGeometry, material);
     sphere.scale.set(sphereScaleXZ, sphereScaleY, sphereScaleXZ);
     sphere.castShadow = true;
     sphere.receiveShadow = true;
@@ -622,7 +610,7 @@
     if (KENKARI_FAMILY.has(speciesId)) {
       const toeLength = radius * 2.2;
       const toeRadius = radius * 0.17;
-      const toeGeometry = new THREE.ConeGeometry(toeRadius, toeLength, 10);
+      const toeGeometry = generateBoxProjectedUvs(THREE, new THREE.ConeGeometry(toeRadius, toeLength, 10));
       const sets = [{ z: radius * 0.18, facing: 0 }, { z: -radius * 0.18, facing: Math.PI }];
       for (const set of sets) {
         for (const side of [-1, 1]) {
@@ -684,9 +672,17 @@
     const scene = await loadGlbScene(THREE, footConfig.glb);
     const clone = scene.clone(true);
     const roles = footConfig.materialRoles || {};
-    const roleTextures = new Map();
-    for (const role of new Set(Object.values(roles))) {
-      roleTextures.set(role, await surfaceForRole(role));
+    const sourceMaterials = new Set();
+    clone.traverse(child => {
+      if (!child.isMesh) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) if (material) sourceMaterials.add(material);
+    });
+    const textureForMaterial = new Map();
+    for (const material of sourceMaterials) {
+      const role = roles[material.name] || 'body';
+      const originalHex = material.color?.isColor ? `#${material.color.getHexString()}` : null;
+      textureForMaterial.set(material, await surfaceForRole(role, originalHex));
     }
     const defaultTexture = await surfaceForRole('body');
     const remapped = new Map();
@@ -697,8 +693,9 @@
       if (child.geometry) child.geometry = generateBoxProjectedUvs(THREE, child.geometry.clone());
       const applyOne = material => {
         if (remapped.has(material)) return remapped.get(material);
-        const role = roles[material.name];
-        const texture = roleTextures.get(role) || defaultTexture;
+        const role = roles[material.name] || 'body';
+        const originalHex = material.color?.isColor ? `#${material.color.getHexString()}` : null;
+        const texture = textureForMaterial.get(material) || defaultTexture;
         // See buildFallbackFoot's comment on unlit vs lit materials.
         const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
         const cloned = spritePngSurface?.makeMaterial
@@ -714,6 +711,7 @@
               opacity: 1,
             });
         cloned.name = material.name;
+        cloned.userData = { ...(cloned.userData || {}), hobunjiFootRole: role, hobunjiOriginalMaterialHex: originalHex };
         remapped.set(material, cloned);
         return cloned;
       };
