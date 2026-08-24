@@ -25,6 +25,7 @@
     const debugLog = typeof deps.debugLog === 'function' ? deps.debugLog : () => {};
     const scene = deps.scene || null;
     const PLAYER_HOUSE_LOGICAL_HEIGHT = 0.6; // Used when building the runtime subtle-elevation override and reporting debug state.
+    const TERRAIN_EDGE_LAYER = 3; // Material-ID terrain layer set by game.js; used to identify visible farm ground meshes on Three r128.
 
     let visualHeights = {}; // Current shared-algorithm center samples, used when deforming farm terrain meshes.
     let footprintFingerprint = ''; // Union-of-module footprint signature; skips terrain work for roof/feature-only rebuilds.
@@ -151,9 +152,17 @@
       }
     }
 
+    function _hasTerrainEdgeLayer(obj) {
+      // Three r128's Layers exposes .mask/.enable()/.test(), but not the newer
+      // isEnabled(channel) helper. Testing the bit directly keeps this runtime
+      // compatible with the exact Three version loaded by docs/index.html.
+      const mask = Number(obj?.layers?.mask ?? 0) >>> 0;
+      return !!(mask & ((1 << TERRAIN_EDGE_LAYER) >>> 0));
+    }
+
     function _terrainMeshWorldAnchor(obj) {
       if (!obj?.isMesh || obj.isInstancedMesh || !obj.geometry?.attributes?.position) return null;
-      if (!obj.layers?.isEnabled?.(3)) return null;
+      if (!_hasTerrainEdgeLayer(obj)) return null;
       if (obj.userData?.isBillboard || obj.userData?.terrainRenderChunkSource) return null;
       obj.updateMatrixWorld?.(true);
       const anchor = new THREE.Vector3(); // World-space tile center allows terrain nested under renderer groups to match the footprint.
