@@ -980,9 +980,15 @@ window.FoliageGenerator = (() => {
       trunkNoise: 0.9, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
       rootsEnabled: true, rootCount: 9, rootLength: 2.2, rootRadius: 0.14,
       rootTaper: 0.78, rootSpread: 1.25, rootCurl: 0.1, rootWonk: 0.55,
-      knotEnabled: true, knotAt: 0.8, knotTiers: 5, knotTierSpacing: 0.08,
+      // Canopy branch count cut from 5 tiers x 7/tier (35 total, each its
+      // own tube mesh + leaf card) to 3 x 5 (15, a ~57% reduction) — this
+      // geometry is built once per shared variant and cloned for every
+      // placed tree (see getTreeVariants/buildTreeInstance), so the saving
+      // is real GPU vertex/triangle cost on every rendered shadewood, not
+      // just the Cloud Forest, at zero runtime cost to cut it.
+      knotEnabled: true, knotAt: 0.8, knotTiers: 3, knotTierSpacing: 0.08,
       knotTierLengthDelta: 0.75, knotTierRadiusDelta: -0.3, branchArchExtra: 0.5,
-      knotCount: 7, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
+      knotCount: 5, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
       knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
       leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
       leafAlong01: 0.88, leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
@@ -1095,6 +1101,7 @@ window.FoliageGenerator = (() => {
     const leafGeoms = [];
     const vineGeoms = [];
     let climbBranchLocal = null; // Populated below for presets that opt into climbBranchChance (shadewood).
+    let climbBranchGeom = null; // Kept as its OWN mesh (not merged into woodGeoms) so buildTreeInstance can show/hide it per tile instance — see the climb-branch block below.
     const unitLeaf = new T.PlaneGeometry(1, 1, 1, 1);
 
     // Trunk
@@ -1479,13 +1486,20 @@ window.FoliageGenerator = (() => {
     // attach high (knotAt ~0.8) and carry leaf cards, this is a single bare
     // branch lower on the bark, thick and roughly horizontal, that reads as
     // something a player or drenkirra could climb onto the same way
-    // ClimbSystem already treats plateau walls. Rolled once per shared tree
-    // variant (not per tile instance — see getTreeVariants), so roughly this
-    // fraction of the handful of cached shapes ends up with one, which reads
-    // as "sometimes" as those shapes recur across many placed trees. Local
-    // (pre-instance-transform) endpoints are cached on the group so
-    // buildTreeInstance can carry them through — see getClimbBranchWorld.
-    if (preset.climbBranchChance > 0 && rand() < preset.climbBranchChance) {
+    // ClimbSystem already treats plateau walls.
+    //
+    // The geometry is always built here (it needs this specific shared
+    // variant's own trunk shape to attach correctly), but climbBranchChance
+    // is NOT rolled in this function — buildTreeInstance rolls it per TILE
+    // INSTANCE instead and shows/hides this mesh accordingly. Rolling it
+    // here, per shared variant, was the original design (see
+    // TREE_VARIANT_COUNT — only 3 cached shapes total) and it's broken at
+    // any reasonably low chance: at 0.17 there's a ~57% chance NONE of the
+    // 3 variants rolls one, meaning entire sessions could have zero
+    // climbable shadewood trees anywhere on the map. Per-instance gating
+    // makes "sometimes" behave like an actual per-tree probability instead
+    // of a session-wide coin flip across 3 buckets.
+    if (preset.climbBranchChance > 0) {
       const at = clamp01(preset.climbBranchAt ?? 0.45);
       const f = at * (trunk.spine.pts.length - 1);
       const i0 = Math.max(0, Math.min(trunk.spine.pts.length - 2, Math.floor(f)));
@@ -1511,7 +1525,7 @@ window.FoliageGenerator = (() => {
         noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: 0,
         radiusFn: (t01, ringIdx) => Math.max(1e-4, branchRad * Math.pow(0.9, ringIdx))
       });
-      woodGeoms.push(climbBranch.geom);
+      climbBranchGeom = climbBranch.geom;
       const tip = climbBranch.spine.pts[climbBranch.spine.pts.length - 1];
       climbBranchLocal = {
         a: { x: origin.x, y: origin.y, z: origin.z },
@@ -1525,6 +1539,18 @@ window.FoliageGenerator = (() => {
       const merged = mergeGeoms(woodGeoms);
       merged.computeVertexNormals();
       group.add(new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)));
+    }
+    if (climbBranchGeom) {
+      // Its own mesh, not merged into the wood mesh above — buildTreeInstance
+      // toggles .visible on this specific child per placed tile instance
+      // (see climbBranchLocal's comment above), which only works if it's a
+      // separate Object3D rather than baked into shared merged geometry.
+      // Added before the leaf mesh for the same "leaves must stay last"
+      // reason as the vines mesh just below.
+      climbBranchGeom.computeVertexNormals();
+      const climbBranchMesh = new T.Mesh(climbBranchGeom, hexBarkMat(preset.barkColorHex ?? 0x4a3b33));
+      climbBranchMesh.name = 'climbBranch';
+      group.add(climbBranchMesh);
     }
     if (vineGeoms.length) {
       // Added before the leaf mesh so leaves stay the LAST child — canopy
@@ -1618,7 +1644,25 @@ window.FoliageGenerator = (() => {
     inst.rotation.y = instYaw;
     inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
-    if (variant.userData.climbBranchLocal) inst.userData.climbBranchLocal = variant.userData.climbBranchLocal;
+    // climbBranchChance is rolled HERE, per tile instance, not per shared
+    // variant — every variant's geometry always includes a climb-branch
+    // mesh (see buildConiferTreeGroup), so this is purely a per-instance
+    // visibility/registration decision. Rolling it per variant instead (the
+    // original design) meant the outcome was fixed for an entire session
+    // across only TREE_VARIANT_COUNT (3) buckets — see the comment on that
+    // block for the failure mode this replaced.
+    if (variant.userData.climbBranchLocal) {
+      // inst.clone() already copied climbBranchLocal onto inst.userData
+      // (it was on the shared variant's own userData) — a failed roll has
+      // to explicitly delete it back off, not just skip setting it, or
+      // every instance would register a climb branch regardless of the
+      // roll (only the mesh's own visibility would differ).
+      if (rand() >= (preset.climbBranchChance ?? 0)) {
+        delete inst.userData.climbBranchLocal;
+        const branchMesh = inst.getObjectByName?.('climbBranch');
+        if (branchMesh) branchMesh.visible = false;
+      }
+    }
     return inst;
   }
 

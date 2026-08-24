@@ -16425,7 +16425,16 @@
           const expandedRadius = s.radius + sticky;
           let show;
           if (radialCullRadius) {
-            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + expandedRadius;
+            // Distance to the tree's own center, plus only the small
+            // anti-flicker hysteresis margin — NOT + s.radius (each tree's
+            // own bounding-sphere size, which the box-cull path below adds
+            // deliberately). A shadewood's canopy bounding sphere can run
+            // several tiles wide on its own, so adding it here made the
+            // Tree Cull Radius slider's number bear little relation to the
+            // actual load-in distance (e.g. "5" behaving nothing like 5
+            // tiles). The distance fade (see below) already softens any
+            // mid-canopy pop/clip this used to guard against.
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky;
           } else {
             const dx = s.x - camX, dz = s.z - camZ;
             const along = dx * viewX + dz * viewZ;
@@ -16456,7 +16465,22 @@
               outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
             }
             if (target !== 1 || obj.userData._fadeMaterials) {
+              const isFirstFade = !obj.userData._fadeMaterials;
               const mats = ensureTreeFadeMaterials(obj);
+              // ensureTreeFadeMaterials always inits _fadeOpacity at 1 (its
+              // original occlusion-only design never needed anything else —
+              // a tree was always fully visible until something started
+              // blocking it). For the Cloud Forest's distance fade that's
+              // wrong the first time a tree is seen: a tree already out
+              // near the fade band would pop in fully opaque and then
+              // visibly animate down to its real target, instead of just
+              // reading at the right opacity immediately. Snap straight to
+              // target on this first frame only; every later frame still
+              // lerps normally as target keeps changing with distance.
+              if (isFirstFade) {
+                obj.userData._fadeOpacity = target;
+                for (const m of mats) m.opacity = target;
+              }
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
               setTreeBlocking(obj, mats, blocking);
