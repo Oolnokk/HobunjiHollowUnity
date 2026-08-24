@@ -739,6 +739,11 @@
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
+        // Standing on a climbable tree branch (see climb-system.js's
+        // beginOnBranch) — onBranch holds the branch descriptor, branchT is
+        // the 0..1 position along it, branchSurfaceY is that branch's own
+        // height (used instead of terrain-follow while onBranch is set).
+        onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
       // All players present in this session — just the local `player` today
@@ -807,6 +812,22 @@
       const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        if (target.onBranch) {
+          // Knockback while standing on a branch is resolved along the
+          // branch's own 1D axis instead of the usual free-plane impulse —
+          // if it doesn't push the target past either end, that's the whole
+          // effect (see resolveBranchKnockback). Pushed past an end, the
+          // target falls to the ground and lands hard rather than sliding —
+          // a flat Footing hit instead of the velocity impulse below.
+          const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
+          if (result?.fell) {
+            // footing-damage-recovery-bridge.js doubles every spendFooting
+            // call, so 47.5 here nets the intended 95 Footing damage.
+            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+          }
+          return;
+        }
         const ang = Math.atan2(target.y - fromY, target.x - fromX);
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
@@ -1303,23 +1324,32 @@
           fogDensity: 0.055,
           // updateZoneVegetationCulling uses this zone's presence here to
           // switch from the other zones' camera-forward/rear/width box to a
-          // simple circle around the player — it pairs with CloudForestFog's
-          // outer mist cylinder, which is scaled to this same radius, so the
-          // ring where vegetation pops in/out sits inside the mist in every
-          // direction rather than just character-forward. 34 tiles is where
-          // fogDensity above has already made FogExp2 ~97% opaque, so the
-          // pop-in itself stays hidden without changing how much actually
-          // renders at once (a full circle this size does mean more gets
-          // drawn behind/beside the player than the old forward-biased box
-          // did — the fog now doing the work that box previously did makes
-          // that an acceptable trade, not a free one).
-          vegCullRadiusTiles: 34,
+          // simple circle around the player — originally paired with
+          // CloudForestFog's outer mist cylinder so the ring where
+          // vegetation pops in/out sat inside the mist in every direction
+          // rather than just character-forward. This is now just the
+          // startup default: both the live cull radius and each fog layer's
+          // own radius/opacity are independently Settings-tab sliders (see
+          // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
+          // setLayerOpacity) — lowered from 34 to 15 by default since the
+          // full 34-tile radius was a real contributor to reported
+          // choppiness in this zone. At 34, fogDensity above had already
+          // made FogExp2 ~97% opaque out there, hiding the vegetation
+          // pop-in; at the smaller default the pop-in ring is more likely
+          // to be visible, tunable back up via the slider if that matters
+          // more than the performance it costs.
+          vegCullRadiusTiles: 15,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
           // ever spawn from, anywhere.
           packSpecies: ['gar-wolf'],
-          herbivoreSpecies: ['drenkirra'],
+          // Drenkirra no longer den here — nativeSpeciesFor/spawnPackAtDen
+          // (via this pool) decide both a den's exterior pack and its
+          // cavern Den-Mother, and drenkirra now nest on shadewood branches
+          // instead (see wildlife-spawn.js's ensureCurrentZoneNestTrees),
+          // so every den in this zone is a gar-wolf den.
+          herbivoreSpecies: [],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -2100,6 +2130,14 @@
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
         counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
+        // Drenkirra nests — the bucket preset's shape, halved in height and
+        // colored yellow (see procedural-furniture.js's nestRecipe). Two
+        // footprints out of the same recipe: a small one for a nest lashed
+        // to a climbable branch, and the existing den-nest size (2x2, same
+        // as the marker _denNests previously placed by hand) for the ones
+        // still found in caverns/dens for other species.
+        nestBranch:    { itemKey: 'nestBranchFurniture',    icon: '🪺', name: 'Branch Nest',          modelFile: 'nest_branch.glb',              price: 0,  fw: 1, fd: 1, color: 0xc9a227, area: 'any',      desc: 'A woven nest lashed to a branch.', fixture: true },
+        nest:          { itemKey: 'nestFurniture',          icon: '🪺', name: 'Nest',                 modelFile: 'nest_den.glb',                 price: 0,  fw: 2, fd: 2, color: 0xc9a227, area: 'any',      desc: 'A large woven nest.', fixture: true },
         // Game-authored fixtures (fixture: true) — spawned by the game itself
         // inside specific building interiors (see BUILDING_FIXTURE_INTERACTABLES
         // below), never bought/carried by the player, so they're excluded from
@@ -4393,6 +4431,26 @@
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
       }
 
+      // Vertical companion to currentPlayerAimAngle(), passed to RangedWeapons
+      // as getPlayerAimPitch. An auto-target lock assists elevation the same
+      // way it already assists heading — aiming at the target's actual
+      // rendered height rather than just its ground tile. With no lock,
+      // pitch reuses the existing camera-tilt input (shift-drag or
+      // shoulder-surf drag write cameraAngleOffsetDeg already) as manual
+      // up/down aim, rather than inventing a second control scheme.
+      const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
+      function currentPlayerAimPitch() {
+        const target = activeCameraMode === SHOULDER_SURF_MODE ? null : findAutoTarget();
+        if (target) {
+          const originY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55;
+          const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
+          const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
+          if (horizDist < 0.05) return 0;
+          return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+        }
+        return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+      }
+
       // Used by updateAmbientCues() to duck exploration/dawn music during a
       // fight — true whenever any live hostile in the player's current area
       // is actively chasing/attacking (state === 'chase'), regardless of
@@ -4719,7 +4777,10 @@
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
-        const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+        // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
+        // spawn) uses that branch's own height instead of terrain-follow —
+        // same override the player gets while climbing/on a branch.
+        const surfY = c.onBranch ? c.branchSurfaceY : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const grp = c.avatarRef.group;
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
@@ -7731,6 +7792,7 @@
         const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
+        window.ClimbSystem?.resetAreaBranches(mapId); // This zone's shadewood instances (below) re-register their climbable branches fresh on every (re)build.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -7906,6 +7968,22 @@
                     undersideY: groundY + canopyLocal.undersideY * scaleTotal,
                   };
                 }
+                // This instance's tree shape may have rolled a climbable
+                // mid-trunk branch (see foliage-generator.js's
+                // climbBranchChance) — register it with ClimbSystem in world
+                // px (matching player.x/y), keyed by this zone's mapId.
+                const branchWorld = window.FoliageGenerator.getClimbBranchWorld(vegGroup);
+                if (branchWorld) {
+                  const baseX = branchWorld.a.x * TILE, baseY = branchWorld.a.z * TILE;
+                  const tipX = branchWorld.b.x * TILE, tipY = branchWorld.b.z * TILE;
+                  window.ClimbSystem?.registerBranch(mapId, {
+                    col: c, row: r,
+                    baseX, baseY, tipX, tipY,
+                    baseWorldY: branchWorld.a.y, tipWorldY: branchWorld.b.y,
+                    length: Math.max(1, Math.hypot(tipX - baseX, tipY - baseY)),
+                    radius: branchWorld.radius,
+                  });
+                }
               }
               if (isNativeBuild) {
                 // Bounding sphere for view-corridor culling (see
@@ -7964,7 +8042,13 @@
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(fogColor);
-        zScene.fog = new THREE.FogExp2(fogColor, zdef?.fogDensity ?? 0.018); // match town/farm fog density unless the zone overrides it (see map_southern_cloud_forest)
+        // match town/farm fog density unless the zone overrides it (see
+        // map_southern_cloud_forest) — but respect the Cloud Forest Mist
+        // toggle if it's already been switched off this session, so
+        // (re)entering the zone doesn't silently re-enable the mist the
+        // player just turned off.
+        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0.018 : (zdef?.fogDensity ?? 0.018);
+        zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -13258,6 +13342,11 @@
           return;
         }
 
+        if (player.onBranch) {
+          window.ClimbSystem.updateBranchMovement(dt);
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
@@ -16267,9 +16356,20 @@
       // Re-enabled the instant a tree stops blocking, same as depthWrite.
       function setTreeBlocking(vegGroup, mats, blocking) {
         for (const m of mats || []) m.depthWrite = !blocking;
+      }
+      // Split out of setTreeBlocking so the Cloud Forest's distance-based
+      // Outline Radius (independent of occlusion blocking — see
+      // updateZoneVegetationCulling's radialCullRadius branch) can toggle
+      // just the outline layer without also touching depthWrite/occlusion
+      // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
+      // toggle only actually runs on a real transition, not every frame for
+      // every visible tree.
+      function setTreeOutlineEnabled(vegGroup, enabled) {
+        if (vegGroup.userData._outlineEnabled === enabled) return;
+        vegGroup.userData._outlineEnabled = enabled;
         vegGroup.traverse(child => {
           if (!child.isMesh || child.userData.noOutline) return;
-          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+          if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
       function updateTreeFadeAnimation(dt) {
@@ -16322,7 +16422,9 @@
         // CloudForestFog's own player-centered mist cylinders so the ring
         // where vegetation pops in/out sits inside the mist uniformly in
         // every direction instead of only character-forward.
-        const radialCullRadius = EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles;
+        const radialCullRadius = s_cloudForestWideCull
+          ? (currentArea === 'map_southern_cloud_forest' ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
+          : null;
         let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
         if (!radialCullRadius) {
           let vx = camTargetX - camX, vz = camTargetZ - camZ;
@@ -16352,7 +16454,16 @@
           const expandedRadius = s.radius + sticky;
           let show;
           if (radialCullRadius) {
-            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + expandedRadius;
+            // Distance to the tree's own center, plus only the small
+            // anti-flicker hysteresis margin — NOT + s.radius (each tree's
+            // own bounding-sphere size, which the box-cull path below adds
+            // deliberately). A shadewood's canopy bounding sphere can run
+            // several tiles wide on its own, so adding it here made the
+            // Tree Cull Radius slider's number bear little relation to the
+            // actual load-in distance (e.g. "5" behaving nothing like 5
+            // tiles). The distance fade (see below) already softens any
+            // mid-canopy pop/clip this used to guard against.
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky;
           } else {
             const dx = s.x - camX, dz = s.z - camZ;
             const along = dx * viewX + dz * viewZ;
@@ -16366,18 +16477,50 @@
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
             const blocking = !obj.userData.skipOcclusionFade
               && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
-            const target = blocking ? TREE_FADE_OPACITY : 1;
+            let target = blocking ? TREE_FADE_OPACITY : 1;
+            let outlineAllowed = true;
+            // Cloud Forest only (radialCullRadius implies it — see above):
+            // ramp opacity in over the outer band of the cull radius
+            // instead of popping a tree in solid the instant it crosses the
+            // cull sphere, and keep the (pricier) outline pass off outside
+            // its own closer radius regardless of the tree's own opacity.
+            if (radialCullRadius) {
+              const distFromPlayer = Math.hypot(s.x - px, s.z - pz);
+              const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
+              if (distFromPlayer > fadeStartAt) {
+                const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
+                target = Math.min(target, clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+              }
+              outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
+            }
             if (target !== 1 || obj.userData._fadeMaterials) {
+              const isFirstFade = !obj.userData._fadeMaterials;
               const mats = ensureTreeFadeMaterials(obj);
+              // ensureTreeFadeMaterials always inits _fadeOpacity at 1 (its
+              // original occlusion-only design never needed anything else —
+              // a tree was always fully visible until something started
+              // blocking it). For the Cloud Forest's distance fade that's
+              // wrong the first time a tree is seen: a tree already out
+              // near the fade band would pop in fully opaque and then
+              // visibly animate down to its real target, instead of just
+              // reading at the right opacity immediately. Snap straight to
+              // target on this first frame only; every later frame still
+              // lerps normally as target keeps changing with distance.
+              if (isFirstFade) {
+                obj.userData._fadeOpacity = target;
+                for (const m of mats) m.opacity = target;
+              }
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
               setTreeBlocking(obj, mats, blocking);
             }
+            setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
           } else if (obj.userData._fadeMaterials) {
             obj.userData._fadeTarget = 1;
             obj.userData._fadeOpacity = 1;
             for (const m of obj.userData._fadeMaterials) m.opacity = 1;
             setTreeBlocking(obj, obj.userData._fadeMaterials, false);
+            setTreeOutlineEnabled(obj, true);
             _treeFadeActive.delete(obj);
           }
         }
@@ -19950,7 +20093,8 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const standY = player.climbing ? player.climbSurfaceY
+        const standY = player.onBranch ? player.branchSurfaceY
+          : player.climbing ? player.climbSurfaceY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
 
         // Riding a mount lifts the rider up so their posterior anchor
@@ -20278,6 +20422,32 @@
       }
 
       // ── Visual feature toggles (Settings tab) ────────────────────
+      // Southern Cloud Forest-specific effects added in the same window as
+      // Shoulder Cam's promotion out of experimental (mist cylinders, the
+      // zone's wide player-centered vegetation cull radius, and its dense
+      // instanced background forest along the north town-entrance edge) —
+      // off switches for isolating which one (if any) is behind reported
+      // choppiness/hitching specifically in that zone. Default on (no
+      // change from current behavior); each is meant to be flipped off one
+      // at a time to A/B test.
+      let s_cloudForestFog = true;
+      let s_cloudForestWideCull = true;
+      let s_cloudForestBgForest = true;
+      // Live Settings-tab slider value for the radial vegetation cull
+      // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
+      // vegCullRadiusTiles default (15) but is independently adjustable
+      // without touching that config.
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
+      // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
+      // beyond this fraction of the radius a tree ramps from opaque (at the
+      // fraction) down to fully transparent (at the radius) instead of
+      // popping in solid the instant it enters the cull sphere. Outline:
+      // the (cheaper-to-skip, pricier-to-draw) shell outline pass only
+      // draws within this closer fraction, independent of the tree's own
+      // opacity fade.
+      let s_cloudForestFadeStartFrac = 0.70;
+      let s_cloudForestOutlineFrac = 0.40;
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
@@ -20294,7 +20464,6 @@
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
-      let s_fpsCounter = false;
       let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
       // Debug hitbox overlay — unlike the other visual toggles above, its
       // state is cached across sessions (it's a dev tool you flip on once
@@ -20317,8 +20486,6 @@
       // contributing to the reported translucency.
       let s_disableHatXray = false;
 
-      const fpsCounterEl = document.getElementById('fpsCounter');
-      let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
       let _pathBrickCullAccum = 0;
 
@@ -20399,11 +20566,86 @@
         s_weed3D = e.target.checked;
         _rebuildWeedTiles();
       });
-      document.getElementById('settingFpsCounter').addEventListener('change', e => {
-        s_fpsCounter = e.target.checked;
-        fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
-        _fpsFrames = 0; _fpsAccum = 0;
+      // Cloud Forest perf-testing toggles — each takes effect immediately,
+      // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
+      // declaration comment).
+      document.getElementById('settingCloudForestFog')?.addEventListener('change', e => {
+        s_cloudForestFog = e.target.checked;
+        window.CloudForestFog?.setEnabled(s_cloudForestFog);
+        // CloudForestFog only owns the player-centered mist cylinders — the
+        // zone's own THREE.FogExp2 (density 0.055, vs. every other zone's
+        // 0.018 — see EXTERIOR_ZONES.map_southern_cloud_forest's fogDensity
+        // comment) is a second, independent haze source the toggle used to
+        // leave untouched, so turning it off didn't visibly remove the mist.
+        // Drop it to the normal baseline off, restore it on, live if the
+        // zone's already built this session.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        if (zi?.scene?.fog) {
+          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0.018;
+        }
       });
+      document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
+        s_cloudForestWideCull = e.target.checked;
+      });
+      document.getElementById('settingCloudForestBgForest')?.addEventListener('change', e => {
+        s_cloudForestBgForest = e.target.checked;
+        if (window.CloudForestRuntimeV2) window.CloudForestRuntimeV2.bgForestEnabled = s_cloudForestBgForest;
+        // Also hide/show whatever's already built this session, so the
+        // toggle is instant instead of only affecting the next zone build.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
+      });
+      document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
+        if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
+      });
+      // Shared by the cull-radius and all six fog-layer sliders below: wires
+      // an <input type=range> to a live value getter/setter plus its
+      // paired display span, all taking effect on the very next frame.
+      function wireSlider(inputId, valueId, apply) {
+        const input = document.getElementById(inputId);
+        const valueEl = document.getElementById(valueId);
+        if (!input) return;
+        input.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = String(v);
+          apply(v);
+        });
+      }
+      wireSlider('settingCloudForestCullRadius', 'settingCloudForestCullRadiusValue', v => { s_cloudForestCullRadiusTiles = v; });
+      // These two show a "%" suffix instead of the raw slider number, so
+      // they can't share wireSlider's plain String(v) display — wired by
+      // hand instead, same underlying pattern.
+      (() => {
+        const input = document.getElementById('settingCloudForestFadeStart');
+        const valueEl = document.getElementById('settingCloudForestFadeStartValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestFadeStartFrac = v / 100;
+        });
+      })();
+      (() => {
+        const input = document.getElementById('settingCloudForestOutlineRadius');
+        const valueEl = document.getElementById('settingCloudForestOutlineRadiusValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestOutlineFrac = v / 100;
+        });
+      })();
+      wireSlider('settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerRadiusValue', v => window.CloudForestFog?.setLayerRadius(0, v));
+      wireSlider('settingCloudForestFogInnerOpacity', 'settingCloudForestFogInnerOpacityValue', v => window.CloudForestFog?.setLayerOpacity(0, v));
+      wireSlider('settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleRadiusValue', v => window.CloudForestFog?.setLayerRadius(1, v));
+      wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
+      wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
+      wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // FPS Counter's checkbox is owned entirely by js/performance-debug.js
+      // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
+      // it used to also be independently wired up right here, which meant
+      // two separate frame loops fought over the same #fpsCounter element's
+      // text every half second. Draw calls/triangles/GPU memory/render CPU
+      // time are already available too, via the adjacent "Performance
+      // Profiler" checkbox and its overlay (perfState in that file).
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
@@ -20767,16 +21009,6 @@
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
 
-        if (s_fpsCounter) {
-          _fpsFrames++;
-          _fpsAccum += dt;
-          if (_fpsAccum >= 0.5) {
-            fpsCounterEl.textContent = Math.round(_fpsFrames / _fpsAccum) + ' FPS';
-            _fpsFrames = 0;
-            _fpsAccum  = 0;
-          }
-        }
-
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
@@ -21096,7 +21328,7 @@
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
-        window.CloudForestFog?.update(dt);
+        if (s_cloudForestFog) window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
@@ -22124,7 +22356,9 @@
         const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
         if (climbTarget) {
           const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
-          return [{ icon: '🧗', label: climbAllowed ? 'Climb' : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
+          const isJumpDown = climbTarget.type === 'branchJumpDown';
+          const climbLabel = isJumpDown ? 'Jump Down' : 'Climb';
+          return [{ icon: isJumpDown ? '🤸' : '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
         }
 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
@@ -24459,6 +24693,7 @@
         getCurrentArea: () => currentArea,
         getActiveScene,
         getPlayerAimAngle: currentPlayerAimAngle,
+        getPlayerAimPitch: currentPlayerAimPitch,
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
@@ -24900,7 +25135,6 @@
         getPlayerGroundY: _playerGroundY,
         getActiveScene,
         isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
-        getCloudForestFogRadiusTiles: () => EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles,
       });
 
       window.FarmPanel?.init({
@@ -25179,6 +25413,9 @@
         denNests: _denNests,
         getCutscenePreviewActive: () => cutscenePreviewActive,
         buildZoneScene,
+        DEN_MOTHER_DEFS,
+        zoneScenes: _zoneScenes,
+        makeDecorativeFurnitureMesh,
       });
 
       window.CavernGenerator?.init({
@@ -25274,6 +25511,14 @@
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
+        // Raw movement-intent vector, read fresh each call rather than off
+        // player.inputX/Y — those are written later in updateMovement than
+        // the onBranch early-return that leads into updateBranchMovement,
+        // so they'd still hold last frame's value when read from there.
+        getMovementInput: () => {
+          const kb = getKeyboardVector();
+          return kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        },
       });
 
       window.BanditCombatLog?.init({

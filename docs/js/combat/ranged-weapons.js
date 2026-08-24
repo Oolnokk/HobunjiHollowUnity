@@ -383,8 +383,9 @@
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
       const angle = deps.getPlayerAimAngle();
+      const pitch = deps.getPlayerAimPitch?.() || 0;
       const ammoPayload = playerAmmoPayload(action.itemKey); // Resolved once so a scatter volley consumes one resource and every pellet shares its selected ammo.
-      spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload);
+      spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch);
       consumeSpecialAmmo(ammoPayload);
     }
     if (action.t < action.durationS) return;
@@ -514,7 +515,12 @@
     }
   }
 
-  function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null) {
+  // Vertical aim support: pitch tilts the flight straight-line (no gravity —
+  // arrows already flew dead level before this, this only adds a tilt to
+  // that same line) rather than adding a full ballistic arc. Horizontal
+  // speed is scaled down by cos(pitch) so a steep shot doesn't also fly
+  // unrealistically far along the ground.
+  function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
@@ -522,13 +528,16 @@
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload); // Passed to both impact damage and comet color selection.
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors); // Special ammo can author non-affliction palette lanes such as Disorient/Footing.
     const surfaceY = deps.worldSurfaceY(x, y);
-    mesh.position.set(x / deps.TILE, surfaceY + 0.55, y / deps.TILE);
+    const worldY = surfaceY + 0.55;
+    mesh.position.set(x / deps.TILE, worldY, y / deps.TILE);
     scene.add(mesh);
+    const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
     const p = {
       itemKey, def, team, owner, mesh, visual: mesh.userData.visual,
-      x, y, prevX: x, prevY: y,
-      vx: Math.cos(angle) * def.speedPxS, vy: Math.sin(angle) * def.speedPxS,
-      angle, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
+      x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
+      vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
+      vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE), // Tile-unit world-Y speed to match worldY's units.
+      angle, pitch, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
       ammoId: ammoPayload?.ammoId || 'enemy',
@@ -543,7 +552,7 @@
     return p;
   }
 
-  function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null) {
+  function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0) {
     const def = defFor(itemKey);
     if (!def) return [];
     const count = Math.max(1, Math.round(def.projectileCount));
@@ -551,7 +560,7 @@
     const made = [];
     for (let i = 0; i < count; i++) {
       const u = count === 1 ? 0.5 : i / (count - 1);
-      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload));
+      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload, pitch));
     }
     lastEvent = `${team}:${itemKey}:volley-${count}`;
     return made;
@@ -563,6 +572,24 @@
     const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
     const qx = ax + dx * t, qy = ay + dy * t;
     return (px - qx) ** 2 + (py - qy) ** 2;
+  }
+
+  // Same closest-approach test but also returns the interpolation fraction
+  // along the segment, so a caller can sample the projectile's worldY at
+  // that same point for a vertical-aim hit check.
+  function pointSegmentDistanceSqT(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+    const qx = ax + dx * t, qy = ay + dy * t;
+    return { distSq: (px - qx) ** 2 + (py - qy) ** 2, t };
+  }
+
+  // Best-effort center height for a hostile: its actual rendered avatar
+  // height when available (accounts for elevated terrain/size class), else
+  // an approximate torso height above its ground tile.
+  function hostileCenterWorldY(c) {
+    return c.avatarRef?.group?.position?.y ?? (deps.worldSurfaceY(c.x, c.y) + 0.4);
   }
 
   function applySpecialAmmoDebuff(entity, ammoId) {
@@ -615,7 +642,10 @@
       for (const c of deps.hostileObjects) {
         if (c.health <= 0 || c.areaId && c.areaId !== p.areaId) continue;
         const hitRadius = p.def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
-        if (pointSegmentDistanceSq(c.x, c.y, p.prevX, p.prevY, p.x, p.y) > hitRadius ** 2) continue;
+        const { distSq, t } = pointSegmentDistanceSqT(c.x, c.y, p.prevX, p.prevY, p.x, p.y);
+        if (distSq > hitRadius ** 2) continue;
+        const rayWorldY = p.prevWorldY + (p.worldY - p.prevWorldY) * t;
+        if (Math.abs(rayWorldY - hostileCenterWorldY(c)) > hitRadius / deps.TILE) continue;
         deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
         applySpecialAmmoDebuff(c, p.specialAmmoId);
         deps.awardRangedMastery?.(p.itemKey);
@@ -674,16 +704,17 @@
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
-      p.prevX = p.x; p.prevY = p.y;
+      p.prevX = p.x; p.prevY = p.y; p.prevWorldY = p.worldY;
       const dx = p.vx * dt, dy = p.vy * dt;
-      p.x += dx; p.y += dy; p.distancePx += Math.hypot(dx, dy);
-      if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
+      p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
+      const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08; // A pitched-down shot embeds in the terrain instead of clipping through it.
+      if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
         disposeProjectile(p);
         continue;
       }
       p.mesh.position.x = p.x / deps.TILE;
       p.mesh.position.z = p.y / deps.TILE;
-      p.mesh.position.y = deps.worldSurfaceY(p.x, p.y) + 0.55;
+      p.mesh.position.y = p.worldY;
       updateProjectileVisual(p, dt);
       updateProjectileTrails(p);
     }
@@ -763,6 +794,43 @@
   function cancelBanditAction(c) { if (c) { c._rangedAction = null; c._rangedMode = false; } }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
+  // Predicts whether the currently-aimed shot (angle + pitch, exactly as
+  // startPlayerAction would fire it) would connect with a hostile, without
+  // actually simulating a projectile. Drives the HUD reticle's red state.
+  // Coarse line-of-sight sampling reuses the same wall-collision check
+  // projectiles themselves are stopped by, so the reticle won't light up
+  // red through a solid wall.
+  const WOULD_HIT_LOS_STEP_PX = 48;
+  function wouldHitHostile() {
+    const itemKey = deps?.getEquippedRangedKey?.();
+    const def = defFor(itemKey);
+    if (!def || !isLoaded(itemKey)) return false;
+    const angle = deps.getPlayerAimAngle();
+    const pitch = deps.getPlayerAimPitch?.() || 0;
+    const originX = deps.player.x, originY = deps.player.y;
+    const originWorldY = deps.worldSurfaceY(originX, originY) + 0.55;
+    const dirX = Math.cos(angle), dirY = Math.sin(angle);
+    const maxRangePx = def.rangeTiles * deps.TILE;
+    const currentArea = deps.getCurrentArea();
+    for (const c of deps.hostileObjects) {
+      if (c.health <= 0 || c.areaId !== currentArea) continue;
+      const toX = c.x - originX, toY = c.y - originY;
+      const along = toX * dirX + toY * dirY;
+      if (along <= 0 || along > maxRangePx) continue;
+      const perp = Math.hypot(toX - dirX * along, toY - dirY * along);
+      const hitRadius = def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
+      if (perp > hitRadius) continue;
+      const rayWorldY = originWorldY + Math.tan(pitch) * (along / deps.TILE);
+      if (Math.abs(rayWorldY - hostileCenterWorldY(c)) > hitRadius / deps.TILE) continue;
+      let blocked = false;
+      for (let d = WOULD_HIT_LOS_STEP_PX; d < along; d += WOULD_HIT_LOS_STEP_PX) {
+        if (!deps.canOccupyAt(originX + dirX * d, originY + dirY * d, def.projectileRadiusPx)) { blocked = true; break; }
+      }
+      if (!blocked) return true;
+    }
+    return false;
+  }
+
   function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
@@ -770,6 +838,7 @@
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    wouldHitHostile,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
@@ -784,6 +853,8 @@
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
+    get aimPitchDeg() { return THREE.MathUtils.radToDeg(deps?.getPlayerAimPitch?.() || 0); },
+    get wouldHitHostile() { return wouldHitHostile(); },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),

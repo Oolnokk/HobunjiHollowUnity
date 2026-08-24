@@ -980,9 +980,15 @@ window.FoliageGenerator = (() => {
       trunkNoise: 0.9, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
       rootsEnabled: true, rootCount: 9, rootLength: 2.2, rootRadius: 0.14,
       rootTaper: 0.78, rootSpread: 1.25, rootCurl: 0.1, rootWonk: 0.55,
-      knotEnabled: true, knotAt: 0.8, knotTiers: 5, knotTierSpacing: 0.08,
+      // Canopy branch count cut from 5 tiers x 7/tier (35 total, each its
+      // own tube mesh + leaf card) to 3 x 5 (15, a ~57% reduction) — this
+      // geometry is built once per shared variant and cloned for every
+      // placed tree (see getTreeVariants/buildTreeInstance), so the saving
+      // is real GPU vertex/triangle cost on every rendered shadewood, not
+      // just the Cloud Forest, at zero runtime cost to cut it.
+      knotEnabled: true, knotAt: 0.8, knotTiers: 3, knotTierSpacing: 0.08,
       knotTierLengthDelta: 0.75, knotTierRadiusDelta: -0.3, branchArchExtra: 0.5,
-      knotCount: 7, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
+      knotCount: 5, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
       knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
       leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
       leafAlong01: 0.88, leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
@@ -1002,6 +1008,18 @@ window.FoliageGenerator = (() => {
       vineTubeRadius: 0.06, vineTubeTaper: 0.55, vineRadialSegments: 5,
       vineNoise: 0.35, vineNoiseScale: 1.4, vineNoiseOctaves: 2,
       vineColorHex: 0x3a5f3a,
+      // Sideways mid-trunk climbing branch — see buildConiferTreeGroup's
+      // climbBranchLocal block. climbBranchAt sits well below the knot tier
+      // (knotAt 0.8) so it reads as a bare branch on open trunk, not part of
+      // the canopy. Rolled once per shared tree variant (not per instance),
+      // so climbBranchChance is the fraction of the cached tree shapes that
+      // end up with one, not a per-tree-instance probability.
+      // Rolled once per shared tree shape (see getTreeVariants/
+      // TREE_VARIANT_COUNT), not per tile — 0.5 meant a coin-flip chance
+      // that 2 or all 3 of the zone's shadewood shapes got a branch, so a
+      // large majority of every shadewood tree in the whole forest ended up
+      // climbable. Lowered so "sometimes" stays a minority of trees.
+      climbBranchChance: 0.17, climbBranchAt: 0.42, climbBranchLength: 7.5, climbBranchRadius: 0.55,
       // Calibrated (not guessed) against the tool's own "canopy influence
       // radius"/"canopy underside height" species properties — 2.75 / 6
       // world units respectively — by building this preset unscaled in a
@@ -1082,6 +1100,8 @@ window.FoliageGenerator = (() => {
     const woodGeoms = [];
     const leafGeoms = [];
     const vineGeoms = [];
+    let climbBranchLocal = null; // Populated below for presets that opt into climbBranchChance (shadewood).
+    let climbBranchGeom = null; // Kept as its OWN mesh (not merged into woodGeoms) so buildTreeInstance can show/hide it per tile instance — see the climb-branch block below.
     const unitLeaf = new T.PlaneGeometry(1, 1, 1, 1);
 
     // Trunk
@@ -1461,11 +1481,76 @@ window.FoliageGenerator = (() => {
       }
     }
 
+    // Sideways mid-trunk climbing branch (opt-in via preset.climbBranchChance
+    // — shadewood only). Distinct from the knot/canopy branches above: those
+    // attach high (knotAt ~0.8) and carry leaf cards, this is a single bare
+    // branch lower on the bark, thick and roughly horizontal, that reads as
+    // something a player or drenkirra could climb onto the same way
+    // ClimbSystem already treats plateau walls.
+    //
+    // The geometry is always built here (it needs this specific shared
+    // variant's own trunk shape to attach correctly), but climbBranchChance
+    // is NOT rolled in this function — buildTreeInstance rolls it per TILE
+    // INSTANCE instead and shows/hides this mesh accordingly. Rolling it
+    // here, per shared variant, was the original design (see
+    // TREE_VARIANT_COUNT — only 3 cached shapes total) and it's broken at
+    // any reasonably low chance: at 0.17 there's a ~57% chance NONE of the
+    // 3 variants rolls one, meaning entire sessions could have zero
+    // climbable shadewood trees anywhere on the map. Per-instance gating
+    // makes "sometimes" behave like an actual per-tree probability instead
+    // of a session-wide coin flip across 3 buckets.
+    if (preset.climbBranchChance > 0) {
+      const at = clamp01(preset.climbBranchAt ?? 0.45);
+      const f = at * (trunk.spine.pts.length - 1);
+      const i0 = Math.max(0, Math.min(trunk.spine.pts.length - 2, Math.floor(f)));
+      const alpha = f - i0;
+      const anchor = trunk.spine.pts[i0].clone().lerp(trunk.spine.pts[i0 + 1], alpha);
+      const tan = trunk.spine.tangents[i0].clone().lerp(trunk.spine.tangents[i0 + 1], alpha).normalize();
+      let right = new T.Vector3().copy(tan).cross(UP);
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      right.normalize();
+      if (rand() < 0.5) right.negate(); // Which side of the trunk the branch sticks out from.
+      const attachR = Math.max(1e-4, trunkRad * Math.pow(taper, at * RINGS));
+      const dir = right.clone().addScaledVector(tan, 0.08).addScaledVector(UP, 0.05).normalize();
+      const origin = anchor.clone().addScaledVector(right, attachR);
+      const branchLen = Math.max(1e-4, (preset.climbBranchLength ?? 7) * (0.85 + 0.3 * rand()));
+      const branchRad = Math.max(1e-4, preset.climbBranchRadius ?? 0.55);
+      const climbBranch = buildWonkyChain({
+        seedU32: seedU32 ^ 0xC1113B,
+        length: branchLen, ringSegments: Math.max(4, Math.floor(RINGS * 0.75)), radialSegments: RADIAL,
+        origin, direction: dir,
+        bend: clamp(preset.trunkBend * 0.15, 0, 2), wonk: clamp((preset.knotWonk ?? 0.5) * 0.4, 0, 2),
+        wonkScale: Math.max(0.05, preset.trunkWonkScale), twist: 0,
+        noiseAmt: clamp((preset.trunkNoise ?? 0.5) * 0.3, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale),
+        noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: 0,
+        radiusFn: (t01, ringIdx) => Math.max(1e-4, branchRad * Math.pow(0.9, ringIdx))
+      });
+      climbBranchGeom = climbBranch.geom;
+      const tip = climbBranch.spine.pts[climbBranch.spine.pts.length - 1];
+      climbBranchLocal = {
+        a: { x: origin.x, y: origin.y, z: origin.z },
+        b: { x: tip.x, y: tip.y, z: tip.z },
+        radius: branchRad,
+      };
+    }
+
     const group = new T.Group();
     if (woodGeoms.length) {
       const merged = mergeGeoms(woodGeoms);
       merged.computeVertexNormals();
       group.add(new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)));
+    }
+    if (climbBranchGeom) {
+      // Its own mesh, not merged into the wood mesh above — buildTreeInstance
+      // toggles .visible on this specific child per placed tile instance
+      // (see climbBranchLocal's comment above), which only works if it's a
+      // separate Object3D rather than baked into shared merged geometry.
+      // Added before the leaf mesh for the same "leaves must stay last"
+      // reason as the vines mesh just below.
+      climbBranchGeom.computeVertexNormals();
+      const climbBranchMesh = new T.Mesh(climbBranchGeom, hexBarkMat(preset.barkColorHex ?? 0x4a3b33));
+      climbBranchMesh.name = 'climbBranch';
+      group.add(climbBranchMesh);
     }
     if (vineGeoms.length) {
       // Added before the leaf mesh so leaves stay the LAST child — canopy
@@ -1489,6 +1574,7 @@ window.FoliageGenerator = (() => {
 
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
+    if (climbBranchLocal) group.userData.climbBranchLocal = climbBranchLocal;
     return group;
   }
 
@@ -1544,7 +1630,7 @@ window.FoliageGenerator = (() => {
     return variants;
   }
 
-  function buildTreeInstance(presetKey, preset, seedU32) {
+  function buildTreeInstance(presetKey, preset, seedU32, opts) {
     const variants = getTreeVariants(presetKey, preset);
     const rand = mulberry32(seedU32);
     const variantIndex = Math.floor(rand() * variants.length) % variants.length;
@@ -1558,13 +1644,64 @@ window.FoliageGenerator = (() => {
     inst.rotation.y = instYaw;
     inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
+    // climbBranchChance is rolled HERE, per tile instance, not per shared
+    // variant — every variant's geometry always includes a climb-branch
+    // mesh (see buildConiferTreeGroup), so this is purely a per-instance
+    // visibility/registration decision. Rolling it per variant instead (the
+    // original design) meant the outcome was fixed for an entire session
+    // across only TREE_VARIANT_COUNT (3) buckets — see the comment on that
+    // block for the failure mode this replaced.
+    if (variant.userData.climbBranchLocal) {
+      // inst.clone() already copied climbBranchLocal onto inst.userData
+      // (it was on the shared variant's own userData) — a failed roll has
+      // to explicitly delete it back off, not just skip setting it, or
+      // every instance would register a climb branch regardless of the
+      // roll (only the mesh's own visibility would differ).
+      const keep = opts?.forceClimbBranch || rand() < (preset.climbBranchChance ?? 0);
+      if (!keep) {
+        delete inst.userData.climbBranchLocal;
+        const branchMesh = inst.getObjectByName?.('climbBranch');
+        if (branchMesh) branchMesh.visible = false;
+      } else {
+        // Tags the branch mesh itself (not just the group) with where it
+        // is, in local pre-instance-transform space (a/b endpoints, radius)
+        // — this is what the tree GLB exporter tool reads to mark the node
+        // as a recognizable climb branch in the exported asset's extras
+        // (glTF exporters serialize mesh.userData as node "extras").
+        const branchMesh = inst.getObjectByName?.('climbBranch');
+        if (branchMesh) {
+          branchMesh.userData = { ...(branchMesh.userData || {}), isClimbBranch: true, climbBranchLocal: variant.userData.climbBranchLocal };
+        }
+      }
+    }
     return inst;
+  }
+
+  // Converts a placed tree instance's cached local-space climb-branch
+  // endpoints (see buildConiferTreeGroup's climbBranchLocal block) into
+  // world space, using the instance's own position/rotation.y/uniform scale
+  // — the only transforms buildTreeInstance/its caller ever apply. Called by
+  // game.js once a shadewood instance has been positioned, to register the
+  // branch (if this instance has one) with ClimbSystem. Returns null when
+  // this instance's tree shape rolled no climbable branch.
+  function getClimbBranchWorld(inst) {
+    const local = inst.userData?.climbBranchLocal;
+    if (!local) return null;
+    const yaw = inst.rotation.y, scale = inst.scale.x;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const toWorld = (p) => ({
+      x: inst.position.x + (p.x * cos + p.z * sin) * scale,
+      y: inst.position.y + p.y * scale,
+      z: inst.position.z + (-p.x * sin + p.z * cos) * scale,
+    });
+    return { a: toWorld(local.a), b: toWorld(local.b), radius: local.radius * scale };
   }
 
   function degToRad(d) { return d * Math.PI / 180; }
 
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
+    getClimbBranchWorld,
     buildNeedlegrainMesh(growth01, col, row) {
       const seedU32 = xfnv1a(`ng_${col}_${row}`);
       return buildNeedlegrainGroup(growth01, seedU32);
@@ -1593,9 +1730,13 @@ window.FoliageGenerator = (() => {
       const seedU32 = xfnv1a(`cp_${col}_${row}`);
       return buildTreeInstance('crownedPine', TREE_PRESETS.crownedPine, seedU32);
     },
-    buildShadewoodMesh(col, row) {
+    // opts.forceClimbBranch bypasses climbBranchChance's per-instance roll
+    // and always shows/registers the climb branch — used by the tree GLB
+    // exporter tool so an exported reference asset deterministically
+    // includes it instead of a ~1-in-6 chance per export.
+    buildShadewoodMesh(col, row, opts) {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
-      return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32);
+      return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32, opts);
     },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);

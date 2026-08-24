@@ -551,9 +551,19 @@
     _banditZoneEntryPending.delete(zoneId);
   }
 
+  // Perf-testing toggle (Settings → Dev Tools) — see the settingBanditCamps
+  // listener in game.js. Gates only new spawns/re-rolls; a camp already
+  // stamped into a zone before the toggle was switched off is left standing
+  // (unstamping it mid-visit would mean bulldozing its tents and restoring
+  // the gang's occupied tiles out from under a player who might be near or
+  // fighting it), matching how the Cloud Forest toggles apply going forward
+  // rather than retroactively.
+  let campsEnabled = true;
+
   // Called alongside ensureCurrentZoneDenPacks on the shared zone-tick (see
   // updateHostileSpawning).
   function ensureCurrentZoneBanditCamps() {
+    if (!campsEnabled) return;
     const zoneId = deps.getCurrentArea();
     if (!deps.isZoneArea(zoneId) || zoneId === deps.DEV_ARENA_ZONE_ID) return;
     if (!window.TemporaryLocales) return;
@@ -794,5 +804,7 @@
     interruptTentHold: () => { _banditTentHoldT = 0; },
     get campInstances() { return _banditCampInstances; },
     get perceivedThreats() { return _perceivedThreats; },
+    get campsEnabled() { return campsEnabled; },
+    set campsEnabled(v) { campsEnabled = !!v; },
   };
 })();

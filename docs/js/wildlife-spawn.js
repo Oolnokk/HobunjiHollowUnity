@@ -217,6 +217,13 @@
     for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
     for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
     for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+    // Terrain regen also reshuffles which tiles have a shadewood tree with a
+    // climbable branch — old nest-tree bookkeeping keyed by col,row would
+    // otherwise wrongly apply to whatever unrelated tree ends up there now.
+    for (const key of nestTreeEverSpawned) if (key.startsWith(prefix)) nestTreeEverSpawned.delete(key);
+    for (const key of pendingNestTreeRespawn) if (key.startsWith(prefix)) pendingNestTreeRespawn.delete(key);
+    for (const key of [...nestTreeLastKnownAlive.keys()]) if (key.startsWith(prefix)) nestTreeLastKnownAlive.delete(key);
+    _nestTreeSelectionCache.delete(zoneId);
     // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
     // generation, so a fresh Tothal Shift very likely reuses an old
     // den's exact id — without this, that den's cavern would keep
@@ -350,6 +357,144 @@
     }
   }
 
+  // Drenkirra nest trees: drenkirra no longer den underground (see
+  // EXTERIOR_ZONES.map_southern_cloud_forest's now-empty herbivoreSpecies
+  // pool) — instead a ground pack gathers at the base of a shadewood tree
+  // that rolled a climbable branch (see climb-system.js's branch registry,
+  // populated by game.js as each tree instance is placed), with the
+  // Nestmother stationed directly on the branch itself. Mirrors
+  // ensureCurrentZoneDenPacks' wipe/respawn-next-day bookkeeping, keyed by
+  // tree tile instead of den id since there's no den anchor here.
+  const nestTreeEverSpawned = new Set();
+  const pendingNestTreeRespawn = new Set();
+  const nestTreeLastKnownAlive = new Map();
+  const NEST_TREE_ZONE_ID = 'map_southern_cloud_forest';
+  // A HARD CAP on how many nest trees a zone can ever have, not a fraction
+  // of however many climbable branches happen to exist — a dense shadewood
+  // forest can easily carry hundreds of registered branches (see
+  // foliage-generator.js's climbBranchChance, rolled per shared tree shape,
+  // so it's common for most trees in the zone to have one), and spawning a
+  // full pack + Nestmother at every one of them independently blew up
+  // hostileObjects into the hundreds the moment the zone loaded — the cause
+  // of the severe slowdown entering this zone. Capped to roughly the same
+  // scale a zone's normal den count already runs at.
+  const NEST_TREE_MAX_PER_ZONE = 5;
+  const NEST_PACK_SIZE_MIN = 2;
+  const NEST_PACK_SIZE_MAX = 4;
+  const _nestTreeSelectionCache = new Map(); // zoneId -> capped branch[], computed once (deterministic, so recomputing would pick the same trees anyway).
+
+  function nestTreeKeyFor(zoneId, branch) { return `${zoneId}:nesttree:${branch.col},${branch.row}`; }
+
+  function isNestTreeAlive(key) {
+    for (const c of deps.hostileObjects) if (c.nestTreeKey === key && c.health > 0) return true;
+    return false;
+  }
+
+  // Deterministic per-tree score (not the general mutable RNG stream) so
+  // the same handful of trees hosts a nest across a session/save rather
+  // than reshuffling whenever this check happens to run — sorted and
+  // capped to NEST_TREE_MAX_PER_ZONE regardless of how many climbable
+  // branches this zone actually has registered.
+  function eligibleNestBranches(zoneId) {
+    const cached = _nestTreeSelectionCache.get(zoneId);
+    if (cached) return cached;
+    const branches = window.ClimbSystem?.debugBranchesFor?.(zoneId) || [];
+    const scored = branches.map(b => {
+      const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${b.col}_${b.row}`);
+      return { b, score: rng ? rng() : deps.rnd() };
+    });
+    scored.sort((x, y) => x.score - y.score);
+    const selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE).map(s => s.b);
+    _nestTreeSelectionCache.set(zoneId, selected);
+    return selected;
+  }
+
+  function spawnNestAtBranch(zoneId, branch, key) {
+    const motherKey = deps.DEN_MOTHER_DEFS?.drenkirra?.creatureKey;
+    const motherDef = motherKey ? deps.CREATURE_DB[motherKey] : null;
+    if (!motherDef) {
+      window.__farmLog?.(`[wildlife] ${key}: no drenkirra Nestmother configured (DEN_MOTHER_DEFS.drenkirra missing) — nest tree left empty.`, 'warn');
+      return;
+    }
+    const midX = (branch.baseX + branch.tipX) / 2, midY = (branch.baseY + branch.tipY) / 2;
+    const midWorldY = (branch.baseWorldY + branch.tipWorldY) / 2;
+    const midT = 0.5;
+
+    // Nestmother — stationed directly on the branch (skips the scripted
+    // climb animation; she's simply placed there), ready to fire her
+    // caustic pellet down at anyone approaching the tree. onBranch/branchT
+    // plug her into the same 1D-movement/fall-to-ground-knockback rules a
+    // climbed-up player gets (see climb-system.js/game.js's applyKnockback).
+    const mother = deps.makeCreatureEntity(motherKey, midX, midY, {
+      homeX: midX, homeY: midY, state: 'idle', isDenMother: true, nestTreeKey: key,
+    });
+    if (!mother) {
+      window.__farmLog?.(`[wildlife] ${key}: makeCreatureEntity("${motherKey}") returned null — nest tree left empty.`, 'wildlife');
+      return;
+    }
+    // updateCreatureMesh reads onBranch/branchSurfaceY every frame (mirrors
+    // the player's climbSurfaceY/branchSurfaceY override) to place her at
+    // the branch's height instead of terrain-follow.
+    mother.onBranch = branch;
+    mother.branchT = midT;
+    mother.branchSurfaceY = midWorldY;
+    deps.hostileObjects.add(mother);
+
+    // Ground pack — same size range as a den's exterior pack, scattered
+    // around the tree's base instead of a den footprint's center.
+    const zoneData = deps.zoneLayouts.get(zoneId);
+    const count = NEST_PACK_SIZE_MIN + Math.floor(deps.rnd() * (NEST_PACK_SIZE_MAX - NEST_PACK_SIZE_MIN + 1));
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      const angle = deps.rnd() * Math.PI * 2;
+      const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
+      const x = branch.baseX + Math.cos(angle) * dist, y = branch.baseY + Math.sin(angle) * dist;
+      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key };
+      assignWildlifeStation(opts, zoneData, branch.baseX, branch.baseY, true);
+      const creature = deps.makeCreatureEntity('drenkirra', x, y, opts);
+      if (creature) { deps.hostileObjects.add(creature); spawned++; }
+    }
+
+    // Branch-nest furniture, centered where the Nestmother sits.
+    const zi = deps.zoneScenes?.get(zoneId);
+    if (zi?.scene && window.ProceduralFurniture) {
+      const col = midX / deps.TILE - 0.5, row = midY / deps.TILE - 0.5;
+      const rotYDeg = Math.atan2(branch.tipY - branch.baseY, branch.tipX - branch.baseX) * 180 / Math.PI;
+      const result = deps.makeDecorativeFurnitureMesh?.(col, row, 'nestBranch', zi.scene, zoneId, rotYDeg);
+      if (result) result.mesh.position.y += midWorldY;
+    }
+
+    if (zoneId === deps.getCurrentArea()) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
+  }
+
+  function ensureCurrentZoneNestTrees() {
+    const currentArea = deps.getCurrentArea();
+    if (currentArea !== NEST_TREE_ZONE_ID) return;
+    for (const branch of eligibleNestBranches(currentArea)) {
+      const key = nestTreeKeyFor(currentArea, branch);
+      const alive = isNestTreeAlive(key);
+
+      if (alive) { nestTreeLastKnownAlive.set(key, true); continue; }
+
+      if (!nestTreeEverSpawned.has(key)) {
+        nestTreeEverSpawned.add(key);
+        nestTreeLastKnownAlive.set(key, false);
+        spawnNestAtBranch(currentArea, branch, key);
+        continue;
+      }
+
+      if (nestTreeLastKnownAlive.get(key) !== false) {
+        nestTreeLastKnownAlive.set(key, false);
+        pendingNestTreeRespawn.add(key);
+        continue;
+      }
+
+      if (pendingNestTreeRespawn.has(key)) continue; // still waiting for the next day
+
+      spawnNestAtBranch(currentArea, branch, key);
+    }
+  }
+
   function updateHostileSpawning(dt) {
     // Ambient wildlife spawning has no business intruding on an
     // authored cutscene once this scene finally lives on a real
@@ -363,6 +508,7 @@
     denCheckTimer = DEN_CHECK_INTERVAL_S;
     if (!deps.buildZoneScene(currentArea)) return;
     ensureCurrentZoneDenPacks();
+    ensureCurrentZoneNestTrees();
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
@@ -393,6 +539,10 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
-    clearPendingDenRespawn: () => pendingDenRespawn.clear(),
+    // Also clears pendingNestTreeRespawn — a wiped nest tree waits for the
+    // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
+    // so it rides the same day-advance call sites as den respawn instead of
+    // needing its own.
+    clearPendingDenRespawn: () => { pendingDenRespawn.clear(); pendingNestTreeRespawn.clear(); },
   };
 })();

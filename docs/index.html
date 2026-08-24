@@ -1241,6 +1241,125 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingWeed3D"><span class="toggle-slider"></span></span>
           </label>
+          <div class="settings-section-title" style="margin-top:10px">Cloud Forest (perf testing)</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Mist</div>
+              <div class="settings-desc">Player-centered fog cylinders shown only in the Southern Cloud Forest</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestFog" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Wide Vegetation Cull</div>
+              <div class="settings-desc">Off: falls back to the normal camera-forward cull box every other zone uses. On: a circle around the player, sized by the radius slider below</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestWideCull" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Cull Radius</div>
+              <div class="settings-desc">How far (in tiles) around the player vegetation stays loaded while Wide Vegetation Cull is on</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestCullRadius" min="5" max="40" step="1" value="15" style="align-self:center">
+              <span id="settingCloudForestCullRadiusValue" class="settings-slider-value">15</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Fade-In Start</div>
+              <div class="settings-desc">Percent of Tree Cull Radius where a tree reaches full opacity — beyond that (out to the radius) it fades toward transparent instead of popping in solid</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFadeStart" min="0" max="100" step="1" value="70" style="align-self:center">
+              <span id="settingCloudForestFadeStartValue" class="settings-slider-value">70%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Outline Radius</div>
+              <div class="settings-desc">Percent of Tree Cull Radius within which a tree's dark shell outline is drawn — farther out than this the outline is skipped even though the tree itself is visible (the outline pass is the more expensive of the two)</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestOutlineRadius" min="0" max="100" step="1" value="40" style="align-self:center">
+              <span id="settingCloudForestOutlineRadiusValue" class="settings-slider-value">40%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Inner Layer Radius</div>
+              <div class="settings-desc">Closest, densest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogInnerRadius" min="0.5" max="15" step="0.1" value="2.2" style="align-self:center">
+              <span id="settingCloudForestFogInnerRadiusValue" class="settings-slider-value">2.2</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Inner Layer Opacity</div>
+              <div class="settings-desc">Closest, densest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogInnerOpacity" min="0" max="1" step="0.01" value="0.14" style="align-self:center">
+              <span id="settingCloudForestFogInnerOpacityValue" class="settings-slider-value">0.14</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Middle Layer Radius</div>
+              <div class="settings-desc">Middle mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogMiddleRadius" min="0.5" max="20" step="0.1" value="3.7" style="align-self:center">
+              <span id="settingCloudForestFogMiddleRadiusValue" class="settings-slider-value">3.7</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Middle Layer Opacity</div>
+              <div class="settings-desc">Middle mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogMiddleOpacity" min="0" max="1" step="0.01" value="0.26" style="align-self:center">
+              <span id="settingCloudForestFogMiddleOpacityValue" class="settings-slider-value">0.26</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Outer Layer Radius</div>
+              <div class="settings-desc">Farthest, faintest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogOuterRadius" min="1" max="40" step="0.5" value="15" style="align-self:center">
+              <span id="settingCloudForestFogOuterRadiusValue" class="settings-slider-value">15</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Outer Layer Opacity</div>
+              <div class="settings-desc">Farthest, faintest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogOuterOpacity" min="0" max="1" step="0.01" value="0.46" style="align-self:center">
+              <span id="settingCloudForestFogOuterOpacityValue" class="settings-slider-value">0.46</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Background Forest</div>
+              <div class="settings-desc">Dense instanced tree wall along the north town-entrance edge</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestBgForest" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Bandit Camps</div>
+              <div class="settings-desc">Spawn bandit camps (tents, campfires, gangs) in wilderness zones — applies to zones you haven't entered yet, not camps already standing</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingBanditCamps" checked><span class="toggle-slider"></span></span>
+          </label>
           <div class="settings-section-title" style="margin-top:10px">Camera</div>
           <label class="settings-row">
             <div class="settings-label">

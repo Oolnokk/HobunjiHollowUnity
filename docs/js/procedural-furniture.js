@@ -335,6 +335,22 @@
     disc(0, .37, 0, .46, .03, .46, 1.3, { segments: 16 }),
   ];
 
+  // Drenkirra nest — the bucket recipe's exact tapered-cylinder-body +
+  // rim-disc shape, just halved in height and rendered in a yellow "woven"
+  // tint (see DECORATIVE_FURNITURE_DEFS.nestBranch/nest's color) instead of
+  // the bucket's tin gray. diameter is the caller's own knob rather than a
+  // fixed size, since a 1x1 branch nest and a 2x2 den nest need different
+  // footprints out of the same recipe.
+  function nestRecipe(diameter) {
+    const bodyH = .19; // Half of bucket's .38 body height.
+    return [
+      cyl(0, bodyH / 2, 0, diameter, bodyH, diameter, 1, { topScaleX: 1.08, topScaleZ: 1.08, bottomScaleX: .85, bottomScaleZ: .85, segments: 16 }),
+      disc(0, bodyH * 0.97, 0, diameter + .04, .03, diameter + .04, 1.3, { segments: 16 }),
+    ];
+  }
+  CATALOG.nestBranch = nestRecipe(.84); // 1x1 tile footprint, same scale as the bucket.
+  CATALOG.nest = nestRecipe(1.7); // 2x2 tile footprint — matches the den nest marker's existing w:2,h:2 size.
+
   CATALOG.candleTable = [
     box(0, .42, 0, .6, .08, .6, 1.05, { topScaleX: .96, topScaleZ: .96 }),
     leg(-.22, -.22, .38, .07, .8), leg(.22, -.22, .38, .07, .8),

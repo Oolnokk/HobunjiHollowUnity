@@ -71,7 +71,7 @@
     },
     {
       "id": "drenkirra-den-mother",
-      "label": "Drenkirra Den-Mother",
+      "label": "Drenkirra Nestmother",
       "hostile": true,
       "diet": "herbivore",
       "aggroRangeTiles": 5.5,
