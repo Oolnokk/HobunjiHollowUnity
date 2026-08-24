@@ -95,6 +95,7 @@
       if (thicknessUniform && Number.isFinite(previousThickness)) {
         state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
         thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+        material.uniformsNeedUpdate = true; // Shared ShaderMaterial is reused across meshes; force this per-limb value onto the GPU for this draw.
       } else {
         state.thicknessRestoreStack.push(null);
       }
@@ -126,7 +127,12 @@
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
       const thicknessRestore = state.thicknessRestoreStack.pop();
-      if (thicknessRestore) thicknessRestore.uniform.value = thicknessRestore.value;
+      if (thicknessRestore) {
+        thicknessRestore.uniform.value = thicknessRestore.value;
+        const scene = args[1];
+        const material = args[4];
+        if (material?.isShaderMaterial) material.uniformsNeedUpdate = true; // Ensure the restored global thickness is uploaded before the next non-limb shell draw.
+      }
     };
 
     mesh.userData.__hobunjiFeetOutlineParity = true;

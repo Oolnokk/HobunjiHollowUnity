@@ -344,7 +344,7 @@
   function buildFallbackHand(THREE, size, color, side, sourceIsLeft, speciesId, bodyColors) {
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
-    const bodyTexture = handBodySurfaceTexture(THREE, speciesId, bodyColors); // Keeps generated fallback hands visually consistent with GLB body-hand surfaces.
+    const bodyTexture = handSurfaceTexture(THREE, 'body', speciesId, bodyColors); // Generated fallback hands use the same canvas.png body surface as GLB hands.
     const materialName = `${normalizeKey(speciesId) || 'avatar'}_hand_body`;
     const spritePngSurface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
     const material = spritePngSurface?.makeMaterial
@@ -364,7 +364,7 @@
         });
     material.name = materialName;
     material.userData.hobunjiHandRole = 'body';
-    material.userData.hobunjiHandSurfaceTexture = 'wavy_surface.png';
+    material.userData.hobunjiHandSurfaceTexture = 'canvas.png';
     const mesh = new THREE.Mesh(geometry, material);
     const sign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1);
     mesh.scale.x = sign;
