@@ -8047,7 +8047,7 @@
         // toggle if it's already been switched off this session, so
         // (re)entering the zone doesn't silently re-enable the mist the
         // player just turned off.
-        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0.018 : (zdef?.fogDensity ?? 0.018);
+        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
         zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
@@ -16450,6 +16450,8 @@
         }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
+          // Used below to cull grass without running tree fade/outline bookkeeping.
+          const isGrassChunk = obj.userData.isWildernessGrassChunk === true;
           const sticky = obj.visible ? hysteresis : 0;
           const expandedRadius = s.radius + sticky;
           let show;
@@ -16463,7 +16465,8 @@
             // actual load-in distance (e.g. "5" behaving nothing like 5
             // tiles). The distance fade (see below) already softens any
             // mid-canopy pop/clip this used to guard against.
-            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky;
+            const chunkOverlap = isGrassChunk ? (s.xzRadius ?? s.radius) : 0;
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky + chunkOverlap;
           } else {
             const dx = s.x - camX, dz = s.z - camZ;
             const along = dx * viewX + dz * viewZ;
@@ -16472,6 +16475,7 @@
               && side <= halfWidth + expandedRadius;
           }
           if (force || show !== obj.visible) obj.visible = show;
+          if (isGrassChunk) continue;
 
           if (show) {
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
@@ -19460,15 +19464,17 @@
       const _grassBillVert = `
         uniform float uTime;
         uniform float uStrength;
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            uniform float fogDensity;
+          #else
+            uniform float fogNear;
+            uniform float fogFar;
+          #endif
+          varying float vGrassFogFactor;
+        #endif
         varying vec2 vUv;
         varying float vRandom;
-        // See shellOutlineMat's own vFogDepth comment — same by-hand fog
-        // depth instead of the built-in fog_vertex chunk (which expects a
-        // view-space variable literally named mvPosition). Computed
-        // unconditionally (cheap, one varying) so this one vertex shader
-        // keeps serving both grassBillboardMat (fog: true) and
-        // cuttableBillboardGlowMat (no fog) without needing two copies.
-        varying float vFogDepth;
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -19488,7 +19494,16 @@
           worldPos.x += sway;
           worldPos.z += sway2;
           vec4 mvPosition = viewMatrix * worldPos;
-          vFogDepth = -mvPosition.z;
+          #ifdef USE_FOG
+            // Evaluate fog four times per blade plane and interpolate it, rather
+            // than running exp() for every overlapping grass fragment.
+            float fogDepth = -mvPosition.z;
+            #ifdef FOG_EXP2
+              vGrassFogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDepth * fogDepth);
+            #else
+              vGrassFogFactor = smoothstep(fogNear, fogFar, fogDepth);
+            #endif
+          #endif
           gl_Position = projectionMatrix * mvPosition;
         }
       `;
@@ -19498,15 +19513,11 @@
         uniform vec3 uTint;
         uniform float uDensity;
         uniform vec3 fogColor;
-        #ifdef FOG_EXP2
-          uniform float fogDensity;
-        #else
-          uniform float fogNear;
-          uniform float fogFar;
+        #ifdef USE_FOG
+          varying float vGrassFogFactor;
         #endif
         varying vec2 vUv;
         varying float vRandom;
-        varying float vFogDepth;
         void main() {
           if (vRandom > uDensity) discard;
           vec4 texel = texture2D(uGrassTex, vUv);
@@ -19522,12 +19533,7 @@
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
           #ifdef USE_FOG
-            #ifdef FOG_EXP2
-              float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
-            #else
-              float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-            #endif
-            col = mix(col, fogColor, fogFactor);
+            col = mix(col, fogColor, vGrassFogFactor);
           #endif
           gl_FragColor = vec4(col, texel.a);
         }
@@ -20553,6 +20559,16 @@
         if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
+        // Existing zone grass groups use this switch for truthful mobile-side perf testing.
+        for (const grassGroup of _zoneGrassMeshes.values()) {
+          if (grassGroup) grassGroup.visible = s_grass;
+        }
+        // Rich foliage is stored separately, so sync its top-level group too.
+        for (const zoneInfo of _zoneScenes.values()) {
+          for (const object of (zoneInfo.scene?.children || [])) {
+            if (object.userData?.isRichFoliageBillboard) object.visible = s_grass;
+          }
+        }
         window.BorderTerrain.setGrassVisible(s_grass);
       }
       document.getElementById('settingGrass').addEventListener('change', e => applyGrassVisible(e.target.checked));
@@ -20577,11 +20593,11 @@
         // 0.018 — see EXTERIOR_ZONES.map_southern_cloud_forest's fogDensity
         // comment) is a second, independent haze source the toggle used to
         // leave untouched, so turning it off didn't visibly remove the mist.
-        // Drop it to the normal baseline off, restore it on, live if the
-        // zone's already built this session.
+        // Set it to zero when off so the checkbox removes every mist source,
+        // then restore the authored density when on, live if the zone exists.
         const zi = _zoneScenes.get('map_southern_cloud_forest');
         if (zi?.scene?.fog) {
-          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0.018;
+          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0;
         }
       });
       document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
