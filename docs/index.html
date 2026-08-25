@@ -125,6 +125,8 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -267,7 +269,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260825hitbox2"></script>
+  <script src="js/debug-hitboxes.js?v=20260825hitbox3"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -1977,7 +1979,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks6"></script>
+  <script src="game.js?v=20260825chunks8"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
