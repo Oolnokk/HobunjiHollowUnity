@@ -279,7 +279,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260816a"></script>
+  <script src="js/climb-system.js?v=20260825chunks1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -459,7 +459,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20260809c"></script>
+  <script src="js/zone-terrain-features.js?v=20260825chunks1"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -473,7 +473,11 @@
        window.ZoneGrassBillboards.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene and
        refreshZoneGroundVisuals, never synchronously during initial boot. -->
-  <script src="js/zone-grass-billboards.js?v=20260807a"></script>
+  <script src="js/zone-grass-billboards.js?v=20260825chunks1"></script>
+  <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
+       terrain/vegetation chunks while the Tothal generator remains owner of
+       each zone's deterministic complete tile blueprint. -->
+  <script src="js/wilderness-chunks.js?v=20260825chunks1"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -1581,10 +1585,12 @@
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
             <span style="font-size:12px;color:#9ca3af">Wild pack genotypes — every den seen this session</span>
             <div style="display:flex;gap:6px">
+              <button id="wildernessChunkDebugBtn" style="font-size:11px;padding:3px 10px;background:rgba(70,229,139,.14);border:1px solid rgba(70,229,139,.4);border-radius:6px;color:#8df2b5;cursor:pointer">Show Chunk Grid</button>
               <button id="wildlifeShiftBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Force Tothal Shift</button>
               <button id="wildlifeRefreshBtn" style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">Refresh</button>
             </div>
           </div>
+          <pre id="wildernessChunkStatus" style="margin:4px 12px;padding:6px 8px;max-height:84px;overflow:auto;background:rgba(0,0,0,.28);border:1px solid rgba(70,229,139,.2);border-radius:5px;color:#b8f5cf;font:10px/1.35 ui-monospace,monospace;white-space:pre-wrap">Wilderness chunks have not initialized yet.</pre>
           <div id="wildlifeDenList" style="flex:1;overflow-y:auto;padding:6px 12px 12px;font-size:12px;color:#d1d5db"></div>
         </div>
       </div><!-- /mpWildlife -->
@@ -1961,7 +1967,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260821alchemy6"></script>
+  <script src="game.js?v=20260825chunks1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
