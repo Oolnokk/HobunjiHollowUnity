@@ -19,6 +19,13 @@
   // movement code.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
+
+  // World interaction uses the centered reticle in every exterior camera mode;
+  // ranged projectile aim remains on getPlayerAimRay, while climb/nest focus
+  // can still work with a melee weapon or empty hands equipped.
+  function getInteractionRay() {
+    return deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.() || null;
+  }
   const climbSafetyDebug = {
     lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0,
     lastFocusType: null, lastFocusId: null, lastFocusPoint: null,
@@ -114,7 +121,7 @@
     const player = deps.player;
     const proximityPx = deps.TILE * BRANCH_CLIMB_PROXIMITY_TILES;
     const nearby = branches.filter(branch => Math.hypot(branch.baseX - player.x, branch.baseY - player.y) <= proximityPx);
-    const hasAimRay = !!deps.getPlayerAimRay?.();
+    const hasAimRay = !!getInteractionRay();
     if (hasAimRay && window.RangedWeapons?.focusCandidates) {
       const focus = focusedWorldCandidate(nearby.map(branch => ({
         type: 'branch', id: branch.id || (branch.col + ',' + branch.row), data: branch, box: branchTrunkBox(branch),
@@ -161,7 +168,7 @@
     const nest = branch?.nest;
     if (!nest || nest.remaining <= 0 || nest.areaId !== deps.getCurrentArea()) return null;
     if (Math.hypot(player.x - nest.x, player.y - nest.y) > deps.TILE * 1.6) return null;
-    if (deps.getPlayerAimRay?.() && window.RangedWeapons?.focusCandidates) {
+    if (getInteractionRay() && window.RangedWeapons?.focusCandidates) {
       const focus = focusedWorldCandidate([{ type: 'nest', id: nest.id, data: nest, box: branchNestBox(branch, nest) }]);
       recordClimbFocusDebug(focus, 'nest');
       return focus?.candidate?.data || null;
@@ -173,7 +180,7 @@
   }
 
   function currentLook2D() {
-    const direction = deps.getPlayerAimRay?.()?.direction;
+    const direction = getInteractionRay()?.direction;
     const len = Math.hypot(Number(direction?.x) || 0, Number(direction?.z) || 0);
     return len > 0.001
       ? { x: direction.x / len, y: direction.z / len }
@@ -192,7 +199,7 @@
       const branch = player.onBranch;
       // An enemy under the same centered ray keeps Action 1 in combat; jump
       // down only claims it when no hostile body volume is in front.
-      const hostileFocus = deps.getPlayerAimRay?.() ? window.RangedWeapons?.focusedHostile?.(24) : null;
+      const hostileFocus = getInteractionRay() ? window.RangedWeapons?.focusedHostile?.(24) : null;
       if (hostileFocus) {
         climbSafetyDebug.lastFocusType = 'hostile';
         climbSafetyDebug.lastFocusId = hostileFocus.candidate?.id || null;
