@@ -134,9 +134,18 @@
     state.rangePx = c.def.attackRangePx;
     state.halfConeRad = c.def.attackHalfConeRad;
     state.damage = c.def.attackDamage;
+    state.lungeProfile = window.Combat?.meleeLungeProfile?.(
+      state.rangePx,
+      state.aimPitch,
+      0,
+      c.def.lungeHeightUnits ?? 1,
+    ) || { distancePx: state.rangePx, hopUnits: 0, pitch: state.aimPitch };
+    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx);
+    state.traveledPx = 0;
     state.collideRadiusPx = deps.TILE * 0.32;
     c.facing = state.angle;
     c.scaleY = 1;
+    c._banditLungeHopCurrent = 0; // Shared creature renderer slot for the pounce's vertical arc.
   }
 
   function pounceUpdate(c, state, dt, deps) {
@@ -170,12 +179,17 @@
 
     // stage === 'leap'
     const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const stepPx = POUNCE_LEAP_SPEED_PX_S * dt;
+    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
+    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
+    const stepPx = Math.min(POUNCE_LEAP_SPEED_PX_S * dt, remainingPx);
     const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false; // collided; stop in place
+    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; } // collided; stop in place
 
     c.x = nx;
     c.y = ny;
+    state.traveledPx += stepPx;
+    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
+    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
     deps.tickCreatureFootsteps?.(c, stepPx);
 
     const dmgTag = c.def.attackTag || 'sharp';
@@ -204,6 +218,7 @@
 
   function pounceCancel(c) {
     c.scaleY = 1;
+    c._banditLungeHopCurrent = 0;
   }
 
   register('pounce', {
