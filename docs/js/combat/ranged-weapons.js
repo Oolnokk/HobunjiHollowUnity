@@ -18,6 +18,8 @@
   const SPECIAL_AMMO_LOOT_CHANCE = 0.72; // High per-corpse chance requested for creatures and bandits.
   const SHRAPNEL_DURATION_MS = 5000; // Movement-powered Shrapnel debuff lifetime.
   const DISORIENT_DURATION_MS = 3000; // Concussive reversed-movement debuff lifetime.
+  const HITBOX_MIN_DEPTH_TILES = 0.18; // Prevents very narrow portrait data from collapsing the actor's 3D target volume.
+  const AIM_EPSILON = 1e-6; // Shared tolerance for normalized shot rays and slab intersection math.
 
   const BASIC_AMMO_EFFECTS = Object.freeze([
     { id: 'bleedingHealth', label: 'Bleeding Health', desc: 'Each bolt applies a small amount of Bleeding Health.', afflictionId: 'bleedingHealth' },
@@ -104,7 +106,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     ensureAmmoState();
-    deps.debugLog?.('Ranged update: mastery loadouts, basic/special ammo arch, Shrapnel/Concussive debuffs, corpse ammo loot, zero default ranged Footing, and corrected editor sprite basis.');
+    deps.debugLog?.('Ranged update: portrait-scaled 3D actor hitboxes now share one screen-reticle shot line with live projectile collision.');
   }
 
   function gear() { return deps?.getGearInventory?.() || null; }
@@ -382,8 +384,9 @@
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
-      const angle = deps.getPlayerAimAngle();
-      const pitch = deps.getPlayerAimPitch?.() || 0;
+      const aim = playerAimSolution(action.itemKey); // Re-resolved at release so the projectile follows the reticle's current screen-center ray, not the windup's stale ground aim.
+      const angle = aim?.angle ?? deps.getPlayerAimAngle();
+      const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey); // Resolved once so a scatter volley consumes one resource and every pellet shares its selected ammo.
       spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch);
       consumeSpecialAmmo(ammoPayload);
@@ -566,30 +569,197 @@
     return made;
   }
 
-  function pointSegmentDistanceSq(px, py, ax, ay, bx, by) {
-    const dx = bx - ax, dy = by - ay;
-    const l2 = dx * dx + dy * dy;
-    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-    const qx = ax + dx * t, qy = ay + dy * t;
-    return (px - qx) ** 2 + (py - qy) ** 2;
+  function avatarNodeForActor(actor) {
+    if (!actor) return null;
+    if (actor === deps.player) return deps.getPlayerAvatarGroup?.() || null;
+    if (actor.avatarGroup?.isObject3D) return actor.avatarGroup;
+    if (actor.avatarRef?.group?.isObject3D) return actor.avatarRef.group;
+    let found = null;
+    actor.root?.traverse?.(child => {
+      if (!found && Number.isFinite(child.userData?.portraitModelHeight)) found = child;
+    });
+    return found;
   }
 
-  // Same closest-approach test but also returns the interpolation fraction
-  // along the segment, so a caller can sample the projectile's worldY at
-  // that same point for a vertical-aim hit check.
-  function pointSegmentDistanceSqT(px, py, ax, ay, bx, by) {
-    const dx = bx - ax, dy = by - ay;
-    const l2 = dx * dx + dy * dy;
-    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-    const qx = ax + dx * t, qy = ay + dy * t;
-    return { distSq: (px - qx) ** 2 + (py - qy) ** 2, t };
+  function positiveNumber(...values) {
+    for (const value of values) {
+      const number = Number(value);
+      if (Number.isFinite(number) && number > 0) return number;
+    }
+    return null;
   }
 
-  // Best-effort center height for a hostile: its actual rendered avatar
-  // height when available (accounts for elevated terrain/size class), else
-  // an approximate torso height above its ground tile.
-  function hostileCenterWorldY(c) {
-    return c.avatarRef?.group?.position?.y ?? (deps.worldSurfaceY(c.x, c.y) + 0.4);
+  // Produces an upright THREE.Box3 in world coordinates from the portrait's
+  // authored width/height and grounding offset. getWorldScale applies every
+  // parent/body scale after the PNG builder's species/child portrait scale,
+  // and a square X/Z footprint turns the billboard into a true 3D volume.
+  function actorHitbox(actor) {
+    if (!deps || !actor) return null;
+    const avatarNode = avatarNodeForActor(actor);
+    const portraitWidth = positiveNumber(
+      avatarNode?.userData?.portraitModelWidth,
+      actor.avatarRef?.modelWidth,
+      actor.visualModelWidth,
+      actor.def?.modelWidth,
+      deps.playerRadius ? (deps.playerRadius * 2 / deps.TILE) : null,
+      0.6,
+    );
+    const portraitHeight = positiveNumber(
+      avatarNode?.userData?.portraitModelHeight,
+      actor.avatarRef?.modelHeight,
+      actor.halfHeight ? actor.halfHeight * 2 : null,
+      actor.def?.modelHeight,
+      portraitWidth,
+    );
+    const worldPosition = new THREE.Vector3();
+    const bodyScale = new THREE.Vector3(1, 1, 1);
+    let verticalOffset = 0;
+    if (avatarNode) {
+      avatarNode.updateWorldMatrix?.(true, false);
+      avatarNode.getWorldPosition(worldPosition);
+      avatarNode.getWorldScale(bodyScale);
+      const placementRatio = Number(avatarNode.userData?.portraitVerticalPlacementRatio);
+      if (Number.isFinite(placementRatio)) {
+        verticalOffset = (placementRatio - 0.5) * portraitHeight;
+      } else {
+        const planeOffset = Number(actor.avatarRef?.frontPlane?.position?.y);
+        if (Number.isFinite(planeOffset)) verticalOffset = planeOffset;
+      }
+      worldPosition.y += verticalOffset * Math.abs(bodyScale.y);
+    } else {
+      worldPosition.set(
+        (Number(actor.x) || 0) / deps.TILE,
+        deps.worldSurfaceY(Number(actor.x) || 0, Number(actor.y) || 0) + portraitHeight / 2,
+        (Number(actor.y) || 0) / deps.TILE,
+      );
+    }
+    const horizontalScale = Math.max(Math.abs(bodyScale.x), Math.abs(bodyScale.z), AIM_EPSILON);
+    const verticalScale = Math.max(Math.abs(bodyScale.y), AIM_EPSILON);
+    const width = portraitWidth * horizontalScale;
+    const height = portraitHeight * verticalScale;
+    const depth = Math.max(HITBOX_MIN_DEPTH_TILES, width);
+    const halfWidth = width / 2, halfHeight = height / 2, halfDepth = depth / 2;
+    const box = new THREE.Box3(
+      new THREE.Vector3(worldPosition.x - halfWidth, worldPosition.y - halfHeight, worldPosition.z - halfDepth),
+      new THREE.Vector3(worldPosition.x + halfWidth, worldPosition.y + halfHeight, worldPosition.z + halfDepth),
+    );
+    return {
+      actor, box, center: worldPosition.clone(), width, height, depth,
+      portraitWidth, portraitHeight, verticalOffset,
+      bodyScale: { x: bodyScale.x, y: bodyScale.y, z: bodyScale.z },
+    };
+  }
+
+  // Slab intersection against a swept-sphere-expanded Box3. The returned
+  // fractions are measured along the supplied segment and are shared by
+  // prediction and actual projectile impacts.
+  function segmentHitboxInterval(start, end, hitbox, radius = 0) {
+    if (!hitbox?.box) return null;
+    let enter = 0, exit = 1;
+    for (const axis of ['x', 'y', 'z']) {
+      const delta = end[axis] - start[axis];
+      const min = hitbox.box.min[axis] - radius;
+      const max = hitbox.box.max[axis] + radius;
+      if (Math.abs(delta) < AIM_EPSILON) {
+        if (start[axis] < min || start[axis] > max) return null;
+        continue;
+      }
+      let a = (min - start[axis]) / delta;
+      let b = (max - start[axis]) / delta;
+      if (a > b) [a, b] = [b, a];
+      enter = Math.max(enter, a);
+      exit = Math.min(exit, b);
+      if (enter > exit) return null;
+    }
+    return exit >= 0 && enter <= 1 ? { enter: Math.max(0, enter), exit: Math.min(1, exit) } : null;
+  }
+
+  function actorDebugHitbox(label, actor) {
+    const hitbox = actorHitbox(actor);
+    if (!hitbox) return null;
+    return {
+      label,
+      center: { x: hitbox.center.x, y: hitbox.center.y, z: hitbox.center.z },
+      size: { width: hitbox.width, height: hitbox.height, depth: hitbox.depth },
+      portrait: { width: hitbox.portraitWidth, height: hitbox.portraitHeight, verticalOffset: hitbox.verticalOffset },
+      bodyScale: { ...hitbox.bodyScale },
+    };
+  }
+
+  function playerProjectileOrigin() {
+    return new THREE.Vector3(
+      deps.player.x / deps.TILE,
+      deps.worldSurfaceY(deps.player.x, deps.player.y) + 0.55,
+      deps.player.y / deps.TILE,
+    );
+  }
+
+  function normalizedAimRay(rawRay) {
+    const origin = rawRay?.origin;
+    const direction = rawRay?.direction;
+    if (![origin?.x, origin?.y, origin?.z, direction?.x, direction?.y, direction?.z].every(Number.isFinite)) return null;
+    const dir = new THREE.Vector3(direction.x, direction.y, direction.z);
+    if (dir.lengthSq() < AIM_EPSILON) return null;
+    return {
+      origin: new THREE.Vector3(origin.x, origin.y, origin.z),
+      direction: dir.normalize(),
+    };
+  }
+
+  // Finds the exact point under the centered HUD reticle. When its camera ray
+  // crosses a hostile portrait box, the projectile converges from the player
+  // muzzle to the middle of that volume; otherwise it converges at max range.
+  function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.()) {
+    const def = defFor(itemKey);
+    if (!def || !deps?.player) return null;
+    const origin = playerProjectileOrigin();
+    let direction = null;
+    let targetPoint = null;
+    let reticleTarget = null;
+    const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
+    if (cameraRay) {
+      const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
+      const rayDistance = Math.max(def.rangeTiles + 2, cameraToMuzzle.length() + def.rangeTiles + 2);
+      const rayEnd = cameraRay.origin.clone().addScaledVector(cameraRay.direction, rayDistance);
+      let nearest = null;
+      for (const hostile of deps.hostileObjects) {
+        if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
+        const interval = segmentHitboxInterval(cameraRay.origin, rayEnd, actorHitbox(hostile));
+        if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+        nearest = { hostile, interval };
+      }
+      if (nearest) {
+        const middle = (nearest.interval.enter + nearest.interval.exit) / 2;
+        targetPoint = cameraRay.origin.clone().lerp(rayEnd, middle);
+        reticleTarget = nearest.hostile;
+      } else {
+        const alongMuzzle = cameraToMuzzle.dot(cameraRay.direction);
+        targetPoint = cameraRay.origin.clone().addScaledVector(cameraRay.direction, Math.max(1, alongMuzzle + def.rangeTiles));
+      }
+      direction = targetPoint.clone().sub(origin);
+      if (direction.lengthSq() < AIM_EPSILON) direction = cameraRay.direction.clone();
+      else direction.normalize();
+    }
+    if (!direction) {
+      const angle = deps.getPlayerAimAngle();
+      const pitch = deps.getPlayerAimPitch?.() || 0;
+      const horizontal = Math.cos(pitch);
+      direction = new THREE.Vector3(Math.cos(angle) * horizontal, Math.sin(pitch), Math.sin(angle) * horizontal).normalize();
+    }
+    return {
+      itemKey, origin, direction, targetPoint, reticleTarget,
+      angle: Math.atan2(direction.z, direction.x),
+      pitch: Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
+    };
+  }
+
+  function shotSegment(solution, def) {
+    const horizontal = Math.hypot(solution.direction.x, solution.direction.z);
+    const travel = def.rangeTiles / Math.max(horizontal, AIM_EPSILON);
+    return {
+      start: solution.origin.clone(),
+      end: solution.origin.clone().addScaledVector(solution.direction, travel),
+    };
   }
 
   function applySpecialAmmoDebuff(entity, ammoId) {
@@ -638,29 +808,29 @@
   }
 
   function projectileHit(p) {
+    const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
+    const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
     if (p.team === 'player') {
+      let nearest = null;
       for (const c of deps.hostileObjects) {
         if (c.health <= 0 || c.areaId && c.areaId !== p.areaId) continue;
-        const hitRadius = p.def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
-        const { distSq, t } = pointSegmentDistanceSqT(c.x, c.y, p.prevX, p.prevY, p.x, p.y);
-        if (distSq > hitRadius ** 2) continue;
-        const rayWorldY = p.prevWorldY + (p.worldY - p.prevWorldY) * t;
-        if (Math.abs(rayWorldY - hostileCenterWorldY(c)) > hitRadius / deps.TILE) continue;
-        deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
-        applySpecialAmmoDebuff(c, p.specialAmmoId);
-        deps.awardRangedMastery?.(p.itemKey);
-        return true;
+        const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
+        if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+        nearest = { creature: c, interval };
       }
-      return false;
-    }
-    const player = deps.player;
-    const hitRadius = p.def.projectileRadiusPx + deps.playerRadius;
-    if (pointSegmentDistanceSq(player.x, player.y, p.prevX, p.prevY, p.x, p.y) <= hitRadius ** 2) {
-      deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
-      applySpecialAmmoDebuff(player, p.specialAmmoId);
+      if (!nearest) return false;
+      const c = nearest.creature;
+      deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      applySpecialAmmoDebuff(c, p.specialAmmoId);
+      deps.awardRangedMastery?.(p.itemKey);
       return true;
     }
-    return false;
+    const playerHit = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
+    if (!playerHit) return false;
+    deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+    applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
+    return true;
   }
 
   function updateProjectileVisual(p, dt) {
@@ -794,41 +964,39 @@
   function cancelBanditAction(c) { if (c) { c._rangedAction = null; c._rangedMode = false; } }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
-  // Predicts whether the currently-aimed shot (angle + pitch, exactly as
-  // startPlayerAction would fire it) would connect with a hostile, without
-  // actually simulating a projectile. Drives the HUD reticle's red state.
-  // Coarse line-of-sight sampling reuses the same wall-collision check
-  // projectiles themselves are stopped by, so the reticle won't light up
-  // red through a solid wall.
+  // Drives the red HUD state with the same shot segment, portrait Box3
+  // volumes, projectile radius, wall test, and terrain-floor test used by
+  // live projectiles. A red reticle therefore means the released center
+  // projectile has an unobstructed 3D body-volume impact.
   const WOULD_HIT_LOS_STEP_PX = 48;
   function wouldHitHostile() {
     const itemKey = deps?.getEquippedRangedKey?.();
     const def = defFor(itemKey);
     if (!def || !isLoaded(itemKey)) return false;
-    const angle = deps.getPlayerAimAngle();
-    const pitch = deps.getPlayerAimPitch?.() || 0;
-    const originX = deps.player.x, originY = deps.player.y;
-    const originWorldY = deps.worldSurfaceY(originX, originY) + 0.55;
-    const dirX = Math.cos(angle), dirY = Math.sin(angle);
-    const maxRangePx = def.rangeTiles * deps.TILE;
-    const currentArea = deps.getCurrentArea();
-    for (const c of deps.hostileObjects) {
-      if (c.health <= 0 || c.areaId !== currentArea) continue;
-      const toX = c.x - originX, toY = c.y - originY;
-      const along = toX * dirX + toY * dirY;
-      if (along <= 0 || along > maxRangePx) continue;
-      const perp = Math.hypot(toX - dirX * along, toY - dirY * along);
-      const hitRadius = def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
-      if (perp > hitRadius) continue;
-      const rayWorldY = originWorldY + Math.tan(pitch) * (along / deps.TILE);
-      if (Math.abs(rayWorldY - hostileCenterWorldY(c)) > hitRadius / deps.TILE) continue;
-      let blocked = false;
-      for (let d = WOULD_HIT_LOS_STEP_PX; d < along; d += WOULD_HIT_LOS_STEP_PX) {
-        if (!deps.canOccupyAt(originX + dirX * d, originY + dirY * d, def.projectileRadiusPx)) { blocked = true; break; }
-      }
-      if (!blocked) return true;
+    const solution = playerAimSolution(itemKey);
+    if (!solution) return false;
+    const segment = shotSegment(solution, def);
+    const projectileRadius = def.projectileRadiusPx / deps.TILE;
+    let nearest = null;
+    for (const hostile of deps.hostileObjects) {
+      if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
+      const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(hostile), projectileRadius);
+      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+      nearest = { hostile, interval };
     }
-    return false;
+    if (!nearest) return false;
+    const maxRangePx = def.rangeTiles * deps.TILE;
+    const hitDistancePx = nearest.interval.enter * maxRangePx;
+    const horizontalDirX = (segment.end.x - segment.start.x) / def.rangeTiles;
+    const horizontalDirY = (segment.end.z - segment.start.z) / def.rangeTiles;
+    for (let distancePx = WOULD_HIT_LOS_STEP_PX; distancePx < hitDistancePx; distancePx += WOULD_HIT_LOS_STEP_PX) {
+      const fraction = distancePx / maxRangePx;
+      const x = deps.player.x + horizontalDirX * distancePx;
+      const y = deps.player.y + horizontalDirY * distancePx;
+      const worldY = THREE.MathUtils.lerp(segment.start.y, segment.end.y, fraction);
+      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
+    }
+    return true;
   }
 
   function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); }
@@ -838,7 +1006,7 @@
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
-    wouldHitHostile,
+    wouldHitHostile, playerAimSolution, actorHitbox,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
@@ -853,13 +1021,29 @@
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
-    get aimPitchDeg() { return THREE.MathUtils.radToDeg(deps?.getPlayerAimPitch?.() || 0); },
+    get aimPitchDeg() { return THREE.MathUtils.radToDeg(playerAimSolution()?.pitch ?? deps?.getPlayerAimPitch?.() ?? 0); },
+    get aimSolution() {
+      const aim = playerAimSolution();
+      return aim ? {
+        angleDeg: THREE.MathUtils.radToDeg(aim.angle), pitchDeg: THREE.MathUtils.radToDeg(aim.pitch),
+        origin: { x: aim.origin.x, y: aim.origin.y, z: aim.origin.z },
+        direction: { x: aim.direction.x, y: aim.direction.y, z: aim.direction.z },
+        reticleTarget: aim.reticleTarget?.id || aim.reticleTarget?.name || aim.reticleTarget?.def?.id || null,
+      } : null;
+    },
+    get actorHitboxes() {
+      return [
+        actorDebugHitbox('player', deps?.player),
+        ...(deps?.hostileObjects || []).filter(c => c.health > 0 && c.areaId === deps.getCurrentArea()).map((c, index) => actorDebugHitbox(c.id || c.name || `hostile-${index}`, c)),
+        ...(deps?.npcWalkers || []).filter(npc => npc.area === deps.getCurrentArea()).map((npc, index) => actorDebugHitbox(npc.id || npc.name || `npc-${index}`, npc)),
+      ].filter(Boolean);
+    },
     get wouldHitHostile() { return wouldHitHostile(); },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Ranged mastery loadout ranks; basic/special ammo switching; Shrapnel movement bleed; Concussive Footing/Disorient; shared 0/8 corpse loot; ranged Footing disabled by default; editor runtime orientation parity.',
+      latestChange: 'Portrait width/height plus scaled vertical placement now form 3D player/NPC hitboxes; the centered HUD ray, red prediction, and projectile trajectory share one shot solution.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
