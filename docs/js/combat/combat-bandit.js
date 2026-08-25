@@ -603,7 +603,7 @@
   // the way pounceUpdate already calls them.
   function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
     if (durationS <= 0 || c._banditLunging) return;
-    const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, c._banditAimPitch || 0, 0)
+    const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, c._banditAimPitch || 0, 0, c.def?.lungeHeightUnits ?? 1)
       || { distancePx, hopUnits: 0, pitch: c._banditAimPitch || 0 }; // Used to turn high enemy aim into a shorter leap.
     distancePx = lungeProfile.distancePx;
     // Cap the travel distance so an already-close bandit can't lunge
