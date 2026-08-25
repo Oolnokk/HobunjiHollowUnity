@@ -124,7 +124,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/combat/ranged-weapons.js?v=20260817e"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260825hitbox1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -132,13 +132,13 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260807a"></script>
+  <script src="js/combat/combat-bandit.js?v=20260825hitbox1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260807a"></script>
+  <script src="js/bandit-camps.js?v=20260825desktop2"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -1970,7 +1970,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks2"></script>
+  <script src="game.js?v=20260825chunks3"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
