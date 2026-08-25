@@ -33,7 +33,8 @@
   const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
-  let lastMelee3DResult = null; // Mobile-readable record of the latest 3D cone decision.
+  const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
+  let lastMelee3DResult = null; // Mobile-readable record of the latest 3D collider decision.
 
   function combatActorHitbox(actor) {
     return window.RangedWeapons?.actorHitbox?.(actor) || null;
@@ -86,23 +87,113 @@
     return points;
   }
 
-  // A target is hit only when some point on its authored portrait Box3 lies
-  // inside the attack's real 3D cone and world-space range.
-  function meleeHit(attacker, target, opts = {}) {
+  function meleeSolutionForOptions(attacker, opts = {}) {
     const hasExplicitAngles = opts.yaw != null || opts.pitch != null;
     const explicitDirection = finiteDirection(opts.direction)
       || (hasExplicitAngles ? directionFromAngles(opts.yaw ?? attacker?.facing ?? attacker?.angle ?? 0, opts.pitch ?? 0) : null);
-    const solution = explicitDirection
-      ? { ...meleeAimSolution(attacker, null, opts.yaw, opts.pitch), direction: explicitDirection,
-          yaw: Math.atan2(explicitDirection.z, explicitDirection.x),
-          pitch: Math.asin(THREE.MathUtils.clamp(explicitDirection.y, -1, 1)) }
-      : meleeAimSolution(attacker, null, attacker?.facing ?? attacker?.angle ?? 0, 0);
+    if (!explicitDirection) return meleeAimSolution(attacker, null, attacker?.facing ?? attacker?.angle ?? 0, 0);
+    return {
+      ...meleeAimSolution(attacker, null, opts.yaw, opts.pitch),
+      direction: explicitDirection,
+      yaw: Math.atan2(explicitDirection.z, explicitDirection.x),
+      pitch: Math.asin(THREE.MathUtils.clamp(explicitDirection.y, -1, 1)),
+    };
+  }
+
+  // The melee collider is a vertically extruded pie piece. Its pointed
+  // vertical edge is centered on the attacker's portrait volume, while its
+  // whole sector rises/falls with pitch instead of narrowing to a 3D cone tip.
+  function meleeColliderVolume(attacker, opts = {}, solutionOverride = null) {
+    const solution = solutionOverride || meleeSolutionForOptions(attacker, opts);
+    const rangeWorld = Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64);
+    const pitch = THREE.MathUtils.clamp(solution.pitch, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
+    const attackerSize = solution.attackerHitbox?.box?.getSize?.(new THREE.Vector3());
+    const authoredHeight = Math.max(0.35, Number(attackerSize?.y) || 0.7);
+    const heightWorld = Math.max(0.2, Number(opts.heightWorld) || authoredHeight);
+    return {
+      actor: attacker,
+      origin: solution.origin.clone(),
+      direction: solution.direction.clone(),
+      yaw: solution.yaw,
+      pitch,
+      rangeWorld,
+      horizontalRangeWorld: rangeWorld * Math.cos(pitch),
+      verticalRiseWorld: rangeWorld * Math.sin(pitch),
+      halfConeRad: Math.max(0, Number(opts.halfConeRad) || 0),
+      halfHeightWorld: heightWorld / 2,
+    };
+  }
+
+  function rememberMeleeColliderDebug(collider) {
+    if (!collider?.actor) return;
+    activeMeleeColliderDebug.set(collider.actor, {
+      ...collider,
+      recordedAt: Date.now(),
+      expiresAt: Date.now() + 850,
+    });
+  }
+
+  function debugMeleeColliders() {
+    const now = Date.now();
+    for (const [actor, collider] of activeMeleeColliderDebug) {
+      if (collider.expiresAt < now) activeMeleeColliderDebug.delete(actor);
+    }
+    return Array.from(activeMeleeColliderDebug.values());
+  }
+
+  function meleeColliderPoint(collider, radialFraction, angleOffset, verticalSign) {
+    const radial = THREE.MathUtils.clamp(Number(radialFraction) || 0, 0, 1);
+    const angle = collider.yaw + angleOffset;
+    return new THREE.Vector3(
+      collider.origin.x + Math.cos(angle) * collider.horizontalRangeWorld * radial,
+      collider.origin.y + collider.verticalRiseWorld * radial + collider.halfHeightWorld * verticalSign,
+      collider.origin.z + Math.sin(angle) * collider.horizontalRangeWorld * radial,
+    );
+  }
+
+  // Shared wireframe boundary generated from the same dimensions meleeHit
+  // tests, preventing the debug drawing from drifting away from gameplay.
+  function meleeColliderWireframe(collider, samples = 18) {
+    const count = Math.max(4, Math.floor(Number(samples) || 18));
+    const segments = [];
+    const nearBottom = meleeColliderPoint(collider, 0, 0, -1);
+    const nearTop = meleeColliderPoint(collider, 0, 0, 1);
+    segments.push([nearBottom, nearTop]);
+    for (const radial of [0.5, 1]) {
+      let previousBottom = null, previousTop = null;
+      for (let i = 0; i <= count; i++) {
+        const angleOffset = -collider.halfConeRad + collider.halfConeRad * 2 * (i / count);
+        const bottom = meleeColliderPoint(collider, radial, angleOffset, -1);
+        const top = meleeColliderPoint(collider, radial, angleOffset, 1);
+        if (previousBottom) {
+          segments.push([previousBottom, bottom]);
+          segments.push([previousTop, top]);
+        }
+        if (radial === 1 && (i === 0 || i === count || i % 3 === 0)) segments.push([bottom, top]);
+        previousBottom = bottom;
+        previousTop = top;
+      }
+    }
+    for (const side of [-1, 1]) {
+      const angleOffset = collider.halfConeRad * side;
+      segments.push([nearBottom, meleeColliderPoint(collider, 1, angleOffset, -1)]);
+      segments.push([nearTop, meleeColliderPoint(collider, 1, angleOffset, 1)]);
+    }
+    return segments;
+  }
+
+  // A target is hit when its portrait Box3 intersects the pitched, vertically
+  // extruded pie piece described above.
+  function meleeHit(attacker, target, opts = {}) {
+    const solution = meleeSolutionForOptions(attacker, opts);
+    const collider = meleeColliderVolume(attacker, opts, solution);
+    rememberMeleeColliderDebug(collider);
     const targetHitbox = combatActorHitbox(target);
     const rangePx = Math.max(0, Number(opts.rangePx) || 0);
-    const halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
+    const halfConeRad = collider.halfConeRad;
     if (!targetHitbox?.box) {
-      // Preserve the old 2D cone behavior for an actor whose portrait has not
-      // mounted yet; never turn a missing render object into an unconditional hit.
+      // Preserve the old 2D sector behavior for an actor whose portrait has
+      // not mounted yet; never turn a missing render object into an automatic hit.
       const dx = (Number(target?.x) || 0) - (Number(attacker?.x) || 0);
       const dz = (Number(target?.y) || 0) - (Number(attacker?.y) || 0);
       const distancePx = Math.hypot(dx, dz);
@@ -110,50 +201,70 @@
       const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - solution.yaw), Math.cos(pointYaw - solution.yaw)));
       const hit = distancePx <= rangePx && yawDelta <= halfConeRad;
       lastMelee3DResult = {
-        at: Date.now(), hit, fallback2D: true,
+        at: Date.now(), hit, fallback2D: true, shape: 'pie-prism',
         attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
         target: target?.id || target?.name || target?.def?.id || 'target',
         yawDeg: THREE.MathUtils.radToDeg(solution.yaw),
         pitchDeg: THREE.MathUtils.radToDeg(solution.pitch),
         halfConeDeg: THREE.MathUtils.radToDeg(halfConeRad),
-        rangeWorld: rangePx / (deps?.TILE || 64),
+        rangeWorld: collider.rangeWorld,
+        horizontalRangeWorld: collider.horizontalRangeWorld,
+        halfHeightWorld: collider.halfHeightWorld,
         bestDistanceWorld: distancePx / (deps?.TILE || 64),
         bestAngleDeg: THREE.MathUtils.radToDeg(yawDelta),
       };
       return hit;
     }
-    const rangeWorld = rangePx / (deps?.TILE || 64);
+
     let hit = false;
     let bestDistanceWorld = Infinity;
     let bestAngleRad = Infinity;
-    // The center camera ray is the reticle contract: if it intersects the
-    // visible portrait Box3 within melee range, the matching swing must hit.
-    const directPoint = new THREE.Ray(solution.origin, solution.direction)
+    let bestVerticalOffsetWorld = Infinity;
+    // The centered reticle ray remains an exact contract: a direct Box3
+    // intersection inside weapon length also lies on the pie piece centerline.
+    const directPoint = new THREE.Ray(collider.origin, collider.direction)
       .intersectBox(targetHitbox.box, new THREE.Vector3());
     if (directPoint) {
-      bestDistanceWorld = directPoint.distanceTo(solution.origin);
+      bestDistanceWorld = directPoint.distanceTo(collider.origin);
       bestAngleRad = 0;
-      hit = bestDistanceWorld <= rangeWorld;
+      bestVerticalOffsetWorld = 0;
+      hit = bestDistanceWorld <= collider.rangeWorld;
     }
-    for (const point of boxSamplePoints(targetHitbox.box, solution.origin)) {
-      const delta = point.clone().sub(solution.origin);
-      const distanceWorld = delta.length();
-      if (distanceWorld < 1e-6) { hit = true; bestDistanceWorld = 0; bestAngleRad = 0; break; }
-      const angleRad = Math.acos(THREE.MathUtils.clamp(delta.normalize().dot(solution.direction), -1, 1));
-      if (distanceWorld < bestDistanceWorld || (distanceWorld === bestDistanceWorld && angleRad < bestAngleRad)) {
+    for (const point of boxSamplePoints(targetHitbox.box, collider.origin)) {
+      const dx = point.x - collider.origin.x;
+      const dz = point.z - collider.origin.z;
+      const horizontalDistance = Math.hypot(dx, dz);
+      const pointYaw = horizontalDistance > 1e-6 ? Math.atan2(dz, dx) : collider.yaw;
+      const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - collider.yaw), Math.cos(pointYaw - collider.yaw)));
+      const radialFraction = collider.horizontalRangeWorld > 1e-6
+        ? horizontalDistance / collider.horizontalRangeWorld
+        : (horizontalDistance <= 1e-6 ? 0 : Infinity);
+      const centerY = collider.origin.y + collider.verticalRiseWorld * radialFraction;
+      const verticalOffset = Math.abs(point.y - centerY);
+      const distanceWorld = point.distanceTo(collider.origin);
+      if (distanceWorld < bestDistanceWorld || (distanceWorld === bestDistanceWorld && yawDelta < bestAngleRad)) {
         bestDistanceWorld = distanceWorld;
-        bestAngleRad = angleRad;
+        bestAngleRad = yawDelta;
+        bestVerticalOffsetWorld = verticalOffset;
       }
-      if (distanceWorld <= rangeWorld && angleRad <= halfConeRad) { hit = true; break; }
+      if (radialFraction <= 1 && yawDelta <= halfConeRad && verticalOffset <= collider.halfHeightWorld) {
+        hit = true;
+        break;
+      }
     }
     lastMelee3DResult = {
-      at: Date.now(), hit,
+      at: Date.now(), hit, shape: 'pie-prism',
       attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
       target: target?.id || target?.name || target?.def?.id || 'target',
       yawDeg: THREE.MathUtils.radToDeg(solution.yaw),
       pitchDeg: THREE.MathUtils.radToDeg(solution.pitch),
       halfConeDeg: THREE.MathUtils.radToDeg(halfConeRad),
-      rangeWorld, bestDistanceWorld, bestAngleDeg: THREE.MathUtils.radToDeg(bestAngleRad),
+      rangeWorld: collider.rangeWorld,
+      horizontalRangeWorld: collider.horizontalRangeWorld,
+      halfHeightWorld: collider.halfHeightWorld,
+      bestDistanceWorld,
+      bestAngleDeg: THREE.MathUtils.radToDeg(bestAngleRad),
+      bestVerticalOffsetWorld,
     };
     return hit;
   }
@@ -213,6 +324,8 @@
     const actor = opts.actor;
     const target = opts.target || null;
     const solution = meleeAimSolution(actor, target, opts.yaw ?? actor?.facing ?? actor?.angle ?? 0, opts.pitch ?? 0);
+    const collider = meleeColliderVolume(actor, opts, solution); // Reused by Show Hitboxes so trail and damage volume share an origin.
+    rememberMeleeColliderDebug(collider);
     const samples = 16;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
@@ -360,6 +473,9 @@
     beginStagedAction,
     cancelAllStaged,
     meleeAimSolution,
+    meleeColliderVolume,
+    meleeColliderWireframe,
+    debugMeleeColliders,
     meleeHit,
     meleeLungeProfile,
     writeMeleeTrailRibbon,
@@ -381,6 +497,13 @@
       latestChange: 'Melee cones and trails now use portrait Box3 volumes plus a pitched 3D aim direction; upward lunges become shorter rendered leaps.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
+      activeColliders: debugMeleeColliders().map(collider => ({
+        actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
+        shape: 'pie-prism',
+        pitchDeg: THREE.MathUtils.radToDeg(collider.pitch),
+        rangeWorld: collider.rangeWorld,
+        heightWorld: collider.halfHeightWorld * 2,
+      })),
     }),
   };
 })();
