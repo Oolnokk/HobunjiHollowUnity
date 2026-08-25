@@ -4421,7 +4421,7 @@
       function desktopAutoTargetNearReticle(maxDistanceWorld) {
         const ray = currentPlayerInteractionRay();
         if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
-          const candidates = hostileObjects
+          const candidates = Array.from(hostileObjects)
             .filter(c => c.health > 0 && c.areaId === currentArea)
             .map(c => {
               const hitbox = window.RangedWeapons.actorHitbox(c);
