@@ -114,7 +114,7 @@
 
   function _interactionRaySnapshot() {
     deps.refreshInteractionFocusDebug?.();
-    const raw = deps.getPlayerAimRay?.();
+    const raw = deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.();
     if (!raw?.origin || !raw?.direction) return null;
     const origin = new THREE.Vector3(Number(raw.origin.x) || 0, Number(raw.origin.y) || 0, Number(raw.origin.z) || 0);
     const direction = new THREE.Vector3(Number(raw.direction.x) || 0, Number(raw.direction.y) || 0, Number(raw.direction.z) || 0);
