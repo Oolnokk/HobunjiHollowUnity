@@ -712,11 +712,17 @@
         : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}`).join(' ');
       lines.push(`3D hitboxes: ${actorState}`);
     }
+    const interactionRay = hitboxDebug?.interactionRay;
+    if (interactionRay) {
+      lines.push(interactionRay.hit
+        ? `Interaction ray: ${interactionRay.targetType || 'target'}${interactionRay.targetId ? ':' + interactionRay.targetId : ''} at ${Number(interactionRay.distanceWorld).toFixed(2)}u${interactionRay.hostile ? ' (attack precedence)' : ''}`
+        : `Interaction ray: no 3D hit in ${Number(interactionRay.distanceWorld).toFixed(0)}u`);
+    }
     const meleeDebug = window.__melee3DDebug?.snapshot?.(); // Exposes pitched melee acceptance and trail state without desktop developer tools.
     if (meleeDebug) {
       const result = meleeDebug.lastResult;
       lines.push(result
-        ? `3D melee: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° trails=${meleeDebug.activeTrailCount}`
+        ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
     }
     const held = deps.getHeldObjectDebug?.();
