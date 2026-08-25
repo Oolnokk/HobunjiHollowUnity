@@ -732,6 +732,7 @@
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
         lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeHeightUnits: 1.0, // Potion/food effects can adjust the player's vertical leap budget before the next attack.
         lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
@@ -1083,7 +1084,7 @@
           // no match for a hound's nose.
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff,
+          modelWidth: 1.6, tint: 0xffffff, lungeHeightUnits: 0.08, // Nearly grounded; high aim should shed almost all travel.
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
@@ -1146,7 +1147,7 @@
           attackStaminaCost: 12, attackCooldownS: 0.95,
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, lungeHeightUnits: 2.4, spriteAspect: 523 / 831, tint: 0xffffff,
           // See dabinggi-hound's matching comment.
           defaultSizeClass: 'small',
           mountSpeed: 340,
@@ -1253,7 +1254,7 @@
           attackStaminaCost: 15, attackCooldownS: 1.1,
           attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], spriteAspect: 523 / 831, tint: 0x789078,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], lungeHeightUnits: 2.8, spriteAspect: 523 / 831, tint: 0x789078,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra-den-mother',
         },
@@ -4410,18 +4411,69 @@
       // off the instant a melee weapon isn't actually out (see
       // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
       let meleeAutoTargetOn = false;
+      let meleeAutoTargetFreeAim = false; // Mouse movement releases the lock without turning the targeting toggle off.
+      const MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD = 0.48; // Small 3D radius around the centered reticle used for reacquisition.
+      const DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX = 2; // Ignore sub-pixel noise, but any real desktop mouse movement breaks the lock.
+
+      // Find a hostile whose 3D portrait hitbox is close enough to the centered
+      // reticle. Expanding the same hitbox used by projectiles keeps reacquisition
+      // forgiving without making a target behind the player eligible.
+      function desktopAutoTargetNearReticle(maxDistanceWorld) {
+        const ray = currentPlayerInteractionRay();
+        if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
+          const candidates = hostileObjects
+            .filter(c => c.health > 0 && c.areaId === currentArea)
+            .map(c => {
+              const hitbox = window.RangedWeapons.actorHitbox(c);
+              return hitbox?.box ? {
+                type: 'hostile',
+                id: c.id,
+                data: c,
+                box: hitbox.box.clone().expandByScalar(MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD),
+              } : null;
+            })
+            .filter(Boolean);
+          const focus = window.RangedWeapons.focusCandidates(candidates, maxDistanceWorld / TILE);
+          if (focus?.candidate?.data) return focus.candidate.data;
+        }
+        // Fallback for a not-yet-initialized renderer: use a small ground-space
+        // cone around the current aim bearing rather than nearest hostile.
+        const aim = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const radiusPx = MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD * TILE;
+        let best = null, bestDist = maxDistanceWorld;
+        const fx = Math.cos(aim), fy = Math.sin(aim);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const along = dx * fx + dy * fy;
+          if (along < 0 || along > bestDist) continue;
+          const lateral = Math.abs(dx * fy - dy * fx);
+          if (lateral > radiusPx) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist < bestDist) { best = c; bestDist = dist; }
+        }
+        return best;
+      }
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
-      // Hardened at the source (not left to every caller to remember): auto
-      // target is only ever active while the weapon tool slot is both
-      // selected AND actually has a weapon equipped in it — every caller
-      // gets this for free instead of some checking activeTool alone.
+      // Desktop melee only acquires while the targeting toggle is on. Once
+      // mouse-look releases a lock, it waits for the reticle to pass close to
+      // another hostile before reacquiring.
       function findAutoTarget() {
         const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (!meleeActive && !rangedActive) {
           manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          return null;
+        }
+        if (meleeActive && isDesktop && !meleeAutoTargetOn) {
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
           return null;
         }
         const maxDist = rangedActive
@@ -4433,6 +4485,16 @@
             return manualAutoTarget;
           }
           manualAutoTarget = null;
+        }
+        if (meleeActive && isDesktop && meleeAutoTargetOn) {
+          const reacquired = desktopAutoTargetNearReticle(maxDist);
+          if (reacquired) {
+            manualAutoTarget = reacquired;
+            meleeAutoTargetFreeAim = false;
+            return reacquired;
+          }
+          meleeAutoTargetFreeAim = true;
+          return null;
         }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
@@ -4487,7 +4549,7 @@
           const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
           return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
         }
-        const cameraRay = currentPlayerAimRay();
+        const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
         if (cameraRay?.direction) return { ...cameraRay.direction };
         const yaw = currentPlayerAimAngle();
         const pitch = currentPlayerAimPitch();
@@ -4541,6 +4603,7 @@
         }
         if (!best) return false;
         manualAutoTarget = best;
+        meleeAutoTargetFreeAim = false;
         return true;
       }
 
@@ -4583,7 +4646,7 @@
       // looking at and have it pick up from there. No-ops if already on, no
       // melee weapon out, or nothing qualifies.
       function tryAutoEngageMeleeTarget() {
-        if (meleeAutoTargetOn || !meleeWeaponOut()) return;
+        if (isDesktop || meleeAutoTargetOn || !meleeWeaponOut()) return;
         const candidate = meleeAttackTargetCandidate();
         if (!candidate) return;
         manualAutoTarget = candidate;
@@ -4609,6 +4672,7 @@
         let idx = candidates.findIndex(entry => entry.c === current);
         idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
         manualAutoTarget = candidates[idx].c;
+        meleeAutoTargetFreeAim = false;
       }
 
       // Drives melee auto-target's actual aim, once per frame (see its call
@@ -7269,8 +7333,10 @@
           const aimAngle = target
             ? Math.atan2(target.y - player.y, target.x - player.x)
             : player.angle;
-          dirX = -Math.cos(aimAngle);
-          dirY = -Math.sin(aimAngle);
+          // A no-input dodge is a forward dodge, matching the direction used
+          // to enter a climb instead of unexpectedly zipping backward.
+          dirX = Math.cos(aimAngle);
+          dirY = Math.sin(aimAngle);
         }
         if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
         else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
@@ -7301,11 +7367,29 @@
       // start swimming needs no separate trigger of its own now that water
       // is a real (slow, non-swimmer) crossing instead of a hard block —
       // see tileSpeedAt.
+      function dodgeInputIsForward() {
+        const kb = getKeyboardVector();
+        const ix = kb.active ? kb.x : input.x;
+        const iy = kb.active ? kb.y : input.y;
+        const length = Math.hypot(ix, iy);
+        if (length < 0.08) return true; // No direction means a forward dodge in facing direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // Shoulder movement is camera-relative: local up (-Y) is forward.
+          return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
+        }
+        const facing = player.angle;
+        const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
+        const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
+        return forward > 0.35 && side < 0.85;
+      }
+
       function performContextAction() {
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
+        // Climbing is now the forward-dodge context action. Sideways/backward
+        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
-        if (climb) { window.ClimbSystem.startClimb(climb); return; }
+        if (climb && dodgeInputIsForward()) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -7342,7 +7426,7 @@
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
-        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits)
+        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
           || { distancePx, hopUnits, pitch: aimPitch };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
@@ -7351,6 +7435,14 @@
         player.lungeAimPitch = lungeProfile.pitch;
         player.lungeHitTest = hitTest;
       }
+
+      // Public effect seam: food/potion systems can set or add to the
+      // player's next lunge height without knowing combat's internal state.
+      window.PlayerLunge = {
+        getHeight: () => Math.max(0, Number(player.lungeHeightUnits) || 0),
+        setHeight: (value) => { player.lungeHeightUnits = Math.max(0, Number(value) || 0); },
+        addHeight: (delta) => { player.lungeHeightUnits = Math.max(0, (Number(player.lungeHeightUnits) || 0) + (Number(delta) || 0)); },
+      };
 
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
@@ -15145,12 +15237,10 @@
         // The frame update owns the five-second aimed nest hold; do not let
         // the same physical Action 1 press fall through into a weapon swing.
         if (activeAction === 'nest_take') return;
-        if (activeAction === 'climb') {
-          if (player.climbing) return;
-          const climb = window.ClimbSystem.getClimbTarget();
-          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
-          return;
-        }
+        // Climb is no longer an Action 1/tool action. The dodge input owns
+        // the forward-dodge climb context; keep this legacy branch inert for
+        // saved bindings or stale UI events from older sessions.
+        if (activeAction === 'climb') return;
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -15384,6 +15474,18 @@
       function currentPlayerAimRay() {
         if (activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
+        camera.updateMatrixWorld?.();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
+      function currentPlayerInteractionRay() {
+        if (menuOpen || farmEditMode || dialogueOpen || sitInteraction ||
+            window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
@@ -21294,7 +21396,7 @@
       }
       function aimedCavernNest(nest) {
         if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest) || isNestGuarded(nest)) return null;
-        if (!currentPlayerAimRay() || !window.RangedWeapons?.focusCandidates) return nest;
+        if (!currentPlayerInteractionRay() || !window.RangedWeapons?.focusCandidates) return nest;
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
         const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
@@ -22778,17 +22880,9 @@
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
         }
 
-        // Zone: a climbable cliff face under the centered reticle takes
-        // priority over tool use. Keep the target visible while riding, but
-        // disable it so mobile communicates that the rider must dismount.
-        const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
-        if (climbTarget) {
-          const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
-          const isJumpDown = climbTarget.type === 'branchJumpDown';
-          const climbLabel = isJumpDown ? 'Jump Down' : 'Climb';
-          return [{ icon: isJumpDown ? '🤸' : '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
-        }
-
+        // Climbing is triggered by a forward dodge, not by the tool's
+        // Action 1 slot. Leaving the normal action stack here prevents an
+        // attack/item press from grabbing a nearby trunk.
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
@@ -23729,11 +23823,12 @@
       btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         if (!meleeWeaponOut()) return;
-        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; return; }
+        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; manualAutoTarget = null; meleeAutoTargetFreeAim = false; return; }
         const target = findAutoTarget();
         if (!target) return;
         manualAutoTarget = target;
         meleeAutoTargetOn = true;
+        meleeAutoTargetFreeAim = false;
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -24245,6 +24340,8 @@
         if (down.has('Button11') && meleeWeaponOut()) {
           if (!gamepadState.previous.has('Button11')) {
             meleeAutoTargetOn = !meleeAutoTargetOn;
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = false;
             showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
           }
           down.delete('Button11');
@@ -24746,6 +24843,15 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
+          // Desktop auto-target is intentionally loose: micro pointer noise is
+          // ignored, but any real mouse movement releases the camera from its
+          // current target. The toggle stays on so simply moving the reticle
+          // back over an enemy reacquires it.
+          if (isDesktop && meleeAutoTargetOn && meleeWeaponOut() &&
+              Math.hypot(Number(e.movementX) || 0, Number(e.movementY) || 0) > DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX) {
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = true;
+          }
           // Shoulder-surf gets mouse-look "for free" here: plain mouse
           // movement drives the camera exactly like Shift+drag does
           // everywhere else, no modifier key needed, and freeRotateCameraActive()
@@ -25167,6 +25273,7 @@
         getPlayerAimAngle: currentPlayerAimAngle,
         getPlayerAimPitch: currentPlayerAimPitch,
         getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
         getPlayerAvatarGroup: () => {
           let avatarGroup = null;
           playerMesh?.traverse?.(child => {
@@ -26001,6 +26108,7 @@
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
         getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         // Read fresh input because player.inputX/Y are written after the
         // on-branch early return. Shoulder cam uses the exact same
