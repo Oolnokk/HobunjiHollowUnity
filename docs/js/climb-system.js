@@ -33,6 +33,18 @@
     if (!branchesByArea.has(mapId)) branchesByArea.set(mapId, []);
     branchesByArea.get(mapId).push(branch);
   }
+  function removeBranchesInBounds(mapId, bounds) {
+    const branches = branchesByArea.get(mapId);
+    if (!branches?.length || !bounds || !deps?.TILE) return 0;
+    const kept = branches.filter(branch => {
+      const col = Math.floor(branch.baseX / deps.TILE);
+      const row = Math.floor(branch.baseY / deps.TILE);
+      return col < bounds.colStart || col >= bounds.colEnd || row < bounds.rowStart || row >= bounds.rowEnd;
+    });
+    const removed = branches.length - kept.length;
+    branchesByArea.set(mapId, kept);
+    return removed;
+  }
 
   const CLIMB_MAX_WALL_TILES = 4;
   function getWallClimbTarget() {
@@ -374,6 +386,7 @@
     resolveBranchKnockback,
     resetAreaBranches,
     registerBranch,
+    removeBranchesInBounds,
     debugBranchesFor: (mapId) => (branchesByArea.get(mapId) || []).slice(),
     get debug() {
       return {

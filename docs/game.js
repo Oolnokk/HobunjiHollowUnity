@@ -1331,14 +1331,14 @@
           // startup default: both the live cull radius and each fog layer's
           // own radius/opacity are independently Settings-tab sliders (see
           // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
-          // setLayerOpacity) — lowered from 34 to 15 by default since the
+          // setLayerOpacity) — lowered from 34 to 30 by default since the
           // full 34-tile radius was a real contributor to reported
           // choppiness in this zone. At 34, fogDensity above had already
           // made FogExp2 ~97% opaque out there, hiding the vegetation
           // pop-in; at the smaller default the pop-in ring is more likely
           // to be visible, tunable back up via the slider if that matters
           // more than the performance it costs.
-          vegCullRadiusTiles: 15,
+          vegCullRadiusTiles: 30,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -6511,6 +6511,7 @@
           member.cookingState = window.CookingSystem.serialize();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
+          member.wildernessChunkState = serializeWildernessChunkState();
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -6710,6 +6711,10 @@
         _tothalShiftInFlight = true;
         const worldId = _tothalWorldId() || 'default';
         const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
+        if (_wildernessChunkTileStateYear !== null && _wildernessChunkTileStateYear !== year) {
+          _wildernessChunkTileDeltas.clear();
+        }
+        _wildernessChunkTileStateYear = year;
         debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
         try {
           // Each singleton locale should exist exactly once across all four
@@ -7654,6 +7659,8 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
+      let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
+      const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -7786,13 +7793,22 @@
       // raising with a shovel/pick — see applyAction) without disposing/
       // rebuilding the whole zone scene. Returns every mesh it added to
       // zScene, so the caller can track and later remove them.
-      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
+      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, options = {}) {
         const meshes = [];
-        const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
-        const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
+        const resetState = options.resetState !== false; // Controls one-time per-zone indexes versus additive chunk builds.
+        const vegetationByTile = resetState ? new Map() : (_zoneVegetationMeshes.get(mapId) || new Map()); // Used for O(1) runtime foliage removal by tile.
+        const mineableRocksByTile = resetState ? new Map() : (_zoneMineableRockMeshes.get(mapId) || new Map()); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
-        window.ClimbSystem?.resetAreaBranches(mapId); // This zone's shadewood instances (below) re-register their climbable branches fresh on every (re)build.
+        if (resetState) window.ClimbSystem?.resetAreaBranches(mapId); // Loaded shadewood chunks re-register their climbable branches below.
+        const bounds = {
+          colStart: Math.max(0, Math.floor(options.bounds?.colStart ?? 0)),
+          rowStart: Math.max(0, Math.floor(options.bounds?.rowStart ?? 0)),
+          colEnd: Math.min(ZCOLS, Math.ceil(options.bounds?.colEnd ?? ZCOLS)),
+          rowEnd: Math.min(ZROWS, Math.ceil(options.bounds?.rowEnd ?? ZROWS)),
+        }; // Restricts tile-owned meshes to one streaming chunk.
+        const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
+        const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -7813,8 +7829,8 @@
           for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
         }
 
-        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
-        if (pathNet) {
+        const pathNet = options.pathNet || buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
+        if (includeGlobalPath && pathNet) {
           // Tiny lift above the plateau mesa lid (which shares this exact
           // tier height wherever a path crosses a plateau — see
           // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
@@ -7833,13 +7849,15 @@
         // below): built once the shared recipe/GLB are ready, chunked and
         // culled by camera corridor rather than tied to this zone's own
         // scene-build timing.
-        ensurePathSurfaceReady().then(() => {
-          const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
-          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
-          if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
-        }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        if (includeGlobalPath) {
+          ensurePathSurfaceReady().then(() => {
+            const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
+            const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
+            if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+          }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        }
 
-        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+        if (includeTiles) for (let r = bounds.rowStart; r < bounds.rowEnd; r++) for (let c = bounds.colStart; c < bounds.colEnd; c++) {
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
@@ -7874,6 +7892,7 @@
                 geometry.computeVertexNormals();
                 const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
+                rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
                 rockGroup.add(rockMesh);
               }
@@ -8024,6 +8043,7 @@
           merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
+          mesh.userData.wildernessChunkOwnsGeometry = true;
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -8031,9 +8051,14 @@
         return meshes;
       }
 
-      function buildZoneScene(mapId) {
+      function buildZoneScene(mapId, focusCol = null, focusRow = null) {
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
-        if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
+        if (_zoneScenes.has(mapId)) {
+          if (Number.isFinite(focusCol) && Number.isFinite(focusRow)) {
+            window.WildernessChunks?.primeZone(mapId, focusCol, focusRow);
+          }
+          return _zoneScenes.get(mapId);
+        }
         const zdef = EXTERIOR_ZONES[mapId];
         const zoneData = _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
@@ -8081,6 +8106,10 @@
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
           if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+        }
+        const restoredChunkTiles = applyWildernessChunkTileDeltas(mapId, zGrid);
+        if (restoredChunkTiles) {
+          debugLog(`[wilderness-chunks] restored ${restoredChunkTiles} edited tile(s) in ${mapId}`);
         }
         // Re-apply any trees felled with the axe that haven't regrown yet
         // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
@@ -8145,7 +8174,17 @@
         // mesh per material — see _buildZoneFloorMeshes. Tracked per-zone so a
         // runtime tile change (digging/filling/raising — see
         // refreshZoneGroundVisuals) can rebuild just this layer later.
-        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        // The route network is one connected, zone-wide topology, so build it
+        // once and keep it outside streamed chunks. Ordinary floor tiles,
+        // removable rocks, trees, ramps, water and grass are built by the
+        // 16x16 chunk factory below.
+        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Reused by every chunk for seam-safe path exclusions.
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
+          includeTiles: false,
+          includeGlobalPath: true,
+          resetState: true,
+          pathNet: zonePathNet,
+        }));
 
         // Each tier transition in the merged plateau stack renders as one continuous
         // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
@@ -8156,18 +8195,10 @@
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
-        window.ZoneTerrainFeatures.buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
-        _zoneWaterMeshes.set(mapId, [
-          ...window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-          ...window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-        ]);
-
-        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
-        window.ZoneGrassBillboards.buildRichFoliageBillboards(zScene, zoneData, zGrid);
+        _zoneWaterMeshes.set(mapId, []);
+        _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
         window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
@@ -8206,8 +8237,119 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null };
         _zoneScenes.set(mapId, info);
+
+        const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
+        const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
+        const removeRefs = (list, values) => {
+          if (!list?.length || !values?.length) return;
+          const removed = new Set(values);
+          for (let i = list.length - 1; i >= 0; i--) if (removed.has(list[i])) list.splice(i, 1);
+        };
+        const buildRuntimeChunk = ({ group, bounds }) => {
+          const floorMeshes = _buildZoneFloorMeshes(group, zGrid, ZCOLS, ZROWS, mapId, {
+            bounds,
+            includeGlobalPath: false,
+            resetState: false,
+            pathNet: zonePathNet,
+          }); // Chunk-owned ground, rocks and vegetation.
+          const featureMeshes = [
+            ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned ramps and solved rock faces.
+          for (const object of [...floorMeshes, ...featureMeshes]) {
+            object.traverse?.(mesh => {
+              if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) {
+                const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+                if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
+              }
+            });
+          }
+          const waterMeshes = [
+            ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned water surfaces and falls.
+          const grassGroups = [
+            window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds),
+            window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds),
+          ].filter(Boolean); // Chunk-owned ordinary and rich foliage billboards.
+          const chunkOcclusionMeshes = [];
+          const chunkCanopyZones = [];
+          const chunkCullables = [];
+          group.traverse(object => {
+            if (object.userData?.cameraObstacle) chunkOcclusionMeshes.push(object);
+            if (object.userData?.canopyClamp) chunkCanopyZones.push(object.userData.canopyClamp);
+            if (object.userData?.cullSphere) chunkCullables.push(object);
+          });
+          return { floorMeshes, featureMeshes, waterMeshes, grassGroups, chunkOcclusionMeshes, chunkCanopyZones, chunkCullables };
+        };
+        const integrateRuntimeChunk = payload => {
+          floorRegistry.push(...payload.floorMeshes);
+          waterRegistry.push(...payload.waterMeshes);
+          info.occlusionMeshes.push(...payload.chunkOcclusionMeshes);
+          info.canopyZones.push(...payload.chunkCanopyZones);
+          info.cullables.push(...payload.chunkCullables);
+        };
+        const detachRuntimeChunk = (payload, bounds, group) => {
+          removeRefs(floorRegistry, payload.floorMeshes);
+          removeRefs(waterRegistry, payload.waterMeshes);
+          removeRefs(info.occlusionMeshes, payload.chunkOcclusionMeshes);
+          removeRefs(info.canopyZones, payload.chunkCanopyZones);
+          removeRefs(info.cullables, payload.chunkCullables);
+          for (const registry of [_zoneVegetationMeshes.get(mapId), _zoneMineableRockMeshes.get(mapId)]) {
+            if (!registry) continue;
+            for (const key of [...registry.keys()]) {
+              const [col, row] = key.split(',').map(Number);
+              if (col >= bounds.colStart && col < bounds.colEnd && row >= bounds.rowStart && row < bounds.rowEnd) registry.delete(key);
+            }
+          }
+          window.ClimbSystem?.removeBranchesInBounds(mapId, bounds);
+          group.traverse(object => {
+            _treeFadeActive.delete(object);
+            for (const material of (object.userData?._fadeMaterials || [])) material.dispose?.();
+          });
+        };
+        const disposeRuntimeChunk = record => {
+          record.group.traverse(object => {
+            if (object.userData?.wildernessChunkOwnsGeometry) object.geometry?.dispose?.();
+            if (object.userData?.wildernessChunkOwnsMaterial) {
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              for (const material of materials) {
+                material?.map?.dispose?.();
+                for (const uniform of Object.values(material?.uniforms || {})) {
+                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                }
+                material?.dispose?.();
+              }
+            }
+            if (object.userData?.mergedWaterStatKey) window.MergedWaterRenderer?.clearStats?.(object.userData.mergedWaterStatKey);
+          });
+        };
+        const arrivalCol = Number.isFinite(focusCol) ? focusCol : (zdef?.entryCol ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        const arrivalRow = Number.isFinite(focusRow) ? focusRow : (zdef?.entryRow ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        if (window.WildernessChunks) {
+          info.chunkController = window.WildernessChunks.createZone({
+            mapId,
+            scene: zScene,
+            cols: ZCOLS,
+            rows: ZROWS,
+            focusCol: arrivalCol,
+            focusRow: arrivalRow,
+            buildChunk: buildRuntimeChunk,
+            onChunkLoaded: record => integrateRuntimeChunk(record.payload),
+            onChunkUnloaded: record => detachRuntimeChunk(record.payload, record.bounds, record.group),
+            disposeChunk: disposeRuntimeChunk,
+          });
+        } else {
+          // Defensive fallback for a stale/cached index that omitted the new
+          // module: preserve complete terrain rather than showing an empty zone.
+          integrateRuntimeChunk(buildRuntimeChunk({
+            group: zScene,
+            bounds: { colStart: 0, rowStart: 0, colEnd: ZCOLS, rowEnd: ZROWS },
+          }));
+        }
         window.TownZoneBuildings.spawnZoneBuildings(mapId);
         window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
         window.FoliageFurnitureRuntime?.spawnForMap(mapId);
@@ -10825,7 +10967,7 @@
           // area silently landed the player on the farm scene instead (see
           // enterZone, which builds/adds to the zone scene the same way on
           // the way in).
-          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea, player.x / TILE, player.y / TILE)?.scene : scene);
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -10848,7 +10990,9 @@
         }
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
-        const zi = buildZoneScene(mapId);
+        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
+        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        const zi = buildZoneScene(mapId, col, row);
         if (!zi) return;
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
@@ -10856,8 +11000,6 @@
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
-        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
-        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2; player.angle = facingAngle;
@@ -10979,6 +11121,95 @@
         return candidates.slice(0, count);
       }
 
+      function wildernessChunkTileSize() {
+        return window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+      }
+
+      function recordWildernessChunkTileDelta(mapId, col, row) {
+        const tile = _zoneScenes.get(mapId)?.grid?.[row]?.[col];
+        if (!tile) return false;
+        const chunkTiles = wildernessChunkTileSize();
+        const chunkKey = Math.floor(col / chunkTiles) + ',' + Math.floor(row / chunkTiles);
+        let zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) _wildernessChunkTileDeltas.set(mapId, zone = new Map());
+        let chunk = zone.get(chunkKey);
+        if (!chunk) zone.set(chunkKey, chunk = new Map());
+        chunk.set(col + ',' + row, {
+          col, row,
+          type: tile.type,
+          elevTier: tile.elevTier || 0,
+          rampElevation: tile.rampElevation || 0,
+          skipFloor: !!tile.skipFloor,
+          incline: !!tile.incline,
+          floraKind: tile.floraKind || null,
+          rockKind: tile.rockKind || null,
+          water: Number(tile.water) || 0,
+          crop: tile.crop,
+          cropAge: Number(tile.cropAge) || 0,
+          cropReady: !!tile.cropReady,
+          stress: tile.stress || '',
+          variation: Number(tile.variation) || 0,
+        });
+        _wildernessChunkTileStateYear = currentTothalYear();
+        return true;
+      }
+
+      function applyWildernessChunkTileDeltas(mapId, zGrid) {
+        if (_wildernessChunkTileStateYear !== currentTothalYear()) return 0;
+        const zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) return 0;
+        let applied = 0;
+        for (const chunk of zone.values()) {
+          for (const delta of chunk.values()) {
+            const tile = zGrid?.[delta.row]?.[delta.col];
+            if (!tile) continue;
+            Object.assign(tile, delta);
+            delete tile.col;
+            delete tile.row;
+            applied++;
+          }
+        }
+        return applied;
+      }
+
+      function serializeWildernessChunkState() {
+        const zones = {};
+        for (const [mapId, chunks] of _wildernessChunkTileDeltas) {
+          const serializedChunks = {};
+          for (const [chunkKey, tiles] of chunks) serializedChunks[chunkKey] = [...tiles.values()];
+          zones[mapId] = serializedChunks;
+        }
+        return { version: 1, year: currentTothalYear(), chunkTiles: wildernessChunkTileSize(), zones };
+      }
+
+      function restoreWildernessChunkState(saved) {
+        _wildernessChunkTileDeltas.clear();
+        const currentYear = currentTothalYear();
+        _wildernessChunkTileStateYear = currentYear;
+        if (!saved || saved.version !== 1 || Number(saved.year) !== currentYear) return;
+        for (const [mapId, chunks] of Object.entries(saved.zones || {})) {
+          const zone = new Map();
+          for (const [chunkKey, tiles] of Object.entries(chunks || {})) {
+            const tileMap = new Map();
+            for (const delta of (Array.isArray(tiles) ? tiles : [])) {
+              if (!Number.isFinite(delta?.col) || !Number.isFinite(delta?.row)) continue;
+              tileMap.set(delta.col + ',' + delta.row, { ...delta });
+            }
+            if (tileMap.size) zone.set(chunkKey, tileMap);
+          }
+          if (zone.size) _wildernessChunkTileDeltas.set(mapId, zone);
+        }
+      }
+
+      window.__wildernessChunkPersistenceDebug = () => {
+        let chunks = 0, tiles = 0;
+        for (const zone of _wildernessChunkTileDeltas.values()) {
+          chunks += zone.size;
+          for (const chunk of zone.values()) tiles += chunk.size;
+        }
+        return { year: _wildernessChunkTileStateYear, chunks, editedTiles: tiles };
+      };
+
       // Save/restore _zoneFelledTreePersist as a plain object — see
       // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
       // _zoneReagentPersist (no day-mismatch staleness check needed here).
@@ -11015,6 +11246,7 @@
       // materials are shared across every map and must outlive this.
       function _disposeZoneScene(mapId) {
         window.FoliageFurnitureRuntime?.disposeMap(mapId);
+        window.WildernessChunks?.destroyZone(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
@@ -11067,7 +11299,7 @@
         const byTile = _zoneVegetationMeshes.get(mapId);
         const vegGroup = byTile?.get(`${col},${row}`);
         if (!zi || !vegGroup) return false;
-        zi.scene.remove(vegGroup);
+        vegGroup.parent?.remove(vegGroup);
         byTile.delete(`${col},${row}`);
         _treeFadeActive.delete(vegGroup);
         for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
@@ -11096,7 +11328,7 @@
         const byTile = _zoneMineableRockMeshes.get(mapId);
         const rockGroup = byTile?.get(`${col},${row}`);
         if (!zi || !rockGroup) return false;
-        zi.scene.remove(rockGroup);
+        rockGroup.parent?.remove(rockGroup);
         byTile.delete(`${col},${row}`);
         rockGroup.traverse(object => object.geometry?.dispose());
 
@@ -11128,7 +11360,7 @@
           tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
           row + 0.5
         );
-        zi.scene.add(patch);
+        if (!window.WildernessChunks?.attachObject(mapId, col, row, patch)) zi.scene.add(patch);
         _markTerrainEdgeId(patch, TileType.GRASS);
         _zoneFloorMeshGroups.get(mapId)?.push(patch);
         return true;
@@ -11148,9 +11380,18 @@
       // alone, so it's safe to call immediately while the player is
       // standing in the zone (unlike a full zone rebuild — see
       // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
-      function refreshZoneGroundVisuals(mapId) {
+      function refreshZoneGroundVisuals(mapId, col = null, row = null) {
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
+        if (zi.chunkController && window.WildernessChunks) {
+          // The live grid already contains the authoritative edit. Rebuild
+          // only its resident chunk plus one-chunk seam halo; unloaded chunks
+          // will naturally read the updated grid when they are next streamed.
+          window.WildernessChunks.rebuildZone(mapId, col, row);
+          rebuildZoneMesaMeshes(mapId);
+          window.WildTreasure.syncZoneInteractivity(mapId);
+          return;
+        }
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
         if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
         const oldGrass = _zoneGrassMeshes.get(mapId);
@@ -15049,7 +15290,8 @@
           // per-tile array, so the whole ground+grass layer needs rebuilding
           // (not just this one tile) for the change to actually show up. See
           // refreshZoneGroundVisuals.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -18332,7 +18574,8 @@
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -20443,9 +20686,9 @@
       let s_cloudForestBgForest = true;
       // Live Settings-tab slider value for the radial vegetation cull
       // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
-      // vegCullRadiusTiles default (15) but is independently adjustable
+      // vegCullRadiusTiles default (30) but is independently adjustable
       // without touching that config.
-      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
       // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
       // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
       // beyond this fraction of the radius a tree ramps from opaque (at the
@@ -20561,15 +20804,12 @@
         if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
-        // Existing zone grass groups use this switch for truthful mobile-side perf testing.
-        for (const grassGroup of _zoneGrassMeshes.values()) {
-          if (grassGroup) grassGroup.visible = s_grass;
-        }
-        // Rich foliage is stored separately, so sync its top-level group too.
+        // Streamed zone grass/rich-foliage groups live below their owning
+        // chunk groups, so traverse rather than assuming direct scene children.
         for (const zoneInfo of _zoneScenes.values()) {
-          for (const object of (zoneInfo.scene?.children || [])) {
-            if (object.userData?.isRichFoliageBillboard) object.visible = s_grass;
-          }
+          zoneInfo.scene?.traverse?.(object => {
+            if (object.userData?.isWildernessGrassChunkGroup || object.userData?.isRichFoliageBillboard) object.visible = s_grass;
+          });
         }
         window.BorderTerrain.setGrassVisible(s_grass);
       }
@@ -20657,6 +20897,28 @@
       wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
       wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
       wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // Used by the mobile-friendly reset button to restore every slider in
+      // the Cloud Forest performance-testing group from its HTML default.
+      const CLOUD_FOREST_DEV_SLIDER_IDS = Object.freeze([
+        'settingCloudForestCullRadius',
+        'settingCloudForestFadeStart',
+        'settingCloudForestOutlineRadius',
+        'settingCloudForestFogInnerRadius',
+        'settingCloudForestFogInnerOpacity',
+        'settingCloudForestFogMiddleRadius',
+        'settingCloudForestFogMiddleOpacity',
+        'settingCloudForestFogOuterRadius',
+        'settingCloudForestFogOuterOpacity',
+      ]);
+      document.getElementById('settingCloudForestResetDefaults')?.addEventListener('click', () => {
+        for (const inputId of CLOUD_FOREST_DEV_SLIDER_IDS) {
+          const input = document.getElementById(inputId);
+          if (!input) continue;
+          input.value = input.defaultValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+      });
       // FPS Counter's checkbox is owned entirely by js/performance-debug.js
       // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
       // it used to also be independently wired up right here, which meant
@@ -20801,7 +21063,7 @@
             player.y = (anchor.y + 0.5) * TILE;
             player.vx = 0; player.vy = 0;
             _snapCameraTarget();
-            const toScene = buildZoneScene(zoneId)?.scene;
+            const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
             if (toScene) {
               toScene.add(playerMesh); toScene.add(playerGroundShadow);
               toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -20825,6 +21087,7 @@
         player.y = (anchor.y + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         _snapCameraTarget();
+        window.WildernessChunks?.primeZone(currentArea, anchor.x, anchor.y);
         showToast(`Teleported to a den (${dens.length} on this map).`, true);
         closeMenu();
       }
@@ -20862,6 +21125,7 @@
           player.y = (anchor.y + 0.5) * TILE;
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
+          window.WildernessChunks?.primeZone(zoneId, anchor.x, anchor.y);
         };
         if (currentArea === zoneId) {
           land();
@@ -20875,7 +21139,7 @@
           if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
           currentArea = zoneId;
           land();
-          const toScene = buildZoneScene(zoneId)?.scene;
+          const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -21062,6 +21326,7 @@
           pollControllerInput();
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          window.WildernessChunks?.update(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -25512,6 +25777,13 @@
         WMAP_ZONE_LABELS,
       });
 
+      window.WildernessChunks?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        player,
+        TILE,
+      });
+
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,
@@ -26105,6 +26377,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreWildernessChunkState(playerData.wildernessChunkState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS

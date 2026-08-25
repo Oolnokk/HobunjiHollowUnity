@@ -15,12 +15,22 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  function buildZoneRampMeshes(zScene, zGrid, zcols, zrows, mapId) {
+  function normalizedBounds(zcols, zrows, bounds) {
+    return {
+      colStart: Math.max(0, Math.floor(bounds?.colStart ?? 0)),
+      rowStart: Math.max(0, Math.floor(bounds?.rowStart ?? 0)),
+      colEnd: Math.min(zcols, Math.ceil(bounds?.colEnd ?? zcols)),
+      rowEnd: Math.min(zrows, Math.ceil(bounds?.rowEnd ?? zrows)),
+    };
+  }
+
+  function buildZoneRampMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const range = normalizedBounds(zcols, zrows, bounds);
     const rampCells = [];
-    for (let r = 0; r < zrows; r++)
-      for (let c = 0; c < zcols; c++)
+    for (let r = range.rowStart; r < range.rowEnd; r++)
+      for (let c = range.colStart; c < range.colEnd; c++)
         if (zGrid[r]?.[c]?.type === deps.TileType.RAMP) rampCells.push([c, r]);
-    if (!rampCells.length) return;
+    if (!rampCells.length) return [];
 
     const cornerY = (ci, cj) => {
       let sum = 0, n = 0;
@@ -52,10 +62,12 @@
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, deps.resolveTileMat(mapId, deps.TileType.PATH));
     mesh.receiveShadow = true;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, deps.terrainCategoryFor(deps.TileType.PATH));
 
     console.log(`%c[zone:${mapId}] ramp mesh built: ${rampCells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+    return [mesh];
   }
 
   // Ramp side curtains: a 1-tile sloped skirt on every cell flagged `rampCurtain`
@@ -66,12 +78,13 @@
   // from the ramp's edge down to ground over one tile — the same margin width
   // buildPlateauMesa uses for its cliff face — and picks up the same steep-face
   // stone skin so a ramp's sides read as a cut bank rather than floating grass.
-  function buildRampCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
+  function buildRampCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const range = normalizedBounds(zcols, zrows, bounds);
     const cells = [];
-    for (let r = 0; r < zrows; r++)
-      for (let c = 0; c < zcols; c++)
+    for (let r = range.rowStart; r < range.rowEnd; r++)
+      for (let c = range.colStart; c < range.colEnd; c++)
         if (zGrid[r]?.[c]?.rampCurtain) cells.push([c, r]);
-    if (!cells.length) return;
+    if (!cells.length) return [];
 
     const cornerY = (ci, cj, fallback) => {
       let sum = 0, n = 0;
@@ -103,6 +116,7 @@
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, deps.resolveTileMat(mapId, deps.TileType.GRASS));
     mesh.receiveShadow = true;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, deps.terrainCategoryFor(deps.TileType.GRASS));
 
@@ -110,6 +124,7 @@
     // after unioning ramp side spans with neighboring plateau cliff spans.
 
     console.log(`%c[zone:${mapId}] ramp curtain skirt built: ${cells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+    return [mesh];
   }
 
   // Unified solved non-walkable rock layer. This mirrors
@@ -121,7 +136,8 @@
   // plateau-cliff spans are excluded — buildPlateauMesa's own mesh
   // renders those directly with a stone material group now, so solving
   // them again here would just double them up.
-  function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId) {
+  function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const range = normalizedBounds(zcols, zrows, bounds);
     const rampCornerYFor = (ci, cj, fallback = null) => {
       let sum = 0, n = 0;
       for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
@@ -153,7 +169,7 @@
       else { prev.top0 = Math.max(prev.top0, top0); prev.top1 = Math.max(prev.top1, top1); prev.bottom0 = Math.min(prev.bottom0, bottom0); prev.bottom1 = Math.min(prev.bottom1, bottom1); prev.kinds.add(kind); }
     };
     const kindOf = (a, b) => (a?.type === deps.TileType.RAMP || b?.type === deps.TileType.RAMP) ? ((a?.incline || b?.incline) ? 'ramp_plateau_seam' : 'ramp_side') : ((a?.incline || b?.incline) ? 'plateau_cliff' : 'tier_seam');
-    for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
+    for (let r = range.rowStart; r < range.rowEnd; r++) for (let c = range.colStart; c < range.colEnd; c++) {
       const t = zGrid?.[r]?.[c]; if (!t) continue;
       const [, y10, y01, y11] = cellCornerHeights(c, r);
       for (const [dc, dr, side] of [[1,0,'E'],[0,1,'S']]) {
@@ -200,7 +216,7 @@
       }
       vi += (segs + 1) * (segs + 1);
     }
-    if (!idx.length) return;
+    if (!idx.length) return [];
     const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -209,19 +225,23 @@
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
+    mesh.userData.wildernessChunkOwnsMaterial = true;
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, deps.terrainCategoryFor(deps.TileType.ROCK));
     mesh.userData.cameraObstacle = true; // vertical cliff-face skin — see buildPlateauMesa's own tag
     console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
+    return [mesh];
   }
 
   // Waterfall curtain: a vertical sheet at every elevation drop touching a
   // WATERFALL tile — same tier-step detection buildRampCurtainMeshes uses to
   // find a ramp's sides. Returns the spawned mesh(es) for _zoneWaterMeshes.
-  function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
+  function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const range = normalizedBounds(zcols, zrows, bounds);
     const cells = [];
-    for (let r = 0; r < zrows; r++)
-      for (let c = 0; c < zcols; c++)
+    for (let r = range.rowStart; r < range.rowEnd; r++)
+      for (let c = range.colStart; c < range.colEnd; c++)
         if (zGrid[r]?.[c]?.type === deps.TileType.WATERFALL) cells.push([c, r]);
     if (!cells.length) return [];
 
@@ -272,6 +292,8 @@
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = false;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
+    mesh.userData.wildernessChunkOwnsMaterial = true;
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, 'water');
 
@@ -283,13 +305,14 @@
   // above the sunken beds. Each tile still contributes its own elevation,
   // depth, and flow attributes, so plateau waterways and waterfall pools keep
   // their authored heights without returning to one draw call per tile.
-  function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId) {
+  function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const range = normalizedBounds(zcols, zrows, bounds);
     const isWaterTile = (cc, rr) => {
       const t = zGrid[rr]?.[cc]?.type;
       return t === deps.TileType.RIVER || t === deps.TileType.STREAM || t === deps.TileType.WATERFALL;
     };
     const cells = [];
-    for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
+    for (let r = range.rowStart; r < range.rowEnd; r++) for (let c = range.colStart; c < range.colEnd; c++) {
       const tile = zGrid[r][c];
       if (!isWaterTile(c, r)) continue;
       let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
@@ -307,10 +330,13 @@
       });
     }
     if (!cells.length) return [];
+    const chunkSuffix = range.colStart + '_' + range.rowStart;
     const mesh = deps.buildMergedWaterMesh(zScene, cells, {
-      name: `${mapId}_merged_water`, statKey: `${mapId} waterways`,
+      name: `${mapId}_merged_water_${chunkSuffix}`, statKey: `${mapId} waterways ${chunkSuffix}`,
     });
     if (!mesh) return [];
+    mesh.userData.wildernessChunkOwnsGeometry = true;
+    mesh.userData.wildernessChunkOwnsMaterial = true;
     deps.displaceZoneGeometry(mesh.geometry, mapId);
     mesh.geometry.computeVertexNormals();
     console.log(`%c[zone:${mapId}] merged river/stream/waterfall water surface built: ${cells.length} tile(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
