@@ -102,7 +102,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260825melee2"></script>
+  <script src="js/combat/combat-core.js?v=20260825lunge3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
        rig. Must load after that module (see the "Procedural leg/foot
@@ -110,7 +110,7 @@
   <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260825lunge3"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
@@ -124,7 +124,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260825focus3"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -132,7 +132,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260825hitbox2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260825hitbox3"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -279,7 +279,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260825focus2"></script>
+  <script src="js/climb-system.js?v=20260825focus3"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -1977,7 +1977,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks6"></script>
+  <script src="game.js?v=20260825chunks7"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
