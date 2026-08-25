@@ -1331,14 +1331,14 @@
           // startup default: both the live cull radius and each fog layer's
           // own radius/opacity are independently Settings-tab sliders (see
           // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
-          // setLayerOpacity) — lowered from 34 to 15 by default since the
+          // setLayerOpacity) — lowered from 34 to 30 by default since the
           // full 34-tile radius was a real contributor to reported
           // choppiness in this zone. At 34, fogDensity above had already
           // made FogExp2 ~97% opaque out there, hiding the vegetation
           // pop-in; at the smaller default the pop-in ring is more likely
           // to be visible, tunable back up via the slider if that matters
           // more than the performance it costs.
-          vegCullRadiusTiles: 15,
+          vegCullRadiusTiles: 30,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -20686,9 +20686,9 @@
       let s_cloudForestBgForest = true;
       // Live Settings-tab slider value for the radial vegetation cull
       // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
-      // vegCullRadiusTiles default (15) but is independently adjustable
+      // vegCullRadiusTiles default (30) but is independently adjustable
       // without touching that config.
-      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
       // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
       // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
       // beyond this fraction of the radius a tree ramps from opaque (at the
@@ -20897,6 +20897,28 @@
       wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
       wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
       wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // Used by the mobile-friendly reset button to restore every slider in
+      // the Cloud Forest performance-testing group from its HTML default.
+      const CLOUD_FOREST_DEV_SLIDER_IDS = Object.freeze([
+        'settingCloudForestCullRadius',
+        'settingCloudForestFadeStart',
+        'settingCloudForestOutlineRadius',
+        'settingCloudForestFogInnerRadius',
+        'settingCloudForestFogInnerOpacity',
+        'settingCloudForestFogMiddleRadius',
+        'settingCloudForestFogMiddleOpacity',
+        'settingCloudForestFogOuterRadius',
+        'settingCloudForestFogOuterOpacity',
+      ]);
+      document.getElementById('settingCloudForestResetDefaults')?.addEventListener('click', () => {
+        for (const inputId of CLOUD_FOREST_DEV_SLIDER_IDS) {
+          const input = document.getElementById(inputId);
+          if (!input) continue;
+          input.value = input.defaultValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+      });
       // FPS Counter's checkbox is owned entirely by js/performance-debug.js
       // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
       // it used to also be independently wired up right here, which meant

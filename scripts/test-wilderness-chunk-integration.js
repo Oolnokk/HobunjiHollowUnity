@@ -9,10 +9,12 @@ const grass = fs.readFileSync('docs/js/zone-grass-billboards.js', 'utf8');
 const features = fs.readFileSync('docs/js/zone-terrain-features.js', 'utf8');
 const climb = fs.readFileSync('docs/js/climb-system.js', 'utf8');
 
-assert.ok(index.includes('js/wilderness-chunks.js?v=20260825chunks1'));
-assert.ok(index.indexOf('js/wilderness-chunks.js') < index.indexOf('game.js?v=20260825chunks1'));
+assert.match(index, /js\/wilderness-chunks\.js\?v=[^"']+/);
+assert.ok(index.indexOf('js/wilderness-chunks.js') < index.indexOf('src="game.js?v='));
 assert.ok(index.includes('id="wildernessChunkDebugBtn"'));
 assert.ok(index.includes('id="wildernessChunkStatus"'));
+assert.match(index, /id="settingCloudForestCullRadius"[^>]+value="30"/);
+assert.ok(index.includes('id="settingCloudForestResetDefaults"'));
 
 assert.ok(game.includes('function buildZoneScene(mapId, focusCol = null, focusRow = null)'));
 assert.ok(game.includes('window.WildernessChunks.createZone({'));
@@ -28,6 +30,8 @@ assert.ok(game.includes('mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeomet
 assert.ok(game.includes('window.TerrainJigsawUV?.bakeMesh?.(mesh)'));
 assert.ok(game.includes('window.WildernessChunks?.destroyZone(mapId);'));
 assert.ok(game.includes('removeBranchesInBounds(mapId, bounds)'));
+assert.ok(game.includes('vegCullRadiusTiles: 30'));
+assert.ok(game.includes("document.getElementById('settingCloudForestResetDefaults')"));
 
 assert.ok(grass.includes('function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0, bounds = null)'));
 assert.ok(grass.includes('for (let row = range.rowStart; row < range.rowEnd; row++)'));
