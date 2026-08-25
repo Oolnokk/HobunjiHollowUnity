@@ -624,6 +624,11 @@
     return best;
   }
 
+  function hasNearbyTent() {
+    const zoneId = deps?.getCurrentArea?.(); // Used by desktop Interact to reserve E for the nearby tent hold instead of opening Tool Select.
+    return !!(zoneId && deps.isZoneArea(zoneId) && nearestBanditTent(zoneId));
+  }
+
   function lootBanditTent(zoneId, obj) {
     const gained = deps.rollLootPool('banditTent');
     const parts = grantBanditLoot(gained);
@@ -793,6 +798,7 @@
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,
+    hasNearbyTent,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
     // Marks a zone as just (re-)entered — the one moment
     // ensureCurrentZoneCamps is allowed to release and re-stamp a cleared
