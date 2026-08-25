@@ -709,8 +709,11 @@
   // Generic centered-reticle resolver shared by combat and world
   // interactions. Each candidate supplies a Box3 directly or the same
   // actor-hitbox wrapper used by projectiles.
+  function interactionAimRay() {
+    return normalizedAimRay(deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.());
+  }
   function focusCandidates(candidates, maxDistanceWorld = 24) {
-    const cameraRay = normalizedAimRay(deps?.getPlayerAimRay?.());
+    const cameraRay = interactionAimRay();
     const distance = Math.max(0.01, Number(maxDistanceWorld) || 24);
     if (!cameraRay || !Array.isArray(candidates) || !candidates.length) return null;
     const rayEnd = cameraRay.origin.clone().addScaledVector(cameraRay.direction, distance);
