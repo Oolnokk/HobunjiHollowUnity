@@ -4,7 +4,8 @@
   // Four corner pieces mirror the four weapon-tool loadout slots.
   const SLOT_IDS = ['tap1', 'tap2', 'hold1', 'hold2'];
   const SLOT_LABELS = ['Combo', 'Quick Attack', 'Held 1', 'Held 2'];
-  const SLOT_COLORS = ['#5ce7ff', '#ffd166', '#c084fc', '#7ee787'];
+  // Reuse the action-arch combat colors so the HUD sight and input buttons agree.
+  const SLOT_COLORS = ['#00D9FF', '#FFD23F', '#FF4FD8', '#7CFF4F'];
   const RETICLE_URL = 'assets/hud/hud_reticle.png';
   const RETICLE_SCALE = 0.5;
   const RETICLE_OPACITY = 0.62;
@@ -14,10 +15,10 @@
   const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
   // Slot colors are applied only after the corresponding attack is reachable.
   const SLOT_READY_FILTERS = [
-    'brightness(0) saturate(100%) invert(83%) sepia(77%) saturate(1190%) hue-rotate(128deg) brightness(101%) contrast(101%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(78%) sepia(91%) saturate(708%) hue-rotate(2deg) brightness(105%) contrast(104%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(70%) sepia(38%) saturate(1987%) hue-rotate(239deg) brightness(101%) contrast(101%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(77%) sepia(68%) saturate(553%) hue-rotate(79deg) brightness(101%) contrast(102%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)' + READY_GLOW,
   ];
   const CLIPS = [
     'polygon(0 0, 54% 0, 54% 54%, 0 54%)',
