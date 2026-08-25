@@ -506,7 +506,7 @@
     get lastResult() { return lastMelee3DResult; },
     get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
     snapshot: () => ({
-      latestChange: 'Melee cones and trails now use portrait Box3 volumes plus a pitched 3D aim direction; upward lunges become shorter rendered leaps.',
+      latestChange: 'Melee cones and trails use portrait Box3 volumes; angled lunges use attacker-specific height budgets for distance and leap arcs.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
       activeColliders: debugMeleeColliders().map(collider => ({
