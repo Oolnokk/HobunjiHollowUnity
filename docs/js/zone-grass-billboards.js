@@ -25,6 +25,15 @@
   const RICH_BLADES_PER_TILE = 24;
   const BILLBOARD_VERTICAL_PAD = 1.5;
 
+  function normalizedBounds(zcols, zrows, bounds) {
+    return {
+      colStart: Math.max(0, Math.floor(bounds?.colStart ?? 0)),
+      rowStart: Math.max(0, Math.floor(bounds?.rowStart ?? 0)),
+      colEnd: Math.min(zcols, Math.ceil(bounds?.colEnd ?? zcols)),
+      rowEnd: Math.min(zrows, Math.ceil(bounds?.rowEnd ?? zrows)),
+    };
+  }
+
   function chunkBoundsGeometry(minCol, minRow, maxCol, maxRow, minBaseY, maxBaseY) {
     const geo = deps.grassBladeGeo.clone();
     const minX = minCol - 0.25;
@@ -71,6 +80,7 @@
     mesh.visible = true;
     mesh.userData.isBillboard = true;
     mesh.userData.isWildernessGrassChunk = true;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
     mesh.userData.skipOcclusionFade = true;
     // Used by game.js's zone culler to reject entire grass chunks before draw submission.
     const bounds = geo.boundingBox;
@@ -91,13 +101,14 @@
     return mesh;
   }
 
-  function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0) {
+  function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0, bounds = null) {
     const grassBillboardMat = deps.getGrassBillboardMat();
     if (!grassBillboardMat) return null;
 
+    const range = normalizedBounds(zcols, zrows, bounds);
     const tiles = [];
-    for (let row = 0; row < zrows; row++) {
-      for (let col = 0; col < zcols; col++) {
+    for (let row = range.rowStart; row < range.rowEnd; row++) {
+      for (let col = range.colStart; col < range.colEnd; col++) {
         const tile = zGrid[row]?.[col];
         if (tile?.type !== deps.TileType.GRASS) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
@@ -115,6 +126,7 @@
     group.visible = deps.getGrassEnabled();
     group.userData.isBillboard = true;
     group.userData.isWildernessGrassChunkGroup = true;
+    group.userData.wildernessChunkBounds = range;
     let instances = 0;
     const buckets = chunkTileBuckets(tiles);
     for (const bucketTiles of buckets.values()) {
@@ -169,15 +181,19 @@
     return idx;
   }
 
-  function buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
+  function buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0, bounds = null) {
     const grassBillboardMat = deps.getGrassBillboardMat();
     if (!grassBillboardMat) return null;
     const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
     if (!richPatches.length) return null;
 
+    const zrows = zGrid?.length || 0;
+    const zcols = zGrid?.[0]?.length || 0;
+    const range = normalizedBounds(zcols, zrows, bounds);
     const tiles = [];
     for (const patch of richPatches) {
       for (const t of patch.tiles) {
+        if (t.x < range.colStart || t.x >= range.colEnd || t.y < range.rowStart || t.y >= range.rowEnd) continue;
         const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * deps.PLATEAU_UNIT;
         tiles.push({
           col: t.x,
@@ -192,6 +208,7 @@
     const group = new THREE.Group();
     group.visible = deps.getGrassEnabled();
     group.userData.isRichFoliageBillboard = true;
+    group.userData.wildernessChunkBounds = range;
     let instances = 0;
     const buckets = chunkTileBuckets(tiles);
     for (const bucketTiles of buckets.values()) {
