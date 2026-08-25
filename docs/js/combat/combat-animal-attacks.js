@@ -134,12 +134,18 @@
     state.rangePx = c.def.attackRangePx;
     state.halfConeRad = c.def.attackHalfConeRad;
     state.damage = c.def.attackDamage;
-    state.lungeProfile = window.Combat?.meleeLungeProfile?.(
+    // Preserve pounce's existing target-reaching travel budget, then let
+    // the angled profile shorten/extend that budget from the species height.
+    const baseLungeDistancePx = Math.max(
       state.rangePx,
+      Math.hypot((ctx.target?.x ?? c.x) - c.x, (ctx.target?.y ?? c.y) - c.y),
+    );
+    state.lungeProfile = window.Combat?.meleeLungeProfile?.(
+      baseLungeDistancePx,
       state.aimPitch,
       0,
       c.def.lungeHeightUnits ?? 1,
-    ) || { distancePx: state.rangePx, hopUnits: 0, pitch: state.aimPitch };
+    ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
     state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx);
     state.traveledPx = 0;
     state.collideRadiusPx = deps.TILE * 0.32;
