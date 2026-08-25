@@ -15487,7 +15487,10 @@
         if (menuOpen || farmEditMode || dialogueOpen || sitInteraction ||
             window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
         camera.updateMatrixWorld?.();
-        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        // Desktop normal-camera interactions follow the actual cursor reticle;
+        // shoulder/mobile interactions remain screen-centered.
+        const ndc = activeCameraMode === SHOULDER_SURF_MODE ? _screenCenterNDC : _mouseNDC;
+        _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
