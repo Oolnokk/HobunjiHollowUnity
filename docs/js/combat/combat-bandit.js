@@ -304,6 +304,13 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+    // Preserve the portrait box recipe on the converted animal-style root:
+    // authored width/height plus vertical placement, with runtime world scale
+    // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
+    group.userData.portraitModelWidth = modelWidth;
+    group.userData.portraitModelHeight = modelHeight;
+    group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
+    group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     const legsPivot = new THREE.Group();
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
