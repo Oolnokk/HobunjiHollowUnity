@@ -147,17 +147,20 @@
   }
 
   function branchNestBox(branch, nest) {
-    if (nest.mesh?.isObject3D) {
-      nest.mesh.updateWorldMatrix?.(true, true);
-      const meshBox = new THREE.Box3().setFromObject(nest.mesh);
-      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12);
-    }
     const x = nest.x / deps.TILE, z = nest.y / deps.TILE;
     const y = Number(nest.worldY) || ((branch.baseWorldY + branch.tipWorldY) / 2);
-    return new THREE.Box3(
+    // Keep an authored midpoint volume even when a decorative nest mesh has a
+    // local pivot/scale that makes its world bounds too small or offset.
+    const authoredBox = new THREE.Box3(
       new THREE.Vector3(x - 0.55, y - 0.15, z - 0.55),
       new THREE.Vector3(x + 0.55, y + 0.65, z + 0.55),
     );
+    if (nest.mesh?.isObject3D) {
+      nest.mesh.updateWorldMatrix?.(true, true);
+      const meshBox = new THREE.Box3().setFromObject(nest.mesh);
+      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12).union(authoredBox);
+    }
+    return authoredBox;
   }
 
   // Branch nests share the exact centered ray/nearest-hit arbitration used
