@@ -269,22 +269,34 @@
     return hit;
   }
 
-  // Horizontal travel falls linearly toward zero at a vertical 90-degree
-  // aim. Upward aim past 12 degrees adds a real rendered leap arc.
-  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0) {
+  // Horizontal travel falls with aim angle, but the falloff is authored per
+  // attacker. A creature's lungeHeightUnits is the vertical leap budget:
+  // tiny values (Uumkao'ii) nearly stop a vertical lunge, while a tall
+  // Drenkirra leap can retain more than its horizontal attack distance.
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
-    const distanceScale = THREE.MathUtils.clamp(1 - Math.abs(pitch) / (Math.PI / 2), 0, 1);
+    const absPitch = Math.abs(pitch);
+    const distanceScaleAtAngle = THREE.MathUtils.clamp(1 - absPitch / (Math.PI / 2), 0, 1);
     const leapT = THREE.MathUtils.clamp(
       (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
       0, 1,
     );
     const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
+    const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
+    const heightToDistance = baseDistanceWorld > 1e-4 ? heightUnits / baseDistanceWorld : 0;
+    // The same linear angle decrease remains at the core; the leap height
+    // adds a linear, authored recovery term as the aim turns upward.
+    const distanceScale = THREE.MathUtils.clamp(
+      distanceScaleAtAngle + leapT * heightToDistance,
+      0, 3.5,
+    );
     return {
       pitch,
       distanceScale,
+      lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
       leapT,
-      hopUnits: Math.max(0, Number(baseHopUnits) || 0) + leapT * Math.max(0.45, baseDistanceWorld * 0.55),
+      hopUnits: Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits,
     };
   }
 
