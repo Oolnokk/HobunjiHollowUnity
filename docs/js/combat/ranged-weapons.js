@@ -706,6 +706,61 @@
     };
   }
 
+  // Generic centered-reticle resolver shared by combat and world
+  // interactions. Each candidate supplies a Box3 directly or the same
+  // actor-hitbox wrapper used by projectiles.
+  function focusCandidates(candidates, maxDistanceWorld = 24) {
+    const cameraRay = normalizedAimRay(deps?.getPlayerAimRay?.());
+    const distance = Math.max(0.01, Number(maxDistanceWorld) || 24);
+    if (!cameraRay || !Array.isArray(candidates) || !candidates.length) return null;
+    const rayEnd = cameraRay.origin.clone().addScaledVector(cameraRay.direction, distance);
+    let nearest = null;
+    for (const candidate of candidates) {
+      const hitbox = candidate?.hitbox?.box ? candidate.hitbox
+        : candidate?.box?.isBox3 ? { box: candidate.box }
+        : candidate?.box?.min && candidate?.box?.max ? { box: candidate.box }
+        : null;
+      const interval = segmentHitboxInterval(cameraRay.origin, rayEnd, hitbox);
+      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+      const middle = (interval.enter + interval.exit) / 2;
+      nearest = {
+        candidate, interval,
+        distanceWorld: interval.enter * distance,
+        point: cameraRay.origin.clone().lerp(rayEnd, middle),
+      };
+    }
+    return nearest;
+  }
+
+  function focusedHostile(maxDistanceWorld = 24) {
+    if (!deps?.hostileObjects) return null;
+    const candidates = [];
+    for (const hostile of deps.hostileObjects) {
+      if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
+      const hitbox = actorHitbox(hostile);
+      if (hitbox) candidates.push({ type: 'hostile', id: hostile.id || hostile.name || hostile.def?.id, data: hostile, hitbox });
+    }
+    return focusCandidates(candidates, maxDistanceWorld);
+  }
+
+  // Horizontal attack cones remain authoritative for ordinary melee range;
+  // this adds the missing vertical requirement using the same portrait body
+  // volumes that centered aiming and projectile collision already share.
+  function meleeReachCheck(attacker, target, verticalAllowanceWorld = 0.4) {
+    const attackerHitbox = actorHitbox(attacker);
+    const targetHitbox = actorHitbox(target);
+    if (!attackerHitbox || !targetHitbox) return { reachable: true, verticalGap: 0, allowance: verticalAllowanceWorld };
+    const a = attackerHitbox.box, b = targetHitbox.box;
+    const verticalGap = a.max.y < b.min.y ? b.min.y - a.max.y
+      : b.max.y < a.min.y ? a.min.y - b.max.y
+      : 0;
+    const allowance = Math.max(0, Number(verticalAllowanceWorld) || 0);
+    return { reachable: verticalGap <= allowance, verticalGap, allowance, attackerHitbox, targetHitbox };
+  }
+  function canMeleeReach(attacker, target, verticalAllowanceWorld = 0.4) {
+    return meleeReachCheck(attacker, target, verticalAllowanceWorld).reachable;
+  }
+
   // Finds the exact point under the centered HUD reticle. When its camera ray
   // crosses a hostile portrait box, the projectile converges from the player
   // muzzle to the middle of that volume; otherwise it converges at max range.
@@ -1007,6 +1062,7 @@
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     wouldHitHostile, playerAimSolution, actorHitbox,
+    focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
@@ -1038,12 +1094,17 @@
         ...(deps?.npcWalkers || []).filter(npc => npc.area === deps.getCurrentArea()).map((npc, index) => actorDebugHitbox(npc.id || npc.name || `npc-${index}`, npc)),
       ].filter(Boolean);
     },
+    get focusedHostile() {
+      const focus = focusedHostile();
+      return focus ? { id: focus.candidate.id || null, distanceWorld: focus.distanceWorld } : null;
+    },
+    get lastMeleeHeightBlock() { return deps?.getLastMeleeHeightBlock?.() || null; },
     get wouldHitHostile() { return wouldHitHostile(); },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Portrait width/height plus scaled vertical placement now form 3D player/NPC hitboxes; the centered HUD ray, red prediction, and projectile trajectory share one shot solution.',
+      latestChange: 'The centered 3D aim ray now selects enemies, climb trunks, and nests through shared Box3 focus; melee also requires vertically reachable portrait body volumes.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
