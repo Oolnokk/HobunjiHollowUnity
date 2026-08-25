@@ -170,6 +170,7 @@
           halfConeRad: profile.halfConeRad,
           yaw,
           pitch,
+          debug: false,
         });
     });
     return { target: target.id || target.name || 'hostile', ready, distanceWorld };
