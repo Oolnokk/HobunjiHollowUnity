@@ -15315,7 +15315,33 @@
       // with the actual point on the ground being targeted, and every
       // consumer needs to agree on that one real point or the head/body/
       // reticle visibly disagree with each other.
+      // Supplies a copy of the camera's exact screen-center ray while the
+      // ranged weapon is drawn. RangedWeapons owns portrait-box convergence
+      // and returns the final muzzle trajectory, keeping HUD placement,
+      // target color, player facing, and the projectile on one line.
+      function currentPlayerAimRay() {
+        if (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged) return null;
+        camera.updateMatrixWorld?.();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
       function updateShoulderSurfReticleAim() {
+        const rangedAim = heldMode === 'tool' && activeTool === 'ranged'
+          ? window.RangedWeapons?.playerAimSolution?.(equipmentSlots.ranged)
+          : null;
+        const rangedHorizontal = rangedAim ? Math.hypot(rangedAim.direction.x, rangedAim.direction.z) : 0;
+        if (rangedHorizontal > 0.0001) {
+          mouseLookAngle = Math.atan2(rangedAim.direction.z, rangedAim.direction.x);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+          return;
+        }
         _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
@@ -23647,6 +23673,7 @@
       }
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
         e: { down: false, held: false, timer: null, arc: 'tool' }
@@ -23874,6 +23901,14 @@
         if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
+      function visibleActionOverrideForWeaponSlot(actionId) {
+        const slot = weaponActionSlot(actionId);
+        if (!slot) return null;
+        const button = computeActionButtons()[slot - 1]; // Used to preserve the world-context button occupying this physical weapon slot.
+        if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
+        return { slot, button };
+      }
+      const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -23955,6 +23990,7 @@
         }
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
+          if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
@@ -23965,6 +24001,12 @@
         }
         if (menuOpen || farmEditMode) return;
         if (actionId === 'interact') { runInteractAction(); return; }
+        const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
+        if (visibleOverride) {
+          visibleWeaponContextPresses.add(actionId);
+          runActionButtonAtSlot(visibleOverride.slot);
+          return;
+        }
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
@@ -24205,7 +24247,15 @@
 
         if (key === 'e') {
           event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+          if (isDesktop) {
+            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+              desktopTentInteractHeld = true;
+              actionHeldDown = true;
+              return;
+            }
+            startDesktopHoldKey('e', event);
+            return;
+          }
         }
         if (key === 'q') {
           event.preventDefault();
@@ -24305,6 +24355,11 @@
         }
         if (key === 'e' && isDesktop) {
           event.preventDefault();
+          if (desktopTentInteractHeld) {
+            desktopTentInteractHeld = false;
+            actionHeldDown = false;
+            return;
+          }
           const wasHeld = finishDesktopHoldKey('e');
           if (!wasHeld) runInteractAction();
           return;
@@ -24522,6 +24577,13 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+            const pointerActionId = e.button === 0 ? 'action1' : e.button === 2 ? 'action2' : null; // Used to map mouse presses through the same visible-slot override as keyboard/controller input.
+            const visibleOverride = pointerActionId ? visibleActionOverrideForWeaponSlot(pointerActionId) : null;
+            if (visibleOverride) {
+              visibleWeaponContextPresses.add('mouse:' + e.button);
+              runActionButtonAtSlot(visibleOverride.slot);
+              return;
+            }
             tryAutoEngageMeleeTarget();
             if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
@@ -24540,6 +24602,10 @@
       }
       window.addEventListener('pointerup', (e) => {
         if (e.pointerType !== 'mouse') return;
+        if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
+          if (e.button === 0) actionHeldDown = false;
+          return;
+        }
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
           else if (e.button === 2) { window.Combat.input.pressEnd(2); }
@@ -24973,10 +25039,19 @@
         playerRadius: PLAYER_RADIUS,
         TILE,
         hostileObjects,
+        npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
         getActiveScene,
         getPlayerAimAngle: currentPlayerAimAngle,
         getPlayerAimPitch: currentPlayerAimPitch,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerAvatarGroup: () => {
+          let avatarGroup = null;
+          playerMesh?.traverse?.(child => {
+            if (!avatarGroup && Number.isFinite(child.userData?.portraitModelHeight)) avatarGroup = child;
+          });
+          return avatarGroup;
+        },
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
