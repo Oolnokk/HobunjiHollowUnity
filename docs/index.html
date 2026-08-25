@@ -102,7 +102,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260825melee1"></script>
+  <script src="js/combat/combat-core.js?v=20260825melee2"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
        rig. Must load after that module (see the "Procedural leg/foot
@@ -110,7 +110,7 @@
   <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260809a"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
@@ -267,7 +267,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260825hitbox1"></script>
+  <script src="js/debug-hitboxes.js?v=20260825hitbox2"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -1498,9 +1498,16 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Show Hitboxes</div>
-              <div class="settings-desc">Outline the player's and creatures' collision circles, plus active attack colliders</div>
+              <div class="settings-desc">Show elevated portrait hitboxes and active 3D melee pie-prism colliders</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingShowHitboxes"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Show Interaction Raycast</div>
+              <div class="settings-desc">Show the centered camera ray, its selected target, and the player-to-hit guide</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShowInteractionRaycast"><span class="toggle-slider"></span></span>
           </label>
           <label class="settings-row">
             <div class="settings-label">
@@ -1897,7 +1904,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260825melee1"></script>
+  <script src="js/pixel-probe.js?v=20260825melee2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1970,7 +1977,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks5"></script>
+  <script src="game.js?v=20260825chunks6"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
