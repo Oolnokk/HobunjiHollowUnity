@@ -105,7 +105,19 @@
   function meshTriangleCount(obj) {
     if (!obj?.isMesh || !obj.geometry) return 0;
     const geometry = obj.geometry;
-    const count = geometry.index?.count ?? geometry.attributes?.position?.count ?? 0;
+    const totalCount = geometry.index?.count ?? geometry.attributes?.position?.count ?? 0;
+    // Several meshes (see terrain-render-chunks.js's spatial chunking) share
+    // ONE big index buffer across many sibling meshes, each drawing only its
+    // own drawRange slice of it. geometry.index.count is that whole shared
+    // buffer's size, not this particular mesh's share — reading it directly
+    // over-counts by roughly (number of sibling chunks) for every one of
+    // them, compounding into an absurd total (a real ~1M-triangle terrain
+    // surface split into hundreds of chunks was reported as several hundred
+    // million). Clamp to drawRange when it's actually restricting output.
+    const range = geometry.drawRange;
+    const count = range && Number.isFinite(range.count)
+      ? Math.max(0, Math.min(range.count, totalCount - (range.start || 0)))
+      : totalCount;
     let tris = count / 3;
     if (obj.isInstancedMesh) tris *= Math.max(0, Number(obj.count) || 0);
     return Number.isFinite(tris) ? tris : 0;
