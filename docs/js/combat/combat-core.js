@@ -187,7 +187,7 @@
   function meleeHit(attacker, target, opts = {}) {
     const solution = meleeSolutionForOptions(attacker, opts);
     const collider = meleeColliderVolume(attacker, opts, solution);
-    rememberMeleeColliderDebug(collider);
+    if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     const targetHitbox = combatActorHitbox(target);
     const rangePx = Math.max(0, Number(opts.rangePx) || 0);
     const halfConeRad = collider.halfConeRad;
