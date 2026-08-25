@@ -731,7 +731,8 @@
         // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
-        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0, lungeHitTest: null,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -4383,7 +4384,12 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
-          if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
+          if (!window.Combat?.meleeHit?.(player, c, {
+            rangePx: abil.rangePx,
+            halfConeRad: abil.halfConeRad,
+            yaw: player.angle,
+            pitch: currentPlayerMeleeAimPitch(),
+          })) continue;
           damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
           hits++;
           lastName = c.def.label;
@@ -4470,6 +4476,27 @@
           return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
         }
         return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+      }
+
+      // Shared player melee direction. A hostile under the centered reticle
+      // converges from the player's body center to that same portrait Box3;
+      // otherwise the camera/facing yaw and pitch remain authoritative.
+      function currentPlayerMeleeAimDirection() {
+        const focused = window.RangedWeapons?.focusedHostile?.(24);
+        if (focused?.candidate?.data && window.Combat?.meleeAimSolution) {
+          const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
+          return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
+        }
+        const cameraRay = currentPlayerAimRay();
+        if (cameraRay?.direction) return { ...cameraRay.direction };
+        const yaw = currentPlayerAimAngle();
+        const pitch = currentPlayerAimPitch();
+        const horizontal = Math.cos(pitch);
+        return { x: Math.cos(yaw) * horizontal, y: Math.sin(pitch), z: Math.sin(yaw) * horizontal };
+      }
+      function currentPlayerMeleeAimPitch() {
+        const direction = currentPlayerMeleeAimDirection();
+        return Math.asin(clamp(Number(direction?.y) || 0, -1, 1));
       }
 
       // Used by updateAmbientCues() to duck exploration/dawn music during a
@@ -4808,7 +4835,8 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY;
+        const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
@@ -5336,8 +5364,22 @@
                       // pass deliberately doesn't take on. Harmless today
                       // since targetPlayer === player whenever `players` has
                       // one entry.
-                      if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+                      const attackTag = def.attackTag || 'sharp'; // Used to tint the hostile's new 3D swipe and preserve its existing affliction type.
+                      const enemyAim = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing || 0, 0);
+                      const attackHalfConeRad = def.attackHalfConeRad || THREE.MathUtils.degToRad(38); // Shared by this hostile's trail and exact 3D hit test.
+                      const trailColor = attackTag === 'blunt' ? 0xffaa55 : attackTag === 'toxin' || attackTag === 'poison' ? 0x78ff62 : 0xff6a6a;
+                      window.Combat?.spawnMeleeTrail?.({
+                        actor: c, target: targetPlayer,
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        color: trailColor,
+                      });
+                      if (window.Combat?.meleeHit?.(c, targetPlayer, {
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        direction: enemyAim?.direction,
+                      })) {
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -7297,10 +7339,16 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
-        player.lungeDirX = Math.cos(player.angle);
-        player.lungeDirY = Math.sin(player.angle);
-        player.lungeDistancePx = distancePx;
-        player.lungeHopUnits = hopUnits;
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
+        const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
+        const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
+        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits)
+          || { distancePx, hopUnits, pitch: aimPitch };
+        player.lungeDirX = Math.cos(aimYaw);
+        player.lungeDirY = Math.sin(aimYaw);
+        player.lungeDistancePx = lungeProfile.distancePx;
+        player.lungeHopUnits = lungeProfile.hopUnits;
+        player.lungeAimPitch = lungeProfile.pitch;
         player.lungeHitTest = hitTest;
       }
 
@@ -7311,7 +7359,12 @@
         if (!hitTest) return false;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
-          if (inCone(player.x, player.y, player.angle, c.x, c.y, hitTest.rangePx, hitTest.halfConeRad)) return true;
+          if (window.Combat?.meleeHit?.(player, c, {
+            rangePx: hitTest.rangePx,
+            halfConeRad: hitTest.halfConeRad,
+            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
+            pitch: player.lungeAimPitch || 0,
+          })) return true;
         }
         return false;
       }
@@ -13651,12 +13704,22 @@
           // the target is guaranteed to still be within the collider right
           // where the lunge halts instead of the player sliding past it.
           if (isHostileInLungeCone(player.lungeHitTest)) {
-            player.lunging = false;
-            player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
-            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
-            tickLungeTrail(_fsPrevX, _fsPrevY);
-            return;
+            if ((player.lungeHopUnits || 0) > 0.01) {
+              // Keep finishing the vertical arc after reaching an elevated
+              // target, but freeze horizontal travel so the leap cannot
+              // carry through and past that target.
+              player.lungeHitTest = null;
+              player.lungeStartX = player.x;
+              player.lungeStartY = player.y;
+              player.lungeDistancePx = 0;
+            } else {
+              player.lunging = false;
+              player.lungeHopCurrent = 0;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+              tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+              tickLungeTrail(_fsPrevX, _fsPrevY);
+              return;
+            }
           }
           // Gently re-aim the lunge toward the locked target's *current*
           // position each frame, capped at LUNGE_HOMING_RATE so it reads as
@@ -13667,12 +13730,15 @@
           // player right past it.
           const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
           if (lungeTarget) {
-            const desiredLungeAngle = Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
+            const aimed = window.Combat?.meleeAimSolution?.(player, lungeTarget, player.angle, player.lungeAimPitch || 0);
+            const desiredLungeAngle = aimed?.yaw ?? Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
             const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+            const homingT = Math.min(1, LUNGE_HOMING_RATE * dt);
             const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
-            const newLungeAngle = curLungeAngle + lungeDiff * Math.min(1, LUNGE_HOMING_RATE * dt);
+            const newLungeAngle = curLungeAngle + lungeDiff * homingT;
             player.lungeDirX = Math.cos(newLungeAngle);
             player.lungeDirY = Math.sin(newLungeAngle);
+            if (aimed) player.lungeAimPitch += (aimed.pitch - (player.lungeAimPitch || 0)) * homingT;
           }
 
           player.lungeT = Math.max(0, player.lungeT - dt);
@@ -14678,11 +14744,16 @@
           return;
         }
 
-        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const { rangePx, halfConeRad, angle, pitch = 0 } = combatSwingCone;
         const rangeTiles = rangePx / TILE;
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
         const y = weaponTrailCenterY();
+        const trailDirection = new THREE.Vector3(
+          Math.cos(angle) * Math.cos(pitch),
+          Math.sin(pitch),
+          Math.sin(angle) * Math.cos(pitch),
+        ).normalize(); // Used to tilt the entire swipe plane toward the 3D aim direction.
         const ids = combatSwingAfflictionIds;
         const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
         // Which tip (u=0 or u=1) the bright spike starts from — mirrors
@@ -14702,23 +14773,23 @@
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
           const posAttr = mesh.geometry.attributes.position;
           const colorAttr = mesh.geometry.attributes.color;
-          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
-            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
-            const a = angle - halfConeRad + (2 * halfConeRad) * u;
-            const cosA = Math.cos(a), sinA = Math.sin(a);
-            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
-            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
-            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
-            const innerR = laneRadius - half, outerR = laneRadius + half;
-            const vi = s * 2;
-            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
-            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+          window.Combat?.writeMeleeTrailRibbon?.(posAttr, {
+            samples: COMBAT_CONE_TRAIL_SAMPLES,
+            origin: new THREE.Vector3(baseX, y, baseZ),
+            direction: trailDirection,
+            rangeTiles: laneRadius,
+            halfConeRad,
+            halfThickness: COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES,
+            archUnits: COMBAT_CONE_TRAIL_ARCH_UNITS,
+          });
+          for (let sample = 0; sample <= COMBAT_CONE_TRAIL_SAMPLES; sample++) {
+            const u = sample / COMBAT_CONE_TRAIL_SAMPLES;
+            const vi = sample * 2;
             const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
             const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
             colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
             colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
           }
-          posAttr.needsUpdate = true;
           colorAttr.needsUpdate = true;
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
@@ -18556,10 +18627,15 @@
       // than at the hold-start windup) call this directly once those
       // numbers are settled instead of going through triggerWeaponSwingVisual's
       // opts. Pass rangePx == null to clear the cone (no trail to draw).
-      function setCombatSwingCone(rangePx, halfConeRad, angle) {
-        combatSwingCone = (rangePx != null)
-          ? { rangePx, halfConeRad: halfConeRad ?? 0, angle: angle ?? player.angle }
-          : null;
+      function setCombatSwingCone(rangePx, halfConeRad, angle, pitch = null) {
+        if (rangePx == null) { combatSwingCone = null; return; }
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used by the pitched 3D ribbon and the strike's matching cone.
+        combatSwingCone = {
+          rangePx,
+          halfConeRad: halfConeRad ?? 0,
+          angle: angle ?? Math.atan2(aimDirection.z, aimDirection.x),
+          pitch: pitch ?? Math.asin(clamp(aimDirection.y, -1, 1)),
+        };
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -25018,6 +25094,9 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        getActiveScene,
+        getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
+        getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
         inCone,
         damageCreature,
         damagePlayer,
@@ -25969,6 +26048,7 @@
       window.DebugHitboxes?.init({
         getActiveTileAt,
         tileSurfaceY,
+        surfaceYAtWorld: activeSurfaceYAtWorld,
         worldToOverlay,
         octx,
         TILE,
