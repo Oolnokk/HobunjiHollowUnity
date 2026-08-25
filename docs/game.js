@@ -14570,38 +14570,6 @@
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
       }
 
-      function drawCombatConeReticle() {
-        const cfg = combatConfig().combatConeReticle || {};
-        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
-        const abil = weaponAbility('cut');
-        if (!abil) return;
-        const rangeTiles = abil.rangePx / TILE;
-        const baseX = player.x / TILE;
-        const baseZ = player.y / TILE;
-        const y = activeSurfaceYAtWorld(baseX, baseZ) + 0.035;
-        const alpha = Number(cfg.alpha) || 0.24;
-        const lineWidth = Number(cfg.lineWidth) || 2;
-        const color = cfg.color || '#d9ffe0';
-        const left = player.angle - abil.halfConeRad;
-        const right = player.angle + abil.halfConeRad;
-        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-        const origin = worldToOverlay(baseX, y, baseZ);
-        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
-        octx.save();
-        octx.globalAlpha = alpha;
-        octx.strokeStyle = color;
-        octx.lineWidth = lineWidth;
-        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(leftEnd.x, leftEnd.y);
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(rightEnd.x, rightEnd.y);
-        octx.stroke();
-        octx.restore();
-      }
-
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
@@ -20848,6 +20816,9 @@
       const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
       let s_showHitboxes = false;
       try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      const INTERACTION_RAY_DEBUG_STORAGE_KEY = 'hobunjiDebugInteractionRay'; // Persists the separate ray visualization toggle.
+      let s_showInteractionRaycast = false; // Read by DebugHitboxes.draw() independently of Show Hitboxes.
+      try { s_showInteractionRaycast = localStorage.getItem(INTERACTION_RAY_DEBUG_STORAGE_KEY) === '1'; } catch {}
       // Global dev-mode flag — same "flip on once, stays on" persistence as
       // s_showHitboxes above. Currently only gates the +1 Mastery button in
       // each tool's item-info panel (see selectGearTool/selectEquipSlot),
@@ -21118,6 +21089,12 @@
         s_showHitboxes = e.target.checked;
         try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
       });
+      const settingShowInteractionRaycastEl = document.getElementById('settingShowInteractionRaycast');
+      settingShowInteractionRaycastEl.checked = s_showInteractionRaycast;
+      settingShowInteractionRaycastEl.addEventListener('change', e => {
+        s_showInteractionRaycast = e.target.checked;
+        try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
+      });
       const settingDevModeEl = document.getElementById('settingDevMode');
       settingDevModeEl.checked = s_devMode;
       settingDevModeEl.addEventListener('change', e => {
@@ -21328,12 +21305,21 @@
         const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
         if (!focus) return null;
         const hostile = window.RangedWeapons.focusedHostile?.(24);
-        return hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05 ? null : nest;
+        if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+        window.DebugHitboxes?.noteInteractionFocus?.(focus);
+        return nest;
       }
       function currentAimedNest() {
         const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
         if (branchNest) return isNestGuarded(branchNest) ? null : branchNest;
         return aimedCavernNest(_denNests.get(currentArea));
+      }
+      function refreshInteractionFocusDebug() {
+        if (!s_showInteractionRaycast) return;
+        // Match computeActionButtons priority: a nest owns the shared input
+        // before branch climbing is considered.
+        if (currentAimedNest()) return;
+        if (_isZoneArea(currentArea) && !player.climbing) window.ClimbSystem?.getClimbTarget?.();
       }
       function updateNestInteraction(dt) {
         const nest = currentAimedNest();
@@ -21902,7 +21888,6 @@
           octx.fillRect(0, 0, W, H);
         }
 
-        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
@@ -26057,10 +26042,10 @@
         companionObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
+        getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getPlayerAimRay: currentPlayerAimRay,
+        refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
-        creatureAimColliderReachPx,
-        cameraRelativeCreaturePerps,
-        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
       });
 
       window.RelationshipsPanel?.init({
