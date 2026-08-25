@@ -410,7 +410,8 @@
   }
 
   function spawnNestAtBranch(zoneId, branch, key) {
-    const motherKey = deps.DEN_MOTHER_DEFS?.drenkirra?.creatureKey;
+    const nestMotherConfig = deps.DEN_MOTHER_DEFS?.drenkirra;
+    const motherKey = nestMotherConfig?.creatureKey;
     const motherDef = motherKey ? deps.CREATURE_DB[motherKey] : null;
     if (!motherDef) {
       window.__farmLog?.(`[wildlife] ${key}: no drenkirra Nestmother configured (DEN_MOTHER_DEFS.drenkirra missing) — nest tree left empty.`, 'warn');
@@ -419,6 +420,14 @@
     const midX = (branch.baseX + branch.tipX) / 2, midY = (branch.baseY + branch.tipY) / 2;
     const midWorldY = (branch.baseWorldY + branch.tipWorldY) / 2;
     const midT = 0.5;
+    const motherFamily = denGenotypeFamily(motherKey);
+    const nestGenotype = motherFamily ? getOrMakeDenGenotype(key, motherFamily) : null;
+    const nestRng = window.WildernessMapGenerator?.makeRng?.(key + '_nestcount') || deps.rnd;
+    const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+    const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+    const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+    const itemKey = deps.DEN_MOTHER_ITEM_KEYS?.[motherKey];
+    const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
 
     // Nestmother — stationed directly on the branch (skips the scripted
     // climb animation; she's simply placed there), ready to fire her
@@ -427,6 +436,7 @@
     // climbed-up player gets (see climb-system.js/game.js's applyKnockback).
     const mother = deps.makeCreatureEntity(motherKey, midX, midY, {
       homeX: midX, homeY: midY, state: 'idle', isDenMother: true, nestTreeKey: key,
+      genotype: nestGenotype,
     });
     if (!mother) {
       window.__farmLog?.(`[wildlife] ${key}: makeCreatureEntity("${motherKey}") returned null — nest tree left empty.`, 'wildlife');
@@ -455,13 +465,27 @@
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
     }
 
+    // Store the branch objective on the registered branch itself so the
+    // climb system can resolve its 3D focus box without a second registry.
+    branch.nest = itemKey ? {
+      id: key, areaId: zoneId, x: midX, y: midY, worldY: midWorldY,
+      itemKey, liveBirth: !!nestMotherConfig?.liveBirth, remaining,
+      genotype: nestGenotype, mesh: null,
+    } : null;
+    if (!itemKey) {
+      window.__farmLog?.(`[wildlife] Nestmother "${motherKey}" has no configured nest reward; branch collection is disabled.`, 'warn');
+    }
+
     // Branch-nest furniture, centered where the Nestmother sits.
     const zi = deps.zoneScenes?.get(zoneId);
     if (zi?.scene && window.ProceduralFurniture) {
       const col = midX / deps.TILE - 0.5, row = midY / deps.TILE - 0.5;
       const rotYDeg = Math.atan2(branch.tipY - branch.baseY, branch.tipX - branch.baseX) * 180 / Math.PI;
       const result = deps.makeDecorativeFurnitureMesh?.(col, row, 'nestBranch', zi.scene, zoneId, rotYDeg);
-      if (result) result.mesh.position.y += midWorldY;
+      if (result) {
+        result.mesh.position.y += midWorldY;
+        if (branch.nest) branch.nest.mesh = result.mesh;
+      }
     }
 
     if (zoneId === deps.getCurrentArea()) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
