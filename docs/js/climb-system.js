@@ -21,8 +21,9 @@
   function init(injectedDeps) { deps = injectedDeps; }
   const climbSafetyDebug = {
     lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0,
-    lastFocusType: null, lastFocusId: null, lastJumpMode: null,
-  }; // Used by Pixel Probe to expose climb/focus decisions on mobile.
+    lastFocusType: null, lastFocusId: null, lastFocusPoint: null,
+    lastFocusDistanceWorld: null, lastFocusAt: 0, lastJumpMode: null,
+  }; // Used by Pixel Probe and the interaction-ray overlay on mobile.
 
   // Climbable shadewood branches, registered per zone by game.js right after
   // it positions each shadewood tree instance (see FoliageGenerator's
@@ -90,6 +91,17 @@
       new THREE.Vector3(x + half, topY, z + half),
     );
   }
+  function recordClimbFocusDebug(focus, type) {
+    climbSafetyDebug.lastFocusType = focus ? type : null;
+    climbSafetyDebug.lastFocusId = focus?.candidate?.id || null;
+    climbSafetyDebug.lastFocusPoint = focus?.point
+      ? { x: focus.point.x, y: focus.point.y, z: focus.point.z }
+      : null;
+    climbSafetyDebug.lastFocusDistanceWorld = focus?.distanceWorld ?? null;
+    climbSafetyDebug.lastFocusAt = performance.now();
+    if (focus) window.DebugHitboxes?.noteInteractionFocus?.(focus);
+  }
+
   function focusedWorldCandidate(candidates, maxDistanceWorld = 12) {
     const focus = window.RangedWeapons?.focusCandidates?.(candidates, maxDistanceWorld) || null;
     if (!focus) return null;
@@ -107,8 +119,7 @@
       const focus = focusedWorldCandidate(nearby.map(branch => ({
         type: 'branch', id: branch.id || (branch.col + ',' + branch.row), data: branch, box: branchTrunkBox(branch),
       })));
-      climbSafetyDebug.lastFocusType = focus ? 'branch' : null;
-      climbSafetyDebug.lastFocusId = focus?.candidate?.id || null;
+      recordClimbFocusDebug(focus, 'branch');
       return focus ? { type: 'branch', branch: focus.candidate.data, aimDistanceWorld: focus.distanceWorld } : null;
     }
     const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
@@ -122,6 +133,9 @@
     }
     climbSafetyDebug.lastFocusType = best ? 'branch-facing-fallback' : null;
     climbSafetyDebug.lastFocusId = best ? (best.id || (best.col + ',' + best.row)) : null;
+    climbSafetyDebug.lastFocusPoint = null;
+    climbSafetyDebug.lastFocusDistanceWorld = null;
+    climbSafetyDebug.lastFocusAt = performance.now();
     return best ? { type: 'branch', branch: best } : null;
   }
 
@@ -149,8 +163,7 @@
     if (Math.hypot(player.x - nest.x, player.y - nest.y) > deps.TILE * 1.6) return null;
     if (deps.getPlayerAimRay?.() && window.RangedWeapons?.focusCandidates) {
       const focus = focusedWorldCandidate([{ type: 'nest', id: nest.id, data: nest, box: branchNestBox(branch, nest) }]);
-      climbSafetyDebug.lastFocusType = focus ? 'nest' : null;
-      climbSafetyDebug.lastFocusId = focus?.candidate?.id || null;
+      recordClimbFocusDebug(focus, 'nest');
       return focus?.candidate?.data || null;
     }
     const dx = nest.x - player.x, dy = nest.y - player.y;
@@ -183,6 +196,11 @@
       if (hostileFocus) {
         climbSafetyDebug.lastFocusType = 'hostile';
         climbSafetyDebug.lastFocusId = hostileFocus.candidate?.id || null;
+        climbSafetyDebug.lastFocusPoint = hostileFocus.point
+          ? { x: hostileFocus.point.x, y: hostileFocus.point.y, z: hostileFocus.point.z }
+          : null;
+        climbSafetyDebug.lastFocusDistanceWorld = hostileFocus.distanceWorld;
+        climbSafetyDebug.lastFocusAt = performance.now();
         return null;
       }
       const axisX = (branch.tipX - branch.baseX) / branch.length;
