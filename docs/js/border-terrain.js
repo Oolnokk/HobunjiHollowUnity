@@ -846,10 +846,17 @@
       // to selectively thin the way a true InstancedMesh could be post-hoc.
       const sceneryOptions = window.CloudForestSceneryOptions;
       const treeWallOn = sceneryOptions?.treeWallEnabled?.() !== false;
-      const stats = instanceDenseShadewoodForest(scene, layout, {
-        keepFraction: treeWallOn ? (sceneryOptions?.DENSITY_KEEP ?? 0.25) : 1,
-        tagOutlineLayer: treeWallOn,
-      });
+      // Tree Wall OFF deletes this whole group afterward (see
+      // cloud-forest-scenery-options.js's clearForestWall) — building it at
+      // full, unthinned density (every full/0.75/0.5-scale gap-filler tree
+      // buildDenseCloudForestLayout generates, not just the 25% kept when the
+      // wall is actually shown) just to immediately throw it away wastes a
+      // synchronous merge of several times the ON-mode geometry into a
+      // handful of oversized static buffers for nothing. Skip the build
+      // entirely instead.
+      const stats = treeWallOn
+        ? instanceDenseShadewoodForest(scene, layout, { keepFraction: sceneryOptions?.DENSITY_KEEP ?? 0.25, tagOutlineLayer: true })
+        : { chunks: 0, instances: 0 };
       scene.userData = scene.userData || {};
       scene.userData.authoredCloudForestScenery = {
         ...meta,
@@ -860,7 +867,7 @@
         threeQuarterCount: layout.filter(e => e.scale === 0.75).length,
         halfHeightCount: layout.filter(e => e.scale === 0.5).length,
         baseTreeSpacingWorld: BASE_TREE_SPACING_WORLD,
-        instanced: true,
+        merged: treeWallOn,
         cullChunks: stats.chunks,
         northBoundaryCliffsRemoved: true,
       };
