@@ -91,6 +91,7 @@
 
   function objectPerfCategory(obj) {
     const u = obj?.userData || {};
+    if (u.isBillboard) return 'foliage'; // Grass/foliage billboard InstancedMeshes are otherwise unnamed and fall through to 'other'.
     const text = [obj?.name, u.kind, u.type, u.category, u.furnitureKey, u.treeSpecies, u.sourceObjectType]
       .filter(Boolean).join(' ').toLowerCase();
     if (/tree|shadewood|crowned|foliage|grass|bush|plant|crop|forest/.test(text)) return 'foliage';

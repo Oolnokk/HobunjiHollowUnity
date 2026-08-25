@@ -495,8 +495,18 @@
   const CLOUD_ID = 'map_southern_cloud_forest';
   const NORTH_DEPTH = 18;
   const BASE_TREE_SPACING_WORLD = 1;
-  const FOREST_CHUNK_WIDTH = 10;
-  const FOREST_CHUNK_DEPTH = 6;
+  // Chunk footprint (was 10x6): each chunk's own cullSphere.radius grows with
+  // its half-diagonal, and that radius gets ADDED to the player's chosen cull
+  // radius in updateZoneVegetationCulling — so oversized chunks silently
+  // floor out how small a "cull radius" setting can actually get (10x6 pinned
+  // the effective minimum to ~15 tiles even with the slider at its own
+  // minimum of 5). Shrinking depth more than width, since Z is the axis that
+  // actually determines distance-from-player as you approach the wall from
+  // the south. More, smaller chunks means more draw calls (partially offsets
+  // the merge win below), so this isn't shrunk to the floor — see `pad`
+  // below for why a further reduction now runs into a harder floor.
+  const FOREST_CHUNK_WIDTH = 6;
+  const FOREST_CHUNK_DEPTH = 3;
   const PATH_CLEARANCE = 1.15;
 
   function _hash01(x, z, salt = 0) {
@@ -784,6 +794,12 @@
         group.add(mesh);
       }
       const cx = (minX + maxX) * 0.5, cz = (minZ + maxZ) * 0.5;
+      // This pad is now the dominant term in xzRadius as chunks shrink — even
+      // at a near-zero chunk footprint, xzRadius bottoms out around
+      // pad*sqrt(2) (~4.5 tiles). Shrinking it further to tighten the cull
+      // radius floor beyond that would need reducing pad itself (a buffer
+      // against pop-in at the ~7Hz vegetation-culling check rate), traded
+      // against how well thick fog hides that pop-in.
       const pad = 3.2;
       const xzRadius = Math.hypot((maxX - minX) * 0.5 + pad, (maxZ - minZ) * 0.5 + pad);
       group.userData.backgroundScenery = true;
