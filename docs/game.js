@@ -16915,7 +16915,8 @@
 
           if (show) {
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
-            const blocking = !obj.userData.skipOcclusionFade
+            const blocking = activeCameraMode !== SHOULDER_SURF_MODE
+              && !obj.userData.skipOcclusionFade
               && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
             let target = blocking ? TREE_FADE_OPACITY : 1;
             let outlineAllowed = true;
@@ -26155,6 +26156,7 @@
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
         refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
       });
