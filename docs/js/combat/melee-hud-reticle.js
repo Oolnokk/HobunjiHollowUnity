@@ -10,12 +10,14 @@
   const RETICLE_OPACITY = 0.62;
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
-  const FILTER_RED = 'brightness(0) saturate(100%) invert(21%) sepia(89%) saturate(6510%) hue-rotate(357deg) brightness(94%) contrast(119%) drop-shadow(0 0 5px #ff3030)';
-  const FILTERS = [
-    'brightness(0) saturate(100%) invert(83%) sepia(77%) saturate(1190%) hue-rotate(128deg) brightness(101%) contrast(101%)',
-    'brightness(0) saturate(100%) invert(78%) sepia(91%) saturate(708%) hue-rotate(2deg) brightness(105%) contrast(104%)',
-    'brightness(0) saturate(100%) invert(70%) sepia(38%) saturate(1987%) hue-rotate(239deg) brightness(101%) contrast(101%)',
-    'brightness(0) saturate(100%) invert(77%) sepia(68%) saturate(553%) hue-rotate(79deg) brightness(101%) contrast(102%)',
+  const FILTER_WHITE = 'brightness(0) invert(1)';
+  const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
+  // Slot colors are applied only after the corresponding attack is reachable.
+  const SLOT_READY_FILTERS = [
+    'brightness(0) saturate(100%) invert(83%) sepia(77%) saturate(1190%) hue-rotate(128deg) brightness(101%) contrast(101%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(78%) sepia(91%) saturate(708%) hue-rotate(2deg) brightness(105%) contrast(104%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(70%) sepia(38%) saturate(1987%) hue-rotate(239deg) brightness(101%) contrast(101%)' + READY_GLOW,
+    'brightness(0) saturate(100%) invert(77%) sepia(68%) saturate(553%) hue-rotate(79deg) brightness(101%) contrast(102%)' + READY_GLOW,
   ];
   const CLIPS = [
     'polygon(0 0, 54% 0, 54% 54%, 0 54%)',
@@ -73,7 +75,7 @@
         userSelect: 'none',
         WebkitUserDrag: 'none',
         clipPath: CLIPS[index],
-        filter: FILTERS[index],
+        filter: FILTER_WHITE,
       });
       image.src = RETICLE_URL;
       image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
@@ -193,7 +195,7 @@
     pieces.forEach((image, index) => {
       const profile = slotProfiles[index] || {};
       image.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
-      image.style.filter = state.ready[index] ? FILTER_RED : FILTERS[index];
+      image.style.filter = state.ready[index] ? SLOT_READY_FILTERS[index] : FILTER_WHITE;
     });
     lastSnapshot = {
       visible: true,
