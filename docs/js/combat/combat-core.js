@@ -30,6 +30,239 @@
   }
 
   const activeStaged = new Set();
+  const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
+  const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
+  const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
+  let lastMelee3DResult = null; // Mobile-readable record of the latest 3D cone decision.
+
+  function combatActorHitbox(actor) {
+    return window.RangedWeapons?.actorHitbox?.(actor) || null;
+  }
+
+  function finiteDirection(raw) {
+    if (![raw?.x, raw?.y, raw?.z].every(Number.isFinite)) return null;
+    const direction = new THREE.Vector3(raw.x, raw.y, raw.z);
+    return direction.lengthSq() > 1e-8 ? direction.normalize() : null;
+  }
+
+  function directionFromAngles(yaw = 0, pitch = 0) {
+    const clampedPitch = THREE.MathUtils.clamp(Number(pitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
+    const horizontal = Math.cos(clampedPitch);
+    return new THREE.Vector3(Math.cos(yaw) * horizontal, Math.sin(clampedPitch), Math.sin(yaw) * horizontal).normalize();
+  }
+
+  function meleeAimSolution(attacker, target = null, fallbackYaw = 0, fallbackPitch = 0) {
+    const attackerHitbox = combatActorHitbox(attacker);
+    const origin = attackerHitbox?.center?.clone?.() || new THREE.Vector3(
+      (Number(attacker?.x) || 0) / (deps?.TILE || 64),
+      0.5,
+      (Number(attacker?.y) || 0) / (deps?.TILE || 64),
+    );
+    const targetHitbox = combatActorHitbox(target);
+    const targetPoint = targetHitbox?.center?.clone?.() || null;
+    const targetDelta = targetPoint ? targetPoint.clone().sub(origin) : null;
+    let direction = targetDelta && targetDelta.lengthSq() > 1e-8 ? targetDelta.normalize() : null;
+    if (!direction && attacker === deps?.player) direction = finiteDirection(deps.getPlayerMeleeAimDirection?.());
+    if (!direction) direction = directionFromAngles(fallbackYaw, fallbackPitch);
+    const pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
+    return {
+      attacker, target, attackerHitbox, targetHitbox, origin, targetPoint, direction,
+      yaw: Math.atan2(direction.z, direction.x),
+      pitch,
+    };
+  }
+
+  function boxSamplePoints(box, origin) {
+    const center = box.getCenter(new THREE.Vector3());
+    const closest = box.clampPoint(origin, new THREE.Vector3());
+    const points = [closest];
+    // A 3×3×3 volume grid catches cone/face intersections that corners alone
+    // miss, while the exact center ray test in meleeHit keeps reticle alignment exact.
+    for (const x of [box.min.x, center.x, box.max.x]) {
+      for (const y of [box.min.y, center.y, box.max.y]) {
+        for (const z of [box.min.z, center.z, box.max.z]) points.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    return points;
+  }
+
+  // A target is hit only when some point on its authored portrait Box3 lies
+  // inside the attack's real 3D cone and world-space range.
+  function meleeHit(attacker, target, opts = {}) {
+    const hasExplicitAngles = opts.yaw != null || opts.pitch != null;
+    const explicitDirection = finiteDirection(opts.direction)
+      || (hasExplicitAngles ? directionFromAngles(opts.yaw ?? attacker?.facing ?? attacker?.angle ?? 0, opts.pitch ?? 0) : null);
+    const solution = explicitDirection
+      ? { ...meleeAimSolution(attacker, null, opts.yaw, opts.pitch), direction: explicitDirection,
+          yaw: Math.atan2(explicitDirection.z, explicitDirection.x),
+          pitch: Math.asin(THREE.MathUtils.clamp(explicitDirection.y, -1, 1)) }
+      : meleeAimSolution(attacker, null, attacker?.facing ?? attacker?.angle ?? 0, 0);
+    const targetHitbox = combatActorHitbox(target);
+    const rangePx = Math.max(0, Number(opts.rangePx) || 0);
+    const halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
+    if (!targetHitbox?.box) {
+      // Preserve the old 2D cone behavior for an actor whose portrait has not
+      // mounted yet; never turn a missing render object into an unconditional hit.
+      const dx = (Number(target?.x) || 0) - (Number(attacker?.x) || 0);
+      const dz = (Number(target?.y) || 0) - (Number(attacker?.y) || 0);
+      const distancePx = Math.hypot(dx, dz);
+      const pointYaw = Math.atan2(dz, dx);
+      const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - solution.yaw), Math.cos(pointYaw - solution.yaw)));
+      const hit = distancePx <= rangePx && yawDelta <= halfConeRad;
+      lastMelee3DResult = {
+        at: Date.now(), hit, fallback2D: true,
+        attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
+        target: target?.id || target?.name || target?.def?.id || 'target',
+        yawDeg: THREE.MathUtils.radToDeg(solution.yaw),
+        pitchDeg: THREE.MathUtils.radToDeg(solution.pitch),
+        halfConeDeg: THREE.MathUtils.radToDeg(halfConeRad),
+        rangeWorld: rangePx / (deps?.TILE || 64),
+        bestDistanceWorld: distancePx / (deps?.TILE || 64),
+        bestAngleDeg: THREE.MathUtils.radToDeg(yawDelta),
+      };
+      return hit;
+    }
+    const rangeWorld = rangePx / (deps?.TILE || 64);
+    let hit = false;
+    let bestDistanceWorld = Infinity;
+    let bestAngleRad = Infinity;
+    // The center camera ray is the reticle contract: if it intersects the
+    // visible portrait Box3 within melee range, the matching swing must hit.
+    const directPoint = new THREE.Ray(solution.origin, solution.direction)
+      .intersectBox(targetHitbox.box, new THREE.Vector3());
+    if (directPoint) {
+      bestDistanceWorld = directPoint.distanceTo(solution.origin);
+      bestAngleRad = 0;
+      hit = bestDistanceWorld <= rangeWorld;
+    }
+    for (const point of boxSamplePoints(targetHitbox.box, solution.origin)) {
+      const delta = point.clone().sub(solution.origin);
+      const distanceWorld = delta.length();
+      if (distanceWorld < 1e-6) { hit = true; bestDistanceWorld = 0; bestAngleRad = 0; break; }
+      const angleRad = Math.acos(THREE.MathUtils.clamp(delta.normalize().dot(solution.direction), -1, 1));
+      if (distanceWorld < bestDistanceWorld || (distanceWorld === bestDistanceWorld && angleRad < bestAngleRad)) {
+        bestDistanceWorld = distanceWorld;
+        bestAngleRad = angleRad;
+      }
+      if (distanceWorld <= rangeWorld && angleRad <= halfConeRad) { hit = true; break; }
+    }
+    lastMelee3DResult = {
+      at: Date.now(), hit,
+      attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
+      target: target?.id || target?.name || target?.def?.id || 'target',
+      yawDeg: THREE.MathUtils.radToDeg(solution.yaw),
+      pitchDeg: THREE.MathUtils.radToDeg(solution.pitch),
+      halfConeDeg: THREE.MathUtils.radToDeg(halfConeRad),
+      rangeWorld, bestDistanceWorld, bestAngleDeg: THREE.MathUtils.radToDeg(bestAngleRad),
+    };
+    return hit;
+  }
+
+  // Horizontal travel falls linearly toward zero at a vertical 90-degree
+  // aim. Upward aim past 12 degrees adds a real rendered leap arc.
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0) {
+    const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
+    const distanceScale = THREE.MathUtils.clamp(1 - Math.abs(pitch) / (Math.PI / 2), 0, 1);
+    const leapT = THREE.MathUtils.clamp(
+      (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
+      0, 1,
+    );
+    const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
+    return {
+      pitch,
+      distanceScale,
+      distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
+      leapT,
+      hopUnits: Math.max(0, Number(baseHopUnits) || 0) + leapT * Math.max(0.45, baseDistanceWorld * 0.55),
+    };
+  }
+
+  // Writes a tapered ribbon in a plane tilted to the attack's pitch. At zero
+  // pitch this is the familiar horizontal sweep; aiming up rotates the whole
+  // sweep plane upward instead of merely raising a flat ground arc.
+  function writeMeleeTrailRibbon(positionAttr, opts = {}) {
+    const samples = Math.max(2, Math.floor(Number(opts.samples) || 16));
+    const origin = opts.origin?.isVector3 ? opts.origin : new THREE.Vector3();
+    const direction = finiteDirection(opts.direction) || directionFromAngles(opts.yaw, opts.pitch);
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const side = new THREE.Vector3().crossVectors(direction, worldUp);
+    if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
+    else side.normalize();
+    const planeUp = new THREE.Vector3().crossVectors(side, direction).normalize();
+    const rangeTiles = Math.max(0, Number(opts.rangeTiles) || 0);
+    const halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
+    const halfThickness = Math.max(0.001, Number(opts.halfThickness) || 0.06);
+    const archUnits = Math.max(0, Number(opts.archUnits) || 0.22);
+    for (let sample = 0; sample <= samples; sample++) {
+      const u = sample / samples;
+      const sweepAngle = -halfConeRad + 2 * halfConeRad * u;
+      const radial = direction.clone().applyAxisAngle(planeUp, sweepAngle);
+      const taper = Math.sin(u * Math.PI);
+      const half = halfThickness * (0.25 + 0.75 * taper);
+      const arch = planeUp.clone().multiplyScalar(archUnits * taper);
+      const inner = origin.clone().addScaledVector(radial, Math.max(0, rangeTiles - half)).add(arch);
+      const outer = origin.clone().addScaledVector(radial, rangeTiles + half).add(arch);
+      const vi = sample * 2;
+      positionAttr.setXYZ(vi, inner.x, inner.y, inner.z);
+      positionAttr.setXYZ(vi + 1, outer.x, outer.y, outer.z);
+    }
+    positionAttr.needsUpdate = true;
+  }
+
+  function spawnMeleeTrail(opts = {}) {
+    const actor = opts.actor;
+    const target = opts.target || null;
+    const solution = meleeAimSolution(actor, target, opts.yaw ?? actor?.facing ?? actor?.angle ?? 0, opts.pitch ?? 0);
+    const samples = 16;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
+    const indices = [];
+    for (let sample = 0; sample < samples; sample++) {
+      const a = sample * 2, b = a + 1, c = a + 2, d = a + 3;
+      indices.push(a, b, c, b, d, c);
+    }
+    geometry.setIndex(indices);
+    writeMeleeTrailRibbon(geometry.attributes.position, {
+      samples, origin: solution.origin, direction: solution.direction,
+      rangeTiles: Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64),
+      halfConeRad: opts.halfConeRad,
+      halfThickness: opts.halfThickness,
+      archUnits: opts.archUnits,
+    });
+    const material = new THREE.MeshBasicMaterial({
+      color: opts.color ?? (actor === deps?.player ? 0xffffff : 0xff6a6a),
+      transparent: true, opacity: 0.85, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    const scene = opts.scene || actor?.scene || deps?.getActiveScene?.();
+    if (!scene) { geometry.dispose(); material.dispose(); return null; }
+    scene.add(mesh);
+    const trail = {
+      mesh, scene, age: 0,
+      holdS: Math.max(0, Number(opts.holdS) || 0.16),
+      fadeS: Math.max(0.05, Number(opts.fadeS) || 0.18),
+      actor: actor?.id || actor?.name || (actor === deps?.player ? 'player' : 'enemy'),
+      pitchDeg: THREE.MathUtils.radToDeg(solution.pitch),
+    };
+    activeMeleeTrails.push(trail);
+    return trail;
+  }
+
+  function updateMeleeTrails(dt) {
+    for (let i = activeMeleeTrails.length - 1; i >= 0; i--) {
+      const trail = activeMeleeTrails[i];
+      trail.age += dt;
+      if (trail.age <= trail.holdS) continue;
+      const fade = 1 - (trail.age - trail.holdS) / trail.fadeS;
+      if (fade > 0.01) { trail.mesh.material.opacity = fade * 0.85; continue; }
+      trail.scene.remove(trail.mesh);
+      trail.mesh.geometry.dispose();
+      trail.mesh.material.dispose();
+      activeMeleeTrails.splice(i, 1);
+    }
+  }
 
   function beginStagedAction(opts) {
     const action = {
@@ -84,6 +317,7 @@
   }
 
   function update(dt) {
+    updateMeleeTrails(dt);
     for (const action of Array.from(activeStaged)) updateStagedAction(action, dt);
   }
 
@@ -125,6 +359,11 @@
     resolveWeaponHit,
     beginStagedAction,
     cancelAllStaged,
+    meleeAimSolution,
+    meleeHit,
+    meleeLungeProfile,
+    writeMeleeTrailRibbon,
+    spawnMeleeTrail,
     isStaggered,
     beginStagger,
     update,
@@ -133,6 +372,16 @@
     setMovementSpeedMul,
     getMovementSpeedMul,
     get deps() { return deps; },
+    MAX_MELEE_AIM_PITCH_RAD,
+  };
+  window.__melee3DDebug = {
+    get lastResult() { return lastMelee3DResult; },
+    get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
+    snapshot: () => ({
+      latestChange: 'Melee cones and trails now use portrait Box3 volumes plus a pitched 3D aim direction; upward lunges become shorter rendered leaps.',
+      lastResult: lastMelee3DResult,
+      activeTrailCount: activeMeleeTrails.length,
+    }),
   };
 })();
 
