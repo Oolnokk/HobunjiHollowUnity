@@ -1,37 +1,21 @@
 (() => {
   'use strict';
 
-  // Debug hitbox/collider overlay — draws player/creature collision squares,
-  // attack telegraph shapes, and PNG-plane deadzone fans on the 2D overlay
-  // canvas, gated behind Settings → Dev Tools → "Show hitboxes". Extracted
-  // out of game.js following the same window.<Namespace> + init(deps)
-  // pattern as its sibling systems. creatureHitboxHalfSizePx/
-  // creatureAimColliderReachPx/cameraRelativeCreaturePerps/
-  // CREATURE_PERP_DEAD_RAD stay behind in game.js on purpose — they're also
-  // used by the live creature movement/animation code, not owned by the
-  // debug overlay alone — and come in through deps.
+  // Settings → Dev Tools overlay for authored actor hitboxes, the real melee
+  // collider volumes, and the separately toggled centered interaction ray.
   let deps = null;
+  let lastInteractionFocusDebug = null; // Most recent accepted branch/nest focus, used by the interaction-ray toggle.
   function init(injectedDeps) { deps = injectedDeps; }
 
-  const DEBUG_HITBOX_COLOR_PLAYER    = '#5cf2ff';
-  const DEBUG_HITBOX_COLOR_HOSTILE   = '#ff6a6a';
+  const DEBUG_HITBOX_COLOR_PLAYER = '#5cf2ff';
+  const DEBUG_HITBOX_COLOR_HOSTILE = '#ff6a6a';
   const DEBUG_HITBOX_COLOR_COMPANION = '#7fe89a';
-  const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
-  const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
-  const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
-  const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
-  // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-  // camera-relative dead zones the PNG plane never freely tracks through
-  // (see CREATURE_PLANE_ROT_MODE in game.js for which of sway/halt/snap
-  // governs what it does instead). The pngRot line shows where the PNG
-  // plane is actually pointed right now (may differ from group rotation).
-  const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
-  const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
-  const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
+  const DEBUG_MELEE_COLOR_PLAYER = '#ffffff';
+  const DEBUG_MELEE_COLOR_HOSTILE = '#ff9b54';
+  const DEBUG_INTERACTION_RAY_COLOR = '#35ffdc';
+  const DEBUG_INTERACTION_HIT_COLOR = '#fff566';
+  const DEBUG_INTERACTION_HOSTILE_COLOR = '#ff5c5c';
 
-  // Player avatar's crossed-plane "prism" base width (tile units) — mirrors
-  // the worldModelWidth lookup refreshPlayerAvatar() (game.js) uses to build
-  // the avatar mesh, since the player object stores no width of its own.
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
   }
@@ -46,15 +30,31 @@
     return window.RangedWeapons?.actorHitbox?.(actor) || null;
   }
 
-  function _drawDebugSegment3D(a, b, color, dashed = false) {
+  function _plainPoint(point) {
+    return point ? { x: Number(point.x) || 0, y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
+  }
+
+  // Called only after the shared camera ray wins nearest-target arbitration.
+  function noteInteractionFocus(focus) {
+    if (!focus?.point || !focus?.candidate) return;
+    lastInteractionFocusDebug = {
+      type: focus.candidate.type || 'interaction',
+      id: focus.candidate.id || null,
+      point: _plainPoint(focus.point),
+      distanceWorld: Number(focus.distanceWorld) || 0,
+      recordedAt: Date.now(),
+    };
+  }
+
+  function _drawDebugSegment3D(a, b, color, dashed = false, lineWidth = 1.5, alpha = 0.9) {
     const p1 = deps.worldToOverlay(a.x, a.y, a.z);
     const p2 = deps.worldToOverlay(b.x, b.y, b.z);
     if (!p1.visible && !p2.visible) return;
     const octx = deps.octx;
     octx.save();
-    octx.globalAlpha = 0.9;
+    octx.globalAlpha = alpha;
     octx.strokeStyle = color;
-    octx.lineWidth = 1.5;
+    octx.lineWidth = lineWidth;
     if (dashed) octx.setLineDash([4, 3]);
     octx.beginPath();
     octx.moveTo(p1.x, p1.y);
@@ -68,195 +68,156 @@
   function _drawDebugBox3(hitbox, color) {
     const box = hitbox?.box;
     if (!box) return;
-    const p = [];
+    const points = [];
     for (const x of [box.min.x, box.max.x]) {
       for (const y of [box.min.y, box.max.y]) {
-        for (const z of [box.min.z, box.max.z]) p.push({ x, y, z });
+        for (const z of [box.min.z, box.max.z]) points.push({ x, y, z });
       }
     }
     const edges = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
-    for (const [a, b] of edges) _drawDebugSegment3D(p[a], p[b], color);
-  }
-
-  function _drawDebugCircle(wx, wy, radiusPx, color, dashed, worldY = null) {
-    const octx = deps.octx;
-    const y = worldY ?? _debugGroundY(wx, wy);
-    const center = deps.worldToOverlay(wx / deps.TILE, y, wy / deps.TILE);
-    if (!center.visible) return;
-    const edge = deps.worldToOverlay((wx + radiusPx) / deps.TILE, y, wy / deps.TILE);
-    const r = Math.hypot(edge.x - center.x, edge.y - center.y);
-    octx.save();
-    octx.globalAlpha = 0.8;
-    octx.strokeStyle = color;
-    octx.lineWidth = 1.5;
-    if (dashed) octx.setLineDash([5, 4]);
-    octx.beginPath();
-    octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
-    octx.stroke();
-    octx.restore();
+    for (const [a, b] of edges) _drawDebugSegment3D(points[a], points[b], color);
   }
 
   function _drawDebugSquare(wx, wy, halfSizePx, color, dashed, worldY = null) {
-    const octx = deps.octx;
     const y = worldY ?? _debugGroundY(wx, wy);
     const halfTiles = halfSizePx / deps.TILE;
     const baseX = wx / deps.TILE, baseZ = wy / deps.TILE;
     const corners = [
-      deps.worldToOverlay(baseX - halfTiles, y, baseZ - halfTiles),
-      deps.worldToOverlay(baseX + halfTiles, y, baseZ - halfTiles),
-      deps.worldToOverlay(baseX + halfTiles, y, baseZ + halfTiles),
-      deps.worldToOverlay(baseX - halfTiles, y, baseZ + halfTiles),
+      { x: baseX - halfTiles, y, z: baseZ - halfTiles },
+      { x: baseX + halfTiles, y, z: baseZ - halfTiles },
+      { x: baseX + halfTiles, y, z: baseZ + halfTiles },
+      { x: baseX - halfTiles, y, z: baseZ + halfTiles },
     ];
-    if (!corners[0].visible) return;
-    octx.save();
-    octx.globalAlpha = 0.8;
-    octx.strokeStyle = color;
-    octx.lineWidth = 1.5;
-    if (dashed) octx.setLineDash([5, 4]);
-    octx.beginPath();
-    octx.moveTo(corners[0].x, corners[0].y);
-    for (let i = 1; i < corners.length; i++) octx.lineTo(corners[i].x, corners[i].y);
-    octx.closePath();
-    octx.stroke();
-    octx.restore();
-  }
-
-  function _drawDebugLine(wx1, wy1, wx2, wy2, color, dashed, worldY1 = null, worldY2 = null) {
-    const octx = deps.octx;
-    const p1 = deps.worldToOverlay(wx1 / deps.TILE, worldY1 ?? _debugGroundY(wx1, wy1), wy1 / deps.TILE);
-    const p2 = deps.worldToOverlay(wx2 / deps.TILE, worldY2 ?? _debugGroundY(wx2, wy2), wy2 / deps.TILE);
-    if (!p1.visible && !p2.visible) return;
-    octx.save();
-    octx.globalAlpha = 0.85;
-    octx.strokeStyle = color;
-    octx.lineWidth = 2;
-    if (dashed) octx.setLineDash([4, 4]);
-    octx.beginPath();
-    octx.moveTo(p1.x, p1.y);
-    octx.lineTo(p2.x, p2.y);
-    octx.stroke();
-    octx.restore();
-  }
-
-  function _drawDebugCone(wx, wy, angle, rangePx, halfConeRad, color, worldY = null) {
-    const octx = deps.octx;
-    const y = worldY ?? _debugGroundY(wx, wy);
-    const rangeTiles = rangePx / deps.TILE;
-    const baseX = wx / deps.TILE, baseZ = wy / deps.TILE;
-    const left = angle - halfConeRad, right = angle + halfConeRad;
-    const origin = deps.worldToOverlay(baseX, y, baseZ);
-    if (!origin.visible) return;
-    const leftEnd = deps.worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-    const rightEnd = deps.worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-    octx.save();
-    octx.globalAlpha = 0.85;
-    octx.strokeStyle = color;
-    octx.lineWidth = 2;
-    octx.beginPath();
-    octx.moveTo(origin.x, origin.y);
-    octx.lineTo(leftEnd.x, leftEnd.y);
-    octx.lineTo(rightEnd.x, rightEnd.y);
-    octx.closePath();
-    octx.stroke();
-    octx.restore();
-  }
-
-  // Ground-plane arc sector (for deadzone fans). fromAngle/toAngle are
-  // world-space angles (same convention as c.facing / atan2 game coords).
-  // radiusPx is the visual reach of the fan in game pixels.
-  function _drawDebugArcSector(wx, wy, fromAngle, toAngle, radiusPx, edgeColor, fillColor, worldY = null) {
-    const octx = deps.octx;
-    const N = 20;
-    const y = worldY ?? _debugGroundY(wx, wy);
-    const bx = wx / deps.TILE, bz = wy / deps.TILE, rT = radiusPx / deps.TILE;
-    const origin = deps.worldToOverlay(bx, y, bz);
-    if (!origin.visible) return;
-    const pts = [];
-    for (let i = 0; i <= N; i++) {
-      const a = fromAngle + (toAngle - fromAngle) * (i / N);
-      pts.push(deps.worldToOverlay(bx + Math.cos(a) * rT, y, bz + Math.sin(a) * rT));
+    for (let i = 0; i < corners.length; i++) {
+      _drawDebugSegment3D(corners[i], corners[(i + 1) % corners.length], color, dashed);
     }
-    octx.save();
-    octx.beginPath();
-    octx.moveTo(origin.x, origin.y);
-    octx.lineTo(pts[0].x, pts[0].y);
-    for (let i = 1; i <= N; i++) octx.lineTo(pts[i].x, pts[i].y);
-    octx.closePath();
-    octx.globalAlpha = 0.18;
-    octx.fillStyle = fillColor;
-    octx.fill();
-    octx.globalAlpha = 0.75;
-    octx.strokeStyle = edgeColor;
-    octx.lineWidth = 1.5;
-    octx.setLineDash([3, 3]);
-    octx.stroke();
-    octx.restore();
   }
 
   function _drawCreatureDebug(c, hitboxColor) {
-    const def = c.def;
     const hitbox = _actorHitbox(c);
     const footY = hitbox?.box?.min?.y ?? _debugGroundY(c.x, c.y);
-    const halfSize = deps.creatureHitboxHalfSizePx(def);
+    const halfSize = deps.creatureHitboxHalfSizePx(c.def);
     _drawDebugSquare(c.x, c.y, halfSize, hitboxColor, true, footY + 0.01);
     _drawDebugBox3(hitbox, hitboxColor);
+  }
 
-    if (def.attacks?.includes('pounce')) {
-      const ang = c.facing || 0;
-      const reach = deps.creatureAimColliderReachPx(def);
-      const sx = c.x + Math.cos(ang) * halfSize, sy = c.y + Math.sin(ang) * halfSize;
-      const ex = c.x + Math.cos(ang) * reach, ey = c.y + Math.sin(ang) * reach;
-      _drawDebugLine(sx, sy, ex, ey, DEBUG_AIM_COLLIDER_COLOR, true, hitbox?.center?.y, hitbox?.center?.y);
-    }
-
-    const aa = c._animalAttack;
-    if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
-      const st = aa.state;
-      const headX = c.x + Math.cos(st.angle) * st.headOffsetPx;
-      const headY = c.y + Math.sin(st.angle) * st.headOffsetPx;
-      _drawDebugCone(headX, headY, st.angle, st.rangePx, st.halfConeRad, DEBUG_ATTACK_COLOR_LEAP, hitbox?.center?.y);
-    } else if (c.telegraphState) {
-      _drawDebugCircle(c.x, c.y, def.attackRangePx,
-        c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true, footY + 0.015);
-    }
-
-    // Deadzone fans — the two camera-relative angle bands where the PNG
-    // plane lerps through rather than tracking freely. Each perp is stored
-    // in Three.js rotation.y space; convert to world-space angle via
-    //   worldAngle = π/2 − rotY
-    // so the sector maps back into the same atan2 space as c.facing.
-    const dzR = deps.TILE * 0.65;
-    for (const P_rotY of deps.cameraRelativeCreaturePerps()) {
-      const wc = Math.PI / 2 - P_rotY;
-      _drawDebugArcSector(c.x, c.y, wc - deps.CREATURE_PERP_DEAD_RAD, wc + deps.CREATURE_PERP_DEAD_RAD,
-        dzR, DEBUG_DEADZONE_EDGE_COLOR, DEBUG_DEADZONE_FILL_COLOR, footY + 0.015);
-    }
-    // Current PNG plane direction — where the sprite is visually facing
-    // right now (may lag or differ from the prism/group rotation).
-    if (c.pngRot !== undefined) {
-      const pngWorldAngle = Math.PI / 2 - c.pngRot;
-      _drawDebugLine(c.x, c.y,
-        c.x + Math.cos(pngWorldAngle) * dzR,
-        c.y + Math.sin(pngWorldAngle) * dzR,
-        DEBUG_PNG_ROT_COLOR, false, hitbox?.center?.y, hitbox?.center?.y);
+  function _drawMeleeColliders() {
+    for (const collider of window.Combat?.debugMeleeColliders?.() || []) {
+      const actor = collider.actor;
+      if (actor !== deps.player && actor?.areaId && actor.areaId !== deps.getCurrentArea()) continue;
+      const color = actor === deps.player ? DEBUG_MELEE_COLOR_PLAYER : DEBUG_MELEE_COLOR_HOSTILE;
+      for (const [a, b] of window.Combat.meleeColliderWireframe(collider, 18)) {
+        _drawDebugSegment3D(a, b, color, false, 2, 0.95);
+      }
     }
   }
 
-  function drawDebugHitboxes() {
-    if (!deps.getShowHitboxes()) return;
-    const player = deps.player;
-    const playerHitbox = _actorHitbox(player);
-    const playerFootY = playerHitbox?.box?.min?.y ?? _debugGroundY(player.x, player.y);
-    _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * deps.TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, true, playerFootY + 0.01);
-    _drawDebugBox3(playerHitbox, DEBUG_HITBOX_COLOR_PLAYER);
-    for (const c of deps.hostileObjects) {
-      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-      _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
+  function _interactionRaySnapshot() {
+    deps.refreshInteractionFocusDebug?.();
+    const raw = deps.getPlayerAimRay?.();
+    if (!raw?.origin || !raw?.direction) return null;
+    const origin = new THREE.Vector3(Number(raw.origin.x) || 0, Number(raw.origin.y) || 0, Number(raw.origin.z) || 0);
+    const direction = new THREE.Vector3(Number(raw.direction.x) || 0, Number(raw.direction.y) || 0, Number(raw.direction.z) || 0);
+    if (direction.lengthSq() < 1e-8) return null;
+    direction.normalize();
+
+    const candidates = [];
+    if (lastInteractionFocusDebug && Date.now() - lastInteractionFocusDebug.recordedAt <= 750) {
+      candidates.push({ ...lastInteractionFocusDebug, hostile: false });
     }
-    for (const c of deps.companionObjects) {
-      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-      _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
+    // Hostiles participate in the same shared-input arbitration: showing a
+    // nearer red hit explains why Action 1 attacks instead of interacting.
+    const hostile = window.RangedWeapons?.focusedHostile?.(24);
+    if (hostile?.point) {
+      candidates.push({
+        type: 'hostile',
+        id: hostile.candidate?.id || null,
+        point: _plainPoint(hostile.point),
+        distanceWorld: Number(hostile.distanceWorld) || 0,
+        hostile: true,
+      });
     }
+    candidates.sort((a, b) => a.distanceWorld - b.distanceWorld);
+    const focus = candidates[0] || null;
+    const maxDistanceWorld = 12; // Matches ordinary branch interaction focus distance.
+    const endpoint = focus?.point
+      ? new THREE.Vector3(focus.point.x, focus.point.y, focus.point.z)
+      : origin.clone().addScaledVector(direction, maxDistanceWorld);
+    return {
+      origin: _plainPoint(origin),
+      direction: _plainPoint(direction),
+      endpoint: _plainPoint(endpoint),
+      hit: !!focus,
+      targetType: focus?.type || null,
+      targetId: focus?.id || null,
+      distanceWorld: focus?.distanceWorld ?? maxDistanceWorld,
+      hostile: !!focus?.hostile,
+    };
+  }
+
+  function _drawInteractionRaycast() {
+    if (!deps.getShowInteractionRaycast?.()) return;
+    const state = _interactionRaySnapshot();
+    if (!state) return;
+    const playerCenter = _actorHitbox(deps.player)?.center || new THREE.Vector3(
+      deps.player.x / deps.TILE,
+      _debugGroundY(deps.player.x, deps.player.y) + 0.45,
+      deps.player.y / deps.TILE,
+    );
+    const color = state.hostile ? DEBUG_INTERACTION_HOSTILE_COLOR
+      : state.hit ? DEBUG_INTERACTION_HIT_COLOR
+      : DEBUG_INTERACTION_RAY_COLOR;
+
+    // The exact camera ray projects to the screen center and therefore reads
+    // as a point; the player-to-endpoint guide makes its world-space result legible.
+    _drawDebugSegment3D(state.origin, state.endpoint, color, true, 1.5, 0.75);
+    _drawDebugSegment3D(playerCenter, state.endpoint, color, false, 2.5, 0.95);
+
+    const projected = deps.worldToOverlay(state.endpoint.x, state.endpoint.y, state.endpoint.z);
+    if (!projected.visible) return;
+    const octx = deps.octx;
+    const label = state.hit
+      ? `${state.targetType}${state.targetId ? ':' + state.targetId : ''} ${state.distanceWorld.toFixed(2)}u`
+      : `no 3D interaction hit (${state.distanceWorld.toFixed(0)}u)`;
+    octx.save();
+    octx.strokeStyle = color;
+    octx.fillStyle = color;
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.arc(projected.x, projected.y, 7, 0, Math.PI * 2);
+    octx.moveTo(projected.x - 11, projected.y);
+    octx.lineTo(projected.x + 11, projected.y);
+    octx.moveTo(projected.x, projected.y - 11);
+    octx.lineTo(projected.x, projected.y + 11);
+    octx.stroke();
+    octx.font = '12px monospace';
+    octx.textBaseline = 'bottom';
+    const width = octx.measureText(label).width;
+    octx.globalAlpha = 0.8;
+    octx.fillStyle = '#07120f';
+    octx.fillRect(projected.x + 12, projected.y - 20, width + 8, 18);
+    octx.globalAlpha = 1;
+    octx.fillStyle = color;
+    octx.fillText(label, projected.x + 16, projected.y - 5);
+    octx.restore();
+  }
+
+  function drawDebugOverlays() {
+    if (deps.getShowHitboxes?.()) {
+      const player = deps.player;
+      const playerHitbox = _actorHitbox(player);
+      const playerFootY = playerHitbox?.box?.min?.y ?? _debugGroundY(player.x, player.y);
+      _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * deps.TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, true, playerFootY + 0.01);
+      _drawDebugBox3(playerHitbox, DEBUG_HITBOX_COLOR_PLAYER);
+      for (const c of deps.hostileObjects) {
+        if (c.health > 0 && c.areaId === deps.getCurrentArea()) _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
+      }
+      for (const c of deps.companionObjects) {
+        if (c.health > 0 && c.areaId === deps.getCurrentArea()) _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
+      }
+      _drawMeleeColliders();
+    }
+    _drawInteractionRaycast();
   }
 
   function debugSnapshot() {
@@ -267,8 +228,8 @@
       const hitbox = _actorHitbox(actor);
       return hitbox ? {
         label,
-        min: { x: hitbox.box.min.x, y: hitbox.box.min.y, z: hitbox.box.min.z },
-        max: { x: hitbox.box.max.x, y: hitbox.box.max.y, z: hitbox.box.max.z },
+        min: _plainPoint(hitbox.box.min),
+        max: _plainPoint(hitbox.box.max),
         onBranch: !!actor?.onBranch,
         climbing: !!actor?.climbing,
       } : { label, missing: true };
@@ -277,13 +238,22 @@
 
   window.DebugHitboxes = {
     init,
-    draw: drawDebugHitboxes,
+    draw: drawDebugOverlays,
+    noteInteractionFocus,
   };
   window.__hitboxDebug = {
     get actors() { return debugSnapshot(); },
+    get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Hitboxes now projects the real elevated portrait Box3 volumes; dashed squares remain as footing/collision references.',
+      latestChange: 'Show Hitboxes now draws only real elevated Box3 and melee pie-prism volumes; interaction-ray visualization has its own toggle.',
       actors: debugSnapshot(),
+      meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
+        actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
+        pitchDeg: THREE.MathUtils.radToDeg(collider.pitch),
+        rangeWorld: collider.rangeWorld,
+        heightWorld: collider.halfHeightWorld * 2,
+      })),
+      interactionRay: _interactionRaySnapshot(),
     }),
   };
 })();
