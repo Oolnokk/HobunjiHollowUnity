@@ -126,7 +126,7 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle2"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -1979,7 +1979,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks8"></script>
+  <script src="game.js?v=20260825chunks9"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
