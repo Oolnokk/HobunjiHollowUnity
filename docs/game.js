@@ -4221,7 +4221,28 @@
         return amount * (1 - window.BanditCombat.GUARD_DAMAGE_ABSORB);
       }
 
+      let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        // Player melee must overlap the target vertically as well as pass its
+        // existing top-down cone/range test. Ranged projectiles already run
+        // their own swept 3D Box3 collision and deliberately bypass this.
+        const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
+        if (!dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+          const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
+          if (reach && !reach.reachable) {
+            lastMeleeHeightBlock = {
+              at: Date.now(),
+              target: c.id || c.name || c.def?.id || 'hostile',
+              verticalGap: Number(reach.verticalGap.toFixed(3)),
+              allowance: reach.allowance,
+              playerOnBranch: !!player.onBranch,
+              targetOnBranch: !!c.onBranch,
+            };
+            window.__farmLog?.(`[combat] melee height blocked target=${lastMeleeHeightBlock.target} gap=${lastMeleeHeightBlock.verticalGap}`, 'combat');
+            return false;
+          }
+        }
         // Only the player currently ever calls damageCreature (see
         // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
@@ -15082,6 +15103,9 @@
           refreshActionBar();
           return;
         }
+        // The frame update owns the five-second aimed nest hold; do not let
+        // the same physical Action 1 press fall through into a weapon swing.
+        if (activeAction === 'nest_take') return;
         if (activeAction === 'climb') {
           if (player.climbing) return;
           const climb = window.ClimbSystem.getClimbTarget();
@@ -15315,12 +15339,12 @@
       // with the actual point on the ground being targeted, and every
       // consumer needs to agree on that one real point or the head/body/
       // reticle visibly disagree with each other.
-      // Supplies a copy of the camera's exact screen-center ray while the
-      // ranged weapon is drawn. RangedWeapons owns portrait-box convergence
-      // and returns the final muzzle trajectory, keeping HUD placement,
-      // target color, player facing, and the projectile on one line.
+      // Supplies one exact screen-center ray to both combat and world focus.
+      // Shoulder cam always has a meaningful 3D reticle; other camera modes
+      // retain their existing ranged-weapon-only ray behavior.
       function currentPlayerAimRay() {
-        if (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged) return null;
+        if (activeCameraMode !== SHOULDER_SURF_MODE
+          && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
@@ -21208,10 +21232,37 @@
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
       }
+      function isNestGuarded(nest) {
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || !c.isDenMother) continue;
+          if (nest.id ? c.nestTreeKey === nest.id : !c.nestTreeKey) return true;
+        }
+        return false;
+      }
+      function aimedCavernNest(nest) {
+        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest) || isNestGuarded(nest)) return null;
+        if (!currentPlayerAimRay() || !window.RangedWeapons?.focusCandidates) return nest;
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
+        const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
+        const box = new THREE.Box3(
+          new THREE.Vector3(cx / TILE - halfW, groundY, cy / TILE - halfH),
+          new THREE.Vector3(cx / TILE + halfW, groundY + 0.75, cy / TILE + halfH),
+        );
+        const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
+        if (!focus) return null;
+        const hostile = window.RangedWeapons.focusedHostile?.(24);
+        return hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05 ? null : nest;
+      }
+      function currentAimedNest() {
+        const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
+        if (branchNest) return isNestGuarded(branchNest) ? null : branchNest;
+        return aimedCavernNest(_denNests.get(currentArea));
+      }
       function updateNestInteraction(dt) {
-        const nest = _denNests.get(currentArea);
-        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
-        if (!near || !actionHeldDown) {
+        const nest = currentAimedNest();
+        const taking = nest && activeAction === 'nest_take' && actionHeldDown;
+        if (!taking) {
           if (_nestHoldT > 0) _nestHoldT = 0;
           if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
           return;
@@ -22594,8 +22645,8 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const nest = _denNests.get(currentArea);
-          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+          const nest = currentAimedNest();
+          if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
           }
@@ -22658,10 +22709,17 @@
           return btnsSpot;
         }
 
-        // Zone: a climbable cliff face straight ahead takes priority over
-        // tool use. Keep the target visible while riding, but disable it so
-        // mobile clearly communicates that the rider must dismount instead
-        // of letting the mount and scripted climb fight over player.x/y.
+        // A branch nest claims Action 1 only while its 3D volume is under
+        // the centered reticle and its Nestmother is no longer guarding it.
+        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        if (zoneNest) {
+          const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+        }
+
+        // Zone: a climbable cliff face under the centered reticle takes
+        // priority over tool use. Keep the target visible while riding, but
+        // disable it so mobile communicates that the rider must dismount.
         const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
         if (climbTarget) {
           const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
@@ -25077,6 +25135,7 @@
         getEquippedRangedKey: () => equipmentSlots.ranged,
         showToast,
         random: () => window.GameRandom?.random?.() ?? Math.random(),
+        getLastMeleeHeightBlock: () => lastMeleeHeightBlock,
         debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
       });
 
@@ -25772,6 +25831,7 @@
         getCutscenePreviewActive: () => cutscenePreviewActive,
         buildZoneScene,
         DEN_MOTHER_DEFS,
+        DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
         makeDecorativeFurnitureMesh,
       });
@@ -25876,13 +25936,21 @@
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
-        // Raw movement-intent vector, read fresh each call rather than off
-        // player.inputX/Y — those are written later in updateMovement than
-        // the onBranch early-return that leads into updateBranchMovement,
-        // so they'd still hold last frame's value when read from there.
+        getPlayerAimRay: currentPlayerAimRay,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        // Read fresh input because player.inputX/Y are written after the
+        // on-branch early return. Shoulder cam uses the exact same
+        // camera-relative transform as ordinary ground movement.
         getMovementInput: () => {
           const kb = getKeyboardVector();
-          return kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+          const aim = cameraFacingAngleRad();
+          const sin = Math.sin(aim), cos = Math.cos(aim);
+          return {
+            x: -move.x * sin - move.y * cos,
+            y: move.x * cos - move.y * sin,
+          };
         },
       });
 
