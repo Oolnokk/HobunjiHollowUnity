@@ -5590,8 +5590,8 @@
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
       const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
-      const SHOULDER_PET_CURIOUS_LOOK_MIN_DEG = 22; // Smallest side glance — enough to read on a mobile-sized sprite without looking like a body turn.
-      const SHOULDER_PET_CURIOUS_LOOK_MAX_DEG = 48; // Keeps the parrot/monkey-like look playful without pulling the pet off its authored perch.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
       const SHOULDER_PET_CURIOUS_LOOK_MIN_S = 0.65; // Brief hold after easing into the glance.
       const SHOULDER_PET_CURIOUS_LOOK_MAX_S = 1.35;
       const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3.4; // A cooldown keeps the glance spontaneous rather than constant.
@@ -5683,12 +5683,12 @@
         const state = c.shoulderCuriosity || (c.shoulderCuriosity = {
           phase: 'wait',
           timer: 1.4 + rnd() * 2.2, // First glance arrives soon enough to be noticed after equipping a pet.
-          currentYawDeg: 0,
-          targetYawDeg: 0,
+          currentLeanDeg: 0,
+          targetLeanDeg: 0,
           currentPitchDeg: 0,
           targetPitchDeg: 0,
-          baseFrontYaw: null,
-          baseBackYaw: null,
+          baseFrontRoll: null,
+          baseBackRoll: null,
         });
         state.timer -= dt;
         if (state.timer <= 0) {
@@ -5697,15 +5697,15 @@
             state.phase = 'look';
             state.timer = SHOULDER_PET_CURIOUS_LOOK_MIN_S
               + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
-            state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_LOOK_MIN_DEG
-              + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_DEG - SHOULDER_PET_CURIOUS_LOOK_MIN_DEG));
+            state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
             state.targetPitchDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
               + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG))
               + (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           } else if (state.phase === 'look') {
             state.phase = 'settle';
             state.timer = 0.55;
-            state.targetYawDeg = 0;
+            state.targetLeanDeg = 0;
             state.targetPitchDeg = 0;
           } else {
             state.phase = 'wait';
@@ -5714,22 +5714,24 @@
           }
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
         state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
         return state;
       }
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        const yawRadians = state.currentYawDeg * Math.PI / 180;
-        if (state.baseFrontYaw === null) state.baseFrontYaw = c.avatarRef.frontPlane?.rotation.y || 0;
-        if (state.baseBackYaw === null) state.baseBackYaw = c.avatarRef.backPlane?.rotation.y || 0;
+        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
+        if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
+        if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
         // updateCreatureMesh owns the attachment root and will be followed by
-        // updateShoulderPetMeshPin. Turning the two sprite planes here keeps
-        // the pet glued to the shoulder while letting its visible body/head
-        // glance left or right independently of the player.
-        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = state.baseFrontYaw + yawRadians;
-        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = state.baseBackYaw + yawRadians;
+        // updateShoulderPetMeshPin. A local Y turn foreshortens these flat
+        // side-view planes and used to look exactly like the small pet was
+        // randomly becoming medium-sized. Roll the mirrored planes within
+        // their own image instead; the authored head bone supplies the real
+        // independent curious turn without disturbing genotype scale.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
       }
 

@@ -460,6 +460,16 @@
     else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
 
     if (liveActivePet) {
+      const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.
+      const expectedScaleY = (Number(liveActivePet.visualScaleY) || 1) * (Number(liveActivePet.scaleY) || 1); // Used below to detect a real renderer scale overwrite rather than apparent foreshortening.
+      const expectedScaleZ = Number(liveActivePet.visualScaleX) || 1; // Used below because animal billboard width is carried on group Z.
+      const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
+      const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
+      lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
+      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
+        lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
+      }
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
       const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
