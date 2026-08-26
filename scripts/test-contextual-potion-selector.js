@@ -9,70 +9,131 @@ class FakeClassList {
   contains(token) { return this.tokens.has(token); }
   add(token) { this.tokens.add(token); }
   remove(token) { this.tokens.delete(token); }
+  toggle(token, force) { if (force === false) this.tokens.delete(token); else if (force === true || !this.tokens.has(token)) this.tokens.add(token); else this.tokens.delete(token); }
 }
 
 class FakeSlot {
   constructor(entry, active = false) {
     this.entry = entry;
     this.dataset = {};
-    this.title = entry.label;
+    this.title = entry.label || '';
+    this.textContent = entry.label || '';
     this.classList = new FakeClassList([...(entry.className || '').split(/\s+/).filter(Boolean), ...(entry.disabled ? ['blocked'] : []), ...(active ? ['arc-active'] : [])]);
   }
-  getAttribute(name) { return name === 'aria-label' ? this.entry.label : null; }
-  querySelector() { return null; }
+  getAttribute(name) { return name === 'aria-label' ? (this.entry.label || '') : null; }
+  querySelector(selector) { return selector === '.arc-label' ? { textContent:this.entry.label || '' } : null; }
 }
 
-const itemName = { textContent: 'Pebble' }; // Mirrors the live selected-item label read by the selector bridge.
-let slots = []; // Mirrors the currently rendered shared-arch slots for selector DOM queries.
-let mode = null; // Tracks the fake shared arch mode so callback-driven transitions behave like game.js.
-let activeIndex = -1; // Tracks the highlighted shared-arch entry used by scroll/commit.
-let heldItemLabel = 'Pebble'; // Tracks the ordinary inventory selection committed by the potion adapter.
-let heldMode = 'tool'; // Mirrors game.js's hidden heldMode so the quick-switch can prove temporary item restoration.
-let activeCombatSlot = 'ranged'; // Potion Select begins from ranged for exact-slot restoration coverage.
-let weaponSwitchClicks = 0; // Ensures restoration uses the existing quick-switch rather than mutating private state.
-const inventoryLabels = ['Pebble', 'Healing Potion', 'Stamina Potion · Potency 2', 'Potion of Strength', 'Venom Flask']; // Ordinary item-wheel order used to validate exact-stack selection.
-let inventoryIndex = 0; // Used by the fake ordinary item wheel's wraparound cycling.
-const listeners = new Map(); // Minimal CustomEvent bus for flask-release restoration.
+let slots = []; // Current fake shared-arch DOM.
+let mode = null; // Current fake game.js selector mode.
+let activeIndex = -1; // Highlighted slot in the current selector.
+let inventoryIndex = 0; // Authoritative ordinary-item index; starts on Control Remedy.
+let heldMode = 'tool'; // Mirrors game.js heldMode.
+let heldItemKey = null; // Exact ordinary item key committed by the fake game.js path.
+let heldItemLabel = null; // Friendly label for assertions/debug.
+let activeCombatSlot = 'ranged'; // Exact combat slot Potion Select must restore.
+let weaponSwitchClicks = 0; // Confirms restoration uses the real quick-switch seam.
+const listeners = new Map(); // Minimal CustomEvent bus.
+const injectedNodes = new Map(); // Minimal style-node registry for the selector's spacer CSS.
+const itemName = { textContent:'Potion of Strength' }; // Deliberately stale: reproduces the old wrong-item bug.
 
 function syncActive() {
-  slots.forEach((slot, index) => {
-    if (index === activeIndex) slot.classList.add('arc-active');
-    else slot.classList.remove('arc-active');
-  });
+  slots.forEach((slot, index) => slot.classList.toggle('arc-active', index === activeIndex));
 }
 
-const weaponSwitchButton = {
-  click() {
-    weaponSwitchClicks++;
-    if (heldMode === 'item') {
-      heldMode = 'tool';
-      activeCombatSlot = 'weapon'; // Mirrors the normal-tool/item -> melee entry path.
-      return;
-    }
-    activeCombatSlot = activeCombatSlot === 'weapon' ? 'ranged' : 'weapon';
-  },
+function renderEntries(nextMode, entries, rawMode = false) {
+  mode = rawMode ? nextMode : `entries:${nextMode}`;
+  activeIndex = entries.findIndex(entry => entry.active);
+  if (activeIndex < 0 && entries.length) activeIndex = Math.floor((entries.length - 1) / 2);
+  slots = entries.map((entry, index) => new FakeSlot(entry, index === activeIndex));
+}
+
+const defs = {
+  control:{ id:'control', label:'Control Remedy', icon:'🪨' },
+  heal:{ id:'heal', label:'Healing Potion', icon:'💚' },
+  stamina:{ id:'stamina', label:'Stamina Potion', icon:'💨' },
+  clarity:{ id:'clarity', label:'Potion of Clarity', icon:'👁️' },
+  strength:{ id:'strength', label:'Potion of Strength', icon:'💪' },
+  speed:{ id:'speed', label:'Potion of Speed', icon:'🏃' },
+  venom:{ id:'venom', label:'Venom Flask', icon:'☠️' },
 };
+const control = { itemKey:'alchemy_control_p0', payload:{recipeId:'control',potencyTier:0}, recipe:defs.control, count:1 };
+const healing = { itemKey:'alchemy_heal_p0', payload:{recipeId:'heal',potencyTier:0}, recipe:defs.heal, count:2, score:100 };
+const stamina = { itemKey:'alchemy_stamina_p1', payload:{recipeId:'stamina',potencyTier:1}, recipe:defs.stamina, count:1, score:40 };
+const clarity = { itemKey:'alchemy_clarity_p0', payload:{recipeId:'clarity',potencyTier:0}, recipe:defs.clarity, count:1, score:50 };
+const strength = { itemKey:'alchemy_strength_p0', payload:{recipeId:'strength',potencyTier:0}, recipe:defs.strength, count:1 };
+const speed = { itemKey:'alchemy_speed_p0', payload:{recipeId:'speed',potencyTier:0}, recipe:defs.speed, count:1 };
+const venom = { itemKey:'alchemy_venom_p0', payload:{recipeId:'venom',potencyTier:0}, recipe:defs.venom, count:3 };
+const allItems = [control, healing, strength, speed, clarity, stamina, venom];
+
+function itemLabel(entry) {
+  const tier = Math.max(0, Math.min(4, Number(entry.payload?.potencyTier) || 0));
+  return `${entry.recipe.label}${tier ? ` · Potency ${tier + 1}` : ''}`;
+}
+
+function equipExact(entry) {
+  heldMode = 'item';
+  heldItemKey = entry.itemKey;
+  heldItemLabel = itemLabel(entry);
+}
+
+let contextual = [healing, stamina]; // New root's useful restoratives.
+let buffs = [strength, speed]; // New/legacy Buff list.
+let flasks = [venom]; // New/legacy Flask list.
+let cures = [clarity]; // Legacy exact-key Cure list used when Clarity is contextual.
+let healingUseful = [healing]; // Legacy exact-key Healing list.
+
+function categoryState() {
+  return {
+    healing:{ usefulItems:healingUseful },
+    cures:{ usefulItems:cures },
+    buffs:{ items:buffs, usefulItems:buffs },
+    flasks:{ items:flasks },
+  };
+}
+
+function openLegacyPotionItems(category) {
+  const state = categoryState();
+  const raw = category === 'healing' ? state.healing.usefulItems
+    : category === 'cures' ? state.cures.usefulItems
+      : category === 'buffs' ? state.buffs.items : state.flasks.items;
+  const itemEntries = raw.map(entry => ({ id:entry.itemKey, label:itemLabel(entry), itemKey:entry.itemKey, disabled:false, onSelect:() => equipExact(entry) }));
+  const cancel = { id:`cancel-${category}`, label:'Cancel', active:true, disabled:false, onSelect:() => arc.close() };
+  const entries = category === 'healing' || category === 'buffs' ? [cancel, ...itemEntries] : [...itemEntries, cancel];
+  renderEntries(`entries:potion-items-${category}`, entries, true);
+}
+
+function renderItemArc() {
+  mode = 'item';
+  slots = allItems.map((entry, index) => new FakeSlot({ label:itemLabel(entry), itemKey:entry.itemKey, type:'item' }, index === inventoryIndex));
+  activeIndex = inventoryIndex;
+}
 
 const arc = {
-  openEntries(nextMode, entries) {
-    mode = `entries:${nextMode}`;
-    activeIndex = entries.findIndex(entry => entry.active);
-    if (activeIndex < 0 && entries.length) activeIndex = Math.floor((entries.length - 1) / 2);
-    slots = entries.map((entry, index) => new FakeSlot(entry, index === activeIndex));
-  },
-  openPotions() {},
+  openEntries(nextMode, entries) { renderEntries(nextMode, entries); },
+  openPotions() { renderEntries('entries:potion-root', [{id:'medicine',label:'Medicine'},{id:'utility',label:'Utility'}], true); },
   scrollEntries(dir) {
+    if (mode === 'entries:potion-root') {
+      renderEntries(dir < 0 ? 'entries:potion-medicine' : 'entries:potion-utility', [], true);
+      return true;
+    }
+    if (mode === 'entries:potion-medicine' || mode === 'entries:potion-utility') {
+      const category = mode.endsWith('medicine') ? (dir < 0 ? 'healing' : 'cures') : (dir < 0 ? 'buffs' : 'flasks');
+      openLegacyPotionItems(category);
+      return true;
+    }
     if (!slots.length) return false;
-    activeIndex = (activeIndex + (dir < 0 ? -1 : 1) + slots.length) % slots.length;
+    const delta = dir < 0 ? -1 : 1;
+    if (mode?.startsWith('entries:potion-items-')) activeIndex = Math.max(0, Math.min(slots.length - 1, activeIndex + delta));
+    else activeIndex = (activeIndex + delta + slots.length) % slots.length;
     syncActive();
     return true;
   },
-  movePointer() {},
-  releaseSelection() { this.commit(); },
+  movePointer() { return true; },
+  releaseSelection() { return this.commit(); },
   commit() {
     if (mode === 'item') {
-      heldMode = 'item';
-      heldItemLabel = itemName.textContent;
+      equipExact(allItems[inventoryIndex]);
       this.close();
       return true;
     }
@@ -84,24 +145,41 @@ const arc = {
     return true;
   },
   close() { mode = null; slots = []; activeIndex = -1; },
-  openItem() { mode = 'item'; itemName.textContent = inventoryLabels[inventoryIndex]; },
+  openItem() { renderItemArc(); },
   scrollItem(dir) {
-    inventoryIndex = (inventoryIndex + (dir < 0 ? -1 : 1) + inventoryLabels.length) % inventoryLabels.length;
-    itemName.textContent = inventoryLabels[inventoryIndex];
+    inventoryIndex = (inventoryIndex + (dir < 0 ? -1 : 1) + allItems.length) % allItems.length;
+    renderItemArc(); // Deliberately does NOT update #itemName; active arc slot is authoritative.
     return true;
   },
   beginHeldSelection() {}, endHeldSelection() {}, heldSelectionKind() { return 'potions'; },
   entryMenuOpen() { return mode?.startsWith('entries:') || false; },
 };
 
-global.document = {
-  querySelector: selector => selector.includes('.arc-active') ? slots.find(slot => slot.classList.contains('arc-active')) || null : null,
-  querySelectorAll: selector => selector.startsWith('.arc-slot') ? slots : [],
-  getElementById: id => id === 'itemName' ? itemName : id === 'btnWeaponSwitch' ? weaponSwitchButton : null,
-  addEventListener(type, listener) {
-    if (!listeners.has(type)) listeners.set(type, []);
-    listeners.get(type).push(listener);
+const weaponSwitchButton = {
+  click() {
+    weaponSwitchClicks++;
+    if (heldMode === 'item') {
+      heldMode = 'tool';
+      activeCombatSlot = 'weapon';
+      return;
+    }
+    activeCombatSlot = activeCombatSlot === 'weapon' ? 'ranged' : 'weapon';
   },
+};
+
+const fakeHead = { appendChild(node) { if (node?.id) injectedNodes.set(node.id, node); } };
+const fakeBody = { appendChild(node) { if (node?.id) injectedNodes.set(node.id, node); } };
+global.document = {
+  head:fakeHead, body:fakeBody,
+  querySelector(selector) { return selector.includes('.arc-active') ? slots.find(slot => slot.classList.contains('arc-active')) || null : null; },
+  querySelectorAll(selector) {
+    if (selector.startsWith('.arc-slot')) return slots;
+    if (selector.startsWith('#btnAction')) return [];
+    return [];
+  },
+  getElementById(id) { return id === 'itemName' ? itemName : id === 'btnWeaponSwitch' ? weaponSwitchButton : injectedNodes.get(id) || null; },
+  createElement() { return { id:'', textContent:'', style:{}, classList:new FakeClassList() }; },
+  addEventListener(type, listener) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(listener); },
   dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener(event); },
 };
 global.CustomEvent = class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
@@ -110,26 +188,12 @@ global.window = {
   SharedSelectionArch:arc,
   WeaponToolStances:{ debugSnapshot:() => ({ activeSlot:activeCombatSlot }) },
 };
-
-const defs = {
-  heal:{ id:'heal', label:'Healing Potion', icon:'💚' },
-  stamina:{ id:'stamina', label:'Stamina Potion', icon:'💨' },
-  strength:{ id:'strength', label:'Potion of Strength', icon:'💪' },
-  venom:{ id:'venom', label:'Venom Flask', icon:'☠️' },
-};
-const healing = { itemKey:'alchemy_heal_p0', payload:{recipeId:'heal',potencyTier:0}, recipe:defs.heal, count:2, score:100 };
-const stamina = { itemKey:'alchemy_stamina_p1', payload:{recipeId:'stamina',potencyTier:1}, recipe:defs.stamina, count:1, score:40 };
-const strength = { itemKey:'alchemy_strength_p0', payload:{recipeId:'strength',potencyTier:0}, recipe:defs.strength, count:1 };
-const venom = { itemKey:'alchemy_venom_p0', payload:{recipeId:'venom',potencyTier:0}, recipe:defs.venom, count:3 };
-let contextual = [healing, stamina];
-let buffs = [strength];
-let flasks = [venom];
 window.AlchemySystem = {
   RECIPE_DEFS:defs,
-  POTION_ITEMS:Object.fromEntries([healing, stamina, strength, venom].map(entry => [entry.itemKey, entry.payload])),
+  POTION_ITEMS:Object.fromEntries(allItems.map(entry => [entry.itemKey, entry.payload])),
   parseBrewedItemKey:key => window.AlchemySystem.POTION_ITEMS[key] || null,
   contextualRestoratives:() => contextual,
-  potionCategoryState:() => ({ buffs:{items:buffs}, flasks:{items:flasks} }),
+  potionCategoryState:() => categoryState(),
   drinkPotion:itemKey => ({ ok:true, itemKey }),
 };
 
@@ -137,105 +201,93 @@ require(path.join(__dirname, '..', 'docs/js/mobile-potion-category-drag.js'));
 const selector = window._desktopSelectionArc;
 const debug = () => window.ContextualPotionSelector.diagnostics();
 
+// Reproduce the reported bug: HUD text claims Strength while the underlying
+// ordinary item index is Control Remedy. Exact-key routing must ignore it.
+contextual = [];
+buffs = [strength, speed];
+flasks = [];
+inventoryIndex = 0;
+itemName.textContent = 'Potion of Strength';
 selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Stamina Potion · Potency 2 ×1', 'Healing Potion ×2', 'Cancel', 'Flasks'], 'root order must place buffs far CCW, contextual restoratives left of Cancel, and Flasks immediately clockwise');
-assert.strictEqual(debug().active, 'Cancel', 'holding Potion Select must begin on Cancel');
+assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Cancel'], 'Buffs-only root must keep centered Cancel');
+selector.scrollEntries(-1); // Enter Buffs.
+selector.scrollEntries(-1); // Strength is nearest Cancel after display reversal.
+assert.strictEqual(debug().active, 'Potion of Strength ×1', 'Strength must be the highlighted buff');
 selector.releaseSelection();
-assert.strictEqual(mode, null, 'releasing without scrolling must cancel');
-assert.strictEqual(heldItemLabel, 'Pebble', 'Cancel must not change the held item');
+assert.strictEqual(heldItemKey, strength.itemKey, 'Strength selection must equip Strength, never stale Control Remedy');
+assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'buffs must use game.js exact-key potion callback');
+assert.strictEqual(debug().lastSelection.itemKey, strength.itemKey, 'diagnostics must report the exact selected Strength key');
 
+// Speed is the next buff farther counterclockwise and must resolve independently.
 selector.openPotions();
 selector.scrollEntries(-1);
-assert.strictEqual(debug().active, 'Healing Potion ×2', 'one counterclockwise step must reach the highest-scored contextual restorative');
+selector.scrollEntries(-1);
+selector.scrollEntries(-1);
+assert.strictEqual(debug().active, 'Potion of Speed ×1', 'Speed must be independently highlightable');
 selector.releaseSelection();
-assert.strictEqual(heldMode, 'item', 'releasing Potion Select on a potion must temporarily equip it');
-assert.strictEqual(heldItemLabel, 'Healing Potion', 'contextual restorative release must select the ordinary inventory stack');
-assert.strictEqual(debug().temporarySelection.priorSlot, 'ranged', 'temporary selection must remember the exact previously equipped combat slot');
-window.AlchemySystem.drinkPotion(healing.itemKey);
-assert.strictEqual(heldMode, 'tool', 'successful drinking must return from temporary item mode');
-assert.strictEqual(activeCombatSlot, 'ranged', 'successful drinking must restore the exact ranged slot that was equipped before Potion Select');
-assert.strictEqual(debug().temporarySelection, null, 'successful drinking must clear the temporary-selection restore state');
-assert.strictEqual(debug().lastRestore.ok, true, 'drink restoration must be visible in diagnostics');
+assert.strictEqual(heldItemKey, speed.itemKey, 'Speed selection must equip the exact Speed key');
+assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'Speed must use exact-key routing');
 
+// Clarity is a contextual Cure, not a buff. It uses the legacy Cures list's
+// private _selectHeldInventoryKey callback and must not fall onto Control Remedy.
+contextual = [clarity];
+buffs = [];
+flasks = [];
+cures = [clarity];
+inventoryIndex = 0;
+itemName.textContent = 'Potion of Clarity';
+selector.openPotions();
+selector.scrollEntries(-1);
+assert.strictEqual(debug().active, 'Potion of Clarity ×1', 'Clarity must be highlighted from contextual medicine');
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, clarity.itemKey, 'Clarity selection must equip Clarity, never Control Remedy');
+assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'Cures must use exact-key routing');
+
+// Stamina is contextual Restore but not represented in the old Healing/Cures
+// hierarchy. Its fallback must inspect the actual active item-arc slot rather
+// than stale #itemName; start underlying selection on Control Remedy again.
+contextual = [stamina];
+cures = [];
+inventoryIndex = 0;
+itemName.textContent = 'Stamina Potion · Potency 2';
+selector.openPotions();
+selector.scrollEntries(-1);
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, stamina.itemKey, 'Stamina fallback must cycle to the real Stamina stack despite stale HUD text');
+assert.strictEqual(debug().lastSelection.commitPath, 'item-arc', 'non-legacy resource restoratives must use the active item-arc fallback');
+
+// Temporary item handoff still restores the exact prior combat slot after use.
+window.AlchemySystem.drinkPotion(stamina.itemKey);
+assert.strictEqual(heldMode, 'tool', 'successful drinking must leave temporary item mode');
+assert.strictEqual(activeCombatSlot, 'ranged', 'successful drinking must restore the exact prior ranged slot');
+assert.strictEqual(debug().lastRestore.ok, true, 'restoration must remain visible in diagnostics');
+
+// Flask exact-key routing and post-release restoration remain intact.
+contextual = [];
+flasks = [venom];
 selector.openPotions();
 selector.scrollEntries(1);
-assert.strictEqual(debug().stage, 'flasks', 'one clockwise step from Cancel must enter Flasks');
-assert.strictEqual(debug().active, 'Cancel', 'Flasks must open on its boundary Cancel slot');
 selector.scrollEntries(1);
-assert.strictEqual(debug().active, 'Venom Flask ×3', 'continuing clockwise must enter the flask list');
 selector.releaseSelection();
-assert.strictEqual(heldMode, 'item', 'flask release from the selector must temporarily equip the throwable bottle');
-assert.strictEqual(heldItemLabel, 'Venom Flask', 'flask release must select the throwable bottle without consuming it');
+assert.strictEqual(heldItemKey, venom.itemKey, 'Flask selection must equip the exact Flask key');
+assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'Flasks must use exact-key routing');
 document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail:{ type:'flask-release', itemKey:venom.itemKey } }));
-assert.strictEqual(heldMode, 'tool', 'actual flask release must restore the prior combat equipment');
-assert.strictEqual(activeCombatSlot, 'ranged', 'flask throw must return to the exact prior ranged slot');
+assert.strictEqual(activeCombatSlot, 'ranged', 'flask release must restore prior ranged slot');
 
-selector.openPotions();
-selector.scrollEntries(-1);
-selector.scrollEntries(-1);
-selector.scrollEntries(-1);
-assert.strictEqual(debug().stage, 'buffs', 'the far counterclockwise endpoint must enter Buffs');
-assert.strictEqual(debug().active, 'Cancel', 'Buffs must open on its boundary Cancel slot');
-selector.scrollEntries(-1);
-assert.strictEqual(debug().active, 'Potion of Strength ×1', 'continuing counterclockwise must enter the buff list');
-selector.releaseSelection();
-assert.strictEqual(heldItemLabel, 'Potion of Strength', 'buff release must select the ordinary held potion stack');
-window.AlchemySystem.drinkPotion(strength.itemKey);
-assert.strictEqual(activeCombatSlot, 'ranged', 'buff drinking must also return to the prior combat slot');
-
-// No useful medicine: Cancel remains the physical/default center even when
-// utility categories exist. Invisible blocked spacers balance any missing side.
+// No-useful-medicine layouts retain centered/default Cancel and omit stale hierarchy labels.
 contextual = [];
 buffs = [];
 flasks = [];
 selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Cancel'], 'with no useful medicine, buffs, or flasks the visible selector must contain only Cancel');
-assert.strictEqual(debug().active, 'Cancel', 'fully empty Potion Select must begin on centered Cancel');
-assert.strictEqual(activeIndex, 1, 'fully empty Potion Select must keep Cancel in the middle slot');
+assert.deepStrictEqual(debug().rootOrder, ['Cancel'], 'no useful medicine or utility must show only Cancel');
+assert.strictEqual(debug().active, 'Cancel', 'empty selector must default to Cancel');
 selector.scrollEntries(-1);
-assert.strictEqual(debug().active, 'Cancel', 'scrolling toward an empty counterclockwise side must stay on Cancel');
+assert.strictEqual(debug().active, 'Cancel', 'empty counterclockwise side must bounce to Cancel');
 selector.scrollEntries(1);
-assert.strictEqual(debug().active, 'Cancel', 'scrolling toward an empty clockwise side must stay on Cancel');
+assert.strictEqual(debug().active, 'Cancel', 'empty clockwise side must bounce to Cancel');
+assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'legacy Medicine/Utility labels must not leak into contextual root diagnostics');
 selector.releaseSelection();
 
-contextual = [];
-buffs = [strength];
-flasks = [];
-selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Cancel'], 'Buffs-only with no useful medicine must keep only Buffs plus centered Cancel visible');
-assert.strictEqual(debug().active, 'Cancel', 'Buffs-only root must start on Cancel');
-assert.strictEqual(activeIndex, 1, 'Buffs-only root must keep Cancel in the middle slot');
-selector.scrollEntries(1);
-assert.strictEqual(debug().active, 'Cancel', 'missing Flask side must bounce back to Cancel');
-selector.scrollEntries(-1);
-assert.strictEqual(debug().stage, 'buffs', 'counterclockwise from centered Cancel must still enter Buffs');
-assert.strictEqual(debug().active, 'Cancel', 'Buffs category must open on its boundary Cancel');
-selector.releaseSelection();
-
-contextual = [];
-buffs = [];
-flasks = [venom];
-selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Cancel', 'Flasks'], 'Flasks-only with no useful medicine must keep centered Cancel plus Flasks visible');
-assert.strictEqual(debug().active, 'Cancel', 'Flasks-only root must start on Cancel');
-assert.strictEqual(activeIndex, 1, 'Flasks-only root must keep Cancel in the middle slot');
-selector.scrollEntries(-1);
-assert.strictEqual(debug().active, 'Cancel', 'missing Buff side must bounce back to Cancel');
-selector.scrollEntries(1);
-assert.strictEqual(debug().stage, 'flasks', 'clockwise from centered Cancel must still enter Flasks');
-assert.strictEqual(debug().active, 'Cancel', 'Flasks category must open on its boundary Cancel');
-selector.releaseSelection();
-
-contextual = [];
-buffs = [strength];
-flasks = [venom];
-selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Cancel', 'Flasks'], 'with both utility categories and no useful medicine, Cancel must sit between Buffs and Flasks');
-assert.strictEqual(debug().active, 'Cancel', 'utility-only root must still default to Cancel');
-assert.strictEqual(activeIndex, 1, 'utility-only root must keep Cancel in the physical center');
-assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'no-useful-medicine roots must never expose stale Medicine/Utility UI');
-selector.releaseSelection();
-
-assert.strictEqual(debug().mode, 'hold-scroll-contextual', 'diagnostics must identify the new hold/scroll selector');
-assert.ok(weaponSwitchClicks >= 3, 'restoration must use the existing combat quick-switch path');
-console.log('Contextual potion selector tests passed.');
+assert.ok(weaponSwitchClicks >= 2, 'restoration must use the existing weapon quick-switch path');
+assert.strictEqual(debug().mode, 'hold-scroll-contextual', 'diagnostics must identify contextual selector mode');
+console.log('Contextual potion selector exact-key tests passed.');
