@@ -8,12 +8,18 @@
   const BUFF_MODE = 'potion-contextual-buffs'; // Used by the shared arch while browsing buff bottles.
   const FLASK_MODE = 'potion-contextual-flasks'; // Used by the shared arch while browsing throwable flasks.
   const MAX_ITEM_SCAN = 512; // Safety cap used by the ordinary item-wheel bridge when committing a potion stack.
+  const DRINK_RESTORE_PAD_MS = 40; // Keeps the bottle visible through the last authored drink-animation frames.
 
   let installed = false; // Guards the proxy against duplicate installation from load-order retries.
   let stage = null; // Tracks which custom potion view owns the shared arch for release/navigation handling.
+  let selectionOriginSlot = null; // Combat slot that was out when the current Potion Select hold began.
+  let temporarySelection = null; // Bottle temporarily replacing the remembered combat slot until it is consumed/thrown.
+  let restoreTimer = null; // Delayed drink restore so the weapon does not reappear before the swig animation finishes.
+  let selectHeldPotion = () => false; // Assigned during install; wheel entries live outside install and call this shared commit bridge.
   let lastRootOrder = []; // Exposed through diagnostics so mobile testing can verify clockwise ordering without DevTools.
   let lastSelection = null; // Exposed through diagnostics to report the most recent committed bottle.
-  let lastError = null; // Exposed through diagnostics when a displayed potion cannot be resolved in the ordinary item wheel.
+  let lastRestore = null; // Exposed through diagnostics to verify temporary potion handoff and exact combat-slot restoration.
+  let lastError = null; // Exposed through diagnostics when a displayed potion cannot be resolved/restored.
 
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
   const activeSlot = () => document.querySelector('.arc-slot.arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost)');
@@ -41,6 +47,62 @@
     if (!definition) return '';
     const tier = Math.max(0, Math.min(4, Number(payload?.potencyTier) || 0));
     return `${definition.label}${tier ? ` · Potency ${tier + 1}` : ''}`;
+  }
+
+  function currentCombatSlot() {
+    const stanceSlot = window.WeaponToolStances?.debugSnapshot?.()?.activeSlot;
+    if (stanceSlot === 'weapon' || stanceSlot === 'ranged') return stanceSlot;
+    const actions = [...document.querySelectorAll('#btnAction1,#btnAction2,#btnAction3')].map(button => button?.dataset?.action).filter(Boolean);
+    if (actions.includes('shoot') || actions.includes('ammo_select')) return 'ranged';
+    if (actions.includes('cut') || actions.includes('slash')) return 'weapon';
+    return null;
+  }
+
+  function drinkRestoreDelayMs() {
+    const animation = window.HeldActionAnimations?.drink;
+    if (!animation) return 0;
+    const durationS = Math.max(0.1, Number(animation.durationS) || 0.95);
+    const strikeFrac = Math.max(0, Math.min(1, Number(animation.strikeFrac) || 0.62));
+    return Math.max(0, Math.round(durationS * (1 - strikeFrac) * 1000) + DRINK_RESTORE_PAD_MS);
+  }
+
+  function restorePreviousEquipment(reason, itemKey) {
+    if (!temporarySelection || (itemKey && temporarySelection.itemKey !== itemKey)) return false;
+    if (restoreTimer) { clearTimeout(restoreTimer); restoreTimer = null; }
+    const pending = temporarySelection;
+    temporarySelection = null;
+    const switchButton = document.getElementById('btnWeaponSwitch');
+    if (!pending.priorSlot || !switchButton?.click) {
+      lastError = `Potion Select consumed ${pending.label}, but could not restore the previous combat slot.`;
+      lastRestore = { ok:false, reason, itemKey:pending.itemKey, priorSlot:pending.priorSlot, restoredSlot:currentCombatSlot(), at:Date.now() };
+      return false;
+    }
+
+    // From item mode the existing combat quick-switch first re-enters a combat
+    // slot. If that is the opposite slot, one additional click returns to the
+    // exact melee/ranged slot that was active before Potion Select.
+    switchButton.click();
+    let restoredSlot = currentCombatSlot();
+    if (restoredSlot !== pending.priorSlot) {
+      switchButton.click();
+      restoredSlot = currentCombatSlot();
+    }
+    const ok = restoredSlot === pending.priorSlot;
+    lastRestore = { ok, reason, itemKey:pending.itemKey, priorSlot:pending.priorSlot, restoredSlot, at:Date.now() };
+    lastError = ok ? null : `Potion Select could not return to ${pending.priorSlot} after ${reason}.`;
+    return ok;
+  }
+
+  function scheduleDrinkRestore(itemKey) {
+    if (!temporarySelection || temporarySelection.itemKey !== itemKey) return false;
+    const delayMs = drinkRestoreDelayMs();
+    if (!(delayMs > 0)) return restorePreviousEquipment('drink', itemKey);
+    if (restoreTimer) clearTimeout(restoreTimer);
+    restoreTimer = setTimeout(() => {
+      restoreTimer = null;
+      restorePreviousEquipment('drink', itemKey);
+    }, delayMs);
+    return true;
   }
 
   function wheelEntry(entry, className = 'potion-contextual') {
@@ -86,6 +148,7 @@
 
     function closeSelector() {
       stage = null;
+      selectionOriginSlot = null;
       baseClose();
     }
 
@@ -116,10 +179,10 @@
       const buffs = categoryState.buffs?.items || [];
       const flasks = categoryState.flasks?.items || [];
       const entries = [
-        { id:'buffs', icon:'✨', label:'Buffs', className:`potion-category potion-buff-gateway${buffs.length ? '' : ' muted'}`, disabled:!buffs.length, onSelect:() => openCategory('buffs') },
+        ...(buffs.length ? [{ id:'buffs', icon:'✨', label:'Buffs', className:'potion-category potion-buff-gateway', disabled:false, onSelect:() => openCategory('buffs') }] : []),
         ...contextual,
         { id:'cancel', icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:closeSelector },
-        { id:'flasks', icon:'🫙', label:'Flasks', className:`potion-category potion-flask-gateway${flasks.length ? '' : ' muted'}`, disabled:!flasks.length, onSelect:() => openCategory('flasks') },
+        ...(flasks.length ? [{ id:'flasks', icon:'🫙', label:'Flasks', className:'potion-category potion-flask-gateway', disabled:false, onSelect:() => openCategory('flasks') }] : []),
       ];
       lastRootOrder = entries.map(entry => entry.label);
       return entries;
@@ -127,6 +190,7 @@
 
     function openRoot() {
       stage = 'root';
+      selectionOriginSlot = currentCombatSlot();
       lastError = null;
       baseOpenEntries(ROOT_MODE, contextualRootEntries());
       markEntryIds();
@@ -148,7 +212,7 @@
       return normalized(document.getElementById('itemName')?.textContent);
     }
 
-    function selectHeldPotion(entry) {
+    selectHeldPotion = function selectHeldPotionEntry(entry) {
       const targetLabel = inventoryLabel(entry);
       if (!targetLabel) {
         lastError = `Potion Select could not resolve ${entry?.itemKey || '(unknown item)'}.`;
@@ -159,6 +223,7 @@
       // Commit through the existing item selector instead of mutating private
       // activeItemIndex/heldMode state. All changes remain inside the ordinary
       // inventory path, including potency-specific stacks and action refreshes.
+      const priorSlot = selectionOriginSlot || currentCombatSlot();
       stage = null;
       baseClose();
       baseOpenItem();
@@ -168,15 +233,32 @@
         found = selectedInventoryLabel() === targetLabel;
       }
       if (!found) {
+        selectionOriginSlot = null;
         lastError = `Potion Select displayed ${targetLabel}, but the inventory selector could not find that stack.`;
         baseClose();
         return false;
       }
-      lastSelection = { itemKey:entry.itemKey, label:targetLabel, at:Date.now() };
+      lastSelection = { itemKey:entry.itemKey, label:targetLabel, priorSlot, at:Date.now() };
+      temporarySelection = { itemKey:entry.itemKey, label:targetLabel, priorSlot, selectedAt:Date.now() };
+      selectionOriginSlot = null;
       lastError = null;
       baseCommit();
       return true;
+    };
+
+    if (!A.__contextualPotionRestoreHooked && typeof A.drinkPotion === 'function') {
+      const originalDrinkPotion = A.drinkPotion;
+      A.drinkPotion = function contextualPotionRestoreDrink(itemKey, ...args) {
+        const result = originalDrinkPotion.call(this, itemKey, ...args);
+        if (result?.ok) scheduleDrinkRestore(itemKey);
+        return result;
+      };
+      Object.defineProperty(A, '__contextualPotionRestoreHooked', { value:true, configurable:true });
     }
+
+    document.addEventListener?.('hobunji-alchemy-change', event => {
+      if (event?.detail?.type === 'flask-release') restorePreviousEquipment('flask-release', event.detail.itemKey);
+    });
 
     const overrides = {
       openPotions() { return openRoot(); },
@@ -222,14 +304,17 @@
       mode:'hold-scroll-contextual',
       stage,
       active:activeLabel(),
+      selectionOriginSlot,
+      temporarySelection:temporarySelection && { ...temporarySelection },
       rootOrder:lastRootOrder.slice(),
       contextual:(A.contextualRestoratives() || []).map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), score:entry.score, count:entry.count })),
       buffs:currentCategoryEntries('buffs').map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), count:entry.count })),
       flasks:currentCategoryEntries('flasks').map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), count:entry.count })),
       lastSelection:lastSelection && { ...lastSelection },
+      lastRestore:lastRestore && { ...lastRestore },
       lastError,
     });
-    window.ContextualPotionSelector = Object.freeze({ diagnostics, open:openRoot });
+    window.ContextualPotionSelector = Object.freeze({ diagnostics, open:openRoot, restorePreviousEquipment });
     window.MobilePotionTapNavigation = window.ContextualPotionSelector; // Compatibility alias for existing mobile debug probes.
     window.MobilePotionCategoryDrag = window.ContextualPotionSelector; // Compatibility alias for the legacy script name.
     return true;
