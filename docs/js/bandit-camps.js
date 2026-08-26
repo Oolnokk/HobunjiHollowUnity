@@ -644,6 +644,8 @@
       action: 'bandit_tent_interact',
       style: 'primary',
       allowed: true,
+      worldInteraction: true,
+      promptRoot: _banditCampMeshes.get(zoneId)?.get(tent.id)?.mesh || null,
     };
   }
 
@@ -717,13 +719,13 @@
     const parts = [];
     for (const [key, qty] of Object.entries(gained || {})) {
       if (key === 'gold') {
-        inventory.gold = (inventory.gold || 0) + qty;
+        deps.inventory.gold = (deps.inventory.gold || 0) + qty;
         parts.push('💰' + qty + 'g');
         continue;
       }
-      inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
-      clampInventoryStack(key);
-      parts.push(itemIconForKey(key) + '×' + qty);
+      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + qty);
+      deps.clampInventoryStack(key);
+      parts.push(deps.itemIconForKey(key) + '×' + qty);
     }
     return parts;
   }
@@ -778,6 +780,7 @@
     return {
       id: 'corpse_' + c.id,
       type: 'bandit_corpse',
+      promptRoot: c.avatarRef?.group || null,
       getButtons() {
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },

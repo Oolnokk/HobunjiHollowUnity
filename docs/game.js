@@ -823,9 +823,13 @@
           // a flat Footing hit instead of the velocity impulse below.
           const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
           if (result?.fell) {
-            // footing-damage-recovery-bridge.js doubles every spendFooting
-            // call, so 47.5 here nets the intended 95 Footing damage.
+            // Branch falls are a real landing event: a small Health hit plus
+            // a large Footing hit, with a floor of one remaining Health.
+            const currentHealth = Number(target.health);
+            const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
+            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
           }
           return;
@@ -4161,6 +4165,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
+          promptRoot: c.avatarRef?.group || null,
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -4316,6 +4321,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        player._nestTakeActive = false;
         window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -5244,6 +5250,7 @@
           // flicker between equally-near players every frame.
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
@@ -5560,6 +5567,7 @@
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
           c.facing = aimAngle;
+          if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
@@ -7408,7 +7416,7 @@
         // Climbing is now the forward-dodge context action. Sideways/backward
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
-        if (climb && dodgeInputIsForward()) { window.ClimbSystem.startClimb(climb); return; }
+        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -15122,6 +15130,9 @@
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
           // freeze (especially in the Southern Cloud Forest).
+          // Let every branch occupant fall before the decorative tree group
+          // is removed. collapseTree also starts the nest's ground lerp.
+          window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
@@ -21411,16 +21422,10 @@
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
       }
-      function isNestGuarded(nest) {
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || !c.isDenMother) continue;
-          if (nest.id ? c.nestTreeKey === nest.id : !c.nestTreeKey) return true;
-        }
-        return false;
-      }
       function aimedCavernNest(nest) {
-        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest) || isNestGuarded(nest)) return null;
-        if (!currentPlayerInteractionRay() || !window.RangedWeapons?.focusCandidates) return nest;
+        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
+        const interactionRay = currentPlayerInteractionRay();
+        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
         const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
@@ -21437,7 +21442,7 @@
       }
       function currentAimedNest() {
         const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
-        if (branchNest) return isNestGuarded(branchNest) ? null : branchNest;
+        if (branchNest) return branchNest;
         return aimedCavernNest(_denNests.get(currentArea));
       }
       function refreshInteractionFocusDebug() {
@@ -21450,6 +21455,7 @@
       function updateNestInteraction(dt) {
         const nest = currentAimedNest();
         const taking = nest && activeAction === 'nest_take' && actionHeldDown;
+        player._nestTakeActive = !!taking;
         if (!taking) {
           if (_nestHoldT > 0) _nestHoldT = 0;
           if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
@@ -21461,6 +21467,7 @@
         _nestTakeHudEl?.classList.add('visible');
         if (_nestHoldT >= NEST_TAKE_HOLD_S) {
           _nestHoldT = 0;
+          player._nestTakeActive = false;
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
@@ -21626,7 +21633,8 @@
             window.CreatureDeath.updateCorpses(dt);
           }
 
-          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          window.ClimbSystem?.updateFallenNests?.(dt);
+          updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -22835,7 +22843,7 @@
           const nest = currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
@@ -22901,7 +22909,7 @@
         const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
 
         // Bandit tents are runtime props rather than worldObjects, so expose
@@ -23016,6 +23024,11 @@
         return btns;
       }
 
+      // Fallback anchor for interactibles without their own Object3D. It is
+      // moved to the aimed tile before the world-space list is synchronized.
+      const _worldInteractionPromptAnchor = new THREE.Object3D(); // Used by refreshActionBar for non-mesh world objects.
+      _worldInteractionPromptAnchor.name = 'world_interaction_prompt_anchor';
+
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
@@ -23038,23 +23051,41 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
-        // Contextual held-item interactions always use the world popup list.
-        // Ordinary world targets use it once they expose more than one choice,
-        // establishing the same path for future actions such as Invite to Dance.
-        const isWorldInteraction = button => button?.contextualHeldItem
+        // Every action supplied by an aimed world object is a world
+        // interaction even if its id predates the obj_* naming convention.
+        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const isWorldInteraction = button => button?.worldInteraction
+          || button?.contextualHeldItem
+          || objectActionIds.has(button?.action)
           || button?.action === npcDialogueAction()
           || button?.action === generalStoreAction()
           || button?.action === carpenterAction()
           || button?.action === 'use_spot'
+          || button?.action === 'nest_take'
+          || button?.action === 'bandit_tent_interact'
           || button?.action?.startsWith('obj_');
-        const interactionRoot = nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        const interactionButton = btns.find(isWorldInteraction) || null;
+        if (interactionButton) {
+          _worldInteractionPromptAnchor.position.set(
+            reticle.col + 0.5,
+            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            reticle.row + 0.5,
+          );
+        }
+        const interactionRoot = interactionButton?.promptRoot
+          || nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
+        const promptKeys = promptActionIds.map((actionId, index) =>
+          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          desktop: isDesktop,
           scene: getActiveScene(),
+          promptKeys,
+          showInputHints: true,
           isWorldInteraction,
         });
         // Dynamic providers (including the asynchronously loaded consumable
@@ -25231,6 +25262,9 @@
         getActiveScene,
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
+        getHeldMode: () => heldMode,
+        getActiveTool: () => activeTool,
+        getMeleeReticleTarget: () => findAutoTarget() || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
         inCone,
         damageCreature,
         damagePlayer,
@@ -26137,6 +26171,8 @@
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
+        hostileObjects,
+        companionObjects,
         facingCardinal,
         getActiveGrid,
         getActiveCols,
@@ -26582,6 +26618,9 @@
         showZoneBanner,
         showToast,
         rollLootPool,
+        inventory,
+        clampInventoryStack,
+        itemIconForKey,
         refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,

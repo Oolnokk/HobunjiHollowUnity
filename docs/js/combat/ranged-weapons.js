@@ -775,6 +775,8 @@
     let targetPoint = null;
     let reticleTarget = null;
     const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
+    // Acquisition uses the same swept projectile radius as live collision.
+    const aimRadius = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
       const rayDistance = Math.max(def.rangeTiles + 2, cameraToMuzzle.length() + def.rangeTiles + 2);
@@ -782,7 +784,7 @@
       let nearest = null;
       for (const hostile of deps.hostileObjects) {
         if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
-        const interval = segmentHitboxInterval(cameraRay.origin, rayEnd, actorHitbox(hostile));
+        const interval = segmentHitboxInterval(cameraRay.origin, rayEnd, actorHitbox(hostile), aimRadius);
         if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
         nearest = { hostile, interval };
       }
@@ -808,6 +810,7 @@
       itemKey, origin, direction, targetPoint, reticleTarget,
       angle: Math.atan2(direction.z, direction.x),
       pitch: Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
+      aimRadiusPx: aimRadius * deps.TILE,
     };
   }
 

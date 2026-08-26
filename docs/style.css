@@ -106,6 +106,54 @@
       overflow: hidden; white-space: nowrap;
       box-shadow: 0 4px 18px rgba(0,0,0,0.32);
     }
+
+    /* Skyrim-style bearing strip. Marker glyphs move with player heading;
+       their font size is supplied by navigation-compass.js from distance. */
+    #navigationCompass {
+      position: fixed;
+      left: var(--play-center);
+      top: calc(var(--oy) + 2 * var(--row) + 4px);
+      width: clamp(240px, 42vw, 620px);
+      height: 34px;
+      z-index: 19;
+      opacity: 0;
+      transform: translateX(-50%) translateY(-4px);
+      pointer-events: none;
+      overflow: hidden;
+      color: #f3ead3;
+      text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,.9);
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+    #navigationCompass.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #navigationCompass::before {
+      content: '';
+      position: absolute;
+      left: 5%; right: 5%; top: 13px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(243,234,211,.6) 18%, rgba(243,234,211,.85) 50%, rgba(243,234,211,.6) 82%, transparent);
+    }
+    #navigationCompass::after {
+      content: '';
+      position: absolute;
+      left: 50%; top: 8px;
+      width: 1px; height: 11px;
+      background: #fff2c8;
+      box-shadow: 0 0 5px rgba(255,235,170,.75);
+    }
+    #navigationCompassLayer { position: absolute; inset: 0; }
+    .nav-compass-cardinal, .nav-compass-marker {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .nav-compass-cardinal { top: 17px; font-size: 10px; font-weight: 700; }
+    .nav-compass-marker {
+      top: 1px;
+      font-size: var(--nav-marker-size, 12px);
+      filter: drop-shadow(0 0 3px currentColor);
+    }
     .sb-time { font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 13px; color: var(--accent); letter-spacing: 0.03em; flex-shrink: 0; }
     .sb-div  { width: 1px; height: 12px; background: var(--border-bright); flex-shrink: 0; }
     .sb-info { font-size: 11px; color: var(--muted); flex-shrink: 0; }

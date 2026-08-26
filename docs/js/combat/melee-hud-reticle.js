@@ -12,20 +12,28 @@
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
   const FILTER_WHITE = 'brightness(0) invert(1)';
-  const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
-  // Slot colors are applied only after the corresponding attack is reachable.
-  const SLOT_READY_FILTERS = [
-    'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)' + READY_GLOW,
+  const READY_SCALE = 1.16;
+  const SCALE_TRANSITION = 'transform 140ms ease-out'; // Used by each cropped quadrant wrapper when its attack enters or leaves range.
+  const COLOR_TRANSITION = 'opacity 140ms ease-out'; // Used by the neutral/color layers for the readiness color lerp.
+  // The neutral layer matches the ranged reticle. A second, transparent layer
+  // fades in the slot color only when that ability's authoritative hit test is ready.
+  const SLOT_COLOR_FILTERS = [
+    'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)',
+    'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)',
+    'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)',
+    'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)',
   ];
-  const CLIPS = [
-    'polygon(0 0, 54% 0, 54% 54%, 0 54%)',
-    'polygon(46% 0, 100% 0, 100% 54%, 46% 54%)',
-    'polygon(0 46%, 54% 46%, 54% 100%, 0 100%)',
-    'polygon(46% 46%, 100% 46%, 100% 100%, 46% 100%)',
+  // Pixel bounds measured after splitting the 75x71 source at its center and
+  // trimming each piece to alpha > 0. This removes transparent padding before scaling.
+  const QUADRANT_BOUNDS = [
+    { x: 0, y: 0, width: 32, height: 32 },
+    { x: 37, y: 0, width: 37, height: 32 },
+    { x: 0, y: 35, width: 31, height: 31 },
+    { x: 37, y: 35, width: 36, height: 31 },
   ];
+  // Scale outward from the opposite inner corner so each quadrant appears to
+  // grow toward the target rather than pulling the reticle off-center.
+  const SLOT_TRANSFORM_ORIGINS = ['100% 100%', '0% 100%', '100% 0%', '0% 0%'];
 
   let host = null;
   let container = null;
@@ -34,12 +42,18 @@
   let lastSnapshot = { visible: false, target: null, slots: [] };
 
   function meleeWeaponDrawn() {
-    // The action-arch observer can rewrite the switch button label while it
-    // rebuilds the HUD. Prefer the authoritative gameplay mode when exposed,
-    // then keep the DOM check as a backwards-compatible fallback.
-    const activeTool = window.Combat?.deps?.getActiveTool?.();
+    // Gameplay state is authoritative. The previous DOM fallback could stay
+    // false forever because getActiveTool was accidentally wired into an
+    // unrelated subsystem rather than Combat.
+    const deps = window.Combat?.deps;
+    const heldMode = deps?.getHeldMode?.();
+    const activeTool = deps?.getActiveTool?.();
+    if (heldMode || activeTool) {
+      return heldMode === 'tool'
+        && activeTool === 'weapon'
+        && !!deps?.currentWeaponKey?.();
+    }
     const switchButton = document.getElementById('btnWeaponSwitch');
-    if (activeTool) return activeTool === 'weapon' && !!switchButton?.classList.contains('active');
     return !!switchButton?.classList.contains('active')
       && switchButton?.getAttribute('aria-label') !== 'Switch to melee weapon';
   }
@@ -63,30 +77,54 @@
       userSelect: 'none',
       zIndex: '10',
       display: 'none',
-      opacity: String(RETICLE_OPACITY),
+      opacity: '1',
     });
 
     pieces = SLOT_IDS.map((slotId, index) => {
-      const image = document.createElement('img');
-      image.alt = '';
-      image.setAttribute('aria-hidden', 'true');
-      image.dataset.slot = slotId;
-      Object.assign(image.style, {
+      const bounds = QUADRANT_BOUNDS[index];
+      const quadrant = document.createElement('div');
+      quadrant.dataset.slot = slotId;
+      Object.assign(quadrant.style, {
         position: 'absolute',
-        inset: '0',
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain',
+        left: `${bounds.x * RETICLE_SCALE}px`,
+        top: `${bounds.y * RETICLE_SCALE}px`,
+        width: `${bounds.width * RETICLE_SCALE}px`,
+        height: `${bounds.height * RETICLE_SCALE}px`,
+        overflow: 'hidden',
         pointerEvents: 'none',
-        userSelect: 'none',
-        WebkitUserDrag: 'none',
-        clipPath: CLIPS[index],
-        filter: FILTER_WHITE,
+        transformOrigin: SLOT_TRANSFORM_ORIGINS[index],
+        transition: SCALE_TRANSITION,
       });
-      image.src = RETICLE_URL;
-      image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
-      container.appendChild(image);
-      return image;
+      container.appendChild(quadrant);
+
+      const makeLayer = (filter, opacity) => {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.setAttribute('aria-hidden', 'true');
+        image.dataset.slot = slotId;
+        Object.assign(image.style, {
+          position: 'absolute',
+          left: `${-bounds.x * RETICLE_SCALE}px`,
+          top: `${-bounds.y * RETICLE_SCALE}px`,
+          width: `${RETICLE_WIDTH_PX}px`,
+          height: `${RETICLE_HEIGHT_PX}px`,
+          objectFit: 'contain',
+          pointerEvents: 'none',
+          userSelect: 'none',
+          WebkitUserDrag: 'none',
+          transition: COLOR_TRANSITION,
+          filter,
+          opacity: String(opacity),
+        });
+        image.src = RETICLE_URL;
+        image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
+        quadrant.appendChild(image);
+        return image;
+      };
+      const neutral = makeLayer(FILTER_WHITE, RETICLE_OPACITY);
+      const color = makeLayer(SLOT_COLOR_FILTERS[index], 0);
+      color.dataset.colorLayer = 'true';
+      return { quadrant, neutral, color };
     });
     host.appendChild(container);
     return container;
@@ -159,34 +197,54 @@
   }
 
   function targetState(deps, direction, slotProfiles) {
-    let focused = null;
-    try { focused = window.RangedWeapons?.focusedHostile?.(24) || null; } catch (err) {
-      console.warn('[melee-reticle] focused target failed', err);
-    }
-    const target = focused?.candidate?.data || null;
-    if (!target || target.health <= 0) return { target: null, ready: slotProfiles.map(() => false), distanceWorld: null };
+    const area = deps.getCurrentArea?.() || deps.currentArea?.() || null;
+    const candidates = [];
+    const seen = new Set();
+    const add = (entity, source) => {
+      if (!entity || entity.health <= 0 || (area && entity.areaId && entity.areaId !== area) || seen.has(entity)) return;
+      seen.add(entity);
+      candidates.push({ entity, source });
+    };
+    try { add(deps.getMeleeReticleTarget?.(), 'combat-target'); } catch (err) {}
+    try { add(window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data, 'interaction-ray'); } catch (err) {}
+    for (const entity of (deps.hostileObjects || [])) add(entity, 'hostile-scan');
 
     const origin = new THREE.Vector3(
       deps.player.x / deps.TILE,
       deps.player.avatarRef?.group?.position?.y || 0.55,
       deps.player.y / deps.TILE,
     );
-    const hitbox = window.RangedWeapons?.actorHitbox?.(target);
-    const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
-      || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
-    const distanceWorld = closest.distanceTo(origin);
-    const vertical = window.RangedWeapons?.meleeReachCheck?.(deps.player, target, 0.4);
-    // focusedHostile() already proves the camera ray is on this actor. Use
-    // the attack's actual reach plus the shared vertical gate for readiness;
-    // re-running the old 2D meleeHit cone here made every slot stay white
-    // when shoulder-camera aim pitch differed by a few degrees.
-    const ready = slotProfiles.map(profile => {
-      if (!profile.attackId || profile.reachPx <= 0) return false;
-      const inReach = distanceWorld <= profile.reachPx / deps.TILE + 1e-4;
-      const sameHeight = !vertical || vertical.reachable !== false;
-      return inReach && sameHeight;
-    });
-    return { target: target.id || target.name || 'hostile', ready, distanceWorld };
+    const aim = new THREE.Vector3(Number(direction.x) || 1, Number(direction.y) || 0, Number(direction.z) || 0).normalize();
+    let selected = null;
+    for (const candidate of candidates) {
+      const target = candidate.entity;
+      const hitbox = window.RangedWeapons?.actorHitbox?.(target);
+      const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
+        || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
+      const distanceWorld = closest.distanceTo(origin);
+      const ready = slotProfiles.map(profile => {
+        if (!profile.attackId || profile.reachPx <= 0) return false;
+        try {
+          const result = window.Combat?.meleeHit?.(deps.player, target, {
+            rangePx: profile.reachPx,
+            halfConeRad: profile.halfConeRad,
+            direction: aim,
+            debug: false,
+          });
+          if (result != null) return !!(result.hit ?? result.ok ?? result);
+        } catch (err) {}
+        const vertical = window.RangedWeapons?.meleeReachCheck?.(deps.player, target, 0.4);
+        const horizontal = Math.hypot(target.x - deps.player.x, target.y - deps.player.y);
+        return horizontal <= profile.reachPx && (!vertical || vertical.reachable !== false);
+      });
+      const state = { target: target.id || target.name || 'hostile', targetSource: candidate.source, ready, distanceWorld };
+      if (!selected || ready.some(Boolean)) {
+        selected = state;
+        if (ready.some(Boolean)) break;
+      }
+    }
+    if (!selected) return { target: null, targetSource: null, ready: slotProfiles.map(() => false), distanceWorld: null };
+    return selected;
   }
 
   function refresh() {
@@ -203,14 +261,21 @@
     const direction = deps.getPlayerMeleeAimDirection?.() || { x: 1, y: 0, z: 0 };
     const state = targetState(deps, direction, slotProfiles);
     root.style.display = 'block';
-    pieces.forEach((image, index) => {
+    pieces.forEach((piece, index) => {
       const profile = slotProfiles[index] || {};
-      image.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
-      image.style.filter = state.ready[index] ? SLOT_READY_FILTERS[index] : FILTER_WHITE;
+      const unlocked = !!profile.attackId;
+      const ready = unlocked && !!state.ready[index];
+      const neutralOpacity = unlocked ? RETICLE_OPACITY : RETICLE_OPACITY * 0.72;
+      piece.neutral.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
+      piece.color.title = piece.neutral.title;
+      piece.neutral.style.opacity = ready ? '0' : String(neutralOpacity);
+      piece.color.style.opacity = ready ? '1' : '0';
+      piece.quadrant.style.transform = `scale(${ready ? READY_SCALE : 1})`;
     });
     lastSnapshot = {
       visible: true,
       target: state.target,
+      targetSource: state.targetSource,
       distanceWorld: state.distanceWorld,
       slots: slotProfiles.map((profile, index) => ({
         slot: profile.slotId,
@@ -220,6 +285,8 @@
         reachDistancePx: profile.reachPx,
         ready: !!state.ready[index],
         color: SLOT_COLORS[index],
+        colorBlend: state.ready[index] ? 1 : 0,
+        scale: state.ready[index] ? READY_SCALE : 1,
       })),
     };
     return true;

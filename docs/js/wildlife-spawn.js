@@ -381,9 +381,12 @@
   const NEST_TREE_MAX_PER_ZONE = 5;
   const NEST_PACK_SIZE_MIN = 2;
   const NEST_PACK_SIZE_MAX = 4;
-  const _nestTreeSelectionCache = new Map(); // zoneId -> capped branch[], computed once (deterministic, so recomputing would pick the same trees anyway).
+  // Cache stable tile keys, not branch object identities: chunk streaming
+  // destroys and recreates branch objects as chunks unload/reload.
+  const _nestTreeSelectionCache = new Map(); // zoneId -> [{ key, branch }]
 
-  function nestTreeKeyFor(zoneId, branch) { return `${zoneId}:nesttree:${branch.col},${branch.row}`; }
+  function branchTileKey(branch) { return `${branch.col},${branch.row}`; }
+  function nestTreeKeyFor(zoneId, branch) { return `${zoneId}:nesttree:${branchTileKey(branch)}`; }
 
   function isNestTreeAlive(key) {
     for (const c of deps.hostileObjects) if (c.nestTreeKey === key && c.health > 0) return true;
@@ -395,18 +398,46 @@
   // than reshuffling whenever this check happens to run — sorted and
   // capped to NEST_TREE_MAX_PER_ZONE regardless of how many climbable
   // branches this zone actually has registered.
+  function rebindStreamedNestBranch(zoneId, entry, liveBranch) {
+    const prior = entry.branch;
+    if (!prior || prior === liveBranch) return;
+    if (prior.felled) liveBranch.felled = true;
+    if (prior.nest && (!liveBranch.nest || prior.nest.fallen)) liveBranch.nest = prior.nest;
+    const key = nestTreeKeyFor(zoneId, liveBranch);
+    for (const creature of deps.hostileObjects) {
+      if (creature.nestTreeKey !== key || creature.onBranch !== prior) continue;
+      creature.onBranch = liveBranch;
+      const t = Math.max(0, Math.min(1, Number(creature.branchT) || 0));
+      creature.x = liveBranch.baseX + (liveBranch.tipX - liveBranch.baseX) * t;
+      creature.y = liveBranch.baseY + (liveBranch.tipY - liveBranch.baseY) * t;
+      creature.branchSurfaceY = liveBranch.baseWorldY + (liveBranch.tipWorldY - liveBranch.baseWorldY) * t;
+    }
+    entry.branch = liveBranch;
+  }
+
   function eligibleNestBranches(zoneId) {
-    const cached = _nestTreeSelectionCache.get(zoneId);
-    if (cached) return cached;
-    const branches = window.ClimbSystem?.debugBranchesFor?.(zoneId) || [];
-    const scored = branches.map(b => {
-      const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${b.col}_${b.row}`);
-      return { b, score: rng ? rng() : deps.rnd() };
-    });
-    scored.sort((x, y) => x.score - y.score);
-    const selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE).map(s => s.b);
-    _nestTreeSelectionCache.set(zoneId, selected);
-    return selected;
+    const branches = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(branch => !branch.felled);
+    let selected = _nestTreeSelectionCache.get(zoneId);
+    if (!selected) {
+      const scored = branches.map(branch => {
+        const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${branch.col}_${branch.row}`);
+        return { branch, key: branchTileKey(branch), score: rng ? rng() : deps.rnd() };
+      });
+      scored.sort((a, b) => a.score - b.score);
+      selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE)
+        .map(({ key, branch }) => ({ key, branch }));
+      _nestTreeSelectionCache.set(zoneId, selected);
+    }
+
+    const liveByKey = new Map(branches.map(branch => [branchTileKey(branch), branch]));
+    const liveSelected = [];
+    for (const entry of selected) {
+      const liveBranch = liveByKey.get(entry.key);
+      if (!liveBranch) continue;
+      rebindStreamedNestBranch(zoneId, entry, liveBranch);
+      liveSelected.push(liveBranch);
+    }
+    return liveSelected;
   }
 
   function spawnNestAtBranch(zoneId, branch, key) {
@@ -471,6 +502,7 @@
       id: key, areaId: zoneId, x: midX, y: midY, worldY: midWorldY,
       itemKey, liveBirth: !!nestMotherConfig?.liveBirth, remaining,
       genotype: nestGenotype, mesh: null,
+      interactionCollider: { halfWidth: 0.55, bottomOffset: -0.15, topOffset: 0.65 },
     } : null;
     if (!itemKey) {
       window.__farmLog?.(`[wildlife] Nestmother "${motherKey}" has no configured nest reward; branch collection is disabled.`, 'warn');
