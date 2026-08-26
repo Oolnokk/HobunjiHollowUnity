@@ -21424,7 +21424,8 @@
       }
       function aimedCavernNest(nest) {
         if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
-        if (!currentPlayerInteractionRay() || !window.RangedWeapons?.focusCandidates) return nest;
+        const interactionRay = currentPlayerInteractionRay();
+        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
         const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
