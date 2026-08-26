@@ -705,6 +705,40 @@
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
     }
+    const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
+    if (creatureDeathDebug?.lastRecovery) {
+      const recovery = creatureDeathDebug.lastRecovery;
+      lines.push(`Creature death: RECOVERED ${recovery.creature} at ${recovery.areaId}:${recovery.col},${recovery.row} reason=${String(recovery.reason || 'unknown').split('\n')[0]}`);
+    } else if (creatureDeathDebug?.lastBegin) {
+      lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
+    }
+    const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
+    if (compassDebug) {
+      const markerText = compassDebug.markers.map(marker => `${marker.source}:${marker.label}@${marker.distanceTiles}t/${marker.sizePx}px/${marker.bearingDeg}°`).join(' ');
+      lines.push(`Compass: ${compassDebug.visible ? 'visible' : 'hidden'} heading=${compassDebug.headingDeg}° markers=${compassDebug.markers.length} offAreaQuests=${compassDebug.offAreaQuestTargets}${markerText ? ' ' + markerText : ''}`);
+    }
+    const chunkAudit = window.WildernessChunks?.snapshot?.()?.lastResidencyAudit; // Used to carry the latest button-driven chunk leak result into copied probe reports.
+    if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);
+    const hitboxDebug = window.__hitboxDebug?.snapshot?.(); // Mobile-readable elevation proof for the Show Hitboxes overlay.
+    if (hitboxDebug?.actors?.length) {
+      const actorState = hitboxDebug.actors.map(actor => actor.missing
+        ? `${actor.label}=missing`
+        : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}`).join(' ');
+      lines.push(`3D hitboxes: ${actorState}`);
+    }
+    const interactionRay = hitboxDebug?.interactionRay;
+    if (interactionRay) {
+      lines.push(interactionRay.hit
+        ? `Interaction ray: ${interactionRay.targetType || 'target'}${interactionRay.targetId ? ':' + interactionRay.targetId : ''} at ${Number(interactionRay.distanceWorld).toFixed(2)}u${interactionRay.hostile ? ' (attack precedence)' : ''}`
+        : `Interaction ray: no 3D hit in ${Number(interactionRay.distanceWorld).toFixed(0)}u`);
+    }
+    const meleeDebug = window.__melee3DDebug?.snapshot?.(); // Exposes pitched melee acceptance and trail state without desktop developer tools.
+    if (meleeDebug) {
+      const result = meleeDebug.lastResult;
+      lines.push(result
+        ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
+        : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
+    }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.actionArch?.length) {

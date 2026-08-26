@@ -151,7 +151,11 @@
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
+            if (!window.Combat.meleeHit(deps.player, c, {
+              rangePx, halfConeRad,
+              yaw: deps.player.angle,
+              pitch: deps.getPlayerMeleeAimPitch?.() || 0,
+            })) continue;
             // Sharp/blunt comes from whichever tool occupies the weapon
             // slot (see combat-combo.js's matching comment) -- this used to
             // hardcode 'blunt' regardless of the equipped weapon.

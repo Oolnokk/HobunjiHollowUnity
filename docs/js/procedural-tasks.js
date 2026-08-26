@@ -252,6 +252,30 @@
     return null;
   }
 
+  // Active board/favor quests point back to their requesting NPC. The
+  // compass consumes the walker's live scheduled area/position so it never
+  // maintains a second, stale copy of NPC navigation state.
+  function compassTargets() {
+    const byNpc = new Map(); // Used to collapse multiple active requests for the same NPC into one compass marker.
+    for (const [id, state] of Object.entries(deps?.getQuestProgress?.() || {})) {
+      const task = state?.progress;
+      if (state?.status !== 'available' || !['board', 'favor'].includes(task?.kind) || !task.npcId) continue;
+      const walker = deps.npcWalkers.find(candidate => candidate.rec?.id === task.npcId);
+      if (!walker?.root?.position) continue;
+      const existing = byNpc.get(task.npcId);
+      byNpc.set(task.npcId, {
+        id: existing?.id || `quest:${id}`,
+        taskIds: [...(existing?.taskIds || []), id],
+        npcId: task.npcId,
+        label: `Quest: ${task.npcName || walker.rec?.name || task.npcId}`,
+        areaId: walker.area || walker.root?._pendingBuildingAdd || (walker.root?._pendingTownAdd ? 'town' : ''),
+        col: walker.root.position.x,
+        row: walker.root.position.z,
+      });
+    }
+    return [...byNpc.values()];
+  }
+
   // Turning a task in only ever happens by talking to the specific NPC
   // who posted/asked it — see openNpcDialogue's turn-in offer and the
   // 'turnInTask' dialogue-choice action.
@@ -291,6 +315,7 @@
     maybeRefreshBoardTask,
     takeBoardTask,
     getTurnInReadyTaskForNpc,
+    compassTargets,
     turnInTask,
   };
 })();

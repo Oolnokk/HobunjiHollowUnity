@@ -15,14 +15,12 @@
     'tletingan::male', 'tletingan::female',
     'mashtzarr::male', 'mashtzarr::female',
     'kenkari::male', 'kenkari::female',
-    'rakakoan::male', 'rakakoan::female',
   ]);
 
   const STORAGE_KEY = 'hobunji.handShoulderPoints.v1';
   const source = {
     schema: 'hobunji_hand_shoulder_points.v1',
     coordinateSpace: 'portrait-200px',
-    portraitSize: { width: 200, height: 200 },
     characters: Object.fromEntries(DEFAULT_KEYS.map(key => [key, {
       left: { ...DEFAULT_POINT },
       right: { ...DEFAULT_POINT },
@@ -33,6 +31,11 @@
   const normalizeKey = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const normalizeGender = value => String(value || '').trim().toLowerCase() === 'female' ? 'female' : 'male';
   const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+  const transformSpeciesId = value => {
+    const species = normalizeKey(value);
+    if (typeof global.hobunjiTransformSpeciesId === 'function') return global.hobunjiTransformSpeciesId(species);
+    return species === 'rakakoan' ? 'kenkari' : species;
+  }; // Rakakoan shoulder reads/edits always target the matching Kenkari transform record.
 
   function normalizePoint(raw) {
     return { x: number(raw?.x), y: number(raw?.y) };
@@ -42,7 +45,10 @@
     const next = clone(source);
     if (raw?.characters && typeof raw.characters === 'object') {
       for (const [key, entry] of Object.entries(raw.characters)) {
-        const normalized = normalizeKey(key.split('::')[0]) + '::' + normalizeGender(key.split('::')[1]);
+        const rawSpecies = normalizeKey(key.split('::')[0]);
+        const canonicalSpecies = transformSpeciesId(rawSpecies);
+        if (canonicalSpecies !== rawSpecies) continue; // Ignore stale independently-authored Rakakoan saves instead of letting them overwrite Kenkari.
+        const normalized = canonicalSpecies + '::' + normalizeGender(key.split('::')[1]);
         next.characters[normalized] = {
           left: normalizePoint(entry?.left),
           right: normalizePoint(entry?.right),
@@ -56,7 +62,7 @@
   const listeners = new Set();
 
   function keyFor(speciesId, gender) {
-    return `${normalizeKey(speciesId)}::${normalizeGender(gender)}`;
+    return `${transformSpeciesId(speciesId)}::${normalizeGender(gender)}`;
   }
 
   function pointsFor(speciesId, gender) {
@@ -119,6 +125,7 @@
   global.HobunjiHandShoulderPoints = {
     schema: source.schema,
     coordinateSpace: source.coordinateSpace,
+    transformSpeciesAliases: Object.freeze({ rakakoan: 'kenkari' }),
     get data() { return data; },
     get defaultData() { return normalizeData(source); },
     keyFor,

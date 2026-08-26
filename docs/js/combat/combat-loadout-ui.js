@@ -1,7 +1,7 @@
 // Combat loadout UI — lets the player view/swap which ability occupies each
 // of the weapon tool's 4 category-locked slots (see combat-loadout.js's
-// SLOT_CATEGORIES: tap1 Combo/auto, tap2 Quick Attack, hold1 Defensive-or-
-// Offensive Held, hold2 Offensive Held), and for whichever ability currently
+// SLOT_CATEGORIES: tap1 Combo/auto, tap2 Quick Attack, hold1 Offensive Held,
+// hold2 Defensive-or-Offensive Held), and for whichever ability currently
 // sits in each slot, pick (or later change) that ability's 5-level upgrade
 // tree one choice at a time (see combat-progression.js) — gated by the
 // currently equipped tool's own Mastery level and paid for with Motes of
@@ -16,8 +16,8 @@
   const SLOTS = [
     { id: 'tap1', name: 'Combo', desc: 'Left click (desktop) tapped quickly. Always your equipped weapon’s own 3-hit combo — not player-chosen.', readOnly: true },
     { id: 'tap2', name: 'Quick Attack', desc: 'Right click (desktop) tapped quickly. Choose which conditional technique fires.' },
-    { id: 'hold1', name: 'Held — Defensive or Offensive', desc: 'Left click held past a beat. Choose a defensive stance or a heavy release.' },
-    { id: 'hold2', name: 'Held — Offensive', desc: 'Right click held past a beat. Choose a heavy release.' },
+    { id: 'hold1', name: 'Held — Offensive', desc: 'Left click held past a beat. Choose a heavy offensive release.' },
+    { id: 'hold2', name: 'Held — Defensive or Offensive', desc: 'Right click held past a beat. Choose a defensive stance or a heavy offensive release.' },
   ];
 
   // Which level (if any) currently has its options picker expanded — an
@@ -288,4 +288,36 @@
     if (tab) tab.addEventListener('click', () => { expandedFor = null; render(); });
     document.addEventListener('hobunji-ranged-ammo-change', render);
   });
+})();
+
+// Durable livestock-item lineage persistence is isolated from FarmAnimals so
+// the existing count-based inventory does not need a save-schema rewrite. The
+// module waits for FarmAnimals, wraps its public queue/deploy seams, and stores
+// those queued genotypes on the active world member record.
+(() => {
+  'use strict';
+  if (window.LivestockItemGenotypePersistence?.install) { window.LivestockItemGenotypePersistence.install(); return; }
+  if (document.querySelector('script[data-hobunji-livestock-genotypes]')) return;
+  const script = document.createElement('script'); // Used to load the persistent creature-item lineage adapter once.
+  script.src = 'js/livestock-item-genotype-persistence.js?v=20260826a';
+  script.async = false;
+  script.dataset.hobunjiLivestockGenotypes = 'true';
+  script.onload = () => window.LivestockItemGenotypePersistence?.install?.();
+  script.onerror = () => window.__farmLog?.('[genotype] failed to load livestock item persistence', 'warn');
+  (document.head || document.documentElement).appendChild(script);
+})();
+
+// The Compendium is kept in its own file; this already-menu-owned module is
+// the narrow bootstrap so index.html/game.js do not need another dependency.
+(() => {
+  'use strict';
+  if (window.CompendiumUI?.install) { window.CompendiumUI.install(); return; }
+  if (document.querySelector('script[data-hobunji-compendium]')) return;
+  const script = document.createElement('script'); // Used to load the isolated player-facing Compendium module once.
+  script.src = 'js/compendium-ui.js?v=20260826farm1';
+  script.async = false;
+  script.dataset.hobunjiCompendium = 'true';
+  script.onload = () => window.CompendiumUI?.install?.();
+  script.onerror = () => window.__farmLog?.('[compendium] failed to load js/compendium-ui.js', 'warn');
+  (document.head || document.documentElement).appendChild(script);
 })();

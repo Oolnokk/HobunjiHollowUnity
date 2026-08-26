@@ -161,7 +161,11 @@
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
+            if (!window.Combat.meleeHit(deps.player, c, {
+              rangePx, halfConeRad,
+              yaw: deps.player.angle,
+              pitch: deps.getPlayerMeleeAimPitch?.() || 0,
+            })) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
