@@ -38,8 +38,8 @@
     // rebuilds the HUD. Prefer the authoritative gameplay mode when exposed,
     // then keep the DOM check as a backwards-compatible fallback.
     const activeTool = window.Combat?.deps?.getActiveTool?.();
-    if (activeTool) return activeTool === 'weapon';
     const switchButton = document.getElementById('btnWeaponSwitch');
+    if (activeTool) return activeTool === 'weapon' && !!switchButton?.classList.contains('active');
     return !!switchButton?.classList.contains('active')
       && switchButton?.getAttribute('aria-label') !== 'Switch to melee weapon';
   }
