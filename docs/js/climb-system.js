@@ -149,11 +149,15 @@
   function branchNestBox(branch, nest) {
     const x = nest.x / deps.TILE, z = nest.y / deps.TILE;
     const y = Number(nest.worldY) || ((branch.baseWorldY + branch.tipWorldY) / 2);
-    // Keep an authored midpoint volume even when a decorative nest mesh has a
-    // local pivot/scale that makes its world bounds too small or offset.
+    // Interaction selection owns a dedicated collider instead of depending
+    // on the decorative mesh pivot or visible geometry.
+    const collider = nest.interactionCollider || {};
+    const halfWidth = Math.max(0.1, Number(collider.halfWidth) || 0.55);
+    const bottomOffset = Number.isFinite(Number(collider.bottomOffset)) ? Number(collider.bottomOffset) : -0.15;
+    const topOffset = Number.isFinite(Number(collider.topOffset)) ? Number(collider.topOffset) : 0.65;
     const authoredBox = new THREE.Box3(
-      new THREE.Vector3(x - 0.55, y - 0.15, z - 0.55),
-      new THREE.Vector3(x + 0.55, y + 0.65, z + 0.55),
+      new THREE.Vector3(x - halfWidth, y + bottomOffset, z - halfWidth),
+      new THREE.Vector3(x + halfWidth, y + topOffset, z + halfWidth),
     );
     if (nest.mesh?.isObject3D) {
       nest.mesh.updateWorldMatrix?.(true, true);
@@ -370,6 +374,23 @@
   // ever climbed up) — getMovementInput reads the same raw keyboard/stick
   // vector fresh, independent of that write order.
   const BRANCH_WALK_SPEED_PX_S = 90;
+
+  // Projects any branch-bound entity back onto the finite branch segment.
+  // Creature AI can still choose a direction normally, but it cannot retain
+  // branch height while wandering sideways through empty air.
+  function constrainEntityToBranch(entity) {
+    const branch = entity?.onBranch;
+    if (!branch || !(branch.length > 0)) return false;
+    const axisX = (branch.tipX - branch.baseX) / branch.length;
+    const axisY = (branch.tipY - branch.baseY) / branch.length;
+    const projectedPx = (entity.x - branch.baseX) * axisX + (entity.y - branch.baseY) * axisY;
+    entity.branchT = deps.clamp(projectedPx / branch.length, 0, 1);
+    entity.x = branch.baseX + (branch.tipX - branch.baseX) * entity.branchT;
+    entity.y = branch.baseY + (branch.tipY - branch.baseY) * entity.branchT;
+    entity.branchSurfaceY = branch.baseWorldY + (branch.tipWorldY - branch.baseWorldY) * entity.branchT;
+    return true;
+  }
+
   function updateBranchMovement(dt) {
     const player = deps.player;
     const branch = player.onBranch;
@@ -491,6 +512,7 @@
     startClimb,
     updateClimb,
     updateBranchMovement,
+    constrainEntityToBranch,
     resolveBranchKnockback,
     resetAreaBranches,
     registerBranch,
