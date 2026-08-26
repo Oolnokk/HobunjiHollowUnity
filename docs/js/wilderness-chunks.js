@@ -19,6 +19,7 @@
   const zones = new Map(); // Stores one ZoneChunkController per built wilderness map.
   let debugVisible = false; // Controls the optional in-world chunk cages and fixed diagnostic overlay.
   let lastDebugRefreshAt = 0; // Throttles DOM diagnostic updates.
+  let lastResidencyAudit = null; // Stores the latest button-driven orphan/out-of-radius chunk scan for mobile copy/reporting.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -382,8 +383,72 @@
       unloadRadius: UNLOAD_RADIUS,
       debugVisible,
       activeArea: deps?.getCurrentArea?.() || null,
+      lastResidencyAudit,
       zones: [...zones.values()].map(controller => controller.snapshot()),
     };
+  }
+
+  function auditResidency() {
+    const activeArea = deps?.getCurrentArea?.() || null;
+    const issues = []; // Collects concrete scene/registry mismatches found during this audit.
+    const zoneReports = [];
+    for (const controller of zones.values()) {
+      const expectedGroups = new Set([...controller.loaded.values()].map(record => record.group)); // Used to distinguish registered groups from leaked scene groups.
+      const sceneGroups = controller.scene?.children?.filter(child => child.userData?.wildernessChunk) || [];
+      const orphanGroups = sceneGroups.filter(group => !expectedGroups.has(group));
+      const detachedRecords = [...controller.loaded.values()].filter(record => record.group.parent !== controller.scene);
+      const outOfRadius = controller.centerCx == null ? [] : [...controller.loaded.values()].filter(record =>
+        chebyshev(record.cx, record.cz, controller.centerCx, controller.centerCz) > UNLOAD_RADIUS
+      );
+      const queuedOutOfRadius = controller.centerCx == null ? [] : [...controller.queue.values()].filter(request =>
+        chebyshev(request.cx, request.cz, controller.centerCx, controller.centerCz) > LOAD_RADIUS
+      );
+      const duplicateKeys = [];
+      const seenSceneKeys = new Set(); // Used to detect multiple live THREE groups claiming the same chunk coordinate.
+      for (const group of sceneGroups) {
+        const key = chunkKey(group.userData.wildernessChunkX, group.userData.wildernessChunkZ);
+        if (seenSceneKeys.has(key)) duplicateKeys.push(key);
+        seenSceneKeys.add(key);
+        if (group.userData.wildernessChunkMapId !== controller.mapId) {
+          issues.push(`${controller.mapId}: foreign group ${group.name || key} claims ${group.userData.wildernessChunkMapId}`);
+        }
+      }
+      const inactiveOverdue = controller.mapId !== activeArea
+        && controller.inactiveSeconds >= INACTIVE_UNLOAD_DELAY_S && controller.loaded.size > 0;
+      if (orphanGroups.length) issues.push(`${controller.mapId}: ${orphanGroups.length} orphan chunk group(s)`);
+      if (detachedRecords.length) issues.push(`${controller.mapId}: ${detachedRecords.length} registered group(s) detached/wrong-scene`);
+      if (outOfRadius.length) issues.push(`${controller.mapId}: ${outOfRadius.length} loaded beyond unload radius ${UNLOAD_RADIUS}`);
+      if (queuedOutOfRadius.length) issues.push(`${controller.mapId}: ${queuedOutOfRadius.length} queued beyond load radius ${LOAD_RADIUS}`);
+      if (duplicateKeys.length) issues.push(`${controller.mapId}: duplicate scene chunk key(s) ${duplicateKeys.join(',')}`);
+      if (inactiveOverdue) issues.push(`${controller.mapId}: ${controller.loaded.size} chunk(s) still resident after ${controller.inactiveSeconds.toFixed(1)}s inactive`);
+      zoneReports.push({
+        mapId: controller.mapId, active: controller.mapId === activeArea,
+        center: controller.centerCx == null ? null : `${controller.centerCx},${controller.centerCz}`,
+        registered: controller.loaded.size, sceneGroups: sceneGroups.length,
+        orphanGroups: orphanGroups.map(group => group.name || '(unnamed)'),
+        detachedKeys: detachedRecords.map(record => record.key),
+        outOfRadiusKeys: outOfRadius.map(record => record.key),
+        queuedOutOfRadiusKeys: queuedOutOfRadius.map(request => request.key),
+        duplicateKeys, inactiveSeconds: Number(controller.inactiveSeconds.toFixed(1)),
+      });
+    }
+    lastResidencyAudit = { at: Date.now(), activeArea, ok: issues.length === 0, issues, zones: zoneReports };
+    const text = formatResidencyAudit(lastResidencyAudit);
+    window.__farmLog?.(text, issues.length ? 'warn' : 'info', 'chunks');
+    const status = document.getElementById('wildernessChunkStatus');
+    if (status) status.textContent = text;
+    return lastResidencyAudit;
+  }
+
+  function formatResidencyAudit(audit = lastResidencyAudit) {
+    if (!audit) return 'Chunk residency audit has not run.';
+    const lines = [`Chunk residency audit: ${audit.ok ? 'PASS' : `FAIL (${audit.issues.length})`} active=${audit.activeArea || '(none)'}`];
+    for (const zone of audit.zones) {
+      lines.push(`${zone.mapId}${zone.active ? '*' : ''}: center=${zone.center || '-'} registry=${zone.registered} scene=${zone.sceneGroups} inactive=${zone.inactiveSeconds}s`);
+    }
+    if (audit.issues.length) lines.push(...audit.issues.map(issue => `! ${issue}`));
+    else lines.push('No orphan, detached, duplicate, out-of-radius, or overdue inactive chunk groups found.');
+    return lines.join('\n');
   }
 
   function ensureDebugOverlay() {
@@ -458,6 +523,11 @@
       button.dataset.wildernessChunksBound = 'true';
       button.addEventListener('click', () => toggleDebug());
     }
+    const auditButton = document.getElementById('wildernessChunkAuditBtn'); // Used to expose the residency scan on mobile without DevTools.
+    if (auditButton && !auditButton.dataset.wildernessChunkAuditBound) {
+      auditButton.dataset.wildernessChunkAuditBound = 'true';
+      auditButton.addEventListener('click', () => auditResidency());
+    }
     refreshDebugText(true);
   }
 
@@ -471,6 +541,8 @@
     update,
     snapshot,
     toggleDebug,
+    auditResidency,
+    formatResidencyAudit,
     constants: Object.freeze({
       CHUNK_TILES,
       IMMEDIATE_RADIUS,
