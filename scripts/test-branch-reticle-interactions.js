@@ -19,3 +19,4 @@ assert(reticle.includes('SLOT_COLOR_FILTERS'), 'reticle keeps unlocked slot colo
 assert(reticle.includes('Combat?.meleeHit'), 'reticle uses authoritative melee collision');
 assert(ranged.includes('aimRadius'), 'ranged acquisition uses projectile sweep radius');
 console.log('branch/reticle interaction contracts: 9 checks passed');
+
