@@ -20,7 +20,8 @@ assert(game.includes('player._nestTakeActive = false'), 'damage interrupts nest 
 assert(reticle.includes('FILTER_WHITE'), 'reticle has a neutral ranged-style base');
 assert(reticle.includes("color.style.opacity = ready ? '1' : '0'"), 'reticle fades ready color overlays');
 assert(reticle.includes("SLOT_TRANSFORM_ORIGINS"), 'reticle quadrants have directional scale origins');
+assert(reticle.includes('QUADRANT_BOUNDS'), 'reticle quadrants crop to measured opaque-pixel bounds');
+assert(!reticle.includes('READY_GLOW'), 'reticle readiness uses scale and color without a glow');
 assert(reticle.includes('Combat?.meleeHit'), 'reticle uses authoritative melee collision');
 assert(ranged.includes('aimRadius'), 'ranged acquisition uses projectile sweep radius');
-console.log('branch/reticle interaction contracts: 9 checks passed');
-
+console.log('branch/reticle interaction contracts: 11 checks passed');
