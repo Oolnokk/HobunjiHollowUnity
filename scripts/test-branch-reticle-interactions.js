@@ -17,7 +17,9 @@ assert(climb.includes('updateBranchDefender'), 'branch defender climb path exist
 assert(game.includes('ClimbSystem?.collapseTree'), 'axe action collapses branch occupants');
 assert(game.includes('updateFallenNests'), 'game loop updates fallen nest lerp');
 assert(game.includes('player._nestTakeActive = false'), 'damage interrupts nest hold');
-assert(reticle.includes('SLOT_COLOR_FILTERS'), 'reticle keeps unlocked slot colors');
+assert(reticle.includes('FILTER_WHITE'), 'reticle has a neutral ranged-style base');
+assert(reticle.includes("color.style.opacity = ready ? '1' : '0'"), 'reticle fades ready color overlays');
+assert(reticle.includes("SLOT_TRANSFORM_ORIGINS"), 'reticle quadrants have directional scale origins');
 assert(reticle.includes('Combat?.meleeHit'), 'reticle uses authoritative melee collision');
 assert(ranged.includes('aimRadius'), 'ranged acquisition uses projectile sweep radius');
 console.log('branch/reticle interaction contracts: 9 checks passed');
