@@ -20,4 +20,8 @@ assert.ok(rigTableStart >= 0
   && rigTable.includes('"grehlr"'),
   'the authored species rig table includes the four animal families');
 assert.ok(indexSource.indexOf('js/png-plane-avatar.js') < indexSource.indexOf('js/creature-genetics.js')
-  && indexSource.indexOf('js/creature-genetics.js') < indexSource.indexOf('js/creature-genetics-re
+  && indexSource.indexOf('js/creature-genetics.js') < indexSource.indexOf('js/creature-genetics-render.js'),
+  'the head-rig runtime loads before the species bridge and game startup');
+assert.match(gameSource, /creatureId: creatureKey[\s\S]{0,180}headRig: window\.CreatureGeneticsRender\?\.headRigForKind/, 'game passes each creature kind\'s authored head rig explicitly so shoulder pets cannot fall back to whole-body turns');
+
+console.log('Animal head-rig runtime regression checks passed.');

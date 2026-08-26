@@ -31,4 +31,15 @@ assert.match(source,
   'run-in-place advances run frames explicitly without moving the companion');
 const combatClearIndex = source.indexOf("if (target && c.treasureCue) _clearCompanionTreasureCue(c, dt, 'combat');"); // Priority-order anchor for the explicit combat interruption.
 const cueMovementIndex = source.indexOf('} else if (c.treasureCue) {', combatClearIndex); // Movement-ownership anchor that must follow combat handling.
-assert(combatClearIndex >
+assert(combatClearIndex >= 0 && cueMovementIndex > combatClearIndex,
+  'combat clears the treasure cue before the cue can own movement');
+assert.match(source,
+  /nearestBuriedPixelPos\(currentArea, cue\.targetX, cue\.targetY\)[\s\S]{0,80}nearest\.dist < 1/,
+  'the exact cue target is revalidated until it is dug or found');
+assert.match(source,
+  /AmbientDialogue\?\.companionTreasure\(c\)[\s\S]{0,180}playCreatureTreasureAlert\?\.\(c\)[\s\S]{0,420}found buried treasure/,
+  'the announcement combines the existing utterance, an audible alert, and explicit readable treasure text');
+assert.doesNotMatch(source, /_treasureHintAnnounced/,
+  'the old inferred announcement latch no longer competes with the explicit state machine');
+
+console.log('Companion treasure cue regression checks passed.');

@@ -1000,4 +1000,374 @@
     if (!offset) { collectResource(animal.livestockId); return; } // no authored spot — just collect instantly
     const theta = animal.groupRot;
     const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
-    const dz = -offset.x * Math.sin(
+    const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
+    const animalPxX = animal.wx * deps.TILE, animalPxY = animal.wz * deps.TILE;
+    const targetX = animalPxX + dx * deps.TILE, targetY = animalPxY + dz * deps.TILE;
+    const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
+    animal._harvestFrozen = true;
+    harvestInteraction = {
+      animal, livestockId: animal.livestockId,
+      phase: 'in', t: 0,
+      startX: deps.player.x, startY: deps.player.y, startAngle: deps.getFacingAngle(),
+      targetX, targetY, targetAngle,
+      prevCameraMode: deps.getCameraMode(), prevCameraTarget: deps.getCameraTarget(),
+    };
+    // Auto-zooms onto the animal the same way opening NPC dialogue swaps
+    // in its own tighter camera mode (see game.js's openNpcDialogue) — no
+    // separate tween function needed, the existing per-frame follow-lerp
+    // in the main loop (updateCameraPosition's camLerp) eases the camera
+    // into the new mode's framing smoothly over the 'in' transition below.
+    deps.setCameraMode('harvestInteraction');
+    deps.setCameraTarget(animal.avatarRef?.group || null);
+  }
+
+  function updateHarvestInteraction(dt) {
+    const h = harvestInteraction;
+    if (!h) return;
+    deps.player.vx = 0; deps.player.vy = 0;
+    if (h.phase === 'active') {
+      deps.setFacingAngle(h.targetAngle); deps.player.angle = deps.getFacingAngle();
+      h.t += dt;
+      if (h.t >= HARVEST_ACTIVE_DURATION_S) {
+        const result = collectResource(h.livestockId);
+        if (result?.message) deps.showToast(result.message, !!result.ok);
+        h.phase = 'out'; h.t = 0;
+      }
+      return;
+    }
+    h.t = Math.min(1, h.t + dt / HARVEST_TRANSITION_S);
+    const e = h.t;
+    const [fromX, fromY, fromAngle, toX, toY, toAngle] = h.phase === 'in'
+      ? [h.startX, h.startY, h.startAngle, h.targetX, h.targetY, h.targetAngle]
+      : [h.targetX, h.targetY, h.targetAngle, h.startX, h.startY, h.startAngle];
+    deps.player.x = fromX + (toX - fromX) * e;
+    deps.player.y = fromY + (toY - fromY) * e;
+    deps.setFacingAngle(fromAngle + deps.angleDiff(toAngle, fromAngle) * e);
+    deps.player.angle = deps.getFacingAngle();
+    if (e >= 1) {
+      if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
+      else {
+        if (h.animal) h.animal._harvestFrozen = false;
+        // Mirrors game.js's closeNpcDialogue own restore of camera mode/
+        // target — the per-frame camLerp eases the camera back out to
+        // wherever it was before the interaction zoomed in.
+        deps.setCameraMode(h.prevCameraMode ?? (deps.cameraConfig().defaultMode || 'default'));
+        deps.setCameraTarget(h.prevCameraTarget ?? null);
+        harvestInteraction = null;
+      }
+    }
+  }
+
+  // Adds a creature from an item straight into the character's personal
+  // stable — no farm/ownership involved at all (any character, anywhere,
+  // can do this with their own bag item), unlike addFromItem() above. A
+  // stabled animal is untradeable and can never be placed on any farm;
+  // it becomes a nameable, eventually-levelable companion instead.
+  function addToStable(itemKey) {
+    const kind = deps.LIVESTOCK_ITEM_KINDS[itemKey];
+    if (!kind) return { ok: false, message: 'That item cannot be added to a stable.' };
+    if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
+    deps.inventory[itemKey]--;
+    deps.clampInventoryStack(itemKey);
+    const entry = {
+      id: 'stable_' + Math.random().toString(36).slice(2, 10),
+      kind, name: window.CreatureGenetics.defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind),
+      aiType: deps.companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
+    };
+    deps.getStable().push(entry);
+    deps._autoAssignStableRole(entry);
+    deps.saveStable();
+    return { ok: true, message: `${entry.name} added to your stable!`, entry };
+  }
+
+  // Recreates every animal this world's owner (or any farmhand) has ever
+  // released, from the world's own saved livestock list — called once
+  // per world load, after furniture placement so canSpawnAt's occupancy
+  // check sees the final tile state.
+  function respawnWorldLivestock() {
+    const farmBuildings = deps.getFarmBuildings();
+    for (const entry of deps.loadWorldLivestock()) {
+      const factory = LIVESTOCK_FACTORIES[entry.kind];
+      if (!factory) continue;
+      // Entries saved before barns existed have no 'barnId' property at
+      // all (vs. the new stasis default of an explicit null) — treat
+      // those as already-free-roaming and keep spawning them at their
+      // saved spot, same as always. New-format entries only spawn when
+      // actually housed in a still-existing, built barn.
+      const isLegacyRoaming = !('barnId' in entry);
+      let col = entry.col, row = entry.row;
+      if (!isLegacyRoaming) {
+        if (!entry.barnId) continue; // stasis — no world presence
+        const barn = farmBuildings.find(b => b.id === entry.barnId && b.kind === 'barn' && b.stage === 'built');
+        if (!barn) continue; // barn demolished/not yet built — stays in stasis until reassigned
+        const spot = deps.findOpenTileNearBarn(barn);
+        if (!spot) continue;
+        col = spot.col; row = spot.row;
+      } else if (!canSpawnAt(col, row)) {
+        continue;
+      }
+      const animal = factory(col, row, entry.id, entry.genotype);
+      if (!animal) continue;
+      deps.worldObjects.set(col + ',' + row, animal);
+      deps.animalObjects.add(animal);
+    }
+  }
+
+  // Gestation length for a set breeding pair, in in-game days — resolved
+  // hourly by tickBreedingProgress() (see GESTATION_HOURS_PER_DAY below).
+  const LIVESTOCK_GESTATION_DAYS = 3;
+
+  // A breeding-pair parent ref is { source: 'world'|'stable', id, characterId? }
+  // — 'world' points into this farm's own livestock, 'stable' points into
+  // a specific character's personal stable (characterId required so the
+  // pair still resolves correctly even if a *different* character is the
+  // one currently playing when gestation completes).
+  function refsEqual(a, b) {
+    return !!a && !!b && a.source === b.source && a.id === b.id;
+  }
+  function currentCharacterId() {
+    return (window.__hobunjiPlayerProfile || deps.getPlayerData())?.characterId || null;
+  }
+  function _loadCharacterStable(characterId) {
+    try {
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      return (meta?.characters || []).find(c => c.id === characterId)?.stable ?? [];
+    } catch { return []; }
+  }
+  function _saveCharacterStable(characterId, stableEntries) {
+    try {
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const character = (meta?.characters || []).find(entry => entry.id === characterId);
+      if (!character) return;
+      character.stable = stableEntries;
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+    } catch { /* A malformed legacy profile must not break the day tick. */ }
+  }
+  function resolveBreedingParent(ref, worldLivestock, stableCache) {
+    if (!ref) return null;
+    if (ref.source === 'stable') {
+      const stable = stableCache?.get(ref.characterId) || _loadCharacterStable(ref.characterId);
+      stableCache?.set(ref.characterId, stable);
+      return stable.find(s => s.id === ref.id) || null;
+    }
+    return worldLivestock.find(l => l.id === ref.id) || null;
+  }
+
+  function shiftedSizeClass(sizeClass, shift) {
+    const classes = ['small', 'medium', 'large']; // Existing genotype Size vocabulary.
+    const index = Math.max(0, classes.indexOf(String(sizeClass || 'medium').toLowerCase()));
+    return classes[Math.max(0, Math.min(classes.length - 1, index + Math.sign(shift || 0)))];
+  }
+
+  // A well-hearted pair breeds faster and throws rarer traits more often —
+  // 0 hearts (average of both parents) is the slow/plain end, 5 hearts the
+  // fast/lucky end. Both scale linearly off the same avgHeart input so
+  // "keep them fed" reads as one consistent payoff, not two unrelated dials.
+  function breedingSpeedMultiplier(avgHeart) {
+    return 0.6 + (avgHeart / HEART_MAX) * 0.9; // 0.6x .. 1.5x
+  }
+  function breedingMutationChance(avgHeart) {
+    const base = window.CreatureGenetics.MUTATION_CHANCE || 0.05;
+    return base * (1 + (avgHeart / HEART_MAX) * 2); // base .. 3x base
+  }
+  function parentHeartLevel(parent) {
+    return Number.isFinite(parent?.heartLevel) ? parent.heartLevel : HEART_DEFAULT; // Stable pets/legacy records carry no heart level — treat as the neutral default rather than penalizing them as starved.
+  }
+
+  // The game's "day" only actually models its waking hours (calendar's
+  // MORNING_HOUR..NIGHT_HOUR span, see CalendarSystem.getHour) — night is
+  // skipped straight through by sleeping rather than simulated — so that's
+  // the unit hourly breeding progress is denominated in.
+  const GESTATION_HOURS_PER_DAY = 16;
+
+  // Resolves every breeding pair's progress by `dayFraction` (a fraction
+  // of one full gestation *day*, not a whole day — see the two call
+  // sites: game.js's updateCalendar ticks 1/GESTATION_HOURS_PER_DAY per
+  // real in-game hour crossed during normal play, so a pair's bar visibly
+  // creeps forward through the day instead of only jumping once at
+  // morning; sleepInBed() instead passes whatever fraction of the day's
+  // waking hours sleeping skipped over, so the two paths always sum to
+  // the same one-day's-worth of progress regardless of how it was spent).
+  // Sped up by the parents' average heart level (see setBreedingPair's
+  // {startedDay, progress: 0} bar) and completes any pair that just
+  // filled, the moment it crosses 100% rather than waiting for the next
+  // morning: crosses the parents' genotypes (crossOffspring, itself
+  // heart-boosted toward rarer traits), spawns the offspring on an open
+  // tile, and appends it to world.livestock. Pairs are consumed on
+  // resolution — a farmhand must re-pair to breed again.
+  function tickBreedingProgress(dayFraction = 1 / GESTATION_HOURS_PER_DAY) {
+    const pairs = deps._loadWorldBreedingPairs();
+    if (!pairs.length || dayFraction <= 0) return;
+    const livestock = deps.loadWorldLivestock();
+    const stableCache = new Map(); // Persists pending modifiers for stable parents too.
+    const remainingPairs = [];
+    let changed = false;
+    for (const pair of pairs) {
+      const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
+      const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
+      if (!parentA || !parentB) { changed = true; continue; } // a parent was sold/removed/stable-emptied — pair quietly lapses
+      // Migrate a pre-heart-level pair (readyDay, no progress field yet)
+      // to an equivalent starting progress instead of losing its head start.
+      if (pair.progress == null) {
+        const totalDays = Math.max(1, Number(pair.readyDay) - Number(pair.startedDay));
+        const elapsedDays = Math.max(0, Number(deps.calendar.day) - Number(pair.startedDay));
+        pair.progress = Math.min(0.999, elapsedDays / totalDays);
+      }
+      const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
+      pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
+      changed = true;
+      if (pair.progress < 1) { remainingPairs.push(pair); continue; }
+      const kind = parentA.kind;
+      const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind, breedingMutationChance(avgHeart));
+      const shiftA = Math.sign(Number(parentA.pendingOffspringSizeShift) || 0); // Pending one-off parent A modifier.
+      const shiftB = Math.sign(Number(parentB.pendingOffspringSizeShift) || 0); // Pending one-off parent B modifier.
+      const resolvedShift = shiftA && shiftB ? (shiftA === shiftB ? shiftA : 0) : (shiftA || shiftB); // Same applies once; opposites cancel.
+      if (resolvedShift) childGenotype.sizeClass = shiftedSizeClass(childGenotype.sizeClass, resolvedShift); // Genetics first, authored shift second.
+      if (shiftA) parentA.pendingOffspringSizeShift = 0;
+      if (shiftB) parentB.pendingOffspringSizeShift = 0;
+      // Newborns start in stasis just like a freshly-released crate
+      // animal — the owner assigns them to a barn from the Farm tab
+      // when there's room, same as any other unhoused livestock.
+      livestock.push({
+        id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
+        name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
+        daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+        heartLevel: HEART_DEFAULT,
+      });
+      deps.showToast(`🐣 A new ${window.CreatureGenetics.defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
+    }
+    if (changed) {
+      deps.saveWorldLivestock(livestock);
+      stableCache.forEach((entries, characterId) => _saveCharacterStable(characterId, entries));
+      deps._saveWorldBreedingPairs(remainingPairs);
+    }
+  }
+
+  function clearAnimalObjects() {
+    deps.animalObjects.forEach(obj => {
+      deps.worldObjects.delete(obj.col + ',' + obj.row);
+      obj.reset && obj.reset();
+    });
+    deps.animalObjects.clear();
+  }
+
+  function _applyVatWorkPose(animal) {
+    const pose = animal._vatWorkPose;
+    if (!pose) return false;
+    const group = animal.avatarRef.group; // Used to apply the editor-equivalent world matrix without decomposing away warp scale/shear.
+    group.visible = true;
+    group.matrixAutoUpdate = false;
+    group.matrix.copy(pose.matrix);
+    group.matrixWorldNeedsUpdate = true;
+    return true;
+  }
+
+  // Temporarily pins the livestock assigned to a vat to its authored stomp
+  // anchor. The animal keeps its logical farm tile/home untouched; only its
+  // rendered body moves, then normal wandering resumes when the batch ends.
+  // This deliberately mirrors furniture-avatar-author's hierarchy exactly:
+  // stomp target * inverse(scaled shoulderGrip) * Small size scale. Keeping
+  // the result as one matrix also preserves the vat's non-uniform stomp scale
+  // instead of decomposing it into a drifting world-space position.
+  function setVatWorkerPose(vatId, targetMatrix, anchorName = 'shoulderGrip') {
+    if (!targetMatrix) return null;
+    let animal = [...deps.animalObjects].find(item => item._vatWorkPose?.vatId === vatId);
+    let rec = animal?._vatWorkRecord;
+    if (!animal) {
+      rec = deps.loadWorldLivestock().find(item => item.assignedVatId === vatId);
+      animal = rec && [...deps.animalObjects].find(item => item.livestockId === rec.id);
+    }
+    if (!rec || !animal) return null;
+    if (window.DewVats?.vatCanAccept?.(rec.kind, rec.genotype) !== true) {
+      clearVatWorkerPose(vatId);
+      return null;
+    }
+    const grip = deps.creatureAttachmentAnchor(rec.kind, anchorName, rec.genotype);
+    if (!grip) return null;
+    const sizeScale = window.CreatureGenetics.creatureSizeScale(rec.kind, rec.genotype); // Used to mirror the editor's Small sizeRoot scale in the final pose matrix.
+    const gripRotation = grip.rotationDeg || {};
+    const gripQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      (gripRotation.x || 0) * Math.PI / 180,
+      (gripRotation.y || 0) * Math.PI / 180,
+      (gripRotation.z || 0) * Math.PI / 180,
+      'XYZ'));
+    const scaledGrip = new THREE.Vector3((grip.x || 0) * sizeScale.x, (grip.y || 0) * sizeScale.y, grip.z || 0); // Used as the editor-equivalent attachment position after size scaling.
+    const gripMatrix = new THREE.Matrix4().compose(scaledGrip, gripQuaternion, new THREE.Vector3(1, 1, 1)).invert(); // Used to align shoulderGrip exactly onto the animated stomp point.
+    const sizeMatrix = new THREE.Matrix4().makeScale(sizeScale.x, sizeScale.y, 1); // Used after grip alignment just like the editor's child sizeRoot.
+    const poseMatrix = targetMatrix.clone().multiply(gripMatrix).multiply(sizeMatrix); // Used directly by _applyVatWorkPose so no target scale/shear is discarded.
+    if (!animal._vatWorkPose) {
+      animal._vatWorkPreviousVisible = animal.avatarRef.group.visible; // Used to restore barn-hidden animals after a completed job.
+      animal._vatWorkPreviousMatrixAutoUpdate = animal.avatarRef.group.matrixAutoUpdate; // Used to restore the avatar's ordinary TRS-driven update mode after vat work.
+    }
+    animal._vatWorkPose = { vatId, matrix: poseMatrix };
+    animal._vatWorkRecord = rec; // Used to avoid reparsing livestock storage on every animation frame.
+    return rec;
+  }
+
+  function clearVatWorkerPose(vatId) {
+    for (const animal of deps.animalObjects) {
+      if (animal._vatWorkPose?.vatId !== vatId) continue;
+      const group = animal.avatarRef.group; // Used to restore ordinary farm-animal transform updates after a vat batch ends.
+      group.visible = animal._vatWorkPreviousVisible !== false;
+      group.matrixAutoUpdate = animal._vatWorkPreviousMatrixAutoUpdate !== false;
+      if (group.matrixAutoUpdate) group.updateMatrix();
+      group.matrixWorldNeedsUpdate = true;
+      delete animal._vatWorkPose;
+      delete animal._vatWorkPreviousVisible;
+      delete animal._vatWorkPreviousMatrixAutoUpdate;
+      delete animal._vatWorkRecord;
+    }
+  }
+
+  function updateAnimalMeshes(dt) {
+    // .tick() drives wander/barn-homing steps (throttled internally via
+    // each animal's own tickCounter); .update(dt) is the continuous
+    // position/rotation lerp toward wherever tick() last moved it. One
+    // loadWorldLivestock() read for the whole frame rather than one per
+    // animal per tick -- in-place mutations (e.g. a dew drop resetting
+    // rec.dewReady) stay visible to every other animal in this same pass
+    // since it's the same array reference, and saveWorldLivestock still
+    // persists it for real, so this is purely a read-dedup, not a
+    // staleness risk.
+    deps.setWorldLivestockFrameCache(deps.loadWorldLivestock());
+    for (const animal of deps.animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
+    deps.setWorldLivestockFrameCache(null);
+  }
+
+  window.FarmAnimals = {
+    init,
+    canSpawnAt,
+    queueItemGenotype,
+    addFromItem,
+    assignToBarn,
+    unassignFromBarn,
+    assignToTrough,
+    depositFeedToTrough,
+    withdrawFeedFromTrough,
+    ensureBarnTroughs: _ensureBarnTroughs,
+    dietFor,
+    feedKeysForDiet,
+    tickResources,
+    tickHearts,
+    isHarvesting,
+    updateHarvestInteraction,
+    addToStable,
+    administerBreedingPotion,
+    respawnWorldLivestock,
+    refsEqual,
+    currentCharacterId,
+    resolveBreedingParent,
+    shiftedSizeClass,
+    tickBreedingProgress,
+    GESTATION_HOURS_PER_DAY,
+    clearAnimalObjects,
+    updateAnimalMeshes,
+    setVatWorkerPose,
+    clearVatWorkerPose,
+    GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,
+    HEART_MAX,
+    HEART_STEP,
+    HEART_DEFAULT,
+    TROUGH_CAPACITY,
+  };
+})();

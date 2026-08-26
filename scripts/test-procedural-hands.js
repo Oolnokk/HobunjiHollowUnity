@@ -293,4 +293,105 @@ const liveBodyScaleSandbox = {
 }; // Models the adult and child branches of the real PNGPlaneAvatar builder without requiring a WebGL scene.
 vm.runInNewContext(`${liveBodyScaleHelperSource}\nthis.liveBodyScaleResults = [
   requestedRigActorAvatarScaleV1534({ source: { type: 'npc', id: 'adult', species: 'mashtzarr', gender: 'male' } }, 1.35),
-  requestedRigActorAvatarScaleV1534({ source: { type: 'npc', id: 'child'
+  requestedRigActorAvatarScaleV1534({ source: { type: 'npc', id: 'child', species: 'engh-sho', gender: 'male' } }, 1.35),
+];`, liveBodyScaleSandbox, { filename: 'animation-author-live-body-scale-helper.js' });
+assert.deepStrictEqual(Array.from(liveBodyScaleSandbox.liveBodyScaleResults), [1.35, 1.08], 'entered body scale must remain authoritative while child avatars retain their 0.8 multiplier');
+assert.match(animationAuthorSource, /rigReferencePreserveDuringActorSwapV1532 = !!preservedReference/, 'rig NPC replacement must guard its reference from the shared actor clear');
+assert.match(animationAuthorSource, /if \(!rigReferencePreserveDuringActorSwapV1532\) disposeRigReferenceNpcV1531\(\)/, 'ordinary project clears must still dispose the reference NPC');
+assert.match(animationAuthorSource, /positionRigReferenceNpcV1532\(actor\)/, 'a preserved reference NPC must be repositioned beside the newly selected rig actor');
+assert.match(animationAuthorSource, /attachmentProfileReady = window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'Animation Author must apply deferred attachment-profile corrections after its repository config loads');
+assert.match(animationAuthorSource, /Attachment rig profile corrections could not find/, 'deferred config failures must appear in the author\'s built-in Diagnostics panel');
+assert.match(heldSource, /isAnimationAuthor/, 'hand bootstrap must distinguish the lightweight Animation Author preview from the full game runtime');
+assert.match(heldSource, /window\.HobunjiHandRuntimeReady = ready/, 'dynamic repository tools need an explicit hand-runtime readiness signal');
+assert.match(heldSource, /ready\.then\(\(\) => window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)\)/, 'hand bootstrap must apply exported hand scales once the profile manager is available');
+assert.match(heldSource, /selfUrl && selfUrl\.protocol !== 'blob:'/, 'blob-executed bootstraps must not pass a null base into the URL constructor');
+assert.match(attachmentRigProfileSource, /SCRATCHBONES_CONFIG\?\.game\?\.assets\?\.pngPlaneAvatar/, 'attachment profiles must tolerate Animation Author loading the shared config later');
+assert.match(attachmentRigProfileSource, /HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS/, 'delayed attachment-profile setup must expose a mobile-visible diagnostics state');
+
+const attachmentProfileWindow = {}; // Represents Animation Author before its repository configuration script has executed.
+const attachmentProfileSandbox = {
+  window: attachmentProfileWindow,
+};
+vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filename: 'attachment-rig-profiles.js' });
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.schema, 'hobunji.attachment-rig-profiles.v9');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'included-in-v9');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'pending');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 10);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.suppliedCharacterProfiles, 12);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.exactSuppliedProfiles, 10);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionCalibration, 'not-needed:v9-runtime-space');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionScale, 1);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.posteriorCoordinateSpace, 'floor-relative');
+const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
+assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['mashtzarr::male'].anchors.shoulderPerch.position[axis]), [-0.3080816783597182, 0.6479187307531316, 0], 'v9 must use the exact main-branch Mashtzarr shoulder perch');
+assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['mashtzarr::male'].anchors.leftHandShoulder.position[axis]), [0.2938287377558306, 0.471474644548211, 0], 'v9 must use the exact main-branch left hand shoulder');
+assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['engh-sho::female'].anchors.rightHandShoulder.position[axis]), [-0.24815066240089945, 0.46042886220274515, 0], 'v9 must retain gender-specific hand anchors');
+assert.strictEqual(authoredCharacterProfiles['mashtzarr::male'].posteriorRule.heightPercentFromFloor, 0, 'v9 posterior coordinates are floor-relative and preserve the supplied zero');
+assert.strictEqual(authoredCharacterProfiles['rakakoan::male'], authoredCharacterProfiles['kenkari::male'], 'Rakakoan male transforms must alias Kenkari male by object identity');
+assert.strictEqual(authoredCharacterProfiles['rakakoan::female'], authoredCharacterProfiles['kenkari::female'], 'Rakakoan female transforms must alias Kenkari female by object identity');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.1636307385658067, 'v9 must include the exact main-branch Drenkirra shoulder grip');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures['gar-wolf'].anchors.shoulderGrip.position.z, 0.07486897921502367, 'v9 must include the exact main-branch Gar-wolf shoulder grip');
+assert.strictEqual(
+  attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(authoredCharacterProfiles['rakakoan::male'].posteriorRule, 0.675, 0.023625),
+  attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(authoredCharacterProfiles['kenkari::male'].posteriorRule, 0.675, 0.037125),
+  'shared Rakakoan/Kenkari posterior profiles must resolve identically even when portrait bottom pixels differ'
+);
+assert.strictEqual(
+  attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY({ heightPercentOffset: 0 }, 0.9, 0),
+  0,
+  'legacy posterior fallback must preserve a legitimate zero hand/base Y instead of replacing it with half-height'
+);
+attachmentProfileWindow.SCRATCHBONES_CONFIG = { game: { assets: { pngPlaneAvatar: {
+  portraitScaleBySpecies: {}, portraitVerticalPlacement: {}, proceduralFeet: { footScale: { default: 1 } },
+} } } };
+const appliedHandScales = {};
+attachmentProfileWindow.HobunjiHandModelProfiles = {
+  data: { speciesScaleOverrides: appliedHandScales },
+  mutate(mutator) { mutator(this.data); },
+};
+attachmentProfileWindow.applyHobunjiAttachmentRigProfileCorrections();
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr.male, 1.18);
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies.mashtzarr.female, 1.18);
+assert.deepStrictEqual(
+  { ...attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement.mashtzarr },
+  { male: 0.755, female: 0.79 },
+);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'included-in-v9');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'applied');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement['engh-sho'].male, 1.005, 'profile correction must apply exported portrait Y placement');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies['engh-sho'].male, 0.95, 'profile correction must apply exported gender-specific body scale');
+assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['engh-sho'].male, 1.275, 'profile correction must apply exported foot scale');
+assert.strictEqual(appliedHandScales['engh-sho'].male, 1.15, 'profile correction must apply exported hand scale after that runtime loads');
+
+const authorPreviewUrl = new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/example/docs/tools/animation-author/index.html'); // Mirrors the immutable per-commit test URL used for this author.
+const authorDocsBase = new URL('../../', authorPreviewUrl);
+assert.strictEqual(authorDocsBase.pathname, '/Oolnokk/HobunjiHollowUnity/example/docs/');
+assert.strictEqual(new URL('assets/portraitsprites/arm-R_mao-ao_m.png', authorDocsBase).pathname, '/Oolnokk/HobunjiHollowUnity/example/docs/assets/portraitsprites/arm-R_mao-ao_m.png');
+assert(!new URL('assets/portraitsprites/arm-R_mao-ao_m.png', authorDocsBase).pathname.includes('/docs/docs/'), 'author hand asset paths must never duplicate the docs root');
+
+assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
+assert.match(materialRoleSource, /MAT_EyeSurface_0c0c0c: 'body'/, 'parrot second export material must be flipped to body');
+assert.strictEqual(parrotGlbJson.meshes?.[0]?.primitives?.length, 2, 'parrot GLB must retain separate keratin and body-wing primitives');
+assert.deepStrictEqual(parrotGlbJson.materials.map(material => material.name), ['MAT_None_7a4e2e', 'MAT_EyeSurface_0c0c0c']);
+assert.match(gltfLoaderSource, /meshes\.push\( mesh \)/, 'bundled GLTFLoader must continue creating one runtime mesh per primitive');
+
+assert.match(weaponScaleSource, /BASE_WEAPON_PNG_SCALE = 1\.15/, 'unscaled weapon PNG baseline must be 1.15x');
+for (const key of ['hatchet', 'bronzehoe', 'pickshovel', 'fishingspear', 'fishingmace']) {
+  assert(weaponScaleSource.includes(`'${key}'`), `${key} must receive the baseline weapon PNG scale`);
+}
+assert.match(weaponScaleSource, /holderScale <= 1\.0001/, 'already enlarged weapon animations must not receive another 1.15 multiplier');
+assert.doesNotMatch(weaponScaleSource, /crossbow|scatterbow/, 'already enlarged ranged weapons must not be placed in the 1.15 eligibility list');
+
+for (const removed of [
+  'docs/js/arm-bones.js',
+  'docs/js/procedural-arm-animation.js',
+  'docs/js/procedural-hand-portrait-shoulders.js',
+  'docs/js/procedural-arm-portrait-biceps.js',
+  'docs/js/procedural-hand-forearm-follow.js',
+  'docs/js/procedural-hand-arm-length.js',
+  'docs/js/portrait-arm-compass.js',
+  'docs/js/procedural-hand-compass-aim.js',
+]) assert(!fs.existsSync(path.join(root, removed)), `${removed} should be physically removed`);
+
+console.log('procedural hands: per-pose shoulder lerp + manual/fallback shoulder points + direct sockets PASS');

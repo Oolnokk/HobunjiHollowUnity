@@ -20,4 +20,12 @@ assert.match(source,
   'shoulder-pet glances add a small pitch when the authored head rig is available');
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14/,
-  'shoulder-pet glances give the head its own visible turn inst
+  'shoulder-pet glances give the head its own visible turn instead of only rotating the body planes');
+assert.match(source,
+  /state\.targetPitchDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
+  'curiosity applies the separate head turn in the same direction as its body glance');
+assert.match(source,
+  /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4/,
+  'shoulder-pet glances have a cooldown so they remain spontaneous');
+
+console.log('Shoulder-pet curiosity regression checks passed.');

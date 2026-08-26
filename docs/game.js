@@ -19931,3 +19931,7569 @@
         cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
       }
 
+      // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
+      // Mode A, always on) each get one InstancedMesh sized for the worst case
+      // (every farm tile being that type), so edits just refill the buffer and
+      // adjust .count rather than recreating the mesh.
+      let farmGrassBillMesh = null, farmWeedBillMesh = null;
+      function _ensureFarmBillboardMeshes() {
+        if (farmGrassBillMesh) return;
+        const cap = ROWS * COLS * 28;
+        farmGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
+        farmGrassBillMesh.frustumCulled = false;
+        farmGrassBillMesh.count = 0;
+        farmGrassBillMesh.visible = s_grass;
+        farmGrassBillMesh.userData.isBillboard = true;
+        scene.add(farmGrassBillMesh);
+
+        farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
+        farmWeedBillMesh.frustumCulled = false;
+        farmWeedBillMesh.count = 0;
+        farmWeedBillMesh.userData.isBillboard = true;
+        scene.add(farmWeedBillMesh);
+
+        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
+        cuttableBillboardGlowMesh.frustumCulled = false;
+        cuttableBillboardGlowMesh.count = 0;
+        cuttableBillboardGlowMesh.userData.isBillboard = true;
+        scene.add(cuttableBillboardGlowMesh);
+      }
+
+      function _rebuildFarmBillboards() {
+        if (!grassBillboardMat) return;
+        _ensureFarmBillboardMeshes();
+        const dummy = new THREE.Object3D();
+        let gi = 0, wi = 0;
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const tile = grid[row][col];
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            if (tile.type === TileType.GRASS) {
+              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
+            } else if (tile.type === TileType.WEEDS && !s_weed3D) {
+              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
+            }
+          }
+        }
+        farmGrassBillMesh.count = gi;
+        farmWeedBillMesh.count  = wi;
+        farmGrassBillMesh.instanceMatrix.needsUpdate = true;
+        farmWeedBillMesh.instanceMatrix.needsUpdate  = true;
+      }
+
+      // Town's grass billboards — built once when entering town (town tiles
+      // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
+      let townGrassBillMesh = null;
+      function _buildTownGrassBillboards(tcols, trows) {
+        if (!grassBillboardMat) return;
+        if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
+        let count = 0;
+        for (let row = 0; row < trows; row++)
+          for (let col = 0; col < tcols; col++)
+            if (townGrid[row]?.[col]?.type === TileType.GRASS) count++;
+        if (count === 0) return;
+
+        townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
+        townGrassBillMesh.frustumCulled = false;
+        townGrassBillMesh.visible = s_grass;
+        townGrassBillMesh.userData.isBillboard = true;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (let row = 0; row < trows; row++) {
+          for (let col = 0; col < tcols; col++) {
+            const tile = townGrid[row]?.[col];
+            if (tile?.type !== TileType.GRASS) continue;
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
+          }
+        }
+        townGrassBillMesh.count = idx;
+        townGrassBillMesh.instanceMatrix.needsUpdate = true;
+        townScene.add(townGrassBillMesh);
+      }
+
+      function _rebuildWeedTiles() {
+        for (let r = 0; r < ROWS; r++)
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r][c].type !== TileType.WEEDS) continue;
+            const i = r * COLS + c;
+            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
+            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); setVegFoliageMesh(i, null); }
+            _buildOneTileMesh(c, r);
+          }
+        _rebuildFarmBillboards();
+      }
+
+      // ── Crop mesh system ──────────────────────────────────────────
+      // Needlegrain and heftroot use procedural foliage geometry.
+      // All other crops use a simple colored cube (unchanged).
+      const CROP_COLORS = {
+        needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
+        heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
+        garlink:       { body: 0xd8d0b0, ripe: 0xf2ead0, sprout: 0x8bbf6a },
+        ongyums:       { body: 0xc07a3d, ripe: 0xe09a4b, sprout: 0x86b95a },
+        redberries:    { body: 0xb83b42, ripe: 0xff4f62, sprout: 0x4c9b43 },
+        blueberries:   { body: 0x3d62c8, ripe: 0x5f80ff, sprout: 0x4c9b74 },
+        yellowberries: { body: 0xd6c345, ripe: 0xffe86a, sprout: 0x7ca84b },
+        whiteberries:  { body: 0xdcded2, ripe: 0xffffff, sprout: 0x8bbf8a },
+        blackberries:  { body: 0x3d2a52, ripe: 0x17121f, sprout: 0x4d8a4a },
+        blackMustard:  { body: 0x4a3b2f, ripe: 0x1f1812, sprout: 0x789b3a },
+        greenMustard:  { body: 0x6da64a, ripe: 0x9bd66b, sprout: 0x75b957 },
+      };
+      const CROP_MAX_SCALE = 0.96;
+      const CROP_MIN_SCALE = 0.16;
+      const cropMeshes = new Array(ROWS * COLS).fill(null);
+
+      // Tracks which growth bucket (0–3) each foliage crop was built at,
+      // so we only rebuild when the plant crosses a threshold.
+      const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
+
+      // Indices of tiles that currently have a crop — rebuilt lazily whenever
+      // a tile changes so updateCropMeshes() doesn't scan all 936 tiles.
+      let _cropTileIndices = null;
+      function _invalidateCropList() { _cropTileIndices = null; }
+      function _ensureCropList() {
+        if (_cropTileIndices !== null) return;
+        _cropTileIndices = [];
+        for (let row = 0; row < ROWS; row++)
+          for (let col = 0; col < COLS; col++)
+            if (grid[row][col].crop) _cropTileIndices.push(row * COLS + col);
+      }
+
+      const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
+      const FG = window.FoliageGenerator;
+
+      function _growthBucket(growth) {
+        // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
+        if (growth < 0.15) return 0;
+        if (growth < 0.45) return 1;
+        if (growth < 0.80) return 2;
+        return 3;
+      }
+
+      function _buildFoliageMesh(crop, growth, col, row) {
+        if (!FG) return null;
+        if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
+        if (crop === 'heftroot') {
+          // Three plants in a triangle cluster, each with a unique seed offset
+          const wrapper = new THREE.Group();
+          const offsets = [[-0.20, 0, 0.14], [0.22, 0, 0.14], [0.0, 0, -0.22]];
+          for (let idx = 0; idx < 3; idx++) {
+            const [ox, oy, oz] = offsets[idx];
+            const plant = FG.buildHeftrootMesh(growth, col + idx * 127, row + idx * 61);
+            plant.position.set(ox, oy, oz);
+            plant.scale.setScalar(0.68);
+            wrapper.add(plant);
+          }
+          return wrapper;
+        }
+        return null;
+      }
+
+      function updateCropMeshes() {
+        _ensureCropList();
+        const _now = performance.now();
+        for (const i of _cropTileIndices) {
+          const col  = i % COLS;
+          const row  = (i / COLS) | 0;
+          const tile = grid[row][col];
+
+          // Stale entry (crop was harvested since last list rebuild) — clean up.
+          if (!tile.crop) {
+            if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
+            cropGrowthBucket[i] = -1;
+            _invalidateCropList();
+            continue;
+          }
+
+            const data   = cropData[tile.crop];
+            const growth = Math.min(tile.cropAge / data.growDays, 1.0);
+            const surfY  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
+
+            if (FOLIAGE_CROPS.has(tile.crop)) {
+              // ── Procedural foliage mesh ──────────────────────────────
+              const bucket = _growthBucket(growth);
+              if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
+                // Growth crossed a threshold — rebuild.
+                scene.remove(cropMeshes[i]);
+                cropMeshes[i] = null;
+              }
+              if (!cropMeshes[i]) {
+                const group = _buildFoliageMesh(tile.crop, growth, col, row);
+                if (group) {
+                  scene.add(group);
+                  _markOutline(group);
+                  cropMeshes[i]       = group;
+                  cropGrowthBucket[i] = bucket;
+                }
+              }
+              const mesh = cropMeshes[i];
+              if (!mesh) continue;
+
+              // Scale: foliage group base is at y=0, grows +Y about 0.5 units at full.
+              // Map to the same visual range as the old box (0.08..0.48).
+              const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
+              mesh.scale.setScalar(scale);
+
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
+              mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
+              if (tile.cropReady) mesh.rotation.y = _now / 2200 + col;
+
+            } else {
+              // ── Simple colored cube (all other crops) ────────────────
+              const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
+              const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
+              const color  = tile.cropReady ? colors.ripe
+                           : growth < 0.15  ? colors.sprout
+                           : colors.body;
+
+              if (!cropMeshes[i]) {
+                const geo  = new THREE.BoxGeometry(1, 1, 1);
+                const mat  = new THREE.MeshLambertMaterial({ color });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = true;
+                scene.add(mesh);
+                mesh.layers.enable(1);
+                cropMeshes[i] = mesh;
+              }
+
+              const mesh = cropMeshes[i];
+              mesh.material.color.setHex(color);
+              mesh.scale.setScalar(size);
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.03 : 0;
+              mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
+              if (tile.cropReady) mesh.rotation.y = _now / 1200 + col;
+            }
+        }
+      }
+
+      // Update a single tile mesh (called after shovel actions)
+      function _buildOneTileMesh(col, row) {
+        const i    = row * COLS + col;
+        const tile = grid[row][col];
+        const mat  = resolveTileMat('farm', tile.type);
+
+        if (tile.type === TileType.ROCK) {
+          // Floor slab — grass so it blends with surrounding tiles
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), resolveTileMat('farm', TileType.GRASS));
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
+          // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
+          const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
+          let moundRoot = null;
+          if (stoneGeo) {
+            const m = new THREE.Mesh(stoneGeo, resolveTileMat('farm', TileType.ROCK));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            _markTerrainEdgeId(m, TileType.ROCK);
+            moundRoot = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
+            if (!moundRoot) moundRoot = m;
+          }
+          if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
+          setVegFoliageMesh(i, moundRoot || { _windAmp: 0 });
+          _markOutline(moundRoot);
+          return;
+        }
+
+        if (tile.type === TileType.SHRUB && window.FoliageGenerator) {
+          // Grass floor slab underneath the shrub
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
+
+          const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
+          vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+          vegGroup._windAmp   = 0.06;
+          // buildShrubMesh now returns TREE_PRESETS.bush, so its native scale
+          // is already the regular wilderness-bush size. Do not apply the old
+          // generic shrub x2 farm boost here.
+          vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
+          scene.add(vegGroup);
+          setVegFoliageMesh(i, vegGroup);
+          _markOutline(vegGroup);
+          return;
+        }
+
+        if (tile.type === TileType.WEEDS) {
+          // Grass floor slab underneath
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
+
+          if (s_weed3D && window.FoliageGenerator) {
+            // Mode B: procedural 3D weeds, subject to shell outline
+            const vegGroup = new THREE.Group();
+            vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
+            const rng   = _mbRng(((col * 31337 + row * 1009) >>> 0));
+            const count = 3 + ((col * 7 + row * 13) % 3);  // 3–5 plants
+            for (let p = 0; p < count; p++) {
+              const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
+              if (wm) {
+                wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
+                vegGroup.add(wm);
+              }
+            }
+            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+            vegGroup._windAmp   = 0.10;
+            scene.add(vegGroup);
+            setVegFoliageMesh(i, vegGroup);
+            _markOutline(vegGroup);
+          }
+          return;
+        }
+
+        if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
+          const { dirtGeo, grassGeo } = buildTerrainTileGeo(col, row, tile.type);
+          let primary = null;
+          if (dirtGeo) {
+            // Both types use trench brown — raised earth is the same dug-soil colour
+            const m = new THREE.Mesh(dirtGeo, resolveTileMat('farm', TileType.TRENCH));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.TRENCH);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            m._windAmp = 0;
+            scene.add(m);
+            m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.GRASS);
+            setVegFoliageMesh(i, m);
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
+          return;
+        }
+
+        if (tile.type === TileType.PATH) {
+          const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
+          let primary = null;
+          if (pathGeo) {
+            // Regular ground (grass) under the path — the paved brick
+            // surface (see "Path: paved brick surface" / registerPathBrickChunks
+            // for 'farm') overlays ordinary ground rather than a separately-
+            // colored path patch, same treatment as the town path.
+            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.GRASS));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            _markTerrainEdgeId(m, TileType.GRASS);
+            scene.add(m);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
+          return;
+        }
+
+        let mesh;
+        if (tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
+          // Fallback: foliage generator not available
+          const phase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+          const color = tile.type === TileType.SHRUB ? 0x356e36 : 0x247c3c;
+          mesh = new THREE.Mesh(vegGeo, makeVegMaterial(color, phase));
+          vegMeshes.push(mesh);
+        } else {
+          mesh = new THREE.Mesh(tile.type === TileType.ROCK ? rockGeo : makeFloorGeo(col, row), mat);
+        }
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
+        scene.add(mesh);
+        tileMeshes[i] = mesh;
+        // Rock and fallback vegetation get outlines; flat floor tiles do not.
+        if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
+          mesh.layers.enable(1);
+        } else {
+          // Flat ground tiles (grass/tilled/paddy/river/stream bed) — fallback
+          // foliage billboards above are skipped since they aren't flat ground.
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(tile.type));
+        }
+      }
+
+      function buildTileMeshes() {
+        window.WaterSystem.resetFarmWaterMesh();
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const i = row * COLS + col;
+            if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+            if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
+            cropGrowthBucket[i] = -1;
+            _buildOneTileMesh(col, row);
+          }
+        }
+        _rebuildFarmBillboards();
+      }
+
+      // Update a single tile mesh (called after shovel actions)
+      function refreshTileMesh(col, row) {
+        const i = row * COLS + col;
+        if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+        if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
+        cropGrowthBucket[i] = -1;
+        _buildOneTileMesh(col, row);
+        _rebuildFarmBillboards();
+      }
+
+      // Merged-water-surface collection/rendering (_collectDynamicWaterCells,
+      // _buildFarAquiferApron, updateWaterMeshes, updateTownWaterMeshes,
+      // updateZoneWaterMeshes) now lives in js/water-system.js — called from
+      // gameLoop via window.WaterSystem.*.
+
+      // ── Update player cube ────────────────────────────────────────
+      function updatePlayerMesh(dt) {
+        // Mount ride state now lives in js/mount-system.js (window.Mounts) —
+        // shadowed locally so the rest of this function (posture/rotation
+        // reads below) doesn't need to change.
+        const mountRideState = window.Mounts?.rideState ?? 'none';
+        const mountRideEntity = window.Mounts?.rideEntity ?? null;
+        // Convert 2D grid coords to 3D world coords
+        const wx = player.x / TILE;  // world X (col)
+        const wz = player.y / TILE;  // world Z (row)
+        const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
+        const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
+        const tile = getActiveTileAt(col, row);
+        // While climbing, the player is mid-crossing through impassable
+        // incline tiles — use the scripted start->landing blend from
+        // updateClimb instead of a raw tile lookup, which would pop between
+        // the cliff base and plateau top the instant the crossing tile
+        // flips (see startClimb/updateClimb).
+        const standY = player.onBranch ? player.branchSurfaceY
+          : player.climbing ? player.climbSurfaceY
+          : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
+
+        // Riding a mount lifts the rider up so their posterior anchor
+        // coincides with the mount's saddle anchor (see
+        // playerAttachmentAnchorY/creatureAttachmentAnchorY above) — 0 the
+        // instant there's no mount to sit on, so dismounting/no-mount play
+        // is completely unaffected.
+        let mountSeatLift = 0;
+        if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle', mountRideEntity.genotype);
+          const posteriorY = playerAttachmentAnchorY('posterior');
+          // posteriorY is floor-relative (see the shoulder-pet lift comment
+          // in updateCompanions) — no separate avatarHeight/2 term belongs
+          // here, same as playerToolBaseY's own usage elsewhere.
+          mountSeatLift = (saddleY != null && posteriorY != null)
+            ? (mountRideEntity.halfHeight + saddleY) - posteriorY
+            : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
+        }
+
+        // Sinks the whole avatar down toward chair-seat height while sitting
+        // (mirrors mountSeatLift just above, negative instead of positive) —
+        // the seated leg pose (see seatedPose below) bends the knees, but
+        // without this the torso sprite would still float at full standing
+        // height above the chair. Derived from the actual seat anchor's
+        // height vs. the player's own standing posterior anchor, same
+        // formula shape as mountSeatLift, so different chair/stool heights
+        // sink correctly instead of one fixed guess.
+        let chairSeatSink = 0;
+        if (sitInteraction && sitInteraction.phase !== 'out') {
+          const standingPosteriorY = playerAttachmentAnchorY('posterior');
+          chairSeatSink = standingPosteriorY != null
+            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
+        }
+
+        // Smooth vertical position (bob over water, plus a combat lunge's
+        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
+        // or a climbing hop's bounce, see player.climbHopBounce)
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
+        playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
+        playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
+        playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // updateMountRide has already written the carrier's final smoothed
+        // mesh transform this frame. In steady riding, use that exact render
+        // position so rider and mount cannot trail each other through two
+        // independent lerps. Mounting/dismounting states intentionally keep
+        // the transition positioning above.
+        window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
+        playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        // Ground-projected Health/Stamina ring HUD — replaces the flat
+        // vitals bar (see #vitalsBar in style.css). Sits just above the
+        // ground shadow, tracking the same smoothed XZ. Uses the actually
+        // active scene (farm/town/interior/zone/building), not the base
+        // farm `scene` — the player mesh itself gets reparented between
+        // those as the player travels (see e.g. the transition-spot code
+        // around fromScene.remove(playerMesh)/toScene.add(playerMesh)), so
+        // hardcoding `scene` here left the ring parented into a scene that
+        // wasn't the one actually being rendered.
+        if (window.ResourceRings) {
+          const ringHud = window.ResourceRings.updateRingHud(player, getActiveScene(), .62);
+          ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        }
+
+        // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
+        // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
+        // the camera, and this recompute runs every frame regardless of fishing state, so
+        // without the guard it fought that and spun the character back around immediately.
+        if (window.Fishing?.state?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (sitInteraction && sitInteraction.phase !== 'out') {
+          // Seated: the body stays pinned to the chair's own facing — no
+          // perpClamp/dead-zone tracking of the camera at all (unlike the
+          // general branch below), since the camera can freely orbit all
+          // the way around while seated and a dead zone that's allowed to
+          // chase a continuously-rotating camera would drag the whole body
+          // around with it. Only the head is meant to turn as the camera
+          // moves (see updateSitInteraction's neck-bone tracking) — pinning
+          // the body here is what makes that "camera doesn't rotate your
+          // body" contract actually hold.
+          playerFacing = -facingAngle + Math.PI / 2;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          // Glued to a mount (same guard as mountSeatLift above): track the
+          // mount's own PNG-plane rotation (c.pngRot, kept current every
+          // frame by updateCreatureMesh — see updateMountRide) instead of
+          // running the rider's own independent perpClamp off facingAngle.
+          // The two dead zones use different angle sets/widths, so left
+          // independent, the rider's legs (children of playerMesh, see
+          // legsSuppressed below) could halt at an orientation that doesn't
+          // match the mount's actual rendered silhouette and poke through it.
+          playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else {
+          if (!player.perpState) player.perpState = {};
+          const rawTargetRotY = -facingAngle + Math.PI / 2;
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          if (pSnapTo !== null) playerFacing = pEffTarget;
+          else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
+          playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+          // Legs are an invisible foot-placement rig, not a flat billboard —
+          // none of the foreshortening problem perpClamp's dead zone exists
+          // to hide applies to them, so they shouldn't hold/snap with the
+          // sprite (most noticeable while seated: the sprite can pin to the
+          // chair's facing or snap away from it as the camera swings past a
+          // dead-zone boundary, but the legs have no business following
+          // that snap). Counter-rotates the leg rig (a child of playerMesh,
+          // see procedural-leg-animation.js's attach()) by the gap between
+          // the clamped rotation just applied and the raw unclamped
+          // equivalent, so the legs' WORLD rotation always tracks
+          // facingAngle directly regardless of what the sprite is doing.
+          if (playerLegs?.group) playerLegs.group.rotation.y = rawTargetRotY - playerMesh.rotation.y;
+        }
+
+        // Bob animation when moving — amplitude ramps continuously from the
+        // calm-walking baseline up toward the full-effort/running peak as
+        // current speed approaches the player's own max attainable speed
+        // (MOVE_SPEED scaled by the same devGlobalSpeedMul that already
+        // governs it in updateMovement), not a flat distance the instant
+        // movement starts.
+        const speed = Math.hypot(player.vx, player.vy);
+        if (speed > 5) {
+          const bobEffort = clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
+          playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
+        }
+        // Suppressed (legs stay visible but just hang straight down from
+        // their hip anchors instead of gaiting, see procedural-leg-
+        // animation.js's own update()) whenever a multi-avatar animation is
+        // driving the player's whole-body transform and the player isn't
+        // its anchor — mounted (glued to the mount's saddle, see
+        // mountSeatLift above) or mid livestock-harvest interaction (see
+        // updateHarvestInteraction). A shoulder pet never sets either of
+        // these: the player stays the anchor and keeps walking normally
+        // underneath it (see updateCompanions' shoulderPet branch), so legs
+        // simply keep animating off the player's own real velocity as usual.
+        const legsSuppressed = mountRideState !== 'none' || window.FarmAnimals.isHarvesting();
+        // Bent-knee seated pose (see procedural-leg-animation.js's own
+        // applySeatedPose/solveSeatedLegSurfaceFlush) while actually seated
+        // in a chair — a faithful port of the furniture-avatar-author
+        // tool's own seat-plane-projection leg solve: the thigh rests flush
+        // against the seat's own authored surface tilt/height and the calf
+        // either continues flat or drops straight to the floor depending on
+        // whether the knee is still over the seat, instead of one fixed
+        // forward-offset/bend approximation for every chair.
+        const seatedPose = (sitInteraction && sitInteraction.phase !== 'out') ? {
+          seatY: sitInteraction.seatWorldY,
+          normalDeg: sitInteraction.seatNormalDeg,
+          footprintHalfDepth: sitInteraction.seatFootprintHalfDepth,
+          anchorZ: sitInteraction.seatAnchorZ,
+        } : undefined;
+        // Stagger/Footing ragdoll playback (docs/js/combat/impact-ragdoll-
+        // playback.js) owns both legs and playerMesh's tilt/height for as
+        // long as it's active/holding — skip the normal gait solve entirely
+        // rather than suppressing it, since suppressed still writes a
+        // straight-hang pose into the same leg-chain objects every frame
+        // (see that module's own update()), which would fight the recorded
+        // ragdoll pose instead of stepping aside for it.
+        if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
+        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
+      }
+
+      // ── Update reticle ────────────────────────────────────────────
+      function updateReticleMesh() {
+        const reticle = getReticleTile();
+        const tile    = getActiveGrid()[reticle.row]?.[reticle.col];
+        if (!tile) {
+          reticleCircleMesh.visible = false;
+          reticleRingMesh.visible   = false;
+          reticleWavyGroup.visible  = false;
+          clearTargetHighlights();
+          return;
+        }
+        const surfY   = tileSurfaceYInArea(tile, currentArea) + 0.01
+                      + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
+        const allowed = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
+        const t       = performance.now();
+        const pulse   = 1 + 0.06 * Math.sin(t / 300);
+
+        const onFarm     = currentArea === 'farm';
+        const weaponEquipped = activeTool === 'weapon';
+        const isExcavate = onFarm && !weaponEquipped && allowed && (activeAction === 'dig' || activeAction === 'raise');
+        const isHoeWork  = onFarm && !weaponEquipped && allowed && activeTool === 'hoe';
+        const showTile   = isExcavate || isHoeWork;
+        const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
+        const i = reticle.row * COLS + reticle.col;
+        const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
+        const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
+                         && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
+
+        // Base tile box
+        reticleMesh.visible = !weaponEquipped;
+        reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
+        reticleMesh.material = showTile ? reticleIntenseMat
+                             : (allowed ? reticleMat : reticleBlockedMat);
+        reticleMesh.scale.set(pulse, 1, pulse);
+
+        // Floor circle — dig / raise only
+        if (isExcavate) {
+          reticleCircleMesh.visible = true;
+          reticleCircleMesh.position.set(reticle.col + 0.5, surfY + 0.02, reticle.row + 0.5);
+          const cp = 1 + 0.09 * Math.sin(t / 250);
+          reticleCircleMesh.scale.set(cp, cp, cp);
+        } else {
+          reticleCircleMesh.visible = false;
+        }
+
+        // Wavy lines — hoe only
+        if (isHoeWork) {
+          reticleWavyGroup.visible = true;
+          reticleWavyGroup.position.set(reticle.col + 0.5, surfY + 0.02, reticle.row + 0.5);
+          const wp = 1 + 0.08 * Math.sin(t / 270);
+          reticleWavyGroup.scale.set(wp, wp, wp);
+        } else {
+          reticleWavyGroup.visible = false;
+        }
+
+        // Object outline (layer 2) and fallback ring
+        clearTargetHighlights();
+        if (isObjTarget || isWeedBlock || cuttableTarget) {
+          const meshes = cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D ? [] : findTargetMeshes(reticle.col, reticle.row);
+          if (meshes.length > 0) {
+            for (const m of meshes) m.layers.enable(2);
+            _targetOutlineMeshes = meshes;
+            _targetOutlineAllowed = isObjTarget;
+            updateCuttableBillboardGlow(0, 0, false);
+            reticleRingMesh.visible = false;
+          } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
+            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
+            reticleRingMesh.visible = false;
+          } else {
+            // No specific mesh — fall back to floating ring
+            const worldObj = getWorldObjectAt(reticle.col, reticle.row);
+            const ringH    = worldObj ? 0.95 : (tile.crop ? 0.65 : 0.45);
+            const bob      = 0.06 * Math.sin(t / 600);
+            reticleRingMesh.visible = true;
+            reticleRingMesh.position.set(reticle.col + 0.5, surfY + ringH + bob, reticle.row + 0.5);
+            reticleRingMesh.rotation.y = t / 2500;
+            const rp = 0.92 + 0.08 * Math.sin(t / 500);
+            reticleRingMesh.scale.set(rp, rp, rp);
+          }
+        } else {
+          reticleRingMesh.visible = false;
+        }
+      }
+
+      // ── Update lighting from time-of-day ──────────────────────────
+      let _lastLightUpdateTime = 0;
+      function updateThreeLighting() {
+        // Lighting changes on a 72-second game day — pushing uniforms every
+        // frame wastes ~1 ms. Throttle to every 500 ms; imperceptible.
+        const now = performance.now();
+        if (now - _lastLightUpdateTime < 500) return;
+        _lastLightUpdateTime = now;
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
+        // Ambient: dimmer at night, brighter at noon
+        const brightnessMul = 1 - a * 0.7;
+        ambientLight.intensity = 0.3 + brightnessMul * 0.7;
+        ambientLight.color.setRGB(
+          (r/255) * 0.6 + 0.4,
+          (g/255) * 0.6 + 0.4,
+          (b/255) * 0.6 + 0.4
+        );
+        sunLight.intensity = brightnessMul * 1.2;
+        sunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        // Grass billboards are unlit (see _grassBillFrag), same as the ground
+        // tiles' MeshBasicMaterial (tileMats.grass) — no day/night uniform to
+        // drive here anymore, so blades never dim independently of the
+        // ground they're standing on.
+        // Fog colour matches sky
+        scene.background.setRGB(
+          Math.max(0, r/255 * 0.15 + 0.04),
+          Math.max(0, g/255 * 0.15 + 0.08),
+          Math.max(0, b/255 * 0.15 + 0.06)
+        );
+        scene.fog.color.copy(scene.background);
+      }
+
+      let _lastTownLightUpdateTime = 0;
+      function updateTownThreeLighting() {
+        const now = performance.now();
+        if (now - _lastTownLightUpdateTime < 500) return;
+        _lastTownLightUpdateTime = now;
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
+        const brightnessMul = 1 - a * 0.7;
+        townAmbientLight.intensity = 0.3 + brightnessMul * 0.7;
+        townAmbientLight.color.setRGB(
+          (r/255) * 0.6 + 0.4,
+          (g/255) * 0.6 + 0.4,
+          (b/255) * 0.6 + 0.4
+        );
+        townSunLight.intensity = brightnessMul * 1.2;
+        townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        // Grass billboards are unlit (see updateThreeLighting's matching comment).
+        townScene.background.setRGB(
+          Math.max(0, r/255 * 0.15 + 0.04),
+          Math.max(0, g/255 * 0.15 + 0.08),
+          Math.max(0, b/255 * 0.15 + 0.06)
+        );
+        townScene.fog.color.copy(townScene.background);
+      }
+
+      // ── Cached container rect — avoids repeated layout reflows per frame ─
+      // Updated in resizeCanvas(); used by drawing functions and worldToOverlay.
+      let _threeRect = { width: window.innerWidth, height: window.innerHeight };
+
+      // ── Resize handler ────────────────────────────────────────────
+      function resizeCanvas() {
+        const dpr  = Math.min(window.devicePixelRatio, 2);
+        const rect = threeContainer.getBoundingClientRect();
+        _threeRect = rect;
+        const w = rect.width  || window.innerWidth;
+        const h = rect.height || window.innerHeight;
+        renderer.setPixelRatio(dpr * s_resScale);
+        renderer.setSize(w, h);
+        const bufSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+        _resizeOutlineTargets(bufSize.x, bufSize.y);
+        overlayCanvas.width  = Math.round(w * dpr);
+        overlayCanvas.height = Math.round(h * dpr);
+        octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        lightingCanvas.width  = Math.round(w * dpr);
+        lightingCanvas.height = Math.round(h * dpr);
+        lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      // ── Visual feature toggles (Settings tab) ────────────────────
+      // Southern Cloud Forest-specific effects added in the same window as
+      // Shoulder Cam's promotion out of experimental (mist cylinders, the
+      // zone's wide player-centered vegetation cull radius, and its dense
+      // instanced background forest along the north town-entrance edge) —
+      // off switches for isolating which one (if any) is behind reported
+      // choppiness/hitching specifically in that zone. Default on (no
+      // change from current behavior); each is meant to be flipped off one
+      // at a time to A/B test.
+      let s_cloudForestFog = true;
+      let s_cloudForestWideCull = true;
+      let s_cloudForestBgForest = true;
+      // Live Settings-tab slider value for the radial vegetation cull
+      // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
+      // vegCullRadiusTiles default (15) but is independently adjustable
+      // without touching that config.
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
+      // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
+      // beyond this fraction of the radius a tree ramps from opaque (at the
+      // fraction) down to fully transparent (at the radius) instead of
+      // popping in solid the instant it enters the cull sphere. Outline:
+      // the (cheaper-to-skip, pricier-to-draw) shell outline pass only
+      // draws within this closer fraction, independent of the tree's own
+      // opacity fade.
+      let s_cloudForestFadeStartFrac = 0.70;
+      let s_cloudForestOutlineFrac = 0.40;
+      let s_outlines  = true;
+      let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
+      let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
+      // Furniture "material ID" seam outline (see _markFurnitureEdgeId/
+      // idEdge in the composite shader) — unlike the shell and depth-edge
+      // passes above, this one never had a Settings toggle of its own; it
+      // just always ran whenever s_outlines was on. Off by default now: the
+      // shell pass alone (see shellOutlineMat's fog handling) is the
+      // intended outline style, and this extra seam layer isn't fog-aware
+      // (it always draws a solid line regardless of distance), so leaving it
+      // on would keep punching crisp lines through the Cloud Forest's mist
+      // that the fogged shell outline is specifically meant to fade into.
+      let s_furnitureSeamOutlines = false;
+      let s_grass     = true;
+      let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
+      let s_billWind  = true;
+      let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
+      // Debug hitbox overlay — unlike the other visual toggles above, its
+      // state is cached across sessions (it's a dev tool you flip on once
+      // and want to stay on, not a per-session visual preference).
+      const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
+      let s_showHitboxes = false;
+      try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      // Global dev-mode flag — same "flip on once, stays on" persistence as
+      // s_showHitboxes above. Currently only gates the +1 Mastery button in
+      // each tool's item-info panel (see selectGearTool/selectEquipSlot),
+      // but is a natural home for future dev-only shortcuts too.
+      const DEV_MODE_STORAGE_KEY = 'hobunjiDevMode';
+      let s_devMode = false;
+      try { s_devMode = localStorage.getItem(DEV_MODE_STORAGE_KEY) === '1'; } catch {}
+      // Debug toggle for the translucent-shoulder-pet investigation — forces
+      // setPlayerHatXray's own gate (see updateCompanions) to always report
+      // "off" regardless of whether a shoulder pet is active, so the hat
+      // plane keeps its normal depthWrite and occludes exactly like any
+      // other opaque sprite. Isolates whether that specific mechanism is
+      // contributing to the reported translucency.
+      let s_disableHatXray = false;
+
+      let _minimapRedrawAccum = 0;
+      let _pathBrickCullAccum = 0;
+
+      buildTileMeshes();
+
+      // Paved brick surface over the farm's path, if it has one — same
+      // technique as the town path (see "Path: paved brick surface" below):
+      // built once the shared recipe/GLB are ready, chunked and culled by
+      // camera corridor. worldRoutes loads asynchronously at boot too, same
+      // as worldTownRoutes, so it's read fresh inside the .then() below
+      // rather than captured now.
+      ensurePathSurfaceReady().then(() => {
+        const farmRoutes = worldRoutes.filter(r => (r.area || 'farm') === 'farm');
+        const splineData = preparePathSplineData(grid, COLS, ROWS, farmRoutes, 'farm');
+        if (splineData) registerPathBrickChunks('farm', scene, splineData);
+      }).catch(err => debugLog('Farm path brick surface error: ' + err.message, 'warn'));
+
+      // Called here (ahead of the other window.*?.init(...) calls near the
+      // bottom of this file, which run too late) since buildBorderTerrain()
+      // below needs it immediately — every other dep it captures by closure
+      // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
+      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass/clamp)
+      // is already declared above this point, or (clamp, a function
+      // declaration) hoisted regardless of where it's written.
+      window.BorderTerrain?.init({
+        COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
+        resolveTileMat, resolveCliffMat, clamp,
+        mbRng: _mbRng,
+        markOutline: _markOutline,
+        grassBladeGeo: _grassBladeGeo,
+        getGrassBillboardMat: () => grassBillboardMat,
+        getGrassEnabled: () => s_grass,
+        getTownScene: () => townScene,
+        getTownZone: () => _townZone,
+      });
+      window.BorderTerrain.buildBorderTerrain();
+
+      // ── Settings tab checkbox wiring ──────────────────────────────
+      document.getElementById('settingOutlines').addEventListener('change', e => {
+        s_outlines = e.target.checked;
+      });
+      document.getElementById('settingDisableHatXray')?.addEventListener('change', e => {
+        s_disableHatXray = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlines').addEventListener('change', e => {
+        s_depthOutlines = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
+        // Slider is "sensitivity" (higher = catches smaller depth gaps), so
+        // invert it into the threshold-scale multiplier used by the shader.
+        // Bounds come from config/outline-rendering.json (read live off
+        // _outlineRenderingConfig, not captured at listener-setup time, so
+        // a config load that lands after this wiring still takes effect).
+        const sensitivity = Number(e.target.value);
+        const { sensitivityMinThreshScale: lo, sensitivityMaxThreshScale: hi } = _outlineRenderingConfig.depthEdge;
+        s_depthOutlineThreshScale = lo + (hi - lo) * sensitivity;
+      });
+      // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
+      // so a headless/console toggle doesn't need to click through Settings —
+      // visually verifying hands/feet/outlines against dense world grass
+      // otherwise means hunting for open ground first.
+      function applyGrassVisible(visible) {
+        s_grass = !!visible;
+        const settingCheckbox = document.getElementById('settingGrass');
+        if (settingCheckbox) settingCheckbox.checked = s_grass;
+        if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
+        if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
+        // Existing zone grass groups use this switch for truthful mobile-side perf testing.
+        for (const grassGroup of _zoneGrassMeshes.values()) {
+          if (grassGroup) grassGroup.visible = s_grass;
+        }
+        // Rich foliage is stored separately, so sync its top-level group too.
+        for (const zoneInfo of _zoneScenes.values()) {
+          for (const object of (zoneInfo.scene?.children || [])) {
+            if (object.userData?.isRichFoliageBillboard) object.visible = s_grass;
+          }
+        }
+        window.BorderTerrain.setGrassVisible(s_grass);
+      }
+      document.getElementById('settingGrass').addEventListener('change', e => applyGrassVisible(e.target.checked));
+      // ?hideGrass=1 starts a session with grass already off, same convention
+      // as the 'tothal' force param above.
+      if (new URLSearchParams(location.search).get('hideGrass') === '1') applyGrassVisible(false);
+      document.getElementById('settingBillWind').addEventListener('change', e => {
+        s_billWind = e.target.checked;
+      });
+      document.getElementById('settingWeed3D').addEventListener('change', e => {
+        s_weed3D = e.target.checked;
+        _rebuildWeedTiles();
+      });
+      // Cloud Forest perf-testing toggles — each takes effect immediately,
+      // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
+      // declaration comment).
+      document.getElementById('settingCloudForestFog')?.addEventListener('change', e => {
+        s_cloudForestFog = e.target.checked;
+        window.CloudForestFog?.setEnabled(s_cloudForestFog);
+        // CloudForestFog only owns the player-centered mist cylinders — the
+        // zone's own THREE.FogExp2 (density 0.055, vs. every other zone's
+        // 0.018 — see EXTERIOR_ZONES.map_southern_cloud_forest's fogDensity
+        // comment) is a second, independent haze source the toggle used to
+        // leave untouched, so turning it off didn't visibly remove the mist.
+        // Set it to zero when off so the checkbox removes every mist source,
+        // then restore the authored density when on, live if the zone exists.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        if (zi?.scene?.fog) {
+          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0;
+        }
+      });
+      document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
+        s_cloudForestWideCull = e.target.checked;
+      });
+      document.getElementById('settingCloudForestBgForest')?.addEventListener('change', e => {
+        s_cloudForestBgForest = e.target.checked;
+        if (window.CloudForestRuntimeV2) window.CloudForestRuntimeV2.bgForestEnabled = s_cloudForestBgForest;
+        // Also hide/show whatever's already built this session, so the
+        // toggle is instant instead of only affecting the next zone build.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
+      });
+      document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
+        if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
+      });
+      // Shared by the cull-radius and all six fog-layer sliders below: wires
+      // an <input type=range> to a live value getter/setter plus its
+      // paired display span, all taking effect on the very next frame.
+      function wireSlider(inputId, valueId, apply) {
+        const input = document.getElementById(inputId);
+        const valueEl = document.getElementById(valueId);
+        if (!input) return;
+        input.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = String(v);
+          apply(v);
+        });
+      }
+      wireSlider('settingCloudForestCullRadius', 'settingCloudForestCullRadiusValue', v => { s_cloudForestCullRadiusTiles = v; });
+      // These two show a "%" suffix instead of the raw slider number, so
+      // they can't share wireSlider's plain String(v) display — wired by
+      // hand instead, same underlying pattern.
+      (() => {
+        const input = document.getElementById('settingCloudForestFadeStart');
+        const valueEl = document.getElementById('settingCloudForestFadeStartValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestFadeStartFrac = v / 100;
+        });
+      })();
+      (() => {
+        const input = document.getElementById('settingCloudForestOutlineRadius');
+        const valueEl = document.getElementById('settingCloudForestOutlineRadiusValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestOutlineFrac = v / 100;
+        });
+      })();
+      wireSlider('settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerRadiusValue', v => window.CloudForestFog?.setLayerRadius(0, v));
+      wireSlider('settingCloudForestFogInnerOpacity', 'settingCloudForestFogInnerOpacityValue', v => window.CloudForestFog?.setLayerOpacity(0, v));
+      wireSlider('settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleRadiusValue', v => window.CloudForestFog?.setLayerRadius(1, v));
+      wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
+      wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
+      wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // FPS Counter's checkbox is owned entirely by js/performance-debug.js
+      // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
+      // it used to also be independently wired up right here, which meant
+      // two separate frame loops fought over the same #fpsCounter element's
+      // text every half second. Draw calls/triangles/GPU memory/render CPU
+      // time are already available too, via the adjacent "Performance
+      // Profiler" checkbox and its overlay (perfState in that file).
+      document.getElementById('settingResolution').addEventListener('change', e => {
+        s_resScale = parseFloat(e.target.value) || 1;
+        resizeCanvas();
+      });
+
+      // Local Save Folder settings row — see docs/js/local-save-folder.js.
+      // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/
+      // File System Access API work; this just renders its status and
+      // wires the buttons.
+      (function initLocalSaveFolderSettings() {
+        const row = document.getElementById('localSaveFolderRow');
+        if (!row || !window.LocalSaveFolder) return;
+        const statusEl = document.getElementById('localSaveFolderStatus');
+        const chooseBtn = document.getElementById('localSaveFolderChooseBtn');
+        const changeBtn = document.getElementById('localSaveFolderChangeBtn');
+        const reconnectBtn = document.getElementById('localSaveFolderReconnectBtn');
+        const saveNowBtn = document.getElementById('localSaveFolderSaveNowBtn');
+        const loadBtn = document.getElementById('localSaveFolderLoadBtn');
+
+        function render(status) {
+          if (!status.supported) {
+            statusEl.textContent = 'Not supported in this browser (Chrome/Edge only).';
+            [chooseBtn, changeBtn, reconnectBtn, saveNowBtn, loadBtn].forEach(b => b.style.display = 'none');
+            return;
+          }
+          chooseBtn.style.display = (status.state === 'not-configured' || status.state === 'error') ? '' : 'none';
+          changeBtn.style.display = status.folderName ? '' : 'none';
+          reconnectBtn.style.display = status.state === 'needs-permission' ? '' : 'none';
+          saveNowBtn.style.display = status.state === 'ready' ? '' : 'none';
+          loadBtn.style.display = status.state === 'ready' ? '' : 'none';
+          if (status.state === 'ready') {
+            const when = status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleTimeString() : 'never';
+            statusEl.textContent = `Saving to "${status.folderName}" — last synced ${when}.`;
+          } else if (status.state === 'needs-permission') {
+            statusEl.textContent = `Folder "${status.folderName}" needs permission again this session.`;
+          } else if (status.state === 'error') {
+            statusEl.textContent = 'Error: ' + (status.lastError || 'unknown');
+          } else {
+            statusEl.textContent = 'No folder chosen yet.';
+          }
+        }
+
+        window.LocalSaveFolder.onChange(render);
+        render(window.LocalSaveFolder.getStatus());
+
+        chooseBtn.addEventListener('click', () => window.LocalSaveFolder.chooseFolder());
+        changeBtn.addEventListener('click', () => window.LocalSaveFolder.changeFolder());
+        reconnectBtn.addEventListener('click', () => window.LocalSaveFolder.reconnect());
+        saveNowBtn.addEventListener('click', async () => {
+          const status = await window.LocalSaveFolder.syncNow();
+          showToast(status.lastError ? ('Local save failed: ' + status.lastError) : 'Saved to local folder.', !status.lastError);
+        });
+        loadBtn.addEventListener('click', async () => {
+          if (!confirm('Load the save from your local folder? This overwrites your current browser save and reloads the page.')) return;
+          const result = await window.LocalSaveFolder.loadFromFolder();
+          showToast(result.message, result.ok);
+          if (result.ok) location.reload();
+        });
+      })();
+
+      const settingShowHitboxesEl = document.getElementById('settingShowHitboxes');
+      settingShowHitboxesEl.checked = s_showHitboxes;
+      settingShowHitboxesEl.addEventListener('change', e => {
+        s_showHitboxes = e.target.checked;
+        try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
+      });
+      const settingDevModeEl = document.getElementById('settingDevMode');
+      settingDevModeEl.checked = s_devMode;
+      settingDevModeEl.addEventListener('change', e => {
+        s_devMode = e.target.checked;
+        try { localStorage.setItem(DEV_MODE_STORAGE_KEY, s_devMode ? '1' : '0'); } catch {}
+        // Takes effect the next time a tool's item-info panel is opened
+        // (selectGearTool/selectEquipSlot both read s_devMode fresh) rather
+        // than needing to track/re-render whichever panel might currently
+        // be open.
+        // The farm editor / dev spawner cheat buttons are dev-mode-gated
+        // (see dev-spawner.js's refreshEditorButtonVisibility) — update them
+        // immediately instead of waiting for the next area change. The
+        // furniture placer button shares that same slot when dev mode is
+        // off (see .fp-shifted), so it also needs an immediate refresh.
+        window.DevSpawner?.refreshEditorButtonVisibility();
+        window.FurniturePlacer?.refreshVisibility();
+      });
+      // Cycles through a zone's dens in a shuffled, non-repeating order
+      // (per zone) instead of an independent random pick every press —
+      // with only a handful of dens per zone, plain Math.random() made it
+      // easy to land on the same 1-2 dens over and over by chance.
+      // Reshuffles whenever the den count changes (e.g. after a Tothal
+      // Shift), so a full lap always visits every den on the map exactly
+      // once before any repeat.
+      const _denTeleportCycle = new Map(); // zoneId -> { order: number[], idx: number, length: number }
+      function _pickCycledDen(zoneId, dens) {
+        let state = _denTeleportCycle.get(zoneId);
+        if (!state || state.length !== dens.length) {
+          const order = dens.map((_, i) => i);
+          for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+          }
+          state = { order, idx: 0, length: dens.length };
+          _denTeleportCycle.set(zoneId, state);
+          window.__farmLog?.(`[wildlife] den teleport cycle rebuilt for ${zoneId}: ${dens.length} dens, order [${order.join(',')}]`, 'wildlife');
+        }
+        const den = dens[state.order[state.idx]];
+        window.__farmLog?.(`[wildlife] den teleport ${zoneId}: picking cycle slot ${state.idx + 1}/${state.order.length} -> den ${den.id}`, 'wildlife');
+        state.idx = (state.idx + 1) % state.order.length;
+        return den;
+      }
+      // Dev Tools: warp to a den's mouth on the CURRENT map only — no
+      // zone-switching, since the request is specifically "does this map
+      // have one" (farm/town/buildings never do; a wilderness zone does once
+      // its Tothal Shift has run — see _zoneLayouts' `dens` field).
+      function teleportToRandomDen() {
+        // Called from inside a den's own cavern (dark, no landmarks, and
+        // "no dens on this map" made no sense there since a cavern's own
+        // _zoneLayouts entry doesn't exist) — resolve the exterior zone
+        // this cavern belongs to (see _denCavernZoneOf) and warp there,
+        // landing at a den mouth like the zone-side path below instead of
+        // requiring a separate exit step first.
+        if (_isCavernBuildingArea(currentArea)) {
+          const zoneId = window.WildlifeSpawn.denCavernZoneOf(currentArea);
+          const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
+          if (!zoneId || !dens || !dens.length) {
+            showToast("No dens found for this burrow's map.", false);
+            return;
+          }
+          const den = _pickCycledDen(zoneId, dens);
+          const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+          startSceneTransition(() => {
+            const fromScene = _buildingScenes.get(currentArea)?.scene || null;
+            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+            _currentBuildingMapId = null;
+            currentArea = zoneId;
+            player.x = (anchor.x + 0.5) * TILE;
+            player.y = (anchor.y + 0.5) * TILE;
+            player.vx = 0; player.vy = 0;
+            _snapCameraTarget();
+            const toScene = buildZoneScene(zoneId)?.scene;
+            if (toScene) {
+              toScene.add(playerMesh); toScene.add(playerGroundShadow);
+              toScene.add(toolHolder); toScene.add(reticleMesh);
+              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+              toScene.add(reticleWavyGroup);
+            }
+            refreshActionBar();
+            showToast(`Teleported to a den (${dens.length} on this map).`, true);
+            closeMenu();
+          });
+          return;
+        }
+        const dens = _zoneLayouts.get(currentArea)?.dens;
+        if (!dens || !dens.length) {
+          showToast('No dens on this map.', false);
+          return;
+        }
+        const den = _pickCycledDen(currentArea, dens);
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        player.x = (anchor.x + 0.5) * TILE;
+        player.y = (anchor.y + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        _snapCameraTarget();
+        showToast(`Teleported to a den (${dens.length} on this map).`, true);
+        closeMenu();
+      }
+      document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+
+      // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
+      // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
+      document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
+        await checkTothalShift(true);
+        window.WildlifeDebugPanel.render();
+      });
+      // Delegated so it keeps working across every re-render of the list
+      // (container.innerHTML replacement would otherwise drop per-button
+      // listeners each time).
+      document.getElementById('wildlifeDenList')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wildlife-den-teleport-btn');
+        if (!btn) return;
+        const zoneId = btn.dataset.zone, denId = btn.dataset.den;
+        const den = _zoneLayouts.get(zoneId)?.dens?.find(d => d.id === denId);
+        if (!den) { showToast('That den no longer exists on the current map.', false); return; }
+        warpToDenAnchor(zoneId, den);
+      });
+      // Warps the player straight to a specific den's mouth on its own
+      // zone, from anywhere (farm, town, another zone, or inside any
+      // building/cavern) — used by the Wildlife panel's per-den Teleport
+      // button. Unlike teleportToRandomDen (which only ever targets
+      // "whichever map you're currently on"), this always resolves the
+      // exact zone the picked den belongs to and does a full scene swap
+      // if that's not where the player already is.
+      function warpToDenAnchor(zoneId, den) {
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        const land = () => {
+          player.x = (anchor.x + 0.5) * TILE;
+          player.y = (anchor.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+        };
+        if (currentArea === zoneId) {
+          land();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+          return;
+        }
+        startSceneTransition(() => {
+          const fromScene = getActiveScene();
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+          currentArea = zoneId;
+          land();
+          const toScene = buildZoneScene(zoneId)?.scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+        });
+      }
+
+      // Dev Tools: Testing Arena teleport + creature/bandit/foliage
+      // spawner panel now lives in js/dev-spawner.js (window.DevSpawner)
+      // — see its init(deps) call below for the shared game.js state
+      // it's threaded.
+
+      // Bandit combat-log capture (AI/Claude review tool, not player-
+      // facing) now lives in js/bandit-combat-log.js — call via
+      // window.BanditCombatLog.captureSnapshotText() if needed elsewhere.
+
+      document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
+        devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
+        const label = document.getElementById('devSpeedMulLabel');
+        if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
+      });
+
+      // window._devSpawner and _refreshEditorButtonVisibility now live in
+      // js/dev-spawner.js (window.DevSpawner) — call via
+      // window.DevSpawner.toggle()/.refreshEditorButtonVisibility().
+
+      // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
+      // in loadBuildingScene) ──────────────────────────────────────────
+      const NEST_TAKE_HOLD_S = 5;
+      let _nestHoldT = 0;
+      const _nestTakeHudEl = document.getElementById('nestTakeHud');
+      const _nestTakeLabelEl = document.getElementById('nestTakeLabel');
+      const _nestTakeFillEl = document.getElementById('nestTakeFill');
+      function isPlayerNearDenNest(nest) {
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
+      }
+      function updateNestInteraction(dt) {
+        const nest = _denNests.get(currentArea);
+        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
+        if (!near || !actionHeldDown) {
+          if (_nestHoldT > 0) _nestHoldT = 0;
+          if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
+          return;
+        }
+        _nestHoldT += dt;
+        if (_nestTakeLabelEl) _nestTakeLabelEl.textContent = nest.liveBirth ? 'Taking Baby...' : 'Taking Egg...';
+        if (_nestTakeFillEl) _nestTakeFillEl.style.width = Math.min(100, (_nestHoldT / NEST_TAKE_HOLD_S) * 100) + '%';
+        _nestTakeHudEl?.classList.add('visible');
+        if (_nestHoldT >= NEST_TAKE_HOLD_S) {
+          _nestHoldT = 0;
+          _nestTakeHudEl?.classList.remove('visible');
+          nest.remaining--;
+          inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
+          window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
+          clampInventoryStack(nest.itemKey);
+          buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+          saveMemberWorldData();
+          showToast(`${itemIconForKey(nest.itemKey)} Took ${ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
+        }
+      }
+      function setCameraZoomScale(value) {
+        const cfg = desktopControlsConfig();
+        const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
+        const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+        s_zoomScale = clamp(Number(value) || 1.5, min, max);
+        const zoomSetting = document.getElementById('settingZoom');
+        if (zoomSetting) zoomSetting.value = String(s_zoomScale);
+        updateCameraPosition();
+      }
+      document.getElementById('settingZoom').addEventListener('change', e => {
+        setCameraZoomScale(parseFloat(e.target.value) || 1.5);
+      });
+      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
+      // the OS cursor itself must never move (a free-roaming cursor runs out
+      // of screen/desk space and pins at the display edge, capping how far
+      // you can turn) — so it Pointer-Locks the canvas instead of just
+      // reading movementX/Y off a visible cursor. Locked or not, the
+      // mousemove handler below always reads movementX/Y the same way;
+      // locking only stops the OS cursor from moving/being visible at all,
+      // so those deltas keep coming no matter how far or how many times the
+      // physical mouse moves in one direction.
+      function shoulderSurfPointerLockActive() {
+        return document.pointerLockElement === threeContainer;
+      }
+      function requestShoulderSurfPointerLock() {
+        if (!isDesktop || shoulderSurfPointerLockActive()) return;
+        // Can reject (no transient user activation, or the browser's own
+        // rate-limit on repeated requests) — that's fine, the click-to-relock
+        // handler below gives the player another chance.
+        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
+      }
+      function releaseShoulderSurfPointerLock() {
+        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
+      }
+      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
+        s_shoulderSurf = e.target.checked;
+        // Only live-swap while in one of the two plain gameplay camera
+        // states — mid-dialogue/fishing/seated/cutscene, leave the active
+        // mode alone and let its own existing restore path (now routed
+        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
+        // the new toggle state next time it resolves back to gameplay.
+        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
+          activeCameraMode = defaultCameraModeKey();
+          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
+        }
+        if (s_shoulderSurf) {
+          requestShoulderSurfPointerLock();
+          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
+        } else releaseShoulderSurfPointerLock();
+      });
+      // Re-engage after the browser's own Escape-releases-lock behavior, or
+      // after the settings menu (below) let go of it — a plain click on the
+      // game world is the same click-to-resume-look convention most desktop
+      // games with Pointer Lock use.
+      threeContainer.addEventListener('click', () => {
+        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+      });
+      // Both offset sliders read/write whichever stance preset is currently
+      // active (see shoulderSurfCombatStanceActive()) rather than a single
+      // flat value — the per-frame sync below snaps the slider itself back
+      // to the other preset's stored number the instant the stance flips,
+      // so what's on screen always matches what's actually driving the
+      // camera.
+      document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetH_combat = v; else s_shoulderSurfOffsetH_default = v;
+        s_shoulderSurfOffsetH_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
+      document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetV_combat = v; else s_shoulderSurfOffsetV_default = v;
+        s_shoulderSurfOffsetV_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
+
+      function gameLoop(now) {
+        const dt = Math.min(0.04, (now - lastTime) / 1000);
+        lastTime = now;
+
+        if (!gameStarted) {
+          window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
+          renderer.render(scene, camera);
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        worldPopupRuntime?.update(now);
+
+        updateSceneTransition(dt);
+
+        // Minimap redraw is throttled — it's an O(zone tile count) canvas
+        // repaint, cheap but pointless to run every single frame.
+        _minimapRedrawAccum += dt;
+        if (_minimapRedrawAccum >= 0.3) {
+          _minimapRedrawAccum = 0;
+          window.WildernessMap.renderMinimap();
+        }
+
+        if (window.Fishing?.state?.active) window.Fishing.update(dt);
+        window.MusicMinigame?.tick(dt);
+
+        window.Music?.updateRainAudio();
+        window.Music?.updateExteriorBgs();
+        window.Music?.updateFurnitureSfxSources();
+        window.Music?.updateAmbientCues();
+        window.Music?.updateLyreDucking();
+        window.Music?.logAudioTickDiagnostics();
+
+        if (!paused) {
+          updateCalendar(dt);
+          window.WeatherFX._advanceSmoothedLighting(dt);
+          pollControllerInput();
+          updateMeleeAutoTarget(dt);
+          updateMovement(dt);
+          window.WildernessMap.updateFogAroundPlayer();
+          updatePlayerVitals(dt);
+          window.AlchemySystem.update();
+          window.AlchemyFlasks?.update(dt);
+          window.CookingSystem.update();
+          window.BountyBoard.updateTracking(dt);
+
+          // Active companions and shoulder pets follow the player through
+          // every playable interior. A building still loading has no real
+          // destination scene yet, so wait behind the existing black scene
+          // transition rather than spawning a follower into `scene`'s
+          // fallback and leaving it there after the building finishes.
+          const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
+          if (companionSceneReady) {
+            syncCompanionFromWhistle();
+            updateCompanions(dt);
+          }
+          // Runs in every area so any phase of a mount transition is cleared
+          // immediately on entering an interior. Mounts remain exterior-only.
+          window.Mounts?.updateMountRide(dt);
+
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+            window.BanditCamps.updateCompanionPerception(dt);
+            window.BanditCamps.updateCampBanners(dt);
+            window.WildlifeSpawn.updateHostileSpawning(dt);
+            updateHostiles(dt);
+            window.CreatureDeath.updateCorpses(dt);
+          } else if (_isBuildingArea(currentArea)) {
+            // Ordinary building interiors still have no wild spawns; this
+            // branch only keeps any authored interior hostile/corpse active.
+            updateHostiles(dt);
+            window.CreatureDeath.updateCorpses(dt);
+          }
+
+          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
+
+          // Interior exit detection: player walks onto any door's exit-nub
+          // threshold (see js/house-pieces.js's computeInteriorLayout()).
+          if (currentArea === 'interior' && sceneTransDir === 0) {
+            const iCol = Math.floor(player.x / TILE), iRow = Math.floor(player.y / TILE);
+            if (_interiorExitTiles.has(iCol + ',' + iRow)) exitInterior();
+          }
+
+          // Transition spots (farm ↔ interior ↔ town ↔ building)
+          if (sceneTransDir === 0) checkTransitionSpots();
+
+          if (currentArea === 'farm' || currentArea === 'town') {
+            window.WeatherFX.updateWaterParticles(dt);
+            window.WeatherFX.updateRipples(dt);
+            window.WeatherFX.updateLightningFlash(dt);
+          }
+          if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
+          if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
+          updateActionParticles(dt);
+          window.WildTreasure.updateSparkles(dt);
+          window.Fishing?.updateFx(dt);
+          // Water sim ticks every 1/8 game-hour (~9s real-time)
+          // Uses game time so rain and drainage are clock-consistent
+          simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
+          if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
+            simAccumulator -= 0.125;
+            if (currentArea === 'farm') {
+              window.WaterSystem.recomputeWater(false);
+              tickWorldObjects();
+            } else {
+              const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+              window.WaterSystem.recomputeWater(false, townGrid, TROWS, TCOLS);
+            }
+            window.WeatherFX.spawnRipples();
+          }
+        }
+
+        // ── Camera smooth follow ─────────────────────────────────
+        const targetPosition = activeCameraTarget?.position;
+        const wx = targetPosition ? targetPosition.x : player.x / TILE;
+        const wz = targetPosition ? targetPosition.z : player.y / TILE;
+        // Shoulder-surf tracks the actual rendered player mesh height rather
+        // than bare ground height, so the camera rises and sinks along with
+        // it — mountSeatLift/chairSeatSink/water bob/etc. (see the movement
+        // update's targetY) already compose into playerMesh.position.y every
+        // frame before this runs, so mounting a tall creature or wading into
+        // water carries straight through to the camera for free.
+        const wy = targetPosition ? targetPosition.y
+          : (activeCameraMode === SHOULDER_SURF_MODE ? playerMesh.position.y : _playerGroundY());
+        const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
+        camTargetX += (wx - camTargetX) * camLerp;
+        camTargetZ += (wz - camTargetZ) * camLerp;
+        camTargetY += (wy - camTargetY) * camLerp;
+        // Safety net: some camera-mode transitions (fishing, the music
+        // minigame, NPC dialogue, harvest interactions...) assign
+        // activeCameraMode directly rather than through
+        // enterDefaultCameraMode(), so this catches any of them landing
+        // outside shoulder-surf while its Pointer Lock is still held —
+        // cheap enough (one property read) to just check every frame rather
+        // than hunting down every such call site individually.
+        if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        // Same "don't hunt down every mode-switch call site" reasoning as
+        // the Pointer Lock release above — held-item ground x-ray reads as
+        // clarity from the normal top-down view but just looks wrong at
+        // shoulder-surf's close third-person range, so keep it in lockstep
+        // with the camera mode every frame instead.
+        window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
+        // Eases the camera's actual offset (…_current) toward whichever
+        // stance preset applies right now — every frame, not just the
+        // instant the stance flips — so drawing/sheathing a weapon (or any
+        // other tool/item swap that changes stance) reads as a smooth
+        // push-in/pull-back instead of a jump-cut. The offset sliders'
+        // displayed value still jumps immediately on the flip, since that's
+        // just showing which preset's number is now in charge, not the
+        // transient eased position.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const combatStance = shoulderSurfCombatStanceActive();
+          const targetH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+          const targetV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
+          s_shoulderSurfOffsetH_current += (targetH - s_shoulderSurfOffsetH_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          s_shoulderSurfOffsetV_current += (targetV - s_shoulderSurfOffsetV_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          if (combatStance !== _shoulderSurfOffsetSliderCombat) {
+            _shoulderSurfOffsetSliderCombat = combatStance;
+            const hEl = document.getElementById('settingShoulderSurfOffsetH');
+            const vEl = document.getElementById('settingShoulderSurfOffsetV');
+            const hValEl = document.getElementById('settingShoulderSurfOffsetHValue');
+            const vValEl = document.getElementById('settingShoulderSurfOffsetVValue');
+            if (hEl) hEl.value = targetH;
+            if (vEl) vEl.value = targetV;
+            if (hValEl) hValEl.textContent = targetH.toFixed(2);
+            if (vValEl) vValEl.textContent = targetV.toFixed(2);
+          }
+        }
+        // Floating camera joystick: held-off-center knob position drives an
+        // ongoing turn rate every frame, for as long as the touch lasts (see
+        // the pointerdown/pointermove handlers below that materialize it and
+        // fill in cameraJoystickX/Y). Self-heals if some other UI claims
+        // input mid-hold instead of leaving the joystick stuck on screen.
+        if (cameraDragPointerId !== null) {
+          if (!cameraDragAllowed()) {
+            cameraDragPointerId = null;
+            hideCameraJoystick();
+          } else if (meleeAutoTargetOn && meleeWeaponOut()) {
+            // While melee auto-target is locked on, this same hidden stick
+            // swaps targets left/right instead of rotating the camera —
+            // akin to the controller's right-stick-tilt cycling. Edge-
+            // triggered off the raw X value (not cameraJoystickX, which is
+            // already deadzone/response-curved for the camera-rotate case)
+            // so one full push-past-threshold reads as exactly one cycle
+            // step, the same discrete feel as the controller's synthesized
+            // RightStickLeft/RightStickRight buttons.
+            const past = Math.abs(cameraJoystickX) >= CAMERA_JOYSTICK_DEADZONE * 2;
+            if (past && !_cameraJoystickTargetCyclePast) cycleMeleeAutoTarget(cameraJoystickX > 0 ? 1 : -1);
+            _cameraJoystickTargetCyclePast = past;
+          } else if (cameraJoystickX !== 0 || cameraJoystickY !== 0) {
+            _cameraJoystickTargetCyclePast = false;
+            const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
+              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            // Inverted relative to X on purpose — matches the desktop
+            // Shift-drag/plain-mouselook convention just below (+movementY
+            // pitches the same way), whereas the raw touch delta this knob
+            // is built from reads the other way for vertical.
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+          }
+        }
+        if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
+          _shoulderSurfBootSnapped = true;
+          snapShoulderSurfAzimuth();
+        }
+        updateCameraPosition();
+        // Refreshes the shared head/body/reticle aim point every frame
+        // (rather than only on a mousemove/touch event) so it always
+        // reflects the current camera — including a horizontal offset slide
+        // — even if the player is just standing still having already turned
+        // the camera. Must run after updateCameraPosition() above, not
+        // before, or the raycast would use last frame's stale camera
+        // position/orientation.
+        if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
+
+        // Throttled to ~7Hz, not every frame — drives the tree-fade targets
+        // (opacity and, while a tree is actually blocking, depthWrite).
+        _vegCullAccum += dt;
+        if (_vegCullAccum >= 0.14) {
+          const force = _vegCullAccum >= 900; // first tick after script load
+          _vegCullAccum = 0;
+          updateZoneVegetationCulling(force);
+        }
+        updateTreeFadeAnimation(dt);
+
+        // Same camera-aligned-corridor visibility toggle, same throttle, for
+        // the path brick chunks built once by registerPathBrickChunks — see
+        // updatePathBrickCulling.
+        _pathBrickCullAccum += dt;
+        if (_pathBrickCullAccum >= 0.14) {
+          const force = _pathBrickCullAccum >= 900;
+          _pathBrickCullAccum = 0;
+          if (_pathBrickChunkLists.size) updatePathBrickCulling(currentArea, force);
+        }
+
+        // ── Three.js updates ─────────────────────────────────────
+        updatePlayerMesh(dt);
+        updateLungeTrailStamps(dt);
+        if (!paused) {
+          updateNpcWalkers(dt);
+          window.NpcDrinkInteraction?.update?.(dt);
+          if (dialogueOpen) faceNpcDialogueParticipants();
+        }
+        // Run after NPC routing/facing so an active ambient greeting can hold
+        // its speaker toward the intended target for the rendered frame.
+        ambientDialogueRuntime?.update(now);
+        if (currentArea === 'town') {
+          window.WaterSystem.updateTownWaterMeshes();
+          updateTownThreeLighting();
+        }
+        if (_isZoneArea(currentArea)) {
+          window.WaterSystem.updateZoneWaterMeshes(currentArea);
+        }
+        // Tools and held bag items render and animate in every playable map.
+        // Ordinary interiors still omit combat/reticle updates below; this
+        // visual pass does not enable farm or combat actions there.
+        updateToolMesh(dt);
+        // Combat and targeting remain limited to exterior maps and den caverns.
+        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+          updateCombatConeTrail();
+          updateChargeAction();
+          window.Combat?.update(dt);
+          updateReticleMesh();
+        }
+        window.RangedWeapons?.update(dt);
+        updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        updateShoulderPetMeshPin();
+        if (currentArea === 'farm') {
+          window.WaterSystem.updateWaterMeshes();
+          updateCropMeshes();
+          window.FarmAnimals.updateAnimalMeshes(dt);
+          updateThreeLighting();
+
+          // Wind animation on vegetation
+          const windTime = performance.now() / 1000;
+          const windStrBase = calendar.isRaining
+            ? (calendar.rainStrength >= 3 ? 0.10 : 0.06)
+            : 0.03;
+          const _playerTX = player.x / TILE;
+          const _playerTZ = player.y / TILE;
+          for (const vm of vegMeshes) {
+            if (vm.material && vm.material.uniforms) {
+              vm.material.uniforms.uTime.value = windTime;
+              // Proximity boost only triggers within 1.2 tiles. Use cheap
+              // Manhattan pre-check to skip Math.hypot for distant meshes.
+              const adx = Math.abs(vm.position.x - _playerTX);
+              const adz = Math.abs(vm.position.z - _playerTZ);
+              let proximityStr;
+              if (adx < 1.4 && adz < 1.4) {
+                const dist = Math.hypot(adx, adz);
+                proximityStr = dist < 1.2 ? windStrBase + 0.12 * (1.2 - dist) / 1.2 : windStrBase;
+              } else {
+                proximityStr = windStrBase;
+              }
+              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
+            }
+          }
+          const windScale = windStrBase / 0.03;
+          for (const _vfi of _vegFoliageActive) {
+            const fg = vegFoliageMeshes[_vfi];
+            if (!fg || !fg._windAmp) continue;
+            // Skip foliage well outside the camera view — it won't be visible.
+            if (Math.abs(fg.position.x - _playerTX) > 14 || Math.abs(fg.position.z - _playerTZ) > 11) continue;
+            const amp = fg._windAmp * windScale;
+            fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
+            fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
+          }
+          if (grassBillboardMat) {
+            grassBillboardMat.uniforms.uTime.value     = windTime;
+            grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
+          }
+        }
+        if (currentArea === 'town' && grassBillboardMat) {
+          // Town grass billboards share the farm's wind shader/material, so keep
+          // them swaying too — farm's block above only runs while on the farm.
+          const windTime = performance.now() / 1000;
+          grassBillboardMat.uniforms.uTime.value     = windTime;
+          grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+        }
+
+        // Constant-cost world rain: three UV/yaw updates regardless of density.
+        window.RainPlanes?.update(dt);
+        if (s_cloudForestFog) window.CloudForestFog?.update(dt);
+
+        // ── Render active scene ──────────────────────────────────
+        const activeScene = getActiveScene();
+        if (s_outlines) {
+          // Colour + depth into an offscreen target so the post-process
+          // composite below can read real per-pixel depth afterwards —
+          // rendering straight to the canvas would lose that depth buffer
+          // the moment the fullscreen composite quad overwrites it.
+          renderer.setRenderTarget(_mainRT);
+          renderer.render(activeScene, camera);
+
+          // Preserve the colour/depth result while PNG silhouettes add only
+          // the missing occlusion depth needed by both outline systems.
+          renderer.autoClearColor = false;
+          renderer.autoClearDepth = false;
+          _renderPngPlaneOutlineOccluderDepth(activeScene);
+
+          // Selective shell outline pass (layer-1 objects only)
+          activeScene.overrideMaterial = shellOutlineMat;
+          camera.layers.set(1);
+          renderer.render(activeScene, camera);
+          camera.layers.enableAll();
+          activeScene.overrideMaterial = null;
+
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+          }
+          renderer.autoClearColor = true;
+          renderer.autoClearDepth = true;
+
+          // Furniture material-ID buffer (layer-3 objects only) — feeds the
+          // material-seam edge detection in the composite shader below.
+          // Skipped entirely while s_furnitureSeamOutlines is off — the
+          // composite's uSeamOutlinesOn uniform also zeroes its contribution
+          // regardless, so leaving _edgeIdRT's contents stale here is safe.
+          if (s_furnitureSeamOutlines) {
+            renderer.setRenderTarget(_edgeIdRT);
+            renderer.setClearColor(0x000000, 0);
+            renderer.clear(true, true, false);
+            camera.layers.set(3);
+            activeScene.overrideMaterial = _furnitureIdMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            camera.layers.enableAll();
+          }
+
+          // Depth-only source for the depth-edge detector, PNG-plane avatars
+          // (see _markPngPlane) and grass billboards (userData.isBillboard,
+          // set at creation on every InstancedMesh built from _grassBladeGeo)
+          // hidden for this pass only so their sprite cutout silhouettes and
+          // near-edge-on quad angles never feed the detector as false edges.
+          // Opt-in/off by default since it's an extra full scene pass on top
+          // of everything above.
+          if (s_depthOutlines) {
+            const _hiddenForDepthPass = [];
+            activeScene.traverse(o => {
+              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
+                o.visible = false;
+                _hiddenForDepthPass.push(o);
+              }
+            });
+            renderer.setRenderTarget(_depthOnlyRT);
+            activeScene.overrideMaterial = _depthOnlyMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            _hiddenForDepthPass.forEach(o => { o.visible = true; });
+          }
+
+          // Composite: blend depth-discontinuity + furniture material-seam
+          // outlines over the rendered scene, straight to the canvas.
+          renderer.setRenderTarget(null);
+          _postMat.uniforms.tColor.value          = _mainRT.texture;
+          _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
+          _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
+          _postMat.uniforms.tEdgeIdDepth.value     = _edgeIdRT.depthTexture;
+          _postMat.uniforms.tSceneDepth.value      = _mainRT.depthTexture;
+          _postMat.uniforms.uCameraNear.value      = camera.near;
+          _postMat.uniforms.uCameraFar.value       = camera.far;
+          _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
+          _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
+          _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
+          renderer.render(_postScene, _postCamera);
+        } else {
+          renderer.setRenderTarget(null);
+          renderer.render(activeScene, camera);
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            renderer.autoClearColor = false;
+            renderer.autoClearDepth = false;
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+            renderer.autoClearColor = true;
+            renderer.autoClearDepth = true;
+          }
+        }
+
+        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        drawOverlays();
+        window.WeatherFX.drawLightingOverlay();
+
+        window.DialogueContent?.updateNpcDialoguePortrait(now);
+        updateHud();
+        requestAnimationFrame(gameLoop);
+      }
+
+      // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
+      // now lives in js/debug-hitboxes.js — call via window.DebugHitboxes.draw().
+
+      // ── 2D overlay draw (world rain is rendered by RainPlanes) ─
+      function drawOverlays() {
+        const rect = _threeRect;
+        const W = rect.width, H = rect.height;
+        octx.clearRect(0, 0, W, H);
+
+        if (currentArea === 'interior') {
+          drawActionParticles();
+          return;
+        }
+
+        if (calendar.isRaining) {
+          const str = calendar.rainStrength || 1;
+          const isStorm = str >= 3;
+
+          // Keep the cheap weather tint here; individual streaks now live on
+          // three world-space planes in the existing WebGL renderer.
+          octx.fillStyle = isStorm ? 'rgba(30,50,80,0.10)' : 'rgba(60,80,100,0.05)';
+          octx.fillRect(0, 0, W, H);
+        }
+
+        drawCombatConeReticle();
+        drawWeaponTrailEffects();
+        drawActionTileEffects();
+        drawActionParticles();
+
+        if (lightningAlpha > 0) {
+          octx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.35})`;
+          octx.fillRect(0, 0, W, H);
+        }
+
+        window.DebugHitboxes.draw();
+      }
+
+      function markTileDirty(col, row) {
+        _invalidateCropList();
+        refreshTileMesh(col, row);
+        // TRENCH/RAISED shape depends on which neighbors share their type, so any
+        // change that could alter those connections must also refresh those neighbors.
+        for (const [dc, dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+          const nt = grid[row + dr]?.[col + dc]?.type;
+          if (nt === TileType.TRENCH || nt === TileType.RAISED)
+            refreshTileMesh(col + dc, row + dr);
+        }
+      }
+
+      function updateCalendar(dt) {
+
+        const previousHour = window.CalendarSystem.getHour();
+        calendar.time01 += dt / DAY_LENGTH_SECONDS;
+        if (calendar.time01 >= 1) {
+          calendar.time01 -= 1;
+          advanceDay();
+        }
+        const currentHour = window.CalendarSystem.getHour();
+        if (Math.floor(previousHour) !== Math.floor(currentHour)) {
+          window.WeatherFX.updateRainState();
+          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
+          // Breeding progress ticks per in-game hour crossed (rather than
+          // once per day) so a pair's bar visibly creeps forward through
+          // the day and can complete the moment it fills, not just at the
+          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
+          // covers whatever fraction of the day this real-time path skips.
+          window.FarmAnimals.tickBreedingProgress();
+          // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
+          // default DAY_LENGTH_SECONDS) so a crash/force-close between day
+          // rollovers still only loses a few minutes of in-game time
+          // instead of the whole session — see _saveWorldCalendar.
+          _saveWorldCalendar();
+        }
+      }
+
+      function advanceDay() {
+        calendar.day += 1;
+        window.WeatherFX.chooseWeatherForDay();
+        tickCropDay();
+        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // here — by the time a day naturally rolls over, every one of its
+        // waking hours has already been credited in real time.
+        window.FarmAnimals.tickResources();
+        window.FarmAnimals.tickHearts();
+        window.ProceduralTasks.maybeRefreshBoardTask();
+        lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
+        checkTothalShift();
+        // Any den wiped out since it started waiting can now be moved back
+        // into — see ensureCurrentZoneDenPacks, which does the actual
+        // (lazy, current-zone-only) spawning once this fires.
+        window.WildlifeSpawn.clearPendingDenRespawn();
+        window.ReagentPlants.respawnAllZoneReagents();
+        window.WildBerries.respawnAll();
+        window.WildTreasure.respawnAll();
+        tickFelledTreeRegrowth();
+        tickMinedRockRegrowth();
+        _saveWorldCalendar();
+      }
+
+      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
+      // the next morning rather than waiting for calendar.time01 to wrap
+      // naturally — same day-rollover work as advanceDay() (weather reroll,
+      // crop growth, Tothal Shift check, den respawns), plus resetting the
+      // clock itself and restoring the player, which advanceDay() doesn't
+      // need to do since it only ever fires from a real elapsed-time wrap.
+      function sleepInBed() {
+        // Whatever fraction of today's waking hours hadn't been played
+        // through yet (and so never got an hourly breeding tick from
+        // updateCalendar) gets credited here in one lump, so a pair
+        // progresses the same one day's worth whether that day was played
+        // out in real time or slept through.
+        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
+        calendar.day += 1;
+        calendar.time01 = 0; // wake at MORNING_HOUR
+        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
+        tickCropDay();
+        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
+        window.FarmAnimals.tickResources();
+        window.FarmAnimals.tickHearts();
+        window.ProceduralTasks.maybeRefreshBoardTask();
+        checkTothalShift();
+        window.WildlifeSpawn.clearPendingDenRespawn();
+        window.ReagentPlants.respawnAllZoneReagents();
+        window.WildTreasure.respawnAll();
+        tickFelledTreeRegrowth();
+        tickMinedRockRegrowth();
+        player.health  = player.maxHealth;
+        player.stamina = player.maxStamina;
+        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
+        lastActionMessage = msg;
+        _saveWorldCalendar();
+        return { ok: true, message: msg };
+      }
+
+      // Weather rolling (chooseWeatherForDay/updateRainState) now lives
+      // in js/weather-fx.js — call via window.WeatherFX.*.
+
+      function tickCropDay() {
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const tile = grid[row][col];
+            if (!tile.crop) continue;
+            const data = cropData[tile.crop];
+            const mul = cropGrowthMultiplier(tile, col, row);
+            const ditchStress = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 'needs ditch' : '';
+            tile.stress = ditchStress || (mul < 0.15 ? (tile.water < data.idealMin ? 'too dry' : 'waterlogged')
+                        : mul < 0.6  ? (tile.water < data.idealMin ? 'dry'     : 'too wet')
+                        : '');
+            tile.cropAge += mul;
+            tile.cropReady = tile.cropAge >= data.growDays;
+          }
+        }
+      }
+
+      // Returns 0..1 growth rate based on how close tile.water is to crop ideal band.
+      function canPlantCropOnTile(crop, tile) {
+        if (!cropData[crop]) return false;
+        return [TileType.TILLED, TileType.RAISED].includes(tile.type) && !tile.crop;
+      }
+
+      function hasAdjacentDitch(col, row) {
+        return cardinalNeighbors(col, row).some(point => grid[point.row][point.col].type === TileType.TRENCH);
+      }
+
+      function cropGrowthMultiplier(tile, col, row) {
+        if (!tile.crop) return 0;
+        const data = cropData[tile.crop];
+        const { idealMin, idealMax } = data;
+        const w = tile.water / MAX_WATER;
+        let waterMul;
+        if (w >= idealMin && w <= idealMax) waterMul = 1.0;
+        else if (w < idealMin) waterMul = Math.max(0, (w - (idealMin - 0.4)) / 0.4);
+        else waterMul = Math.max(0, ((idealMax + 0.4) - w) / 0.4);
+        const ditchMul = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 0.65 : 1.0;
+        return waterMul * ditchMul;
+      }
+
+      // The water simulation itself (avgGridWaterLevel/recomputeWater) now
+      // lives in js/water-system.js — call via window.WaterSystem.*.
+
+      function trenchNeighbors(col, row) {
+        // Used by water routing: south is first to preserve the visible north-to-south bias.
+        return [
+          { col, row: row + 1 },
+          { col: col - 1, row },
+          { col: col + 1, row },
+          { col, row: row - 1 }
+        ].filter(isInsideGrid);
+      }
+
+      function cardinalNeighbors(col, row) {
+        return [
+          { col, row: row - 1 },
+          { col: col + 1, row },
+          { col, row: row + 1 },
+          { col: col - 1, row }
+        ].filter(isInsideGrid);
+      }
+
+      function isInsideGrid(point) {
+        return point.col >= 0 && point.col < COLS && point.row >= 0 && point.row < ROWS;
+      }
+
+      function setActiveTool(tool, opts = {}) {
+        if (!toolActions[tool]) return;
+        if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
+        heldMode = 'tool';
+        activeTool = tool;
+        if (WHEEL_SLOTS.includes(tool)) lastHeldFarmTool = tool; // Direct hotkeys/cycling must update the same recall memory as arch selection.
+        const actions = toolActions[tool];
+        if (!actions.includes(activeAction)) activeAction = actions[0];
+        const equipped = equipmentSlots[tool];
+        const def = TOOL_ITEM_DEFS[equipped];
+        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️' }[tool] || '🔧';
+        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', ranged:'Ranged Weapon', machete:'Weapon' }[tool] || tool;
+        toolBtnIcon.innerHTML  = toolSelectIconHTML(def, fallbackIcon, '0.85em');
+        toolBtnLabel.textContent = label;
+        // Swap visible tool mesh
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[tool]) toolHolder.add(toolMeshMap[tool]);
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+        // opts.silent: hydrating the tool held last session (see
+        // spawnPlayerAvatar) shouldn't pop a "X selected" toast on login.
+        if (!opts.silent) {
+          const msg = `${label} selected.`;
+          lastActionMessage = msg;
+          showToast(msg, true);
+        }
+        saveEquipmentSlots();
+      }
+
+      // Weapon quick-switch icon always shows whatever's actually equipped in
+      // the weapon slot (not necessarily the active tool) — its .active class
+      // (toggled every frame in updateMovement) is what shows the current
+      // in/out state.
+      function refreshWeaponSwitchBtn() {
+        if (!btnWeaponSwitchIcon) return;
+        const showRanged = activeTool !== 'ranged';
+        const def = TOOL_ITEM_DEFS[showRanged ? equipmentSlots.ranged : equipmentSlots.weapon];
+        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, showRanged ? '🏹' : '🗡️', '0.85em');
+        btnWeaponSwitch?.setAttribute('aria-label', showRanged ? 'Switch to ranged weapon' : 'Switch to melee weapon');
+      }
+
+      // One combat toggle: melee↔ranged. From a farming tool or held item the
+      // first press enters melee, preserving the existing binding.
+      function toggleQuickWeaponSwitch() {
+        heldMode = 'tool';
+        if (activeTool === 'weapon') setActiveTool('ranged');
+        else if (activeTool === 'ranged') setActiveTool('weapon');
+        else setActiveTool('weapon');
+      }
+
+      // Holsters the visible tool/weapon or bag item without unassigning any
+      // gear slots. The remembered activeTool/activeItemIndex are restored by
+      // the next tool, item, or weapon selection.
+      function putAwayHeldEquipment() {
+        if (heldMode === 'none') return;
+        heldMode = 'none';
+        activeAction = 'none';
+        actionHeldDown = false;
+        window.Combat?.input?.cancelPress?.(1);
+        window.Combat?.input?.cancelPress?.(2);
+        window.Combat?.cancelAllStaged?.();
+        window.RangedWeapons?.cancelPlayerAction?.();
+        cancelPlayerToolAnimationForInteraction();
+        toolHolder.visible = false;
+        heldItemHolder.visible = false;
+        window._desktopSelectionArc?.close?.();
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+        showToast('Put away held equipment.', true);
+      }
+
+      function setActiveAction(action) {
+        activeAction = action;
+        refreshActionBar();
+        useActiveAction();
+      }
+
+      // Both combat slots are deliberately excluded — the dedicated combat
+      // toggle swaps weapon↔ranged without putting either in the farm-tool cycle.
+      const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
+
+      // ── Outer arch — tool & item arc-dial ─────────────────
+      {
+        const _itemBtn = document.getElementById('itemBtn');
+        const ARC_S = 175, ARC_E = 95;
+        const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
+        const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
+        const SAFE_M = Number.isFinite(configuredSafeMarginPx) ? configuredSafeMarginPx : 0;
+        const actionArchRadiusClamp = mobileControls.actionArch?.radiusClamp || {};
+        const outerArchRadiusClamp = mobileControls.outerArch?.radiusClamp || {};
+
+        function _clampedVmin({ minPx, vmin, maxPx }) {
+          const viewportMin = Math.min(window.innerWidth, window.innerHeight);
+          const configuredVmin = Number(vmin);
+          const preferredPx = viewportMin * (Number.isFinite(configuredVmin) ? configuredVmin : 0) / 100;
+          const lowerPx = Number(minPx);
+          const upperPx = Number(maxPx);
+          if (![preferredPx, lowerPx, upperPx].every(Number.isFinite)) return 0;
+          return Math.min(upperPx, Math.max(lowerPx, preferredPx));
+        }
+
+        function _outerR() {
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 10 : _clampedVmin(outerArchRadiusClamp);
+        }
+        function _innerR() {
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.6 : _clampedVmin(actionArchRadiusClamp);
+        }
+        function _arcPt(deg, radius = _outerR()) {
+          const r = radius, a = deg * Math.PI / 180;
+          return { x: window.innerWidth  + Math.cos(a) * r - SAFE_M,
+                   y: window.innerHeight - Math.sin(a) * r - SAFE_M };
+        }
+        function _cornerAng(px, py) {
+          return Math.atan2(-(py - window.innerHeight), px - window.innerWidth) * 180 / Math.PI;
+        }
+
+        let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
+        let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
+        let _fadingEls = [];
+
+        function _clearArc(keepBackdrop = false) {
+          if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
+          _arcEls.forEach(e => e.remove()); _arcEls = [];
+          _fadingEls.forEach(e => e.remove()); _fadingEls = [];
+          _arcSlots = []; _arcActive = -1; _arcOpen = null;
+          toolBtn.style.visibility = '';
+          if (_itemBtn) _itemBtn.style.visibility = '';
+        }
+
+        function _mkSlot(deg, icon, label, extra, radius = _outerR()) {
+          const pt = _arcPt(deg, radius);
+          const el = document.createElement('div');
+          el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+          el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;`;
+          el.innerHTML = `<span class="arc-icon">${icon}</span>`
+                       + (label ? `<span class="arc-label">${label}</span>` : '');
+          document.body.appendChild(el);
+          _arcEls.push(el);
+          return el;
+        }
+
+        function _setActive(idx) {
+          if (_arcActive === idx) return;
+          if (_arcSlots[_arcActive]) _arcSlots[_arcActive].el.classList.remove('arc-active');
+          _arcActive = idx;
+          if (_arcSlots[idx]) _arcSlots[idx].el.classList.add('arc-active');
+        }
+
+        function _openToolArc() {
+          _clearArc(); _arcOpen = 'tool';
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          const n = WHEEL_SLOTS.length, step = (ARC_S - ARC_E) / (n - 1);
+          WHEEL_SLOTS.forEach((slot, i) => {
+            const deg = ARC_S - i * step;
+            const eq = equipmentSlots[slot], def = eq ? TOOL_ITEM_DEFS[eq] : null;
+            const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
+            const icon  = toolSelectIconHTML(def, fallbackIcon, '1.4em');
+            const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
+            const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
+            _arcSlots.push({ angle: deg, el, data: slot });
+            if (activeTool === slot) _arcActive = i;
+          });
+        }
+
+        function _openAmmoArc() {
+          const choices = window.RangedWeapons?.ammoChoices?.(equipmentSlots.ranged) || [];
+          const activeAmmo = window.RangedWeapons?.activeAmmoId?.(equipmentSlots.ranged) || 'basic';
+          _openEntries('ammo', choices.map(choice => ({
+            id: choice.id, icon: choice.icon, label: choice.available ? choice.label : `${choice.label} · 0/8`,
+            disabled: !choice.available, active: choice.id === activeAmmo,
+            onSelect: () => window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, choice.id),
+          }))); // Special ammo uses the same ordinary-radius arch primitive.
+        }
+
+        function _openEntries(mode, entries, radius = _outerR()) {
+          const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
+          _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          toolBtn.style.visibility = 'hidden';
+          if (!_arcBd) {
+            _arcBd = document.createElement('div');
+            _arcBd.className = 'arc-backdrop';
+            let pointerId = null; // One pointer owns general entry-arch navigation until commit/cancel.
+            _arcBd.addEventListener('pointerdown', event => {
+              pointerId = event.pointerId;
+              try { _arcBd.setPointerCapture(pointerId); } catch (error) { /* Pointer capture is an optional enhancement. */ }
+              _arcMove(event.clientX, event.clientY);
+              event.preventDefault();
+            });
+            _arcBd.addEventListener('pointermove', event => { if (event.pointerId === pointerId) _arcMove(event.clientX, event.clientY); });
+            _arcBd.addEventListener('pointerup', event => { if (event.pointerId === pointerId) { pointerId = null; _arcUp(); } });
+            _arcBd.addEventListener('pointercancel', event => { if (event.pointerId === pointerId) { pointerId = null; _clearArc(); } });
+            document.body.appendChild(_arcBd);
+          }
+          const n = entries.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
+          entries.forEach((entry, index) => {
+            const deg = ARC_S - index * step;
+            const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
+            const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
+            _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
+            if (entry.active) _arcActive = index;
+          });
+          if (_arcActive < 0 && entries.length) _setActive(Math.floor((entries.length - 1) / 2));
+        }
+
+        function _selectHeldInventoryKey(itemKey) {
+          const index = getInventoryStackItems().findIndex(item => item.key === itemKey);
+          if (index < 0) return;
+          activeItemIndex = index;
+          heldMode = 'item';
+          refreshItemScroll(); refreshActionBar();
+        }
+
+        const CURE_FAMILY_ICONS = { damage: '🩸', control: '🌀', offensiveDebuff: '⚔️', defensiveDebuff: '🛡️' }; // Four-family selector vocabulary.
+        function _cureCoverageIcon(coverage, urgent = true) {
+          return `<span class="cure-family-grid">${window.AlchemySystem.FAMILY_ORDER.map(family => {
+            const state = coverage[family] || {};
+            const severity = state.activeAmount >= 45 ? ' severe' : state.activeAmount > 0 ? ' active' : '';
+            const missing = state.owned ? '' : `<b class="cure-family-x${state.urgentMissing && urgent ? ' urgent' : ''}">×</b>`;
+            return `<span class="cure-family${severity}" data-family="${family}">${CURE_FAMILY_ICONS[family]}${missing}</span>`;
+          }).join('')}</span>`;
+        }
+
+        function _openPotionRoot() {
+          _openEntries('potion-root', [
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:() => _openPotionBranch('medicine') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:() => _openPotionBranch('utility') },
+          ], _outerR());
+        }
+
+        function _openPotionBranch(branch) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const healing = state.healing || {}, cures = state.cures || {}, buffs = state.buffs || {}, flasks = state.flasks || {};
+          const urgent = state.inCombat !== false; // Outside combat, unavailable marks stay muted.
+          const healingClass = `potion-category${healing.needed ? '' : ' muted'}${healing.urgentMissing ? ` unavailable${urgent ? ' urgent' : ''}` : ''}`;
+          const curesUseful = (cures.usefulItems || []).length > 0;
+          const buffsUseful = (buffs.usefulItems || []).length > 0;
+          const entries = branch === 'medicine' ? [
+            { id:'healing', icon:`💚${healing.urgentMissing ? '<b class="category-x red">×</b>' : ''}`, label:'Healing', className:healingClass, disabled:!(healing.needed && healing.owned), onSelect:() => _openPotionItems('healing') },
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:_openPotionRoot },
+            { id:'cures', icon:_cureCoverageIcon(cures.coverage || {}, urgent), label:'Cures', className:`potion-category${curesUseful ? '' : ' muted'}`, disabled:!curesUseful, onSelect:() => _openPotionItems('cures') },
+          ] : [
+            { id:'buffs', icon:`✨${buffs.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Buffs', className:`potion-category${buffsUseful ? '' : ' muted'}`, disabled:!buffsUseful, onSelect:() => _openPotionItems('buffs') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:_openPotionRoot },
+            { id:'flasks', icon:`🫙${flasks.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Flasks', className:`potion-category${flasks.owned ? '' : ' muted'}`, disabled:!flasks.owned, onSelect:() => _openPotionItems('flasks') },
+          ];
+          _openEntries(`potion-${branch}`, entries, _outerR());
+        }
+
+        function _openPotionItems(category) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const items = category === 'healing' ? state.healing?.usefulItems
+            : category === 'cures' ? state.cures?.usefulItems
+              : category === 'buffs' ? state.buffs?.items : state.flasks?.items;
+          const itemEntries = (items || []).map(entry => {
+            const definition = entry.recipe || window.AlchemySystem.RECIPE_DEFS[entry.payload.recipeId];
+            const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
+            return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
+          });
+          const cancelEntry = { id:`cancel-${category}`, icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:() => _clearArc() }; // Occupies the focused category's former angle and closes only when the held selector is released on it.
+          if (category === 'healing' || category === 'buffs') itemEntries.unshift(cancelEntry);
+          else itemEntries.push(cancelEntry);
+          _openEntries(`potion-items-${category}`, itemEntries, _outerR());
+        }
+
+        let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
+        const ITEM_VIS = 5;
+
+        function _buildItemSlots() {
+          const stacks = getInventoryStackItems(), total = stacks.length;
+          const slots = [];
+          if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
+          for (let i = 0; i < ITEM_VIS && _iScroll + i < total; i++)
+            slots.push({ type:'item', index:_iScroll+i, key:stacks[_iScroll+i].key, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
+          if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
+          const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
+
+          const oldByKey = new Map(_arcSlots.map(s => [
+            s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`, s
+          ]));
+          const kept = new Set(), newSlots = [];
+
+          slots.forEach((s, i) => {
+            const deg = ARC_S - i * step, pt = _arcPt(deg);
+            const k = s.type === 'arrow' ? `a${s.dir}` : `i${s.index}`;
+            const extra = s.type === 'arrow' ? 'arc-arrow' : (s.index === activeItemIndex ? 'arc-active' : '');
+            if (oldByKey.has(k)) {
+              const old = oldByKey.get(k); kept.add(k);
+              old.el.style.left = pt.x + 'px'; old.el.style.top = pt.y + 'px';
+              old.el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              newSlots.push({ angle: deg, el: old.el, data: s });
+            } else {
+              const el = document.createElement('div');
+              el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;opacity:0;`;
+              el.innerHTML = `<span class="arc-icon">${s.icon}</span>`
+                           + (s.label ? `<span class="arc-label">${s.label}</span>` : '');
+              document.body.appendChild(el);
+              _arcEls.push(el);
+              requestAnimationFrame(() => { el.style.opacity = '1'; });
+              newSlots.push({ angle: deg, el, data: s });
+            }
+            const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
+            if (s.type === 'item') {
+              applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key], s.key);
+            }
+            else clearItemSpriteIcon(iconEl);
+          });
+
+          _arcSlots.forEach(s => {
+            const k = s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`;
+            if (!kept.has(k)) {
+              s.el.style.opacity = '0';
+              _arcEls = _arcEls.filter(e => e !== s.el);
+              _fadingEls.push(s.el);
+              const _el = s.el;
+              setTimeout(() => { _el.remove(); _fadingEls = _fadingEls.filter(f => f !== _el); }, 150);
+            }
+          });
+
+          _arcSlots = newSlots;
+          _arcActive = newSlots.findIndex(s => s.data.type === 'item' && s.data.index === activeItemIndex);
+        }
+
+        function _openItemArc() {
+          _clearArc(); _arcOpen = 'item';
+          toolBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          _iScroll = Math.max(0, activeItemIndex - Math.floor(ITEM_VIS / 2));
+          _iScrollDir = 0;
+          _buildItemSlots();
+        }
+
+        function _arcMove(px, py) {
+          if (!_arcOpen || !_arcSlots.length) return;
+          const ang = Math.max(ARC_E, Math.min(ARC_S, _cornerAng(px, py)));
+          let best = 0, bd = Infinity;
+          _arcSlots.forEach((s, i) => { const d = Math.abs(s.angle - ang); if (d < bd) { bd = d; best = i; } });
+          if (_arcOpen === 'item') {
+            const newDir = _arcSlots[best]?.data.type === 'arrow' ? _arcSlots[best].data.dir : 0;
+            if (newDir !== _iScrollDir) {
+              _iScrollDir = newDir;
+              if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+              if (newDir !== 0) {
+                _iScrollT = setInterval(() => {
+                  _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, _iScroll + _iScrollDir));
+                  _buildItemSlots();
+                }, 200);
+              }
+            }
+          }
+          _setActive(best);
+          if (_arcOpen === 'entries:potion-root') {
+            const branch = _arcSlots[best]?.data.id;
+            if (branch === 'medicine' || branch === 'utility') {
+              _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+              _arcMove(px, py); // Re-evaluate the same continuous drag against the newly populated category arch.
+            }
+          } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+            const category = _arcSlots[best]?.data;
+            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) {
+              _openPotionItems(category.id);
+              _arcMove(px, py); // The replacement Cancel button becomes selected immediately under the uninterrupted drag.
+            }
+          }
+        }
+
+        function _arcUp() {
+          if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+          if (!_arcOpen) return;
+          const slot = _arcSlots[_arcActive];
+          if (_arcOpen === 'tool' && slot) {
+            heldMode = 'tool'; lastHeldFarmTool = slot.data;
+            setActiveTool(slot.data); // calls refreshActionBar internally
+          } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
+            heldMode = 'item';
+            activeItemIndex = slot.data.index;
+            refreshItemScroll(); refreshActionBar();
+          } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
+            const select = slot.data.onSelect;
+            if (typeof select === 'function') {
+              const previousMode = _arcOpen; // Branch callbacks replace the current arch; item callbacks do not.
+              select();
+              if (_arcOpen !== previousMode) return;
+            }
+          }
+          _clearArc();
+        }
+
+        window._desktopSelectionArc = {
+          openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+          openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
+          openPotions() { _openPotionRoot(); },
+          openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
+          recallLastTool() {
+            const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
+            const recalled = WHEEL_SLOTS.includes(lastHeldFarmTool) && equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
+            lastHeldFarmTool = recalled;
+            heldMode = 'tool';
+            setActiveTool(recalled);
+            return recalled;
+          },
+          scrollTool(dir) {
+            if (_arcOpen !== 'tool') _openToolArc();
+            const idx = WHEEL_SLOTS.indexOf(activeTool);
+            const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+            heldMode = 'tool';
+            lastHeldFarmTool = WHEEL_SLOTS[next];
+            setActiveTool(WHEEL_SLOTS[next]);
+            _arcSlots.forEach((s, i) => {
+              const active = s.data === activeTool;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollItem(dir) {
+            if (_arcOpen !== 'item') _openItemArc();
+            heldMode = 'item';
+            cycleActiveInventoryItem(dir);
+            refreshItemScroll(); refreshActionBar();
+            _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
+            _buildItemSlots();
+            _arcSlots.forEach((s, i) => {
+              const active = s.data.type === 'item' && s.data.index === activeItemIndex;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollAmmo(dir) {
+            if (_arcOpen !== 'entries:ammo') _openAmmoArc();
+            const available = _arcSlots.map((slot, index) => ({ slot, index })).filter(entry => !entry.slot.data.disabled);
+            if (!available.length) return false;
+            let position = available.findIndex(entry => entry.index === _arcActive);
+            position = (position + (dir < 0 ? -1 : 1) + available.length) % available.length;
+            _setActive(available[position].index); // Highlight only; the held input's release commits setActiveAmmo.
+            return true;
+          },
+          scrollEntries(dir) {
+            if (!_arcOpen?.startsWith('entries:') || !_arcSlots.length) return false;
+            if (_arcOpen === 'entries:potion-root') {
+              _openPotionBranch(dir < 0 ? 'medicine' : 'utility'); // Direction itself chooses the first hierarchical branch.
+              return true;
+            }
+            if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+              const categoryId = _arcOpen.endsWith('medicine') ? (dir < 0 ? 'healing' : 'cures') : (dir < 0 ? 'buffs' : 'flasks');
+              const category = _arcSlots.find(slot => slot.data.id === categoryId);
+              if (category && !category.data.disabled) _openPotionItems(categoryId);
+              else if (category) _setActive(_arcSlots.indexOf(category));
+              return true;
+            }
+            const nextIndex = _arcActive + (dir < 0 ? -1 : 1);
+            if (_arcOpen.startsWith('entries:potion-items-')) {
+              _setActive(Math.max(0, Math.min(_arcSlots.length - 1, nextIndex))); // Final lists stop at Cancel instead of wrapping past it on repeated wheel events.
+            } else {
+              _setActive((nextIndex + _arcSlots.length) % _arcSlots.length);
+            }
+            return true;
+          },
+          movePointer(x, y) { _arcMove(x, y); },
+          commit() { _arcUp(); },
+          releaseSelection() {
+            if (_arcOpen?.startsWith('entries:potion-') && !_arcOpen.startsWith('entries:potion-items-')) _clearArc();
+            else _arcUp();
+          }, // Releasing a held selector commits only a concrete item/ammo choice, never a hierarchy branch.
+          beginHeldSelection(kind) { _heldEntrySelectorKind = kind === 'ammo' ? 'ammo' : kind === 'potions' ? 'potions' : null; },
+          endHeldSelection() { _heldEntrySelectorKind = null; },
+          heldSelectionKind() { return _heldEntrySelectorKind; },
+          close() { _clearArc(); },
+          entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
+          toolMenuOpen() { return _arcOpen === 'tool'; }
+        };
+        window.SharedSelectionArch = window._desktopSelectionArc; // One configurable arch presenter for tools/items/ammo/potions.
+        document.addEventListener('hobunji-alchemy-change', () => {
+          if (_arcOpen === 'entries:potion-medicine') _openPotionBranch('medicine');
+          else if (_arcOpen === 'entries:potion-utility') _openPotionBranch('utility');
+          else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
+        }); // Refresh the open hierarchy only when its thresholded context changes.
+
+        let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
+        toolBtn.addEventListener('pointerdown', ev => {
+          if (_tPtId !== null) return;
+          _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
+          _tDx = ev.clientX; _tDy = ev.clientY;
+          // See handleJoystickPointerDown's comment: an uncaught throw here
+          // (possible for a touch starting before the browser considers the
+          // pointer fully active) would skip the rest of this handler and
+          // leave _tPtId stuck non-null, permanently blocking this button
+          // via the pointerdown guard above.
+          try { toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+          _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
+          ev.preventDefault();
+        });
+        toolBtn.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _tPtId) return;
+          if (!_tMoved && Math.hypot(ev.clientX - _tDx, ev.clientY - _tDy) > 6) _tMoved = true;
+          if (_arcOpen === 'tool') _arcMove(ev.clientX, ev.clientY);
+        });
+        toolBtn.addEventListener('pointerup', ev => {
+          if (ev.pointerId !== _tPtId) return;
+          _tPtId = null;
+          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
+          if (_arcOpen === 'tool') _arcUp();
+          else if (!_tHeld && !_tMoved) {
+            // A Tool Select tap always recalls the last valid held tool.
+            window._desktopSelectionArc.recallLastTool();
+          }
+          _tHeld = false; _tMoved = false;
+        });
+        toolBtn.addEventListener('pointercancel', ev => {
+          if (ev.pointerId !== _tPtId) return;
+          _tPtId = null;
+          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
+          _clearArc(); _tHeld = false; _tMoved = false;
+        });
+
+        if (_itemBtn) {
+          let _iPtId = null, _iHeld = false, _iTimer = null, _iDx = 0, _iDy = 0, _iMoved = false;
+          _itemBtn.addEventListener('pointerdown', ev => {
+            if (_iPtId !== null) return;
+            _iPtId = ev.pointerId; _iHeld = false; _iMoved = false;
+            _iDx = ev.clientX; _iDy = ev.clientY;
+            // See handleJoystickPointerDown's comment.
+            try { _itemBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 350);
+            ev.preventDefault();
+          });
+          _itemBtn.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            if (!_iMoved && Math.hypot(ev.clientX - _iDx, ev.clientY - _iDy) > 6) _iMoved = true;
+            if (_arcOpen === 'item') _arcMove(ev.clientX, ev.clientY);
+          });
+          _itemBtn.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            _iPtId = null;
+            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
+            if (_arcOpen === 'item') _arcUp();
+            else if (!_iHeld && !_iMoved && heldMode !== 'item') {
+              // Tap while holding a tool or hands-free → switch to item mode.
+              if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
+              heldMode = 'item';
+              refreshItemScroll(); refreshActionBar();
+            }
+            _iHeld = false; _iMoved = false;
+          });
+          _itemBtn.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            _iPtId = null;
+            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
+            if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+            _clearArc(); _iHeld = false; _iMoved = false;
+          });
+        }
+      }
+
+      // ── Action bar update ──────────────────────────────────
+      // ── Dynamic action stack ────────────────────────────────────────
+      // Computes the full list of buttons to show, then rebuilds the DOM rows.
+      // Buttons are packed into rows of 1, 2, 1, 2... (hex packing).
+      // Each button: { icon, label, action, style, allowed }
+
+
+      function computeActionButtons() {
+        // Sitting overrides every other action — Stand is the only way out,
+        // same tier as fishing/dialogue below.
+        if (sitInteraction) {
+          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+        }
+        // Fishing gets its own arc buttons instead of the harpoon's normal
+        // "Fish" one (which would just call beginFishingCast() again and
+        // silently restart the round) — the bottom-center #actionPrompt
+        // (see renderFishingOverlay) mirrors these as an info display
+        // (status text/panic bar/desktop key label), but the actual
+        // thumb-reachable tap target on touch is the arc, same as every
+        // other tool action. Nothing shows before 'bite' (no bite yet to
+        // react to), and nothing shows during 'caught' (the victory view
+        // has its own Continue button).
+        if (window.Fishing?.state?.active) {
+          const fm = window.Fishing.state;
+          if (fm.phase !== 'bite' && fm.phase !== 'active') return [];
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          const icon = attackActionIconHTML('harpoon', 'fish', '🎣');
+          return [
+            { icon, label: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon', action: 'fish_primary', style: 'primary', allowed: true },
+            { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
+          ];
+        }
+        // Music minigame overlay has its own full-screen controls (see
+        // js/music-minigame.js) and the close button lives in the overlay
+        // itself — no action-bar buttons underneath it.
+        if (window.MusicMinigame?.state?.active) return [];
+        // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
+        if (nearbyNpcWalker && !farmEditMode) {
+          const btns = [npcDialogueButton()];
+          if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
+          if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
+          const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
+          if (swigOffer) btns.push(swigOffer);
+          return btns;
+        }
+
+        // Interior: exit button near any door's exit threshold + interact button for interior world objects
+        if (currentArea === 'interior') {
+          const reticle  = getReticleTile();
+          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row);
+          const btns     = [];
+          if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
+          // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
+          // the farm scene's own coordinate space (see its declaration), so
+          // reticle coords while standing in the interior were being checked
+          // against farm-placed objects at those same numeric coordinates.
+          const iObj = getInteriorInteractableAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: iObj.interactIcon || '🔔', label: iObj.interactLabel || 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          return btns;
+        }
+
+        // Town: spot transitions take priority (require explicit input); otherwise
+        // fall through below so tools/weapons remain usable in town.
+        if (currentArea === 'town' && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'building' ? '🚪' : '🏘';
+          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+        }
+
+        // Building interior: spot transitions require explicit input
+        if (_isBuildingArea(currentArea)) {
+          if (_pendingSpotTransition) {
+            const t = _pendingSpotTransition;
+            const icon = t.target === 'exit_building' ? '🚪' : '🪜';
+            const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
+            return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          const nest = _denNests.get(currentArea);
+          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+            const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+          }
+          // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
+          // the weapon/tool combo buttons still need to populate the action
+          // bar here, same as farm/zone (below), even though every other
+          // building interior deliberately shows none. World objects, crops,
+          // and furniture placement don't exist in a cavern, so this skips
+          // straight to the tool-actions block instead of falling through
+          // the farm/zone branch wholesale.
+          if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
+            const cavernReticle = getReticleTile();
+            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernBtns = [];
+            (toolActions[activeTool] || []).forEach((action, i) => {
+              const [fallbackIcon] = actionLabels[action];
+              const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+              const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
+              cavernBtns.push({
+                icon, label: contextualActionLabel(action, cavernTile),
+                action, style: i === 0 ? 'primary' : 'secondary', allowed,
+              });
+            });
+            return cavernBtns;
+          }
+          const bReticle = getReticleTile();
+          const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
+          if (bInteractable) return bInteractable.getButtons();
+          // Building interiors return early above and never reach the
+          // farm/zone/town item-context block further down (it also relies
+          // on a reticle/tile pair this branch never computes) — without
+          // this, held-item actions like eating or playing a Kurraya
+          // silently had no button anywhere indoors, not just in the inn.
+          // Mirrors the same three checks in that block, in the same
+          // priority order; the plant/seed part below them doesn't apply
+          // indoors so isn't duplicated here.
+          if (heldMode === 'item') {
+            const heldItem = getActiveInventoryItem();
+            const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+            if (flaskActions.length) return flaskActions;
+            const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+            if (consumeAction) return [consumeAction];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+          }
+          return [];
+        }
+
+        const reticle = getReticleTile();
+
+        // Farm/zone: show spot transition button (house entrance, town exit, etc.)
+        if ((currentArea === 'farm' || _isZoneArea(currentArea)) && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'interior' ? '🏠' : t.target === 'town' ? '🏘' : '🚪';
+          const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
+          const btnsSpot = [];
+          btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
+          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
+          return btnsSpot;
+        }
+
+        // Zone: a climbable cliff face straight ahead takes priority over
+        // tool use. Keep the target visible while riding, but disable it so
+        // mobile clearly communicates that the rider must dismount instead
+        // of letting the mount and scripted climb fight over player.x/y.
+        const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
+        if (climbTarget) {
+          const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
+          const isJumpDown = climbTarget.type === 'branchJumpDown';
+          const climbLabel = isJumpDown ? 'Jump Down' : 'Climb';
+          return [{ icon: isJumpDown ? '🤸' : '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
+        }
+
+        const tile    = getActiveGrid()[reticle.row][reticle.col];
+        const btns    = [];
+
+        // 0. World object at reticle — its buttons take priority. Town has
+        // no worldObjects of its own (see its "farm-scene-only" comment
+        // above) — its furniture interactables (sittable benches, etc.)
+        // live in _buildingInteractables instead, same as building interiors.
+        const obj = currentArea === 'town'
+          ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
+          : getWorldObjectAt(reticle.col, reticle.row);
+        if (obj) {
+          const objBtns = obj.getButtons(reticle);
+          objBtns.forEach(b => btns.push(b));
+        }
+
+        // 0b. Harvest, same priority tier as a world object (a ready crop
+        // should behave exactly like picking a wild herb/berry: available
+        // as Action 1 regardless of what's in your hand, not just while an
+        // inventory item happens to be selected) — previously this only
+        // ever appeared down in the item-mode-only section below, so aiming
+        // at a ready crop while holding a tool showed no pick button at all.
+        if (tile.crop) {
+          const data = cropData[tile.crop];
+          btns.push({
+            icon: tile.cropReady ? data.emoji : '🌱',
+            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
+            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            allowed: tile.cropReady,
+          });
+        }
+
+        // 1. Tool's own actions (suppressed in item mode)
+        if (heldMode === 'tool') {
+          const actions = toolActions[activeTool] || [];
+          actions.forEach((action, i) => {
+            const [fallbackIcon] = actionLabels[action];
+            const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+            const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            btns.push({
+              icon, label: contextualActionLabel(action, tile),
+              action, style: i === 0 ? 'primary' : 'secondary', allowed,
+            });
+          });
+        }
+
+        // 2+3. Item context actions — only in item mode
+        if (heldMode !== 'item') return btns;
+
+        // A selected consumable is Item Action 1. Its configured binding owns
+        // consumption; raw Space/Enter/Interact keys have no special behavior.
+        const heldItem = getActiveInventoryItem();
+        const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+        if (flaskActions.length) flaskActions.slice().reverse().forEach(action => btns.unshift(action));
+        const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+        if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+
+        // 2. Context: Plant button if selected item is a seed and tile can accept it
+        const item = getActiveInventoryItem();
+        if (item && item.seedFor) {
+          const cropName  = item.seedFor;
+          const plantAct  = 'plant_' + cropName;
+          const count     = inventory[item.key] || 0;
+          const canPlant  = count > 0 && canPlantCropOnTile(cropName, tile);
+          btns.push({
+            icon: item.icon, label: count > 0 ? `Plant (${count})` : 'No seeds',
+            action: plantAct, style: 'plant', allowed: canPlant,
+          });
+        }
+
+        if (item) {
+          const furnitureKey = getFurnitureKeyByItemKey(item.key);
+          if (furnitureKey) {
+            const count = inventory[item.key] || 0;
+            btns.push({
+              icon: item.icon,
+              label: count > 0 ? `Place (${count})` : 'No furniture',
+              action: 'place_' + furnitureKey,
+              style: 'plant',
+              allowed: count > 0 && canPlaceFurnitureAt(reticle.col, reticle.row),
+            });
+          }
+          const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
+          if (decorKey) {
+            const def = DECORATIVE_FURNITURE_DEFS[decorKey];
+            const count = inventory[item.key] || 0;
+            const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
+            btns.push({
+              icon: item.icon,
+              label: count > 0 ? `Place (${count})` : 'No furniture',
+              action: 'place_decor_' + decorKey,
+              style: 'plant',
+              allowed: count > 0 && areaOk && canPlaceDecorativeFurnitureAt(reticle.col, reticle.row),
+            });
+          }
+        }
+
+        return btns;
+      }
+
+      // Track last state to avoid rebuilding the stack every frame
+      let _lastBarKey = '';
+
+      function refreshActionBar(stacks = getInventoryStackItems()) {
+        window.DevSpawner.refreshEditorButtonVisibility();
+        window.FurniturePlacer?.refreshVisibility();
+        const reticle = getReticleTile();
+        const tile    = getActiveTileAt(reticle.col, reticle.row);
+
+        // Was farm-only (world objects didn't exist elsewhere) — now
+        // unconditional so a lootable corpse's identity in any area (zones
+        // included) still invalidates the cache and rebuilds its button.
+        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
+        const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
+        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
+          : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
+        // Consumable counts must invalidate the cached action after the last item is used.
+        const selectedItem = getActiveInventoryItem(stacks);
+        const selectedItemKey = selectedItem?.key || '';
+        const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
+        const btns = computeActionButtons();
+        // Contextual held-item interactions always use the world popup list.
+        // Ordinary world targets use it once they expose more than one choice,
+        // establishing the same path for future actions such as Invite to Dance.
+        const isWorldInteraction = button => button?.contextualHeldItem
+          || button?.action === npcDialogueAction()
+          || button?.action === generalStoreAction()
+          || button?.action === carpenterAction()
+          || button?.action === 'use_spot'
+          || button?.action?.startsWith('obj_');
+        const interactionRoot = nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        window.WorldPopupText?.syncInteractionPrompts?.({
+          buttons: btns,
+          root: interactionRoot,
+          enabled: !menuOpen && !dialogueOpen && !paused,
+          desktop: isDesktop,
+          scene: getActiveScene(),
+          isWorldInteraction,
+        });
+        // Dynamic providers (including the asynchronously loaded consumable
+        // bridge) can change the resolved arch without changing tile/item state.
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
+        // window.Fishing?.state?.phase (not just .active) must be in this key:
+        // computeActionButtons() returns different button sets across the
+        // cast/waiting/bite/active/caught sequence (empty until 'bite', the
+        // fish_primary/fish_cancel pair from 'bite' onward), but that whole
+        // sequence usually doesn't touch anything else the key tracks (same
+        // tile, same tool, same reticle) — keying on just .active would've
+        // caught the very first transition into fishing but then never
+        // rebuilt again for the rest of the round, since .active stays true
+        // throughout. Phase changes every step, so it always forces a rebuild.
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
+        const needsRebuild = key !== _lastBarKey;
+        _lastBarKey = key;
+
+        // Update activeAction even without DOM rebuild
+        const first = btns.find(b => b.allowed) || btns[0];
+        if (first) activeAction = first.action;
+
+        if (!needsRebuild) return;
+
+        // Split tool actions from item-owned consume/plant/place/harvest actions.
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
+          || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
+        const toolBtns = btns.filter(b => !isItemButton(b));
+        const itemBtns = btns.filter(isItemButton);
+
+        const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
+
+        function applyAbt(elId, b, originalIdx) {
+          const el = document.getElementById(elId);
+          if (!el) return;
+          if (!b) { el.classList.add('abt-hidden'); return; }
+          el.classList.remove('abt-hidden');
+          el.classList.toggle('blocked', !b.allowed);
+          el.dataset.action = b.action;
+          const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
+            ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
+          const swigBadge = b.swigFraction
+            ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
+          el.innerHTML = keyBadge +
+            `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
+            `<span class="abt-label">${b.label}</span>`;
+          if (!el._abtDragInit) {
+            el._abtDragInit = true;
+            let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
+            let _drag = false, _rtimer = null, _socket = null;
+            let _chargeFiredOnPress = false;
+            let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
+            let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            const DRAG_THRESH = 10;
+            // Legacy behavior: holding+dragging an action button like a stick used to
+            // keep re-firing the action every 120ms for as long as it stayed pushed off
+            // center. Disabled per design (the single immediate fire-on-threshold-cross
+            // below still happens) — kept here, not deleted, in case it's wanted back.
+            const ABT_DRAG_REPEAT_FIRE = false;
+            const _stack = document.getElementById('actionStack');
+
+            function _abtFire() {
+              const act = el.dataset.action;
+              if (!act || el.classList.contains('abt-hidden')) return;
+              activeAction = act;
+              // Navigation/interaction actions always fire; tool actions respect swing cooldown.
+              // fish_primary/fish_cancel bypass it too — spearfishing has never
+              // used the swing-timer system (see fireFishingBridge's own note on
+              // this), so gating the arc button behind it here would just mean
+              // a stray leftover toolSwingT from whatever was equipped before
+              // switching to the harpoon could silently eat the tap. climb is the
+              // same story: it's pure traversal, not a tool swing, so a leftover
+              // toolSwingT from whatever was equipped before walking up to a
+              // cliff shouldn't be able to eat the tap either.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              if (isNavAction || toolSwingT <= 0) useActiveAction();
+            }
+
+            // Weapon tool-action buttons (cut/slash) route taps through the
+            // loadout's ability slots instead of firing the swing directly —
+            // every other button keeps using _abtFire() unchanged.
+            function _weaponSlotFor(act) {
+              if (activeTool !== 'weapon' || !window.Combat?.input) return null;
+              if (act === toolActions.weapon[0]) return 1;
+              if (act === toolActions.weapon[1]) return 2;
+              return null;
+            }
+            function _resolveFire() {
+              const slot = _weaponSlotFor(el.dataset.action);
+              if (slot) { window.Combat.input.fireTap(slot); return; }
+              _abtFire();
+            }
+
+            el.addEventListener('pointerdown', ev => {
+              if (_ptId !== null) return;
+              _ptId = ev.pointerId;
+              // See handleJoystickPointerDown's comment.
+              try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+              const rect = el.getBoundingClientRect();
+              _cx = rect.left + rect.width / 2;
+              _cy = rect.top + rect.height / 2;
+              _sockR = rect.width * 0.70;
+              _drag = false;
+              _socket = document.createElement('div');
+              _socket.className = 'abt-socket';
+              _socket.style.left   = _cx + 'px';
+              _socket.style.top    = _cy + 'px';
+              _socket.style.width  = (rect.width * 2.2) + 'px';
+              _socket.style.height = (rect.width * 2.2) + 'px';
+              document.body.appendChild(_socket);
+              el.style.transition = 'none';
+              ev.preventDefault();
+              // Hold-to-dig/fill must start on press (not release) so the charge
+              // can run for its full duration while the button stays held.
+              const act = el.dataset.action;
+              _flaskGesture = act === 'alchemy_flask_primary';
+              _flaskCanceled = false;
+              if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
+              if (act === 'ammo_select' || act === 'potion_select') {
+                _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
+                window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
+                _selectorArcOpen = true; // These actions have no tap behavior to preserve, so show their choices as soon as the held input begins.
+                if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
+                else window._desktopSelectionArc?.openPotions();
+              }
+              _chargeFiredOnPress = Boolean(act && !el.classList.contains('abt-hidden') && wouldStartCharge(activeTool, act));
+              if (_chargeFiredOnPress) {
+                activeAction = act;
+                actionHeldDown = true;
+                _abtFire();
+              } else {
+                actionHeldDown = true;
+                _pressSlot = _weaponSlotFor(act);
+                if (_pressSlot) { tryAutoEngageMeleeTarget(); window.Combat.input.pressStart(_pressSlot); }
+              }
+            });
+
+            el.addEventListener('pointermove', ev => {
+              if (ev.pointerId !== _ptId) return;
+              const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+              const dist = Math.hypot(dx, dy);
+              const r = Math.min(dist, _sockR);
+              const nx = dist > 0.5 ? dx / dist * r : 0;
+              const ny = dist > 0.5 ? dy / dist * r : 0;
+              el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              if (_flaskGesture && window.AlchemyFlasks?.aiming) {
+                window.AlchemyFlasks.setTargetFromVector(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
+                const cancelButton = [...document.querySelectorAll('[data-action="alchemy_flask_cancel"]')][0]; // Current Item Action 2 cancel region.
+                const cancelRect = cancelButton?.getBoundingClientRect(); // Used for continuous drag-over cancellation.
+                if (cancelRect && ev.clientX >= cancelRect.left && ev.clientX <= cancelRect.right && ev.clientY >= cancelRect.top && ev.clientY <= cancelRect.bottom) {
+                  cancelButton.classList.add('flask-cancel-hover');
+                  window.AlchemyFlasks.cancelAim();
+                  _flaskCanceled = true;
+                }
+                return;
+              }
+              if (_selectorKind) {
+                if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
+                return;
+              }
+              // With a weapon equipped, action buttons are tap/hold only — dragging
+              // must never act like a directional stick, otherwise a thumb wobbling
+              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
+              // fires a tap instead. Farm tools still use drag-to-aim as before.
+              if (activeTool === 'weapon') return;
+              if (dist > DRAG_THRESH) {
+                const ang = Math.atan2(dy, dx);
+                facingAngle = ang;
+                lastMoveAngle = ang;
+                player.angle = ang;
+                // Actually retarget the reticle (getReticleTile() reads
+                // targetAimAngle, not facingAngle/player.angle — see its
+                // declaration) so this drag genuinely aims farm-tool actions
+                // like axe chop / pick mine at a specific tile on mobile,
+                // instead of only rotating the player's visual facing while
+                // the reticle stays wherever the movement joystick last
+                // pointed it.
+                targetAimAngle = ang;
+                if (!_drag) {
+                  _drag = true;
+                  _stack.classList.add('drag-active');
+                  // Aiming takes over firing from here — disarm the tap/hold
+                  // timer so release doesn't also fire/end an ability.
+                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
+                  _resolveFire();
+                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                }
+              }
+            });
+
+            function _abtUp(ev) {
+              if (ev.pointerId !== _ptId) return;
+              _ptId = null;
+              actionHeldDown = false;
+              if (_selectorHoldTimer) { clearTimeout(_selectorHoldTimer); _selectorHoldTimer = null; }
+              if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
+              _stack.classList.remove('drag-active');
+              if (_socket) { _socket.remove(); _socket = null; }
+              el.style.transition = 'transform 0.14s ease-out';
+              el.style.transform  = 'translate(50%, 50%)';
+              setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
+              if (_selectorKind) {
+                if (_selectorArcOpen) {
+                  if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
+                  else window._desktopSelectionArc?.releaseSelection();
+                }
+              } else if (_flaskGesture) {
+                if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+              } else if (!_drag && !_chargeFiredOnPress) {
+                if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
+                else _abtFire();
+              }
+              _drag = false;
+              _chargeFiredOnPress = false;
+              _selectorArcOpen = false;
+              if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
+              _selectorKind = null;
+              document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
+              _flaskGesture = false;
+              _flaskCanceled = false;
+              _pressSlot = null;
+            }
+
+            el.addEventListener('pointerup', _abtUp);
+            el.addEventListener('pointercancel', _abtUp);
+          }
+        }
+
+        if (heldMode === 'item') {
+          // Item mode: all actions spread across all 5 arch positions
+          applyAbt('btnAction1',    btns[0], 0);
+          applyAbt('btnAction2',    btns[1], 1);
+          applyAbt('btnAction3',    btns[2], 2);
+          applyAbt('btnItemAction1', btns[3], 3);
+          applyAbt('btnItemAction2', btns[4], 4);
+        } else {
+          applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
+          applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
+          applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
+          applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
+          applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
+        }
+
+        if (isDesktop) refreshKeyHud(btns);
+      }
+
+      function refreshKeyHud(btns) {
+        if (!keyHudEl) return;
+        const item = getActiveInventoryItem();
+        const reticle = getReticleTile();
+        const tile = grid[reticle.row][reticle.col];
+        const obj  = getWorldObjectAt(reticle.col, reticle.row);
+
+        const parts = [];
+
+        // Tool
+        const _eqItem = equipmentSlots[activeTool];
+        const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
+        const _khFallback = ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
+        const toolInfo = [toolSelectIconHTML(_eqDef, _khFallback[0], '13px'), _eqDef?.label || _khFallback[1]];
+        parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
+        parts.push('<div class="kh-div"></div>');
+
+        // Action buttons → key prompts: first = [Space/E], second = [Q]
+        btns.forEach((b, idx) => {
+          const keyLabel = idx === 0 ? 'E' : idx === 1 ? 'Q' : `F${idx}`;
+          const blocked  = !b.allowed;
+          parts.push(
+            `<div class="kh-group">` +
+            `<span class="kh-key${blocked ? '" style="opacity:0.35' : ''}">${keyLabel}</span>` +
+            `<span class="kh-action ${b.style}${blocked ? ' blocked' : ''}">${b.icon} ${b.label}</span>` +
+            `</div>`
+          );
+        });
+
+        parts.push('<div class="kh-div"></div>');
+
+        // Item scroll
+        if (item) {
+          const count = inventory[item.key] || 0;
+          parts.push(
+            `<div class="kh-group">` +
+            `<span class="kh-key">,</span><span class="kh-label"> </span>` +
+            `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
+            `<span class="kh-label"> </span><span class="kh-key">.</span>` +
+            `</div>`
+          );
+        }
+
+        parts.push('<div class="kh-div"></div>');
+
+        // Tile info
+        const tileStyle = tileStyles[tile.type] || tileStyles.grass;
+        const waterPct  = Math.round((tile.water / MAX_WATER) * 100);
+        parts.push(
+          `<div class="kh-group">` +
+          `<span class="kh-label">${tileStyle.label}` +
+          (obj ? ` · ${obj.label}` : '') +
+          ` · 💧${waterPct}%</span>` +
+          `</div>`
+        );
+
+        parts.push('<div class="kh-div"></div>');
+        parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
+
+        keyHudEl.innerHTML = parts.join('');
+        if (item) {
+          applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key], item.key);
+        }
+      }
+
+      function contextualActionLabel(action, tile) {
+        if (action === 'dig')   return tile.type === TileType.TRENCH ? 'Redig' : 'Dig';
+        if (action === 'fill')  return 'Fill';
+        if (action === 'raise') return tile.type === TileType.RAISED ? 'Lower' : 'Raise';
+        if (action === 'till')  return tile.type === TileType.TILLED ? 'Untill' : 'Till';
+        if (action === 'smooth') return 'Smooth';
+        if (action === 'cut')   return 'Cut';
+        if (action === 'slash') return 'Slash 3×';
+        if (action === 'chop')  return 'Chop';
+        if (action === 'hack')  return 'Hack 3×';
+        if (action === 'mine')  return 'Mine';
+        if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
+        if (action === 'fish') return 'Fish';
+        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
+        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
+        if (action === 'potion_select') return 'Potions';
+        if (action.startsWith('place_')) return 'Place';
+        if (action.startsWith('obj_process_')) return 'Process';
+        return action;
+      }
+
+      // ── Item scroll ────────────────────────────────────────
+      let _lastItemScrollKey = null;
+      function refreshItemScroll(stacks = getInventoryStackItems()) {
+        const n = stacks.length;
+        const iBtnEl = itemBtnEl;
+        if (n === 0) {
+          if (_lastItemScrollKey === 'empty') return;
+          _lastItemScrollKey = 'empty';
+          itemIcon.textContent  = '□';
+          itemName.textContent  = 'EMPTY';
+          itemCount.textContent = '×0';
+          itemCount.className   = 'is-count empty';
+          if (iBtnEl) iBtnEl.textContent = '□';
+          const prevEl = isPrevIconEl;
+          const nextEl = isNextIconEl;
+          clearItemSpriteIcon(itemIcon);
+          clearItemSpriteIcon(iBtnEl);
+          if (prevEl) prevEl.textContent = '□';
+          if (nextEl) nextEl.textContent = '□';
+          clearItemSpriteIcon(prevEl);
+          clearItemSpriteIcon(nextEl);
+          return;
+        }
+        if (activeItemIndex >= n) activeItemIndex = 0;
+        if (activeItemIndex < 0) activeItemIndex = n - 1;
+        const curr = stacks[activeItemIndex];
+        const prev = stacks[(activeItemIndex - 1 + n) % n];
+        const next = stacks[(activeItemIndex + 1) % n];
+        const count = inventory[curr.key] || 0;
+        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
+        if (key === _lastItemScrollKey) return;
+        _lastItemScrollKey = key;
+        // Current item
+        itemIcon.textContent  = curr.icon;
+        itemName.textContent  = curr.label;
+        if (iBtnEl) iBtnEl.textContent = curr.icon;
+        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key], curr.key);
+        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key], curr.key);
+        itemCount.textContent = `×${count}`;
+        itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
+        // Peek icons (prev/next previews)
+        const prevEl = isPrevIconEl;
+        const nextEl = isNextIconEl;
+        if (prevEl) {
+          prevEl.textContent = prev.icon;
+          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
+        }
+        if (nextEl) {
+          nextEl.textContent = next.icon;
+          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key], next.key);
+        }
+      }
+      itemPrev.addEventListener('click', () => {
+        cycleActiveInventoryItem(-1);
+        refreshItemScroll();
+        refreshActionBar();
+      });
+      itemNext.addEventListener('click', () => {
+        cycleActiveInventoryItem(1);
+        refreshItemScroll();
+        refreshActionBar();
+      });
+
+      // Status-pill fields only actually change a few times a (real) second
+      // at most (season/weather/day/gold on world-state events, time once a
+      // simulated minute, tool/tile/water on reticle or equip changes) —
+      // updateHud runs every frame, so each field caches its last-written
+      // string/color and skips the DOM write (and, for spTile/spWater,
+      // the string-building) when nothing changed.
+      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
+
+      function updateHud() {
+        const season = window.CalendarSystem.currentSeason();
+        const clock  = formatClock(window.CalendarSystem.getHour());
+
+        // Season (changes slowly)
+        const seasonText = season.emoji + ' ' + season.name;
+        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
+
+        // Current weather + precipitation rate
+        let weatherText, precipText;
+        if (calendar.isRaining) {
+          const str = calendar.rainStrength;
+          if (str >= 3) {
+            weatherText = '⛈️ Storm';
+            precipText  = '⬇️ heavy';
+          } else {
+            weatherText = '🌧️ Rain';
+            // RAIN_RATE * str * ticks/hr ≈ mm equivalent display
+            const mmEq  = (RAIN_RATE * str * 51).toFixed(1); // ~51 ticks/hr at 0.7s/tick
+            precipText  = `⬇️ ${mmEq}mm/hr`;
+          }
+        } else {
+          weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
+          precipText  = '⬇️ none';
+        }
+        const weatherFull = weatherText + ' ' + precipText;
+        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
+
+        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
+        if (spDay) {
+          const dayText = window.CalendarSystem.formatCalendarDate();
+          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
+        }
+        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
+
+        // Reticle tile info
+        const reticle  = getReticleTile();
+        const tile     = getActiveTileAt(reticle.col, reticle.row);
+        const tStyle   = tileStyles[tile.type] || tileStyles.grass;
+        const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
+        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
+
+        const waterPct = Math.round((tile.water / MAX_WATER) * 100);
+        const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
+        const waterText = '💧 ' + depthStr;
+        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
+        const waterColor = waterPct > 80 ? '#4488ff'
+                          : waterPct > 40 ? '#6ec6f0'
+                          : waterPct > 10 ? '#aaddee' : '#888';
+        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
+        if (spGold) {
+          const goldText = '💰 ' + inventory.gold + 'g';
+          if (goldText !== _hud.gold) { _hud.gold = goldText; spGold.textContent = goldText; }
+        }
+
+        // Computed once and threaded through below instead of letting
+        // refreshItemScroll/refreshActionBar (and the desktop item pill)
+        // each re-filter-and-sort the whole inventory from scratch — this
+        // runs every frame, and inventory contents don't change nearly
+        // that often.
+        const stacks = getInventoryStackItems();
+
+        // Desktop: show active item in status pill (item scroll is hidden)
+        if (isDesktop) {
+          const item = getActiveInventoryItem(stacks);
+          if (spItem && item) {
+            spItem.style.display = '';
+            spItemDiv.style.display = '';
+            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
+          }
+        }
+
+        refreshItemScroll(stacks);
+        // refreshActionBar is called after actions and on tool/item change;
+        // the dirty-key check makes it cheap to call here too for reticle updates
+        refreshActionBar(stacks);
+        if (menuOpen) {
+          // Keep wallet display live while menu is open
+          const wd = document.getElementById('invWalletDisplay');
+          if (wd) wd.textContent = (inventory.gold || 0) + 'g';
+        }
+      }
+
+      function updateMenuContent() { /* replaced by buildInventoryGrid() */ }
+
+      function updateDebugPage() { /* debug panel removed from menu */ }
+
+      function toolEmoji(tool) {
+        const equipped = equipmentSlots[tool];
+        if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
+        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+      }
+
+      function nextRainText() {
+        if (!calendar.nextRainWindows.length) return 'No rain scheduled today';
+        const hour = window.CalendarSystem.getHour();
+        const next = calendar.nextRainWindows.find((window) => hour < window.end);
+        if (!next) return 'Rain has passed for today';
+        return `Next flow ${formatClock(next.start)}-${formatClock(next.end)}`;
+      }
+
+      function formatClock(hourValue) {
+        const hour = Math.floor(hourValue);
+        const minute = Math.floor((hourValue - hour) * 60 / 10) * 10;
+        const suffix = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = ((hour + 11) % 12) + 1;
+        return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+      }
+
+      function actionEmoji(action) {
+        return actionLabels[action]?.[0] || '❔';
+      }
+
+      function actionName(action) {
+        if (action.startsWith('place_')) return 'Place';
+        if (action.startsWith('obj_process_')) return 'Process';
+        return actionLabels[action]?.[1] || action;
+      }
+
+      function toolName(tool) {
+        const equipped = equipmentSlots[tool];
+        const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
+        if (def) return `${def.icon} ${def.label}`;
+        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
+      }
+
+      function seededRandom(seed) {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+      }
+
+      function handleJoystickPointerDown(event) {
+        input.joystickPointerId = event.pointerId;
+        // setPointerCapture can throw ("No active pointer with the given id
+        // is found") if the browser doesn't consider this pointer fully
+        // active yet — seen in practice on a touch that starts while the
+        // page/layout is still settling right after load. Uncaught, that
+        // exception used to abort this function before updateJoystick()
+        // ran, permanently stranding joystickPointerId pointed at a pointer
+        // that would never get a matching pointerup — every real touch
+        // after that got silently ignored (input.joystickPointerId !==
+        // event.pointerId in handleJoystickPointerMove/Up) until a full
+        // page reload reset the state. Without capture the joystick still
+        // works normally; the only loss is that a drag which leaves
+        // joystickZone's own DOM bounds stops being tracked.
+        try { joystickZone.setPointerCapture(event.pointerId); } catch (e) { /* see above — degrade gracefully, don't skip updateJoystick */ }
+        updateJoystick(event);
+      }
+
+      function handleJoystickPointerMove(event) {
+        if (input.joystickPointerId !== event.pointerId) return;
+        updateJoystick(event);
+      }
+
+      function handleJoystickPointerUp(event) {
+        if (input.joystickPointerId !== event.pointerId) return;
+        input.joystickPointerId = null;
+        input.x = 0;
+        input.y = 0;
+        joystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+      }
+
+      function updateJoystick(event) {
+        const rect = joystickZone.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const rawX = event.clientX - centerX;
+        const rawY = event.clientY - centerY;
+        const distance = Math.hypot(rawX, rawY);
+        const activeRadius = Math.max(32, Math.min(JOYSTICK_RADIUS, rect.width * 0.42)); // Used below to clamp knob travel for the current screen-sized joystick.
+        const angle = Math.atan2(rawY, rawX);
+        const clamped = Math.min(distance, activeRadius);
+        const rawMagnitude = clamp(clamped / activeRadius, 0, 1);
+        const remapped = rawMagnitude <= JOYSTICK_DEADZONE
+          ? 0
+          : Math.pow((rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE), JOYSTICK_RESPONSE);
+        const knobX = Math.cos(angle) * clamped;
+        const knobY = Math.sin(angle) * clamped;
+
+        input.x = remapped > 0 ? Math.cos(angle) * remapped : 0;
+        input.y = remapped > 0 ? Math.sin(angle) * remapped : 0;
+        joystickKnob.style.transform = `translate(-50%,-50%) translate(${knobX}px, ${knobY}px)`;
+      }
+
+      async function copyDebugLog() {
+        const reticle = getReticleTile();
+        const filter = window.__debugLogFilter || 'all';
+        const rawLog = window.__farmDebugLog || [];
+        const filteredLog = window.__debugLogMatchesFilter
+          ? rawLog.filter(e => window.__debugLogMatchesFilter(e, filter))
+          : rawLog;
+        const lines = [
+          'Tropical Trench Farm Debug Report',
+          ...(filter !== 'all' ? [`Debug filter: ${filter} (${filteredLog.length}/${rawLog.length} entries)`] : []),
+          `User agent: ${navigator.userAgent}`,
+          `Viewport: ${window.innerWidth}x${window.innerHeight}`,
+          `UI rect: ${getComputedStyle(document.documentElement).getPropertyValue('--gw').trim()} × ${getComputedStyle(document.documentElement).getPropertyValue('--gh').trim()} at ${getComputedStyle(document.documentElement).getPropertyValue('--ox').trim()}, ${getComputedStyle(document.documentElement).getPropertyValue('--oy').trim()}`,
+          `3D rect: ${Math.round(threeContainer.getBoundingClientRect().width)}x${Math.round(threeContainer.getBoundingClientRect().height)}`,
+          `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
+          `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
+          `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
+          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
+          `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
+          `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          '--- raw log ---',
+          ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
+        ];
+        const text = lines.join('\n');
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.cssText = 'position:fixed;left:-9999px';
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand('copy');
+            area.remove();
+          }
+          showToast('Debug log copied to clipboard.', true);
+          debugLog('debug log copied to clipboard');
+        } catch (error) {
+          showToast('Copy failed — log visible in Debug tab.', false);
+          debugLog(`copy debug log failed: ${error.message}`, 'error');
+        }
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function roundRect(context, x, y, width, height, radius) {
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.arcTo(x + width, y, x + width, y + height, radius);
+        context.arcTo(x + width, y + height, x, y + height, radius);
+        context.arcTo(x, y + height, x, y, radius);
+        context.arcTo(x, y, x + width, y, radius);
+        context.closePath();
+      }
+
+      function doReset() {
+        // Wipes the whole shared farm (day/weather/furniture/animals) and this
+        // character's own inventory back to day one — owner-only, same as the
+        // farm editor, so a farmhand can't nuke the owner's ongoing work.
+        if (!isFarmOwner()) {
+          showToast("Only the farm's owner can reset the farm.", false);
+          return;
+        }
+        calendar.day = 1;
+        calendar.time01 = 0.30;
+        calendar.weather = 'rain';
+        calendar.isRaining = true;
+        calendar.rainStrength = 2;
+        calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
+        calendar.lastRainDay = 1;
+        _saveWorldCalendar();
+        Object.keys(inventory).forEach(key => { delete inventory[key]; });
+        Object.assign(inventory, { ...STARTING_INVENTORY });
+        clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
+        window.FarmBuildings.clearAll(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
+        window.FarmAnimals.clearAnimalObjects();
+        _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
+        clearHostileObjects();
+        despawnCompanions();
+        worldObjects.forEach(o => o.reset && o.reset());
+        grid = createInitialGrid();
+        { const _sl = loadFarmLayout(); if (_sl) applyFarmLayoutToGrid(_sl); }
+        player.x = COLS * TILE * 0.5;
+        player.y = ROWS * TILE * 0.72;
+        player.angle = -Math.PI / 2;
+        player.vx = 0; player.vy = 0;
+        player.health = player.maxHealth;
+        player.stamina = player.maxStamina;
+        player.dodging = false; player.dodgeT = 0; player.dodgeCooldownT = 0; player.invulnUntil = 0;
+        facingAngle = -Math.PI / 2;
+        lastMoveAngle = -Math.PI / 2;
+        cardinalHoldTimer = 0;
+        activeItemIndex = 0;
+        // Reset equipment to defaults
+        packClothing = [];
+        Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
+        if (gearInventory?.tools?.hoe_nativeCopper)      equipmentSlots.hoe    = 'hoe_nativeCopper';
+        else if (gearInventory?.tools?.bronzehoe)        equipmentSlots.hoe    = 'bronzehoe';
+        if (gearInventory?.tools?.pickshovel_nativeCopper) equipmentSlots.shovel = 'pickshovel_nativeCopper';
+        else if (gearInventory?.tools?.pickshovel)       equipmentSlots.shovel = 'pickshovel';
+        if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
+        else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.tools?.crossbow)               equipmentSlots.ranged = 'crossbow';
+        if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
+        rebuildToolMeshes();
+        refreshWeaponSwitchBtn();
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        // Re-apply saved processing furniture from layout (crates keep their current position)
+        try {
+          const _rl = loadFarmLayout();
+          if (_rl) {
+            (_rl.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
+              if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
+                const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
+                if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
+              }
+            });
+            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
+              const def = DECORATIVE_FURNITURE_DEFS[key];
+              if (!def) return;
+              const decorArea = area || 'farm';
+              const tgt = decorArea === 'interior' ? interiorScene : scene;
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0);
+              const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
+              if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+                mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+                ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+                localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+              if (r && decorArea === 'farm' && def.sit) {
+                const size = decorativeFurnitureSize(key, rotYDeg || 0);
+                registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+              }
+              if (r) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
+            });
+            (_rl.buildings || []).forEach(saved => {
+              if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
+              farmBuildings.push(entry);
+              window.FarmBuildings.spawnEntry(entry);
+            });
+          }
+        } catch {}
+        lastActionMessage = 'Farm reset. Stormtide — dig trenches to route the water.';
+        showToast('Farm reset to Stormtide.', true);
+        debugLog('prototype reset');
+        refreshActionBar();
+        refreshItemScroll();
+        closeMenu();
+      }
+
+
+      if (menuResetBtn) menuResetBtn.addEventListener('click', doReset);
+      if (menuPauseBtn) menuPauseBtn.addEventListener('click', () => {
+        paused = !paused;
+        menuPauseBtn.textContent = paused ? '▶' : '⏸';
+        debugLog(paused ? 'paused' : 'resumed');
+      });
+
+      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) window.DialogueContent?.advanceNpcDialogue(); });
+      document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
+
+      joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
+      joystickZone.addEventListener('pointermove', handleJoystickPointerMove);
+      joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
+      joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
+
+      // Dodge button: a plain tap, dodging in the current facing direction.
+      // Always visible on touch (see #dodgeBtn in style.css); hidden only
+      // during fishing, same as the other arc controls.
+      dodgeBtn?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        performContextAction();
+      });
+
+      // Weapon quick-switch button: a plain tap toggles in/out of the
+      // weapon tool slot (see toggleQuickWeaponSwitch) — this is how you
+      // get *into* combat stance to begin with.
+      btnWeaponSwitch?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        toggleQuickWeaponSwitch();
+      });
+
+      // First outer-arch button, mirrored by the desktop Z shortcut.
+      btnUnequipHeld?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        putAwayHeldEquipment();
+      });
+
+      // Mobile mirror of the V key / D-pad down 'toggleMount' action —
+      // .active is kept in sync with rideState in window.Mounts.updateMountRide.
+      btnCallMount?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        window.Mounts?.toggleMount();
+      });
+
+      // Melee auto-target's sixth outer-ring button: a plain tap toggles —
+      // off turns it on and locks the closest hostile in range (no facing
+      // cone required, unlike the attack-triggered auto-engage), on turns
+      // it back off. No-ops if melee isn't out or (turning on) nothing is
+      // in range.
+      btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        if (!meleeWeaponOut()) return;
+        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; return; }
+        const target = findAutoTarget();
+        if (!target) return;
+        manualAutoTarget = target;
+        meleeAutoTargetOn = true;
+      });
+
+      // Swap Target button: its own dedicated drag-direction stick (separate
+      // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
+      // behavior disabled). Pushing it toward a hostile swaps auto-targeting
+      // onto it — fires once per drag, no repeat needed since it's a single
+      // selection, not a continuous action.
+      if (btnSwapTarget) {
+        let _stPtId = null, _stCx = 0, _stCy = 0, _stSockR = 0, _stDrag = false, _stSocket = null;
+        const ST_DRAG_THRESH = 10;
+        btnSwapTarget.addEventListener('pointerdown', ev => {
+          if (btnSwapTarget.classList.contains('abt-hidden')) return;
+          ev.preventDefault();
+          // See handleJoystickPointerDown's comment — guarded here too so a
+          // capture failure just loses this one touch instead of throwing.
+          try { btnSwapTarget.setPointerCapture?.(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+          _stPtId = ev.pointerId;
+          const rect = btnSwapTarget.getBoundingClientRect();
+          _stCx = rect.left + rect.width / 2;
+          _stCy = rect.top + rect.height / 2;
+          _stSockR = rect.width * 0.55;
+          _stDrag = false;
+          _stSocket = document.createElement('div');
+          _stSocket.className = 'abt-socket';
+          _stSocket.style.left = _stCx + 'px';
+          _stSocket.style.top = _stCy + 'px';
+          _stSocket.style.width = _stSocket.style.height = (rect.width * 2.2) + 'px';
+          document.body.appendChild(_stSocket);
+          btnSwapTarget.style.transition = 'none';
+        });
+        btnSwapTarget.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _stPtId) return;
+          const dx = ev.clientX - _stCx, dy = ev.clientY - _stCy;
+          const dist = Math.hypot(dx, dy);
+          const r = Math.min(dist, _stSockR);
+          const nx = dist > 0.5 ? dx / dist * r : 0;
+          const ny = dist > 0.5 ? dy / dist * r : 0;
+          btnSwapTarget.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+          if (!_stDrag && dist > ST_DRAG_THRESH) {
+            _stDrag = true;
+            swapAutoTarget(Math.atan2(dy, dx));
+          }
+        });
+        function _stUp(ev) {
+          if (ev.pointerId !== _stPtId) return;
+          _stPtId = null;
+          if (_stSocket) { _stSocket.remove(); _stSocket = null; }
+          btnSwapTarget.style.transition = 'transform 0.14s ease-out';
+          btnSwapTarget.style.transform = 'translate(50%, 50%)';
+          setTimeout(() => { btnSwapTarget.style.transition = ''; btnSwapTarget.style.transform = ''; }, 150);
+          if (!_stDrag) swapAutoTarget(player.angle);
+          _stDrag = false;
+        }
+        btnSwapTarget.addEventListener('pointerup', _stUp);
+        btnSwapTarget.addEventListener('pointercancel', _stUp);
+      }
+
+      const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      const desktopHoldKeys = {
+        q: { down: false, held: false, timer: null, arc: 'item' },
+        e: { down: false, held: false, timer: null, arc: 'tool' }
+      };
+      function openDesktopHoldArc(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return;
+        state.held = true;
+        if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
+        else window._desktopSelectionArc?.openTool();
+      }
+      function startDesktopHoldKey(key, event) {
+        const state = desktopHoldKeys[key];
+        if (!state || state.down || event.repeat) return;
+        state.down = true;
+        state.held = false;
+        state.timer = setTimeout(() => openDesktopHoldArc(key), desktopTapWindowMs());
+      }
+      function finishDesktopHoldKey(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return false;
+        state.down = false;
+        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+        const wasHeld = state.held;
+        state.held = false;
+        if (wasHeld) {
+          if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
+          else window._desktopSelectionArc?.close();
+        }
+        return wasHeld;
+      }
+
+      const INPUT_DEFAULTS = (() => {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.input || {};
+        const actions = Array.isArray(cfg.actions) ? cfg.actions : [];
+        return {
+          storageKey: cfg.storageKey || 'scratchbones.inputBindings.v1',
+          deadzone: Number(cfg.gamepadDeadzone) || 0.24,
+          axisPressThreshold: Number(cfg.axisPressThreshold) || 0.55,
+          actions,
+          desktop: Object.fromEntries(actions.map(a => [a.id, a.desktop]).filter(([, v]) => v)),
+          controller: Object.fromEntries(actions.map(a => [a.id, a.controller]).filter(([, v]) => v)),
+          modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
+        };
+      })();
+      const inputBindings = loadInputBindings();
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
+      const CONTROLLER_INPUT_OPTIONS = [
+        'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
+        'LeftTrigger', 'RightTrigger',
+        'Button8', 'Button9', 'Button10', 'Button11',
+        'Button12', 'Button13', 'Button14', 'Button15',
+        'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
+      ];
+
+      function loadInputBindings() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          return {
+            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
+            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
+            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
+          };
+        } catch (_err) {
+          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
+        }
+      }
+      function saveInputBindings() {
+        localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
+      }
+      function bindingConflict(device, button, actionId, modeShift = null) {
+        if (!button) return '';
+        if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
+        const bindings = inputBindings[device] || {};
+        for (const [otherAction, otherButton] of Object.entries(bindings)) {
+          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
+        }
+        if (!modeShift) return '';
+        for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
+          if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
+        }
+        return '';
+      }
+      function actionLabel(id) {
+        return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
+      }
+      function buttonLabel(code) {
+        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+      }
+
+      // ── Last-used input device tracking ─────────────────────────────
+      // Nothing else in the game tracks "what device is the player actually
+      // using right now" — isDesktop (see top of file) is a one-time
+      // pointer:fine media-query check, not reactive to switching between
+      // mouse, touch, and a plugged-in controller mid-session. Drives
+      // showActionPrompt below so its "press X" text matches whatever the
+      // player last actually pressed, not just their device class.
+      let lastInputDevice = isDesktop ? 'desktop' : 'touch';
+      window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') lastInputDevice = 'touch';
+        else if (e.pointerType === 'mouse' || e.pointerType === 'pen') lastInputDevice = 'desktop';
+      }, { capture: true, passive: true });
+      window.addEventListener('keydown', () => { lastInputDevice = 'desktop'; }, { capture: true });
+      // Controller presses are marked in pollControllerInput() itself (see
+      // below), since that's the only place an actual button-down edge is
+      // detected rather than just continuous stick state.
+
+      // ── Contextual bottom-of-screen action prompt ───────────────────
+      // Generic "press X to do Y" prompt shared across the game (fishing is
+      // the first caller, see beginFishingCast/renderFishingOverlay) —
+      // resolves its own key/button/icon label from lastInputDevice so
+      // callers only ever describe *what* the action does, never how to
+      // trigger it on any particular device.
+      let actionPromptEls = null;
+      function buildActionPromptDom() {
+        if (actionPromptEls) return;
+        const el = document.getElementById('actionPrompt');
+        if (!el) return;
+        el.innerHTML = `
+          <div class="ap-row">
+            <button class="ap-btn" id="apBtn"></button>
+            <button class="ap-cancel" id="apCancel"></button>
+          </div>
+          <div class="ap-status" id="apStatus"></div>
+          <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
+        actionPromptEls = {
+          el,
+          btn: document.getElementById('apBtn'),
+          cancel: document.getElementById('apCancel'),
+          status: document.getElementById('apStatus'),
+          panicWrap: document.getElementById('apPanicWrap'),
+          panicFill: document.getElementById('apPanicFill'),
+        };
+      }
+      // Real key/button label on desktop/controller, taken from the
+      // player's actual current bindings (not just the defaults) so a
+      // rebound key shows correctly here too. Touch has no key to name, so
+      // callers pass the same icon already shown for that action in the
+      // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
+      function actionPromptGlyph(actionId, touchIcon) {
+        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
+        if (lastInputDevice === 'touch') return touchIcon || '👆';
+        return buttonLabel(inputBindings.desktop[actionId]);
+      }
+      function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
+        buildActionPromptDom();
+        if (!actionPromptEls) return;
+        const glyph = actionPromptGlyph(actionId, touchIcon);
+        // innerHTML, not textContent: touchIcon may be a real <img> tag (see
+        // attackActionIconHTML) when the caller wants this to mirror the
+        // arc button's actual equipped-tool sprite instead of a plain emoji
+        // — callers only ever pass static developer strings here, never
+        // untrusted input, so this is safe.
+        actionPromptEls.btn.innerHTML = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
+        actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
+        if (cancelText && onCancel) {
+          actionPromptEls.cancel.textContent = cancelText;
+          actionPromptEls.cancel.style.display = '';
+          actionPromptEls.cancel.onpointerup = (e) => { e.stopPropagation(); onCancel(); };
+        } else {
+          actionPromptEls.cancel.style.display = 'none';
+          actionPromptEls.cancel.onpointerup = null;
+        }
+        if (statusText) {
+          actionPromptEls.status.textContent = statusText;
+          actionPromptEls.status.className = 'ap-status' + (statusType ? ' ' + statusType : '');
+          actionPromptEls.status.style.display = '';
+        } else {
+          actionPromptEls.status.style.display = 'none';
+        }
+        if (panicPercent != null) {
+          actionPromptEls.panicWrap.style.display = '';
+          actionPromptEls.panicFill.style.width = panicPercent + '%';
+        } else {
+          actionPromptEls.panicWrap.style.display = 'none';
+        }
+        actionPromptEls.el.classList.add('open');
+      }
+      function hideActionPrompt() {
+        if (!actionPromptEls) return;
+        actionPromptEls.el.classList.remove('open');
+        actionPromptEls.btn.onpointerup = null;
+        actionPromptEls.cancel.onpointerup = null;
+      }
+      function runActionButtonAtSlot(slotIndex) {
+        const btn = computeActionButtons()[slotIndex - 1];
+        if (!btn) return;
+        activeAction = btn.action;
+        actionHeldDown = slotIndex === 1;
+        useActiveAction();
+      }
+      function runInteractAction() {
+        // Interact is reserved for world targets such as doors, NPCs, and
+        // furniture. Tool swings and every held-item action use action slots.
+        const toolSet = new Set(Object.values(toolActions).flat());
+        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
+          || action === 'harvest'
+          || action.startsWith('alchemy_flask_')
+          || /^(?:plant_|place_|spawn_)/.test(action);
+        const btn = computeActionButtons().find(b => b.allowed !== false
+          && !toolSet.has(b.action) && !isItemAction(b.action));
+        if (!btn) return;
+        activeAction = btn.action;
+        useActiveAction();
+      }
+      function cycleActiveTool(delta) {
+        const idx = WHEEL_SLOTS.indexOf(activeTool);
+        const next = (idx + delta + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+        setActiveTool(WHEEL_SLOTS[next]);
+      }
+      // action1/action2 while wielding the weapon tool route through
+      // Combat.input's tap/hold state machine (see combat-input.js) — same
+      // as the desktop mouse-click handler just above this function already
+      // does for button 0/2 — instead of runActionButtonAtSlot's single
+      // immediate useActiveAction() call, which has no concept of "held" at
+      // all. Without this, any device whose action1/action2 goes through
+      // runInputAction (keyboard Space, every controller trigger) could
+      // never trigger a hold-slot ability: press *and* release both fired
+      // the same instant tap. Every other tool keeps its previous
+      // instant-fire behavior unchanged.
+      function weaponActionSlot(actionId) {
+        if (!(actionId === 'action1' || actionId === 'action2')) return 0;
+        if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
+        return actionId === 'action1' ? 1 : 2;
+      }
+      const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
+      const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
+      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
+      function potionSelectorAvailable(actionId) {
+        return actionId === 'action3' && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
+          && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
+      }
+      function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'toolSelect') {
+          if (phase === 'release') {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.down = false;
+            if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; }
+            if (toolSelectPress.held) window._desktopSelectionArc?.commit();
+            else window._desktopSelectionArc?.recallLastTool?.();
+            toolSelectPress.held = false;
+            return;
+          }
+          if (toolSelectPress.down) return;
+          toolSelectPress.down = true; toolSelectPress.held = false;
+          toolSelectPress.timer = setTimeout(() => {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.held = true;
+            window._desktopSelectionArc?.openTool?.();
+          }, desktopTapWindowMs());
+          return;
+        }
+        if (window._desktopSelectionArc?.toolMenuOpen?.()) {
+          const isToolBrowseAction = ['action1', 'action2', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Keyboard browsing mirrors controller stick selection while Tool Select is held.
+          if (isToolBrowseAction && phase === 'press') {
+            if (actionId === 'action1') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollTool(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isToolBrowseAction) return;
+        }
+        if (potionSelectorAvailable(actionId) || (actionId === 'action3' && potionAction3Press.down)) {
+          if (phase === 'release') {
+            if (!potionAction3Press.down) return;
+            potionAction3Press.down = false;
+            if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
+            if (potionAction3Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
+            potionAction3Press.held = false;
+            return;
+          }
+          if (potionAction3Press.down) return;
+          potionAction3Press.down = true;
+          potionAction3Press.held = true; // Potion Select is exclusively a held selector; its root choices should be visible immediately.
+          window._desktopSelectionArc?.beginHeldSelection?.('potions');
+          window._desktopSelectionArc?.openPotions();
+          return;
+        }
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !(actionId === 'action2' && activeTool === 'ranged' && rangedAmmoAction2Press.down) && !(actionId === 'action3' && potionAction3Press.down)) {
+          const isSelectorAction = ['action1', 'action2', 'interact', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Common keyboard/controller selector vocabulary.
+          if (isSelectorAction && phase === 'press') {
+            if (actionId === 'action1' || actionId === 'interact') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollEntries(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isSelectorAction) return;
+        }
+        if (actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged') {
+          if (phase === 'release') {
+            if (!rangedAmmoAction2Press.down) return;
+            rangedAmmoAction2Press.down = false;
+            if (rangedAmmoAction2Press.timer) { clearTimeout(rangedAmmoAction2Press.timer); rangedAmmoAction2Press.timer = null; }
+            if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
+            rangedAmmoAction2Press.held = false;
+            return;
+          }
+          if (rangedAmmoAction2Press.down) return;
+          rangedAmmoAction2Press.down = true;
+          rangedAmmoAction2Press.held = true; // Ammo Select likewise has no competing tap action while ranged is drawn.
+          window._desktopSelectionArc?.beginHeldSelection?.('ammo');
+          window._desktopSelectionArc?.openAmmo();
+          return;
+        }
+        if (phase === 'release') {
+          if (actionId === 'action1') actionHeldDown = false;
+          const releaseSlot = weaponActionSlot(actionId);
+          if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
+          return;
+        }
+        if (window.Fishing?.state?.active) {
+          if (actionId === 'interact' || actionId === 'action1') window.Fishing?.primaryAction();
+          return;
+        }
+        if (menuOpen || farmEditMode) return;
+        if (actionId === 'interact') { runInteractAction(); return; }
+        const weaponSlot = weaponActionSlot(actionId);
+        if (weaponSlot) {
+          if (actionId === 'action1') actionHeldDown = true;
+          tryAutoEngageMeleeTarget();
+          window.Combat.input.pressStart(weaponSlot);
+          return;
+        }
+        const actionSlot = /^action(\d+)$/.exec(actionId);
+        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
+        if (actionId === 'dodge') { performContextAction(); return; }
+        if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
+        if (actionId === 'swapTarget') {
+          const aimAngle = controllerLookActive ? controllerLookAngle
+            : (isDesktop && mouseLookActive) ? mouseLookAngle
+            : facingAngle;
+          swapAutoTarget(aimAngle);
+          return;
+        }
+        // Right-stick tilt (controller only — desktop cycles via Shift+
+        // wheel instead) — a no-op unless melee auto-target is already on,
+        // per cycleMeleeAutoTarget's own gate.
+        if (actionId === 'meleeTargetPrev') { cycleMeleeAutoTarget(-1); return; }
+        if (actionId === 'meleeTargetNext') { cycleMeleeAutoTarget(1); return; }
+        if (actionId === 'cycleToolAction') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+        if (actionId === 'itemPrev' || actionId === 'itemNext') {
+          cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
+          refreshItemScroll(); refreshActionBar(); return;
+        }
+        if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
+        if (actionId === 'weaponSwitch') { toggleQuickWeaponSwitch(); return; }
+        const tool = { tool1: 'shovel', tool2: 'hoe', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
+        if (tool) setActiveTool(tool);
+      }
+      function getActionForButton(device, button, heldShift = null) {
+        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
+        const bindings = inputBindings[device] || {};
+        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+      }
+      function pollControllerInput() {
+        if (!gamepadState.focused) return;
+        const pads = navigator.getGamepads?.() || [];
+        const pad = Array.from(pads).find(Boolean);
+        if (!pad) {
+          // Only clear movement input on an actual gamepad disconnect, not every
+          // frame — otherwise this stomps the touch joystick (and keyboard) on
+          // any device with no gamepad, which is virtually all mobile devices.
+          if (gamepadState.hadPad) { input.x = 0; input.y = 0; }
+          gamepadState.hadPad = false;
+          return;
+        }
+        gamepadState.hadPad = true;
+        const dz = INPUT_DEFAULTS.deadzone;
+        const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
+        const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
+        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
+        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
+        input.x = ax; input.y = ay;
+        controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          controllerLookActive = false;
+          const now = performance.now();
+          if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
+            pollControllerInput._selectionArchMovedAt = now;
+            const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
+            window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+          }
+        }
+        if (window.AlchemyFlasks?.aiming) {
+          controllerLookActive = false;
+          window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
+        }
+        if (controllerLookActive) {
+          controllerLookAngle = Math.atan2(ry, rx);
+          targetAimAngle = controllerLookAngle;
+        }
+        if (rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
+            rangedAmmoAction2Press.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        if (potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - potionAction3Press.lastScrollAt >= 220) {
+            potionAction3Press.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        if (toolSelectPress.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - toolSelectPress.lastScrollAt >= 220) {
+            toolSelectPress.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        const down = new Set();
+        pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
+        if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
+        if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
+        const axisPress = INPUT_DEFAULTS.axisPressThreshold;
+        if (rx <= -axisPress) down.add('RightStickLeft');
+        if (rx >= axisPress) down.add('RightStickRight');
+        if (ry <= -axisPress) down.add('RightStickUp');
+        if (ry >= axisPress) down.add('RightStickDown');
+        // Right-stick click (Button11 — R3) toggles melee auto-target
+        // while a melee weapon is out, taking over from its default
+        // weaponSwitch binding for exactly that window (weaponSwitch still
+        // works normally the rest of the time, and via its other bindings/
+        // the action-bar button even then).
+        if (down.has('Button11') && meleeWeaponOut()) {
+          if (!gamepadState.previous.has('Button11')) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          down.delete('Button11');
+        }
+        const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
+        if (heldShift) controllerLookActive = false;
+        for (const button of down) {
+          if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
+          const actionId = getActionForButton('controller', button, heldShift);
+          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
+        }
+        for (const button of gamepadState.previous) {
+          if (down.has(button)) continue;
+          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
+          if (actionId) runInputAction(actionId, 'release');
+        }
+        gamepadState.previous = down;
+        gamepadState.activeShift = heldShift || null;
+      }
+      window.addEventListener('focus', () => { gamepadState.focused = true; });
+      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+
+      // Settings tab's input-binding rows now live in
+      // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
+      // init()'d here rather than down with the other window.<Namespace>
+      // modules, since (unlike them) this one is rendered once immediately
+      // at boot rather than lazily on first tab open.
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      window.InputSettingsPanel?.init({
+        INPUT_DEFAULTS,
+        inputBindings,
+        CONTROLLER_INPUT_OPTIONS,
+        buttonLabel,
+        bindingConflict,
+        saveInputBindings,
+      });
+      window.InputSettingsPanel.render();
+      window.MusicMinigame?.renderNoteKeySettings();
+      window.MusicMinigame?.renderPatternLoadoutSettings();
+      window.MusicMinigame?.renderFreeplayKeySettings();
+
+      // Desktop Shift's dual role: held + mouse movement rotates the camera
+      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
+      // clean TAP — pressed and released within the same tap window as
+      // every other tap/hold gesture here, with no mouse movement in
+      // between — toggles melee auto-target instead. _shiftDragged is set
+      // the instant any mousemove event fires while Shift is down
+      // (regardless of which branch handles it — shoulder-surf's own free
+      // mouselook included), so a hold-to-rotate never gets misread as a
+      // toggle on release.
+      let _shiftDownAt = null;
+      let _shiftDragged = false;
+      window.addEventListener('keydown', (event) => {
+        const key = event.key.toLowerCase();
+        if (window.Fishing?.state?.active) {
+          if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
+          const fishingBoundAction = getActionForButton('desktop', event.code);
+          if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
+            event.preventDefault();
+            window.Fishing?.primaryAction();
+          }
+          return;
+        }
+        if (key === 'escape') {
+          event.preventDefault();
+          // Normally unreachable — the overlay's iframe holds focus and
+          // handles Escape itself (see requestExitOrPause in
+          // lyre-performance.html, which asks js/music-minigame.js to
+          // close()) — but if focus ever lands back on the host page while
+          // the overlay is still open, this is the same fallback Fishing
+          // uses above rather than opening the menu underneath it.
+          if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; }
+          if (dialogueOpen) { closeNpcDialogue(); return; }
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
+        // Tab: same menu open/close as Escape, without Escape's browser side
+        // effect of exiting Fullscreen — added specifically so a player in
+        // fullscreen doesn't have to drop out of it just to reach the menu.
+        // Shift+Tab does the same (no direction to pick between for a plain
+        // open/close toggle); item-cycling moved to [ / ] below to free up
+        // both bindings. Skipped during dialogue/the music minigame, same
+        // as Escape, so the menu can't pop open over either overlay.
+        if (key === 'tab') {
+          event.preventDefault();
+          if (window.MusicMinigame?.state?.active || dialogueOpen) return;
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
+        // M: wilderness map — closes if already open on the map tab (mirrors
+        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
+        if (key === 'm') {
+          event.preventDefault();
+          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
+          if (menuOpen && onMapTab) closeMenu();
+          else openMenu('map');
+          return;
+        }
+        if (menuOpen) return;
+        if (key === 'z') {
+          event.preventDefault();
+          if (!event.repeat) putAwayHeldEquipment();
+          return;
+        }
+        const boundDesktopAction = getActionForButton('desktop', event.code);
+        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+          event.preventDefault();
+          if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          return;
+        }
+        if (key === 'shift') {
+          if (!event.repeat) { _shiftDownAt = performance.now(); _shiftDragged = false; }
+          return;
+        }
+        if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
+          event.preventDefault(); input.keys.add(key);
+        }
+
+        if (key === 'e') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+        }
+        if (key === 'q') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('q', event); return; }
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+
+        // Legacy unbound primary keys. Configured action bindings return above;
+        // desktop E is handled as Interact on keyup after its tool-wheel hold.
+        if (key === ' ' || key === 'enter' || key === 'e') {
+          event.preventDefault();
+          if (!event.repeat) {
+            actionHeldDown = true;
+            useActiveAction();
+          }
+          return;
+        }
+
+        if (key === '1') setActiveTool('shovel');
+        if (key === '2') setActiveTool('hoe');
+        if (key === '3') setActiveTool('weapon');
+        if (key === '4') setActiveTool('axe');
+        if (key === '5') setActiveTool('pick');
+        if (key === '6') setActiveTool('harpoon');
+
+        // Item scroll: , / . or [ / ] — Tab/Shift+Tab moved to opening the
+        // menu (see the keydown handler above) so both are free here.
+        if (key === ',' || key === '[') {
+          cycleActiveInventoryItem(-1);
+          refreshItemScroll(); refreshActionBar();
+        }
+        if (key === '.' || key === ']') {
+          event.preventDefault();
+          cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
+          refreshItemScroll(); refreshActionBar();
+        }
+
+        // X: context action — climbs/cliff-dives a wall in the current
+        // facing direction if one's there, otherwise dodges with i-frames
+        if (key === 'x') {
+          event.preventDefault();
+          performContextAction();
+          return;
+        }
+
+        // B: toggle debug leg-bone visualization (hip/thigh/calf/knee
+        // guides, same colored capsules the furniture-avatar-author tool
+        // draws over its own seated preview) for every visible avatar's leg
+        // rig — dev/diagnostic aid, not a player-facing mechanic.
+        if (key === 'b') {
+          event.preventDefault();
+          const next = !window.ProceduralLegAnimation?.showBones;
+          window.ProceduralLegAnimation?.setShowBones(next);
+          showToast(next ? 'Leg bones: shown' : 'Leg bones: hidden', true, false);
+          return;
+        }
+
+        // R: cycle active tool's action mode (equivalent to Q on mobile)
+        if (key === 'r') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+      });
+
+      window.addEventListener('keyup', (event) => {
+        const key = event.key.toLowerCase();
+        input.keys.delete(key);
+        // Mirrors the keydown handler's early return: without this, releasing
+        // the interact key (E) after fishingPrimaryAction() already fired on
+        // keydown fell through to the 'e' handling below, which calls
+        // useActiveAction() — re-triggering beginFishingCast() and clobbering
+        // the ring minigame that press had just opened.
+        if (window.Fishing?.state?.active) return;
+        // Symmetric release for whatever keydown dispatched as a 'press' —
+        // same binding lookup/exclusion as keydown above, so a held weapon
+        // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
+        // instead of only ever firing as an instant tap.
+        const boundDesktopActionUp = getActionForButton('desktop', event.code);
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+          runInputAction(boundDesktopActionUp, 'release');
+        }
+        if (key === 'shift') {
+          const heldMs = performance.now() - (_shiftDownAt ?? 0);
+          if (!menuOpen && !_shiftDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          _shiftDownAt = null;
+          return;
+        }
+        if (key === 'e' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('e');
+          if (!wasHeld) runInteractAction();
+          return;
+        }
+        if (key === 'q' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('q');
+          if (!wasHeld) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+          return;
+        }
+        if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
+      });
+
+      // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
+      function handleGameWheel(e, heldOnly = false) {
+        if (menuOpen || farmEditMode) return false;
+        const dir = e.deltaY > 0 ? 1 : -1;
+        // Shift+wheel cycles melee auto-target's lock orbitally around the
+        // player instead of zooming — only once a lock is already active,
+        // same "nothing happens if it's off" rule the controller/mobile
+        // cycling inputs follow.
+        if (e.shiftKey && meleeAutoTargetOn && meleeWeaponOut()) {
+          e.preventDefault();
+          cycleMeleeAutoTarget(dir);
+          return true;
+        }
+        const heldEntrySelectorKind = window._desktopSelectionArc?.heldSelectionKind?.(); // Includes keyboard/controller and pointer-held action buttons.
+        if (isDesktop && (potionAction3Press.down || heldEntrySelectorKind === 'potions')) {
+          e.preventDefault();
+          if (potionAction3Press.down && !potionAction3Press.held) {
+            potionAction3Press.held = true;
+            if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
+            window._desktopSelectionArc?.openPotions();
+          } else if (!window._desktopSelectionArc?.entryMenuOpen?.()) {
+            window._desktopSelectionArc?.openPotions();
+          }
+          window._desktopSelectionArc?.scrollEntries(-dir);
+          return true;
+        }
+        if (isDesktop && heldEntrySelectorKind === 'ammo') {
+          e.preventDefault();
+          window._desktopSelectionArc?.openAmmo();
+          window._desktopSelectionArc?.scrollAmmo(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.q.down) {
+          e.preventDefault();
+          openDesktopHoldArc('q');
+          if (activeTool === 'ranged') window._desktopSelectionArc?.scrollAmmo(-dir);
+          else window._desktopSelectionArc?.scrollItem(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.e.down) {
+          e.preventDefault();
+          openDesktopHoldArc('e');
+          window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (heldOnly) return false;
+        e.preventDefault();
+        // The Director authors every camera beat of a cutscene (including
+        // Zoom cards, cutscenePreviewZoomPercent) — manual wheel-zoom would
+        // fight that authored framing, so it's a no-op (but still consumed,
+        // so the page itself doesn't scroll) while a preview is active.
+        if (cutscenePreviewActive) return true;
+        if (dialogueZoomActive()) {
+          const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
+          return true;
+        }
+        const cfg = desktopControlsConfig();
+        const step = Number.isFinite(Number(cfg.wheelZoomStep)) ? Number(cfg.wheelZoomStep) : 0.05;
+        setCameraZoomScale(s_zoomScale + (-dir * step));
+        return true;
+      }
+      window.addEventListener('wheel', (e) => { if (handleGameWheel(e, true)) e.stopPropagation(); }, { passive: false, capture: true });
+      threeContainer.addEventListener('wheel', (e) => { handleGameWheel(e, false); }, { passive: false });
+
+      function updateDialoguePinchDistance() {
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) { dialoguePinchDistance = null; return; }
+        dialoguePinchDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      }
+
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch') return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        updateDialoguePinchDistance();
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch' || !dialogueZoomPointers.has(e.pointerId)) return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) return;
+        const nextDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        if (dialoguePinchDistance && nextDistance > 0) {
+          const sensitivity = dialogueZoomConfig().pinchSensitivity ?? 1;
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + ((nextDistance / dialoguePinchDistance) - 1) * sensitivity * 100);
+        }
+        dialoguePinchDistance = nextDistance;
+        e.preventDefault();
+      }, { passive: false });
+      function clearDialogueZoomPointer(e) {
+        dialogueZoomPointers.delete(e.pointerId);
+        updateDialoguePinchDistance();
+      }
+      window.addEventListener('pointerup', clearDialogueZoomPointer);
+      window.addEventListener('pointercancel', clearDialogueZoomPointer);
+
+      // ── Camera look: a floating joystick that materializes under the
+      // thumb on a right-half touch (mobile), Shift+mouse movement on
+      // desktop. The mobile half used to be a raw delta-drag (camera offset
+      // tracked 1:1 with however far the finger had traveled from its start
+      // point); it's a rate-control stick now instead — hold the knob off
+      // center and the camera keeps turning, same paradigm as the movement
+      // joystick's own analog stick, and the genre-standard "look stick"
+      // behavior on mobile (materialize-under-thumb dynamic joysticks, the
+      // way most twin-stick mobile games handle look input).
+      let cameraDragPointerId = null;
+      let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
+      let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
+      let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
+      function cameraDragAllowed() {
+        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+      }
+      // Every other camera mode nudges a small look-around offset on top of a
+      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
+      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
+      // players get genuine 360° horizontal orbit instead — see the 'seated'
+      // camera mode's freeRotate flag in scratchbones-config.js.
+      function freeRotateCameraActive() {
+        return cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      // Wraps into (-180, 180] instead of clamping, so repeated drag input
+      // keeps spinning all the way around rather than pinning at an edge.
+      function wrapAzimuthDeg(deg) {
+        let d = deg % 360;
+        if (d > 180) d -= 360;
+        if (d <= -180) d += 360;
+        return d;
+      }
+      // Right half only — the left half is the movement joystick's territory
+      // (see #joystickZone, bottom-left) and this keeps the two thumbs from
+      // ever fighting over the same touch. A touch that lands on an existing
+      // button never reaches here at all: buttons are separate overlaid
+      // elements that catch their own pointerdown before it could bubble to
+      // #threeContainer, so nothing extra is needed to exclude them.
+      function cameraDragRequested(e) {
+        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+      }
+      function hideCameraJoystick() {
+        cameraJoystickZone.style.display = 'none';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
+      }
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
+        cameraDragPointerId = e.pointerId;
+        cameraJoystickOriginX = e.clientX;
+        cameraJoystickOriginY = e.clientY;
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
+        cameraJoystickZone.style.left = e.clientX + 'px';
+        cameraJoystickZone.style.top = e.clientY + 'px';
+        cameraJoystickZone.style.display = 'block';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+        // Can throw ("No active pointer with the given id is found") for a
+        // touch that starts before the browser considers the pointer fully
+        // active — e.g. right as the page/layout is still settling after
+        // load. Uncaught, that would leave cameraDragPointerId permanently
+        // stuck on a pointer that will never get a matching pointerup (see
+        // the identical fix/comment on handleJoystickPointerDown), silently
+        // dropping every real camera-look drag afterward until a reload.
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (err) { /* see above — degrade gracefully */ }
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        // Base stays put where the thumb first touched down — only the knob
+        // (and the resulting turn rate) tracks the finger from there, same
+        // clamp/deadzone/response-curve shape as updateJoystick() below.
+        const rawX = e.clientX - cameraJoystickOriginX;
+        const rawY = e.clientY - cameraJoystickOriginY;
+        const distance = Math.hypot(rawX, rawY);
+        const angle = Math.atan2(rawY, rawX);
+        const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
+        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
+          ? 0
+          : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
+        cameraJoystickX = remapped > 0 ? Math.cos(angle) * remapped : 0;
+        cameraJoystickY = remapped > 0 ? Math.sin(angle) * remapped : 0;
+        cameraJoystickKnob.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`;
+      });
+      function clearCameraDragPointer(e) {
+        if (e.pointerId !== cameraDragPointerId) return;
+        cameraDragPointerId = null;
+        hideCameraJoystick();
+      }
+      window.addEventListener('pointerup', clearCameraDragPointer);
+      window.addEventListener('pointercancel', clearCameraDragPointer);
+
+      // Left click = tool action 1 (tap/hold), right click = tool action 2
+      // (tap/hold) when wielding the weapon tool — routed through
+      // Combat.input so the loadout's 4 ability slots can claim them.
+      // Every other tool keeps its previous click behavior unchanged: left
+      // click = primary action, right click = secondary action.
+      if (isDesktop) {
+        threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+        threeContainer.addEventListener('pointerdown', (e) => {
+          if (menuOpen || farmEditMode || e.shiftKey) return;
+          if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+            tryAutoEngageMeleeTarget();
+            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
+            else if (e.button === 2) { window.Combat.input.pressStart(2); }
+            return;
+          }
+          if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
+          if (e.button === 0) {
+            actionHeldDown = true;
+            useActiveAction();
+          } else if (e.button === 2) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+        });
+      }
+      window.addEventListener('pointerup', (e) => {
+        if (e.pointerType !== 'mouse') return;
+        if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
+          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
+          return;
+        }
+        if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
+        if (e.button === 0) actionHeldDown = false;
+      });
+
+      // Mouse-look: raycast cursor onto ground plane to get world position
+      if (isDesktop) {
+        threeContainer.addEventListener('mousemove', (e) => {
+          if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
+          if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
+          if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
+          // While the Pixel Probe is armed, mouse movement should only ever
+          // move the cursor toward the target pixel — not rotate the camera
+          // (Shift+drag, below) or spin the character's facing via mouse-
+          // look (which drags a glued shoulder pet along with it), either of
+          // which would shift the very thing being aimed at mid-approach.
+          if (window.PixelProbe?.armed) return;
+          // Shoulder-surf gets mouse-look "for free" here: plain mouse
+          // movement drives the camera exactly like Shift+drag does
+          // everywhere else, no modifier key needed, and freeRotateCameraActive()
+          // (true for shoulder-surf's config, same as 'seated') already makes
+          // this wrap into a full 360° orbit instead of the usual ±45° peek
+          // clamp. Falls through to the raycast-based facing/aim below
+          // otherwise, same as it always has.
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
+            const cfg = desktopControlsConfig();
+            const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+            const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
+              : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+            updateCameraPosition();
+            return;
+          }
+
+          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
+          const rect = threeContainer.getBoundingClientRect();
+          _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
+          _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
+          _raycaster.setFromCamera(_mouseNDC, camera);
+          // THREE.Plane's constant is -distance-from-origin along its normal —
+          // for the (0,1,0) normal here that's simply -groundY, so the plane
+          // passes through the player's actual current height (elevTier-aware
+          // via _playerGroundY) instead of always sitting at world Y=0.
+          _groundPlane.constant = -_playerGroundY();
+          if (_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) {
+            if (window.AlchemyFlasks?.aiming) window.AlchemyFlasks.setTarget(_mouseWorld.x * TILE, _mouseWorld.z * TILE); // Mouse ground-target cursor.
+            const dx = _mouseWorld.x - player.x / TILE;
+            const dz = _mouseWorld.z - player.y / TILE;
+            if (Math.hypot(dx, dz) > 0.3) {
+              // atan2 in Three.js XZ: angle from +X axis, but game uses -Z=north
+              mouseLookAngle = Math.atan2(dz, dx);
+              targetAimAngle = mouseLookAngle;
+              mouseLookActive = true;
+              lastMouseMoveTime = performance.now();
+            }
+          }
+        });
+      }
+      // ── Furniture placer pointer handler ───────────────────────────
+      // Click-to-place, same interaction model as the farm editor's own
+      // brush below (tap a tile, it applies immediately) rather than the
+      // hotbar's "equip item, aim reticle, interact" flow — checked first
+      // so an armed furniture placement always wins over the (dev-mode-
+      // only, so rarely simultaneously active) farm editor brush.
+      function furniturePlacementPointerArmed() {
+        return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
+          && (currentArea === 'farm' || currentArea === 'interior');
+      }
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!furniturePlacementPointerArmed()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        furniturePlacementPointerId = e.pointerId;
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (_err) { /* preview still follows without capture */ }
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!furniturePlacementPointerArmed()) return;
+        if (e.pointerType !== 'mouse' && e.pointerId !== furniturePlacementPointerId) return;
+        e.preventDefault();
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      function commitFurniturePlacementPointer(e) {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        if (!furniturePlacementPointerArmed() || !furniturePlacementGhost) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const { col, row } = furniturePlacementGhost;
+        if (furnitureMoveArmedId) {
+          const result = processingFurnitureById(furnitureMoveArmedId)
+            ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
+            : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+          showToast(result.message, result.ok);
+          if (result.ok) furnitureMoveArmedId = null;
+        } else {
+          const itemKey = furniturePlacementArmedKey;
+          const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
+          const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
+          const result = decorKey
+            ? placeDecorativeFurniture(col, row, decorKey)
+            : processingKey
+              ? placeProcessingFurniture(col, row, processingKey)
+              : { ok: false, message: 'Furniture not found.' };
+          showToast(result.message, result.ok);
+          window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
+          if (result.ok && processingKey) {
+            refreshItemScroll();
+            saveFarmLayout();
+            saveMemberWorldData();
+          }
+          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
+        }
+        clearFurniturePlacementGhost();
+        window.FurniturePlacer?.render();
+      }
+      window.addEventListener('pointerup', commitFurniturePlacementPointer, { capture: true });
+      window.addEventListener('pointercancel', (e) => {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        clearFurniturePlacementGhost();
+      }, { capture: true });
+
+      // ── Farm editor pointer handlers ──────────────────────────────
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm') return;
+        e.stopPropagation();
+        _editorPainting = true;
+        const t = _screenToFarmTile(e.clientX, e.clientY);
+        if (t) applyFarmEditBrush(t.col, t.row);
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
+        e.stopPropagation();
+        const t = _screenToFarmTile(e.clientX, e.clientY);
+        if (t) applyFarmEditBrush(t.col, t.row);
+      });
+      window.addEventListener('pointerup', () => { _editorPainting = false; });
+
+      // Expose farm editor to the HTML panel buttons
+      window._farmEditor = {
+        toggle: toggleFarmEditMode,
+        setBrush: farmEditorSetBrush,
+        save: saveFarmLayout,
+        clearLayout: () => {
+          try { localStorage.removeItem(farmLayoutKey()); } catch {}
+          showToast('Saved layout cleared. Reset the farm to apply.', true);
+        },
+      };
+
+      // QA/devtools hook for the furniture placement + sitting systems,
+      // mirroring window._devSpawner/_farmEditor above — no in-game UI path
+      // to grant furniture items directly, so this exists for headless/
+      // console testing rather than as a player-facing cheat.
+      window.__hobunjiFurnitureDebug = {
+        give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        place: placeDecorativeFurniture,
+        sit: beginSitInteraction,
+        endSit: endSitInteraction,
+        get sitState() { return sitInteraction; },
+        get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
+        get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
+        foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
+        worldObjectAt: getWorldObjectAt,
+        farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
+        actionButtons: () => computeActionButtons(),
+        npcStation: (id) => npcStationsById.get(id),
+        npcStationCount: () => npcStationsById.size,
+        npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        npcGridTileAt: (area, c, r) => { const g = npcGridForArea(area); return g?.[r]?.[c] || null; },
+        farmGridTileAt: (c, r) => grid?.[r]?.[c] || null,
+        placeProcessing: placeProcessingFurniture,
+        moveProcessing: moveProcessingFurniture,
+        rotateProcessing: rotateProcessingFurniture,
+        removeProcessing: removeProcessingFurniture,
+        seatedNpcs: () => npcWalkers.filter(w => w._seatedStationKey).map(w => ({ id: w.rec?.id, stationId: w._seatedStationKey })),
+        tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
+        loadWorldLivestock: () => _loadWorldLivestock(),
+        saveWorldLivestock: (list) => _saveWorldLivestock(list),
+        assignVat: window.DewVats.assignToVat,
+        unassignVat: window.DewVats.unassignFromVat,
+        tickLivestock: window.FarmAnimals.tickResources,
+        getInventory: () => ({ ...inventory }),
+        loadBuildingScene: (mapId) => loadBuildingScene(mapId),
+        buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
+        buildingInteractableCount: () => _buildingInteractables.size,
+        renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
+        enterInterior: (pieceId) => enterInterior(pieceId),
+        exitInterior: () => exitInterior(),
+        getCurrentArea: () => currentArea,
+        interiorFurnitureObjects: () => interiorFurnitureObjects,
+        loadWorldStorage: () => _loadWorldStorage(),
+        setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
+        get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
+        get sitInteraction() { return sitInteraction; },
+        playerLegsRef: () => playerLegs,
+        get depthOutlinesSetting() { return s_depthOutlines; },
+        get outlinesSetting() { return s_outlines; },
+        get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerNeckJointRotX() { return playerNeckJoint ? playerNeckJoint.rotation.x : null; },
+        get playerMeshRotY() { return playerMesh.rotation.y; },
+        get playerMeshWorldY() { return playerMesh.position.y; },
+        get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        get cameraFacingAngleDeg() { return cameraFacingAngleRad() * 180 / Math.PI; },
+        get facingAngleDeg() { return facingAngle * 180 / Math.PI; },
+        get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
+        get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
+        get mouseLookActive() { return mouseLookActive; },
+        get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
+        get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
+        get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
+        get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
+        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
+        get meleeAutoTargetOn() { return meleeAutoTargetOn; },
+        setMeleeAutoTargetOn: (v) => { meleeAutoTargetOn = !!v; },
+        get meleeAutoTarget() { const t = findAutoTarget(); return t ? { x: t.x, y: t.y, id: t.id } : null; },
+        cycleMeleeAutoTargetDebug: (dir) => cycleMeleeAutoTarget(dir),
+        currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
+        enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        setOutlines: (v) => { s_outlines = !!v; },
+        playerNeckPivotInfo: () => {
+          let avatarGroup = null;
+          playerMesh.traverse(o => { if (o.name === 'player_avatar') avatarGroup = o; });
+          const rig = avatarGroup?.userData?.neckRig;
+          return rig ? {
+            available: rig.available,
+            neckLocal: rig.neckLocal,
+            pivotPx: rig.pivotPx,
+            modelHeight: avatarGroup.userData?.portraitModelHeight,
+            modelWidth: avatarGroup.userData?.portraitModelWidth,
+          } : null;
+        },
+        findDewPileTiles: () => {
+          const found = [];
+          for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
+          return found;
+        },
+        currentArea: () => currentArea,
+      };
+
+      window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
+      // Safety net for any inventory/pack change not already covered by an
+      // explicit saveMemberWorldData() call above. Also flushes the
+      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // own day rollovers, but this catches whatever time01 progress
+      // happened since the last one, so closing mid-afternoon doesn't roll
+      // back to that morning next session).
+      function flushSessionPersistence() {
+        try { saveFarmLayout(); saveMemberWorldData(); _saveWorldCalendar(); } catch {}
+      }
+      window.addEventListener('beforeunload', flushSessionPersistence);
+      window.addEventListener('pagehide', flushSessionPersistence);
+
+      window.DialogueContent?.init({
+        calendar,
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        getDialogueOpen: () => dialogueOpen,
+        getDialogueWalker: () => _dialogueWalker,
+        getWaresPools: () => WARES_POOLS,
+        currentWeekdayName: window.CalendarSystem.currentWeekdayName,
+        currentSeason: window.CalendarSystem.currentSeason,
+        fishingTimeOfDay: () => window.Fishing.timeOfDay(),
+        normalizeStationLabel,
+        canAccessContent,
+        setQuestStatus,
+        turnInTask: window.ProceduralTasks.turnInTask,
+        showToast,
+        openMenu,
+        closeNpcDialogue,
+        getCutscenePreviewActive: () => cutscenePreviewActive,
+        getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
+      });
+
+      window.PixelProbe?.init({
+        renderer,
+        camera,
+        playerMesh,
+        toolHolder,
+        companionObjects,
+        npcWalkers,
+        player,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        getPlayerGroundY: _playerGroundY,
+        getPlayerLegs: () => playerLegs,
+        getPetLayeringPet: () => _petLayeringPet,
+        getPetLayeringActive: () => _petLayeringActive,
+        getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
+        getSitInteraction: () => sitInteraction,
+        getSeatedCameraDebug: () => _seatedCameraDebug,
+        getPaused: () => paused,
+        getHeldObjectDebug,
+        getItemSpriteIconDebug,
+        SHOULDER_PET_PLANE_RENDER_ORDER,
+        playerAttachmentAnchor,
+        creatureAttachmentAnchor,
+        openMenu,
+        closeMenu,
+        showToast,
+      });
+
+      window.Music?.init({
+        calendar,
+        player,
+        TILE,
+        clamp,
+        debugLog,
+        getCurrentArea: () => currentArea,
+        getPaused: () => paused,
+        getGameStarted: () => gameStarted,
+        getHour: window.CalendarSystem.getHour,
+        getTimeOfDay: () => window.Fishing?.timeOfDay?.(),
+        currentWeekdayName: window.CalendarSystem.currentWeekdayName,
+        currentSeason: window.CalendarSystem.currentSeason,
+        isPlayerInCombat,
+        MORNING_HOUR,
+        getWorkspaceMaps: () => _workspaceMaps,
+        _isZoneArea,
+        _isBuildingArea,
+        EXTERIOR_ZONES,
+      });
+
+      window.AudioSystem?.init({
+        TileType,
+        TILE,
+        MAX_WATER,
+        clamp,
+        player,
+        getCurrentArea: () => currentArea,
+        _isBuildingArea,
+        npcGridForArea,
+        isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),
+        markAudioUrlFailed: (...a) => window.Music?.markAudioUrlFailed(...a),
+        audioUrlFailed: (...a) => window.Music?.audioUrlFailed(...a),
+      });
+
+      window.Combat?.init({
+        player,
+        players,
+        TILE,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        // Named animal projectiles use the same live Three.js elevation as
+        // the player/creature renderers so Drenkirra's vertical spit aim is
+        // based on actual target height, not a flattened ground plane.
+        getActorWorldY: (actor) => {
+          if (actor === player) return playerMesh.position.y;
+          const avatarY = actor?.avatarRef?.group?.position?.y;
+          if (Number.isFinite(avatarY)) return avatarY;
+          if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y)) return activeSurfaceYAtWorld(actor.x / TILE, actor.y / TILE) + 0.4;
+          return 0.4;
+        },
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        inCone,
+        damageCreature,
+        damagePlayer,
+        applyKnockback,
+        weaponAbility,
+        combatConfig,
+        resolveWeaponHit,
+        clearVegetationInAttackCone,
+        findAutoTarget,
+        canPlayerOccupy,
+        canOccupyAt,
+        setCreatureFrame,
+        genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
+        showToast,
+        triggerWeaponSwingVisual,
+        triggerWeaponHoldVisual,
+        releaseWeaponSwingHold,
+        cancelWeaponSwingHold,
+        beginCombatLunge,
+        setCombatSwingCone,
+        spawnBurstEffect,
+        playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
+        playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
+        playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
+        playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
+        // Named animal attacks (e.g. Pounce) own the creature's position
+        // directly for their leap instead of going through moveCreatureToward
+        // — without this, that ground covered during the leap never ticked
+        // a footstep (see combat-animal-attacks.js's pounceUpdate).
+        tickCreatureFootsteps,
+        // Same idea as tickCreatureFootsteps but for the colored onion-ring
+        // lunge trail (see spawnLungeTrailStamp) — Pounce's leap passes its
+        // own dmgTag-derived afflictionBonuses since it has no upgrade tree
+        // to read from the way player attacks do.
+        tickCreatureLungeTrail,
+        // Gates every weapon tap/hold ability (see combat-input.js) — no
+        // attacking while swimming in a river/stream, player or creature.
+        isPlayerSwimming,
+        // Drives the loadout's Combo slot (tap1) — never player-chosen,
+        // always whichever combo matches the equipped weapon's own swing
+        // style (see combat-loadout.js's comboAbilityId()).
+        currentComboAbilityId,
+        // Picks which affliction-option flavor every weapon-tool ability
+        // offers (see combat-progression.js).
+        currentWeaponDamageType,
+        weaponDamageTypeForTool,
+        // Keys the loadout's per-weapon slot assignments (see
+        // combat-loadout.js).
+        currentWeaponKey,
+        currentWeaponLabel,
+        // Tool mastery ("trusty axe/shovel/pick/spear") gates which of a
+        // tool's own equipped abilities' 5 upgrade levels can be chosen;
+        // Motes of Prowess pay for actually making that choice — both see
+        // combat-progression.js.
+        toolMasteryLevel,
+        awardWeaponMasteryXp,
+        getMotesOfProwess,
+        spendMotesOfProwess,
+        awardMotesOfProwess,
+        // Gates the loadout page's dev-only "+1 Mote" test button (see
+        // combat-loadout-ui.js) — mirrors the same s_devMode toggle the
+        // gear-tool item panel's "+1 Mastery" button uses.
+        isDevMode: () => s_devMode,
+        // Fires the weapon tool's plain cut/slash swing exactly as it
+        // behaved before the loadout system existed — the fallback
+        // combat-input.js uses for a tap slot until an ability module
+        // claims it.
+        fireLegacyWeaponAction: (slotIndex) => {
+          if (activeTool !== 'weapon') return;
+          activeAction = toolActions.weapon[slotIndex - 1];
+          useActiveAction();
+        },
+      });
+
+      window.RangedWeapons?.init({
+        player,
+        playerRadius: PLAYER_RADIUS,
+        TILE,
+        hostileObjects,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getPlayerAimAngle: currentPlayerAimAngle,
+        getPlayerAimPitch: currentPlayerAimPitch,
+        worldSurfaceY: (x, y) => {
+          const grid = getActiveGrid();
+          const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
+          const row = clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
+        },
+        canOccupyAt,
+        damageCreature,
+        damagePlayer,
+        angleDiff,
+        cameraRelativeCreaturePerps,
+        creaturePerpDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        triggerRangedWeaponVisual,
+        setRangedLoadedVisual,
+        refreshActionBar,
+        moveCreatureToward,
+        awardRangedMastery: (itemKey) => awardToolMasteryXp(itemKey, MASTERY_XP_PER_COMBAT_HIT),
+        toolMasteryLevel,
+        devBumpToolMasteryLevel,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        getEquippedRangedKey: () => equipmentSlots.ranged,
+        showToast,
+        random: () => window.GameRandom?.random?.() ?? Math.random(),
+        debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
+      });
+
+      window.Mounts?.init({
+        player,
+        scene,
+        companionObjects,
+        getStable: () => stable,
+        CREATURE_DB,
+        input,
+        btnCallMount,
+        TILE,
+        PLAYER_RADIUS,
+        FACING_LERP,
+        MOVE_SPEED,
+        ACCEL,
+        DECEL,
+        MOUSE_IDLE_MS,
+        isDesktop,
+        rnd,
+        clamp,
+        angleDiff,
+        canPlayerOccupy,
+        getAlchemySpeedMul: window.AlchemySystem.getSpeedMul,
+        getKeyboardVector,
+        makeCreatureEntity,
+        despawnCreature,
+        moveCreatureToward,
+        updateCreatureMesh,
+        updateCreatureAnimFrame,
+        tileSurfaceYInArea,
+        characterGroundShadowSurfaceOffset,
+        getActiveScene,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        _isZoneArea,
+        _isCavernBuildingArea,
+        showToast,
+        getCurrentArea: () => currentArea,
+        getActiveMountId: () => activeMountId,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        getFacingAngle: () => facingAngle,
+        setFacingAngle: (v) => { facingAngle = v; },
+        getMouseLookActive: () => mouseLookActive,
+        setMouseLookActive: (v) => { mouseLookActive = v; },
+        getControllerLookActive: () => controllerLookActive,
+        getControllerLookAngle: () => controllerLookAngle,
+        getLastMouseMoveTime: () => lastMouseMoveTime,
+        getMouseLookAngle: () => mouseLookAngle,
+        isShoulderSurfMode: () => activeCameraMode === SHOULDER_SURF_MODE,
+        cameraFacingAngleRad,
+      });
+
+      window.Fishing?.init({
+        clamp,
+        getActiveScene,
+        currentSeason: window.CalendarSystem.currentSeason,
+        getHour: window.CalendarSystem.getHour,
+        FISH_DEFS,
+        getReticleTile,
+        getActiveTileAt,
+        tileSurfaceYInArea,
+        playerMesh,
+        showToast,
+        refreshActionBar,
+        hideActionPrompt,
+        showActionPrompt,
+        attackActionIconHTML,
+        worldToOverlay,
+        inventory,
+        equipmentSlots,
+        rollItemStars,
+        starRatingText,
+        rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
+        awardToolUseMasteryXp,
+        getInventoryStackKeys,
+        getCurrentArea: () => currentArea,
+        getThreeRect: () => _threeRect,
+        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        setPlayerFacing: (v) => { playerFacing = v; },
+        setHeldMode: (v) => { heldMode = v; },
+        setActiveTool: (v) => { activeTool = v; },
+        setLastActionMessage: (v) => { lastActionMessage = v; },
+        getCameraMode: () => activeCameraMode,
+        setCameraMode: (v) => { activeCameraMode = v; },
+        getCameraTarget: () => activeCameraTarget,
+        setCameraTarget: (v) => { activeCameraTarget = v; },
+        setToolSwingDur: (v) => { toolSwingDur = v; },
+        setToolSwingT: (v) => { toolSwingT = v; },
+        setStrikeFired: (v) => { strikeFired = v; },
+        setFishThrowActive: (v) => { fishThrowActive = v; },
+      });
+
+      let _musicPrevCameraMode = null;
+      let _musicPrevCameraTarget = null;
+      // Resolves a random real-recording footstep URL for whatever surface
+      // this NPC is currently standing on — same surface resolution
+      // _tickFootsteps uses for their actual footfalls — turned into an
+      // absolute URL so it still loads correctly from inside the Lyre
+      // minigame's own iframe (a different base path under assets/minigames/).
+      // Used to give an ambient NPC performance's metronome a beat that
+      // matches the ground they're actually playing on instead of a
+      // generic click.
+      function npcFootstepSampleUrl(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId);
+        if (!walker || !window.AudioSystem) return null;
+        const wx = walker.root.position.x * TILE, wy = walker.root.position.z * TILE;
+        const tile = window.AudioSystem.footstepTileAt(walker.area, wx, wy, npcGridForArea(walker.area));
+        const surfaceKey = window.AudioSystem.footstepSurfaceKey(walker.area, tile?.type ?? null);
+        const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls;
+        if (!urls?.length) return null;
+        const url = urls[Math.floor(Math.random() * urls.length)];
+        try { return new URL(url, document.baseURI).href; } catch { return url; }
+      }
+
+      window.MusicMinigame?.init({
+        refreshActionBar,
+        getCurrentArea: () => currentArea,
+        listInstrumentPerformers,
+        getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        showToast,
+        // Frames the performance in third-person (see the "music" camera
+        // mode in scratchbones-config.js) instead of leaving the default
+        // camera in place — matches how fishing/dialogue each get their
+        // own framing. In backup mode the target sits at the midpoint
+        // between the player and whichever NPC they joined, so both stay
+        // in shot; in lead/solo mode it just follows the player as usual.
+        beginMusicCamera: (npcId) => {
+          _musicPrevCameraMode = activeCameraMode;
+          _musicPrevCameraTarget = activeCameraTarget;
+          activeCameraMode = 'music';
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.root) {
+            const midX = (player.x / TILE + walker.root.position.x) / 2;
+            const midZ = (player.y / TILE + walker.root.position.z) / 2;
+            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
+          } else {
+            activeCameraTarget = null;
+          }
+        },
+        endMusicCamera: () => {
+          activeCameraMode = _musicPrevCameraMode ?? 'default';
+          activeCameraTarget = _musicPrevCameraTarget ?? null;
+          _musicPrevCameraMode = null;
+          _musicPrevCameraTarget = null;
+        },
+        // Driven by js/music-minigame.js's 'sounded-note' relay from either
+        // the player's overlay iframe or an NPC's ambient performance iframe
+        // — see updateHeldItemHolder (player) and the station-tool block
+        // above (NPC) for what actually owns each twitch state.
+        triggerPlayerKurrayaTwitch: () => {
+          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        },
+        triggerNpcKurrayaTwitch: (npcId) => {
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);
+        },
+      });
+
+      window.BanditCombat?.init({
+        rnd,
+        clamp,
+        debugLog,
+        TILE,
+        PLAYER_RADIUS,
+        JUMP_BACK_DUR_S,
+        JUMP_BACK_SPEED,
+        HOSTILE_BITE_KNOCKBACK_PX_S,
+        TOOL_SHAPE_DEFS,
+        METAL_DEFS,
+        TOOL_ITEM_DEFS,
+        VERDIGRIS_METAL_KEYS,
+        craftedToolItemKey,
+        metalDmgMultiplier,
+        damagePlayer,
+        inCone,
+        sweptMove,
+        canOccupyAt,
+        angleDiff,
+        moveCreatureToward,
+        creatureCanEnterTile,
+        isCreatureSwimming,
+        tickCreatureLungeTrail,
+        tickCreatureFootsteps,
+        hostileObjects,
+        getActiveScene,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        tileSurfaceYInArea,
+        makeCharacterGroundShadow,
+        creatureGroundShadowRadii,
+        characterGroundShadowSurfaceOffset,
+        markPngPlane: _markPngPlane,
+        makeToolPlaneMesh,
+        STYLE_NEUTRAL_POSE,
+        qFac: _qFac,
+        qToolYaw: _qToolYaw,
+        qAnim: _qAnim,
+        qRoll: _qRoll,
+        tUp: _tUp,
+        xAxis: _xAxis,
+        zAxis: _zAxis,
+        getCurrentArea: () => currentArea,
+      });
+
+      window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+
+      window.CookingSystem?.init({
+        ITEM_DEFS,
+        inventoryItems,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        showToast,
+        saveMemberWorldData,
+        random: rnd,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
+          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+        },
+      });
+
+      window.SkillSystem?.init({
+        random: rnd,
+        getFoodEffectStacks: effect => window.CookingSystem?.getFoodEffectStacks(effect) || 0,
+        saveSkillProgress,
+        showToast,
+        debugLog,
+        isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
+      });
+
+      window.AlchemySystem?.init({
+        ITEM_DEFS,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        showToast,
+        saveMemberWorldData,
+        random: rnd,
+        getPlayer: () => player,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getInCombat: () => isPlayerInCombat(),
+      });
+
+      window.AlchemyFlasks?.init({
+        THREE,
+        TILE,
+        inventory,
+        clampInventoryStack,
+        getPlayer: () => player,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
+        getGroundY: () => _playerGroundY() + 0.025,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getHeldWorldPosition: () => {
+          const position = new THREE.Vector3(); // Used to release the rendered flask from the player's hand.
+          heldItemHolder.getWorldPosition(position);
+          return position;
+        },
+        getSplashEntities: (area, x, y, radiusPx) => {
+          const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
+          return entities.filter(entity => entity && entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx);
+        },
+        spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
+          const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.
+          const fx = { isCone: true, x: x / TILE, z: y / TILE, y: _playerGroundY() + 0.08, angle: 0, halfConeRad: Math.PI, rangeTiles: radiusTiles, age: 0, maxAge: 0.34, ok: true, color }; // Uses the same bounded radial-particle renderer as combat/Grehlr-style bursts.
+          fx.particles = weaponTrailParticleSeeds(fx);
+          weaponTrailEffects.push(fx);
+        },
+        startThrowWindup: () => { _heldThrowAimT = 1; },
+        confirmThrowAnimation: () => { _heldThrowAimT = 2; },
+        cancelThrowWindup: () => { _heldThrowAimT = 0; },
+        refreshItemScroll,
+        refreshActionBar,
+        saveMemberWorldData,
+      });
+
+      window.PerpRotation?.init({
+        angleDiff,
+      });
+
+      window.GeneralStore?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
+        calendar,
+        esc,
+        getPackClothing: () => packClothing,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
+        seededRandom,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
+      });
+
+      window.CarpenterShop?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getBarnTiers: () => BARN_TIERS,
+        getHousePieceDeeds: () => Object.fromEntries(Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem)),
+        FURNITURE_BLUEPRINT_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        esc,
+      });
+
+      // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
+      // declared here (game.js scope) rather than inside the deps object
+      // literal, since that object's own methods don't close over each
+      // other's sibling keys the way a plain local variable does.
+      let _furnitureLightScanCache = { scene: null, objs: null, lastScan: 0 };
+
+      window.WeatherFX?.init({
+        calendar,
+        seededRandom,
+        getGrid: () => grid,
+        ROWS, COLS,
+        TileType,
+        clamp,
+        showToast,
+        debugLog,
+        worldToOverlay,
+        camera,
+        lctx,
+        player,
+        npcWalkers,
+        getCurrentArea: () => currentArea,
+        TILE,
+        getLightningAlpha: () => lightningAlpha,
+        setLightningAlpha: (v) => { lightningAlpha = v; },
+        getSceneTransAlpha: () => sceneTransAlpha,
+        getThreeRect: () => _threeRect,
+        _isBuildingArea,
+        getActiveGrid, getActiveCols, getActiveRows,
+        getFlowingTrenchTiles: () => window.WaterSystem.getFlowingTrenchTiles(),
+        getTownFlowingTrenchTiles: () => window.WaterSystem.getTownFlowingTrenchTiles(),
+        threeContainer,
+        getCamX: () => camX,
+        getCamY: () => camY,
+        // Used by WeatherFX's player lantern mask to follow the avatar's
+        // smoothed world elevation instead of projecting from flat Y=0.
+        getPlayerWorldY: () => playerMesh.position.y,
+        // Lighting is sampled at 10 Hz, but a full scene.traverse() every one
+        // of those ticks still visits every node in the active scene (not
+        // just the lights) to find the handful tagged furnitureLightMask —
+        // real, avoidable cost in a decor-dense area (a lot of furniture/
+        // NPCs/terrain chunks, e.g. the inn) since it scales with total
+        // scene size, not light count. Re-scanning is still cheap and
+        // correctness matters more than shaving cost further, so this only
+        // throttles the traversal itself down to 2s (light *positions* are
+        // re-read fresh from world matrices every call regardless — only
+        // which objects count as sources is cached) rather than trying to
+        // track furniture add/remove sites to invalidate it precisely.
+        getFurnitureLightSources: () => {
+          const cache = _furnitureLightScanCache;
+          const scene = getActiveScene();
+          const now = performance.now();
+          if (cache.scene !== scene || now - cache.lastScan >= 2000) {
+            const objs = [];
+            scene?.traverse(obj => { if (obj.isPointLight && obj.userData?.furnitureLightMask) objs.push(obj); });
+            cache.scene = scene; cache.objs = objs; cache.lastScan = now;
+          }
+          const worldPosition = new THREE.Vector3();
+          return (cache.objs || []).map(obj => {
+            obj.getWorldPosition(worldPosition);
+            return {
+              x: worldPosition.x,
+              y: worldPosition.y,
+              z: worldPosition.z,
+              distance: obj.distance,
+              intensity: obj.intensity,
+              color: {
+                r: Math.round(obj.color.r * 255),
+                g: Math.round(obj.color.g * 255),
+                b: Math.round(obj.color.b * 255),
+              },
+            };
+          });
+        },
+        applySeasonalGrassAppearance,
+        RAIN_PITY_DAYS,
+      });
+
+      window.RainPlanes?.init({
+        THREE,
+        renderer,
+        camera,
+        calendar,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
+      });
+
+      window.CloudForestFog?.init({
+        THREE,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+      });
+
+      window.FarmPanel?.init({
+        LIVESTOCK_ITEM_KINDS,
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        refreshActionBar,
+        isFarmOwner,
+        getFarmName,
+        setFarmName,
+        getFarmOwnerName,
+        TileType,
+        COLS, ROWS,
+        getGrid: () => grid,
+        isHouseFootprint,
+        processingFurnitureObjects,
+        interiorFurnitureObjects,
+        DECORATIVE_FURNITURE_DEFS,
+        _loadWorldLivestock,
+        worldObjects,
+        animalObjects,
+        esc,
+        hasFarmPermission,
+        getBarnTiers: () => BARN_TIERS,
+        getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
+        getHousePieces: () => housePieces,
+        placeHouseDeed: (pieceKey, col, row) => window.HousePieces.placeDeed(pieceKey, col, row),
+        buildHousePiece: (id) => window.HousePieces.build(id),
+        demolishHousePiece: (id) => window.HousePieces.demolish(id),
+        moveHouse: (col, row) => window.HousePieces.moveHouse(col, row),
+        movePiece: (pieceId, col, row) => window.HousePieces.movePiece(pieceId, col, row),
+        canMovePieceTo: (pieceId, col, row) => window.HousePieces.canMovePieceTo(pieceId, col, row),
+        rotateHousePiece: (id) => window.HousePieces.rotatePiece(id),
+        rotateHouseRoof: (id) => window.HousePieces.rotateRoofAxis(id),
+        canPlaceHouseFeatureAt: (col, row) => window.HousePieces.canPlaceFeatureAt(col, row),
+        placeHouseFeature: (col, row, worldX, worldZ, type) => window.HousePieces.placeFeature(col, row, worldX, worldZ, type),
+        removeHouseFeatureAt: (col, row) => window.HousePieces.removeFeatureAt(col, row),
+        getHouseFixtureInventory: () => window.HousePieces.getFixtureInventory(),
+        housePieceLabel: (entry) => window.HousePieces.label(entry),
+        scene,
+        getFarmBuildings: () => farmBuildings,
+        PROCESSING_FURNITURE_DEFS,
+        AGING_METHODS,
+        calendar,
+        getStable: () => stable,
+        _loadWorldBreedingPairs,
+        saveMemberWorldData,
+        _saveWorldBreedingPairs,
+        _saveWorldLivestock,
+        companionAiTypeForKind,
+        _autoAssignStableRole,
+        saveStable,
+        _tothalWorldId,
+        defaultWorldMemberState,
+        spGold,
+        _loadWorldStorage,
+        _saveWorldStorage,
+        ITEM_DEFS,
+        dewItemKey,
+        clampInventoryStack,
+        getActiveMountId: () => activeMountId,
+        setActiveMountId: (v) => { activeMountId = v; },
+        getActiveShoulderPetId: () => activeShoulderPetId,
+        setActiveShoulderPetId: (v) => { activeShoulderPetId = v; },
+        getActiveCompanionId: () => activeCompanionId,
+        setActiveCompanionId: (v) => { activeCompanionId = v; },
+      });
+
+      window.TasksPanel?.init({
+        ITEM_DEFS,
+        esc,
+        WMAP_ZONE_LABELS,
+        getQuestProgress: () => questProgress,
+        inventory,
+      });
+
+      window.SupplyPage?.init({
+        inventory,
+        getSupplyBoxObject: () => supplyBoxObject,
+        SUPPLY_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getPendingOrders: () => pendingOrders,
+        getDeliveryLog: () => deliveryLog,
+      });
+
+      window.EquipmentPanel?.init({
+        inventory,
+        clampInventoryStack,
+        equipmentSlots,
+        saveEquipmentSlots,
+        TOOL_ITEM_DEFS,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        getPackClothing: () => packClothing,
+        setPackClothing: (arr) => { packClothing = arr; },
+        saveMemberWorldData,
+        showToast,
+        rebuildToolMeshes,
+        toolMeshMap,
+        toolHolder,
+        getActiveTool: () => activeTool,
+        refreshActionBar,
+        setActiveTool,
+        isDevMode: () => s_devMode,
+        toolMasteryLevel,
+        devBumpToolMasteryLevel,
+        metalToolImgSrc,
+        esc,
+        refreshPlayerAvatar,
+        buildInventoryGrid,
+        clearInventoryDetail,
+        clearInvSelection: () => {
+          invSelectedKey = null;
+          document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        },
+      });
+
+      window.WhistleEquip?.init({
+        setEquipmentSlot: window.EquipmentPanel.setEquipmentSlot,
+        getGearInventory: () => gearInventory,
+        CREATURE_DB,
+        equipmentSlots,
+      });
+
+      window.WildlifeDebugPanel?.init({
+        esc,
+        _zoneLayouts,
+        hostileObjects,
+      });
+
+      window.ShippingPanel?.init({
+        inventory,
+        ITEM_DEFS,
+        BASE_PRICES,
+        getShippingBoxObject: () => shippingBoxObject,
+        showToast,
+        hasFarmPermission,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+        refreshActionBar,
+        saveMemberWorldData,
+      });
+
+      window.CraftingPanel?.init({
+        inventory,
+        clampInventoryStack,
+        FURNITURE_BLUEPRINT_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        esc,
+      });
+
+      window.DevSpawner?.init({
+        getCurrentArea: () => currentArea,
+        setCurrentArea: (v) => { currentArea = v; },
+        getActiveScene,
+        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        _isBuildingArea,
+        setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
+        startSceneTransition,
+        player,
+        _snapCameraTarget,
+        refreshActionBar,
+        showToast,
+        closeMenu,
+        EXTERIOR_ZONES,
+        buildTownScene,
+        buildZoneScene,
+        COLS, ROWS, TILE,
+        CREATURE_DB,
+        esc,
+        clamp,
+        makeCreatureEntity,
+        hostileObjects, companionObjects,
+        damageCreature,
+        getActiveGrid,
+        tileSurfaceYInArea,
+        markOutline: _markOutline,
+        zoneScenes: _zoneScenes,
+        treeFadeActive: _treeFadeActive,
+        isFarmOwner,
+        getFarmEditMode: () => farmEditMode,
+        toggleFarmEditMode,
+        setDebugWeather: window.WeatherFX.setDebugWeather,
+        getDebugWeather: window.WeatherFX.getDebugWeather,
+        getRainPlaneSettings: window.RainPlanes.getSettings,
+        setRainPlaneSettings: window.RainPlanes.setSettings,
+        isDevMode: () => s_devMode,
+      });
+
+      window.FurniturePlacer?.init({
+        getCurrentArea: () => currentArea,
+        getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
+        inventory,
+        hasFarmPermission,
+        armFurniturePlacement,
+        getArmedFurniturePlacementKey,
+        armFurnitureMove,
+        getArmedFurnitureMoveId,
+        getPlacedFurniture: () => [
+          ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
+          ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
+        ],
+        removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
+        rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
+        showToast,
+        esc,
+        isPaused: () => paused,
+        isDevMode: () => s_devMode,
+      });
+
+      window.TownZoneBuildings?.init({
+        getTownZone: () => _townZone,
+        debugLog,
+        getTownScene: () => townScene,
+        getTownBuildingDefs: () => _townBuildingDefs,
+        getTownBuildingGroups: () => _townBuildingGroups,
+        setTownBuildingGroups: (v) => { _townBuildingGroups = v; },
+        getWorldTownTransitions: () => worldTownTransitions,
+        getTownGrid: () => townGrid,
+        houseWallBuilder,
+        INTERIOR_COLS,
+        INTERIOR_ROWS,
+        tileSurfaceY,
+        TileType,
+        zoneLayouts: _zoneLayouts,
+        zoneBuildingGroups: _zoneBuildingGroups,
+        zoneBuildingsGlbUpgradePending: _zoneBuildingsGlbUpgradePending,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        makeDecorativeFurnitureMesh,
+        PROCESSING_FURNITURE_DEFS,
+        buildFurnitureVisual,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+      });
+
+      window.FoliageFurnitureRuntime?.init({
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        sit: beginSitInteraction,
+        debugLog,
+      });
+
+      window.WildlifeSpawn?.init({
+        TILE,
+        TileType,
+        rnd,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        random: rnd,
+        bonusYieldChance: skill => window.SkillSystem?.bonusYieldChance?.(skill) || 0,
+        awardForagingXp: () => window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb'),
+        hostileObjects,
+        EXTERIOR_ZONES,
+        damageCreature,
+        HOSTILE_BITE_KNOCKBACK_PX_S,
+        zoneLayouts: _zoneLayouts,
+        makeCreatureEntity,
+        CREATURE_DB,
+        showToast,
+        buildingScenes: _buildingScenes,
+        denNests: _denNests,
+        getCutscenePreviewActive: () => cutscenePreviewActive,
+        buildZoneScene,
+        DEN_MOTHER_DEFS,
+        zoneScenes: _zoneScenes,
+        makeDecorativeFurnitureMesh,
+      });
+
+      window.CavernGenerator?.init({
+        EXTERIOR_ZONES,
+        DEN_MOTHER_DEFS,
+      });
+
+      window.ZonePlateauMesa?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        resolveTileMat, displaceZoneGeometry,
+      });
+
+      window.ZoneTerrainFeatures?.init({
+        TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
+        displaceZoneGeometry, resolveTileMat,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+        waterVertShader, waterFragShader,
+        buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
+      });
+
+      window.ZoneDenTotemFeatures?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, ROCK_MOUND_CELLS_PER_TILE,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+      });
+
+      window.ZoneGrassBillboards?.init({
+        TileType, PLATEAU_UNIT,
+        grassBladeGeo: _grassBladeGeo,
+        getGrassBillboardMat: () => grassBillboardMat,
+        getGrassEnabled: () => s_grass,
+        fillBillboardInstances: _fillBillboardInstances,
+        mbRng: _mbRng,
+        tileSurfaceY,
+      });
+
+      window.MetalCraftShop?.init({
+        inventory,
+        showToast,
+        clampInventoryStack,
+        buildInventoryGrid,
+        buildEquipmentSlots: window.EquipmentPanel.buildEquipmentSlots,
+        saveMemberWorldData,
+        esc,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        metalBarItemKey,
+        craftedToolItemKey,
+        toolPlating,
+        clearToolPlating,
+        setToolPlating,
+        toolReinforcementMetal,
+        setToolReinforcement,
+        toolEffectiveMetalKey,
+        toolVerdigrisFraction,
+        toolMasteryLevel,
+        refreshMetalToolWorldTexture,
+        METAL_DEFS,
+        TOOL_ITEM_DEFS,
+        VERDIGRIS_METAL_KEYS,
+        UNLOCKED_TOOL_SHAPES,
+        TOOL_SHAPE_DEFS,
+      });
+
+      window.WildernessMap?.init({
+        _zoneLayouts,
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        showToast,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        TILE,
+        npcWalkers,
+        WMAP_ZONE_LABELS,
+      });
+
+      window.ClimbSystem?.init({
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        facingCardinal,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        TILE,
+        isSolid,
+        tileSurfaceYInArea,
+        clamp,
+        getMountRideState: () => window.Mounts?.rideState ?? 'none',
+        showToast,
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+        // Raw movement-intent vector, read fresh each call rather than off
+        // player.inputX/Y — those are written later in updateMovement than
+        // the onBranch early-return that leads into updateBranchMovement,
+        // so they'd still hold last frame's value when read from there.
+        getMovementInput: () => {
+          const kb = getKeyboardVector();
+          return kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        },
+      });
+
+      window.BanditCombatLog?.init({
+        player,
+        companionObjects,
+        arenaSpawnedCreatures: window.DevSpawner.getArenaSpawnedCreatures(),
+        getCurrentArea: () => currentArea,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
+        TILE,
+        angleDiff,
+        showToast,
+      });
+
+      window.DebugHitboxes?.init({
+        getActiveTileAt,
+        tileSurfaceY,
+        worldToOverlay,
+        octx,
+        TILE,
+        player,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        getShowHitboxes: () => s_showHitboxes,
+        creatureHitboxHalfSizePx,
+        creatureAimColliderReachPx,
+        cameraRelativeCreaturePerps,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+      });
+
+      window.RelationshipsPanel?.init({
+        npcWalkers,
+        esc,
+      });
+
+      window.CalendarSystem?.init({
+        MORNING_HOUR,
+        NIGHT_HOUR,
+        calendar,
+        calToday,
+        calMonthTitle,
+        calPrevMonth,
+        calNextMonth,
+        calWeeks,
+      });
+
+      window.JubmirShop?.init({
+        tothalWorldId: _tothalWorldId,
+        getShopStock: () => _shopStock,
+        lootShopWorldState: _lootShopWorldState,
+        calendar,
+        inventory,
+        showToast,
+        esc,
+        buildInventoryGrid,
+        saveMemberWorldData,
+      });
+
+      window.DyeSystem?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+      });
+
+      window.ReagentPlants?.init({
+        calendar,
+        inventory,
+        debugLog,
+        refreshItemScroll,
+        tileSurfaceYInArea,
+        NORMAL_TOP,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneReagentObjects,
+        _zoneReagentMeshGroups,
+        _zoneReagentPersist,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+      });
+
+      window.DewVats?.init({
+        COLS,
+        ROWS,
+        TileType,
+        ITEM_DEFS,
+        inventory,
+        processingFurnitureObjects,
+        PROCESSING_FURNITURE_DEFS,
+        PROCESSING_SFX_KEY,
+        getGrid: () => grid,
+        rollItemStars,
+        starRatingText,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
+        getScene: getActiveScene,
+        getWorldObjectAt,
+        isHouseFootprint,
+        tileSurfaceY,
+        creaturePlaneGroundOffset,
+        nearestAngleAmong,
+        cameraRelativePerps,
+        perpClamp: window.PerpRotation.perpClamp,
+        angleDiff,
+        dewItemKey,
+        ensureProcessedItemDef,
+        getProcessingOutputs,
+        hasFarmPermission,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
+        rnd,
+      });
+
+      window.WildBerries?.init({
+        BERRY_COLORS,
+        ITEM_DEFS,
+        NORMAL_TOP,
+        cropData,
+        inventory,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneBerryMeshGroups,
+        _zoneBerryObjects,
+        _zoneBerryPersist,
+        _zoneReagentPersist,
+        calendar,
+        debugLog,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        refreshItemScroll,
+        tileSurfaceYInArea,
+      });
+
+      window.WildTreasure?.init({
+        calendar,
+        rnd,
+        VERDIGRIS_METAL_KEYS,
+        getLootPools: () => _lootPools,
+        lootShopWorldState: _lootShopWorldState,
+        MYSTERY_DYE_ITEM_KEY_BY_POOL,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
+        _zoneScenes,
+        _mbRng,
+        _seedFromString,
+        _zoneReagentPersist,
+        _zoneBerryPersist,
+        findZoneFlatEmptyTiles,
+        PLATEAU_UNIT,
+        NORMAL_TOP,
+        TRENCH_TOP,
+        TileType,
+        metalBarItemKey,
+        inventory,
+        ITEM_DEFS,
+        METAL_DEFS,
+        getPackClothing: () => packClothing,
+        _zoneTreasureMeshGroups,
+        _zoneTreasureObjects,
+        _zoneTreasurePersist,
+        refreshItemScroll,
+        buildInventoryGrid,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
+        debugLog,
+        isZoneArea: _isZoneArea,
+        getCurrentArea: () => currentArea,
+        TILE,
+        player,
+        actionParticles,
+        ACTION_FX_LIMIT,
+      });
+
+      window.FarmAnimals?.init({
+        COLS,
+        ROWS,
+        TILE,
+        TileType,
+        CREATURE_DB,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+        ITEM_DEFS,
+        LIVESTOCK_RESOURCE_DEFS,
+        LIVESTOCK_RESOURCE_VERB,
+        LIVESTOCK_ITEM_KINDS,
+        LIVESTOCK_DIET,
+        UUMKAOII_DEFAULT_DEW_COLOR,
+        UUMKAOII_DEW_COOLDOWN_DAYS,
+        animalObjects,
+        calendar,
+        inventory,
+        player,
+        // Farm livestock has its own tile-space update loop, so give it the
+        // same explicit face target used by companion/wildlife gaze.  The
+        // horizontal point is in farm tiles; worldY is the player's actual
+        // smoothed portrait face height, never the feet/body center.
+        getPlayerFaceTarget: () => ({
+          x: player.x / TILE,
+          z: player.y / TILE,
+          worldY: playerMesh.position.y + (Number(playerAvatarModelHeight) || 0.9) * PLAYER_FACE_HEIGHT_RATIO,
+        }),
+        scene,
+        worldObjects,
+        angleDiff,
+        cameraConfig,
+        cameraRelativeCreaturePerps,
+        cameraRelativePerps,
+        clampInventoryStack,
+        getHeldItemKey: () => heldMode === 'item' ? getActiveInventoryItem()?.key || null : null,
+        refreshItemScroll,
+        refreshActionBar,
+        saveMemberWorldData,
+        companionAiTypeForKind,
+        creatureAttachmentAnchor,
+        creaturePlaneGroundOffset,
+        findOpenTileNearBarn: window.FarmBuildings.findOpenTileNear,
+        getWorldObjectAt,
+        hasFarmPermission,
+        isSolid,
+        nearestAngleAmong,
+        perpClamp: window.PerpRotation.perpClamp,
+        resolveCreatureGroundAnchorRatio,
+        rnd,
+        saveStable,
+        showToast,
+        tileSurfaceY,
+        _autoAssignStableRole,
+        _markPngPlane,
+        _loadWorldBreedingPairs,
+        _saveWorldBreedingPairs,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
+        getBarnTiers: () => BARN_TIERS,
+        getPlayerData: () => _playerData,
+        getGrid: () => grid,
+        getFarmBuildings: () => farmBuildings,
+        getStable: () => stable,
+        getCurrentArea: () => currentArea,
+        getFacingAngle: () => facingAngle,
+        setFacingAngle: (v) => { facingAngle = v; },
+        getCameraMode: () => activeCameraMode,
+        setCameraMode: (v) => { activeCameraMode = v; },
+        getCameraTarget: () => activeCameraTarget,
+        setCameraTarget: (v) => { activeCameraTarget = v; },
+        setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
+        refreshTroughVisual: (barnId, troughIndex) => window.FarmTroughs.refreshVisual(barnId, troughIndex),
+      });
+
+      window.FarmTroughs?.init({
+        getBarnTiers: () => BARN_TIERS,
+        getFarmBuildings: () => farmBuildings,
+        inventory,
+        ITEM_DEFS,
+        esc,
+        showToast,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        loadWorldLivestock: _loadWorldLivestock,
+      });
+
+      window.FarmBuildings?.init({
+        COLS,
+        ROWS,
+        TileType,
+        animalObjects,
+        clampInventoryStack,
+        debugLog,
+        hasFarmPermission,
+        inventory,
+        loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
+        markTileDirty,
+        openMenu,
+        recomputeWater: window.WaterSystem.recomputeWater,
+        saveFarmLayout,
+        saveMemberWorldData,
+        scene,
+        worldObjects,
+        houseWallBuilder,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        enterBuilding: (mapId) => enterBuilding(mapId),
+        getBarnTiers: () => BARN_TIERS,
+        getGrid: () => grid,
+        getHousePieceRects: () => window.HousePieces.getPieceRects(),
+        getFarmBuildings: () => farmBuildings,
+        setFarmBuildings: (v) => { farmBuildings = v; },
+        setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
+        UUMKAOII_DEW_COOLDOWN_DAYS,
+      });
+
+      window.HousePieces?.init({
+        COLS,
+        ROWS,
+        TileType,
+        clampInventoryStack,
+        debugLog,
+        hasFarmPermission,
+        inventory,
+        loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
+        markTileDirty,
+        openMenu,
+        recomputeWater: window.WaterSystem.recomputeWater,
+        getGrid: () => grid,
+        saveFarmLayout,
+        saveMemberWorldData,
+        scene,
+        worldObjects,
+        houseWallBuilder,
+        startSceneTransition,
+        enterInterior,
+        onPieceGeometryChanged: () => rebuildInteriorGeometry(),
+        transformFurnitureWithHousePiece,
+        recoverFurnitureInInteriorRect: (c0, r0, w, h) => recoverFurnitureInInteriorRect(c0, r0, w, h),
+        getPieceCatalog: () => HOUSE_PIECE_CATALOG,
+        getHousePieces: () => housePieces,
+        setHousePieces: (v) => { housePieces = v; },
+        getFarmBuildings: () => farmBuildings,
+      });
+
+      window.CreatureDeath?.init({
+        TILE,
+        COLS,
+        ROWS,
+        clamp,
+        canOccupyAt,
+        characterGroundShadowSurfaceOffset,
+        tileSurfaceYInArea,
+        corpseObjects,
+        getCurrentArea: () => currentArea,
+        getGrid: () => grid,
+      });
+
+      window.FarmCrates?.init({
+        BASE_PRICES,
+        MORNING_HOUR,
+        SELL_INTERVAL_HOURS,
+        SUPPLY_CATALOG,
+        TileType,
+        inventory,
+        calendar,
+        clampInventoryStack,
+        getActiveInventoryItem,
+        getHeldMode: () => heldMode,
+        canPlayNpcDrinkInteraction: (...args) => window.NpcDrinkInteraction?.canPlay?.(...args) || false,
+        playNpcDrinkInteraction: (...args) => window.NpcDrinkInteraction?.play?.(...args) || 0,
+        itemIconForKey,
+        getHour: window.CalendarSystem.getHour,
+        hasFarmPermission,
+        openMenu,
+        showToast,
+        saveMemberWorldData,
+        buildInventoryGrid,
+        refreshItemScroll,
+        refreshActionBar,
+        buildShippingTransferUI: () => window.ShippingPanel.build(),
+        tileSurfaceY,
+        scene,
+        getDeliveryLog: () => deliveryLog,
+        getPendingOrders: () => pendingOrders,
+        getMenuOpen: () => menuOpen,
+        triggerHeldDrinkAnimation,
+      });
+
+      window.ProceduralTasks?.init({
+        FISH_DEFS,
+        CREATURE_DB,
+        getLootPools: () => _lootPools,
+        ITEM_DEFS,
+        toolMasteryLevel,
+        equipmentSlots,
+        calendar,
+        setQuestStatus,
+        getQuestProgress: () => questProgress,
+        npcWalkers,
+        inventory,
+        clampInventoryStack,
+        showToast,
+      });
+
+      window.BountyBoard?.init({
+        getQuestProgress: () => questProgress,
+        setQuestStatus,
+        showToast,
+        inventory,
+        calendar,
+        WMAP_ZONE_LABELS,
+        makeTaskId: window.ProceduralTasks.makeTaskId,
+      });
+
+      window.BanditCamps?.init({
+        clamp,
+        rnd,
+        debugLog,
+        TILE,
+        TileType,
+        WATERWAY_TYPES,
+        EXTERIOR_ZONES,
+        NORMAL_TOP,
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        refreshZoneGroundVisuals,
+        markOutline: _markOutline,
+        makeDecorativeFurnitureMesh,
+        tileSurfaceYInArea,
+        hostileObjects,
+        companionObjects,
+        corpseObjects,
+        isZoneArea: _isZoneArea,
+        isDenPackAlive: window.WildlifeSpawn.isDenPackAlive,
+        denKeyFor: window.WildlifeSpawn.denKeyFor,
+        player,
+        showZoneBanner,
+        showToast,
+        rollLootPool,
+        refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        despawnCreature,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
+        getDyeCatalog: window.DyeSystem.getCatalog,
+        dyeToClothingColor: window.DyeSystem.toClothingColor,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
+        activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
+        getCurrentArea: () => currentArea,
+        getActionHeldDown: () => actionHeldDown,
+        getPackClothing: () => packClothing,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+      });
+      fitToAspect();
+      resizeCanvas();
+      refreshActionBar();
+      refreshItemScroll();
+      try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
+      // Apply saved object positions and furniture after world objects are created
+      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      // Transition spots + shared NPC routes from the map editor
+      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Ensure a farm→town transition always exists even without map editor data
+      if (!worldTransitions.some(t => t.target === 'town')) {
+        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
+        buildTransitionMarkers();
+      }
+      // Load town layout from workspace config (authoritative source)
+      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
+      _loadTownFromWorkspace().catch(() => {});
+      debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
+
+      // ── Onboarding gate ────────────────────────────────────────────
+      let gameStarted = false;
+      window.__hobunjiGameStarted = false;
+
+      async function spawnPlayerAvatar(playerData) {
+        // Restore this world's saved date/time/weather (see
+        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
+        // calendar.day — checkTothalShift() below derives the current
+        // Tothal year from it, so this has to land first or the shift check
+        // runs against the just-reset "Day 1" default instead of wherever
+        // the world actually left off.
+        const _savedCalendar = _loadWorldCalendar();
+        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+
+        // Fire-and-forget: the Tothal Shift at world start (or on any missed
+        // year since last played) can take a few seconds across all four
+        // zones, but nothing here needs to block on it — a zone only needs
+        // to be reshaped by the time the player actually walks into it.
+        checkTothalShift();
+
+        // The module-level init above loaded the farm layout (tiles/crops and
+        // furniture/crate positions) under the legacy unnamespaced key, since
+        // worldId wasn't known yet at that point. Now that playerData.worldId
+        // is known, redo just that part against the correctly-namespaced
+        // per-world key so separate worlds never bleed into each other's farm
+        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
+        // routes/NPC schedules are shared authored map content, not per-world
+        // state, so initWorldTravel() is deliberately NOT redone here — it
+        // already ran once at module init, and spawnScheduledNpcs() isn't
+        // idempotent (it appends to npcWalkers with no clear step), so calling
+        // it again would spawn every scheduled NPC a second time.
+        clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
+        window.FarmBuildings.clearAll();
+        // Module init may have placed house pieces per the legacy-key
+        // layout — clear them now (same as FarmBuildings.clearAll() just
+        // above) so the reset loop below doesn't call .reset() on a piece
+        // this world hasn't actually earned; the starter piece is reseeded
+        // fresh right after that loop, at its hard default, before applying
+        // (or not finding) this world's own saved position — same rationale
+        // as the sell crate/supply box reset immediately below.
+        window.HousePieces.clearAll();
+        worldObjects.forEach(o => o.reset && o.reset());
+        window.HousePieces.seedStarter(HOUSE_STARTER_COL, HOUSE_STARTER_ROW);
+        rebuildInteriorGeometry();
+        grid = createInitialGrid();
+        // Module init already may have moved the shipping/supply crates per the
+        // legacy-key layout — put them back to their hard defaults before
+        // applying (or not finding) this world's own saved positions, so a
+        // brand-new world can't inherit another world's crate placement.
+        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
+        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
+        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
+          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          const nc = window.FarmCrates.makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
+          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
+        }
+        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
+          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          const nb = window.FarmCrates.makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
+          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
+        }
+        const _worldLayout = loadFarmLayout();
+        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
+        // player has no bed item in inventory yet to buy+place one themselves.
+        // Gated on this world having no saved layout at all, so it never
+        // re-appears for a returning player, including one who moved or
+        // removed their starter bed (farmLayoutKey() is per-world, so this
+        // check has to happen here — after playerData.worldId is known —
+        // rather than at module init, where it would save under the wrong,
+        // not-yet-namespaced key and then get cleared right back out by this
+        // same per-world reload).
+        if (!_worldLayout) {
+          try {
+            // A cell just inside the starter piece's own doubled interior
+            // block (away from its door threshold) — see
+            // rebuildInteriorGeometry()/HOUSE_STARTER_COL/ROW above.
+            const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
+            const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
+            if (starterBed) {
+              interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
+                mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
+                ...furnitureOwnerFields(bedCol, bedRow) });
+              saveFarmLayout();
+            }
+          } catch (e) { console.error('starter bed seed:', e); }
+        }
+        window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
+        window.WaterSystem.recomputeWater(false);
+
+        // Non-gear inventory (resources) and pack clothing are world-scoped
+        // per character — they stay behind in this world's member record
+        // rather than following the character to another world.
+        Object.keys(inventory).forEach(key => { delete inventory[key]; });
+        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
+          ? { ...playerData.nonGearInventory }
+          : { ...STARTING_INVENTORY });
+        window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
+        window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
+        packClothing = [...(playerData.packClothing || [])];
+        window.CookingSystem.restore(playerData.cookingState);
+        window.SkillSystem.restore(playerData);
+
+        // NPC relationships/memory and quest progress are likewise world-scoped
+        // per character.
+        window.DialogueContent?.loadNpcRelationships(playerData);
+        questProgress = { ...(playerData.questProgress || {}) };
+        window.ProceduralTasks.maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
+
+        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
+        // today's (not-yet-picked) wilderness reagent placements — all
+        // world-scoped per character, same as the fields just above.
+        window.AlchemySystem.restoreKnownRecipes(playerData.alchemyKnownRecipes, playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
+        window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
+        window.WildBerries.restoreState(playerData.wildBerryState);
+        window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreZoneFelledTreeState(playerData.felledTreeState);
+        restoreZoneMinedRockState(playerData.minedRockState);
+        // Potion items just restored into `inventory` above have no ITEM_DEFS
+        // entry yet this page load (ITEM_DEFS starts empty of them every
+        // session, unlike the static reagent/furniture/fish tables) — rebuild
+        // each one's display/Drink metadata straight from its key, which
+        // deterministically encodes its effects (see ensurePotionItemDef).
+        window.AlchemySystem.migrateLegacyPotionInventory(inventory);
+        Object.keys(inventory).forEach(key => {
+          const payload = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (payload?.recipeId) window.AlchemySystem.ensureRecipeItemDef(payload.recipeId, payload.potencyTier);
+          else if (payload?.legacyEffects) window.AlchemySystem.ensurePotionItemDef(payload.legacyEffects);
+          if (key.startsWith('alchemy_recipe_')) window.AlchemySystem.ensureRecipeScrollItemDef(key.slice('alchemy_recipe_'.length));
+        });
+
+        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
+          ? playerData.gearInventory
+          : makeDefaultGear();
+        if (!gearInventory.tools)    gearInventory.tools    = {};
+        // Existing characters receive the first two ranged weapons so the
+        // new slot is immediately testable without invalidating old saves.
+        gearInventory.tools.crossbow ??= true;
+        gearInventory.tools.scatterbow ??= true;
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!gearInventory.charms)   gearInventory.charms   = [];
+        if (!gearInventory.whistles || !gearInventory.whistles.length) {
+          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
+        }
+        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
+        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
+        gearInventory.specialAmmo = Math.max(0, Math.min(8, Math.floor(Number(gearInventory.specialAmmo) || 0)));
+        if (!gearInventory.rangedAmmoLoadouts || typeof gearInventory.rangedAmmoLoadouts !== 'object') gearInventory.rangedAmmoLoadouts = {};
+        if (!Array.isArray(gearInventory.unlockedSpecialAmmo)) gearInventory.unlockedSpecialAmmo = [];
+        for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
+        window.EquipmentPanel.ensureGearClothingCollection();
+        window.DyeSystem.ensureCollection();
+
+        // Personal stable — same lazy-seed pattern as the whistles block just
+        // above: a character with no stable yet gets the starter dabinggi-hound
+        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
+        // hound you start with is stored in the stable" holds for old saves too.
+        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
+        activeCompanionId = playerData.activeCompanionId ?? null;
+        activeMountId = playerData.activeMountId ?? null;
+        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
+        if (!stable.length) {
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          stable.push(starter);
+          activeCompanionId = starter.id;
+        }
+        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // Backfill genotype-less stable entries from older saves (e.g. a
+        // starter Bingo saved before pattern genes existed) so they render
+        // real genes instead of the plain uncolored sprite forever. Also
+        // backfills a missing Size (genotype.sizeClass) on entries saved
+        // before the stable's mount/companion/shoulder-pet system existed.
+        for (const entry of stable) {
+          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
+          }
+          if (entry.genotype && !entry.genotype.sizeClass) {
+            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
+          }
+        }
+        saveStable();
+        // Restore whichever literal tool/weapon/whistle instance was equipped
+        // in each slot last session (see saveEquipmentSlots) — skips any slot
+        // whose saved item no longer exists in this character's gearInventory
+        // (sold/lost since, or a save from before this field existed), which
+        // then falls through to the starter-gear defaults just below.
+        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
+          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+            if (!itemId || !(slot in equipmentSlots)) continue;
+            const stillOwned = slot === 'whistle'
+              ? gearInventory.whistles.some(w => w.id === itemId)
+              : !!gearInventory.tools[itemId];
+            if (stillOwned) equipmentSlots[slot] = itemId;
+          }
+        }
+        // Set default equipment slot assignments
+        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
+        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
+        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
+        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
+        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // A cutscene preview's ephemeral profile can inherit gearInventory
+        // (and an already-equipped whistle) straight from the real local
+        // save via docs/index.html's onboarding-profile handoff, and the
+        // line above auto-equips the starter whistle for any profile that
+        // has none — either way, an uninvited companion animal would spawn
+        // and compete for camera framing in a scene the Director never
+        // authored one for. A scene's own creature actors are unaffected;
+        // this only clears the real player's own companion slot.
+        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
+        rebuildToolMeshes();
+        // Restore the tool actually held last session (see saveEquipmentSlots)
+        // — silent so returning to a save doesn't pop a "X selected" toast.
+        if (playerData.activeTool && toolActions[playerData.activeTool]) {
+          setActiveTool(playerData.activeTool, { silent: true });
+        } else {
+          refreshWeaponSwitchBtn();
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        }
+        window.EquipmentPanel.buildEquipmentSlots();
+        try {
+          await window.NpcAvatarPreview.ensurePortraitCosmetics({
+            assetBase: './assets/',
+            configBase: './config/',
+          });
+
+          await refreshPlayerAvatar();
+          debugLog('PNG plane avatar attached to player_root');
+        } catch (err) {
+          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        gameStarted = true;
+        window.__hobunjiGameStarted = true;
+      }
+
+      document.addEventListener('hobunjiPlayerReady', (e) => {
+        _playerData = e.detail;
+        spawnPlayerAvatar(e.detail);
+      }, { once: true });
+
+      // If init() already fired synchronously (returning player with localStorage profile),
+      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
+      if (window.__hobunjiPlayerProfile) {
+        _playerData = window.__hobunjiPlayerProfile;
+        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
+      }
+
+
+      // ══════════════════════════════════════════════════════════════════
+      //  Cutscene Preview Mode
+      // ──────────────────────────────────────────────────────────────────
+      //  Boots this tab with a throwaway character/world (see the inline
+      //  handoff script in index.html, just before <script src="game.js">,
+      //  and docs/tools/cutscene-director/index.html's "Preview in game"
+      //  button) instead of the real save, and replays an authored
+      //  cutscene using the REAL dialogue UI and REAL dialogue-zoom camera
+      //  system — not the Director tool's own private preview.
+      //
+      //  The differences from a normal conversation are deliberate and
+      //  narrow, and live right next to the code they change:
+      //    - beginNpcDialogueStaging / faceNpcDialogueParticipants /
+      //      updateNpcDialogueStaging (above) no-op when
+      //      cutscenePreviewActive — the director already scripts every
+      //      participant's exact position/facing frame by frame, so the
+      //      real "walk the player up to the NPC" auto-staging would only
+      //      fight it, and there may not even be a "player" among the
+      //      scene's actors.
+      //    - advanceNpcDialogue (above) delegates to
+      //      cutscenePreviewAdvance — the director walks its own
+      //      move/talk/choice/... stage list, not an authored dialogueTree.
+      //    - Camera/dialogue-zoom targeting reuses activeCameraTarget
+      //      exactly as normal NPC dialogue already does (openNpcDialogue
+      //      sets it to walker.root) — it's just pointed at whichever
+      //      cutscene participant is currently speaking instead of always
+      //      being "the NPC the player walked up to." That target is never
+      //      the real singleton player/playerMesh, even for a "Player"
+      //      role actor in the scene — every actor, including that one, is
+      //      spawned as its own independent stand-in entity here, so this
+      //      previewer never reads or writes the real player's position.
+      //      The real player sits exactly wherever their save left them,
+      //      off-screen and untouched, for the whole preview.
+      // ══════════════════════════════════════════════════════════════════
+
+      let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
+
+      function cutscenePreviewBanner(text, isError) {
+        let el = document.getElementById('cutscenePreviewBanner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewBanner';
+          el.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:99999;'
+            + 'padding:8px 16px;border-radius:10px;font:600 14px/1.3 system-ui,sans-serif;color:#fff;'
+            + 'background:rgba(20,14,10,.86);border:2px solid #f2b755;box-shadow:0 6px 18px rgba(0,0,0,.4);'
+            + 'display:flex;gap:10px;align-items:center;pointer-events:auto;';
+          const label = document.createElement('span');
+          label.id = 'cutscenePreviewBannerLabel';
+          el.appendChild(label);
+          const closeBtn = document.createElement('button');
+          closeBtn.textContent = 'Exit preview';
+          closeBtn.style.cssText = 'font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;'
+            + 'border:1px solid #f2b755;background:#3a2c22;color:#fff;cursor:pointer;';
+          // A plain reload is enough to leave preview mode cleanly: the
+          // handoff key is one-shot (already consumed) and the ephemeral
+          // profile only ever lived in window.__hobunjiPlayerProfile, never
+          // written to the real hobunjiPlayerProfile/hobunjiSaveMeta keys.
+          closeBtn.addEventListener('click', () => location.reload());
+          el.appendChild(closeBtn);
+          document.body.appendChild(el);
+        }
+        el.style.borderColor = isError ? '#d66b68' : '#f2b755';
+        document.getElementById('cutscenePreviewBannerLabel').textContent = text;
+      }
+
+      function cutscenePreviewFadeEl() {
+        let el = document.getElementById('cutscenePreviewFade');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewFade';
+          el.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000;opacity:0;'
+            + 'pointer-events:none;transition:opacity 1s linear;';
+          document.body.appendChild(el);
+        }
+        return el;
+      }
+
+      async function cutscenePreviewWaitForArea(area, timeoutMs, predicate) {
+        const check = predicate || (() => !!(sceneForNpcArea(area) && npcGridForArea(area)));
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          if (check()) return true;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        return false;
+      }
+
+      // Scans a generated wilderness zone's real tile grid for a clear, flat
+      // w×h rectangle to drop an authored scene's whole local footprint onto
+      // — same tile-level exclusion checklist wilderness-map-generator.js's
+      // own areaFree/randomFreeArea use (uniform elevation tier, no incline/
+      // ramp/water/solid tiles), plus building/decor/furniture/den occupancy
+      // that live outside the tile grid itself (see buildZoneScene /
+      // _spawnZoneDecorFurniture / performTothalShift's `dens`). Searches
+      // outward in Chebyshev rings from the zone's center so a found spot is
+      // never farther from the middle of the map than it has to be.
+      function findZonePlacementFootprint(area, w, h) {
+        const zi = _zoneScenes.get(area);
+        const grid = zi?.grid;
+        if (!grid) return null;
+        const cols = zi.cols, rows = zi.rows;
+        const zoneData = _zoneLayouts.get(area);
+        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
+        const markOccupied = (col, row, ow, oh) => {
+          for (let r = Math.max(0, row); r < Math.min(rows, row + oh); r++)
+            for (let c = Math.max(0, col); c < Math.min(cols, col + ow); c++) occupied[r][c] = true;
+        };
+        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
+        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+
+        function rectOk(col, row) {
+          if (col < 1 || row < 1 || col + w > cols - 1 || row + h > rows - 1) return false; // stay off the border terrain skirt
+          let elevTier = null;
+          for (let r = row; r < row + h; r++) {
+            for (let c = col; c < col + w; c++) {
+              if (occupied[r][c]) return false;
+              const tile = grid[r][c];
+              if (!tile) return false;
+              if (tile.water) return false;
+              if (tile.incline) return false;
+              if (tile.type === TileType.RAMP) return false;
+              if (isSolid(tile.type)) return false;
+              const tier = tile.elevTier || 0;
+              if (elevTier === null) elevTier = tier;
+              else if (tier !== elevTier) return false;
+            }
+          }
+          return true;
+        }
+
+        const centerCol = Math.floor((cols - w) / 2), centerRow = Math.floor((rows - h) / 2);
+        const maxRadius = Math.max(cols, rows);
+        for (let radius = 0; radius <= maxRadius; radius++) {
+          for (let dr = -radius; dr <= radius; dr++) {
+            for (let dc = -radius; dc <= radius; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue; // ring only — interior already checked at smaller radii
+              const col = centerCol + dc, row = centerRow + dr;
+              if (rectOk(col, row)) return { col, row };
+            }
+          }
+        }
+        return null;
+      }
+
+      // Freeform ("custom") actors, and any actor whose real NPC/creature
+      // spawn failed, fall back to a plain placeholder mesh — same
+      // graceful-degradation policy the Cutscene Director tool's own
+      // standalone preview uses for the same cases.
+      function cutscenePreviewMakePlaceholder(actor, area, targetScene) {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: actor.color || '#cccccc' });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.85, 10), mat);
+        body.position.y = 0.28 + 0.85 / 2;
+        group.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mat);
+        head.position.y = 0.28 + 0.85 + 0.18;
+        group.add(head);
+        const surfY = npcSurfaceY(area, actor.worldC, actor.worldR);
+        group.position.set(actor.worldC + 0.5, surfY, actor.worldR + 0.5);
+        group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+        targetScene.add(group);
+        return { kind: 'placeholder', root: group };
+      }
+
+      const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+
+      function cutscenePreviewApplyState(entity, area, st) {
+        const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
+        if (entity.kind === 'creature') {
+          const c = entity.creature;
+          c.x = st.c * TILE; c.y = st.r * TILE;
+          c.avatarRef.group.position.set(st.c + 0.5, surfY + c.halfHeight, st.r + 0.5);
+          c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
+          // real tick (see below) starts an angleDiff of exactly 0 instead
+          // of smoothly sweeping in from wherever makeCreatureEntity's
+          // groupRot:0 default left them.
+          c.groupRot = c.pngRot = THREE.MathUtils.degToRad(st.rotation);
+          c.groundShadow?.position.set(st.c + 0.5, surfY + characterGroundShadowSurfaceOffset(), st.r + 0.5);
+          c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        } else if (entity.kind === 'npc') {
+          entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = entity.walker.rot;
+          entity.root.scale.setScalar(1);
+          // Prone tips the flat portrait plane down onto its back instead of
+          // just shrinking a standing figure — this walker is scripted
+          // entirely by the director (pause:Infinity, see the actor-spawn
+          // loop) and never dialogue-staged (guarded by cutscenePreviewActive
+          // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
+          // nothing else re-asserts a standing transform over this pose.
+          const avatarGroup = entity.walker.avatarGroup;
+          if (avatarGroup) {
+            const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1;
+            if (st.pose === 'prone') {
+              avatarGroup.rotation.x = Math.PI / 2;
+              avatarGroup.position.y = avatarHeight * 0.06;
+            } else {
+              avatarGroup.rotation.x = 0;
+              avatarGroup.position.y = avatarHeight / 2;
+            }
+          }
+        } else {
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        }
+      }
+
+      async function runCutscenePreview(payload) {
+        cutscenePreviewActive = true;
+        cutscenePreviewZoomPercent = 100;
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+
+        const area = normalizeNpcArea(payload.mapId);
+        if (_isBuildingArea(area)) {
+          try { await loadBuildingScene(area); } catch (e) { console.error(e); }
+        } else if (area === 'town' && !townScene) {
+          // The town's tile/route data loads automatically at boot
+          // (_loadTownFromWorkspace → initTownTravel), but the actual 3D
+          // scene (buildTownScene, which sets `townScene`) is normally only
+          // built lazily the moment the player first walks in from the farm
+          // (enterTown). enterTown() also does things this previewer must
+          // never do to the real player (moves player.x/y, stamps
+          // farmPlayerSave, flips currentArea) — buildTownScene() itself is
+          // the standalone, player-untouched half of that, so it's called
+          // directly here instead of enterTown().
+          try {
+            if (!townGrid) await cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+            buildTownScene();
+          } catch (e) { console.error('[cutscene preview] buildTownScene failed:', e); }
+        } else if (payload.wilderness && _isZoneArea(area)) {
+          // A wilderness zone's real terrain doesn't exist until the yearly
+          // Tothal Shift generates it (performTothalShift, kicked off at
+          // world boot by checkTothalShift) — wait for that to finish, then
+          // build the zone's 3D scene and scan its actual tile grid for a
+          // clear, flat spot to drop this scene's whole local footprint onto
+          // (findZonePlacementFootprint). The Director sends every point/
+          // actor/camera position in local, un-anchored coordinates for this
+          // mode (see buildPreviewPayload) precisely because that anchor —
+          // which map, and where on it — can only be resolved here, against
+          // real generated terrain, not authored ahead of time.
+          try {
+            if (_tothalShiftPromise) await _tothalShiftPromise;
+            if (!_zoneLayouts.has(area)) {
+              checkTothalShift();
+              await cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
+            }
+            buildZoneScene(area);
+            const fp = payload.footprint || {};
+            const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
+            const anchor = findZonePlacementFootprint(area, fw, fh);
+            if (!anchor) {
+              cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              cutscenePreviewActive = false;
+              return;
+            }
+            const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
+            for (const a of (payload.actors || [])) {
+              a.worldC = (a.lc || 0) + offsetC;
+              a.worldR = (a.lr || 0) + offsetR;
+            }
+            for (const s of (payload.stages || [])) {
+              if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR, facing: s.targetLocal.facing ?? null };
+            }
+            if (payload.camera3d?.localPos && payload.camera3d?.localTarget) {
+              // localPos.y/localTarget.y were authored against the Director's
+              // flat y=0 wilderness practice grid (groundYAt returns 0 for
+              // mapMeta.kind==="wilderness" — there's no real elevation to
+              // author against yet) — add the REAL terrain's elevation at
+              // wherever the translated camera/target actually land, or the
+              // rig sits at the wrong height the instant the anchor lands
+              // anywhere but a zero-elevation tile (actors don't have this
+              // bug — their Y is computed fresh from the real terrain at
+              // spawn time, only the camera3d block skipped it).
+              const posX = payload.camera3d.localPos.x + offsetC, posZ = payload.camera3d.localPos.z + offsetR;
+              const targetX = payload.camera3d.localTarget.x + offsetC, targetZ = payload.camera3d.localTarget.z + offsetR;
+              const posElevY = npcSurfaceY(area, Math.round(posX), Math.round(posZ));
+              const targetElevY = npcSurfaceY(area, Math.round(targetX), Math.round(targetZ));
+              payload.camera3d.worldPos = { x: posX, y: payload.camera3d.localPos.y + posElevY, z: posZ };
+              payload.camera3d.worldTarget = { x: targetX, y: payload.camera3d.localTarget.y + targetElevY, z: targetZ };
+            }
+            debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
+          } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
+        }
+        const ready = await cutscenePreviewWaitForArea(area, 20000);
+        if (!ready) {
+          cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          cutscenePreviewActive = false;
+          return;
+        }
+        currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
+
+        // Without this, NPC avatars silently fall back to placeholder
+        // capsules: buildProfileFromNpcExport (npc-avatar-preview-utils.js)
+        // returns null whenever its module-level cosmetics cache hasn't
+        // loaded yet. spawnPlayerAvatar's own boot-time call (game.js
+        // ~19883) races this function rather than reliably beating it, so
+        // this waits on the same shared cache/promise explicitly.
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+
+        const targetScene = sceneForNpcArea(area);
+        const targetGrid  = npcGridForArea(area);
+        const targetCols  = getActiveCols();
+        const targetRows  = getActiveRows();
+
+        // ── Camera: an "establishing" mode for everything except active
+        //    dialogue, computed from the Director's captured shot (already
+        //    resolved to world tile-space) via the same
+        //    distance/angleFromGroundDeg/azimuthDeg basis the real fishing
+        //    minigame's camera-mode swap uses (see updateCameraPosition).
+        //    Set up before actors spawn (rather than after, from their
+        //    entities) so camera.position is already correct in time for
+        //    each NPC/player actor's initial spawn facing to check itself
+        //    against it (see cutscenePreviewNpcFacingCheatAngle below).
+        const baseDlgCfg = cameraModeConfig(cameraConfig().dialogueMode || 'npcDialogue');
+        const dlgModeKey = 'cutscenePreviewDialogue';
+        (window.SCRATCHBONES_CONFIG.game.camera.modes ||= {})[dlgModeKey] = {
+          ...baseDlgCfg,
+          // Real gameplay's alignToDialoguePortraitCenters hardcodes the
+          // actual player mesh as one of its two framing anchors, which is
+          // meaningless here (neither cutscene speaker is ever the real
+          // player) — but the alignment itself (an eye-level shot pinned to
+          // the speaker's own visual center, not the generic elevated
+          // follow-camera's sin(angle)*distance climb above it) is exactly
+          // what a cutscene close-up wants too, so this stays on and
+          // dialoguePortraitCameraAim substitutes the speaking actor's own
+          // center (see cutscenePreviewSpeakerCenterY) instead of playerMesh
+          // whenever cutscenePreviewActive is set.
+          alignToDialoguePortraitCenters: true,
+        };
+        // A creature's root position (avatarRef.group) already sits at its
+        // own body-center height (see makeCreatureEntity/updateCreatureMesh),
+        // unlike an NPC walker's root, which sits at ground level — so the
+        // human-chest-height targetYOffsetTiles npcDialogue tunes for
+        // overshoots way above a low-slung creature like a wolf. This
+        // variant looks only slightly above the creature's own center and
+        // sits lower/closer so it still reads as a proper close-up.
+        const dlgModeKeyCreature = 'cutscenePreviewDialogueCreature';
+        window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature] = {
+          ...baseDlgCfg,
+          // Also pinned to the speaker's own center (cameraY/lookY come from
+          // dialoguePortraitCameraAim, not targetYOffsetTiles/angle below) —
+          // angleFromGroundDeg/distanceTiles still shape the horizontal
+          // framing (azimuth distance/height-of-shot feel), just no longer
+          // the vertical climb.
+          alignToDialoguePortraitCenters: true,
+          targetYOffsetTiles: 0.08,
+          angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
+          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
+        };
+
+        let idleCameraMode, idleCameraTarget;
+        if (payload.camera3d) {
+          const p = payload.camera3d.worldPos, t = payload.camera3d.worldTarget;
+          const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z;
+          const distance = Math.max(0.5, Math.hypot(dx, dy, dz));
+          const angleFromGroundDeg = Math.asin(clamp(dy / distance, -1, 1)) * 180 / Math.PI;
+          const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
+          const shotModeKey = 'cutscenePreviewShot';
+          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
+          idleCameraMode = shotModeKey;
+          idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
+          camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
+        } else {
+          const firstActor = (payload.actors || [])[0];
+          idleCameraMode = cameraConfig().defaultMode || 'default';
+          if (firstActor) {
+            const fx = firstActor.worldC + 0.5, fz = firstActor.worldR + 0.5, fy = npcSurfaceY(area, firstActor.worldC, firstActor.worldR);
+            idleCameraTarget = { position: new THREE.Vector3(fx, fy, fz) };
+            camTargetX = fx; camTargetY = fy; camTargetZ = fz;
+          } else {
+            idleCameraTarget = null;
+          }
+        }
+        activeCameraMode = idleCameraMode;
+        activeCameraTarget = idleCameraTarget;
+        updateCameraPosition();
+
+        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        for (const actor of (payload.actors || [])) {
+          let entity = null;
+          try {
+            if (actor.npcId && actor.npcRecord) {
+              const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
+                entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            } else if (actor.creatureTypeId && CREATURE_DB[actor.creatureTypeId]) {
+              // makeCreatureEntity's ground-height lookup reads the global
+              // `currentArea` directly rather than taking it as an option,
+              // so it's bookended here even though currentArea already
+              // equals `area` by this point (kept explicit/defensive in
+              // case that assignment above ever moves).
+              const savedArea = currentArea;
+              currentArea = area;
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              currentArea = savedArea;
+              if (creature) {
+                creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+                entity = { kind: 'creature', root: creature.avatarRef.group, creature };
+              }
+            } else if (actor.isPlayer) {
+              // The scene's authored stand-in for whoever's actually running
+              // this preview — built through the exact same makeNpcWalker
+              // pipeline an NPC actor uses, just fed a synthetic "record"
+              // sourced from the real player's own appearance instead of the
+              // NPC database, so it gets a real PNG-plane avatar instead of
+              // the generic placeholder every other freeform actor falls
+              // back to.
+              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const fakeRec = {
+                id: 'player', name: actor.name || 'Player',
+                appearance: playerProfile?.appearance,
+                equippedCosmetics: playerProfile?.equippedCosmetics || [],
+                appliedDyes: playerProfile?.appliedDyes || {},
+              };
+              const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity;
+                entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            }
+          } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
+          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entities.set(actor.id, entity);
+        }
+
+        // ── Stage engine ──────────────────────────────────────────────
+        // Same move/talk/choice/animation/turn/combat/fade semantics as
+        // docs/tools/cutscene-director/index.html's own preview engine
+        // (ported, not shared code — that tool drives a private Three.js
+        // scene, this drives real spawned entities + the real dialogue UI),
+        // reading a payload the Director tool has already fully resolved
+        // to world tile coordinates (see its "Preview in game" handler).
+        const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        // Authored rotation, used exactly as given — no camera-visibility
+        // biasing. This is the single source of truth for every actor's
+        // rotation from here on, kept in sync with the mesh only through
+        // applyState, so it can't drift out of sync with what's actually on
+        // screen the way computing it twice would.
+        const actorStates = new Map((payload.actors || []).map(a =>
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false }]
+        ));
+        // actorId -> desired facing in degrees: what each actor is currently
+        // trying to face (set at spawn from its raw authored rotation, and
+        // whenever a Turn card or a move's arrival facing gives it a new
+        // one). cutsceneRotationTick (below) is the only thing that ever
+        // turns this into an actual mesh rotation, continuously, for the
+        // actor's entire time on screen — mirroring how real gameplay never
+        // snaps a stationary NPC/creature's facing in one frame either (see
+        // faceNpcDialogueParticipants's npcFacePlayerLerp, updateHostiles/
+        // updateCompanions calling updateCreatureMesh every frame whether a
+        // creature is moving or holding still) — rather than a fixed-
+        // duration one-shot "turn card" animation that stops driving once
+        // its own timer runs out.
+        const desiredFacingDeg = new Map((payload.actors || []).map(a => [a.id, a.rotation || 0]));
+        // actorIds currently owning their own rotation each frame — a Move
+        // stage's own per-frame stepper (walker.moveToward's perpClamp, or
+        // updateCreatureMesh driven by live travel direction), or a Combat
+        // stage's real hostileObjects/companionObjects AI (updateHostiles/
+        // updateCompanions, which also call updateCreatureMesh themselves
+        // with their own chase-target aimAngle). cutsceneRotationTick skips
+        // anyone in here so it never fights whatever's actively driving them.
+        const externallyDrivenActorIds = new Set();
+        const stagesById  = new Map((payload.stages || []).map(s => [s.id, s]));
+        const stageOrder  = (payload.stages || []).map(s => s.id);
+        let running = true;
+
+        const getResolvedNext = (stageId, requestedNext) => {
+          if (requestedNext === '__end__') return null;
+          if (requestedNext && requestedNext !== '__next__') return stagesById.has(requestedNext) ? requestedNext : null;
+          return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
+        };
+        const angleTowardState = cutscenePreviewAngleToward;
+        const buildGridPath = (start, goal) => {
+          const path = [{ c: start.c, r: start.r }];
+          let c = start.c, r = start.r, horizontalTurn = true;
+          while (c !== goal.c || r !== goal.r) {
+            const canH = c !== goal.c, canV = r !== goal.r;
+            if ((horizontalTurn && canH) || !canV) c += Math.sign(goal.c - c); else r += Math.sign(goal.r - r);
+            path.push({ c, r });
+            horizontalTurn = !horizontalTurn;
+          }
+          return path;
+        };
+        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) cutscenePreviewApplyState(entity, area, st); };
+
+        // Per-frame travel toward a tile-center target, reusing the real
+        // game's own locomotion instead of the discrete grid-hop stepping
+        // this used to do: an NPC actor rides the exact same
+        // walker.moveToward() the schedule system drives real villagers
+        // with, and a creature actor rides moveCreatureToward() +
+        // updateCreatureMesh()/updateCreatureAnimFrame() — the same trio
+        // updateHostiles() drives wild creatures with. A freeform/failed-
+        // spawn placeholder actor has no real system to borrow, so it gets
+        // an honest straight-line lerp (same degrade-gracefully policy as
+        // cutscenePreviewMakePlaceholder itself). Returns true once arrived.
+        const advanceActorToward = (actorId, tx, tz, dt, speedMul = 1) => {
+          const entity = entities.get(actorId), st = actorStates.get(actorId);
+          if (!entity || !st) return true;
+          if (entity.kind === 'npc' && entity.walker) {
+            entity.walker.catchup = speedMul; // preview-scripted walkers are never schedule-driven, so catchup is free to repurpose as a speed dial
+            const arrived = entity.walker.moveToward(tx, tz, dt);
+            st.c = entity.root.position.x - 0.5;
+            st.r = entity.root.position.z - 0.5;
+            st.rotation = THREE.MathUtils.radToDeg(entity.walker.rot);
+            return arrived;
+          }
+          if (entity.kind === 'creature' && entity.creature) {
+            const c = entity.creature;
+            const speed = (c.def.moveSpeed || 2.4) * speedMul;
+            const moving = moveCreatureToward(c, tx * TILE, tz * TILE, speed, dt);
+            const dist = Math.hypot(c.x - tx * TILE, c.y - tz * TILE);
+            const aimAngle = moving ? Math.atan2(tz * TILE - c.y, tx * TILE - c.x) : c.facing;
+            c.facing = aimAngle;
+            updateCreatureMesh(c, dt, aimAngle);
+            updateCreatureAnimFrame(c, dt, moving);
+            st.c = c.x / TILE - 0.5;
+            st.r = c.y / TILE - 0.5;
+            // st.rotation is the "direct model Y-rotation" convention every
+            // other creature rotation path uses (Turn cards, spawn, the
+            // tool's own gizmo/preview) — NOT aimAngle's raw world-direction
+            // convention (updateCreatureMesh internally maps aimAngle to
+            // groupRot via rawTargetRotY = -(aimAngle) + PI/2, a reflected,
+            // *not* simply offset, relationship). Reading it back from the
+            // mesh's actual resulting groupRot keeps it consistent so
+            // cutsceneRotationTick's post-arrival fallback (when a move has
+            // no authored arrival facing) picks up from the true current
+            // facing instead of a rotation the creature never actually had.
+            st.rotation = ((THREE.MathUtils.radToDeg(c.groupRot) % 360) + 360) % 360;
+            return dist < TILE * 0.12;
+          }
+          const previous = { c: st.c, r: st.r };
+          const dx = tx - 0.5 - st.c, dz = tz - 0.5 - st.r;
+          const d = Math.hypot(dx, dz);
+          const step = Math.max(0.001, 1.6 * speedMul * dt);
+          if (d <= step) { st.c = tx - 0.5; st.r = tz - 0.5; } else { st.c += dx / d * step; st.r += dz / d * step; }
+          if (d > 0.001) st.rotation = angleTowardState(previous, st);
+          applyState(actorId);
+          return d <= step;
+        };
+
+        const finish = message => {
+          running = false;
+          cutscenePreviewActive = false;
+          cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
+          cutscenePreviewDialogueSpeaker = null;
+          enterDefaultCameraMode();
+          activeCameraTarget = null;
+          cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+        };
+
+        async function openLine(entity, speakerName, text) {
+          dialogueOpen = true;
+          _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
+          cutscenePreviewDialogueSpeaker = entity || null;
+          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          _npcDialogueNameEl.textContent = speakerName;
+          if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
+          _arcContainerEl?.classList.add('arc-hidden');
+          const ctx = _npcPortraitCanvas.getContext('2d');
+          if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
+            ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+            await window.DialogueContent?.renderNpcDialoguePortrait();
+          } else {
+            ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+          }
+          _npcDialogueEl.classList.add('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'false');
+          window.DialogueContent?.hideChoiceButtons();
+          window.DialogueContent?.setNpcDialogueText(text);
+        }
+
+        function closeLine() {
+          dialogueOpen = false;
+          cutscenePreviewAdvance = null;
+          window.DialogueContent?.hideChoiceButtons();
+          window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
+          window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+          _dialogueWalker = null;
+          cutscenePreviewDialogueSpeaker = null;
+          _npcDialogueEl.classList.remove('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'true');
+          _arcContainerEl?.classList.remove('arc-hidden');
+          activeCameraMode = idleCameraMode;
+          activeCameraTarget = idleCameraTarget;
+        }
+
+        function showChoiceOptions(options) {
+          const optEls = [1, 2, 3, 4, 5, 6].map(i => document.getElementById(`dlgOpt${i}`));
+          optEls.forEach(el => { if (!el) return; const label = el.querySelector('.dlg-opt-label'); if (label) { label.textContent = ''; label.style.fontSize = ''; } el.classList.remove('dlg-opt-visible'); el.onclick = null; });
+          options.slice(0, 6).forEach((opt, i) => {
+            const el = optEls[i]; if (!el) return;
+            const label = el.querySelector('.dlg-opt-label'); if (label) label.textContent = opt.text || 'Choice';
+            el.classList.add('dlg-opt-visible');
+            el.onclick = () => { if (!dialogueOpen) return; opt.onClick(); };
+          });
+          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) window.DialogueContent?.fitDlgOptionLabel(el); });
+          const continueBtn = document.getElementById('npcDialogueContinue');
+          if (continueBtn) continueBtn.style.display = options.length ? 'none' : '';
+        }
+
+        function continueTo(nextId) {
+          if (!running) return;
+          if (dialogueOpen) closeLine();
+          if (!nextId) { finish(); return; }
+          runStage(nextId);
+        }
+
+        function runStage(stageId) {
+          if (!running) return;
+          const stage = stagesById.get(stageId);
+          if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
+          cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+
+          if (stage.type === 'move') return runMove(stage);
+          if (stage.type === 'animation') return runAnimation(stage);
+          if (stage.type === 'turn') return runTurn(stage);
+          if (stage.type === 'combat') return runCombat(stage);
+          if (stage.type === 'fade') return runFade(stage);
+          if (stage.type === 'zoom') return runZoom(stage);
+
+          const speakerActor  = actorsById.get(stage.speakerId);
+          const speakerEntity = entities.get(stage.speakerId);
+          const speakerName   = speakerActor?.name || 'Someone';
+          if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          if (stage.type === 'choice') {
+            openLine(speakerEntity, speakerName, stage.text).then(() => {
+              showChoiceOptions((stage.options || []).map(o => ({ text: o.text, onClick: () => continueTo(getResolvedNext(stage.id, o.next)) })));
+            });
+            cutscenePreviewAdvance = () => {}; // choices only ever advance via their own button
+            return;
+          }
+          openLine(speakerEntity, speakerName, stage.text);
+          cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+        function runMove(stage) {
+          const st = actorStates.get(stage.actorId);
+          const goal = stage.targetWorld;
+          if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
+          const waitForArrival = stage.waitForArrival !== false;
+          const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          let lastT = performance.now();
+          let arrivedAlready = false;
+          externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
+          const onArrive = () => {
+            if (arrivedAlready) return;
+            arrivedAlready = true;
+            externallyDrivenActorIds.delete(stage.actorId);
+            // advanceActorToward's own "arrived" gate (TILE*0.12) is looser
+            // than moveCreatureToward's internal one (a flat 1px), so the
+            // loop above can exit here while the creature was still just
+            // inside that inner threshold on its very last step — i.e.
+            // still mid-run-cycle sprite (updateCreatureAnimFrame's
+            // `moving` was still true that frame). cutsceneRotationTick
+            // (below) picks up idle framing on its very next tick once this
+            // actor is out of externallyDrivenActorIds, so no explicit
+            // cleanup call is needed here for that.
+            //
+            // The target point's own authored arrival facing (if any) wins
+            // over whatever direction the walk itself left the actor facing
+            // — same as a "Turn in place" card, just triggered by landing on
+            // this point. Handed to cutsceneRotationTick as this actor's new
+            // desired facing (no arrival facing at all just keeps whatever
+            // direction the walk left it facing, exactly like real NPC/
+            // creature movement does) — never blocks the scene on it, the
+            // actor keeps turning in the background while the next card
+            // starts.
+            desiredFacingDeg.set(stage.actorId, goal.facing != null ? goal.facing : st.rotation);
+            if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
+          };
+          const step = () => {
+            if (!running) return;
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastT) / 1000);
+            lastT = now;
+            const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
+            if (arrived) { onArrive(); return; }
+            requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+          // Unchecked in the Director ("Wait for arrival before continuing")
+          // — start the next card immediately while this actor keeps
+          // walking toward its target in the background (the loop above
+          // still runs, gated on the same `running` flag a blocking move
+          // uses, so stopping the preview cancels it identically), so
+          // several actors can be sent off at once instead of one at a time.
+          if (!waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+        function runAnimation(stage) {
+          const st = actorStates.get(stage.actorId);
+          const entity = entities.get(stage.actorId);
+          if (!st || !entity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const composer = window.portraitBreathingComposer;
+          let breathTimer = null;
+          if (stage.animKind === 'emote' && entity.kind === 'npc' && entity.profile && composer) composer.triggerEmote(stage.emoteName);
+          if ((stage.animKind === 'breathing' || stage.animKind === 'emote') && entity.kind === 'npc' && entity.profile && composer && window.NpcAvatarPreview && window.PNGPlaneAvatar) {
+            breathTimer = setInterval(async () => {
+              if (!running) { clearInterval(breathTimer); return; }
+              try {
+                await window.NpcAvatarPreview.renderProfileToCanvas(entity.avatarFrontCanvas, entity.profile, { breathingComposer: composer });
+                window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(entity.walker.avatarGroup, entity.avatarFrontCanvas);
+              } catch (e) {}
+            }, 120);
+          }
+          setTimeout(() => {
+            if (!running) return;
+            if (breathTimer) clearInterval(breathTimer);
+            if (stage.resultPose !== 'unchanged') st.pose = stage.resultPose;
+            applyState(stage.actorId);
+            continueTo(getResolvedNext(stage.id, stage.next));
+          }, (stage.duration || 0) * 1000);
+        }
+
+        // A Turn card just hands cutsceneRotationTick (below) a new desired
+        // facing — the continuous per-frame ticker is what actually eases
+        // the actor's rotation toward it, exactly like a stationary real
+        // NPC/creature turning to face something (no instant snap). The
+        // card's own duration is a pacing beat for the scene (when the next
+        // card starts), not a literal "wait until the turn finishes" gate —
+        // same as it was before.
+        function runTurn(stage) {
+          const st = actorStates.get(stage.actorId);
+          if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          let targetDeg = st.rotation;
+          if (stage.mode === 'actor') {
+            const targetSt = actorStates.get(stage.targetActorId);
+            if (targetSt) targetDeg = angleTowardState(st, targetSt);
+          } else {
+            targetDeg = ((Math.round(stage.angle) % 360) + 360) % 360;
+          }
+          desiredFacingDeg.set(stage.actorId, targetDeg);
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Live creature-vs-creature AI, identical in spirit to the Cutscene
+        // Director tool's own combat-card simulation: a creature-linked,
+        // teamed participant chases the nearest Combat On participant on a
+        // different team within the real CREATURE_DB aggro range, and
+        // attacks (cooldown-gated pulse) once within attack range. Same
+        // team or no team = never a threat. Non-creature participants (a
+        // person NPC ever marked Combat On) are left stationary.
+        function runCombat(stage) {
+          stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
+
+          // Real hostile/companion AI, not a bespoke simulation: a hostile
+          // species (CREATURE_DB[...].hostile === true, e.g. gar-wolf) is
+          // added to the real hostileObjects Set and driven by the exact
+          // same updateHostiles() wild creatures chase/attack the player
+          // with. A non-hostile species (e.g. dabinggi-hound) is added to
+          // the real companionObjects Set and driven by updateCompanions()
+          // — the same "defend whoever's nearest hostileObjects to its
+          // master" AI a whistle-summoned companion uses, explicitly pointed
+          // at the real player via c.master (see the `master` field on
+          // makeCreatureEntity — a future authored master besides the
+          // player would just need this line to pick a different entity).
+          // Both are already ticked every frame by the main game loop, so
+          // nothing here drives them by hand; this only registers/
+          // unregisters them and parks the real player.x/y at the scene's
+          // Player actor so that targeting resolves against the right spot
+          // instead of wherever the real player last stood.
+          const combatOnIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
+            .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && CREATURE_DB[a.creatureTypeId]; });
+
+          const playerActor = (payload.actors || []).find(a => a.isPlayer);
+          const playerSt = playerActor ? actorStates.get(playerActor.id) : null;
+          const savedPlayerX = player.x, savedPlayerY = player.y;
+          if (playerSt) { player.x = (playerSt.c + 0.5) * TILE; player.y = (playerSt.r + 0.5) * TILE; }
+
+          const registered = [];
+          for (const actorId of combatOnIds) {
+            const entity = entities.get(actorId);
+            if (!entity || entity.kind !== 'creature') continue;
+            const c = entity.creature;
+            c.state = 'idle';
+            externallyDrivenActorIds.add(actorId); // updateHostiles/updateCompanions own this creature's rotation now
+            if (c.def.hostile) {
+              c.homeX = c.x; c.homeY = c.y;
+              hostileObjects.add(c);
+              registered.push({ c, set: hostileObjects });
+            } else {
+              c.isCompanion = true;
+              c.master = player;
+              companionObjects.add(c);
+              registered.push({ c, set: companionObjects });
+            }
+          }
+
+          setTimeout(() => {
+            for (const { c, set } of registered) { set.delete(c); if (set === companionObjects) c.master = null; }
+            player.x = savedPlayerX; player.y = savedPlayerY;
+            if (!running) return;
+            // Sync each combatant's authored-coordinate state from wherever
+            // the real AI actually left it, so the next stage (a Settle/Flee
+            // move) starts from its true position instead of snapping back
+            // to its pre-combat spawn point. Same for rotation/desired
+            // facing — handing cutsceneRotationTick back control (it resumes
+            // next frame, now that this actorId is out of
+            // externallyDrivenActorIds) with the wrong desired facing would
+            // yank the creature toward its old pre-combat target the instant
+            // combat ends.
+            for (const actorId of combatOnIds) {
+              const entity = entities.get(actorId), st = actorStates.get(actorId);
+              externallyDrivenActorIds.delete(actorId);
+              if (entity?.kind === 'creature' && st) {
+                st.c = entity.creature.x / TILE - 0.5; st.r = entity.creature.y / TILE - 0.5;
+                st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+                desiredFacingDeg.set(actorId, st.rotation);
+              }
+            }
+            stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
+            const canLose = stage.participants.some(p => p.combatOn && p.canLose);
+            if (!canLose) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            const anyEntity = entities.get(stage.participants[0]?.actorId);
+            openLine(anyEntity, 'Combat result', 'A character marked Can Lose may use the separate loss branch.').then(() => {
+              showChoiceOptions([
+                { text: 'No loss', onClick: () => continueTo(getResolvedNext(stage.id, stage.next)) },
+                { text: 'Loss happens', onClick: () => continueTo(getResolvedNext(stage.id, stage.lossNext)) },
+              ]);
+            });
+            cutscenePreviewAdvance = () => {};
+          }, (stage.duration || 0) * 1000);
+        }
+
+        function runFade(stage) {
+          const fadeEl = cutscenePreviewFadeEl();
+          const targetOpacity = stage.direction === 'out' ? 1 : 0;
+          fadeEl.style.transitionDuration = `${stage.duration || 0}s`;
+          requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Smoothly lerps cutscenePreviewZoomPercent (100 = the captured
+        // shot's own unmodified framing, higher = closer — see
+        // updateCameraPosition's cutsceneZoomMul) from wherever it currently
+        // sits to stage.percent over stage.duration seconds, driving the
+        // camera every frame along the way rather than a single instant cut.
+        function runZoom(stage) {
+          const fromPercent = cutscenePreviewZoomPercent;
+          const toPercent = Math.max(10, Number(stage.percent) || 100);
+          const durationMs = Math.max(0, (stage.duration ?? 0.6) * 1000);
+          const start = performance.now();
+          const step = () => {
+            if (!running) return;
+            const t = durationMs <= 0 ? 1 : Math.min(1, (performance.now() - start) / durationMs);
+            cutscenePreviewZoomPercent = fromPercent + (toPercent - fromPercent) * t;
+            updateCameraPosition();
+            if (t < 1) requestAnimationFrame(step);
+            else continueTo(getResolvedNext(stage.id, stage.next));
+          };
+          step();
+        }
+
+        // Actors otherwise only get their state (position, and any starting
+        // pose like Prone) pushed onto their mesh the first time some stage
+        // happens to touch them — an actor a scene never moves or animates
+        // would sit at its raw spawn transform forever. Every actor's
+        // initial authored state is applied once, up front, so a resting
+        // Prone/rotation reads correctly from frame one (and so a
+        // creature's groupRot/pngRot are seeded to match before
+        // cutsceneRotationTick's first real tick below).
+        for (const actorId of actorStates.keys()) applyState(actorId);
+
+        // Continuously eases every actor's rotation toward desiredFacingDeg
+        // (set at spawn from its raw authored rotation, and updated by a
+        // Turn card or a move's arrival facing), every frame, for the
+        // actor's entire time in the scene — not a fixed-duration one-shot
+        // animation that stops driving once a card's own timer runs out.
+        // Skips anyone in externallyDrivenActorIds: a Move stage's own
+        // stepper (walker.moveToward's perpClamp, or updateCreatureMesh
+        // driven by live travel direction) or a Combat stage's real
+        // hostileObjects/companionObjects AI already owns their rotation
+        // that frame.
+        let cutsceneRotLastT = performance.now();
+        function cutsceneRotationTick() {
+          if (!running) return;
+          const now = performance.now();
+          const dt = Math.min(0.05, (now - cutsceneRotLastT) / 1000);
+          cutsceneRotLastT = now;
+          for (const [actorId, st] of actorStates) {
+            if (externallyDrivenActorIds.has(actorId)) continue;
+            const entity = entities.get(actorId);
+            if (!entity) continue;
+            const targetDeg = desiredFacingDeg.get(actorId) ?? st.rotation;
+            if (entity.kind === 'creature' && entity.creature) {
+              // The exact same function real wild/companion creatures are
+              // driven through every frame whether moving or holding still
+              // (see updateHostiles/updateCompanions): groupRot eases
+              // toward the raw target with no dead zone of its own, while
+              // the crossed-plane sprite gets its own separate perpClamp
+              // dead zone (cameraRelativeCreaturePerps/CREATURE_PERP_DEAD_
+              // RAD) internally so it never goes edge-on.
+              //
+              // updateCreatureMesh's own aimAngle parameter is a raw
+              // world-direction angle, converted internally via
+              // rawTargetRotY = -(aimAngle) + PI/2 — a reflected relationship
+              // with groupRot, not a simple additive offset. targetDeg here
+              // is in the "direct model Y-rotation" convention every other
+              // creature rotation path uses instead (Turn cards, spawn, the
+              // tool's own gizmo/preview), so it has to go through the
+              // inverse of that same mapping (creatureAimAngleForGroupRot)
+              // to land groupRot on the actual authored angle rather than
+              // its mirror.
+              updateCreatureMesh(entity.creature, dt, creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg)));
+              updateCreatureAnimFrame(entity.creature, dt, false);
+              st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+            } else {
+              // NPC/player/placeholder: the same idle "face player" ease
+              // real stationary NPCs use (see faceNpcDialogueParticipants's
+              // npcFacePlayerLerp) — a flat coin-plane avatar has no edge-on
+              // issue to dead-zone against, so there's nothing else this
+              // needs to run through.
+              const cfg = npcDialogueStagingConfig();
+              const current = THREE.MathUtils.degToRad(st.rotation);
+              const next = current + angleDiff(THREE.MathUtils.degToRad(targetDeg), current) * (cfg.npcFacePlayerLerp ?? 0.28);
+              st.rotation = THREE.MathUtils.radToDeg(next);
+              applyState(actorId);
+            }
+          }
+          requestAnimationFrame(cutsceneRotationTick);
+        }
+        cutsceneRotationTick();
+
+        if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        runStage(stageOrder[0]);
+      }
+
+      if (window.__hobunjiCutscenePreview) {
+        runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
+          console.error('[cutscene preview] failed to start:', err);
+          cutscenePreviewActive = false;
+          cutscenePreviewBanner('Preview failed to start — see console.', true);
+        });
+      }
+
+      requestAnimationFrame(gameLoop);
+    })();

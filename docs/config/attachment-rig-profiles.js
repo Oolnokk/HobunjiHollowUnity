@@ -178,3 +178,84 @@
     schema: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.schema,
     exportedAt: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.exportedAt,
     mashtzarrPortraitCorrection: 'included-in-v9',
+    anatomyProfiles: 'pending',
+    authoredCharacterProfiles: 10,
+    suppliedCharacterProfiles: 12,
+    sharedCharacterProfiles: 2,
+    exactSuppliedProfiles: 10,
+    authoredCreatureProfiles: 5,
+    parrotSharedProfiles: 2,
+    rakakoanTransforms: 'always-aliased-to-kenkari',
+    anchorPositionCalibration: 'not-needed:v9-runtime-space',
+    anchorPositionScale: 1,
+    posteriorCoordinateSpace: 'floor-relative',
+    posteriorPixelDependency: 'removed',
+  }; // Mobile-readable import status so this source can be verified without DevTools.
+
+  const applyAttachmentRigProfileCorrections = () => {
+    const pngAvatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Receives authored anatomy values once shared config exists.
+    if (!pngAvatarConfig?.portraitScaleBySpecies || !pngAvatarConfig?.portraitVerticalPlacement) return false;
+    pngAvatarConfig.proceduralFeet ||= {};
+    pngAvatarConfig.proceduralFeet.footScale ||= { default: 1 };
+
+    // Remove every transform override owned by an alias species before applying
+    // canonical data. The existing parentSpecies chain then resolves Rakakoan to
+    // Kenkari for body scale/placement, feet, leg bends, and future reads of the
+    // same transform tables instead of allowing copied values to drift apart.
+    for (const aliasSpecies of Object.keys(characterTransformAliases)) {
+      delete pngAvatarConfig.portraitVerticalPlacement[aliasSpecies];
+      delete pngAvatarConfig.portraitScaleBySpecies[aliasSpecies];
+      delete pngAvatarConfig.proceduralFeet.footScale?.[aliasSpecies];
+      delete pngAvatarConfig.proceduralFeet.legBend?.[aliasSpecies];
+    }
+
+    const handScaleUpdates = []; // Defers hand-profile mutation until that later-loaded runtime exists.
+    const appliedProfiles = new Set(); // Alias keys can reference the same canonical profile; only apply each transform record once.
+    for (const profile of Object.values(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)) {
+      if (!profile || appliedProfiles.has(profile)) continue;
+      appliedProfiles.add(profile);
+      const species = String(profile.species || '').trim().toLowerCase();
+      const gender = String(profile.gender || '').trim().toLowerCase();
+      const anatomy = profile.anatomy || {};
+      if (!species || !gender) continue;
+      const placement = Number(anatomy.portraitVerticalPlacementRatio);
+      const portraitScale = Number(anatomy.portraitScale);
+      const handScale = Number(anatomy.handScale);
+      const footScale = Number(anatomy.footScale);
+      if (Number.isFinite(placement)) {
+        pngAvatarConfig.portraitVerticalPlacement[species] ||= {};
+        pngAvatarConfig.portraitVerticalPlacement[species][gender] = placement;
+      }
+      if (Number.isFinite(portraitScale) && portraitScale > 0) {
+        const legacyScale = Number(pngAvatarConfig.portraitScaleBySpecies[species]);
+        const scaleProfile = typeof pngAvatarConfig.portraitScaleBySpecies[species] === 'object'
+          ? pngAvatarConfig.portraitScaleBySpecies[species]
+          : { default: Number.isFinite(legacyScale) && legacyScale > 0 ? legacyScale : 1 };
+        scaleProfile[gender] = portraitScale;
+        pngAvatarConfig.portraitScaleBySpecies[species] = scaleProfile;
+      }
+      if (Number.isFinite(footScale) && footScale > 0) {
+        pngAvatarConfig.proceduralFeet.footScale[species] ||= {};
+        pngAvatarConfig.proceduralFeet.footScale[species][gender] = footScale;
+      }
+      if (Number.isFinite(handScale) && handScale > 0) handScaleUpdates.push({ species, gender, handScale });
+    }
+    const handProfiles = window.HobunjiHandModelProfiles;
+    if (handProfiles?.mutate) {
+      const aliasOverridesPresent = Object.keys(characterTransformAliases).some(aliasSpecies => handProfiles.data?.speciesScaleOverrides?.[aliasSpecies]);
+      const needsMutation = aliasOverridesPresent || handScaleUpdates.some(update => Number(handProfiles.data?.speciesScaleOverrides?.[update.species]?.[update.gender]) !== update.handScale);
+      if (needsMutation) handProfiles.mutate(profileData => {
+        profileData.speciesScaleOverrides ||= {};
+        for (const aliasSpecies of Object.keys(characterTransformAliases)) delete profileData.speciesScaleOverrides[aliasSpecies];
+        for (const update of handScaleUpdates) {
+          profileData.speciesScaleOverrides[update.species] ||= {};
+          profileData.speciesScaleOverrides[update.species][update.gender] = update.handScale;
+        }
+      });
+    }
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles = handProfiles?.mutate ? 'applied' : 'config-applied; hand-runtime-pending';
+    return true;
+  };
+  window.applyHobunjiAttachmentRigProfileCorrections = applyAttachmentRigProfileCorrections; // Called again after deferred config/hand-profile loads.
+  applyAttachmentRigProfileCorrections();
+})();

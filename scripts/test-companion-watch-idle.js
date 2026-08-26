@@ -13,4 +13,9 @@ assert.match(source, /function _tickCompanionWatchIdle\([\s\S]{0,500}c\.vx = 0; 
 assert.match(source, /function _playerFaceTarget\(master = player\)[\s\S]{0,700}PLAYER_FACE_HEIGHT_RATIO/, 'player-facing behaviors resolve the portrait face height instead of the feet');
 const treasurePriority = source.indexOf("} else if (c.treasureCue) {"); // Treasure branch must remain above the cute idle branch.
 const watchPriority = source.indexOf("} else if (c.watchPlayerIdle) {"); // Watch branch must remain below treasure.
-const normalFollowPriority = source.indexOf(
+const normalFollowPriority = source.indexOf("} else if (distToMaster > FOLLOW_FAR_PX) {"); // Follow branch must remain above watch.
+assert(treasurePriority >= 0 && normalFollowPriority > treasurePriority && watchPriority > normalFollowPriority,
+  'priority order is treasure, then normal follow, then watch-player idle, then wander');
+assert.match(source, /if \(target && c\.watchPlayerIdle\) _clearCompanionWatchIdle\(c, 'combat'\);/, 'combat interrupts the watch-player idle');
+
+console.log('Companion watch-player idle regression checks passed.');

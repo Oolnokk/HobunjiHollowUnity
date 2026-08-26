@@ -23,4 +23,15 @@ assert.match(source, /FRONT_XRAY_RENDER_ORDER = 2\.5/,
   'front xray is ordered above body=2 but below shoulder pet=3 without a geometry offset');
 assert.match(source, /yawDot > 0 && uprightDot >= TILT_CUTOFF_DOT/,
   'front xray uses the same binary 90-degree yaw and 35-degree tilt gate as front headwear');
-assert.match(source, /cur
+assert.match(source, /currentMaterial\.opacity = visible \? baseOpacity : 0;/,
+  'culled xray fragments are made fully transparent before alphaTest/depth write');
+assert.match(source, /assembly\.add = function addWithHatXrayParity/,
+  'post-build xray additions are intercepted and corrected when they are created');
+assert.match(loader, /js\/hat-xray-head-facing\.js\?v=20260824a/,
+  'xray parity module loads before game.js constructs the player overlay');
+assert.ok(
+  loader.indexOf('js/front-hat-head-facing.js') < loader.indexOf('js/hat-xray-head-facing.js'),
+  'xray parity wraps the final front-hat-aware avatar builder'
+);
+
+console.log('hat xray facing parity checks passed.');
