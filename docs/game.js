@@ -24040,10 +24040,12 @@
         if (actionPromptEls) return;
         const el = document.getElementById('actionPrompt');
         if (!el) return;
+        // World prompts use the same stacked list-row treatment as merchant
+        // dialogue choices, including when there is only one available action.
         el.innerHTML = `
-          <div class="ap-row">
-            <button class="ap-btn" id="apBtn"></button>
-            <button class="ap-cancel" id="apCancel"></button>
+          <div class="ap-list">
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-btn" id="apBtn"></button>
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-cancel" id="apCancel"></button>
           </div>
           <div class="ap-status" id="apStatus"></div>
           <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
