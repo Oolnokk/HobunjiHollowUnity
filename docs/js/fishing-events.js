@@ -19,7 +19,7 @@
     spawnChance: 0.18,
     ringRadius: 128,
     orbitSpeedDegPerSec: [170, 245],
-    dashCooldownSec: [0.35, 0.9],
+    dashCooldownSec: [3, 7],
     dashDurationSec: [0.28, 0.42],
     hitRadius: 20,
     escapeSeconds: 10,
