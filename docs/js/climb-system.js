@@ -19,7 +19,18 @@
   // movement code.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
-  const climbSafetyDebug = { lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0 }; // Used by Pixel Probe to expose rejected mounted-climb attempts on mobile.
+
+  // World interaction uses the centered reticle in every exterior camera mode;
+  // ranged projectile aim remains on getPlayerAimRay, while climb/nest focus
+  // can still work with a melee weapon or empty hands equipped.
+  function getInteractionRay() {
+    return deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.() || null;
+  }
+  const climbSafetyDebug = {
+    lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0,
+    lastFocusType: null, lastFocusId: null, lastFocusPoint: null,
+    lastFocusDistanceWorld: null, lastFocusAt: 0, lastJumpMode: null,
+  }; // Used by Pixel Probe and the interaction-ray overlay on mobile.
 
   // Climbable shadewood branches, registered per zone by game.js right after
   // it positions each shadewood tree instance (see FoliageGenerator's
@@ -73,48 +84,146 @@
     return null;
   }
 
-  // Facing + proximity scan against this zone's registered branches — same
-  // shape of check as the wall-climb scan above, just angle/distance based
-  // instead of tile-wall based since a branch isn't grid-aligned.
+  // Camera-ray focus owns branch interactions whenever a 3D aim ray exists;
+  // the old facing test remains as the non-shoulder/mobile fallback.
   const BRANCH_CLIMB_PROXIMITY_TILES = 1.15;
   const BRANCH_CLIMB_FACING_COS = 0.55; // ~56 degrees either side of dead-on.
+  function branchTrunkBox(branch) {
+    const x = branch.baseX / deps.TILE, z = branch.baseY / deps.TILE;
+    const half = Math.max(0.32, Number(branch.radius) || 0.25);
+    const groundY = deps.worldSurfaceY?.(branch.baseX, branch.baseY) ?? 0;
+    const topY = Math.max(groundY + 0.6, Number(branch.baseWorldY) + half);
+    return new THREE.Box3(
+      new THREE.Vector3(x - half, groundY, z - half),
+      new THREE.Vector3(x + half, topY, z + half),
+    );
+  }
+  function recordClimbFocusDebug(focus, type) {
+    climbSafetyDebug.lastFocusType = focus ? type : null;
+    climbSafetyDebug.lastFocusId = focus?.candidate?.id || null;
+    climbSafetyDebug.lastFocusPoint = focus?.point
+      ? { x: focus.point.x, y: focus.point.y, z: focus.point.z }
+      : null;
+    climbSafetyDebug.lastFocusDistanceWorld = focus?.distanceWorld ?? null;
+    climbSafetyDebug.lastFocusAt = performance.now();
+    if (focus) window.DebugHitboxes?.noteInteractionFocus?.(focus);
+  }
+
+  function focusedWorldCandidate(candidates, maxDistanceWorld = 12) {
+    const focus = window.RangedWeapons?.focusCandidates?.(candidates, maxDistanceWorld) || null;
+    if (!focus) return null;
+    const hostile = window.RangedWeapons?.focusedHostile?.(maxDistanceWorld) || null;
+    return hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05 ? null : focus;
+  }
   function getBranchClimbTarget() {
     const branches = branchesByArea.get(deps.getCurrentArea());
     if (!branches || !branches.length) return null;
     const player = deps.player;
     const proximityPx = deps.TILE * BRANCH_CLIMB_PROXIMITY_TILES;
+    const nearby = branches.filter(branch => Math.hypot(branch.baseX - player.x, branch.baseY - player.y) <= proximityPx);
+    const hasAimRay = !!getInteractionRay();
+    if (hasAimRay && window.RangedWeapons?.focusCandidates) {
+      const focus = focusedWorldCandidate(nearby.map(branch => ({
+        type: 'branch', id: branch.id || (branch.col + ',' + branch.row), data: branch, box: branchTrunkBox(branch),
+      })));
+      recordClimbFocusDebug(focus, 'branch');
+      return focus ? { type: 'branch', branch: focus.candidate.data, aimDistanceWorld: focus.distanceWorld } : null;
+    }
     const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
     let best = null, bestDist = Infinity;
-    for (const branch of branches) {
+    for (const branch of nearby) {
       const dx = branch.baseX - player.x, dy = branch.baseY - player.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > proximityPx || dist < 1 || dist >= bestDist) continue;
+      if (dist < 1 || dist >= bestDist) continue;
       if ((dx * facingX + dy * facingY) / dist < BRANCH_CLIMB_FACING_COS) continue;
       bestDist = dist; best = branch;
     }
+    climbSafetyDebug.lastFocusType = best ? 'branch-facing-fallback' : null;
+    climbSafetyDebug.lastFocusId = best ? (best.id || (best.col + ',' + best.row)) : null;
+    climbSafetyDebug.lastFocusPoint = null;
+    climbSafetyDebug.lastFocusDistanceWorld = null;
+    climbSafetyDebug.lastFocusAt = performance.now();
     return best ? { type: 'branch', branch: best } : null;
   }
 
-  // Jump-down prompt: only offered once the player has walked out to (near)
-  // the branch's tip AND is facing beyond it (roughly along the branch's
-  // own outward axis) — reaching the tip mid-branch while still facing back
-  // toward the trunk (e.g. after being pushed there) doesn't count. Walking
-  // to the tip under normal branch movement naturally faces the player
-  // outward already (see updateBranchMovement), so in practice this is just
-  // "walk to the end."
+  function branchNestBox(branch, nest) {
+    const x = nest.x / deps.TILE, z = nest.y / deps.TILE;
+    const y = Number(nest.worldY) || ((branch.baseWorldY + branch.tipWorldY) / 2);
+    // Keep an authored midpoint volume even when a decorative nest mesh has a
+    // local pivot/scale that makes its world bounds too small or offset.
+    const authoredBox = new THREE.Box3(
+      new THREE.Vector3(x - 0.55, y - 0.15, z - 0.55),
+      new THREE.Vector3(x + 0.55, y + 0.65, z + 0.55),
+    );
+    if (nest.mesh?.isObject3D) {
+      nest.mesh.updateWorldMatrix?.(true, true);
+      const meshBox = new THREE.Box3().setFromObject(nest.mesh);
+      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12).union(authoredBox);
+    }
+    return authoredBox;
+  }
+
+  // Branch nests share the exact centered ray/nearest-hit arbitration used
+  // by hostile aim. They are only collectible from their own branch.
+  function getAimedNest() {
+    const player = deps.player;
+    const branch = player?.onBranch;
+    const nest = branch?.nest;
+    if (!nest || nest.remaining <= 0 || nest.areaId !== deps.getCurrentArea()) return null;
+    if (Math.hypot(player.x - nest.x, player.y - nest.y) > deps.TILE * 1.6) return null;
+    if (getInteractionRay() && window.RangedWeapons?.focusCandidates) {
+      const focus = focusedWorldCandidate([{ type: 'nest', id: nest.id, data: nest, box: branchNestBox(branch, nest) }]);
+      recordClimbFocusDebug(focus, 'nest');
+      return focus?.candidate?.data || null;
+    }
+    const dx = nest.x - player.x, dy = nest.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    const facing = dist > 0 ? (dx * Math.cos(player.angle) + dy * Math.sin(player.angle)) / dist : 1;
+    return facing >= BRANCH_CLIMB_FACING_COS ? nest : null;
+  }
+
+  function currentLook2D() {
+    const direction = getInteractionRay()?.direction;
+    const len = Math.hypot(Number(direction?.x) || 0, Number(direction?.z) || 0);
+    return len > 0.001
+      ? { x: direction.x / len, y: direction.z / len }
+      : { x: Math.cos(deps.player.angle), y: Math.sin(deps.player.angle) };
+  }
+
+  // Jump-down is available at the tip while looking outward, or anywhere on
+  // the branch while looking roughly perpendicular to it.
   const BRANCH_TIP_T_THRESHOLD = 0.85;
   const BRANCH_JUMP_FACING_COS = 0.7; // ~45 degrees either side of dead-on outward.
+  const BRANCH_JUMP_PERP_DOT_MAX = 0.42;
   function getClimbTarget() {
     if (!deps._isZoneArea(deps.getCurrentArea())) return null;
     const player = deps.player;
     if (player.onBranch) {
       const branch = player.onBranch;
-      if ((player.branchT ?? 0) < BRANCH_TIP_T_THRESHOLD) return null;
+      // An enemy under the same centered ray keeps Action 1 in combat; jump
+      // down only claims it when no hostile body volume is in front.
+      const hostileFocus = getInteractionRay() ? window.RangedWeapons?.focusedHostile?.(24) : null;
+      if (hostileFocus) {
+        climbSafetyDebug.lastFocusType = 'hostile';
+        climbSafetyDebug.lastFocusId = hostileFocus.candidate?.id || null;
+        climbSafetyDebug.lastFocusPoint = hostileFocus.point
+          ? { x: hostileFocus.point.x, y: hostileFocus.point.y, z: hostileFocus.point.z }
+          : null;
+        climbSafetyDebug.lastFocusDistanceWorld = hostileFocus.distanceWorld;
+        climbSafetyDebug.lastFocusAt = performance.now();
+        return null;
+      }
       const axisX = (branch.tipX - branch.baseX) / branch.length;
       const axisY = (branch.tipY - branch.baseY) / branch.length;
-      const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
-      if (axisX * facingX + axisY * facingY < BRANCH_JUMP_FACING_COS) return null;
-      return { type: 'branchJumpDown' };
+      const look = currentLook2D();
+      const along = axisX * look.x + axisY * look.y;
+      if (Math.abs(along) <= BRANCH_JUMP_PERP_DOT_MAX) {
+        return { type: 'branchJumpDown', mode: 'perpendicular', dir: look };
+      }
+      if ((player.branchT ?? 0) >= BRANCH_TIP_T_THRESHOLD && along >= BRANCH_JUMP_FACING_COS) {
+        return { type: 'branchJumpDown', mode: 'tip', dir: { x: axisX, y: axisY } };
+      }
+      return null;
     }
     return getWallClimbTarget() || getBranchClimbTarget();
   }
@@ -133,7 +242,7 @@
       return false;
     }
     if (climb.type === 'branch') return startBranchClimb(climb.branch);
-    if (climb.type === 'branchJumpDown') return startBranchJumpDown();
+    if (climb.type === 'branchJumpDown') return startBranchJumpDown(climb);
 
     const player = deps.player;
     const currentArea = deps.getCurrentArea();
@@ -202,40 +311,38 @@
     return true;
   }
 
-  // Jump down from the tip: a quick single drop (climbHopCount=1, versus 3
-  // for a careful climb) straight down to the tip's own ground projection —
-  // same X/Y, branch height to terrain height — and then, on landing,
-  // updateClimb hands off into a dodge-roll (player._climbJumpDownAxis)
-  // instead of just standing. Safe: unlike being knocked off (see
-  // resolveBranchKnockback/game.js's applyKnockback), this never deals
-  // footing damage.
+  // A quick one-hop vertical drop from the player's current branch point,
+  // followed by the existing landing roll in the aimed jump direction.
   const BRANCH_JUMP_LAND_ROLL_S = 0.32;
-  function startBranchJumpDown() {
+  function startBranchJumpDown(climb = {}) {
     const player = deps.player;
     const branch = player.onBranch;
     if (!branch) return false;
     const currentArea = deps.getCurrentArea();
     const grid = deps.getActiveGrid();
-    const col = Math.floor(branch.tipX / deps.TILE), row = Math.floor(branch.tipY / deps.TILE);
+    const startX = player.x, startY = player.y;
+    const col = Math.floor(startX / deps.TILE), row = Math.floor(startY / deps.TILE);
     const groundTile = grid[row]?.[col];
     const axisX = (branch.tipX - branch.baseX) / branch.length;
     const axisY = (branch.tipY - branch.baseY) / branch.length;
+    const jumpDir = climb.dir || { x: axisX, y: axisY };
     player.onBranch = null;
     player.climbing = true;
     player.climbElapsed = 0;
     player.climbHopCount = 1;
-    player.climbStartX = branch.tipX;
-    player.climbStartY = branch.tipY;
-    player.climbEndX = branch.tipX;
-    player.climbEndY = branch.tipY;
-    player.climbSurfaceStartY = player.branchSurfaceY ?? branch.tipWorldY;
+    player.climbStartX = startX;
+    player.climbStartY = startY;
+    player.climbEndX = startX;
+    player.climbEndY = startY;
+    player.climbSurfaceStartY = player.branchSurfaceY ?? (branch.baseWorldY + (branch.tipWorldY - branch.baseWorldY) * (player.branchT ?? 0));
     player.climbSurfaceEndY = groundTile ? deps.tileSurfaceYInArea(groundTile, currentArea) : 0;
     player.climbSurfaceY = player.climbSurfaceStartY;
     player.climbHopBounce = 0;
     player.vx = 0; player.vy = 0;
     player._climbTargetBranch = null;
-    player._climbJumpDownAxis = { x: axisX, y: axisY };
+    player._climbJumpDownAxis = jumpDir;
     player._climbLastHopIndex = -1;
+    climbSafetyDebug.lastJumpMode = climb.mode || 'tip';
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -380,6 +487,7 @@
   window.ClimbSystem = {
     init,
     getClimbTarget,
+    getAimedNest,
     startClimb,
     updateClimb,
     updateBranchMovement,

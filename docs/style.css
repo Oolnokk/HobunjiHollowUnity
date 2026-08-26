@@ -1253,29 +1253,68 @@
        fishing-specific) — see showActionPrompt/hideActionPrompt in game.js.
        Sits just above where a Stardew-style item/hotbar row would run
        along the very bottom of the screen. */
+    /* Shared merchant/world interaction list scale: 60% of the original
+       popup footprint, while keeping the text treatment identical. */
+    :root {
+      --interaction-choice-popup-cols: 4.2;
+      --interaction-choice-popup-rows: 3.6;
+      --interaction-choice-popup-font: 7px;
+    }
     #actionPrompt {
       position: fixed;
       top: calc(var(--oy) + 15.2 * var(--row)); left: var(--play-center);
+      width: calc(var(--interaction-choice-popup-cols) * var(--col));
+      min-height: 0;
       transform: translateX(-50%);
       z-index: 60;
-      display: none; flex-direction: column; align-items: center; gap: 4px;
+      display: none; flex-direction: column; align-items: stretch; gap: 0;
       pointer-events: none;
+      background: var(--glass-2);
+      border: 1px solid var(--border-bright);
+      border-radius: 0 10px 10px 10px;
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+      overflow: hidden;
     }
     #actionPrompt.open { display: flex; }
-    .ap-row { display: flex; align-items: center; gap: 10px; }
-    .ap-btn, .ap-cancel {
-      pointer-events: auto; background: none; border: none; padding: 2px 4px; cursor: pointer;
-      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
-      letter-spacing: 0.04em;
-      text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+    #actionPrompt .ap-list {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
     }
-    .ap-btn { font-size: 14px; color: var(--accent); }
-    .ap-btn:active { color: #fff; }
-    .ap-cancel { font-size: 9px; color: var(--muted); text-decoration: underline; }
-    .ap-status { font-size: 9px; color: var(--text); min-height: 11px; text-align: center; text-shadow: 0 0 4px rgba(0,0,0,0.85); }
+    #actionPrompt .ap-world-option {
+      display: none;
+      width: 100%;
+      min-height: calc(var(--interaction-choice-popup-rows) * var(--row) / 4);
+      align-items: center;
+      justify-content: flex-start;
+      padding: 2px 6px;
+      pointer-events: auto;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      text-align: left;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: var(--interaction-choice-popup-font);
+      line-height: 1.2;
+      letter-spacing: 0.04em;
+      color: var(--text);
+      text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+      overflow: hidden;
+    }
+    #actionPrompt .ap-world-option:not([style*="display: none"]) { display: flex; }
+    #actionPrompt .ap-world-option.ap-btn { color: var(--accent); }
+    #actionPrompt .ap-world-option.ap-cancel { color: var(--muted); text-decoration: none; }
+    #actionPrompt .ap-world-option:active { background: rgba(255,255,255,0.08); color: #fff; }
+    .ap-status {
+      font-size: 6px; color: var(--text); min-height: 7px; padding: 2px 6px;
+      text-align: center; text-shadow: 0 0 4px rgba(0,0,0,0.85);
+    }
     .ap-status.good { color: var(--ok); }
     .ap-status.bad  { color: var(--danger); }
-    .ap-panic-wrap { width: 72px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
+    .ap-panic-wrap { width: 43px; height: 2px; margin: 0 auto 3px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
     .ap-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
 
     /* ── Combo streak HUD: big "xN" readout on the screen's side, tracking
@@ -1554,7 +1593,9 @@
        Stacked options (rows 0-11 of sub-grid = 75%) + action row (25%). */
     #npcResponsePanel {
       flex-shrink: 0;
-      width: calc(7 * var(--col));
+      width: calc(var(--interaction-choice-popup-cols) * var(--col));
+      height: calc(var(--interaction-choice-popup-rows) * var(--row));
+      align-self: flex-end;
       display: flex;
       flex-direction: column;
       border-left: 1px solid var(--border);
@@ -1573,8 +1614,8 @@
       min-height: 0;
       display: none;
       align-items: center;
-      padding: 4px 10px;
-      font-size: 11px;
+      padding: 2px 6px;
+      font-size: var(--interaction-choice-popup-font);
       color: var(--text);
       background: transparent;
       border: none;
@@ -1612,7 +1653,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: var(--interaction-choice-popup-font);
       color: var(--muted);
       background: transparent;
       border: none;
@@ -1631,7 +1672,7 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
-      font-size: 11px;
+      font-size: var(--interaction-choice-popup-font);
       color: var(--muted);
       background: transparent;
       border: none;
@@ -1641,9 +1682,9 @@
     }
     #npcDialogueContinue kbd {
       font: inherit;
-      font-size: 10px;
+      font-size: 6px;
       color: var(--accent);
-      padding: 1px 5px;
+      padding: 1px 3px;
       border: 1px solid var(--border-bright);
       border-radius: 4px;
     }
