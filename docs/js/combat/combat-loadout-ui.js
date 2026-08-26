@@ -290,6 +290,23 @@
   });
 })();
 
+// Durable livestock-item lineage persistence is isolated from FarmAnimals so
+// the existing count-based inventory does not need a save-schema rewrite. The
+// module waits for FarmAnimals, wraps its public queue/deploy seams, and stores
+// those queued genotypes on the active world member record.
+(() => {
+  'use strict';
+  if (window.LivestockItemGenotypePersistence?.install) { window.LivestockItemGenotypePersistence.install(); return; }
+  if (document.querySelector('script[data-hobunji-livestock-genotypes]')) return;
+  const script = document.createElement('script'); // Used to load the persistent creature-item lineage adapter once.
+  script.src = 'js/livestock-item-genotype-persistence.js?v=20260826a';
+  script.async = false;
+  script.dataset.hobunjiLivestockGenotypes = 'true';
+  script.onload = () => window.LivestockItemGenotypePersistence?.install?.();
+  script.onerror = () => window.__farmLog?.('[genotype] failed to load livestock item persistence', 'warn');
+  (document.head || document.documentElement).appendChild(script);
+})();
+
 // The Compendium is kept in its own file; this already-menu-owned module is
 // the narrow bootstrap so index.html/game.js do not need another dependency.
 (() => {
@@ -297,7 +314,7 @@
   if (window.CompendiumUI?.install) { window.CompendiumUI.install(); return; }
   if (document.querySelector('script[data-hobunji-compendium]')) return;
   const script = document.createElement('script'); // Used to load the isolated player-facing Compendium module once.
-  script.src = 'js/compendium-ui.js?v=20260825a';
+  script.src = 'js/compendium-ui.js?v=20260826farm1';
   script.async = false;
   script.dataset.hobunjiCompendium = 'true';
   script.onload = () => window.CompendiumUI?.install?.();
