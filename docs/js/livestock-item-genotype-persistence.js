@@ -12,6 +12,7 @@
   if (window.LivestockItemGenotypePersistence) return;
 
   const SAVE_META_KEY = 'hobunjiSaveMeta';
+  const PROFILE_KEY = 'hobunjiPlayerProfile';
   const MEMBER_FIELD = 'livestockItemGenotypes';
   const INSTALL_RETRY_MS = 50;
   const INSTALL_RETRY_LIMIT = 200;
@@ -45,8 +46,13 @@
     }
   }
 
+  function storedProfile() {
+    try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); }
+    catch (_) { return null; }
+  }
+
   function currentIds() {
-    const profile = window.__hobunjiPlayerProfile;
+    const profile = window.__hobunjiPlayerProfile || storedProfile();
     const worldId = profile?.worldId || null;
     const characterId = profile?.characterId || null;
     return { worldId, characterId, identity: worldId && characterId ? `${worldId}::${characterId}` : null };
@@ -95,7 +101,7 @@
     return out;
   }
 
-  function saveQueues() {
+  function saveQueues({ consumedItemKey = null } = {}) {
     if (!ensureLoaded()) return false;
     const ids = currentIds();
     const meta = loadMeta();
@@ -108,6 +114,22 @@
     const saved = serializedQueues();
     if (Object.keys(saved).length) member[MEMBER_FIELD] = saved;
     else delete member[MEMBER_FIELD];
+
+    // FarmAnimals consumes the live inventory unit before returning ok, but
+    // its Farm/Stable deployment functions do not themselves flush the
+    // character's world inventory. A lineage deployment must therefore save
+    // both halves together: removing the FIFO head while leaving the saved
+    // stack count untouched would resurrect a generic copy of the consumed egg
+    // on reload. Acquisition sources already save their newly-added stack unit
+    // immediately after queueItemGenotype, so decrementing that saved count by
+    // exactly one here mirrors the successful live deployment atomically.
+    if (consumedItemKey && member.nonGearInventory && typeof member.nonGearInventory === 'object') {
+      const before = Math.max(0, Number(member.nonGearInventory[consumedItemKey]) || 0);
+      const after = Math.max(0, before - 1);
+      if (after > 0) member.nonGearInventory[consumedItemKey] = after;
+      else delete member.nonGearInventory[consumedItemKey];
+    }
+
     try {
       localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta));
       debug.saves++;
@@ -156,7 +178,7 @@
     debug.consumed++;
     debug.lastItemKey = itemKey;
     debug.lastAction = 'consume';
-    saveQueues();
+    saveQueues({ consumedItemKey: itemKey });
     window.__farmLog?.(`[genotype] consumed persisted carried lineage for ${itemKey} (${queues[itemKey]?.length || 0} queued)`, 'wildlife');
   }
 
