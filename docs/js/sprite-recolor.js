@@ -152,55 +152,38 @@
     });
   }
 
-  function loadFishCatalogForGame() {
-    if (typeof document === 'undefined') return;
-    if (!document.getElementById('fishingOverlay') || window.FishCatalog || document.querySelector('script[data-fish-catalog]')) return;
+  function parserOrderedScript(filename, datasetKey, version, alreadyLoaded) {
+    if (typeof document === 'undefined' || alreadyLoaded?.() || document.querySelector(`script[data-${datasetKey}]`)) return;
     const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('fish-catalog.js?v=20260826amphib1', ownSrc).href : 'js/fish-catalog.js?v=20260826amphib1';
+    const src = ownSrc ? new URL(`${filename}?v=${version}`, ownSrc).href : `js/${filename}?v=${version}`;
     if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-fish-catalog="true"></script>`);
+      document.write(`<script src="${src}" data-${datasetKey}="true"></script>`);
       return;
     }
     const script = document.createElement('script');
     script.src = src;
-    script.dataset.fishCatalog = 'true';
-    script.onerror = () => console.warn('[sprite-recolor] failed to load fish-catalog.js');
+    script.dataset[datasetKey.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase())] = 'true';
+    script.onerror = () => console.warn(`[sprite-recolor] failed to load ${filename}`);
     document.head.appendChild(script);
+  }
+
+  function loadFishCatalogForGame() {
+    if (typeof document === 'undefined' || !document.getElementById('fishingOverlay')) return;
+    parserOrderedScript('fish-catalog.js', 'fish-catalog', '20260826amphib1', () => !!window.FishCatalog);
   }
 
   // fishing-events layers the Frenzy/Gullet feature on top of FishCatalog.
   function loadFishingEventsForGame() {
-    if (typeof document === 'undefined') return;
-    if (!document.getElementById('fishingOverlay') || document.querySelector('script[data-fishing-events]')) return;
-    const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('fishing-events.js?v=20260826gullet2', ownSrc).href : 'js/fishing-events.js?v=20260826gullet2';
-    if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-fishing-events="true"></script>`);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.fishingEvents = 'true';
-    script.onerror = () => console.warn('[sprite-recolor] failed to load fishing-events.js');
-    document.head.appendChild(script);
+    if (typeof document === 'undefined' || !document.getElementById('fishingOverlay')) return;
+    parserOrderedScript('fishing-events.js', 'fishing-events', '20260826gullet2');
   }
 
   // Amphibious rules load last so their Fishing accessor sees both FishCatalog
   // and Frenzy/Gullet wrappers, but still before fishing-minigame.js/game.js initialize Fishing.
   function loadAmphibiousFishingForGame() {
-    if (typeof document === 'undefined') return;
-    if (!document.getElementById('fishingOverlay') || window.AmphibiousFishing || document.querySelector('script[data-amphibious-fishing]')) return;
-    const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('amphibious-fishing.js?v=20260826a', ownSrc).href : 'js/amphibious-fishing.js?v=20260826a';
-    if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-amphibious-fishing="true"></script>`);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.amphibiousFishing = 'true';
-    script.onerror = () => console.warn('[sprite-recolor] failed to load amphibious-fishing.js');
-    document.head.appendChild(script);
+    if (typeof document === 'undefined' || !document.getElementById('fishingOverlay')) return;
+    parserOrderedScript('amphibious-fishing.js', 'amphibious-fishing', '20260826a', () => !!window.AmphibiousFishing);
+    parserOrderedScript('amphibious-fish-corpse-cleanup.js', 'amphibious-corpse-cleanup', '20260826a');
   }
 
   window.SpriteRecolor = {
