@@ -183,13 +183,57 @@ assert.strictEqual(heldItemLabel, 'Potion of Strength', 'buff release must selec
 window.AlchemySystem.drinkPotion(strength.itemKey);
 assert.strictEqual(activeCombatSlot, 'ranged', 'buff drinking must also return to the prior combat slot');
 
+// No useful medicine: Cancel remains the physical/default center even when
+// utility categories exist. Invisible blocked spacers balance any missing side.
 contextual = [];
 buffs = [];
 flasks = [];
 selector.openPotions();
-assert.deepStrictEqual(debug().rootOrder, ['Cancel'], 'with no contextual potions, buffs, or flasks the selector must contain only Cancel');
-assert.strictEqual(debug().active, 'Cancel', 'empty Potion Select must still begin and remain on Cancel');
-assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'empty Potion Select must not expose stale Medicine/Utility UI');
+assert.deepStrictEqual(debug().rootOrder, ['Cancel'], 'with no useful medicine, buffs, or flasks the visible selector must contain only Cancel');
+assert.strictEqual(debug().active, 'Cancel', 'fully empty Potion Select must begin on centered Cancel');
+assert.strictEqual(activeIndex, 1, 'fully empty Potion Select must keep Cancel in the middle slot');
+selector.scrollEntries(-1);
+assert.strictEqual(debug().active, 'Cancel', 'scrolling toward an empty counterclockwise side must stay on Cancel');
+selector.scrollEntries(1);
+assert.strictEqual(debug().active, 'Cancel', 'scrolling toward an empty clockwise side must stay on Cancel');
+selector.releaseSelection();
+
+contextual = [];
+buffs = [strength];
+flasks = [];
+selector.openPotions();
+assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Cancel'], 'Buffs-only with no useful medicine must keep only Buffs plus centered Cancel visible');
+assert.strictEqual(debug().active, 'Cancel', 'Buffs-only root must start on Cancel');
+assert.strictEqual(activeIndex, 1, 'Buffs-only root must keep Cancel in the middle slot');
+selector.scrollEntries(1);
+assert.strictEqual(debug().active, 'Cancel', 'missing Flask side must bounce back to Cancel');
+selector.scrollEntries(-1);
+assert.strictEqual(debug().stage, 'buffs', 'counterclockwise from centered Cancel must still enter Buffs');
+assert.strictEqual(debug().active, 'Cancel', 'Buffs category must open on its boundary Cancel');
+selector.releaseSelection();
+
+contextual = [];
+buffs = [];
+flasks = [venom];
+selector.openPotions();
+assert.deepStrictEqual(debug().rootOrder, ['Cancel', 'Flasks'], 'Flasks-only with no useful medicine must keep centered Cancel plus Flasks visible');
+assert.strictEqual(debug().active, 'Cancel', 'Flasks-only root must start on Cancel');
+assert.strictEqual(activeIndex, 1, 'Flasks-only root must keep Cancel in the middle slot');
+selector.scrollEntries(-1);
+assert.strictEqual(debug().active, 'Cancel', 'missing Buff side must bounce back to Cancel');
+selector.scrollEntries(1);
+assert.strictEqual(debug().stage, 'flasks', 'clockwise from centered Cancel must still enter Flasks');
+assert.strictEqual(debug().active, 'Cancel', 'Flasks category must open on its boundary Cancel');
+selector.releaseSelection();
+
+contextual = [];
+buffs = [strength];
+flasks = [venom];
+selector.openPotions();
+assert.deepStrictEqual(debug().rootOrder, ['Buffs', 'Cancel', 'Flasks'], 'with both utility categories and no useful medicine, Cancel must sit between Buffs and Flasks');
+assert.strictEqual(debug().active, 'Cancel', 'utility-only root must still default to Cancel');
+assert.strictEqual(activeIndex, 1, 'utility-only root must keep Cancel in the physical center');
+assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'no-useful-medicine roots must never expose stale Medicine/Utility UI');
 selector.releaseSelection();
 
 assert.strictEqual(debug().mode, 'hold-scroll-contextual', 'diagnostics must identify the new hold/scroll selector');
