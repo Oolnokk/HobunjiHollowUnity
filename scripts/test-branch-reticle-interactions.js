@@ -11,6 +11,8 @@ const ranged = read('docs/js/combat/ranged-weapons.js');
 
 assert(climb.includes('branchJumpDown'), 'branch jump-down path exists');
 assert(climb.includes('collapseTree'), 'tree collapse release path exists');
+assert(climb.includes('rayFocusedNest'), 'nest selection requires a ray-focused collider hit');
+assert(game.includes('const interactionRay = currentPlayerInteractionRay()'), 'cavern nest selection requires an interaction ray');
 assert(climb.includes('updateBranchDefender'), 'branch defender climb path exists');
 assert(game.includes('ClimbSystem?.collapseTree'), 'axe action collapses branch occupants');
 assert(game.includes('updateFallenNests'), 'game loop updates fallen nest lerp');
