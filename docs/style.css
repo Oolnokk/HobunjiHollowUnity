@@ -1264,7 +1264,7 @@
       position: fixed;
       top: calc(var(--oy) + 15.2 * var(--row)); left: var(--play-center);
       width: calc(var(--interaction-choice-popup-cols) * var(--col));
-      min-height: calc(var(--interaction-choice-popup-rows) * var(--row));
+      min-height: 0;
       transform: translateX(-50%);
       z-index: 60;
       display: none; flex-direction: column; align-items: stretch; gap: 0;
