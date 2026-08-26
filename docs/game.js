@@ -22837,7 +22837,7 @@
           const nest = currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
@@ -22903,7 +22903,7 @@
         const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
 
         // Bandit tents are runtime props rather than worldObjects, so expose
