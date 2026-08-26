@@ -22,6 +22,101 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  const CLOUD_FOREST_ID = 'map_southern_cloud_forest'; // Used to keep the specialized routines out of every other biome.
+  const WOLF_SHIFT_HALF_WIDTH_HOURS = 2; // Used to create four-hour shifts centered on sunrise and sunset.
+  const DRENKIRRA_EAT_GAME_HOURS = 0.5; // Used to hold a Drenkirra at one fruit for thirty in-game minutes.
+  const COARSE_NEAR_TILES = 16; // Used as the inner hysteresis edge when returning distant wildlife to full simulation.
+  const COARSE_FAR_TILES = 18; // Used as the outer hysteresis edge before switching wildlife to grid-step simulation.
+  const COARSE_TICK_SECONDS = 1.5; // Used to rate-limit offscreen movement and statistical fights.
+  const MAX_BRANCH_FRUIT = 24; // Used to cap fruit meshes and focus candidates in the dense Cloud Forest.
+  const FRUIT_ITEM_KEY = 'blueberries'; // Used for the existing Southern Cloud Forest forage item granted to the player.
+  const cloudPackGroups = new Map(); // denKey -> shared roaming target used to keep active gar-wolves together.
+  const cloudFruitById = new Map(); // Stable branch key -> today's hanging fruit record.
+  const cloudFruitReservations = new Map(); // Fruit id -> Drenkirra id, preventing the herd from stacking on one meal.
+  const cloudSleepAssignments = new Map(); // Drenkirra id -> branch slot, reused instead of sorting every branch every frame.
+  let cloudFruitDay = null; // Used to rebuild hanging fruit once per in-game day.
+  let cloudFruitLastEnsureAt = 0; // Used to rate-limit branch rescans when chunks have not registered fruit-capable branches yet.
+  let cloudSleepAssignmentsBuiltAt = 0; // Used to refresh night assignments at a low rate as creatures die or chunks change.
+  let cloudFightRolls = 0; // Used by mobile wildlife diagnostics to confirm offscreen fights are being resolved.
+  let lastCloudFight = 'none'; // Used by the mobile-readable wildlife snapshot as the latest coarse fight result.
+
+  function creatureKeyOf(creature) {
+    return String(creature?.creatureKey || creature?.def?.id || creature?.def?.key || '').toLowerCase();
+  }
+
+  function isGarWolf(creature) {
+    return creatureKeyOf(creature).startsWith('gar-wolf') && !creature?.isDenMother;
+  }
+
+  function isDrenkirra(creature) {
+    return creatureKeyOf(creature).includes('drenkirra') && !creature?.isDenMother;
+  }
+
+  function circularHourDistance(hour, center) {
+    const raw = Math.abs((((Number(hour) || 0) - center + 12) % 24 + 24) % 24 - 12); // Used to compare shifts across midnight.
+    return raw;
+  }
+
+  function wolfShiftAtHour(hour) {
+    const sunrise = Number(deps?.MORNING_HOUR) || 6; // Used as the center of the first gar-wolf shift.
+    const sunset = Number(deps?.NIGHT_HOUR) || 22; // Used as the center of the second gar-wolf shift.
+    return circularHourDistance(hour, sunrise) <= WOLF_SHIFT_HALF_WIDTH_HOURS
+      || circularHourDistance(hour, sunset) <= WOLF_SHIFT_HALF_WIDTH_HOURS;
+  }
+
+  function cloudForestDaytime(hour) {
+    const sunrise = Number(deps?.MORNING_HOUR) || 6; // Used as the start of Drenkirra foraging time.
+    const sunset = Number(deps?.NIGHT_HOUR) || 22; // Used as the start of Drenkirra sleeping time.
+    return hour >= sunrise && hour < sunset;
+  }
+
+  function isCloudForestCreature(creature) {
+    return creature?.areaId === CLOUD_FOREST_ID && (isGarWolf(creature) || isDrenkirra(creature));
+  }
+
+  function setCreatureVisible(creature, visible) {
+    if (creature?.avatarRef?.group) creature.avatarRef.group.visible = visible;
+    if (creature?.groundShadow) creature.groundShadow.visible = visible;
+  }
+
+  function canAggroPlayer(creature) {
+    if (!isCloudForestCreature(creature)) return true;
+    if (isGarWolf(creature)) return wolfShiftAtHour(deps.getHour());
+    // Ordinary Drenkirra are prey/foragers. Nestmothers are excluded above
+    // and retain the existing nest-defense attack behavior.
+    return false;
+  }
+
+  function noteCreatureDamaged(creature) {
+    if (!isGarWolf(creature) || creature.areaId !== CLOUD_FOREST_ID || creature.health <= 0) return;
+    creature.state = 'chase';
+    creature.targetPlayer = deps.player;
+    setCreatureVisible(creature, true);
+  }
+
+  function canPredatorHunt(creature) {
+    if (!isGarWolf(creature) || creature?.areaId !== CLOUD_FOREST_ID) return true;
+    return wolfShiftAtHour(deps.getHour());
+  }
+
+  function isCloudForestHuntTarget(attacker, prey) {
+    if (!isGarWolf(attacker) || attacker?.areaId !== CLOUD_FOREST_ID || !wolfShiftAtHour(deps.getHour())) return false;
+    if (!prey || prey.health <= 0 || prey.areaId !== attacker.areaId || prey.onBranch || prey._cloudBranchTransition) return false;
+    return prey.def?.diet === 'herbivore' || isDrenkirra(prey);
+  }
+
+  function huntLeashRangePx(creature) {
+    return isGarWolf(creature) && creature?.areaId === CLOUD_FOREST_ID ? deps.TILE * 20 : null;
+  }
+
+  function predatorSightRangePx(creature, fallback) {
+    return isGarWolf(creature) && creature?.areaId === CLOUD_FOREST_ID ? deps.TILE * 9 : fallback;
+  }
+
+  function isLethalCloudHunt(attacker, target) {
+    return isCloudForestHuntTarget(attacker, target);
+  }
+
   // Once a den's whole pack/herd is wiped, it stays empty — no ambient
   // scatter-spawning — until the next in-game day, when a fresh pack
   // (species re-rolled from the zone's packSpecies pool, not necessarily
@@ -46,9 +141,13 @@
   // 'fleeing-low-health' once it's hurt enough, even if it was already
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
+    if (isLethalCloudHunt(attacker, target)) {
+      deps.damageCreature(target, amount, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', wildlifeSource: true });
+      return;
+    }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
-    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', wildlifeSource: true });
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;
@@ -224,6 +323,13 @@
     for (const key of pendingNestTreeRespawn) if (key.startsWith(prefix)) pendingNestTreeRespawn.delete(key);
     for (const key of [...nestTreeLastKnownAlive.keys()]) if (key.startsWith(prefix)) nestTreeLastKnownAlive.delete(key);
     _nestTreeSelectionCache.delete(zoneId);
+    if (zoneId === CLOUD_FOREST_ID) {
+      disposeCloudFruit();
+      cloudFruitDay = null;
+      cloudPackGroups.clear();
+      cloudSleepAssignments.clear();
+      cloudSleepAssignmentsBuiltAt = 0;
+    }
     // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
     // generation, so a fresh Tothal Shift very likely reuses an old
     // den's exact id — without this, that den's cavern would keep
@@ -286,7 +392,11 @@
       const angle = deps.rnd() * Math.PI * 2;
       const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
       const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-      const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
+      const opts = {
+        homeX, homeY, state: 'idle', denKey, genotype: denGenotype,
+        packIndex: i, packSize: count,
+        denBounds: { x: den.x, y: den.y, w: den.w || 1, h: den.h || 1 },
+      }; // Used by group formation and the own-den collision exemption.
       assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -368,7 +478,7 @@
   const nestTreeEverSpawned = new Set();
   const pendingNestTreeRespawn = new Set();
   const nestTreeLastKnownAlive = new Map();
-  const NEST_TREE_ZONE_ID = 'map_southern_cloud_forest';
+  const NEST_TREE_ZONE_ID = CLOUD_FOREST_ID;
   // A HARD CAP on how many nest trees a zone can ever have, not a fraction
   // of however many climbable branches happen to exist — a dense shadewood
   // forest can easily carry hundreds of registered branches (see
@@ -438,6 +548,492 @@
       liveSelected.push(liveBranch);
     }
     return liveSelected;
+  }
+
+  function allLiveCloudBranches() {
+    return (window.ClimbSystem?.debugBranchesFor?.(CLOUD_FOREST_ID) || []).filter(branch => !branch.felled);
+  }
+
+  function branchPoint(branch, t) {
+    const amount = Math.max(0, Math.min(1, Number(t) || 0)); // Used to keep branch assignments on the finite segment.
+    return {
+      x: branch.baseX + (branch.tipX - branch.baseX) * amount,
+      y: branch.baseY + (branch.tipY - branch.baseY) * amount,
+      worldY: branch.baseWorldY + (branch.tipWorldY - branch.baseWorldY) * amount,
+    };
+  }
+
+  function disposeCloudFruit() {
+    const scene = deps?.zoneScenes?.get(CLOUD_FOREST_ID)?.scene; // Used to detach the previous day's fruit meshes.
+    for (const fruit of cloudFruitById.values()) {
+      if (!fruit.mesh) continue;
+      if (scene) scene.remove(fruit.mesh);
+      fruit.mesh.traverse?.(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
+    }
+    cloudFruitById.clear();
+    cloudFruitReservations.clear();
+    for (const creature of deps?.hostileObjects || []) {
+      creature._cloudFruitId = null;
+      creature._cloudEatT = 0;
+    }
+  }
+
+  function makeFruitMesh(fruit) {
+    const group = new THREE.Group(); // Used as the interaction prompt root and removable fruit cluster.
+    group.name = `cloud_branch_fruit_${fruit.id}`;
+    const geometry = new THREE.SphereGeometry(0.04, 6, 5); // Used by four low-poly blueberries in this one cluster.
+    const material = new THREE.MeshLambertMaterial({ color: 0x4779cf }); // Used to match the existing blueberry forage color family.
+    for (let index = 0; index < 4; index++) {
+      const berry = new THREE.Mesh(geometry, material); // Used as one hanging fruit in the cluster.
+      const angle = index / 4 * Math.PI * 2; // Used to spread berries around the branch instead of overlapping them.
+      berry.position.set(Math.cos(angle) * 0.055, -0.05 - (index % 2) * 0.025, Math.sin(angle) * 0.055);
+      group.add(berry);
+    }
+    group.position.set(fruit.x / deps.TILE, fruit.worldY, fruit.y / deps.TILE);
+    group.userData.cloudFruitId = fruit.id;
+    deps.zoneScenes.get(CLOUD_FOREST_ID)?.scene?.add(group);
+    return group;
+  }
+
+  function ensureCloudForestFruit() {
+    if (deps.getCurrentArea() !== CLOUD_FOREST_ID) return;
+    cloudFruitLastEnsureAt = performance.now();
+    const day = Number(deps.getDay()) || 1; // Used to make picked fruit return on the next in-game day.
+    if (cloudFruitDay !== day) {
+      disposeCloudFruit();
+      cloudFruitDay = day;
+    }
+    const livingDrenkirraIds = new Set([...deps.hostileObjects]
+      .filter(creature => creature.health > 0 && isDrenkirra(creature))
+      .map(creature => creature.id)); // Used to release fruit reserved by a dead/despawned forager.
+    for (const [fruitId, creatureId] of cloudFruitReservations) {
+      if (!livingDrenkirraIds.has(creatureId)) cloudFruitReservations.delete(fruitId);
+    }
+    const branches = allLiveCloudBranches(); // Used to choose a bounded deterministic subset of non-nest branches.
+    const scored = [];
+    for (const branch of branches) {
+      if (branch.nest) continue; // The Nestmother remains alone with her nest and never shares that branch with fruit/sleepers.
+      const id = `${CLOUD_FOREST_ID}:fruit:${branchTileKey(branch)}`; // Used to rebind a fruit record after chunk streaming recreates its branch object.
+      const rng = window.WildernessMapGenerator?.makeRng?.(`${id}:day:${day}`); // Used to make today's fruit selection stable rather than frame-order dependent.
+      scored.push({ id, branch, score: rng ? rng() : deps.rnd() });
+    }
+    scored.sort((left, right) => left.score - right.score);
+    for (const selected of scored.slice(0, MAX_BRANCH_FRUIT)) {
+      const point = branchPoint(selected.branch, 0.68); // Used as both the rendered fruit location and Drenkirra eating perch.
+      let fruit = cloudFruitById.get(selected.id); // Used to preserve picked/eaten state while a live chunk re-registers its branch.
+      if (!fruit) {
+        fruit = {
+          id: selected.id, itemKey: FRUIT_ITEM_KEY, branch: selected.branch, t: 0.68,
+          x: point.x, y: point.y, worldY: point.worldY, remaining: 1, mesh: null,
+        }; // Used by player focus, Drenkirra reservations, and daily disposal.
+        fruit.mesh = makeFruitMesh(fruit);
+        cloudFruitById.set(selected.id, fruit);
+      } else {
+        fruit.branch = selected.branch;
+        fruit.x = point.x; fruit.y = point.y; fruit.worldY = point.worldY;
+        if (fruit.mesh) fruit.mesh.position.set(point.x / deps.TILE, point.worldY, point.y / deps.TILE);
+      }
+      selected.branch.fruit = fruit;
+    }
+  }
+
+  function fruitInteractionBox(fruit) {
+    const half = 0.18; // Used to make the small fruit cluster practical to aim at on mobile.
+    return new THREE.Box3(
+      new THREE.Vector3(fruit.x / deps.TILE - half, fruit.worldY - 0.2, fruit.y / deps.TILE - half),
+      new THREE.Vector3(fruit.x / deps.TILE + half, fruit.worldY + 0.18, fruit.y / deps.TILE + half),
+    );
+  }
+
+  function getAimedFruit() {
+    if (deps?.getCurrentArea?.() !== CLOUD_FOREST_ID || !window.RangedWeapons?.focusCandidates) return null;
+    const player = deps.player; // Used to prevent plucking fruit remotely from across the forest.
+    const candidates = [];
+    for (const fruit of cloudFruitById.values()) {
+      if (fruit.remaining <= 0) continue;
+      const closeToTree = Math.hypot(player.x - fruit.x, player.y - fruit.y) <= deps.TILE * 1.15; // Used as the physical reach gate in addition to ray focus.
+      if (!closeToTree && player.onBranch !== fruit.branch) continue;
+      candidates.push({ type: 'branch-fruit', id: fruit.id, data: fruit, box: fruitInteractionBox(fruit) });
+    }
+    const focus = window.RangedWeapons.focusCandidates(candidates, 3); // Used to select only the centered, nearby fruit cluster.
+    if (!focus?.candidate?.data) return null;
+    const hostile = window.RangedWeapons.focusedHostile?.(3); // Used to keep a closer animal from being hidden behind a fruit prompt.
+    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+    window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    return focus.candidate.data;
+  }
+
+  function removeFruit(fruit) {
+    if (!fruit || fruit.remaining <= 0) return false;
+    fruit.remaining = 0;
+    cloudFruitReservations.delete(fruit.id);
+    if (fruit.mesh) {
+      deps.zoneScenes.get(CLOUD_FOREST_ID)?.scene?.remove(fruit.mesh);
+      fruit.mesh.visible = false;
+    }
+    return true;
+  }
+
+  function takeAimedFruit() {
+    const fruit = getAimedFruit(); // Used to revalidate focus at the instant the action fires.
+    if (!removeFruit(fruit)) return { ok: false, message: 'No fruit is within reach.' };
+    deps.inventory[fruit.itemKey] = Math.min(99, (deps.inventory[fruit.itemKey] || 0) + 1);
+    deps.clampInventoryStack(fruit.itemKey);
+    deps.refreshItemScroll();
+    deps.buildInventoryGrid();
+    deps.saveMemberWorldData();
+    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig?.().harvest);
+    return { ok: true, message: 'Picked Blueberries.' };
+  }
+
+  function chooseFruitFor(creature) {
+    const reserved = creature._cloudFruitId ? cloudFruitById.get(creature._cloudFruitId) : null; // Used to keep a Drenkirra committed to its current meal.
+    if (reserved?.remaining > 0 && cloudFruitReservations.get(reserved.id) === creature.id) return reserved;
+    if (creature._cloudFruitId) cloudFruitReservations.delete(creature._cloudFruitId);
+    creature._cloudFruitId = null;
+    let best = null; // Used to select this individual Drenkirra's nearest unclaimed fruit.
+    let bestDistance = Infinity; // Used to compare candidate fruit without sorting the entire map.
+    for (const fruit of cloudFruitById.values()) {
+      if (fruit.remaining <= 0 || cloudFruitReservations.has(fruit.id)) continue;
+      const distance = Math.hypot(creature.x - fruit.x, creature.y - fruit.y); // Used to distribute the herd spatially instead of random clumping.
+      if (distance < bestDistance) { best = fruit; bestDistance = distance; }
+    }
+    if (best) {
+      creature._cloudFruitId = best.id;
+      cloudFruitReservations.set(best.id, creature.id);
+    }
+    return best;
+  }
+
+  function clearCreatureBranch(creature) {
+    if (!creature.onBranch) return;
+    const branch = creature.onBranch; // Used to return the creature to the trunk before resuming ground navigation.
+    creature.x = branch.baseX;
+    creature.y = branch.baseY;
+    creature.onBranch = null;
+    creature.branchT = 0;
+    creature.branchSurfaceY = 0;
+  }
+
+  function startBranchTransition(creature, branch, targetT, purpose) {
+    const point = branchPoint(branch, targetT); // Used as the interpolation destination on the assigned branch.
+    creature._cloudBranchTransition = {
+      branch, targetT, purpose, t: 0,
+      startX: creature.x, startY: creature.y,
+      startSurfaceY: Number(deps.worldSurfaceY?.(creature.x, creature.y)) || 0,
+      endX: point.x, endY: point.y, endSurfaceY: point.worldY,
+    }; // Used to animate the climb without teleporting from ground to branch.
+    creature.state = purpose === 'sleep' ? 'cloud-climbing-to-sleep' : 'cloud-climbing-to-fruit';
+  }
+
+  function updateBranchTransition(creature, dt) {
+    const transition = creature._cloudBranchTransition; // Used as the active ground-to-branch climb interpolation.
+    if (!transition) return null;
+    transition.t = Math.min(1, transition.t + Math.max(0, Number(dt) || 0) / 0.78);
+    const eased = 1 - Math.pow(1 - transition.t, 2); // Used to ease the creature onto the branch rather than move linearly.
+    creature.x = transition.startX + (transition.endX - transition.startX) * eased;
+    creature.y = transition.startY + (transition.endY - transition.startY) * eased;
+    creature.branchSurfaceY = transition.startSurfaceY + (transition.endSurfaceY - transition.startSurfaceY) * eased;
+    const aimAngle = Math.atan2(transition.endY - creature.y, transition.endX - creature.x); // Used to face into the climb.
+    if (transition.t >= 1) {
+      creature.onBranch = transition.branch;
+      creature.branchT = transition.targetT;
+      creature.x = transition.endX; creature.y = transition.endY; creature.branchSurfaceY = transition.endSurfaceY;
+      creature.state = transition.purpose === 'sleep' ? 'cloud-tree-sleep' : 'cloud-eating-fruit';
+      creature._cloudBranchTransition = null;
+    }
+    return { handled: true, moving: true, aimAngle };
+  }
+
+  function sleepAssignmentFor(creature) {
+    const now = performance.now(); // Used to avoid rebuilding the global two-per-branch allocation for every sleeper every frame.
+    const cached = cloudSleepAssignments.get(creature.id); // Used as this creature's current stable night perch.
+    if (cached && !cached.branch.felled && now - cloudSleepAssignmentsBuiltAt < 1000) return cached;
+    cloudSleepAssignments.clear();
+    cloudSleepAssignmentsBuiltAt = now;
+    const liveBranches = allLiveCloudBranches(); // Used as the one shared branch pool for every nest group.
+    const nestByKey = new Map(liveBranches.filter(branch => branch.nest?.id).map(branch => [branch.nest.id, branch])); // Used to center each sleeper's preference on its own Nestmother.
+    const sleepingBranches = liveBranches.filter(branch => !branch.nest); // Used to guarantee every Nestmother remains alone with her nest.
+    const members = [...deps.hostileObjects]
+      .filter(member => member.health > 0 && isDrenkirra(member) && member.areaId === CLOUD_FOREST_ID)
+      .sort((left, right) => `${left.nestTreeKey}:${left.id}`.localeCompare(`${right.nestTreeKey}:${right.id}`)); // Used to make the global two-per-branch allocation deterministic.
+    const occupancy = new Map(); // Branch -> assigned count, used to enforce two Drenkirra total rather than two per nest group.
+    for (const member of members) {
+      const nestBranch = nestByKey.get(member.nestTreeKey); // Used as this member's distance origin.
+      if (!nestBranch) continue;
+      const candidates = sleepingBranches.slice().sort((left, right) => {
+        const leftDistance = Math.hypot(left.baseX - nestBranch.baseX, left.baseY - nestBranch.baseY); // Used to rank the nearest available sleeping tree.
+        const rightDistance = Math.hypot(right.baseX - nestBranch.baseX, right.baseY - nestBranch.baseY); // Used to rank the nearest available sleeping tree.
+        return leftDistance - rightDistance || branchTileKey(left).localeCompare(branchTileKey(right));
+      });
+      const branch = candidates.find(candidate => (occupancy.get(candidate) || 0) < 2); // Used to select the nearest branch with a free one-of-two slot.
+      if (!branch) continue;
+      const slot = occupancy.get(branch) || 0; // Used to place the pair apart along the same branch.
+      occupancy.set(branch, slot + 1);
+      cloudSleepAssignments.set(member.id, { branch, t: slot === 0 ? 0.35 : 0.65 });
+    }
+    return cloudSleepAssignments.get(creature.id) || null;
+  }
+
+  function cloudGroupTargetFor(creature) {
+    const key = creature.denKey || `wolf:${Math.round(creature.homeX)},${Math.round(creature.homeY)}`; // Used to share one roaming center among den-mates.
+    let group = cloudPackGroups.get(key); // Used to reuse the current group target until its roaming leg expires.
+    const now = performance.now(); // Used to time group target changes in real seconds.
+    if (!group || now >= group.expiresAt) {
+      const angle = deps.rnd() * Math.PI * 2; // Used to select the pack's next shared roaming bearing.
+      const radius = deps.TILE * (5 + deps.rnd() * 7); // Used to send each active shift well beyond the den mouth.
+      group = {
+        x: creature.homeX + Math.cos(angle) * radius,
+        y: creature.homeY + Math.sin(angle) * radius,
+        expiresAt: now + 5000 + deps.rnd() * 5000,
+      }; // Used as the center of the pack's loose moving formation.
+      cloudPackGroups.set(key, group);
+    }
+    const formationAngle = ((Number(creature.packIndex) || 0) / Math.max(1, Number(creature.packSize) || 1)) * Math.PI * 2; // Used to keep den-mates visibly grouped without exact overlap.
+    return {
+      x: group.x + Math.cos(formationAngle) * deps.TILE * 0.65,
+      y: group.y + Math.sin(formationAngle) * deps.TILE * 0.65,
+    };
+  }
+
+  function moveCoarseToward(creature, targetX, targetY, speedScale = 1) {
+    const dx = targetX - creature.x, dy = targetY - creature.y; // Used to advance one low-rate grid-simulation step.
+    const distance = Math.hypot(dx, dy); // Used to clamp the coarse step at the target.
+    if (distance < 1) return false;
+    const step = Math.min(distance, deps.TILE * 2.5 * speedScale); // Used to move distant dots without running per-frame pathfinding.
+    creature.x += dx / distance * step;
+    creature.y += dy / distance * step;
+    creature.facing = Math.atan2(dy, dx);
+    return true;
+  }
+
+  function distantFightScore(creature, randomValue) {
+    const stats = (Number(creature?.maxHealth) || 1)
+      + (Number(creature?.def?.attackDamage) || 1) * 5
+      + (Number(creature?.def?.chaseSpeed) || Number(creature?.def?.moveSpeed) || 1) * 0.2; // Used as the statistical strength behind offscreen fight dice.
+    const healthRatio = Math.max(0.1, Math.min(1, (Number(creature?.health) || 0) / Math.max(1, Number(creature?.maxHealth) || 1))); // Used to make injured animals less likely to win.
+    return stats * healthRatio * (0.7 + (Number(randomValue) || 0) * 0.6);
+  }
+
+  function resolveDistantFight(wolf, prey) {
+    const wolfScore = distantFightScore(wolf, deps.rnd()); // Used as the gar-wolf's weighted die roll.
+    const preyScore = distantFightScore(prey, deps.rnd()); // Used as the prey's weighted die roll.
+    const winner = wolfScore >= preyScore ? wolf : prey; // Used to report and preserve the surviving entity.
+    const loser = winner === wolf ? prey : wolf; // Used as the entity sent through the real death pipeline.
+    deps.damageCreature(loser, Math.max(1, loser.health + 1), winner.x, winner.y, 0, { tag: winner.def?.attackTag || 'sharp', wildlifeSource: true });
+    cloudFightRolls += 1;
+    lastCloudFight = `${winner.creatureKey} defeated ${loser.creatureKey}`;
+    window.__farmLog?.(`[wildlife] coarse fight: ${lastCloudFight} (${wolfScore.toFixed(1)} vs ${preyScore.toFixed(1)})`, 'wildlife');
+  }
+
+  function updateCoarseCreature(creature) {
+    const hour = deps.getHour(); // Used to choose the same schedule state as the nearby visual simulation.
+    if (isGarWolf(creature)) {
+      if (!wolfShiftAtHour(hour)) {
+        moveCoarseToward(creature, creature.homeX, creature.homeY, 1);
+        creature.state = 'cloud-den-resting-coarse';
+        return;
+      }
+      let prey = null; // Used to select the nearest on-ground prey for this coarse hunt step.
+      let preyDistance = Infinity; // Used to compare distant prey without sorting every hostile.
+      for (const candidate of deps.hostileObjects) {
+        if (!isCloudForestHuntTarget(creature, candidate)) continue;
+        const distance = Math.hypot(candidate.x - creature.x, candidate.y - creature.y); // Used to limit coarse awareness to a local grid neighborhood.
+        if (distance < preyDistance && distance <= deps.TILE * 18) { prey = candidate; preyDistance = distance; }
+      }
+      if (prey) {
+        if (preyDistance <= deps.TILE * 1.25) resolveDistantFight(creature, prey);
+        else moveCoarseToward(creature, prey.x, prey.y, 1.25);
+        creature.state = 'cloud-hunting-coarse';
+      } else {
+        const target = cloudGroupTargetFor(creature); // Used to keep offscreen pack dots moving as one shift group.
+        moveCoarseToward(creature, target.x, target.y, 1);
+        creature.state = 'cloud-wolf-shift-coarse';
+      }
+      return;
+    }
+
+    if (isDrenkirra(creature)) {
+      if (!cloudForestDaytime(hour)) {
+        const sleep = sleepAssignmentFor(creature); // Used to move the coarse dot toward its Nestmother-adjacent sleeping tree.
+        if (sleep) moveCoarseToward(creature, sleep.branch.baseX, sleep.branch.baseY, 0.8);
+        creature.state = 'cloud-tree-sleep-coarse';
+        return;
+      }
+      const fruit = chooseFruitFor(creature); // Used to give each coarse Drenkirra an independent feeding destination.
+      if (fruit) {
+        const distance = Math.hypot(creature.x - fruit.x, creature.y - fruit.y); // Used to decide whether this coarse step travels or eats.
+        if (distance > deps.TILE) {
+          moveCoarseToward(creature, fruit.branch.baseX, fruit.branch.baseY, 0.8);
+          creature.state = 'cloud-foraging-coarse';
+        } else {
+          creature._cloudCoarseEatHours = (creature._cloudCoarseEatHours || 0) + deps.gameHoursPerCoarseTick;
+          creature.state = 'cloud-eating-fruit-coarse';
+          if (creature._cloudCoarseEatHours >= DRENKIRRA_EAT_GAME_HOURS) {
+            removeFruit(fruit);
+            creature._cloudCoarseEatHours = 0;
+            creature._cloudFruitId = null;
+          }
+        }
+      } else {
+        const angle = ((String(creature.id).length * 1.618) % (Math.PI * 2)); // Used as an individual fallback bearing when today's fruit is exhausted.
+        moveCoarseToward(creature, creature.homeX + Math.cos(angle) * deps.TILE * 5, creature.homeY + Math.sin(angle) * deps.TILE * 5, 0.6);
+        creature.state = 'cloud-foraging-coarse';
+      }
+    }
+  }
+
+  function updateCloudForestCreature(creature, dt) {
+    if (!isCloudForestCreature(creature)) return null;
+    const currentDay = Number(deps.getDay()) || 1; // Used to avoid rescanning hundreds of branches once per creature per frame.
+    if (cloudFruitDay !== currentDay || (cloudFruitById.size === 0 && performance.now() - cloudFruitLastEnsureAt >= 2000)) ensureCloudForestFruit();
+    const playerDistance = Math.hypot(creature.x - deps.player.x, creature.y - deps.player.y); // Used to switch between nearby visuals and coarse grid simulation.
+    const coarseThreshold = deps.TILE * (creature._coarseSimulated ? COARSE_NEAR_TILES : COARSE_FAR_TILES); // Used as hysteresis so the mode does not flicker at one boundary.
+    if (playerDistance > coarseThreshold && !creature._branchDefense) {
+      creature._coarseSimulated = true;
+      setCreatureVisible(creature, false);
+      creature._cloudCoarseTimer = (creature._cloudCoarseTimer || 0) - dt;
+      if (creature._cloudCoarseTimer <= 0) {
+        creature._cloudCoarseTimer = COARSE_TICK_SECONDS;
+        clearCreatureBranch(creature);
+        updateCoarseCreature(creature);
+      }
+      return { handled: true, moving: false, aimAngle: creature.facing || 0 };
+    }
+
+    if (creature._coarseSimulated) {
+      creature._coarseSimulated = false;
+      creature._cloudCoarseTimer = 0;
+      setCreatureVisible(creature, true);
+      creature.scaleY = 1;
+    }
+    if (creature.state === 'chase' || creature.state === 'patrol-chase') setCreatureVisible(creature, true);
+    const transitionResult = updateBranchTransition(creature, dt); // Used to let an in-progress climb own this frame's movement.
+    if (transitionResult) return transitionResult;
+
+    const hour = deps.getHour(); // Used to choose the nearby shift/forage/sleep routine.
+    if (isGarWolf(creature)) {
+      if (creature.state === 'chase' || creature.state === 'patrol-chase' || creature.state === 'fleeing-low-health' || creature.prone || creature.knockbackT > 0) return null;
+      if (!wolfShiftAtHour(hour)) {
+        const distance = Math.hypot(creature.x - creature.homeX, creature.y - creature.homeY); // Used to hide the wolf only after it has actually returned inside its den.
+        if (distance > deps.TILE * 0.35) {
+          const moving = deps.travelCreatureToward(creature, creature.homeX, creature.homeY, creature.def.moveSpeed, dt); // Used to path home through the creature's own den exemption.
+          creature.state = 'cloud-returning-to-den';
+          return { handled: true, moving, aimAngle: Math.atan2(creature.homeY - creature.y, creature.homeX - creature.x) };
+        }
+        creature.state = 'cloud-den-resting';
+        setCreatureVisible(creature, false);
+        return { handled: true, moving: false, aimAngle: creature.facing || 0 };
+      }
+      setCreatureVisible(creature, true);
+      const target = cloudGroupTargetFor(creature); // Used to keep the nearby pack in one loose sunrise/sunset formation.
+      const moving = deps.travelCreatureToward(creature, target.x, target.y, creature.def.moveSpeed, dt); // Used to route the whole shift around real structures.
+      creature.state = 'cloud-wolf-shift';
+      return { handled: true, moving, aimAngle: moving ? Math.atan2(target.y - creature.y, target.x - creature.x) : creature.facing || 0 };
+    }
+
+    if (creature.state === 'fleeing-low-health' || creature.prone || creature.knockbackT > 0) return null;
+    if (!cloudForestDaytime(hour)) {
+      if (creature._cloudFruitId) cloudFruitReservations.delete(creature._cloudFruitId);
+      creature._cloudFruitId = null;
+      creature._cloudEatT = 0;
+      const sleep = sleepAssignmentFor(creature); // Used to enforce two ordinary Drenkirra per branch nearest their Nestmother.
+      if (!sleep) {
+        creature.scaleY = 0.5;
+        creature.state = 'cloud-ground-sleep-fallback';
+        return { handled: true, moving: false, aimAngle: creature.facing || 0 };
+      }
+      if (creature.onBranch === sleep.branch) {
+        const point = branchPoint(sleep.branch, sleep.t); // Used to hold the sleeper in its assigned one-of-two branch slot.
+        creature.branchT = sleep.t; creature.x = point.x; creature.y = point.y; creature.branchSurfaceY = point.worldY;
+        creature.scaleY = 0.5;
+        creature.state = 'cloud-tree-sleep';
+        return { handled: true, moving: false, aimAngle: creature.facing || 0 };
+      }
+      if (creature.onBranch) clearCreatureBranch(creature);
+      creature.scaleY = 1;
+      const distance = Math.hypot(creature.x - sleep.branch.baseX, creature.y - sleep.branch.baseY); // Used to decide whether to travel to or climb the sleeping tree.
+      if (distance > deps.TILE * 0.55) {
+        const moving = deps.travelCreatureToward(creature, sleep.branch.baseX, sleep.branch.baseY, creature.def.moveSpeed, dt); // Used to route separately to the assigned tree.
+        creature.state = 'cloud-traveling-to-sleep-tree';
+        return { handled: true, moving, aimAngle: Math.atan2(sleep.branch.baseY - creature.y, sleep.branch.baseX - creature.x) };
+      }
+      startBranchTransition(creature, sleep.branch, sleep.t, 'sleep');
+      return updateBranchTransition(creature, dt);
+    }
+
+    creature.scaleY = 1;
+    if (creature.onBranch && creature.state === 'cloud-tree-sleep') clearCreatureBranch(creature);
+    const fruit = chooseFruitFor(creature); // Used to send each daytime Drenkirra toward a separate hanging fruit.
+    if (!fruit) {
+      const moving = deps.wanderTick(creature, dt, creature.homeX, creature.homeY, deps.TILE * 6); // Used as independent daytime searching after all fruit is gone/reserved.
+      creature.state = 'cloud-searching-for-fruit';
+      return { handled: true, moving, aimAngle: moving ? Math.atan2(creature.vy, creature.vx) : creature.facing || 0 };
+    }
+    if (creature.onBranch === fruit.branch) {
+      const point = branchPoint(fruit.branch, fruit.t); // Used to keep the eater beside its selected fruit for the full timer.
+      creature.branchT = fruit.t; creature.x = point.x; creature.y = point.y; creature.branchSurfaceY = point.worldY;
+      creature._cloudEatT = (creature._cloudEatT || 0) + dt;
+      creature.state = 'cloud-eating-fruit';
+      const eatSeconds = Math.max(0.1, DRENKIRRA_EAT_GAME_HOURS / deps.gameHoursPerSecond); // Used to convert thirty game minutes to real simulation seconds.
+      if (creature._cloudEatT >= eatSeconds) {
+        removeFruit(fruit);
+        creature._cloudEatT = 0;
+        creature._cloudFruitId = null;
+        clearCreatureBranch(creature);
+      }
+      return { handled: true, moving: false, aimAngle: creature.facing || 0 };
+    }
+    if (creature.onBranch) clearCreatureBranch(creature);
+    const distance = Math.hypot(creature.x - fruit.branch.baseX, creature.y - fruit.branch.baseY); // Used to decide whether this individual travels or starts climbing.
+    if (distance > deps.TILE * 0.55) {
+      const moving = deps.travelCreatureToward(creature, fruit.branch.baseX, fruit.branch.baseY, creature.def.moveSpeed, dt); // Used to route independently to the fruit tree.
+      creature.state = 'cloud-traveling-to-fruit';
+      return { handled: true, moving, aimAngle: Math.atan2(fruit.branch.baseY - creature.y, fruit.branch.baseX - creature.x) };
+    }
+    startBranchTransition(creature, fruit.branch, fruit.t, 'fruit');
+    return updateBranchTransition(creature, dt);
+  }
+
+  function cloudForestDebugSnapshot() {
+    const hour = Number(deps?.getHour?.()) || 0; // Used to report the exact schedule branch active in mobile diagnostics.
+    let coarse = 0, wolves = 0, drenkirra = 0, sleepers = 0, eaters = 0; // Used as compact counters in the debug panel/dump.
+    for (const creature of deps?.hostileObjects || []) {
+      if (creature.areaId !== CLOUD_FOREST_ID || creature.health <= 0) continue;
+      if (creature._coarseSimulated) coarse++;
+      if (isGarWolf(creature)) wolves++;
+      if (isDrenkirra(creature)) drenkirra++;
+      if (String(creature.state).includes('sleep')) sleepers++;
+      if (String(creature.state).includes('eating-fruit')) eaters++;
+    }
+    const fruitRemaining = [...cloudFruitById.values()].filter(fruit => fruit.remaining > 0).length; // Used to expose today's remaining meals/pickups.
+    return {
+      hour, wolfShiftActive: wolfShiftAtHour(hour), daytime: cloudForestDaytime(hour),
+      wolves, drenkirra, sleepers, eaters, coarse,
+      fruitRemaining, fruitTotal: cloudFruitById.size,
+      coarseFightRolls: cloudFightRolls, lastCloudFight,
+    };
+  }
+
+  function refreshCloudForestDebugCard() {
+    const pane = document.getElementById('devWildlifePane'); // Used as the existing mobile-visible wildlife diagnostics host.
+    if (!pane) return;
+    let card = document.getElementById('cloudForestRoutineDebug'); // Used to reuse one live schedule/simulation card.
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'cloudForestRoutineDebug';
+      card.className = 'small';
+      card.style.cssText = 'margin:6px 0;padding:6px;border:1px solid currentColor;border-radius:6px;white-space:pre-line;';
+      pane.prepend(card);
+    }
+    const snapshot = cloudForestDebugSnapshot(); // Used to format current shift, feeding, sleep, fruit, and coarse-fight state.
+    card.textContent = [
+      'Cloud Forest Routines',
+      `hour ${snapshot.hour.toFixed(2)} · wolves ${snapshot.wolfShiftActive ? 'ON SHIFT' : 'in dens'} · ${snapshot.daytime ? 'day forage' : 'tree sleep'}`,
+      `wolves ${snapshot.wolves} · drenkirra ${snapshot.drenkirra} · sleep ${snapshot.sleepers} · eat ${snapshot.eaters}`,
+      `coarse dots ${snapshot.coarse} · fruit ${snapshot.fruitRemaining}/${snapshot.fruitTotal}`,
+      `far fights ${snapshot.coarseFightRolls} · ${snapshot.lastCloudFight}`,
+    ].join('\n');
   }
 
   function spawnNestAtBranch(zoneId, branch, key) {
@@ -565,6 +1161,8 @@
     if (!deps.buildZoneScene(currentArea)) return;
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneNestTrees();
+    ensureCloudForestFruit();
+    refreshCloudForestDebugCard();
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
@@ -593,6 +1191,16 @@
     getDenGenotypes: () => _denGenotypes,
     forgetZoneDenState,
     isDenPackAlive,
+    canAggroPlayer,
+    noteCreatureDamaged,
+    canPredatorHunt,
+    isCloudForestHuntTarget,
+    huntLeashRangePx,
+    predatorSightRangePx,
+    updateCloudForestCreature,
+    getAimedFruit,
+    takeAimedFruit,
+    cloudForestDebugSnapshot,
     updateHostileSpawning,
     onZoneEntered,
     // Also clears pendingNestTreeRespawn — a wiped nest tree waits for the
@@ -600,5 +1208,6 @@
     // so it rides the same day-advance call sites as den respawn instead of
     // needing its own.
     clearPendingDenRespawn: () => { pendingDenRespawn.clear(); pendingNestTreeRespawn.clear(); },
+    _test: { circularHourDistance, wolfShiftAtHour, cloudForestDaytime, distantFightScore },
   };
 })();
