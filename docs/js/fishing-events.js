@@ -18,11 +18,18 @@
   const GULLET_CONFIG = Object.freeze({ // Used by the secondary-ring Gullet state machine.
     spawnChance: 0.18,
     ringRadius: 128,
-    orbitSpeedDegPerSec: [170, 245],
+    recoveryDurationSec: [1.5, 2.5],
+    recoverySpeedDegPerSec: [18, 28],
+    sprintDurationSec: [3.5, 5.5],
+    sprintSpeedDegPerSec: [160, 230],
+    sprintFlipIntervalSec: [0.28, 0.95],
     dashCooldownSec: [3, 7],
     dashDurationSec: [0.28, 0.42],
     hitRadius: 20,
     escapeSeconds: 10,
+    silhouetteBaseWidth: 64,
+    silhouetteBaseHeight: 40,
+    silhouetteWidthMultiplier: 2,
   });
   const AREA_TO_FISH_ZONE = Object.freeze({ // Used to keep frenzies restricted to wilderness zones that actually have authored fish.
     map_northern_cliffs: 'northernCliffs',
@@ -51,6 +58,10 @@
     mode: 'none',
     angleDeg: 0,
     orbitSpeedDegPerSec: 0,
+    orbitDirection: 1,
+    locomotionPhase: 'sprint',
+    locomotionPhaseRemaining: 0,
+    sprintFlipRemaining: 0,
     dashCooldownSec: 0,
     dashT: 0,
     dashDurationSec: 0,
@@ -292,6 +303,39 @@
     return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
   }
 
+  function gulletSilhouetteSize() {
+    const entries = Array.isArray(window.FishCatalog?.entries) ? window.FishCatalog.entries : []; // Used to read the authored species width scales instead of hard-coding a specific current fish.
+    const maxWidthScale = entries.reduce((max, entry) => Math.max(max, Number(entry?.minigameScaleX ?? entry?.minigameScale ?? 1) || 1), 1); // Used as the widest existing authored fish width multiplier.
+    const width = GULLET_CONFIG.silhouetteBaseWidth * maxWidthScale * GULLET_CONFIG.silhouetteWidthMultiplier; // Used to make the Gullet exactly twice the widest authored fish body width.
+    const height = width * (GULLET_CONFIG.silhouetteBaseHeight / GULLET_CONFIG.silhouetteBaseWidth); // Used to preserve the existing silhouette asset's aspect ratio.
+    return { width, height, maxWidthScale };
+  }
+
+  function setGulletLocomotionPhase(phase) {
+    const sprinting = phase === 'sprint'; // Used to switch between the exhausted recovery bout and the erratic sprint bout.
+    gulletState.locomotionPhase = sprinting ? 'sprint' : 'recovery';
+    gulletState.locomotionPhaseRemaining = randomRange(sprinting ? GULLET_CONFIG.sprintDurationSec : GULLET_CONFIG.recoveryDurationSec);
+    const speed = randomRange(sprinting ? GULLET_CONFIG.sprintSpeedDegPerSec : GULLET_CONFIG.recoverySpeedDegPerSec); // Used as this bout's ring travel speed.
+    gulletState.orbitSpeedDegPerSec = speed * gulletState.orbitDirection;
+    gulletState.sprintFlipRemaining = sprinting ? randomRange(GULLET_CONFIG.sprintFlipIntervalSec) : Infinity;
+  }
+
+  function updateGulletLocomotion(dt) {
+    gulletState.locomotionPhaseRemaining -= dt;
+    if (gulletState.locomotionPhaseRemaining <= 0) {
+      setGulletLocomotionPhase(gulletState.locomotionPhase === 'sprint' ? 'recovery' : 'sprint');
+    }
+    if (gulletState.locomotionPhase === 'sprint') {
+      gulletState.sprintFlipRemaining -= dt;
+      if (gulletState.sprintFlipRemaining <= 0) {
+        gulletState.orbitDirection *= -1;
+        gulletState.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.sprintSpeedDegPerSec) * gulletState.orbitDirection; // Used to make each sprint reversal slightly different instead of metronomic.
+        gulletState.sprintFlipRemaining = randomRange(GULLET_CONFIG.sprintFlipIntervalSec);
+      }
+    }
+    gulletState.angleDeg = (gulletState.angleDeg + gulletState.orbitSpeedDegPerSec * dt + 360) % 360;
+  }
+
   function gulletColorSpriteDataUrl() {
     const canvas = document.createElement('canvas'); // Used to render the surfaced non-silhouette Gullet Fish sprite without requiring a new binary asset.
     canvas.width = 112;
@@ -335,13 +379,27 @@
     const ring = document.createElementNS(ns, 'circle'); // Used as the extra outer patrol ring requested for Gullet encounters.
     ring.setAttribute('cx', '160'); ring.setAttribute('cy', '160'); ring.setAttribute('r', String(GULLET_CONFIG.ringRadius));
     ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', 'rgba(166,207,180,0.48)'); ring.setAttribute('stroke-width', '3'); ring.setAttribute('stroke-dasharray', '7 5');
-    const fish = document.createElementNS(ns, 'g'); // Used as the wide black silhouette while the Gullet patrols/dashes.
+    const fish = document.createElementNS(ns, 'g'); // Used as the moving transform root for the Gullet silhouette.
     fish.setAttribute('id', 'gulletFishSilhouette');
-    const body = document.createElementNS(ns, 'ellipse'); // Used as the intentionally fat Gullet body silhouette.
-    body.setAttribute('cx', '0'); body.setAttribute('cy', '0'); body.setAttribute('rx', '27'); body.setAttribute('ry', '13'); body.setAttribute('fill', 'rgba(12,15,13,0.94)');
-    const tail = document.createElementNS(ns, 'path'); // Used as the broad triangular Gullet tail silhouette.
-    tail.setAttribute('d', 'M -23 0 L -42 -15 L -38 0 L -42 15 Z'); tail.setAttribute('fill', 'rgba(12,15,13,0.94)');
-    fish.append(body, tail);
+    const visual = document.createElementNS(ns, 'g'); // Used to mirror the existing left-facing fish silhouette so positive heading points forward.
+    visual.setAttribute('transform', 'scale(-1 1)');
+    const silhouette = gulletSilhouetteSize(); // Used to size the Gullet at exactly twice the widest existing authored species.
+    const body = document.createElementNS(ns, 'image'); // Used as the exact existing fish body silhouette asset.
+    body.setAttribute('href', 'assets/hud/fish_silhouette-body.png');
+    body.setAttribute('x', (-silhouette.width / 2).toFixed(2));
+    body.setAttribute('y', (-silhouette.height / 2).toFixed(2));
+    body.setAttribute('width', silhouette.width.toFixed(2));
+    body.setAttribute('height', silhouette.height.toFixed(2));
+    body.setAttribute('preserveAspectRatio', 'none');
+    const whiskers = document.createElementNS(ns, 'image'); // Used as the matching existing whisker silhouette layer.
+    whiskers.setAttribute('href', 'assets/hud/fish_silhouette-whiskers.png');
+    whiskers.setAttribute('x', (-silhouette.width / 2).toFixed(2));
+    whiskers.setAttribute('y', (-silhouette.height / 2).toFixed(2));
+    whiskers.setAttribute('width', silhouette.width.toFixed(2));
+    whiskers.setAttribute('height', silhouette.height.toFixed(2));
+    whiskers.setAttribute('preserveAspectRatio', 'none');
+    visual.append(body, whiskers);
+    fish.appendChild(visual);
     group.append(ring, fish);
     svg.appendChild(group);
     gulletState.ringGroup = group;
@@ -365,6 +423,10 @@
     removeSurfaceSprite();
     gulletState.pendingForCast = false;
     gulletState.mode = 'none';
+    gulletState.orbitDirection = 1;
+    gulletState.locomotionPhase = 'sprint';
+    gulletState.locomotionPhaseRemaining = 0;
+    gulletState.sprintFlipRemaining = 0;
     gulletState.dashStart = null;
     gulletState.dashEnd = null;
     gulletState.surfaceStart = null;
@@ -378,9 +440,10 @@
     gulletState.mode = 'orbit';
     gulletState.pendingForCast = false;
     gulletState.angleDeg = Math.random() * 360;
-    gulletState.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.orbitSpeedDegPerSec) * (Math.random() < 0.5 ? -1 : 1);
+    gulletState.orbitDirection = Math.random() < 0.5 ? -1 : 1;
+    setGulletLocomotionPhase('sprint');
     gulletState.dashCooldownSec = randomRange(GULLET_CONFIG.dashCooldownSec);
-    const start = pointOnRing(gulletState.angleDeg, GULLET_CONFIG.ringRadius); // Used as the initial fast patrol position.
+    const start = pointOnRing(gulletState.angleDeg, GULLET_CONFIG.ringRadius); // Used as the initial patrol position.
     gulletState.x = start.x;
     gulletState.y = start.y;
     window.__farmLog?.('[fishing-events] Gullet Fish encounter started', 'fish');
@@ -609,8 +672,8 @@
     if (gulletState.mode === 'none' || gulletState.mode === 'retrieved' || gulletState.mode === 'escaped') return;
 
     if (gulletState.mode === 'orbit') {
-      gulletState.angleDeg = (gulletState.angleDeg + gulletState.orbitSpeedDegPerSec * dt + 360) % 360;
-      const pos = pointOnRing(gulletState.angleDeg, GULLET_CONFIG.ringRadius); // Used as the current fast patrol position on the Gullet ring.
+      updateGulletLocomotion(dt);
+      const pos = pointOnRing(gulletState.angleDeg, GULLET_CONFIG.ringRadius); // Used as the current patrol position on the Gullet ring.
       gulletState.x = pos.x;
       gulletState.y = pos.y;
       gulletState.dashCooldownSec -= dt;
@@ -641,7 +704,7 @@
     }
 
     if (gulletState.ringFish) {
-      const tangentAngle = gulletState.mode === 'orbit' ? gulletState.angleDeg + (gulletState.orbitSpeedDegPerSec >= 0 ? 90 : -90) : Math.atan2(gulletState.dashEnd.y - gulletState.dashStart.y, gulletState.dashEnd.x - gulletState.dashStart.x) * 180 / Math.PI; // Used to orient the wide silhouette along patrol/dash motion.
+      const tangentAngle = gulletState.mode === 'orbit' ? gulletState.angleDeg + (gulletState.orbitSpeedDegPerSec >= 0 ? 90 : -90) : Math.atan2(gulletState.dashEnd.y - gulletState.dashStart.y, gulletState.dashEnd.x - gulletState.dashStart.x) * 180 / Math.PI; // Used to orient the reused silhouette along patrol/dash motion.
       gulletState.ringFish.setAttribute('transform', `translate(${gulletState.x.toFixed(2)} ${gulletState.y.toFixed(2)}) rotate(${tangentAngle.toFixed(2)})`);
     }
 
@@ -762,7 +825,8 @@
     const event = frenzyState.event; // Used to summarize active Frenzy tile/lifetime state in the mobile debug panel.
     const status = debugPanel.querySelector('[data-status]'); // Used as the single compact status text target.
     if (!status) return;
-    status.textContent = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}`;
+    const gulletMotion = gulletState.mode === 'orbit' ? `/${gulletState.locomotionPhase} ${Math.max(0, gulletState.locomotionPhaseRemaining).toFixed(1)}s` : ''; // Used to expose the current sprint/recovery bout without requiring devtools.
+    status.textContent = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletMotion}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}`;
   }
 
   function featureLoop(nowMs) {
@@ -792,6 +856,8 @@
       frenzy: frenzyState.event ? { area: frenzyState.event.area, remainingHours: frenzyState.event.remainingHours, tiles: frenzyState.event.tiles.map(tile => ({ col: tile.col, row: tile.row })) } : null,
       currentCastFrenzy,
       gulletMode: gulletState.mode,
+      gulletLocomotionPhase: gulletState.mode === 'orbit' ? gulletState.locomotionPhase : null,
+      gulletLocomotionRemaining: gulletState.mode === 'orbit' ? gulletState.locomotionPhaseRemaining : null,
       gulletEscapeRemaining: gulletState.mode === 'surface' ? Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed) : null,
     }),
     forceFrenzy: () => { clearFrenzyEvent(); frenzyState.spawnDelayHours = 0; return !!spawnFrenzyEvent(true); },
