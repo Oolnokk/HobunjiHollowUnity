@@ -27,8 +27,12 @@ let slots = []; // Mirrors the currently rendered shared-arch slots for selector
 let mode = null; // Tracks the fake shared arch mode so callback-driven transitions behave like game.js.
 let activeIndex = -1; // Tracks the highlighted shared-arch entry used by scroll/commit.
 let heldItemLabel = 'Pebble'; // Tracks the ordinary inventory selection committed by the potion adapter.
+let heldMode = 'tool'; // Mirrors game.js's hidden heldMode so the quick-switch can prove temporary item restoration.
+let activeCombatSlot = 'ranged'; // Potion Select begins from ranged for exact-slot restoration coverage.
+let weaponSwitchClicks = 0; // Ensures restoration uses the existing quick-switch rather than mutating private state.
 const inventoryLabels = ['Pebble', 'Healing Potion', 'Stamina Potion · Potency 2', 'Potion of Strength', 'Venom Flask']; // Ordinary item-wheel order used to validate exact-stack selection.
 let inventoryIndex = 0; // Used by the fake ordinary item wheel's wraparound cycling.
+const listeners = new Map(); // Minimal CustomEvent bus for flask-release restoration.
 
 function syncActive() {
   slots.forEach((slot, index) => {
@@ -36,6 +40,18 @@ function syncActive() {
     else slot.classList.remove('arc-active');
   });
 }
+
+const weaponSwitchButton = {
+  click() {
+    weaponSwitchClicks++;
+    if (heldMode === 'item') {
+      heldMode = 'tool';
+      activeCombatSlot = 'weapon'; // Mirrors the normal-tool/item -> melee entry path.
+      return;
+    }
+    activeCombatSlot = activeCombatSlot === 'weapon' ? 'ranged' : 'weapon';
+  },
+};
 
 const arc = {
   openEntries(nextMode, entries) {
@@ -55,6 +71,7 @@ const arc = {
   releaseSelection() { this.commit(); },
   commit() {
     if (mode === 'item') {
+      heldMode = 'item';
       heldItemLabel = itemName.textContent;
       this.close();
       return true;
@@ -80,9 +97,19 @@ const arc = {
 global.document = {
   querySelector: selector => selector.includes('.arc-active') ? slots.find(slot => slot.classList.contains('arc-active')) || null : null,
   querySelectorAll: selector => selector.startsWith('.arc-slot') ? slots : [],
-  getElementById: id => id === 'itemName' ? itemName : null,
+  getElementById: id => id === 'itemName' ? itemName : id === 'btnWeaponSwitch' ? weaponSwitchButton : null,
+  addEventListener(type, listener) {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(listener);
+  },
+  dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener(event); },
 };
-global.window = { _desktopSelectionArc:arc, SharedSelectionArch:arc };
+global.CustomEvent = class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
+global.window = {
+  _desktopSelectionArc:arc,
+  SharedSelectionArch:arc,
+  WeaponToolStances:{ debugSnapshot:() => ({ activeSlot:activeCombatSlot }) },
+};
 
 const defs = {
   heal:{ id:'heal', label:'Healing Potion', icon:'💚' },
@@ -94,12 +121,16 @@ const healing = { itemKey:'alchemy_heal_p0', payload:{recipeId:'heal',potencyTie
 const stamina = { itemKey:'alchemy_stamina_p1', payload:{recipeId:'stamina',potencyTier:1}, recipe:defs.stamina, count:1, score:40 };
 const strength = { itemKey:'alchemy_strength_p0', payload:{recipeId:'strength',potencyTier:0}, recipe:defs.strength, count:1 };
 const venom = { itemKey:'alchemy_venom_p0', payload:{recipeId:'venom',potencyTier:0}, recipe:defs.venom, count:3 };
+let contextual = [healing, stamina];
+let buffs = [strength];
+let flasks = [venom];
 window.AlchemySystem = {
   RECIPE_DEFS:defs,
   POTION_ITEMS:Object.fromEntries([healing, stamina, strength, venom].map(entry => [entry.itemKey, entry.payload])),
   parseBrewedItemKey:key => window.AlchemySystem.POTION_ITEMS[key] || null,
-  contextualRestoratives:() => [healing, stamina],
-  potionCategoryState:() => ({ buffs:{items:[strength]}, flasks:{items:[venom]} }),
+  contextualRestoratives:() => contextual,
+  potionCategoryState:() => ({ buffs:{items:buffs}, flasks:{items:flasks} }),
+  drinkPotion:itemKey => ({ ok:true, itemKey }),
 };
 
 require(path.join(__dirname, '..', 'docs/js/mobile-potion-category-drag.js'));
@@ -117,7 +148,14 @@ selector.openPotions();
 selector.scrollEntries(-1);
 assert.strictEqual(debug().active, 'Healing Potion ×2', 'one counterclockwise step must reach the highest-scored contextual restorative');
 selector.releaseSelection();
+assert.strictEqual(heldMode, 'item', 'releasing Potion Select on a potion must temporarily equip it');
 assert.strictEqual(heldItemLabel, 'Healing Potion', 'contextual restorative release must select the ordinary inventory stack');
+assert.strictEqual(debug().temporarySelection.priorSlot, 'ranged', 'temporary selection must remember the exact previously equipped combat slot');
+window.AlchemySystem.drinkPotion(healing.itemKey);
+assert.strictEqual(heldMode, 'tool', 'successful drinking must return from temporary item mode');
+assert.strictEqual(activeCombatSlot, 'ranged', 'successful drinking must restore the exact ranged slot that was equipped before Potion Select');
+assert.strictEqual(debug().temporarySelection, null, 'successful drinking must clear the temporary-selection restore state');
+assert.strictEqual(debug().lastRestore.ok, true, 'drink restoration must be visible in diagnostics');
 
 selector.openPotions();
 selector.scrollEntries(1);
@@ -126,7 +164,11 @@ assert.strictEqual(debug().active, 'Cancel', 'Flasks must open on its boundary C
 selector.scrollEntries(1);
 assert.strictEqual(debug().active, 'Venom Flask ×3', 'continuing clockwise must enter the flask list');
 selector.releaseSelection();
+assert.strictEqual(heldMode, 'item', 'flask release from the selector must temporarily equip the throwable bottle');
 assert.strictEqual(heldItemLabel, 'Venom Flask', 'flask release must select the throwable bottle without consuming it');
+document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail:{ type:'flask-release', itemKey:venom.itemKey } }));
+assert.strictEqual(heldMode, 'tool', 'actual flask release must restore the prior combat equipment');
+assert.strictEqual(activeCombatSlot, 'ranged', 'flask throw must return to the exact prior ranged slot');
 
 selector.openPotions();
 selector.scrollEntries(-1);
@@ -138,7 +180,18 @@ selector.scrollEntries(-1);
 assert.strictEqual(debug().active, 'Potion of Strength ×1', 'continuing counterclockwise must enter the buff list');
 selector.releaseSelection();
 assert.strictEqual(heldItemLabel, 'Potion of Strength', 'buff release must select the ordinary held potion stack');
+window.AlchemySystem.drinkPotion(strength.itemKey);
+assert.strictEqual(activeCombatSlot, 'ranged', 'buff drinking must also return to the prior combat slot');
+
+contextual = [];
+buffs = [];
+flasks = [];
+selector.openPotions();
+assert.deepStrictEqual(debug().rootOrder, ['Cancel'], 'with no contextual potions, buffs, or flasks the selector must contain only Cancel');
+assert.strictEqual(debug().active, 'Cancel', 'empty Potion Select must still begin and remain on Cancel');
+assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'empty Potion Select must not expose stale Medicine/Utility UI');
+selector.releaseSelection();
 
 assert.strictEqual(debug().mode, 'hold-scroll-contextual', 'diagnostics must identify the new hold/scroll selector');
-assert.ok(!debug().rootOrder.some(label => /medicine|utility/i.test(label)), 'Medicine and Utility must not exist in the visible root');
+assert.ok(weaponSwitchClicks >= 3, 'restoration must use the existing combat quick-switch path');
 console.log('Contextual potion selector tests passed.');
