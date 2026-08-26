@@ -4161,6 +4161,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
+          promptRoot: c.avatarRef?.group || null,
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -5560,6 +5561,7 @@
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
           c.facing = aimAngle;
+          if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
@@ -23016,6 +23018,11 @@
         return btns;
       }
 
+      // Fallback anchor for interactibles without their own Object3D. It is
+      // moved to the aimed tile before the world-space list is synchronized.
+      const _worldInteractionPromptAnchor = new THREE.Object3D(); // Used by refreshActionBar for non-mesh world objects.
+      _worldInteractionPromptAnchor.name = 'world_interaction_prompt_anchor';
+
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
@@ -23038,23 +23045,41 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
-        // Contextual held-item interactions always use the world popup list.
-        // Ordinary world targets use it once they expose more than one choice,
-        // establishing the same path for future actions such as Invite to Dance.
-        const isWorldInteraction = button => button?.contextualHeldItem
+        // Every action supplied by an aimed world object is a world
+        // interaction even if its id predates the obj_* naming convention.
+        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const isWorldInteraction = button => button?.worldInteraction
+          || button?.contextualHeldItem
+          || objectActionIds.has(button?.action)
           || button?.action === npcDialogueAction()
           || button?.action === generalStoreAction()
           || button?.action === carpenterAction()
           || button?.action === 'use_spot'
+          || button?.action === 'nest_take'
+          || button?.action === 'bandit_tent_interact'
           || button?.action?.startsWith('obj_');
-        const interactionRoot = nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        const interactionButton = btns.find(isWorldInteraction) || null;
+        if (interactionButton) {
+          _worldInteractionPromptAnchor.position.set(
+            reticle.col + 0.5,
+            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            reticle.row + 0.5,
+          );
+        }
+        const interactionRoot = interactionButton?.promptRoot
+          || nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
+        const promptKeys = promptActionIds.map((actionId, index) =>
+          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          desktop: isDesktop,
           scene: getActiveScene(),
+          promptKeys,
+          showInputHints: true,
           isWorldInteraction,
         });
         // Dynamic providers (including the asynchronously loaded consumable
@@ -25231,6 +25256,9 @@
         getActiveScene,
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
+        getHeldMode: () => heldMode,
+        getActiveTool: () => activeTool,
+        getMeleeReticleTarget: () => findAutoTarget() || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
         inCone,
         damageCreature,
         damagePlayer,
@@ -26582,6 +26610,9 @@
         showZoneBanner,
         showToast,
         rollLootPool,
+        inventory,
+        clampInventoryStack,
+        itemIconForKey,
         refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
