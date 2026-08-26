@@ -13,7 +13,10 @@
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
   const FILTER_WHITE = 'brightness(0) invert(1)';
   const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
-  // Slot colors are applied only after the corresponding attack is reachable.
+  const READY_SCALE = 1.16;
+  const READY_TRANSITION = 'transform 140ms ease-out, opacity 140ms ease-out';
+  // The neutral layer matches the ranged reticle. A second, transparent layer
+  // fades in the slot color only when that ability's authoritative hit test is ready.
   const SLOT_COLOR_FILTERS = [
     'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)',
     'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)',
@@ -27,6 +30,9 @@
     'polygon(0 46%, 54% 46%, 54% 100%, 0 100%)',
     'polygon(46% 46%, 100% 46%, 100% 100%, 46% 100%)',
   ];
+  // Scale outward from the opposite inner corner so each quadrant appears to
+  // grow toward the target rather than pulling the reticle off-center.
+  const SLOT_TRANSFORM_ORIGINS = ['100% 100%', '0% 100%', '100% 0%', '0% 0%'];
 
   let host = null;
   let container = null;
@@ -74,26 +80,35 @@
     });
 
     pieces = SLOT_IDS.map((slotId, index) => {
-      const image = document.createElement('img');
-      image.alt = '';
-      image.setAttribute('aria-hidden', 'true');
-      image.dataset.slot = slotId;
-      Object.assign(image.style, {
-        position: 'absolute',
-        inset: '0',
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain',
-        pointerEvents: 'none',
-        userSelect: 'none',
-        WebkitUserDrag: 'none',
-        clipPath: CLIPS[index],
-        filter: FILTER_WHITE,
-      });
-      image.src = RETICLE_URL;
-      image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
-      container.appendChild(image);
-      return image;
+      const makeLayer = (filter, opacity) => {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.setAttribute('aria-hidden', 'true');
+        image.dataset.slot = slotId;
+        Object.assign(image.style, {
+          position: 'absolute',
+          inset: '0',
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          pointerEvents: 'none',
+          userSelect: 'none',
+          WebkitUserDrag: 'none',
+          clipPath: CLIPS[index],
+          transformOrigin: SLOT_TRANSFORM_ORIGINS[index],
+          transition: READY_TRANSITION,
+          filter,
+          opacity: String(opacity),
+        });
+        image.src = RETICLE_URL;
+        image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
+        container.appendChild(image);
+        return image;
+      };
+      const neutral = makeLayer(FILTER_WHITE, RETICLE_OPACITY);
+      const color = makeLayer(SLOT_READY_FILTERS[index], 0);
+      color.dataset.colorLayer = 'true';
+      return { neutral, color };
     });
     host.appendChild(container);
     return container;
@@ -230,12 +245,17 @@
     const direction = deps.getPlayerMeleeAimDirection?.() || { x: 1, y: 0, z: 0 };
     const state = targetState(deps, direction, slotProfiles);
     root.style.display = 'block';
-    pieces.forEach((image, index) => {
+    pieces.forEach((piece, index) => {
       const profile = slotProfiles[index] || {};
-      image.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
       const unlocked = !!profile.attackId;
-      image.style.filter = unlocked ? (state.ready[index] ? SLOT_READY_FILTERS[index] : SLOT_COLOR_FILTERS[index]) : FILTER_WHITE;
-      image.style.opacity = unlocked ? '1' : String(RETICLE_OPACITY);
+      const ready = unlocked && !!state.ready[index];
+      const neutralOpacity = unlocked ? RETICLE_OPACITY : RETICLE_OPACITY * 0.72;
+      piece.neutral.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
+      piece.color.title = piece.neutral.title;
+      piece.neutral.style.opacity = String(neutralOpacity);
+      piece.neutral.style.transform = `scale(${ready ? READY_SCALE : 1})`;
+      piece.color.style.opacity = ready ? '1' : '0';
+      piece.color.style.transform = `scale(${ready ? READY_SCALE : 1})`;
     });
     lastSnapshot = {
       visible: true,
@@ -250,6 +270,8 @@
         reachDistancePx: profile.reachPx,
         ready: !!state.ready[index],
         color: SLOT_COLORS[index],
+        colorBlend: state.ready[index] ? 1 : 0,
+        scale: state.ready[index] ? READY_SCALE : 1,
       })),
     };
     return true;
