@@ -152,16 +152,11 @@
     });
   }
 
-  // fish-catalog must run before fishing-minigame.js so it can wrap Fishing.init
-  // before game.js injects the full dependency bag. Because this file itself is
-  // parser-blocking in docs/index.html, document.write keeps the catalog in that
-  // same parser-ordered sequence instead of racing it as an async dynamic script.
   function loadFishCatalogForGame() {
-    // Rendering helpers are also evaluated by DOM-less Node test harnesses.
     if (typeof document === 'undefined') return;
     if (!document.getElementById('fishingOverlay') || window.FishCatalog || document.querySelector('script[data-fish-catalog]')) return;
     const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('fish-catalog.js?v=20260814b', ownSrc).href : 'js/fish-catalog.js?v=20260814b';
+    const src = ownSrc ? new URL('fish-catalog.js?v=20260826amphib1', ownSrc).href : 'js/fish-catalog.js?v=20260826amphib1';
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-fish-catalog="true"></script>`);
       return;
@@ -173,13 +168,12 @@
     document.head.appendChild(script);
   }
 
-  // fishing-events must run after fish-catalog (so it layers on the catalog's
-  // Fishing accessor) but before fishing-minigame.js/game.js assign/init Fishing.
+  // fishing-events layers the Frenzy/Gullet feature on top of FishCatalog.
   function loadFishingEventsForGame() {
     if (typeof document === 'undefined') return;
     if (!document.getElementById('fishingOverlay') || document.querySelector('script[data-fishing-events]')) return;
     const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('fishing-events.js?v=20260824a', ownSrc).href : 'js/fishing-events.js?v=20260824a';
+    const src = ownSrc ? new URL('fishing-events.js?v=20260826gullet2', ownSrc).href : 'js/fishing-events.js?v=20260826gullet2';
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-fishing-events="true"></script>`);
       return;
@@ -191,6 +185,24 @@
     document.head.appendChild(script);
   }
 
+  // Amphibious rules load last so their Fishing accessor sees both FishCatalog
+  // and Frenzy/Gullet wrappers, but still before fishing-minigame.js/game.js initialize Fishing.
+  function loadAmphibiousFishingForGame() {
+    if (typeof document === 'undefined') return;
+    if (!document.getElementById('fishingOverlay') || window.AmphibiousFishing || document.querySelector('script[data-amphibious-fishing]')) return;
+    const ownSrc = document.currentScript?.src;
+    const src = ownSrc ? new URL('amphibious-fishing.js?v=20260826a', ownSrc).href : 'js/amphibious-fishing.js?v=20260826a';
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-amphibious-fishing="true"></script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.amphibiousFishing = 'true';
+    script.onerror = () => console.warn('[sprite-recolor] failed to load amphibious-fishing.js');
+    document.head.appendChild(script);
+  }
+
   window.SpriteRecolor = {
     getRecoloredCanvas,
     recolorImageData, relativeLuminance, shadeFillConfig,
@@ -199,4 +211,5 @@
 
   loadFishCatalogForGame();
   loadFishingEventsForGame();
+  loadAmphibiousFishingForGame();
 })();
