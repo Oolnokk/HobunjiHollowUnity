@@ -6,6 +6,7 @@ const fs = require('node:fs');
 
 const avatarSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8');
 const speciesSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 
 assert.match(avatarSource, /function applyAnimalHeadRig\([\s\S]{0,1800}avatarRef\.updateHeadRotation =/,
@@ -19,7 +20,4 @@ assert.ok(rigTableStart >= 0
   && rigTable.includes('"grehlr"'),
   'the authored species rig table includes the four animal families');
 assert.ok(indexSource.indexOf('js/png-plane-avatar.js') < indexSource.indexOf('js/creature-genetics.js')
-  && indexSource.indexOf('js/creature-genetics.js') < indexSource.indexOf('js/creature-genetics-render.js'),
-  'the head-rig runtime loads before the species bridge and game startup');
-
-console.log('Animal head-rig runtime regression checks passed.');
+  && indexSource.indexOf('js/creature-genetics.js') < indexSource.indexOf('js/creature-genetics-re
