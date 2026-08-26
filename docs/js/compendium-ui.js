@@ -1,6 +1,6 @@
 // Player-facing Compendium — searchable explanations of the game's core systems.
-// The affliction and skill sections intentionally read the live registries so
-// newly-authored entries appear without duplicating their names/descriptions here.
+// Live registries are used where the game already owns canonical definitions,
+// while cross-system guides explain how those mechanics fit together for players.
 (() => {
   'use strict';
   if (window.CompendiumUI) return;
@@ -13,6 +13,10 @@
     { id: 'loadouts', label: 'Loadouts' },
     { id: 'skills', label: 'Skills' },
     { id: 'alchemy', label: 'Alchemy' },
+    { id: 'farm', label: 'Farm' },
+    { id: 'livestock', label: 'Livestock' },
+    { id: 'breeding', label: 'Breeding' },
+    { id: 'stable', label: 'Stable' },
   ]); // Used by the Compendium's category filter bar.
 
   const debug = {
@@ -179,7 +183,7 @@
       entries: [
         {
           title: 'What Mastery Does', icon: '★', kicker: '0–5 ranks',
-          text: 'Mastery is attached to the individual tool/weapon entry you use. Higher ranks open that item’s deeper combat technique upgrades; ranged weapons also open their ammo-loadout ranks.',
+          text: 'Mastery is attached to the individual tool or weapon entry you use. Higher ranks open that item’s deeper combat technique upgrades; ranged weapons also open their ammo-loadout ranks.',
           notes: ['Mastery is not the same thing as your Combat Skill level.', 'A different weapon has its own Mastery progress and build.'],
           keywords: ['rank levels weapon tool individual'],
         },
@@ -305,7 +309,7 @@
         {
           title: 'What Drives Mean', icon: '↕', kicker: 'The predictable part',
           text: 'Drive tells you the broad job of a reaction before you know the exact recipe.',
-          notes: ['Restore heals, restores resources, or cleanses.', 'Afflict usually creates throwable offensive flasks, with a few drinkable narcotic exceptions.', 'Greaten strengthens a stat or capability.', 'Lighten reduces a burden or makes movement/effort easier.'],
+          notes: ['Restore heals, restores resources, or cleanses.', 'Afflict usually creates throwable offensive flasks, with a few drinkable narcotic exceptions.', 'Greaten strengthens a stat or capability.', 'Lighten reduces a burden or makes movement or effort easier.'],
           keywords: ['restore afflict greaten lighten flask buff cure'],
         },
         {
@@ -318,8 +322,203 @@
     });
   }
 
+  function farmSection() {
+    return section({
+      id: 'farm',
+      icon: '🚜',
+      title: 'The Farm',
+      intro: 'The Farm tab is the world-owned management hub: it lets you inspect the land, buildings, processors, livestock, shared storage, and who is allowed to change what.',
+      entries: [
+        {
+          title: 'Farm Tab Overview', icon: '🗺', kicker: 'Your world at a glance',
+          text: 'The top-down farm glance shows terrain, crops, buildings, placed furniture, processors, dew piles, and livestock without making you walk the whole property to check them.',
+          notes: ['The Farm name belongs to the world and can be changed by its owner.', 'Processor tiles report whether a station is idle, working, ready, or being worked by livestock.'],
+          keywords: ['farm menu map glance overview crops buildings processors'],
+        },
+        {
+          title: 'Buildings & Layout', icon: '🏚', kicker: 'Barns and house pieces',
+          text: 'Owned barn plans can be placed from the Farm tab, then built and moved. A barn only houses livestock after it is fully built, and each barn tier has a limited number of animal slots.',
+          notes: ['The House has its own layout editor for rooms and architectural features.', 'A full barn cannot accept another animal until a slot opens.'],
+          keywords: ['barn plan foundation build move capacity slots house layout'],
+        },
+        {
+          title: 'Farm Storage', icon: '📦', kicker: 'World-shared inventory',
+          text: 'Farm Storage is separate from your personal bag. Items can be deposited into the world’s shared storage and withdrawn later by characters who have storage permission.',
+          keywords: ['storage box deposit withdraw bag shared world'],
+        },
+        {
+          title: 'Farmhands & Permissions', icon: '🤝', kicker: 'Owner-controlled access',
+          text: 'The farm owner can add other characters as farmhands and grant permissions separately instead of giving everyone full control.',
+          notes: ['Permissions cover Storage, Planting, Harvesting, Furniture, Till/Dig changes, and Livestock management.', 'A farmhand can only use the systems the owner enabled for that character.'],
+          keywords: ['multiplayer farmhand permission owner storage plant harvest furniture dig livestock'],
+        },
+        {
+          title: 'Processors & Uumkao’ii Dew', icon: '💧', kicker: 'Production around the farm',
+          text: 'The Farm tab tracks placed processing furniture and any Uumkao’ii dew piles waiting on the ground.',
+          notes: ['A suitable Small Uumkao’ii can be assigned to a squeezing vat so its dew feeds that processor automatically instead of becoming a ground pile.', 'Unassigned dew piles can be located from the Farm tab before you go dig them up.'],
+          keywords: ['processor furniture vat uumkaoii dew pile squeeze milk curds'],
+        },
+      ],
+    });
+  }
+
+  function livestockSection() {
+    const troughCapacity = Number(window.FarmAnimals?.TROUGH_CAPACITY) || 7; // Used to keep the guide aligned with the live trough capacity.
+    const heartMax = Number(window.FarmAnimals?.HEART_MAX) || 5; // Used to keep the guide aligned with the live livestock-heart cap.
+    const heartStep = Number(window.FarmAnimals?.HEART_STEP) || 0.2; // Used to describe the daily heart adjustment without duplicating tuning.
+    const heartDefault = Number(window.FarmAnimals?.HEART_DEFAULT) || 2; // Used to describe the starting care state of new/born livestock.
+    return section({
+      id: 'livestock',
+      icon: '🐾',
+      title: 'Livestock',
+      intro: 'Farm livestock are world-owned working animals. They can be housed, fed, bred, harvested for goods, sold, transferred, or put into stasis when you do not have room for them.',
+      entries: [
+        {
+          title: 'Crates, Eggs & Babies', icon: '🥚', kicker: 'Undeployed creature items',
+          text: 'Use Add Livestock in the Farm tab to turn a compatible crate, egg, or baby in your bag into farm livestock. The new animal is recorded immediately but begins in stasis.',
+          notes: ['Adding it to the Farm consumes one matching item from your bag.', 'You choose which compatible item to add when you are carrying more than one kind.'],
+          keywords: ['add livestock crate egg baby bag hatch release'],
+        },
+        {
+          title: 'Barns & Stasis', icon: '🏚', kicker: 'Housing controls simulation',
+          text: 'Assign an animal to a built barn with an open slot to bring it onto the farm. Removing its barn assignment returns it to stasis.',
+          notes: ['Stasis means the animal is hidden rather than roaming the world.', 'Production cooldowns pause in stasis.', 'Stasis livestock do not need daily feed and do not lose hearts while stored this way.'],
+          keywords: ['barn housed housing stasis hidden cooldown pause slots'],
+        },
+        {
+          title: 'Troughs & Diets', icon: '🌾', kicker: `${troughCapacity} feed slots per trough`,
+          text: 'Each housed animal is assigned a trough. Every day it tries to eat one unit of fodder its diet accepts.',
+          notes: ['Predators eat Meat Fodder.', 'Prey eat Plant Fodder.', 'Omnivores can eat either.', `Each trough stores up to ${troughCapacity} individual fodder units, so you can stock roughly a week in advance.`],
+          keywords: ['feed feeding trough fodder meat plant predator prey omnivore week'],
+        },
+        {
+          title: 'Hearts & Care', icon: '♥', kicker: `0–${heartMax} hearts · starts at ${heartDefault}`,
+          text: 'A housed animal that successfully eats gains a small amount of affection; one that cannot eat from its assigned trough loses the same amount.',
+          notes: [`The daily change is ${heartStep.toFixed(1)} heart at a time.`, 'Higher hearts can improve the quality of collected goods and shorten their production cooldown.', 'Parent hearts also make breeding faster and increase the chance of rare mutations.'],
+          keywords: ['heart affection happiness care fed unfed quality cooldown breeding'],
+        },
+        {
+          title: 'Collecting Animal Goods', icon: '🪣', kicker: 'Production requires housing',
+          text: 'Livestock resource cooldowns advance while the animal is housed. When a product is ready, visit the animal and use its Collect interaction.',
+          notes: ['The collected item rolls Farming-based quality, then the animal’s hearts can nudge that quality up or down.', 'High hearts can shorten the next production cycle by as much as roughly 40% at maximum care.'],
+          keywords: ['milk venom stink oil egg resource ready harvest collect stars quality'],
+        },
+        {
+          title: 'Selling & Moving Animals', icon: '💰', kicker: 'Farm ownership and transfers',
+          text: 'The owner can sell farm livestock directly, move an animal into their own personal Stable, offer it for a gold price, or mark it Stable-able for another character to take.',
+          notes: ['A purchased or transferred animal becomes a personal Stable creature and leaves the farm.', 'Removing an animal from the farm also removes any breeding pair that depended on it.'],
+          keywords: ['sell price buy marketplace transfer stable stableable trade owner farmhand'],
+        },
+      ],
+    });
+  }
+
+  function breedingSection() {
+    const gestationDays = Number(window.FarmAnimals?.GESTATION_DAYS) || 3; // Used to keep the guide aligned with live gestation tuning.
+    const mutationChance = Number(window.CreatureGenetics?.MUTATION_CHANCE) || 0.05; // Used to explain the unboosted genetics baseline.
+    return section({
+      id: 'breeding',
+      icon: '🥚',
+      title: 'Breeding & Genetics',
+      intro: 'Breeding combines two creatures’ stored genes instead of rolling a completely unrelated animal. Care, inherited traits, rare mutations, and wild nest genetics all matter if you are building a particular line.',
+      entries: [
+        {
+          title: 'Wild Nests & Fertile Eggs', icon: '🪺', kicker: 'Steal a wild bloodline',
+          text: 'Den-Mothers and Nestmothers guard nests that can yield undeployed eggs or babies. A nest reward carries the same family genotype used by that den or nest’s wild family, letting you bring those genes into your Farm or personal Stable.',
+          notes: ['Drenkirra nests occur on climbable shadewood branches in the Southern Cloud Forest: climb onto the branch and focus the nest itself to take its clutch.', 'Wild nest guardians make stealing from a nest dangerous; the creature item is what you later deploy through the Farm or Stable UI.', 'Important: the exact stolen genotype is currently carried in a same-session queue, not saved per item. If you save/reload before deploying that egg or baby, it falls back to a fresh genotype roll.'],
+          keywords: ['steal stealing fertile egg eggs nest den mother denmother nestmother drenkirra branch shadewood wild genotype bloodline clutch baby'],
+        },
+        {
+          title: 'Setting a Breeding Pair', icon: '♥', kicker: 'Two selected parents',
+          text: 'In the Farm tab, select two breeding candidates and set them as a pair. Your farm livestock and animals from your own personal Stable can both be used as parents.',
+          notes: ['Stable creatures are offered as breeding-only candidates and stay personal/untradeable.', 'If a parent disappears from the relevant Farm or Stable before completion, that pair lapses.'],
+          keywords: ['pair parents farm stable select breeding candidates'],
+        },
+        {
+          title: 'Gestation & Parent Care', icon: '⏳', kicker: `Nominally ${gestationDays} in-game days`,
+          text: 'Breeding progress fills through the game’s waking hours instead of jumping only at morning. The Farm tab shows the current pair and a live percentage bar.',
+          notes: ['At very low parent hearts, progress can be about 0.6× normal speed; at maximum hearts it can reach about 1.5×.', 'Once the bar completes, the pair is consumed and must be deliberately paired again for another offspring.'],
+          keywords: ['gestation days time progress bar hearts speed re-pair'],
+        },
+        {
+          title: 'Colors, Patterns & Carriers', icon: '🧬', kicker: 'Genes are inherited',
+          text: 'Offspring colors are blended from the parents. Patterned species pass pattern alleles from each parent, so visible traits and hidden carriers can both matter to later generations.',
+          notes: ['The Farm and Stable trait strips show coat colors, visible patterns, allele copies, inheritance type, and recessive carrier status.', `The base de-novo mutation chance is ${(mutationChance * 100).toFixed(0)}% before parent-care bonuses.`, 'Maximum parent hearts can raise the mutation chance to roughly three times the base rate.'],
+          keywords: ['genetics gene allele dominant recessive carrier pattern fur color mutation copies'],
+        },
+        {
+          title: 'Size Inheritance', icon: '↕', kicker: 'Small · Medium · Large',
+          text: 'A newborn normally inherits one parent’s Size class. A rare Size mutation moves it exactly one step toward a neighboring class rather than jumping arbitrarily.',
+          notes: ['Small creatures fill the Shoulder Pet role in the Stable.', 'Medium creatures fill the Companion role.', 'Large creatures fill the Mount role.', 'Because Size can mutate during breeding, a species can eventually appear in a role different from its usual default.'],
+          keywords: ['small medium large size mutation shoulder pet companion mount role'],
+        },
+        {
+          title: 'Breeding Size Potions', icon: '⚗', kicker: 'One-off next-offspring shift',
+          text: 'Breeding Potion of Gigantism and Breeding Potion of Pygmation modify a parent’s next offspring by one Size class after ordinary genetic inheritance is resolved.',
+          notes: ['One affected parent shifts the next offspring once.', 'If both parents carry the same direction, it still applies as a single one-class shift.', 'Opposite parent shifts cancel each other for that offspring.', 'The pending shift is consumed when that breeding resolves.'],
+          keywords: ['gigantism pygmation potion alchemy size shift offspring small large'],
+        },
+        {
+          title: 'Newborns', icon: '🐣', kicker: 'Born into stasis',
+          text: 'When breeding resolves, the newborn is added to the farm’s livestock records in stasis rather than forcing itself into a full barn.',
+          notes: ['Assign the newborn to a built barn when you have a free slot.', 'Newborns begin at the neutral default heart level rather than inheriting their parents’ current hearts.'],
+          keywords: ['birth newborn baby stasis barn heart'],
+        },
+      ],
+    });
+  }
+
+  function stableSection() {
+    return section({
+      id: 'stable',
+      icon: '🐴',
+      title: 'Personal Stable',
+      intro: 'The Stable is your character’s personal creature collection, separate from world-owned farm livestock. Stable creatures are companions, not trade goods.',
+      entries: [
+        {
+          title: 'Farm vs. Stable', icon: '↔', kicker: 'World-owned vs. character-owned',
+          text: 'Farm livestock belongs to the world and can produce goods, use barns, be traded, and be managed by permitted farmhands. Stable creatures belong to your character and are untradeable.',
+          notes: ['Moving a farm animal into your Stable removes it from the farm.', 'A Stable creature is never housed in a barn just to remain in your collection.'],
+          keywords: ['difference farm stable world character owned untradeable'],
+        },
+        {
+          title: 'Adding a Creature Directly', icon: '📦', kicker: 'No farm required',
+          text: 'A compatible undeployed creature item in your own bag can be added straight to your Stable from the inventory flow, without releasing it onto a farm first.',
+          notes: ['Stolen wild eggs or babies can therefore become personal companions directly.', 'The same carried genotype bridge is used whether you deploy the item to the Farm or Stable.'],
+          keywords: ['add stable inventory item egg baby crate direct'],
+        },
+        {
+          title: 'Size Determines Role', icon: '📏', kicker: 'One role per Size class',
+          text: 'A Stable creature’s genetic Size class determines which active role it can occupy.',
+          notes: ['Small = Shoulder Pet.', 'Medium = Companion.', 'Large = Mount.', 'A rare bred Size can therefore turn a normally larger or smaller species into an unusual role.'],
+          keywords: ['small shoulder pet medium companion large mount active role'],
+        },
+        {
+          title: 'Choosing Active Creatures', icon: '✓', kicker: 'Mount · Companion · Shoulder Pet',
+          text: 'The Stable tab lets you choose the active occupant for each of the three creature roles. Activating another creature in the same role replaces the previous active choice.',
+          notes: ['Stable creatures can also be renamed.', 'Their genetic Size, colors, patterns, and carrier traits remain visible in the Stable list.'],
+          keywords: ['equip activate active rename traits mount whistle companion shoulder'],
+        },
+        {
+          title: 'Breeding From the Stable', icon: '🧬', kicker: 'Personal parent, farm offspring',
+          text: 'Your Stable creatures can be selected as breeding parents from the Farm tab without being transferred into farm ownership.',
+          notes: ['They stay untradeable while participating in the pair.', 'The resulting newborn belongs to the farm and enters farm stasis until housed.'],
+          keywords: ['breeding stable parent farm newborn cross'],
+        },
+        {
+          title: 'Stable Levels', icon: '☆', kicker: 'Not active progression yet',
+          text: 'Stable rows currently show a level value, but the Stable UI explicitly marks creature leveling as coming later. Do not expect that number to advance through normal play yet.',
+          keywords: ['level leveling xp coming soon'],
+        },
+      ],
+    });
+  }
+
   function buildSections() {
-    return [resourceSection(), afflictionSection(), masterySection(), loadoutSection(), skillSection(), alchemySection()];
+    return [
+      resourceSection(), afflictionSection(), masterySection(), loadoutSection(), skillSection(), alchemySection(),
+      farmSection(), livestockSection(), breedingSection(), stableSection(),
+    ];
   }
 
   function applyFilters() {
@@ -344,9 +543,7 @@
 
     const empty = content.querySelector('.compendium-empty');
     if (empty) empty.remove();
-    if (!visibleEntries) {
-      content.appendChild(element('div', 'compendium-empty', 'No Compendium entries match that search.'));
-    }
+    if (!visibleEntries) content.appendChild(element('div', 'compendium-empty', 'No Compendium entries match that search.'));
 
     debug.activeCategory = activeCategory;
     debug.query = query;
@@ -376,6 +573,9 @@
       `visible entries: ${debug.visibleEntries}/${debug.totalEntries}`,
       `ResourceSystem: ${window.ResourceSystem?.AFFLICTIONS ? 'ready' : 'missing'}`,
       `SkillSystem: ${window.SkillSystem?.SKILLS ? 'ready' : 'missing'}`,
+      `FarmAnimals: ${window.FarmAnimals ? 'ready' : 'missing'}`,
+      `CreatureGenetics: ${window.CreatureGenetics ? 'ready' : 'missing'}`,
+      `FarmPanel: ${window.FarmPanel ? 'ready' : 'missing'}`,
       `errors: ${debug.errors.length ? debug.errors.join(' | ') : 'none'}`,
     ].join('\n');
   }
@@ -496,7 +696,7 @@
     const top = element('div', 'compendium-top');
     const heading = element('div', 'compendium-heading');
     heading.appendChild(element('div', 'compendium-title', 'Compendium'));
-    heading.appendChild(element('div', 'compendium-subtitle', 'Player guide to the systems that matter moment-to-moment. Search by a mechanic, status, resource, or progression term.'));
+    heading.appendChild(element('div', 'compendium-subtitle', 'Player guide to the systems that matter moment-to-moment. Search by a mechanic, status, resource, progression term, farm feature, or creature trait.'));
     top.appendChild(heading);
     searchInput = element('input', 'compendium-search');
     searchInput.type = 'search';
