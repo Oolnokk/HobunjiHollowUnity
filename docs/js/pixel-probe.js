@@ -705,6 +705,13 @@
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
     }
+    const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
+    if (creatureDeathDebug?.lastRecovery) {
+      const recovery = creatureDeathDebug.lastRecovery;
+      lines.push(`Creature death: RECOVERED ${recovery.creature} at ${recovery.areaId}:${recovery.col},${recovery.row} reason=${String(recovery.reason || 'unknown').split('\n')[0]}`);
+    } else if (creatureDeathDebug?.lastBegin) {
+      lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
+    }
     const hitboxDebug = window.__hitboxDebug?.snapshot?.(); // Mobile-readable elevation proof for the Show Hitboxes overlay.
     if (hitboxDebug?.actors?.length) {
       const actorState = hitboxDebug.actors.map(actor => actor.missing
