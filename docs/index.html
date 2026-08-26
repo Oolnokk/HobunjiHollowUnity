@@ -126,7 +126,7 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle3"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle4"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -140,7 +140,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260825desktop2"></script>
+  <script src="js/bandit-camps.js?v=20260825desktop3"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -1979,7 +1979,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260825chunks10"></script>
+  <script src="game.js?v=20260825chunks11"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
