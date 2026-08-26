@@ -1682,9 +1682,9 @@
     }
     #npcDialogueContinue kbd {
       font: inherit;
-      font-size: 10px;
+      font-size: 6px;
       color: var(--accent);
-      padding: 1px 5px;
+      padding: 1px 3px;
       border: 1px solid var(--border-bright);
       border-radius: 4px;
     }
