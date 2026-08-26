@@ -8,6 +8,7 @@ const assert = require('assert');
   const events = [];
   const popups = [];
   const toasts = [];
+  const deathRecoveries = []; // Used to verify lethal exceptions still complete corpse conversion.
   const gear = { tools: {}, toolMastery: {} };
   const equipmentSlots = { hoe: 'bronzehoe', shovel: 'pickshovel', weapon: 'hatchet', ranged: 'crossbow' };
   const toolDefs = {
@@ -72,6 +73,13 @@ const assert = require('assert');
     update() {},
     get deps() { return this._deps; },
   };
+  context.CreatureDeath = {
+    recover(enemy, fromX, fromY, error) {
+      enemy.state = 'corpse';
+      deathRecoveries.push({ enemy, fromX, fromY, error });
+      return true;
+    },
+  };
 
   vm.createContext(context);
   const policyPath = path.join(__dirname, '..', 'docs', 'js', 'mastery-policy.js'); // Used to test the repository copy rather than an inline fixture.
@@ -103,13 +111,19 @@ const assert = require('assert');
   };
   context.WildTreasure.init(treasureDeps);
 
-  function damageCreature(enemy, damage) { enemy.health = Math.max(0, enemy.health - damage); return damage; }
+  function damageCreature(enemy, damage) {
+    enemy.health = Math.max(0, enemy.health - damage);
+    if (enemy.throwAfterLethal && enemy.health <= 0) throw new Error('simulated post-lethal reward failure');
+    return damage;
+  }
   const combatDeps = {
     equipmentSlots,
     TOOL_ITEM_DEFS: toolDefs,
     gearInventory: () => gear,
     currentWeaponKey: () => equipmentSlots.weapon,
     getEquippedRangedKey: () => equipmentSlots.ranged,
+    hostileObjects: new Set(),
+    companionObjects: new Set(),
     damageCreature,
     awardWeaponMasteryXp() {
       const k=equipmentSlots.weapon; gear.toolMastery[k] ||= {xp:0}; gear.toolMastery[k].xp += 5;
@@ -149,6 +163,16 @@ const assert = require('assert');
   const bandit = { health: 10, def:{label:'Bandit',health:60,damage:8} };
   combatDeps.damageCreature(bandit, 20, 0, 0, 0, {});
   assert.equal(gear.toolMastery.sword.xp, 2.5, 'weapon-only melee kill should get double XP');
+
+  // A post-lethal exception must not leave the target red/frozen between
+  // the living registry and corpse registry.
+  const interrupted = { id:'interrupted-wolf', health:10, throwAfterLethal:true, def:{label:'Gar-wolf',health:60,damage:8} };
+  combatDeps.hostileObjects.add(interrupted);
+  assert.doesNotThrow(() => combatDeps.damageCreature(interrupted, 20, 7, 9, 0, {}));
+  assert.equal(interrupted.state, 'corpse', 'interrupted lethal transition should be recovered as a corpse');
+  assert.equal(combatDeps.hostileObjects.has(interrupted), false, 'recovered corpse must leave the hostile registry');
+  assert.equal(deathRecoveries.length, 1, 'death recovery should run exactly once');
+  assert.equal(policy.getDebug().lastDeathRecovery.recovered, true, 'mobile debug snapshot should expose the recovery');
 
   // Ranged nonlethal + legacy callback gets nothing.
   gear.toolMastery.crossbow = {xp:0};
