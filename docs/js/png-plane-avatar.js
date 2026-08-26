@@ -739,3 +739,277 @@
     scanOpaqueVerticalBoundsOfImage,
   };
 })();
+
+// Optional painted-weight head rig for side-view animal planes.
+// Unrigged creatures keep the exact legacy two-plane path above.
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // Shared with the Animal Head Rig Author for same-origin previews.
+  const DEFAULT_LIMITS = Object.freeze({ minDeg: -30, maxDeg: 30, restDeg: 0, turnSpeedDeg: 120, meshResolution: 48 }); // Used when authored rig motion/detail values are omitted.
+  const RAD = Math.PI / 180; // Converts authored degrees to Three.js radians.
+  const UNSET_WEIGHT = 256; // Editor-only sentinel; runtime treats unpainted cells as full body influence (head weight 0).
+  let cachedStorageRaw = null; // Avoids reparsing identical localStorage data for every creature spawn.
+  let cachedStorageRigs = {}; // Parsed creature-id -> headRig map matching cachedStorageRaw.
+
+  function finite(value, fallback) {
+    const parsed = Number(value); // Rejects NaN/infinite values from hand-edited JSON.
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value)); // Shared bound helper for coordinates, weights, and angles.
+  }
+
+  function decodeWeightMap(raw) {
+    if (!raw || !Number.isFinite(Number(raw.width)) || !Number.isFinite(Number(raw.height))) return null;
+    const width = Math.max(1, Math.round(Number(raw.width))); // Painted influence-grid width used by bilinear sampling.
+    const height = Math.max(1, Math.round(Number(raw.height))); // Painted influence-grid height used by bilinear sampling.
+    const total = width * height;
+    const values = new Uint16Array(total); // 0..255 = head weight, 256 = author-unset/body fallback.
+    values.fill(UNSET_WEIGHT);
+    if (raw.encoding === 'rle-u9' && Array.isArray(raw.data)) {
+      let cursor = 0;
+      for (let i = 0; i + 1 < raw.data.length && cursor < total; i += 2) {
+        const run = Math.max(0, Math.round(finite(raw.data[i], 0))); // Number of cells in this run.
+        const value = clamp(Math.round(finite(raw.data[i + 1], UNSET_WEIGHT)), 0, UNSET_WEIGHT); // Stored cell head weight or unset sentinel.
+        const end = Math.min(total, cursor + run);
+        values.fill(value, cursor, end);
+        cursor = end;
+      }
+    } else if (Array.isArray(raw.data)) {
+      for (let i = 0; i < total && i < raw.data.length; i++) values[i] = clamp(Math.round(finite(raw.data[i], UNSET_WEIGHT)), 0, UNSET_WEIGHT);
+    } else {
+      return null;
+    }
+    return { width, height, values };
+  }
+
+  function normalizeAnimalHeadRig(raw) {
+    if (!raw || raw.enabled === false || !raw.pivot) return null;
+    const minRaw = finite(raw.minDeg, DEFAULT_LIMITS.minDeg); // Authored lower angle before sorting.
+    const maxRaw = finite(raw.maxDeg, DEFAULT_LIMITS.maxDeg); // Authored upper angle before sorting.
+    const minDeg = Math.min(minRaw, maxRaw); // Runtime-safe lower angle.
+    const maxDeg = Math.max(minRaw, maxRaw); // Runtime-safe upper angle.
+    const weightMap = decodeWeightMap(raw.weightMap); // Preferred painted deformation map.
+    const legacyRegion = raw.region && finite(raw.region.width, 0) > 0 && finite(raw.region.height, 0) > 0
+      ? {
+          x: clamp(finite(raw.region.x, 0), 0, 1),
+          y: clamp(finite(raw.region.y, 0), 0, 1),
+          width: clamp(finite(raw.region.width, 0), 0, 1),
+          height: clamp(finite(raw.region.height, 0), 0, 1),
+        }
+      : null; // Old square rigs remain previewable until re-authored as painted weights.
+    if (!weightMap && !legacyRegion) return null;
+    return {
+      enabled: true,
+      coordinateSpace: 'sprite-normalized-top-left',
+      pivot: {
+        x: clamp(finite(raw.pivot.x, 0.5), 0, 1),
+        y: clamp(finite(raw.pivot.y, 0.5), 0, 1),
+      },
+      weightMap,
+      legacyRegion,
+      minDeg,
+      maxDeg,
+      restDeg: clamp(finite(raw.restDeg, DEFAULT_LIMITS.restDeg), minDeg, maxDeg),
+      turnSpeedDeg: Math.max(0, finite(raw.turnSpeedDeg, DEFAULT_LIMITS.turnSpeedDeg)),
+      meshResolution: clamp(Math.round(finite(raw.meshResolution, DEFAULT_LIMITS.meshResolution)), 12, 72),
+    };
+  }
+
+  function readSavedAnimalHeadRigs() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || ''; // Serialized browser-local preview rig map.
+      if (raw === cachedStorageRaw) return cachedStorageRigs;
+      const parsed = raw ? JSON.parse(raw) : {}; // Parsed creature-id -> rig lookup.
+      cachedStorageRaw = raw;
+      cachedStorageRigs = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      return cachedStorageRigs;
+    } catch (_) {
+      cachedStorageRaw = null;
+      cachedStorageRigs = {};
+      return cachedStorageRigs;
+    }
+  }
+
+  function animalIdFromOptions(options) {
+    const explicit = String(options?.creatureId || options?.animalId || '').trim(); // Preferred stable id supplied by future callers.
+    if (explicit) return explicit;
+    const name = String(options?.name || '').trim(); // Current game names animal groups `${creatureKey}_${uniqueId}`.
+    return name ? name.split('_')[0] : '';
+  }
+
+  function resolveAnimalHeadRig(options) {
+    const direct = options?.headRig || options?.animal?.headRig; // Direct caller rig takes highest precedence.
+    if (direct) return normalizeAnimalHeadRig(direct);
+    const animalId = animalIdFromOptions(options); // Stable key for configured/browser preview rigs.
+    if (!animalId) return null;
+    const configured = window.SCRATCHBONES_CONFIG?.game?.animalHeadRigs?.[animalId]; // Optional source-controlled rig map.
+    if (configured) return normalizeAnimalHeadRig(configured);
+    return normalizeAnimalHeadRig(readSavedAnimalHeadRigs()[animalId]);
+  }
+
+  function sampleWeight(rig, u, topV) {
+    if (rig.weightMap) {
+      const map = rig.weightMap; // Painted grid sampled bilinearly so a modest author grid still bends smoothly.
+      const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
+      const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
+      const x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1);
+      const tx = fx - x0, ty = fy - y0;
+      const at = (x, y) => {
+        const value = map.values[y * map.width + x];
+        return (value === UNSET_WEIGHT ? 0 : value) / 255;
+      };
+      const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+      const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+      return clamp(a * (1 - ty) + b * ty, 0, 1);
+    }
+    const r = rig.legacyRegion; // Binary compatibility with the superseded square-selection rig format.
+    if (!r) return 0;
+    return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
+  }
+
+  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX) {
+    const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
+    const width = finite(params.width, 1);
+    const height = finite(params.height, 1);
+    const mapAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height) : width / Math.max(0.0001, height);
+    const maxSeg = rig.meshResolution; // Authored/runtime mesh detail cap used for the painted deformation surface.
+    const segmentsX = mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect));
+    const segmentsY = mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg;
+    const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Dense enough for painted blend gradients without per-pixel geometry.
+    const uv = geometry.getAttribute('uv');
+    const skinIndices = new Uint16Array(uv.count * 4); // Root/head bone indices for every plane vertex.
+    const skinWeights = new Float32Array(uv.count * 4); // Complementary body/head weights sampled from the paint map.
+    for (let i = 0; i < uv.count; i++) {
+      const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples the horizontally mirrored authored map.
+      const sourceTopV = 1 - uv.getY(i); // Author coordinates start at sprite top-left; Three UVs start bottom-left.
+      const headWeight = sampleWeight(rig, sourceU, sourceTopV);
+      const offset = i * 4;
+      skinIndices[offset] = 0;
+      skinIndices[offset + 1] = 1;
+      skinWeights[offset] = 1 - headWeight;
+      skinWeights[offset + 1] = headWeight;
+    }
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
+    return geometry;
+  }
+
+  function upgradeAnimalPlaneToWeightedSkin(THREE, plane, rig, mirrorX) {
+    if (!plane?.isMesh || !plane.geometry || !plane.material) return null;
+    const weightedGeometry = buildAnimalWeightedGeometry(THREE, plane.geometry, rig, mirrorX); // Replacement geometry carrying painted body/head weights.
+    const material = plane.material; // Reuse the exact legacy material so animation/genotype map swaps and tint updates keep working unchanged.
+    material.skinning = true;
+    material.needsUpdate = true;
+
+    const torsoBone = new THREE.Bone(); // Root/body bone stays at the plane origin.
+    torsoBone.name = `${plane.name}_body_bone`;
+    const headBone = new THREE.Bone(); // Head bone pivots painted head influence around the authored neck point.
+    headBone.name = `${plane.name}_head_bone`;
+    const pivotU = mirrorX ? 1 - rig.pivot.x : rig.pivot.x;
+    const params = plane.geometry.parameters || {};
+    headBone.position.set((pivotU - 0.5) * finite(params.width, 1), (0.5 - rig.pivot.y) * finite(params.height, 1), 0);
+    torsoBone.add(headBone);
+
+    const skinned = new THREE.SkinnedMesh(weightedGeometry, material); // Drop-in replacement: SkinnedMesh still satisfies Mesh checks used elsewhere.
+    skinned.name = plane.name;
+    skinned.position.copy(plane.position);
+    skinned.rotation.copy(plane.rotation);
+    skinned.scale.copy(plane.scale);
+    skinned.renderOrder = plane.renderOrder;
+    skinned.visible = plane.visible;
+    skinned.frustumCulled = false; // Head rotation can move weighted vertices beyond the bind-pose plane bounds.
+    skinned.userData = { ...plane.userData, hobunjiAnimalHeadRig: true };
+    skinned.add(torsoBone);
+    const skeleton = new THREE.Skeleton([torsoBone, headBone]);
+    skinned.bind(skeleton);
+    return { mesh: skinned, weightedGeometry, skeleton, headBone };
+  }
+
+  function applyAnimalHeadRig(THREE, avatarRef, rig) {
+    const group = avatarRef?.group; // Legacy return object exposes front/back animal planes here.
+    if (!group || group.userData?.hobunjiAnimalHeadRig) return avatarRef;
+    const frontPlane = group.children?.[0];
+    const backPlane = group.children?.[1];
+    if (!frontPlane || !backPlane) return avatarRef;
+
+    const front = upgradeAnimalPlaneToWeightedSkin(THREE, frontPlane, rig, false); // Source-facing painted skin.
+    const back = upgradeAnimalPlaneToWeightedSkin(THREE, backPlane, rig, true); // Mirrored reverse-facing painted skin.
+    if (!front || !back) return avatarRef;
+
+    group.remove(frontPlane);
+    group.remove(backPlane);
+    group.add(front.mesh);
+    group.add(back.mesh);
+
+    const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
+    const state = { rig, frontHeadBone: front.headBone, backHeadBone: back.headBone, currentDeg: rig.restDeg, targetDeg: rig.restDeg }; // Runtime rotation state shared by immediate/smoothed setters.
+    group.userData.hobunjiAnimalHeadRig = state;
+    avatarRef.headRig = state;
+
+    const applyDegrees = degrees => {
+      front.headBone.rotation.z = degrees * RAD;
+      back.headBone.rotation.z = -degrees * RAD;
+    };
+    applyDegrees(rig.restDeg);
+
+    avatarRef.setHeadRotation = degrees => {
+      const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Immediate clamped head angle used by explicit animation/AI calls.
+      state.currentDeg = target;
+      state.targetDeg = target;
+      applyDegrees(target);
+      return target;
+    };
+
+    avatarRef.updateHeadRotation = (degrees, deltaSeconds) => {
+      const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Smoothed target used by normal creature behavior.
+      const delta = Math.max(0, finite(deltaSeconds, 0));
+      const step = rig.turnSpeedDeg * delta; // Maximum authored turn distance this frame.
+      const diff = target - state.currentDeg;
+      state.currentDeg += clamp(diff, -step, step);
+      state.targetDeg = target;
+      applyDegrees(state.currentDeg);
+      return state.currentDeg;
+    };
+
+    avatarRef.dispose = () => {
+      front.weightedGeometry.dispose();
+      back.weightedGeometry.dispose();
+      front.skeleton.dispose?.();
+      back.skeleton.dispose?.();
+      if (legacyDispose) legacyDispose();
+    };
+    return avatarRef;
+  }
+
+  function installAnimalHeadRigRuntime() {
+    const api = window.PNGPlaneAvatar; // Base renderer defined immediately above this extension.
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalHeadRigInstalled) return false;
+    const originalBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Old two-plane builder remains the source of textures/materials/orientation.
+    api.buildAnimalPlaneAvatarModel = function patchedAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
+      const avatarRef = originalBuild(THREE, spriteUrl, options);
+      const rig = resolveAnimalHeadRig(options);
+      return rig ? applyAnimalHeadRig(THREE, avatarRef, rig) : avatarRef;
+    };
+    api.__animalHeadRigInstalled = true;
+    return true;
+  }
+
+  window.AnimalHeadRigRuntime = {
+    STORAGE_KEY,
+    UNSET_WEIGHT,
+    normalizeRig: normalizeAnimalHeadRig,
+    readSavedRigs: readSavedAnimalHeadRigs,
+    resolveRig: resolveAnimalHeadRig,
+    applyRigToAvatar: applyAnimalHeadRig,
+    install: installAnimalHeadRigRuntime,
+  };
+
+  installAnimalHeadRigRuntime();
+})();

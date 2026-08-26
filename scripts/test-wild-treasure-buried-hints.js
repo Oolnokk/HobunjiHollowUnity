@@ -43,8 +43,10 @@ assert.equal(objects.get(mapId).size, 0,
   'discovering hidden treasure does not register it early or steal the Dig interaction');
 
 context.window.WildTreasure.updateSparkles(1);
-assert.equal(particles.length, 1,
-  'a nearby still-buried persisted placement emits a sparkle without an interaction object');
+assert.equal(particles.length, 6,
+  'nearby still-buried persisted placements emit visible sparkle clusters without interaction objects');
+assert.ok(particles.every(p => p.emoji === '✨' || p.emoji === '✦'),
+  'treasure sparkle particles use the bright glyphs reserved for the buried-hint cue');
 
 grid[buried.row][buried.col].type = TileType.TRENCH;
 const nextHint = context.window.WildTreasure.nearestBuriedPixelPos(mapId, buried.col * TILE, buried.row * TILE);

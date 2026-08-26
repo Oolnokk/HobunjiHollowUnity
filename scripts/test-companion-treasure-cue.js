@@ -10,6 +10,9 @@ assert.match(source,
   /treasureCue = \{[\s\S]{0,240}phase: 'announce',[\s\S]{0,240}timer: TREASURE_ANNOUNCE_S/,
   'treasure detection creates one explicit announcement state');
 assert.match(source,
+  /markFacingAngle: Math\.atan2\(treasureHint\.y - c\.y, treasureHint\.x - c\.x\)/,
+  'the cue seeds a bearing to the exact treasure tile even when arrival is immediate');
+assert.match(source,
   /if \(cue\.phase === 'announce'\)[\s\S]{0,420}Math\.atan2\(master\.y - c\.y, master\.x - c\.x\)[\s\S]{0,260}cue\.phase = 'lead'/,
   'announcement stops and faces the player before leading');
 assert.match(source,
@@ -20,9 +23,9 @@ const markEndIndex = source.indexOf('return { moving, runInPlace, aimAngle };', 
 const markSource = source.slice(markStartIndex, markEndIndex);
 assert(markStartIndex >= 0 && markEndIndex > markStartIndex
   && markSource.includes('c.vx = 0; c.vy = 0;')
-  && markSource.includes('updateHeadRotation?.(TREASURE_MARK_HEAD_DEG, dt)')
+  && markSource.includes('_updateCompanionHeadRotation(c, TREASURE_MARK_HEAD_DEG, dt)')
   && markSource.includes('runInPlace = true;'),
-  'marking stops translation, tilts a rigged head, and requests run-in-place animation');
+  'marking stops translation, tilts the head (with a legacy fallback), and requests run-in-place animation');
 assert.match(source,
   /const movedPx = runInPlace[\s\S]{0,140}c\.def\.moveSpeed \* 0\.5 \* dt/,
   'run-in-place advances run frames explicitly without moving the companion');
@@ -33,6 +36,9 @@ assert(combatClearIndex >= 0 && cueMovementIndex > combatClearIndex,
 assert.match(source,
   /nearestBuriedPixelPos\(currentArea, cue\.targetX, cue\.targetY\)[\s\S]{0,80}nearest\.dist < 1/,
   'the exact cue target is revalidated until it is dug or found');
+assert.match(source,
+  /AmbientDialogue\?\.companionTreasure\(c\)[\s\S]{0,180}playCreatureTreasureAlert\?\.\(c\)[\s\S]{0,420}found buried treasure/,
+  'the announcement combines the existing utterance, an audible alert, and explicit readable treasure text');
 assert.doesNotMatch(source, /_treasureHintAnnounced/,
   'the old inferred announcement latch no longer competes with the explicit state machine');
 

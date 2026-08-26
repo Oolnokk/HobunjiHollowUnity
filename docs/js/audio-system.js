@@ -387,6 +387,29 @@
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
   }
 
+  // Treasure discovery is a player-facing alert, not a combat bark. It needs
+  // a little more reach and headroom than the ordinary creature sound: a
+  // companion can notice a site several tiles away, while the normal bark's
+  // nine-tile falloff would make that notification effectively silent at the
+  // exact range where the hint is useful. The gain boost is intentionally
+  // scoped to this cue so routine combat audio keeps its authored mix.
+  function playCreatureTreasureAlert(c) {
+    const cfg = combatSfxConfig().creatureBark;
+    if (!cfg || !deps || c?.areaId !== deps.getCurrentArea()) return;
+    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const earshot = deps.TILE * 12;
+    if (distance > earshot) return;
+    const speciesCfg = cfg.species?.[c.creatureKey] || {};
+    const falloff = 0.42 + 0.58 * Math.max(0, 1 - distance / earshot);
+    const alertCfg = {
+      ...cfg,
+      ...speciesCfg,
+      volume: Math.min(1, (Number(cfg.volume) || 0.8) * 1.15),
+      gainBoost: Math.max(1.8, Number(cfg.gainBoost) || 1),
+    };
+    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1);
+  }
+
   function playCreatureClawHit(c) {
     playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
   }
@@ -456,6 +479,7 @@
     playObjectSfx,
     playCreatureSfxAt,
     playCreatureBark,
+    playCreatureTreasureAlert,
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,

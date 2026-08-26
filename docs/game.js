@@ -5558,19 +5558,103 @@
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
-      const TREASURE_ANNOUNCE_S = 2.8; // Holds the companion player-facing for the full overhead treasure utterance.
+      const TREASURE_ANNOUNCE_S = 3.2; // Holds the companion player-facing for the full overhead treasure utterance and alert bark.
       const TREASURE_MARK_ARRIVAL_PX = TILE * 0.55; // Switches the lead into its stationary marking pose near the buried tile center.
       const TREASURE_MARK_HEAD_DEG = -10; // Drives authored animal head rigs downward while indicating the dig spot.
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
       const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
+      const SHOULDER_PET_CURIOUS_LOOK_MIN_DEG = 22; // Smallest side glance — enough to read on a mobile-sized sprite without looking like a body turn.
+      const SHOULDER_PET_CURIOUS_LOOK_MAX_DEG = 48; // Keeps the parrot/monkey-like look playful without pulling the pet off its authored perch.
+      const SHOULDER_PET_CURIOUS_LOOK_MIN_S = 0.65; // Brief hold after easing into the glance.
+      const SHOULDER_PET_CURIOUS_LOOK_MAX_S = 1.35;
+      const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3.4; // A cooldown keeps the glance spontaneous rather than constant.
+      const SHOULDER_PET_CURIOUS_WAIT_MAX_S = 7.2;
+      const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
+      const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
 
       function _companionHeadRestDeg(c) {
         return c.avatarRef?.headRig?.rig?.restDeg ?? 0;
       }
 
+      function _fallbackCompanionHeadState(c) {
+        const front = c.avatarRef?.frontPlane;
+        const back = c.avatarRef?.backPlane;
+        if (!front && !back) return null;
+        return c._fallbackHeadPose || (c._fallbackHeadPose = {
+          baseFrontX: front?.rotation?.x || 0,
+          baseBackX: back?.rotation?.x || 0,
+          currentDeg: 0,
+        });
+      }
+
+      function _updateCompanionHeadRotation(c, targetDeg, dt) {
+        if (typeof c.avatarRef?.updateHeadRotation === 'function') {
+          c.avatarRef.updateHeadRotation(targetDeg, dt);
+          return;
+        }
+        // Older saves/preview builds can still have the legacy rigid animal
+        // planes. Keep their fallback pose visible rather than silently making
+        // every head request a no-op until the painted rig is loaded.
+        const state = _fallbackCompanionHeadState(c);
+        if (!state) return;
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentDeg += clamp(targetDeg - state.currentDeg, -step, step);
+        const radians = state.currentDeg * Math.PI / 180;
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.x = state.baseFrontX + radians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.x = state.baseBackX + radians;
+      }
+
       function _restoreCompanionHead(c, dt) {
-        c.avatarRef?.updateHeadRotation?.(_companionHeadRestDeg(c), dt);
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+      }
+
+      function _tickShoulderPetCuriosity(c, dt) {
+        const state = c.shoulderCuriosity || (c.shoulderCuriosity = {
+          phase: 'wait',
+          timer: 1.4 + rnd() * 2.2, // First glance arrives soon enough to be noticed after equipping a pet.
+          currentYawDeg: 0,
+          targetYawDeg: 0,
+          currentPitchDeg: 0,
+          targetPitchDeg: 0,
+        });
+        state.timer -= dt;
+        if (state.timer <= 0) {
+          if (state.phase === 'wait') {
+            const side = rnd() < 0.5 ? -1 : 1;
+            state.phase = 'look';
+            state.timer = SHOULDER_PET_CURIOUS_LOOK_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
+            state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_LOOK_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_DEG - SHOULDER_PET_CURIOUS_LOOK_MIN_DEG));
+            state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
+          } else if (state.phase === 'look') {
+            state.phase = 'settle';
+            state.timer = 0.55;
+            state.targetYawDeg = 0;
+            state.targetPitchDeg = 0;
+          } else {
+            state.phase = 'wait';
+            state.timer = SHOULDER_PET_CURIOUS_WAIT_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_WAIT_MAX_S - SHOULDER_PET_CURIOUS_WAIT_MIN_S);
+          }
+        }
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        return state;
+      }
+
+      function _applyShoulderPetCuriosity(c, dt) {
+        const state = _tickShoulderPetCuriosity(c, dt);
+        const yawRadians = state.currentYawDeg * Math.PI / 180;
+        // updateCreatureMesh owns the attachment root and will be followed by
+        // updateShoulderPetMeshPin. Turning the two sprite planes here keeps
+        // the pet glued to the shoulder while letting its visible body/head
+        // glance left or right independently of the player.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y += yawRadians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y += yawRadians;
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -5636,14 +5720,18 @@
           targetX: treasureHint.x,
           targetY: treasureHint.y,
           timer: TREASURE_ANNOUNCE_S,
+          markFacingAngle: Math.atan2(treasureHint.y - c.y, treasureHint.x - c.x), // Seed the exact tile bearing even if the companion is already standing on the site.
         };
         c.wanderTarget = null;
         c._travelPath = null;
         c._travelPathTarget = null;
         window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): detected buried treasure; announce -> lead -> mark`, 'wildlife');
-        if (!window.AmbientDialogue?.companionTreasure(c)) {
-          showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
-        }
+        window.AmbientDialogue?.companionTreasure(c);
+        window.AudioSystem?.playCreatureTreasureAlert?.(c);
+        // Keep the cue readable even when audio is muted/blocked or the
+        // companion's species bark is unfamiliar. This toast is deliberately
+        // emitted alongside (rather than instead of) the existing utterance.
+        showToast(`${c.def.label} found buried treasure!`, true, true);
       }
 
       function _tickCompanionTreasureCue(c, master, dt) {
@@ -5664,7 +5752,7 @@
         } else if (cue.phase === 'lead') {
           const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
           const distToTreasure = Math.hypot(treasureDx, treasureDy);
-          if (distToTreasure > 1) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx); // Preserves the last real bearing if pathing lands exactly on the tile center.
+          if (distToTreasure > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx); // Preserves the last real bearing if pathing lands exactly on the tile center.
           aimAngle = cue.markFacingAngle ?? aimAngle;
           _restoreCompanionHead(c, dt);
           if (distToTreasure > TREASURE_MARK_ARRIVAL_PX) {
@@ -5681,9 +5769,9 @@
         if (cue.phase === 'mark') {
           c.vx = 0; c.vy = 0;
           const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
-          if (Math.hypot(treasureDx, treasureDy) > 1) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx);
+          if (Math.hypot(treasureDx, treasureDy) > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx);
           aimAngle = cue.markFacingAngle ?? aimAngle;
-          c.avatarRef?.updateHeadRotation?.(TREASURE_MARK_HEAD_DEG, dt);
+          _updateCompanionHeadRotation(c, TREASURE_MARK_HEAD_DEG, dt);
           runInPlace = true;
         }
         return { moving, runInPlace, aimAngle };
@@ -5952,6 +6040,7 @@
             }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
+            _applyShoulderPetCuriosity(c, dt);
             if (perch && grip) {
               // perch.y/grip.y are floor-relative — the same total
               // height-above-playerMesh convention playerToolBaseY already

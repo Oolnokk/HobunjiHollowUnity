@@ -563,7 +563,7 @@
     return show(companion.avatarRef.group, pick(lines, `${companion.id}:${state.deps?.getDay?.()}`), {
       speakerId: companion.id,
       mode: 'overhead',
-      durationMs: 2800,
+      durationMs: 3600,
       tone: 'companion',
     });
   }
