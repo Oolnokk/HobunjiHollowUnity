@@ -34,12 +34,18 @@
   let lastSnapshot = { visible: false, target: null, slots: [] };
 
   function meleeWeaponDrawn() {
-    // The action-arch observer can rewrite the switch button label while it
-    // rebuilds the HUD. Prefer the authoritative gameplay mode when exposed,
-    // then keep the DOM check as a backwards-compatible fallback.
-    const activeTool = window.Combat?.deps?.getActiveTool?.();
+    // Gameplay state is authoritative. The previous DOM fallback could stay
+    // false forever because getActiveTool was accidentally wired into an
+    // unrelated subsystem rather than Combat.
+    const deps = window.Combat?.deps;
+    const heldMode = deps?.getHeldMode?.();
+    const activeTool = deps?.getActiveTool?.();
+    if (heldMode || activeTool) {
+      return heldMode === 'tool'
+        && activeTool === 'weapon'
+        && !!deps?.currentWeaponKey?.();
+    }
     const switchButton = document.getElementById('btnWeaponSwitch');
-    if (activeTool) return activeTool === 'weapon' && !!switchButton?.classList.contains('active');
     return !!switchButton?.classList.contains('active')
       && switchButton?.getAttribute('aria-label') !== 'Switch to melee weapon';
   }
@@ -63,7 +69,7 @@
       userSelect: 'none',
       zIndex: '10',
       display: 'none',
-      opacity: String(RETICLE_OPACITY),
+      opacity: '1',
     });
 
     pieces = SLOT_IDS.map((slotId, index) => {
@@ -163,8 +169,10 @@
     try { focused = window.RangedWeapons?.focusedHostile?.(24) || null; } catch (err) {
       console.warn('[melee-reticle] focused target failed', err);
     }
-    const target = focused?.candidate?.data || null;
-    if (!target || target.health <= 0) return { target: null, ready: slotProfiles.map(() => false), distanceWorld: null };
+    const gameplayTarget = deps.getMeleeReticleTarget?.() || null;
+    const target = gameplayTarget || focused?.candidate?.data || null;
+    const targetSource = gameplayTarget ? 'combat-target' : focused?.candidate?.data ? 'interaction-ray' : null;
+    if (!target || target.health <= 0) return { target: null, targetSource: null, ready: slotProfiles.map(() => false), distanceWorld: null };
 
     const origin = new THREE.Vector3(
       deps.player.x / deps.TILE,
@@ -186,7 +194,7 @@
       const sameHeight = !vertical || vertical.reachable !== false;
       return inReach && sameHeight;
     });
-    return { target: target.id || target.name || 'hostile', ready, distanceWorld };
+    return { target: target.id || target.name || 'hostile', targetSource, ready, distanceWorld };
   }
 
   function refresh() {
@@ -207,10 +215,12 @@
       const profile = slotProfiles[index] || {};
       image.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
       image.style.filter = state.ready[index] ? SLOT_READY_FILTERS[index] : FILTER_WHITE;
+      image.style.opacity = state.ready[index] ? '1' : String(RETICLE_OPACITY);
     });
     lastSnapshot = {
       visible: true,
       target: state.target,
+      targetSource: state.targetSource,
       distanceWorld: state.distanceWorld,
       slots: slotProfiles.map((profile, index) => ({
         slot: profile.slotId,
