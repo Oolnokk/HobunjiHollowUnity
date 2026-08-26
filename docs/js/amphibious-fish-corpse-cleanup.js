@@ -4,6 +4,7 @@
 (() => {
   'use strict';
 
+  const GURUMAHI_LAND_MODEL_WIDTH = 0.22; // Used to render the Gurumahi land/combat form at one tenth of its previous 2.2-unit width.
   let deps = null; // Used to grant/save the fish and fully despawn the retrieved corpse through the existing corpse-loot pipeline.
 
   function wrap(api) {
@@ -47,19 +48,40 @@
     return api;
   }
 
-  const descriptor = Object.getOwnPropertyDescriptor(window, 'BanditCamps');
-  if (descriptor?.get && descriptor?.set && descriptor.configurable) {
-    Object.defineProperty(window, 'BanditCamps', {
-      configurable: true,
-      enumerable: descriptor.enumerable,
-      get: () => descriptor.get.call(window),
-      set: value => {
-        descriptor.set.call(window, value);
-        wrap(descriptor.get.call(window));
-      },
-    });
-    wrap(descriptor.get.call(window));
-  } else {
-    wrap(window.BanditCamps);
+  function wrapWildlifeSpawn(api) {
+    if (!api?.init || api.__gurumahiLandScaleWrapped) return api;
+    const originalInit = api.init;
+    api.init = injectedDeps => {
+      const result = originalInit.call(api, injectedDeps);
+      const def = injectedDeps?.CREATURE_DB?.gurumahi;
+      if (def?.amphibiousFish) {
+        def.modelWidth = GURUMAHI_LAND_MODEL_WIDTH;
+        window.__farmLog?.(`[amphibious-fishing] Gurumahi land width=${GURUMAHI_LAND_MODEL_WIDTH}`, 'fish');
+      }
+      return result;
+    };
+    Object.defineProperty(api, '__gurumahiLandScaleWrapped', { value: true, configurable: true });
+    return api;
   }
+
+  function hookWindowApi(name, wrapper) {
+    const descriptor = Object.getOwnPropertyDescriptor(window, name);
+    if (descriptor?.get && descriptor?.set && descriptor.configurable) {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        get: () => descriptor.get.call(window),
+        set: value => {
+          descriptor.set.call(window, value);
+          wrapper(descriptor.get.call(window));
+        },
+      });
+      wrapper(descriptor.get.call(window));
+      return;
+    }
+    wrapper(window[name]);
+  }
+
+  hookWindowApi('BanditCamps', wrap);
+  hookWindowApi('WildlifeSpawn', wrapWildlifeSpawn);
 })();
