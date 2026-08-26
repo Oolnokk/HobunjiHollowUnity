@@ -1,13 +1,13 @@
 // Contextual held Potion Select adapter.
-// Replaces the old Medicine / Utility tap hierarchy with one hold-and-scroll
-// selector shared by mobile, mouse-wheel, keyboard, and controller inputs.
+// Replaces the old Medicine / Utility hierarchy with one hold-and-scroll selector
+// shared by mobile, mouse-wheel, keyboard, and controller inputs.
 (() => {
   'use strict';
 
   const ROOT_MODE = 'potion-contextual-root'; // Used to bypass the legacy Medicine/Utility branch rules in game.js.
   const BUFF_MODE = 'potion-contextual-buffs'; // Used by the shared arch while browsing buff bottles.
   const FLASK_MODE = 'potion-contextual-flasks'; // Used by the shared arch while browsing throwable flasks.
-  const MAX_ITEM_SCAN = 512; // Safety cap used by the ordinary item-wheel bridge when committing a potion stack.
+  const MAX_ITEM_SCAN = 512; // Safety cap used only for contextual restoratives absent from the legacy potion hierarchy.
   const DRINK_RESTORE_PAD_MS = 40; // Keeps the bottle visible through the last authored drink-animation frames.
 
   let installed = false; // Guards the proxy against duplicate installation from load-order retries.
@@ -15,9 +15,9 @@
   let selectionOriginSlot = null; // Combat slot that was out when the current Potion Select hold began.
   let temporarySelection = null; // Bottle temporarily replacing the remembered combat slot until it is consumed/thrown.
   let restoreTimer = null; // Delayed drink restore so the weapon does not reappear before the swig animation finishes.
-  let selectHeldPotion = () => false; // Assigned during install; wheel entries live outside install and call this shared commit bridge.
+  let selectHeldPotion = () => false; // Assigned during install; wheel entries call this shared exact-stack commit bridge.
   let lastRootOrder = []; // Exposed through diagnostics so mobile testing can verify clockwise ordering without DevTools.
-  let lastSelection = null; // Exposed through diagnostics to report the most recent committed bottle.
+  let lastSelection = null; // Exposed through diagnostics to report the most recent committed bottle and commit path.
   let lastRestore = null; // Exposed through diagnostics to verify temporary potion handoff and exact combat-slot restoration.
   let lastError = null; // Exposed through diagnostics when a displayed potion cannot be resolved/restored.
 
@@ -151,14 +151,15 @@
 
     installed = true;
     const baseOpenEntries = arc.openEntries.bind(arc); // Used to render every custom potion view on the existing shared arch.
-    const baseOpenItem = arc.openItem.bind(arc); // Used only during an instantaneous commit bridge to the normal inventory selector.
-    const baseScrollItem = arc.scrollItem.bind(arc); // Used to find the exact potency-specific stack in the ordinary inventory selector.
-    const baseScrollEntries = arc.scrollEntries.bind(arc); // Used for generic movement inside custom modes that avoid legacy branch names.
+    const baseOpenPotions = arc.openPotions.bind(arc); // Used invisibly to reach game.js's authoritative exact-item-key potion callbacks.
+    const baseOpenItem = arc.openItem.bind(arc); // Fallback for contextual Stamina/Footing restoratives absent from the legacy hierarchy.
+    const baseScrollItem = arc.scrollItem.bind(arc); // Fallback navigation verified against the actual active item-arc slot.
+    const baseScrollEntries = arc.scrollEntries.bind(arc); // Used for custom movement and invisible legacy exact-key routing.
     const baseMovePointer = arc.movePointer.bind(arc); // Used by mobile drag and pointer-held Potion Select.
-    const baseCommit = arc.commit.bind(arc); // Used because legacy releaseSelection intentionally cancels non-item potion branches.
-    const baseClose = arc.close.bind(arc); // Used to close custom roots/categories and the hidden item-selection bridge.
+    const baseCommit = arc.commit.bind(arc); // Commits either our custom entry or game.js's legacy exact-key item callback.
+    const baseClose = arc.close.bind(arc); // Used to close custom roots/categories and hidden commit bridges.
 
-    const spacerStyle = document.createElement?.('style'); // Keeps balance-only root slots in layout while making them completely invisible/non-interactive.
+    const spacerStyle = document.createElement?.('style'); // Keeps balance-only root slots in layout while making them invisible/non-interactive.
     if (spacerStyle && !document.getElementById?.('contextualPotionSelectorSpacerStyle')) {
       spacerStyle.id = 'contextualPotionSelectorSpacerStyle';
       spacerStyle.textContent = `
@@ -214,8 +215,7 @@
 
       // With no currently useful medicine, keep Cancel physically at the same
       // center point regardless of whether Buffs/Flasks exist. Invisible blocked
-      // spacers preserve the three-slot geometry and also prevent the old
-      // Medicine/Utility curved breadcrumb from leaking into this root view.
+      // spacers preserve the three-slot geometry and suppress stale hierarchy UI.
       const entries = contextual.length
         ? [
             ...(buffGateway ? [buffGateway] : []),
@@ -257,41 +257,91 @@
       return true;
     }
 
-    function selectedInventoryLabel() {
-      return normalized(document.getElementById('itemName')?.textContent);
+    function legacyRouteForItem(itemKey) {
+      const state = A.potionCategoryState() || {};
+      const routes = [
+        { category:'healing', items:state.healing?.usefulItems || [], branchDir:-1, categoryDir:-1, cancelAtStart:true },
+        { category:'cures', items:state.cures?.usefulItems || [], branchDir:-1, categoryDir:1, cancelAtStart:false },
+        { category:'buffs', items:state.buffs?.items || [], branchDir:1, categoryDir:-1, cancelAtStart:true },
+        { category:'flasks', items:state.flasks?.items || [], branchDir:1, categoryDir:1, cancelAtStart:false },
+      ];
+      return routes.find(route => route.items.some(item => item.itemKey === itemKey)) || null;
+    }
+
+    function commitViaLegacyExactKey(itemKey) {
+      const route = legacyRouteForItem(itemKey);
+      if (!route) return false;
+      const itemIndex = route.items.findIndex(item => item.itemKey === itemKey);
+      if (itemIndex < 0) return false;
+
+      // game.js's legacy potion item entries call its private
+      // _selectHeldInventoryKey(entry.itemKey). Traverse that hierarchy in one
+      // synchronous turn, then commit the exact authored key before the browser
+      // can paint the temporary legacy nodes.
+      baseOpenPotions();
+      baseScrollEntries(route.branchDir);
+      baseScrollEntries(route.categoryDir);
+      const direction = route.cancelAtStart ? 1 : -1;
+      const steps = route.cancelAtStart ? itemIndex + 1 : route.items.length - itemIndex;
+      for (let step = 0; step < steps; step++) baseScrollEntries(direction);
+      baseCommit();
+      return true;
+    }
+
+    function activeItemArcLabel() {
+      // Unlike #itemName, this node is rebuilt synchronously from the same
+      // activeItemIndex that commit() will use, so it cannot verify one stack
+      // while another stack is actually selected underneath it.
+      const slot = document.querySelector('.arc-slot.arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost)');
+      return normalized(slot?.querySelector?.('.arc-label')?.textContent || slot?.getAttribute?.('aria-label') || slot?.title || slot?.textContent);
+    }
+
+    function commitViaItemArc(targetLabel) {
+      baseOpenItem();
+      let found = activeItemArcLabel() === targetLabel;
+      for (let scans = 0; !found && scans < MAX_ITEM_SCAN; scans++) {
+        baseScrollItem(1);
+        found = activeItemArcLabel() === targetLabel;
+      }
+      if (!found) {
+        baseClose();
+        return false;
+      }
+      baseCommit();
+      return true;
     }
 
     selectHeldPotion = function selectHeldPotionEntry(entry) {
       const targetLabel = inventoryLabel(entry);
-      if (!targetLabel) {
+      if (!entry?.itemKey || !targetLabel) {
         lastError = `Potion Select could not resolve ${entry?.itemKey || '(unknown item)'}.`;
         closeSelector();
         return false;
       }
 
-      // Commit through the existing item selector instead of mutating private
-      // activeItemIndex/heldMode state. All changes remain inside the ordinary
-      // inventory path, including potency-specific stacks and action refreshes.
       const priorSlot = selectionOriginSlot || currentCombatSlot();
       stage = null;
       baseClose();
-      baseOpenItem();
-      let found = selectedInventoryLabel() === targetLabel;
-      for (let scans = 0; !found && scans < MAX_ITEM_SCAN; scans++) {
-        baseScrollItem(1);
-        found = selectedInventoryLabel() === targetLabel;
+
+      // Buffs, flasks, Healing potions, and Cures use game.js's authoritative
+      // exact-key callback. Stamina/Footing restoratives are not represented in
+      // that old hierarchy, so only those use the ordinary item arc fallback.
+      let commitPath = 'legacy-exact';
+      let committed = commitViaLegacyExactKey(entry.itemKey);
+      if (!committed) {
+        commitPath = 'item-arc';
+        committed = commitViaItemArc(targetLabel);
       }
-      if (!found) {
+      if (!committed) {
         selectionOriginSlot = null;
-        lastError = `Potion Select displayed ${targetLabel}, but the inventory selector could not find that stack.`;
-        baseClose();
+        lastError = `Potion Select displayed ${targetLabel}, but could not resolve its exact inventory stack.`;
         return false;
       }
-      lastSelection = { itemKey:entry.itemKey, label:targetLabel, priorSlot, at:Date.now() };
+
+      lastSelection = { itemKey:entry.itemKey, label:targetLabel, priorSlot, commitPath, at:Date.now() };
       temporarySelection = { itemKey:entry.itemKey, label:targetLabel, priorSlot, selectedAt:Date.now() };
       selectionOriginSlot = null;
       lastError = null;
-      baseCommit();
       return true;
     };
 
