@@ -34,9 +34,14 @@
   let lastSnapshot = { visible: false, target: null, slots: [] };
 
   function meleeWeaponDrawn() {
+    // The action-arch observer can rewrite the switch button label while it
+    // rebuilds the HUD. Prefer the authoritative gameplay mode when exposed,
+    // then keep the DOM check as a backwards-compatible fallback.
+    const activeTool = window.Combat?.deps?.getActiveTool?.();
+    if (activeTool) return activeTool === 'weapon';
     const switchButton = document.getElementById('btnWeaponSwitch');
     return !!switchButton?.classList.contains('active')
-      && switchButton?.getAttribute('aria-label') === 'Switch to ranged weapon';
+      && switchButton?.getAttribute('aria-label') !== 'Switch to melee weapon';
   }
 
   function ensureReticle() {
@@ -154,27 +159,32 @@
   }
 
   function targetState(deps, direction, slotProfiles) {
-    const focused = window.RangedWeapons?.focusedHostile?.(24);
+    let focused = null;
+    try { focused = window.RangedWeapons?.focusedHostile?.(24) || null; } catch (err) {
+      console.warn('[melee-reticle] focused target failed', err);
+    }
     const target = focused?.candidate?.data || null;
     if (!target || target.health <= 0) return { target: null, ready: slotProfiles.map(() => false), distanceWorld: null };
 
-    const yaw = Math.atan2(direction.z, direction.x);
-    const pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
-    const origin = new THREE.Vector3(deps.player.x / deps.TILE, deps.player.avatarRef?.group?.position?.y || 0.55, deps.player.y / deps.TILE);
+    const origin = new THREE.Vector3(
+      deps.player.x / deps.TILE,
+      deps.player.avatarRef?.group?.position?.y || 0.55,
+      deps.player.y / deps.TILE,
+    );
     const hitbox = window.RangedWeapons?.actorHitbox?.(target);
     const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
       || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
     const distanceWorld = closest.distanceTo(origin);
+    const vertical = window.RangedWeapons?.meleeReachCheck?.(deps.player, target, 0.4);
+    // focusedHostile() already proves the camera ray is on this actor. Use
+    // the attack's actual reach plus the shared vertical gate for readiness;
+    // re-running the old 2D meleeHit cone here made every slot stay white
+    // when shoulder-camera aim pitch differed by a few degrees.
     const ready = slotProfiles.map(profile => {
       if (!profile.attackId || profile.reachPx <= 0) return false;
-      return distanceWorld <= profile.reachPx / deps.TILE + 1e-4
-        && !!window.Combat.meleeHit?.(deps.player, target, {
-          rangePx: profile.reachPx,
-          halfConeRad: profile.halfConeRad,
-          yaw,
-          pitch,
-          debug: false,
-        });
+      const inReach = distanceWorld <= profile.reachPx / deps.TILE + 1e-4;
+      const sameHeight = !vertical || vertical.reachable !== false;
+      return inReach && sameHeight;
     });
     return { target: target.id || target.name || 'hostile', ready, distanceWorld };
   }
