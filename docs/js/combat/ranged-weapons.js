@@ -775,13 +775,12 @@
     let targetPoint = null;
     let reticleTarget = null;
     const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
+    // Acquisition uses the same swept projectile radius as live collision.
+    const aimRadius = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
       const rayDistance = Math.max(def.rangeTiles + 2, cameraToMuzzle.length() + def.rangeTiles + 2);
       const rayEnd = cameraRay.origin.clone().addScaledVector(cameraRay.direction, rayDistance);
-      // Acquisition uses the same swept projectile radius as live collision,
-      // so the red reticle does not require a pixel-perfect center aim.
-      const aimRadius = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
       let nearest = null;
       for (const hostile of deps.hostileObjects) {
         if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
