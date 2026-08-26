@@ -5,8 +5,8 @@
 // Per-model mirrorX remains configurable so an asset authored in the opposite basis
 // can opt out without changing every other hand model. Tool grip origin is 0,0,0.
 // handFromTool is the model-specific fine alignment relative to the selected grip mode.
-// Shoulder-compass axes are intentionally NOT stored here: they belong to animation
-// poses and are authored/exported by the Attack Animation Editor.
+// Shoulder-compass axes are intentionally NOT stored on editable model data: animation
+// poses may still author them, while species model policy can override them at runtime.
 (function (global) {
   'use strict';
 
@@ -14,8 +14,14 @@
   const PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Migrates profiles saved by the immediately preceding balance preset.
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
-  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
+  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90-50-0-v2';
   const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
+  const SHOULDER_TRACKING_BY_MODEL = Object.freeze({
+    pachyderm: Object.freeze({ pitch: 1, yaw: 0, roll: 0 }),
+    sloth: Object.freeze({ pitch: 1, yaw: 0, roll: 0 }),
+    feline: Object.freeze({ pitch: 1, yaw: 1, roll: 0 }),
+    parrot: Object.freeze({ pitch: 1, yaw: 1, roll: 0 }),
+  }); // Used by every animation so species anatomy, not pose metadata, decides which shoulder axes hands follow.
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
@@ -24,7 +30,7 @@
   // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
   const MAO_AO_HAND_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
-    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
+    rotationDeg: Object.freeze({ pitch: 90, yaw: 50, roll: 0 }),
   });
 
   function identityTransform() {
@@ -303,6 +309,10 @@
   function handTransformForSpecies(speciesId) {
     return normalizeTransform(modelForSpecies(speciesId)?.handFromTool);
   }
+  function shoulderTrackingForSpecies(speciesId) {
+    const tracking = SHOULDER_TRACKING_BY_MODEL[modelKeyForSpecies(speciesId)];
+    return tracking ? { ...tracking } : null;
+  }
   function footScaleFor(speciesId, gender) {
     const table = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale || {};
     const g = normalizeGender(gender);
@@ -376,6 +386,7 @@
     modelKeyForSpecies,
     modelForSpecies,
     handTransformForSpecies,
+    shoulderTrackingForSpecies,
     speciesScaleFor,
     footScaleFor,
     modelScaleFor,
