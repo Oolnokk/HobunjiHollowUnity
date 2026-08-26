@@ -396,6 +396,27 @@
       const expectedGroups = new Set([...controller.loaded.values()].map(record => record.group)); // Used to distinguish registered groups from leaked scene groups.
       const sceneGroups = controller.scene?.children?.filter(child => child.userData?.wildernessChunk) || [];
       const orphanGroups = sceneGroups.filter(group => !expectedGroups.has(group));
+      const objectCounts = {}; // Counts resident chunk descendants by useful render/object type for the mobile report.
+      for (const record of controller.loaded.values()) {
+        record.group.traverse(object => {
+          if (object === record.group || object.userData?.wildernessChunkDebug) return;
+          const name = String(object.name || '').toLowerCase();
+          const type = object.userData?.mergedWaterStatKey ? 'water'
+            : /grass|foliage|shrub|bush|tree/.test(name) ? 'foliage'
+            : /floor|terrain|ground|cliff|path/.test(name) ? 'terrain'
+            : object.isInstancedMesh ? 'instanced'
+            : object.isMesh ? 'mesh'
+            : object.type || 'object';
+          objectCounts[type] = (objectCounts[type] || 0) + 1;
+        });
+      }
+      const escapedSpatialObjects = []; // Holds named spatial-chunk objects that are not descendants of any registered chunk group.
+      controller.scene?.traverse?.(object => {
+        if (!/__spatial_chunk_|wildernesschunk_/i.test(String(object.name || '')) || expectedGroups.has(object)) return;
+        let parent = object.parent;
+        while (parent && parent !== controller.scene && !expectedGroups.has(parent)) parent = parent.parent;
+        if (!expectedGroups.has(parent)) escapedSpatialObjects.push(object.name || '(unnamed spatial object)');
+      });
       const detachedRecords = [...controller.loaded.values()].filter(record => record.group.parent !== controller.scene);
       const outOfRadius = controller.centerCx == null ? [] : [...controller.loaded.values()].filter(record =>
         chebyshev(record.cx, record.cz, controller.centerCx, controller.centerCz) > UNLOAD_RADIUS
@@ -416,6 +437,7 @@
       const inactiveOverdue = controller.mapId !== activeArea
         && controller.inactiveSeconds >= INACTIVE_UNLOAD_DELAY_S && controller.loaded.size > 0;
       if (orphanGroups.length) issues.push(`${controller.mapId}: ${orphanGroups.length} orphan chunk group(s)`);
+      if (escapedSpatialObjects.length) issues.push(`${controller.mapId}: ${escapedSpatialObjects.length} spatial-chunk object(s) escaped registered groups`);
       if (detachedRecords.length) issues.push(`${controller.mapId}: ${detachedRecords.length} registered group(s) detached/wrong-scene`);
       if (outOfRadius.length) issues.push(`${controller.mapId}: ${outOfRadius.length} loaded beyond unload radius ${UNLOAD_RADIUS}`);
       if (queuedOutOfRadius.length) issues.push(`${controller.mapId}: ${queuedOutOfRadius.length} queued beyond load radius ${LOAD_RADIUS}`);
@@ -425,7 +447,9 @@
         mapId: controller.mapId, active: controller.mapId === activeArea,
         center: controller.centerCx == null ? null : `${controller.centerCx},${controller.centerCz}`,
         registered: controller.loaded.size, sceneGroups: sceneGroups.length,
+        objectCounts,
         orphanGroups: orphanGroups.map(group => group.name || '(unnamed)'),
+        escapedSpatialObjects,
         detachedKeys: detachedRecords.map(record => record.key),
         outOfRadiusKeys: outOfRadius.map(record => record.key),
         queuedOutOfRadiusKeys: queuedOutOfRadius.map(request => request.key),
@@ -444,7 +468,8 @@
     if (!audit) return 'Chunk residency audit has not run.';
     const lines = [`Chunk residency audit: ${audit.ok ? 'PASS' : `FAIL (${audit.issues.length})`} active=${audit.activeArea || '(none)'}`];
     for (const zone of audit.zones) {
-      lines.push(`${zone.mapId}${zone.active ? '*' : ''}: center=${zone.center || '-'} registry=${zone.registered} scene=${zone.sceneGroups} inactive=${zone.inactiveSeconds}s`);
+      const objectSummary = Object.entries(zone.objectCounts).sort((a, b) => b[1] - a[1]).map(([type, count]) => `${type}:${count}`).join(',');
+      lines.push(`${zone.mapId}${zone.active ? '*' : ''}: center=${zone.center || '-'} registry=${zone.registered} scene=${zone.sceneGroups} inactive=${zone.inactiveSeconds}s objects=[${objectSummary || 'none'}]`);
     }
     if (audit.issues.length) lines.push(...audit.issues.map(issue => `! ${issue}`));
     else lines.push('No orphan, detached, duplicate, out-of-radius, or overdue inactive chunk groups found.');
