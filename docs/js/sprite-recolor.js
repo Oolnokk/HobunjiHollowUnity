@@ -183,7 +183,6 @@
   function loadAmphibiousFishingForGame() {
     if (typeof document === 'undefined' || !document.getElementById('fishingOverlay')) return;
     parserOrderedScript('amphibious-fishing.js', 'amphibious-fishing', '20260826a', () => !!window.AmphibiousFishing);
-    parserOrderedScript('amphibious-fish-corpse-cleanup.js', 'amphibious-corpse-cleanup', '20260826a');
   }
 
   window.SpriteRecolor = {
