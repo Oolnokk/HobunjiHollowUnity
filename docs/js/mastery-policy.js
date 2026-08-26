@@ -37,7 +37,7 @@
   const guardedRecordProxies = new WeakSet(); // Used to avoid proxy nesting.
   const debug = {
     blockedWrites: 0, suppressedLegacyCombatAwards: 0, suppressedLegacyPopups: 0,
-    lastBlocked: null, lastAward: null, lastKill: null, lastHarvest: null, lastTreasure: null,
+    lastBlocked: null, lastAward: null, lastKill: null, lastHarvest: null, lastTreasure: null, lastDeathRecovery: null,
   }; // Used by mobile-friendly getDebug()/formatDebug().
 
   const now = () => (performance?.now ? performance.now() : Date.now());
@@ -242,7 +242,23 @@
         const wrapped = function masteryPolicyDamageCreature(enemy, ...args) {
           const before = Math.max(0, Number(enemy?.health) || 0);
           if (enemy && before > Number(enemy._masteryObservedMaxHealth || 0)) enemy._masteryObservedMaxHealth = before;
-          const result = damageCreature(enemy, ...args);
+          let result; // Used to preserve the wrapped damage result or the safe lethal-transition recovery result.
+          try {
+            result = damageCreature(enemy, ...args);
+          } catch (error) {
+            const afterError = Math.max(0, Number(enemy?.health) || 0); // Used to distinguish a recoverable interrupted death from an unrelated combat error.
+            if (!(enemy && before > 0 && afterError <= 0)) throw error;
+            combatDeps?.hostileObjects?.delete?.(enemy);
+            combatDeps?.companionObjects?.delete?.(enemy);
+            const recovered = window.CreatureDeath?.recover?.(enemy, args[1], args[2], error); // Used to finish corpse conversion when a reward/UI hook aborts core damageCreature after lethal health was applied.
+            debug.lastDeathRecovery = {
+              at: now(), enemy: enemy?.id || enemy?.def?.label || 'hostile',
+              recovered: !!recovered, reason: error?.stack || error?.message || String(error),
+            };
+            window.__farmLog?.(`[mastery] lethal transition ${recovered ? 'recovered' : 'FAILED'} for ${debug.lastDeathRecovery.enemy}: ${debug.lastDeathRecovery.reason}`, 'combat');
+            if (!recovered) throw error;
+            result = false;
+          }
           const after = Math.max(0, Number(enemy?.health) || 0);
           const options = args[4] && typeof args[4] === 'object' ? args[4] : {};
           if (before > 0 && after <= 0) {
@@ -464,6 +480,7 @@
       lastKill: debug.lastKill ? { ...debug.lastKill } : null,
       lastHarvest: debug.lastHarvest ? { ...debug.lastHarvest } : null,
       lastTreasure: debug.lastTreasure ? { ...debug.lastTreasure } : null,
+      lastDeathRecovery: debug.lastDeathRecovery ? { ...debug.lastDeathRecovery } : null,
       config: { ...CONFIG, thresholds: [...THRESHOLDS] },
     };
   }
