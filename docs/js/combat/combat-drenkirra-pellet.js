@@ -31,6 +31,9 @@
 
   const tuning = { ...DEFAULTS }; // Used by animation, projectile simulation, and authored runtime overrides.
   const PELLET_SPRITE = 'assets/creaturesprites/drenkirra_pellet.png'; // Future sprite path; fallback material remains visible until the PNG exists.
+  const PELLET_ORIGIN_FORWARD_TILES = 0.3; // Keeps the pellet visibly ahead of the body at the authored mouth/head direction.
+  const PELLET_ORIGIN_HEIGHT_WORLD = 0.08; // Small torso-to-mouth lift in Three.js world units until a species mouth anchor is available.
+  const PELLET_GROUND_CLEARANCE_WORLD = 0.08; // Lets a downward shot embed cleanly instead of skimming through terrain.
   const FALLBACK_COLOR = 0xb6d94c; // Used as a visible acidic placeholder when the not-yet-authored pellet PNG cannot load.
   let pelletTexture = null; // Reused by every pellet once the future PNG loads successfully.
   let pelletTextureRequested = false; // Prevents repeated 404 requests while the placeholder art is intentionally absent.
@@ -55,6 +58,44 @@
     const looksLikeCreature = !!(target?.def || target?.creatureKey || target?.isCompanion || target?.isBandit); // Used to classify companion targets without area-only heuristics.
     if (looksLikeCreature) return 'creature';
     return creature.isCompanion ? 'creature' : 'player';
+  }
+
+  function actorWorldY(actor, deps) {
+    const injected = Number(deps.getActorWorldY?.(actor)); // Used to share the live player/creature render height from game.js when available.
+    if (Number.isFinite(injected)) return injected;
+    const avatarY = Number(actor?.avatarRef?.group?.position?.y); // Used for creature targets in older/ad-hoc combat harnesses.
+    if (Number.isFinite(avatarY)) return avatarY;
+    if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y) && typeof deps.worldSurfaceY === 'function') {
+      const surface = Number(deps.worldSurfaceY(actor.x, actor.y)); // Used as a safe ground-relative fallback when no avatar has been built yet.
+      if (Number.isFinite(surface)) return surface + 0.4;
+    }
+    return 0.4;
+  }
+
+  function clampHeadPitchDeg(creature, pitchDeg) {
+    const rig = creature.avatarRef?.headRig?.rig; // Used to honor the authored Drenkirra limits once PR #251's runtime is present.
+    if (!rig) return pitchDeg;
+    const minDeg = Number(rig.minDeg), maxDeg = Number(rig.maxDeg); // Used as explicit per-species safety limits rather than a generic global clamp.
+    if (!Number.isFinite(minDeg) || !Number.isFinite(maxDeg)) return pitchDeg;
+    const lower = Math.min(minDeg, maxDeg), upper = Math.max(minDeg, maxDeg);
+    return Math.max(lower, Math.min(upper, pitchDeg));
+  }
+
+  function restoreHeadRotation(creature, deltaSeconds = 0.12) {
+    const avatar = creature.avatarRef; // Used to keep the head-rig call optional on saves that predate authored animal rigs.
+    if (typeof avatar?.updateHeadRotation !== 'function') return;
+    const restDeg = Number(avatar.headRig?.rig?.restDeg); // Used to return to the exact authored neutral angle rather than assuming zero.
+    avatar.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, deltaSeconds);
+  }
+
+  function applyHeadAim(creature, state, dt) {
+    const avatar = creature.avatarRef; // Used to make head pitch a no-op for legacy flat-plane Drenkirra avatars.
+    if (typeof avatar?.updateHeadRotation !== 'function') return;
+    if (!state.aimVector || !Number.isFinite(state.aimPitchDeg)) {
+      restoreHeadRotation(creature, dt);
+      return;
+    }
+    avatar.updateHeadRotation(state.aimPitchDeg, dt); // Smoothed authored head pitch during both wind-up and fire.
   }
 
   function gatherTargets(creature, deps) {
@@ -128,11 +169,43 @@
     return { scaleX: lerp(tuning.STRIKE_SCALE_X, 1, t), tiltAmount: 1 - t };
   }
 
-  function updateAim(creature, state) {
+  function aimVectorFor(creature, target, deps) {
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
+    if (Number.isFinite(target.health) && target.health <= 0) return null;
+
+    const targetDxPx = target.x - creature.x, targetDzPx = target.y - creature.y; // Used to choose the horizontal mouth bearing before converting into world units.
+    const horizontalTargetPx = Math.hypot(targetDxPx, targetDzPx);
+    const angle = horizontalTargetPx > 0.001
+      ? Math.atan2(targetDzPx, targetDxPx)
+      : (Number.isFinite(creature.facing) ? creature.facing : 0); // Used to keep a stable direction for a point-blank target.
+    const originX = creature.x + Math.cos(angle) * deps.TILE * PELLET_ORIGIN_FORWARD_TILES; // Used as the logical mouth position in the game's pixel X axis.
+    const originZ = creature.y + Math.sin(angle) * deps.TILE * PELLET_ORIGIN_FORWARD_TILES; // Used as the logical mouth position in the game's pixel Y/Z axis.
+    const originWorldY = actorWorldY(creature, deps) + PELLET_ORIGIN_HEIGHT_WORLD; // Used to start the projectile just above the body center.
+    const rawDirection = {
+      x: (target.x - originX) / deps.TILE,
+      y: actorWorldY(target, deps) - originWorldY,
+      z: (target.y - originZ) / deps.TILE,
+    }; // Used as the complete 3D vector from the mouth to the target point.
+    const length = Math.hypot(rawDirection.x, rawDirection.y, rawDirection.z);
+    if (!(length > 0.0001)) return null;
+    const dir = {
+      x: rawDirection.x / length,
+      y: rawDirection.y / length,
+      z: rawDirection.z / length,
+    }; // Used as the normalized projectile velocity direction, including its vertical component.
+    const horizontal = Math.hypot(dir.x, dir.z); // Used by the requested atan2 pitch calculation without flattening the shot.
+    const pitchDeg = Math.atan2(dir.y, horizontal) * 180 / Math.PI; // Used by the authored head rig and mobile diagnostics.
+    return { originX, originZ, originWorldY, dir, angle, pitchDeg };
+  }
+
+  function updateAim(creature, state, deps) {
     const target = state.target; // Used to keep the animal tracking its intended target until the strike moment.
-    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return;
-    if (Number.isFinite(target.health) && target.health <= 0) return;
-    creature.facing = Math.atan2(target.y - creature.y, target.x - creature.x);
+    const aim = aimVectorFor(creature, target, deps);
+    state.aimVector = aim;
+    state.aimPitchDeg = aim ? clampHeadPitchDeg(creature, aim.pitchDeg) : null;
+    if (!aim) return false;
+    creature.facing = aim.angle;
+    return true;
   }
 
   function projectileParent(creature) {
@@ -187,6 +260,15 @@
     return dx * dx + dy * dy;
   }
 
+  function pointSegmentDistanceSqT(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay; // Used to sample the pellet's world-Y at the same closest horizontal point as the collision check.
+    const apx = px - ax, apy = py - ay;
+    const lenSq = abx * abx + aby * aby;
+    const t = lenSq > 0 ? clamp01((apx * abx + apy * aby) / lenSq) : 0;
+    const dx = px - (ax + abx * t), dy = py - (ay + aby * t);
+    return { distSq: dx * dx + dy * dy, t };
+  }
+
   function disposeProjectile(projectile) {
     projectile.mesh?.parent?.remove(projectile.mesh);
     projectile.mesh?.traverse?.(object => {
@@ -221,14 +303,24 @@
 
   function spawnProjectile(creature, state, deps) {
     const mesh = createPelletMesh(creature, deps); // Used as the projectile's requested sprite-plane visual/fallback.
-    const angle = creature.facing || 0; // Used to lock flight to the direction the Drenkirra is actually aiming at the strike moment.
+    const aim = state.aimVector || aimVectorFor(creature, state.target, deps); // Used to lock flight to the exact normalized 3D direction at the strike moment.
+    const angle = aim?.angle ?? creature.facing ?? 0; // Used to keep horizontal sprite facing aligned with the firing direction.
+    const dir = aim?.dir || { x: Math.cos(angle), y: 0, z: Math.sin(angle) }; // Used as a safe horizontal fallback for legacy/ad-hoc callers.
+    const originX = aim?.originX ?? creature.x;
+    const originZ = aim?.originZ ?? creature.y;
+    const originWorldY = aim?.originWorldY ?? actorWorldY(creature, deps);
     const projectile = {
-      x: creature.x,
-      y: creature.y,
-      prevX: creature.x,
-      prevY: creature.y,
-      vx: Math.cos(angle) * tuning.PROJECTILE_SPEED_PX_S,
-      vy: Math.sin(angle) * tuning.PROJECTILE_SPEED_PX_S,
+      x: originX,
+      y: originZ,
+      prevX: originX,
+      prevY: originZ,
+      worldY: originWorldY,
+      prevWorldY: originWorldY,
+      vx: dir.x * tuning.PROJECTILE_SPEED_PX_S,
+      vy: dir.z * tuning.PROJECTILE_SPEED_PX_S,
+      vyWorld: dir.y * (tuning.PROJECTILE_SPEED_PX_S / deps.TILE),
+      dir,
+      pitchDeg: aim?.pitchDeg ?? 0,
       distancePx: 0,
       maxDistancePx: tuning.PROJECTILE_RANGE_TILES * deps.TILE,
       mesh,
@@ -236,8 +328,7 @@
       dead: false,
     }; // Used for the complete in-flight pellet state during this animal attack.
     if (mesh) {
-      const baseY = creature.avatarRef?.group?.position?.y ?? 0; // Used to launch around the middle of the animal's visible body instead of on the ground.
-      mesh.position.set(projectile.x / deps.TILE, baseY, projectile.y / deps.TILE);
+      mesh.position.set(projectile.x / deps.TILE, projectile.worldY, projectile.y / deps.TILE);
       mesh.rotation.y = -angle;
     }
     state.projectiles.push(projectile);
@@ -250,6 +341,7 @@
       if (projectile.dead) continue;
       projectile.prevX = projectile.x;
       projectile.prevY = projectile.y;
+      projectile.prevWorldY = projectile.worldY;
       const dx = projectile.vx * dt, dy = projectile.vy * dt; // Used as this frame's crossbow-style straight-line flight step.
       const nextX = projectile.x + dx, nextY = projectile.y + dy;
       if (deps.canOccupyAt && !deps.canOccupyAt(nextX, nextY, tuning.PROJECTILE_RADIUS_PX)) {
@@ -259,10 +351,19 @@
       }
       projectile.x = nextX;
       projectile.y = nextY;
+      projectile.worldY += projectile.vyWorld * dt;
       projectile.distancePx += Math.hypot(dx, dy);
       if (projectile.mesh) {
         projectile.mesh.position.x = projectile.x / deps.TILE;
+        projectile.mesh.position.y = projectile.worldY;
         projectile.mesh.position.z = projectile.y / deps.TILE;
+      }
+
+      const surfaceY = typeof deps.worldSurfaceY === 'function' ? Number(deps.worldSurfaceY(projectile.x, projectile.y)) : 0;
+      if (projectile.worldY <= (Number.isFinite(surfaceY) ? surfaceY : 0) + PELLET_GROUND_CLEARANCE_WORLD) {
+        if (state.lastResult === 'IN FLIGHT') state.lastResult = 'BLOCKED';
+        disposeProjectile(projectile);
+        continue;
       }
 
       let hit = false; // Used to stop this pellet on the first opposing actor its swept segment intersects.
@@ -271,7 +372,11 @@
         if (!target || (Number.isFinite(target.health) && target.health <= 0)) continue;
         if (targetEntry.kind === 'creature' && target.areaId != null && creature.areaId != null && target.areaId !== creature.areaId) continue;
         const hitRadius = hitRadiusFor(target, targetEntry.kind, deps); // Used as the target-plus-projectile swept collision radius.
-        if (pointSegmentDistanceSq(target.x, target.y, projectile.prevX, projectile.prevY, projectile.x, projectile.y) > hitRadius * hitRadius) continue;
+        const horizontalHit = pointSegmentDistanceSqT(target.x, target.y, projectile.prevX, projectile.prevY, projectile.x, projectile.y);
+        if (horizontalHit.distSq > hitRadius * hitRadius) continue;
+        const rayWorldY = projectile.prevWorldY + (projectile.worldY - projectile.prevWorldY) * horizontalHit.t; // Used to reject an otherwise-horizontal overlap when the target is above/below the aimed shot.
+        const targetWorldY = actorWorldY(target, deps);
+        if (Math.abs(rayWorldY - targetWorldY) > hitRadius / deps.TILE) continue;
         applyProjectileHit(creature, state, projectile, targetEntry, deps);
         disposeProjectile(projectile);
         hit = true;
@@ -308,7 +413,8 @@
     const element = ensureDebugElement(); // Used to expose animation/fire state on mobile without desktop devtools.
     if (!element) return;
     const liveProjectiles = state.projectiles.filter(projectile => !projectile.dead).length; // Used as the mobile-visible active pellet count.
-    element.textContent = `Drenkirra Caustic Pellet\n${stage} ${(progress * 100).toFixed(0)}% | pellets ${liveProjectiles}\n${state.lastResult || 'CHARGING'} | target ${state.targetKind || '?'}\ncorroded x${tuning.CORRODED_HEALTH_MULTIPLIER.toFixed(2)}`;
+    const pitchLabel = Number.isFinite(state.aimPitchDeg) ? `${state.aimPitchDeg.toFixed(1)}°` : '?'; // Used to verify vertical aim and authored clamping from a phone without desktop devtools.
+    element.textContent = `Drenkirra Caustic Pellet\n${stage} ${(progress * 100).toFixed(0)}% | pellets ${liveProjectiles}\n${state.lastResult || 'CHARGING'} | target ${state.targetKind || '?'}\nhead pitch ${pitchLabel}\ncorroded x${tuning.CORRODED_HEALTH_MULTIPLIER.toFixed(2)}`;
   }
 
   function start(creature, state, context, deps) {
@@ -320,27 +426,31 @@
     state.projectiles = [];
     state.lastResult = 'CHARGING';
     storeBasePose(creature, state);
-    updateAim(creature, state);
+    updateAim(creature, state, deps);
+    applyHeadAim(creature, state, 0);
     updateDebug(creature, state, state.stage, 0);
   }
 
   function update(creature, state, dt, deps) {
     state.t += dt;
-    if (!state.fired) updateAim(creature, state);
+    if (!state.fired) updateAim(creature, state, deps);
 
     if (state.stage === 'charge') {
       const duration = Math.max(0.01, tuning.CHARGE_DURATION_S); // Used as the reload-like accordion prep duration.
       const progress = clamp01(state.t / duration); // Used to drive initial tilt plus repeated accordion compression/stretch.
       const pose = chargePoseAtProgress(progress); // Used as this frame's charge width and up-tilt.
-      const tiltRad = tuning.TILT_DEG * Math.PI / 180 * pose.tiltAmount; // Used as local X pitch; animal local Y is reserved for facing/dead-zone yaw.
+      const hasHeadRig = typeof creature.avatarRef?.updateHeadRotation === 'function'; // Used to keep PR #251's skinned body from receiving the old whole-plane pitch.
+      const tiltRad = hasHeadRig ? 0 : tuning.TILT_DEG * Math.PI / 180 * pose.tiltAmount; // Legacy sprites retain their authored body pose; rigged Drenkirra uses its head bone instead.
       applyPlanePose(creature.avatarRef?.frontPlane, state.basePose.front, pose.scaleX, tiltRad);
       applyPlanePose(creature.avatarRef?.backPlane, state.basePose.back, pose.scaleX, tiltRad);
+      applyHeadAim(creature, state, dt);
       updateDebug(creature, state, state.stage, progress);
       if (progress >= 1) {
         state.stage = 'fire';
         state.t = 0;
-        applyPlanePose(creature.avatarRef?.frontPlane, state.basePose.front, 1, tuning.TILT_DEG * Math.PI / 180);
-        applyPlanePose(creature.avatarRef?.backPlane, state.basePose.back, 1, tuning.TILT_DEG * Math.PI / 180);
+        const transitionTilt = hasHeadRig ? 0 : tuning.TILT_DEG * Math.PI / 180;
+        applyPlanePose(creature.avatarRef?.frontPlane, state.basePose.front, 1, transitionTilt);
+        applyPlanePose(creature.avatarRef?.backPlane, state.basePose.back, 1, transitionTilt);
       }
       return true;
     }
@@ -348,9 +458,11 @@
     const duration = Math.max(0.01, tuning.FIRE_DURATION_S); // Used as the crossbow-matched firing animation duration.
     const progress = clamp01(state.t / duration); // Used to drive 5% windup / 8% strike / 17% hold / slow recovery.
     const pose = firePoseAtProgress(progress); // Used as this frame's strike width and return pose.
-    const tiltRad = tuning.TILT_DEG * Math.PI / 180 * pose.tiltAmount; // Used to keep the animal tipped up through strike then lower slowly.
+    const hasHeadRig = typeof creature.avatarRef?.updateHeadRotation === 'function'; // Used to route vertical aiming through the authored head instead of the whole animal.
+    const tiltRad = hasHeadRig ? 0 : tuning.TILT_DEG * Math.PI / 180 * pose.tiltAmount; // Unrigged sprites retain the old fallback body pitch.
     applyPlanePose(creature.avatarRef?.frontPlane, state.basePose.front, pose.scaleX, tiltRad);
     applyPlanePose(creature.avatarRef?.backPlane, state.basePose.back, pose.scaleX, tiltRad);
+    applyHeadAim(creature, state, dt);
 
     if (!state.fired && progress >= tuning.FIRE_STRIKE_FRAC) spawnProjectile(creature, state, deps);
     updateProjectiles(creature, state, dt, deps);
@@ -359,12 +471,14 @@
     if (progress < 1) return true;
     clearProjectiles(state);
     resetPose(creature, state);
+    restoreHeadRotation(creature);
     return false;
   }
 
   function cancel(creature, state) {
     clearProjectiles(state);
     resetPose(creature, state);
+    restoreHeadRotation(creature);
   }
 
   function applyConfig(config) {

@@ -186,7 +186,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260821alchemy1"></script>
+  <script src="js/wild-treasure.js?v=20260826treasure1"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -1961,7 +1961,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260821alchemy6"></script>
+  <script src="game.js?v=20260826treasure1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

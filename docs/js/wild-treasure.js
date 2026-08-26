@@ -296,13 +296,14 @@
   // yet), in the same pixel-space coordinates as creature x/y — used by
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
-    const objs = deps._zoneTreasureObjects.get(mapId);
-    if (!objs) return null;
+    const persisted = deps._zoneTreasurePersist.get(mapId);
+    if (!persisted) return null;
     let best = null, bestDist = Infinity;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(mapId)?.grid[obj.row]?.[obj.col];
+    for (const placement of persisted.placements || []) {
+      if (placement.found) continue;
+      const tile = deps._zoneScenes.get(mapId)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no longer "buried"
-      const x = (obj.col + 0.5) * deps.TILE, y = (obj.row + 0.5) * deps.TILE;
+      const x = (placement.col + 0.5) * deps.TILE, y = (placement.row + 0.5) * deps.TILE;
       const d = Math.hypot(x - fromX, y - fromY);
       if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
     }
@@ -351,13 +352,14 @@
     _treasureSparkleTimer -= dt;
     if (_treasureSparkleTimer > 0) return;
     _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
-    const objs = deps._zoneTreasureObjects.get(currentArea);
-    if (!objs) return;
+    const persisted = deps._zoneTreasurePersist.get(currentArea);
+    if (!persisted) return;
     const rangePx = deps.TILE * TREASURE_SPARKLE_RANGE_PX_MUL;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(currentArea)?.grid[obj.row]?.[obj.col];
+    for (const placement of persisted.placements || []) {
+      if (placement.found) continue;
+      const tile = deps._zoneScenes.get(currentArea)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no hint needed
-      const cx = obj.col + 0.5, cz = obj.row + 0.5;
+      const cx = placement.col + 0.5, cz = placement.row + 0.5;
       const dPx = Math.hypot(cx * deps.TILE - deps.player.x, cz * deps.TILE - deps.player.y);
       if (dPx > rangePx) continue;
       const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT;
