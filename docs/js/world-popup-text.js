@@ -9,6 +9,7 @@
   const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used for popup measurement and canvas rendering.
   const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
+  const CENTERED_LIST_SCALE = 0.25; // Interaction, reward, and progression lists render at one quarter of their former world-space size.
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
@@ -248,7 +249,10 @@
     const mode = entry.modeOverride || state.settings.assignments[entry.kind];
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
-    const parts = makePlane(entry.text, entry.kind, cfg);
+    const planeCfg = mode === 'centeredFiveRow'
+      ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
+      : cfg;
+    const parts = makePlane(entry.text, entry.kind, planeCfg);
     const event = { ...entry, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
@@ -313,10 +317,11 @@
     clearInteractionPrompts();
     state.interactionSignature = signature;
     const cfg = state.settings.centeredFiveRow;
+    const interactionCfg = { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE };
     const scene = options.scene || state.deps?.getActiveScene?.();
     if (!scene) return [];
     return entries.map((entry, listSlot) => {
-      const parts = makePlane(entry.text, 'interaction', cfg);
+      const parts = makePlane(entry.text, 'interaction', interactionCfg);
       const event = {
         ...entry, ...parts, root, scene, kind: 'interaction', mode: 'centeredFiveRow',
         interactionPrompt: true, sequence: state.sequence++, listSlot,
@@ -440,7 +445,8 @@
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
-      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * pop);
+      const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop);
     }
     updateConditionCallout(camera, cameraRight);
   }
