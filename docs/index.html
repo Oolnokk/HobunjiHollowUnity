@@ -126,7 +126,7 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle5"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle6"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -140,7 +140,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260825desktop3"></script>
+  <script src="js/bandit-camps.js?v=20260825desktop4"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -281,7 +281,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260825focus4"></script>
+  <script src="js/climb-system.js?v=20260825focus5"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -320,7 +320,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260825nest1"></script>
+  <script src="js/wildlife-spawn.js?v=20260825nest2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -1915,7 +1915,7 @@
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260821alchemy1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20260811b"></script>
+  <script src="js/world-popup-text.js?v=20260825worldprompt1"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20260811a"></script>
@@ -1925,7 +1925,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260821a"></script>
+  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
