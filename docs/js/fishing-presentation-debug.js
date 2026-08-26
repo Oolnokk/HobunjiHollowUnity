@@ -4,7 +4,7 @@
 (() => {
   'use strict';
 
-  const GULLET_WIDTH_MULTIPLIER = 1.5; // Used to make the Gullet 1.5x the widest authored fish instead of 2x.
+  const GULLET_BREADTH_MULTIPLIER = 1.5; // Used to make the Gullet 1.5x broader perpendicular to its swimming direction without lengthening it.
   const FALLBACK_FISH_GLOW = 'drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4))'; // Used when the regular fish rig is not yet measurable.
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -69,14 +69,14 @@
     const href = regularImage.getAttribute('href') || regularImage.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
     if (href) gulletImage.setAttribute('href', href); // Copies the exact 12fps skinned/wiggling frame used by the ordinary fish.
 
-    // fishDeformedImage's box includes the deformation canvas padding. Scaling
-    // that whole box by authored X/Y scales preserves the regular fish's real
-    // silhouette proportions while making only Gullet width 1.5x the widest fish.
+    // The local X axis is nose-to-tail because this image is rotated to the
+    // movement heading below. Keep ordinary authored length on X and apply the
+    // Gullet's extra bulk only on local Y so "wide" reads as fat, not long.
     const rawW = Math.max(1, Number(regularImage.getAttribute('width')) || 100);
     const rawH = Math.max(1, Number(regularImage.getAttribute('height')) || 76);
     const { maxX, maxY } = widestFishScales();
-    const width = rawW * maxX * GULLET_WIDTH_MULTIPLIER;
-    const height = rawH * maxY;
+    const width = rawW * maxX;
+    const height = rawH * maxY * GULLET_BREADTH_MULTIPLIER;
     gulletImage.setAttribute('x', (-width / 2).toFixed(2));
     gulletImage.setAttribute('y', (-height / 2).toFixed(2));
     gulletImage.setAttribute('width', width.toFixed(2));
@@ -134,7 +134,7 @@
 
   window.FishingPresentationDebug = {
     water: () => window.AmphibiousFishing?.getDebug?.() || null,
-    gulletWidthMultiplier: GULLET_WIDTH_MULTIPLIER,
+    gulletBreadthMultiplier: GULLET_BREADTH_MULTIPLIER,
   };
 
   requestAnimationFrame(frame);
