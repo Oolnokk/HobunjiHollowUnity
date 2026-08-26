@@ -630,10 +630,12 @@
   };
 
   function releaseBranchEntity(entity, branch, reason) {
-    if (!entity || entity.onBranch !== branch) return null;
-    const t = clamp01(entity.branchT);
-    const x = branch.baseX + (branch.tipX - branch.baseX) * t;
-    const y = branch.baseY + (branch.tipY - branch.baseY) * t;
+    const defense = entity?._branchDefense?.branch === branch ? entity._branchDefense : null;
+    if (!entity || (entity.onBranch !== branch && !defense)) return null;
+    const onBranch = entity.onBranch === branch;
+    const t = onBranch ? clamp01(entity.branchT) : clamp01(defense?.targetT ?? defense?.t ?? 0);
+    const x = onBranch ? branch.baseX + (branch.tipX - branch.baseX) * t : Number(entity.x) || branch.baseX;
+    const y = onBranch ? branch.baseY + (branch.tipY - branch.baseY) * t : Number(entity.y) || branch.baseY;
     entity.onBranch = null;
     entity.branchT = 0;
     entity.branchSurfaceY = 0;
