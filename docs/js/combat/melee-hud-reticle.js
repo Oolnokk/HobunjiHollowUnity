@@ -12,9 +12,9 @@
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
   const FILTER_WHITE = 'brightness(0) invert(1)';
-  const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
   const READY_SCALE = 1.16;
-  const READY_TRANSITION = 'transform 140ms ease-out, opacity 140ms ease-out';
+  const SCALE_TRANSITION = 'transform 140ms ease-out'; // Used by each cropped quadrant wrapper when its attack enters or leaves range.
+  const COLOR_TRANSITION = 'opacity 140ms ease-out'; // Used by the neutral/color layers for the readiness color lerp.
   // The neutral layer matches the ranged reticle. A second, transparent layer
   // fades in the slot color only when that ability's authoritative hit test is ready.
   const SLOT_COLOR_FILTERS = [
@@ -23,12 +23,13 @@
     'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)',
     'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)',
   ];
-  const SLOT_READY_FILTERS = SLOT_COLOR_FILTERS.map(filter => filter + READY_GLOW);
-  const CLIPS = [
-    'polygon(0 0, 54% 0, 54% 54%, 0 54%)',
-    'polygon(46% 0, 100% 0, 100% 54%, 46% 54%)',
-    'polygon(0 46%, 54% 46%, 54% 100%, 0 100%)',
-    'polygon(46% 46%, 100% 46%, 100% 100%, 46% 100%)',
+  // Pixel bounds measured after splitting the 75x71 source at its center and
+  // trimming each piece to alpha > 0. This removes transparent padding before scaling.
+  const QUADRANT_BOUNDS = [
+    { x: 0, y: 0, width: 32, height: 32 },
+    { x: 37, y: 0, width: 37, height: 32 },
+    { x: 0, y: 35, width: 31, height: 31 },
+    { x: 37, y: 35, width: 36, height: 31 },
   ];
   // Scale outward from the opposite inner corner so each quadrant appears to
   // grow toward the target rather than pulling the reticle off-center.
@@ -80,6 +81,22 @@
     });
 
     pieces = SLOT_IDS.map((slotId, index) => {
+      const bounds = QUADRANT_BOUNDS[index];
+      const quadrant = document.createElement('div');
+      quadrant.dataset.slot = slotId;
+      Object.assign(quadrant.style, {
+        position: 'absolute',
+        left: `${bounds.x * RETICLE_SCALE}px`,
+        top: `${bounds.y * RETICLE_SCALE}px`,
+        width: `${bounds.width * RETICLE_SCALE}px`,
+        height: `${bounds.height * RETICLE_SCALE}px`,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+        transformOrigin: SLOT_TRANSFORM_ORIGINS[index],
+        transition: SCALE_TRANSITION,
+      });
+      container.appendChild(quadrant);
+
       const makeLayer = (filter, opacity) => {
         const image = document.createElement('img');
         image.alt = '';
@@ -87,28 +104,27 @@
         image.dataset.slot = slotId;
         Object.assign(image.style, {
           position: 'absolute',
-          inset: '0',
-          width: '100%',
-          height: '100%',
+          left: `${-bounds.x * RETICLE_SCALE}px`,
+          top: `${-bounds.y * RETICLE_SCALE}px`,
+          width: `${RETICLE_WIDTH_PX}px`,
+          height: `${RETICLE_HEIGHT_PX}px`,
           objectFit: 'contain',
           pointerEvents: 'none',
           userSelect: 'none',
           WebkitUserDrag: 'none',
-          clipPath: CLIPS[index],
-          transformOrigin: SLOT_TRANSFORM_ORIGINS[index],
-          transition: READY_TRANSITION,
+          transition: COLOR_TRANSITION,
           filter,
           opacity: String(opacity),
         });
         image.src = RETICLE_URL;
         image.addEventListener('error', () => console.error('Melee HUD reticle failed to load: ' + RETICLE_URL));
-        container.appendChild(image);
+        quadrant.appendChild(image);
         return image;
       };
       const neutral = makeLayer(FILTER_WHITE, RETICLE_OPACITY);
-      const color = makeLayer(SLOT_READY_FILTERS[index], 0);
+      const color = makeLayer(SLOT_COLOR_FILTERS[index], 0);
       color.dataset.colorLayer = 'true';
-      return { neutral, color };
+      return { quadrant, neutral, color };
     });
     host.appendChild(container);
     return container;
@@ -252,10 +268,9 @@
       const neutralOpacity = unlocked ? RETICLE_OPACITY : RETICLE_OPACITY * 0.72;
       piece.neutral.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
       piece.color.title = piece.neutral.title;
-      piece.neutral.style.opacity = String(neutralOpacity);
-      piece.neutral.style.transform = `scale(${ready ? READY_SCALE : 1})`;
+      piece.neutral.style.opacity = ready ? '0' : String(neutralOpacity);
       piece.color.style.opacity = ready ? '1' : '0';
-      piece.color.style.transform = `scale(${ready ? READY_SCALE : 1})`;
+      piece.quadrant.style.transform = `scale(${ready ? READY_SCALE : 1})`;
     });
     lastSnapshot = {
       visible: true,
