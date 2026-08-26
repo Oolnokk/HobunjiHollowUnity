@@ -528,3 +528,233 @@
     },
   };
 })();
+
+
+// Branch safety/defense extension. Kept beside the original climb module so the
+// old wall-climb animation remains authoritative while branch-specific state
+// can be repaired without another interaction or collider implementation.
+(() => {
+  'use strict';
+  const system = window.ClimbSystem;
+  if (!system) return;
+  let deps = null;
+  const originalInit = system.init;
+  const originalRegister = system.registerBranch;
+  const originalGetClimbTarget = system.getClimbTarget;
+  const originalGetAimedNest = system.getAimedNest;
+  const originalResolveKnockback = system.resolveBranchKnockback;
+  const fallenNests = new Set();
+  const branchList = area => system.debugBranchesFor?.(area) || [];
+  const currentArea = () => deps?.getCurrentArea?.() || null;
+  const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const groundY = (x, y) => Number(deps?.worldSurfaceY?.(x, y)) || 0;
+  const branchNest = branch => branch?.nest || null;
+
+  system.init = injected => {
+    deps = injected;
+    originalInit?.(injected);
+  };
+
+  system.registerBranch = (area, branch) => {
+    if (branch) {
+      branch.id = branch.id || String(area) + ':' + String(branch.col) + ',' + String(branch.row);
+      branch.felled = !!branch.felled;
+    }
+    originalRegister?.(area, branch);
+  };
+
+  system.getClimbTarget = () => {
+    const player = deps?.player;
+    if (player?.onBranch && !player.onBranch.felled) {
+      const angle = Number(player.angle) || 0;
+      // A branch drop is deliberately a direct context action. Hostile focus
+      // must not make the player permanently trapped on the branch.
+      return { type: 'branchJumpDown', mode: 'manual', dir: { x: Math.cos(angle), y: Math.sin(angle) } };
+    }
+    const target = originalGetClimbTarget?.();
+    return target?.branch?.felled ? null : target;
+  };
+
+  function nestBox(branch, nest) {
+    const x = Number(nest.x || 0) / (deps?.TILE || 1);
+    const z = Number(nest.y || 0) / (deps?.TILE || 1);
+    const y = Number(nest.worldY) || groundY(nest.x, nest.y);
+    const collider = nest.interactionCollider || {};
+    const half = Math.max(0.1, Number(collider.halfWidth) || 0.55);
+    const bottom = Number.isFinite(Number(collider.bottomOffset)) ? Number(collider.bottomOffset) : -0.15;
+    const top = Number.isFinite(Number(collider.topOffset)) ? Number(collider.topOffset) : 0.65;
+    const authored = new THREE.Box3(
+      new THREE.Vector3(x - half, y + bottom, z - half),
+      new THREE.Vector3(x + half, y + top, z + half),
+    );
+    if (nest.mesh?.isObject3D) {
+      nest.mesh.updateWorldMatrix?.(true, true);
+      const meshBox = new THREE.Box3().setFromObject(nest.mesh);
+      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12).union(authored);
+    }
+    return authored;
+  }
+
+  system.getAimedNest = () => {
+    const player = deps?.player;
+    const onBranch = player?.onBranch;
+    if (onBranch && !onBranch.felled && onBranch.nest && onBranch.nest.remaining > 0) {
+      return originalGetAimedNest?.() || null;
+    }
+    const area = currentArea();
+    const tile = deps?.TILE || 1;
+    const candidates = [];
+    for (const branch of branchList(area)) {
+      const nest = branchNest(branch);
+      if (!nest || !nest.fallen || nest.remaining <= 0 || nest.areaId !== area) continue;
+      if (Math.hypot((player?.x || 0) - nest.x, (player?.y || 0) - nest.y) > tile * 2.8) continue;
+      candidates.push({ type: 'nest', id: nest.id, data: nest, box: nestBox(branch, nest) });
+    }
+    if (!candidates.length) return null;
+    const focus = window.RangedWeapons?.focusCandidates?.(candidates, 24);
+    if (focus?.candidate?.data) return focus.candidate.data;
+    const angle = Number(player?.angle) || 0;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const item of candidates) {
+      const nest = item.data;
+      const dx = nest.x - player.x, dy = nest.y - player.y;
+      const distance = Math.hypot(dx, dy);
+      const facing = distance > 0 ? (dx * Math.cos(angle) + dy * Math.sin(angle)) / distance : 1;
+      if (facing >= 0.35 && distance < bestDistance) {
+        best = nest;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  };
+
+  function releaseBranchEntity(entity, branch, reason) {
+    if (!entity || entity.onBranch !== branch) return null;
+    const t = clamp01(entity.branchT);
+    const x = branch.baseX + (branch.tipX - branch.baseX) * t;
+    const y = branch.baseY + (branch.tipY - branch.baseY) * t;
+    entity.onBranch = null;
+    entity.branchT = 0;
+    entity.branchSurfaceY = 0;
+    entity.climbing = false;
+    entity._branchDefense = null;
+    entity.x = x;
+    entity.y = y;
+    const health = Number(entity.health);
+    const impact = Math.min(4, Math.max(0, (Number.isFinite(health) ? health : 1) - 1));
+    if (impact > 0) window.ResourceSystem?.applyDamage?.(entity, impact, { tag: 'blunt', source: reason });
+    window.ResourceSystem?.spendFooting?.(entity, 47.5, reason);
+    if (entity === deps?.player) entity._nestTakeActive = false;
+    return { entity, x, y, impactHealth: impact, footing: 47.5 };
+  }
+
+  system.collapseTree = (area, col, row) => {
+    const branch = branchList(area).find(item => Number(item.col) === Number(col) && Number(item.row) === Number(row));
+    if (!branch) return { branch: null, nest: null, falls: [] };
+    branch.felled = true;
+    const falls = [];
+    const entities = [];
+    if (deps?.player) entities.push(deps.player);
+    for (const collection of [deps?.hostileObjects, deps?.companionObjects]) {
+      if (!collection) continue;
+      for (const entity of collection) if (entity && !entities.includes(entity)) entities.push(entity);
+    }
+    for (const entity of entities) {
+      const fall = releaseBranchEntity(entity, branch, 'tree fell beneath branch');
+      if (fall) falls.push(fall);
+    }
+    const nest = branch.nest;
+    if (nest && nest.remaining > 0) {
+      const start = Number(nest.worldY) || groundY(nest.x, nest.y);
+      nest.fallen = true;
+      nest.falling = true;
+      nest.fallT = 0;
+      nest.fallStartY = start;
+      nest.fallEndY = groundY(nest.x, nest.y);
+      nest.worldY = start;
+      fallenNests.add(nest);
+    }
+    window.__farmLog?.('[wildlife] tree fell at ' + area + ':' + col + ',' + row + '; released ' + falls.length + ' branch occupant(s)', 'wildlife');
+    return { branch, nest, falls };
+  };
+
+  system.updateFallenNests = dt => {
+    const step = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    for (const nest of fallenNests) {
+      if (!nest.falling) continue;
+      nest.fallT = Math.min(1, (nest.fallT || 0) + step / 0.65);
+      const eased = 1 - Math.pow(1 - nest.fallT, 2);
+      nest.worldY = nest.fallStartY + (nest.fallEndY - nest.fallStartY) * eased;
+      if (nest.mesh?.isObject3D) nest.mesh.position.y = nest.worldY;
+      if (nest.fallT >= 1) {
+        nest.falling = false;
+        nest.worldY = nest.fallEndY;
+      }
+    }
+  };
+
+  function isDrenkirra(entity) {
+    const key = String(entity?.creatureKey || entity?.def?.id || entity?.def?.key || '').toLowerCase();
+    return key.includes('drenkirra');
+  }
+
+  system.updateBranchDefender = (entity, dt, targetPlayer) => {
+    if (!deps || !entity || entity.health <= 0 || entity.areaId !== currentArea()) return false;
+    if (entity.onBranch && !entity._branchDefense) return false;
+    if (entity._branchDefense) {
+      const state = entity._branchDefense;
+      state.t = Math.min(1, state.t + Math.max(0, Number(dt) || 0) / 0.78);
+      const eased = 1 - Math.pow(1 - state.t, 2);
+      entity.x = state.startX + (state.endX - state.startX) * eased;
+      entity.y = state.startY + (state.endY - state.startY) * eased;
+      entity.branchSurfaceY = state.startSurfaceY + (state.endSurfaceY - state.startSurfaceY) * eased;
+      entity.facing = Math.atan2(state.endY - entity.y, state.endX - entity.x);
+      if (state.t >= 1) {
+        entity.onBranch = state.branch;
+        entity.branchT = state.targetT;
+        entity.x = state.endX;
+        entity.y = state.endY;
+        entity.branchSurfaceY = state.endSurfaceY;
+        entity._branchDefense = null;
+        entity.state = 'chase';
+      }
+      return true;
+    }
+    if (!isDrenkirra(entity)) return false;
+    const nestKey = entity.nestTreeKey;
+    if (!nestKey) return false;
+    const branch = branchList(currentArea()).find(item => !item.felled && item.nest?.id === nestKey);
+    const nest = branch?.nest;
+    const player = targetPlayer || deps.player;
+    if (!branch || !nest || nest.remaining <= 0 || !player || player.health <= 0) return false;
+    if (Math.hypot(entity.x - nest.x, entity.y - nest.y) > (deps.TILE || 1) * 4.5) return false;
+    if (Math.hypot(player.x - nest.x, player.y - nest.y) > (deps.TILE || 1) * 3.0) return false;
+    const targetT = 0.42;
+    const endX = branch.baseX + (branch.tipX - branch.baseX) * targetT;
+    const endY = branch.baseY + (branch.tipY - branch.baseY) * targetT;
+    entity._branchDefense = {
+      branch, targetT, t: 0,
+      startX: entity.x, startY: entity.y,
+      endX, endY,
+      startSurfaceY: groundY(entity.x, entity.y),
+      endSurfaceY: branch.baseWorldY + (branch.tipWorldY - branch.baseWorldY) * targetT,
+    };
+    entity.targetPlayer = player;
+    entity.state = 'branch-defend';
+    window.__farmLog?.('[wildlife] ' + (entity.creatureKey || 'drenkirra') + ' climbing to defend nest ' + nestKey, 'wildlife');
+    return true;
+  };
+
+  system.resolveBranchKnockback = (...args) => {
+    const entity = args[0];
+    const result = originalResolveKnockback?.(...args);
+    if (result?.fell && entity) {
+      entity.branchSurfaceY = 0;
+      entity.climbing = false;
+      entity._branchDefense = null;
+      if (entity === deps?.player) entity._nestTakeActive = false;
+    }
+    return result;
+  };
+})();

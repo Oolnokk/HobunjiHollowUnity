@@ -124,9 +124,9 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/combat/ranged-weapons.js?v=20260825focus2"></script>
+  <script src="js/combat/ranged-weapons.js?v=branchfalldefense1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260825reticle6"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=branchfalldefense1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -281,7 +281,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260825focus5"></script>
+  <script src="js/climb-system.js?v=branchfalldefense1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -321,7 +321,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260825nest2"></script>
+  <script src="js/wildlife-spawn.js?v=branchfalldefense1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -1940,7 +1940,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
+  <script src="js/fishing-minigame.js?v=branchfalldefense1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -1948,7 +1948,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260815b"></script>
+  <script src="js/music-minigame.js?v=branchfalldefense1"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
        checks — window.NpcScheduling) — must load before game.js, which
        calls window.NpcScheduling.init(...) during its own setup. -->
@@ -1994,7 +1994,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260826interaction1"></script>
+  <script src="game.js?v=branchfalldefense1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

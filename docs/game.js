@@ -823,9 +823,13 @@
           // a flat Footing hit instead of the velocity impulse below.
           const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
           if (result?.fell) {
-            // footing-damage-recovery-bridge.js doubles every spendFooting
-            // call, so 47.5 here nets the intended 95 Footing damage.
+            // Branch falls are a real landing event: a small Health hit plus
+            // a large Footing hit, with a floor of one remaining Health.
+            const currentHealth = Number(target.health);
+            const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
+            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
           }
           return;
@@ -4317,6 +4321,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        player._nestTakeActive = false;
         window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -5245,6 +5250,7 @@
           // flicker between equally-near players every frame.
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
@@ -7410,7 +7416,7 @@
         // Climbing is now the forward-dodge context action. Sideways/backward
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
-        if (climb && dodgeInputIsForward()) { window.ClimbSystem.startClimb(climb); return; }
+        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -15124,6 +15130,9 @@
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
           // freeze (especially in the Southern Cloud Forest).
+          // Let every branch occupant fall before the decorative tree group
+          // is removed. collapseTree also starts the nest's ground lerp.
+          window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
@@ -21413,15 +21422,8 @@
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
       }
-      function isNestGuarded(nest) {
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || !c.isDenMother) continue;
-          if (nest.id ? c.nestTreeKey === nest.id : !c.nestTreeKey) return true;
-        }
-        return false;
-      }
       function aimedCavernNest(nest) {
-        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest) || isNestGuarded(nest)) return null;
+        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
         if (!currentPlayerInteractionRay() || !window.RangedWeapons?.focusCandidates) return nest;
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
@@ -21439,7 +21441,7 @@
       }
       function currentAimedNest() {
         const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
-        if (branchNest) return isNestGuarded(branchNest) ? null : branchNest;
+        if (branchNest) return branchNest;
         return aimedCavernNest(_denNests.get(currentArea));
       }
       function refreshInteractionFocusDebug() {
@@ -21452,6 +21454,7 @@
       function updateNestInteraction(dt) {
         const nest = currentAimedNest();
         const taking = nest && activeAction === 'nest_take' && actionHeldDown;
+        player._nestTakeActive = !!taking;
         if (!taking) {
           if (_nestHoldT > 0) _nestHoldT = 0;
           if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
@@ -21463,6 +21466,7 @@
         _nestTakeHudEl?.classList.add('visible');
         if (_nestHoldT >= NEST_TAKE_HOLD_S) {
           _nestHoldT = 0;
+          player._nestTakeActive = false;
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
@@ -21628,7 +21632,8 @@
             window.CreatureDeath.updateCorpses(dt);
           }
 
-          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          window.ClimbSystem?.updateFallenNests?.(dt);
+          updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -26165,6 +26170,8 @@
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
+        hostileObjects,
+        companionObjects,
         facingCardinal,
         getActiveGrid,
         getActiveCols,

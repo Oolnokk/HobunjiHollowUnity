@@ -401,7 +401,8 @@
   function rebindStreamedNestBranch(zoneId, entry, liveBranch) {
     const prior = entry.branch;
     if (!prior || prior === liveBranch) return;
-    if (prior.nest && !liveBranch.nest) liveBranch.nest = prior.nest;
+    if (prior.felled) liveBranch.felled = true;
+    if (prior.nest && (!liveBranch.nest || prior.nest.fallen)) liveBranch.nest = prior.nest;
     const key = nestTreeKeyFor(zoneId, liveBranch);
     for (const creature of deps.hostileObjects) {
       if (creature.nestTreeKey !== key || creature.onBranch !== prior) continue;
@@ -415,7 +416,7 @@
   }
 
   function eligibleNestBranches(zoneId) {
-    const branches = window.ClimbSystem?.debugBranchesFor?.(zoneId) || [];
+    const branches = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(branch => !branch.felled);
     let selected = _nestTreeSelectionCache.get(zoneId);
     if (!selected) {
       const scored = branches.map(branch => {

@@ -14,12 +14,13 @@
   const FILTER_WHITE = 'brightness(0) invert(1)';
   const READY_GLOW = ' drop-shadow(0 0 2px #ff3030) drop-shadow(0 0 5px rgba(255,48,48,.95))';
   // Slot colors are applied only after the corresponding attack is reachable.
-  const SLOT_READY_FILTERS = [
-    'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)' + READY_GLOW,
-    'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)' + READY_GLOW,
+  const SLOT_COLOR_FILTERS = [
+    'brightness(0) saturate(100%) invert(79%) sepia(99%) saturate(3955%) hue-rotate(144deg) brightness(103%) contrast(106%)',
+    'brightness(0) saturate(100%) invert(86%) sepia(93%) saturate(1157%) hue-rotate(343deg) brightness(105%) contrast(101%)',
+    'brightness(0) saturate(100%) invert(49%) sepia(97%) saturate(3582%) hue-rotate(287deg) brightness(105%) contrast(104%)',
+    'brightness(0) saturate(100%) invert(89%) sepia(87%) saturate(1548%) hue-rotate(52deg) brightness(104%) contrast(103%)',
   ];
+  const SLOT_READY_FILTERS = SLOT_COLOR_FILTERS.map(filter => filter + READY_GLOW);
   const CLIPS = [
     'polygon(0 0, 54% 0, 54% 54%, 0 54%)',
     'polygon(46% 0, 100% 0, 100% 54%, 46% 54%)',
@@ -165,36 +166,54 @@
   }
 
   function targetState(deps, direction, slotProfiles) {
-    let focused = null;
-    try { focused = window.RangedWeapons?.focusedHostile?.(24) || null; } catch (err) {
-      console.warn('[melee-reticle] focused target failed', err);
-    }
-    const gameplayTarget = deps.getMeleeReticleTarget?.() || null;
-    const target = gameplayTarget || focused?.candidate?.data || null;
-    const targetSource = gameplayTarget ? 'combat-target' : focused?.candidate?.data ? 'interaction-ray' : null;
-    if (!target || target.health <= 0) return { target: null, targetSource: null, ready: slotProfiles.map(() => false), distanceWorld: null };
+    const area = deps.getCurrentArea?.() || deps.currentArea?.() || null;
+    const candidates = [];
+    const seen = new Set();
+    const add = (entity, source) => {
+      if (!entity || entity.health <= 0 || (area && entity.areaId && entity.areaId !== area) || seen.has(entity)) return;
+      seen.add(entity);
+      candidates.push({ entity, source });
+    };
+    try { add(deps.getMeleeReticleTarget?.(), 'combat-target'); } catch (err) {}
+    try { add(window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data, 'interaction-ray'); } catch (err) {}
+    for (const entity of (deps.hostileObjects || [])) add(entity, 'hostile-scan');
 
     const origin = new THREE.Vector3(
       deps.player.x / deps.TILE,
       deps.player.avatarRef?.group?.position?.y || 0.55,
       deps.player.y / deps.TILE,
     );
-    const hitbox = window.RangedWeapons?.actorHitbox?.(target);
-    const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
-      || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
-    const distanceWorld = closest.distanceTo(origin);
-    const vertical = window.RangedWeapons?.meleeReachCheck?.(deps.player, target, 0.4);
-    // focusedHostile() already proves the camera ray is on this actor. Use
-    // the attack's actual reach plus the shared vertical gate for readiness;
-    // re-running the old 2D meleeHit cone here made every slot stay white
-    // when shoulder-camera aim pitch differed by a few degrees.
-    const ready = slotProfiles.map(profile => {
-      if (!profile.attackId || profile.reachPx <= 0) return false;
-      const inReach = distanceWorld <= profile.reachPx / deps.TILE + 1e-4;
-      const sameHeight = !vertical || vertical.reachable !== false;
-      return inReach && sameHeight;
-    });
-    return { target: target.id || target.name || 'hostile', targetSource, ready, distanceWorld };
+    const aim = new THREE.Vector3(Number(direction.x) || 1, Number(direction.y) || 0, Number(direction.z) || 0).normalize();
+    let selected = null;
+    for (const candidate of candidates) {
+      const target = candidate.entity;
+      const hitbox = window.RangedWeapons?.actorHitbox?.(target);
+      const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
+        || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
+      const distanceWorld = closest.distanceTo(origin);
+      const ready = slotProfiles.map(profile => {
+        if (!profile.attackId || profile.reachPx <= 0) return false;
+        try {
+          const result = window.Combat?.meleeHit?.(deps.player, target, {
+            rangePx: profile.reachPx,
+            halfConeRad: profile.halfConeRad,
+            direction: aim,
+            debug: false,
+          });
+          if (result != null) return !!(result.hit ?? result.ok ?? result);
+        } catch (err) {}
+        const vertical = window.RangedWeapons?.meleeReachCheck?.(deps.player, target, 0.4);
+        const horizontal = Math.hypot(target.x - deps.player.x, target.y - deps.player.y);
+        return horizontal <= profile.reachPx && (!vertical || vertical.reachable !== false);
+      });
+      const state = { target: target.id || target.name || 'hostile', targetSource: candidate.source, ready, distanceWorld };
+      if (!selected || ready.some(Boolean)) {
+        selected = state;
+        if (ready.some(Boolean)) break;
+      }
+    }
+    if (!selected) return { target: null, targetSource: null, ready: slotProfiles.map(() => false), distanceWorld: null };
+    return selected;
   }
 
   function refresh() {
@@ -214,8 +233,9 @@
     pieces.forEach((image, index) => {
       const profile = slotProfiles[index] || {};
       image.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
-      image.style.filter = state.ready[index] ? SLOT_READY_FILTERS[index] : FILTER_WHITE;
-      image.style.opacity = state.ready[index] ? '1' : String(RETICLE_OPACITY);
+      const unlocked = !!profile.attackId;
+      image.style.filter = unlocked ? (state.ready[index] ? SLOT_READY_FILTERS[index] : SLOT_COLOR_FILTERS[index]) : FILTER_WHITE;
+      image.style.opacity = unlocked ? '1' : String(RETICLE_OPACITY);
     });
     lastSnapshot = {
       visible: true,
