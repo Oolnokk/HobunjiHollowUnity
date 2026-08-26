@@ -817,6 +817,7 @@
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,
     hasNearbyTent,
+    getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
     // Marks a zone as just (re-)entered — the one moment
     // ensureCurrentZoneCamps is allowed to release and re-stamp a cleared
