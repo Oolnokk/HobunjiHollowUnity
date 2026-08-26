@@ -595,11 +595,24 @@
     return authored;
   }
 
+  function rayFocusedNest(branch, nest) {
+    const ray = deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.();
+    if (!ray || !window.RangedWeapons?.focusCandidates) return null;
+    const focus = window.RangedWeapons.focusCandidates([{
+      type: 'nest', id: nest.id, data: nest, box: nestBox(branch, nest),
+    }], 24);
+    if (!focus?.candidate?.data) return null;
+    const hostile = window.RangedWeapons.focusedHostile?.(24);
+    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+    window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    return focus.candidate.data;
+  }
+
   system.getAimedNest = () => {
     const player = deps?.player;
     const onBranch = player?.onBranch;
     if (onBranch && !onBranch.felled && onBranch.nest && onBranch.nest.remaining > 0) {
-      return originalGetAimedNest?.() || null;
+      return rayFocusedNest(onBranch, onBranch.nest);
     }
     const area = currentArea();
     const tile = deps?.TILE || 1;
@@ -611,22 +624,14 @@
       candidates.push({ type: 'nest', id: nest.id, data: nest, box: nestBox(branch, nest) });
     }
     if (!candidates.length) return null;
-    const focus = window.RangedWeapons?.focusCandidates?.(candidates, 24);
-    if (focus?.candidate?.data) return focus.candidate.data;
-    const angle = Number(player?.angle) || 0;
-    let best = null;
-    let bestDistance = Infinity;
-    for (const item of candidates) {
-      const nest = item.data;
-      const dx = nest.x - player.x, dy = nest.y - player.y;
-      const distance = Math.hypot(dx, dy);
-      const facing = distance > 0 ? (dx * Math.cos(angle) + dy * Math.sin(angle)) / distance : 1;
-      if (facing >= 0.35 && distance < bestDistance) {
-        best = nest;
-        bestDistance = distance;
-      }
-    }
-    return best;
+    const ray = deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.();
+    if (!ray || !window.RangedWeapons?.focusCandidates) return null;
+    const focus = window.RangedWeapons.focusCandidates(candidates, 24);
+    if (!focus?.candidate?.data) return null;
+    const hostile = window.RangedWeapons.focusedHostile?.(24);
+    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+    window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    return focus.candidate.data;
   };
 
   function releaseBranchEntity(entity, branch, reason) {
