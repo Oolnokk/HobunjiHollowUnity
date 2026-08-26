@@ -321,7 +321,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=branchfalldefense1"></script>
+  <script src="js/wildlife-spawn.js?v=20260826cloudroutines1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -1994,7 +1994,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=branchfalldefense1"></script>
+  <script src="game.js?v=20260826cloudroutines1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
