@@ -374,9 +374,10 @@
       ? options.isWorldInteraction
       : button => !!button?.worldInteraction;
     const worldInteractions = buttons.filter(isWorldInteraction);
-    const show = options.enabled !== false
-      && (worldInteractions.some(button => button.contextualHeldItem)
-        || worldInteractions.length > 1);
+    // Every interactible world target uses the list presentation, including
+    // a single available action. This keeps discovery and input hints
+    // consistent instead of silently switching UI modes by option count.
+    const show = options.enabled !== false && worldInteractions.length > 0;
     if (!show || !options.root) {
       clearInteractionPrompts();
       return [];
@@ -384,8 +385,8 @@
     const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
     const prompts = worldInteractions.map(button => {
       const slot = buttons.indexOf(button);
-      const keyHint = options.desktop && slot >= 0
-        ? `${promptKeys[slot] || `F${slot + 1}`}  `
+      const keyHint = options.showInputHints !== false && slot >= 0
+        ? `${promptKeys[slot] || `Action ${slot + 1}`}  `
         : '';
       return { ...button, text: `${keyHint}${button.label}` };
     });
