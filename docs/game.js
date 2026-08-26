@@ -4198,6 +4198,25 @@
         return null;
       }
 
+      // The action arch can be clicked a frame after the reticle has shifted
+      // off the corpse tile (especially in shoulder cam). Keep corpse loot
+      // tied to the same nearby interaction target instead of dropping it on
+      // a stale "No object here" result.
+      function getCorpseObjectForAction(action, col, row) {
+        const exact = getCorpseObjectAt(col, row);
+        if (exact || action !== 'obj_loot_corpse') return exact;
+        let best = null, bestDist = Infinity;
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y);
+          const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
+          if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
+          best = c;
+          bestDist = dist;
+        }
+        return best ? makeCorpseWorldObject(best) : null;
+      }
+
       // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
       // through the resource-afflictions system (bleeding/bruising/wounded
       // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
@@ -15356,7 +15375,7 @@
           // and now sittable furniture — see the mapData.furniture loader).
           const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
             : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
-            : getWorldObjectAt(_r.col, _r.row);
+            : getCorpseObjectForAction(activeAction, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -19170,6 +19189,7 @@
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
         clamp,
         getCurrentArea: () => currentArea,
+        getActiveTool: () => activeTool,
         getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
         getItemDef: itemKey => ITEM_DEFS[itemKey],
@@ -22884,6 +22904,14 @@
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
         }
 
+        // Bandit tents are runtime props rather than worldObjects, so expose
+        // their context action explicitly. Pointer/keyboard holds still feed
+        // the shared actionHeldDown flag consumed by BanditCamps.
+        const banditTentAction = _isZoneArea(currentArea)
+          ? window.BanditCamps?.getNearbyTentAction?.()
+          : null;
+        if (banditTentAction) return [banditTentAction];
+
         // Climbing is triggered by a forward dodge, not by the tool's
         // Action 1 slot. Leaving the normal action stack here prevents an
         // attack/item press from grabbing a nearby trunk.
@@ -24078,9 +24106,18 @@
         actionPromptEls.btn.onpointerup = null;
         actionPromptEls.cancel.onpointerup = null;
       }
+      // Resolve the action currently rendered in the physical arch button.
+      // The visible stack is split into tool/item rows, so computeActionButtons()
+      // index 0 is not necessarily btnAction1 anymore.
+      function actionButtonForPhysicalSlot(slotIndex) {
+        const el = document.getElementById('btnAction' + slotIndex);
+        const action = el?.dataset.action;
+        const buttons = computeActionButtons();
+        return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
+      }
       function runActionButtonAtSlot(slotIndex) {
-        const btn = computeActionButtons()[slotIndex - 1];
-        if (!btn) return;
+        const btn = actionButtonForPhysicalSlot(slotIndex);
+        if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
         actionHeldDown = slotIndex === 1;
         useActiveAction();
@@ -24122,7 +24159,7 @@
       function visibleActionOverrideForWeaponSlot(actionId) {
         const slot = weaponActionSlot(actionId);
         if (!slot) return null;
-        const button = computeActionButtons()[slot - 1]; // Used to preserve the world-context button occupying this physical weapon slot.
+        const button = actionButtonForPhysicalSlot(slot); // Preserve the world-context action actually rendered in this physical weapon slot.
         if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
         return { slot, button };
       }
