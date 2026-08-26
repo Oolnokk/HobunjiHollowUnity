@@ -5900,7 +5900,12 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
+          // A neck-rigged portrait is one SkinnedMesh with separate front/back
+          // materials in an array; rigid fallback portraits still expose one
+          // material per mesh. Flatten both shapes for the depth arbiter.
+          const childMaterials = Array.isArray(child.material) ? child.material : [child.material]; // Used by updateAvatarDepthPriority below.
+          mats.push(...childMaterials.filter(Boolean));
         });
         _playerAvatarBodyMaterialsCache = mats;
         return mats;
@@ -5963,15 +5968,19 @@
       const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
+      function _setLayerDepthWrite(material, depthWrite) {
+        if (!material || material.depthWrite === depthWrite) return;
+        material.depthWrite = depthWrite;
+        material.needsUpdate = true;
+      }
       function updatePetLayering(active, pet) {
-        if (active === _petLayeringActive && pet === _petLayeringPet) return;
         // A previously-arbitrated pet (deactivated, or swapped for a
         // different creature) needs its own planes restored to normal —
         // otherwise a former shoulder pet demoted to a plain wandering
         // companion would be stuck permanently unable to write depth.
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
-            if (m) { m.depthWrite = true; m.needsUpdate = true; }
+            _setLayerDepthWrite(m, true);
           }
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
             if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
@@ -5980,13 +5989,13 @@
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
         for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
-          if (m) { m.depthWrite = !active; m.needsUpdate = true; }
+          _setLayerDepthWrite(m, !active);
         }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) { m.depthWrite = !active; m.needsUpdate = true; }
+        for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
           for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+            if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
           }
         }
       }
@@ -13162,17 +13171,19 @@
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
-        // Direct front/back plane refs for updatePetLayering (see near
-        // updateCompanions) — createSinglePlaneAssembly always nests them
-        // as the assembly's first two children (frontMesh, then backMesh).
-        // The back plane's renderOrder is bumped here (once, unconditionally
-        // — harmless when idle, since front/back are never simultaneously
-        // visible) so the portrait faces retain a stable order. The active
-        // shoulder-pet layer is applied above both faces by updatePetLayering.
+        // Direct front/back material refs for updatePetLayering. A neck-rigged
+        // avatar is one SkinnedMesh with [front, back] materials, whereas the
+        // fallback assembly keeps two separate meshes. Resolve either shape
+        // instead of writing depth state onto the SkinnedMesh's material array.
         const _bodyAssembly = avatarGroup.children[0];
-        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
-        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
-        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        const _skinnedBodyPlane = avatarGroup.userData?.neckRig?.available ? avatarGroup.userData.neckRig.skinnedPlane : null; // Used here to identify the dual-material portrait shape.
+        const _skinnedBodyMaterials = _skinnedBodyPlane
+          ? (Array.isArray(_skinnedBodyPlane.material) ? _skinnedBodyPlane.material : [_skinnedBodyPlane.material])
+          : null; // Used here to map the skinned mesh's material groups to their front/back faces.
+        _playerAvatarFrontMaterial = _skinnedBodyMaterials?.[0] || _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _skinnedBodyMaterials?.[1] || _bodyAssembly?.children?.[1]?.material || null;
+        if (_skinnedBodyPlane) _skinnedBodyPlane.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        else if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
