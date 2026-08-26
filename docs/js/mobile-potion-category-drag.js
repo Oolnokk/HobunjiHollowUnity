@@ -119,12 +119,24 @@
     };
   }
 
+  function rootSpacer(side) {
+    return {
+      id:`spacer-${side}`,
+      icon:'',
+      label:'',
+      className:`potion-category potion-contextual-spacer potion-contextual-spacer-${side}`,
+      disabled:true,
+      onSelect:() => false,
+    };
+  }
+
   function markEntryIds() {
     // The core arch deliberately keeps entry data private; this small DOM mirror
     // lets this adapter identify its gateways after pointer/wheel navigation.
     document.querySelectorAll('.arc-slot:not(.arc-arrow)').forEach(slot => {
       const label = normalized(slot.getAttribute('aria-label') || slot.title || slot.querySelector?.('.arc-label')?.textContent || slot.textContent);
-      if (label === 'Buffs') slot.dataset.contextualPotionId = 'buffs';
+      if (slot.classList.contains('potion-contextual-spacer')) slot.dataset.contextualPotionId = 'spacer';
+      else if (label === 'Buffs') slot.dataset.contextualPotionId = 'buffs';
       else if (label === 'Flasks') slot.dataset.contextualPotionId = 'flasks';
       else if (label === 'Cancel') slot.dataset.contextualPotionId = 'cancel';
       else slot.dataset.contextualPotionId = 'item';
@@ -145,6 +157,24 @@
     const baseMovePointer = arc.movePointer.bind(arc); // Used by mobile drag and pointer-held Potion Select.
     const baseCommit = arc.commit.bind(arc); // Used because legacy releaseSelection intentionally cancels non-item potion branches.
     const baseClose = arc.close.bind(arc); // Used to close custom roots/categories and the hidden item-selection bridge.
+
+    const spacerStyle = document.createElement?.('style'); // Keeps balance-only root slots in layout while making them completely invisible/non-interactive.
+    if (spacerStyle && !document.getElementById?.('contextualPotionSelectorSpacerStyle')) {
+      spacerStyle.id = 'contextualPotionSelectorSpacerStyle';
+      spacerStyle.textContent = `
+        body .arc-slot.potion-contextual-spacer {
+          --shared-selection-opacity:0 !important;
+          opacity:0 !important;
+          background:transparent !important;
+          border-color:transparent !important;
+          box-shadow:none !important;
+          pointer-events:none !important;
+        }
+        body .arc-slot.potion-contextual-spacer .arc-icon,
+        body .arc-slot.potion-contextual-spacer .arc-label { display:none !important; }
+      `;
+      (document.head || document.body)?.appendChild?.(spacerStyle);
+    }
 
     function closeSelector() {
       stage = null;
@@ -178,13 +208,23 @@
       const contextual = context.reverse().map(entry => wheelEntry(entry)).filter(Boolean); // Highest-scored restorative ends nearest Cancel.
       const buffs = categoryState.buffs?.items || [];
       const flasks = categoryState.flasks?.items || [];
-      const entries = [
-        ...(buffs.length ? [{ id:'buffs', icon:'✨', label:'Buffs', className:'potion-category potion-buff-gateway', disabled:false, onSelect:() => openCategory('buffs') }] : []),
-        ...contextual,
-        { id:'cancel', icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:closeSelector },
-        ...(flasks.length ? [{ id:'flasks', icon:'🫙', label:'Flasks', className:'potion-category potion-flask-gateway', disabled:false, onSelect:() => openCategory('flasks') }] : []),
-      ];
-      lastRootOrder = entries.map(entry => entry.label);
+      const buffGateway = buffs.length ? { id:'buffs', icon:'✨', label:'Buffs', className:'potion-category potion-buff-gateway', disabled:false, onSelect:() => openCategory('buffs') } : null;
+      const flaskGateway = flasks.length ? { id:'flasks', icon:'🫙', label:'Flasks', className:'potion-category potion-flask-gateway', disabled:false, onSelect:() => openCategory('flasks') } : null;
+      const cancel = { id:'cancel', icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:closeSelector };
+
+      // With no currently useful medicine, keep Cancel physically at the same
+      // center point regardless of whether Buffs/Flasks exist. Invisible blocked
+      // spacers preserve the three-slot geometry and also prevent the old
+      // Medicine/Utility curved breadcrumb from leaking into this root view.
+      const entries = contextual.length
+        ? [
+            ...(buffGateway ? [buffGateway] : []),
+            ...contextual,
+            cancel,
+            ...(flaskGateway ? [flaskGateway] : []),
+          ]
+        : [buffGateway || rootSpacer('left'), cancel, flaskGateway || rootSpacer('right')];
+      lastRootOrder = entries.filter(entry => !String(entry.id).startsWith('spacer-')).map(entry => entry.label);
       return entries;
     }
 
@@ -193,6 +233,15 @@
       selectionOriginSlot = currentCombatSlot();
       lastError = null;
       baseOpenEntries(ROOT_MODE, contextualRootEntries());
+      markEntryIds();
+      return true;
+    }
+
+    function returnFromSpacer() {
+      if (stage !== 'root' || activeId() !== 'spacer') return false;
+      const slot = activeSlot();
+      const backDir = slot?.classList.contains('potion-contextual-spacer-left') ? 1 : -1;
+      baseScrollEntries(backDir);
       markEntryIds();
       return true;
     }
@@ -266,12 +315,14 @@
         if (!stage) return baseScrollEntries(dir);
         const moved = baseScrollEntries(dir);
         markEntryIds();
+        if (returnFromSpacer()) return moved;
         maybeEnterGateway();
         return moved;
       },
       movePointer(x, y) {
         const result = baseMovePointer(x, y);
         markEntryIds();
+        if (returnFromSpacer()) return result;
         maybeEnterGateway(x, y);
         return result;
       },
