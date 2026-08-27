@@ -4987,17 +4987,38 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
+        const baseCreaturePerps = cameraRelativeCreaturePerps(); // Shared input for every creature rotation mode below.
+        let pngPerps = baseCreaturePerps;
+        let pngDeadRad = window.PerpRotation.CREATURE_PERP_DEAD_RAD;
+        if (c.stableRole === 'shoulderPet') {
+          const clearance = shoulderPetHeadClearanceDeadzone(baseCreaturePerps, pngDeadRad); // Head yaw changes only these clamp boundaries, never c.pngRot directly.
+          pngPerps = clearance.perps;
+          pngDeadRad = clearance.deadRad;
+          c.shoulderPetHeadClearanceDebug = {
+            headLeftTurnRad: clearance.headLeftTurnRad || 0,
+            appliedExtraRad: clearance.appliedExtraRad || 0,
+            baseDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+            effectiveDeadRad: pngDeadRad,
+            edgeSigns: clearance.edgeSigns?.slice?.() || [],
+            basePerps: baseCreaturePerps.slice(),
+            effectivePerps: pngPerps.slice(),
+            renderedBodyYaw: clearance.renderedBodyYaw ?? null,
+            characterLeftYaw: clearance.characterLeftYaw ?? null,
+          };
+        } else if (c.shoulderPetHeadClearanceDebug) {
+          c.shoulderPetHeadClearanceDebug = null;
+        }
         if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, pngPerps, pngDeadRad, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, pngPerps, pngDeadRad, dt, creatureIsMoving);
           c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else { // 'halt'
-          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, pngPerps, pngDeadRad);
           if (pngSnapTo !== null) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         }
@@ -6117,9 +6138,14 @@
       // faces and draw the pet after both faces and hat overlays.
       const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
       // Keep the back portrait above the front portrait. The pet is
-      // intentionally above this value in both camera directions.
+      // intentionally above this value in both camera directions unless the
+      // preserved legacy player-occlusion mode is deliberately re-enabled.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+      const LEGACY_SHOULDER_PET_PLANE_RENDER_ORDER = 3; // Used below to preserve the old front-player < pet < back-player stack without enabling it by default.
+      const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false; // Used by updatePetLayering to keep the legacy back-player-over-pet behavior available but disabled.
+      const SHOULDER_PET_PLANE_RENDER_ORDER = SHOULDER_PET_PLAYER_OCCLUSION_ENABLED
+        ? LEGACY_SHOULDER_PET_PLANE_RENDER_ORDER
+        : PLAYER_BACK_PLANE_RENDER_ORDER + 2;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -6143,7 +6169,8 @@
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
         for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
-          _setLayerDepthWrite(m, !active);
+          const depthWrite = !active || (SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && m === _playerAvatarBackMaterial); // Used here so legacy mode restores only the historical back-player depth occlusion.
+          _setLayerDepthWrite(m, depthWrite);
         }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
         for (const m of petMats) _setLayerDepthWrite(m, !active);
@@ -7990,6 +8017,34 @@
       function cameraRelativeCreaturePerps() {
         const az = activeCameraAzimuthRad();
         return [0 + az, Math.PI + az];
+      }
+
+      // Shoulder pets keep the ordinary camera-relative creature rotation.
+      // Player head yaw never becomes pet yaw; a character-left head turn only
+      // expands the forbidden edge-on region on the edge that points toward
+      // the character's left (screen-right while viewing the front portrait).
+      // The one-sided interval is converted back to shifted symmetric perps so
+      // snap/sway/halt continue using their existing implementations unchanged.
+      function shoulderPetHeadClearanceDeadzone(perps, baseDeadRad) {
+        const headLeftTurnRad = Math.max(0, Number(playerNeckJoint?.rotation?.y) || 0); // Positive neck yaw is character-left because updatePlayerHeadAim stores angleDiff(targetWorldYaw, renderedBodyYaw).
+        if (!(headLeftTurnRad > 1e-6) || !window.PerpRotation?.expandOneSidedDeadzone) {
+          return { perps, deadRad: baseDeadRad, appliedExtraRad: 0, edgeSigns: perps.map(() => 1) };
+        }
+        const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0; // Keeps left/right tied to the visibly rotated torso during one-handed/combat stances.
+        const renderedBodyYaw = playerMesh.rotation.y + composerYawDelta;
+        const characterLeftYaw = renderedBodyYaw + Math.PI / 2; // A front-facing portrait's screen-right is the character's anatomical left.
+        const edgeSigns = perps.map(perp => {
+          const positiveEdge = perp + baseDeadRad;
+          const negativeEdge = perp - baseDeadRad;
+          return Math.abs(angleDiff(characterLeftYaw, positiveEdge)) <= Math.abs(angleDiff(characterLeftYaw, negativeEdge)) ? 1 : -1;
+        });
+        return {
+          ...window.PerpRotation.expandOneSidedDeadzone(perps, baseDeadRad, edgeSigns, headLeftTurnRad),
+          edgeSigns,
+          headLeftTurnRad,
+          renderedBodyYaw,
+          characterLeftYaw,
+        };
       }
       function nearestAngleAmong(current, candidates) {
         let best = candidates[0], bestAbs = Infinity;

@@ -213,6 +213,31 @@
     return { target: P + side * deadRad, snap: flip };
   }
 
+  // Converts an asymmetric forbidden interval around each camera-perp into
+  // the same symmetric center/radius representation the existing creature
+  // sway/halt/snap implementations already consume. `expandedSideSigns[i]`
+  // selects which edge grows for each perp: +1 grows the positive-angle edge,
+  // -1 grows the negative-angle edge. This helper changes no rotation on its
+  // own; shoulder pets use it to let player-head yaw alter only dead-zone
+  // geometry while ordinary creatures continue through the untouched path.
+  const MAX_ONE_SIDED_DEAD_EDGE_RAD = THREE.MathUtils.degToRad(85);
+  function expandOneSidedDeadzone(perps, baseDeadRad, expandedSideSigns, extraRad, maxExpandedEdgeRad = MAX_ONE_SIDED_DEAD_EDGE_RAD) {
+    const base = Math.max(0, Number(baseDeadRad) || 0);
+    const requestedExtra = Math.max(0, Number(extraRad) || 0);
+    const maxExtra = Math.max(0, (Number(maxExpandedEdgeRad) || MAX_ONE_SIDED_DEAD_EDGE_RAD) - base);
+    const appliedExtraRad = Math.min(requestedExtra, maxExtra); // Returned for mobile/debug inspection of the effective head-clearance amount.
+    const halfExtra = appliedExtraRad * 0.5;
+    return {
+      perps: perps.map((perp, index) => {
+        const sign = Number(expandedSideSigns?.[index]) < 0 ? -1 : 1; // Used only to shift this perp toward its selected expanded edge.
+        return perp + sign * halfExtra;
+      }),
+      deadRad: base + halfExtra,
+      appliedExtraRad,
+      expandedEdgeRad: base + appliedExtraRad,
+    };
+  }
+
   function nearestCardinalAngle(angle) {
     const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // E S W N
     let best = cardinals[0], bestDiff = Infinity;
@@ -229,6 +254,7 @@
     clampedRotation,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
+    expandOneSidedDeadzone,
     nearestCardinalAngle,
     PERP_DEAD_RAD,
     PERP_CENTER_HYSTERESIS_RAD,

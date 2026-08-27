@@ -83,6 +83,7 @@
       groupWorldQuaternion: groupQuat ? [groupQuat.x, groupQuat.y, groupQuat.z, groupQuat.w] : null,
       pngRot: pet.pngRot,
       groupRot: pet.groupRot,
+      headClearance: pet.shoulderPetHeadClearanceDebug || null, // Shows head-derived dead-zone geometry without implying head-derived pet rotation.
       planes,
     };
   }
