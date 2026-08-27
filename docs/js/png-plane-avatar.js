@@ -559,11 +559,20 @@
     const backGeo  = frontGeo.clone();
 
     const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+    // The cards face opposite directions but occupy the same geometric plane.
+    // Give them a microscopic separation along the shared plane normal so
+    // depth testing cannot alternate between the two materials as the camera
+    // or parent yaw changes. This is intentionally far below one world pixel.
+    const faceSeparation = Number.isFinite(Number(options.faceSeparation))
+      ? Math.max(0, Number(options.faceSeparation))
+      : 0.0008; // Used below as a stable anti-z-fighting offset in group-local X.
+    frontMesh.position.x = faceSeparation;
     frontMesh.rotation.y = Math.PI / 2;
     frontMesh.renderOrder = 2;
     frontMesh.name = (options.name || 'animal') + '_front_plane';
 
     const backMesh = new THREE.Mesh(backGeo, backMat);
+    backMesh.position.x = -faceSeparation;
     backMesh.rotation.y = -Math.PI / 2;
     backMesh.renderOrder = 2;
     backMesh.name = (options.name || 'animal') + '_back_plane';
