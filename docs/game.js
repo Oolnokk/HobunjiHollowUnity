@@ -6113,13 +6113,18 @@
       // player's head/shoulder (see the shoulderPet branch below), so a
       // per-frame distance comparison between nearly identical points only
       // creates flicker. Keep depth testing enabled (terrain and buildings
-      // can still occlude the pet), but disable depth writes on both portrait
-      // faces and draw the pet after both faces and hat overlays.
+      // can still occlude the pet), and use this fixed relationship:
+      // front portrait < shoulder pet < back portrait. A neck-rigged player
+      // stores both portrait faces on one SkinnedMesh, so its back face cannot
+      // receive a later renderOrder of its own. Instead, only the front
+      // material defers depth writes: the back material keeps writing depth
+      // and therefore blocks the later-drawn pet whenever the back faces the
+      // camera. The rigid fallback still draws its separate back mesh last.
       const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-      // Keep the back portrait above the front portrait. The pet is
-      // intentionally above this value in both camera directions.
+      // Separate rigid back portraits draw above the pet; skinned back
+      // portraits share order 2 with the front and occlude via depth instead.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_FRONT_PLANE_RENDER_ORDER + 1;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -6142,9 +6147,8 @@
         }
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
-          _setLayerDepthWrite(m, !active);
-        }
+        _setLayerDepthWrite(_playerAvatarFrontMaterial, !active);
+        _setLayerDepthWrite(_playerAvatarBackMaterial, true);
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
         for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
@@ -25519,6 +25523,7 @@
         getPetLayeringPet: () => _petLayeringPet,
         getPetLayeringActive: () => _petLayeringActive,
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
+        getPlayerAvatarBackMaterial: () => _playerAvatarBackMaterial,
         getSitInteraction: () => sitInteraction,
         getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,

@@ -520,7 +520,9 @@
 
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
+    const _playerAvatarBackMaterial = deps.getPlayerAvatarBackMaterial();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+    if (_playerAvatarBackMaterial) checks.push(['player back plane', 'depthWrite', true, _playerAvatarBackMaterial.depthWrite]);
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
@@ -530,7 +532,7 @@
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
     if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
-    else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
+    else if (checks.length) lines.push('depthWrite/renderOrder on both player portrait faces and the active pet planes all match what updatePetLayering should have set.');
 
     if (liveActivePet) {
       const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.

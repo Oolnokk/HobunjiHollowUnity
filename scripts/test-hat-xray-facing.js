@@ -12,8 +12,8 @@ assert.match(game, /async function buildPlayerHatXrayOverlay/, 'game still owns 
 assert.match(game, /mesh\.position\.z \+= facingBack \? -0\.0015 : 0\.0015;/,
   'regression fixture confirms game creates the xray with the historical physical Z nudge');
 assert.match(game, /assembly\.add\(mesh\)/, 'xray overlay is added after the avatar build');
-assert.match(game, /const PLAYER_FRONT_PLANE_RENDER_ORDER = 2[\s\S]{0,240}const PLAYER_BACK_PLANE_RENDER_ORDER = 4[\s\S]{0,180}const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER \+ 2/, 'shoulder pets render above both portrait faces and their hat overlays');
-assert.match(game, /for \(const m of \[_playerAvatarFrontMaterial, _playerAvatarBackMaterial\]\)[\s\S]{0,180}_setLayerDepthWrite\(m, !active\)/, 'shoulder-pet xray disables depth writes on both front and back portrait materials');
+assert.match(game, /const PLAYER_FRONT_PLANE_RENDER_ORDER = 2[\s\S]{0,320}const PLAYER_BACK_PLANE_RENDER_ORDER = 4[\s\S]{0,180}const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_FRONT_PLANE_RENDER_ORDER \+ 1/, 'shoulder pets render between the front and rigid back portrait planes');
+assert.match(game, /_setLayerDepthWrite\(_playerAvatarFrontMaterial, !active\);[\s\S]{0,120}_setLayerDepthWrite\(_playerAvatarBackMaterial, true\);/, 'shoulder-pet xray passes the front portrait but remains occluded by the back portrait');
 assert.match(game, /if \(mesh\) mesh\.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER/, 'released shoulder pets restore their own planes to the normal portrait stack');
 
 assert.match(source, /player_avatar_\(front\|back\)_hat_xray_plane/, 'parity module recognizes both runtime xray meshes');
