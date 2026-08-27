@@ -817,11 +817,11 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
-    const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover/movement state copyable on mobile without developer tools.
+    const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover state copyable on mobile without developer tools.
     if (volumeDebug) {
       const blocked = volumeDebug.lastBlock ? `${volumeDebug.lastBlock.kind}:${volumeDebug.lastBlock.object}@${volumeDebug.lastBlock.distanceWorld}u/${volumeDebug.lastBlock.ageMs}ms` : 'none';
       const flags = volumeDebug.options || {};
-      lines.push(`Nearby volumes: enabled=${flags.enabled} movement=${flags.movement} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} treesOutsideCombat=${flags.outsideCombatTrees} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t candidates=${volumeDebug.candidates} refreshes=${volumeDebug.refreshCount} rays=${volumeDebug.testedRayCount} lastBlock=${blocked}`);
+      lines.push(`Nearby cover: enabled=${flags.enabled} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t candidates=${volumeDebug.candidates} refreshes=${volumeDebug.refreshCount} rays=${volumeDebug.testedRayCount} lastBlock=${blocked}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
