@@ -598,20 +598,20 @@
     // deadzone yaw in world space. Applying only local Y rotation lets the
     // player/body attachment hierarchy leak its yaw into the cards and make
     // them appear to change width as the camera catches the opposite face.
-    const applyShoulderPetWorldYaw = plane => {
+    frontMesh.userData.hobunjiPlaneFace = 'front'; // Identifies the source-facing card after head-rig replacement.
+    backMesh.userData.hobunjiPlaneFace = 'back'; // Identifies the reverse-facing card after head-rig replacement.
+    const applyShoulderPetWorldYaw = function () {
+      const plane = this;
       const owner = [...(window.Combat?.deps?.companionObjects || [])].find(companion =>
         companion?.avatarRef?.group === group && companion.stableRole === 'shoulderPet');
       if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
       const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
-      const desiredWorld = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-        0,
-        owner.pngRot + (plane === frontMesh ? Math.PI / 2 : -Math.PI / 2),
-        0,
-        'YXZ'));
+      const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
+      const desiredWorld = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, owner.pngRot + faceYaw, 0, 'YXZ'));
       plane.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
     };
-    frontMesh.onBeforeRender = () => applyShoulderPetWorldYaw(frontMesh);
-    backMesh.onBeforeRender = () => applyShoulderPetWorldYaw(backMesh);
+    frontMesh.onBeforeRender = applyShoulderPetWorldYaw;
+    backMesh.onBeforeRender = applyShoulderPetWorldYaw;
 
     return {
       group,
@@ -972,6 +972,7 @@
     skinned.visible = plane.visible;
     skinned.frustumCulled = false; // Head rotation can move weighted vertices beyond the bind-pose plane bounds.
     skinned.userData = { ...plane.userData, hobunjiAnimalHeadRig: true };
+    skinned.onBeforeRender = plane.onBeforeRender; // Preserve parent-independent shoulder-pet yaw on the rigged replacement mesh.
     skinned.add(torsoBone);
     const skeleton = new THREE.Skeleton([torsoBone, headBone]);
     skinned.bind(skeleton);
