@@ -22,25 +22,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           game_path = Path('docs/game.js')
           game = game_path.read_text(encoding='utf-8')
-
-          old_constants = """      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
-"""
-          new_constants = """      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
-      const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false; // Used by the preserved rear-character overlay so shoulder pets stay visually above the character by default.
-"""
+          old_constants = "      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;\n      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;\n"
+          new_constants = "      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;\n      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;\n      const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false; // Used by the preserved rear-character overlay so shoulder pets stay visually above the character by default.\n"
           if game.count(old_constants) != 1:
               raise SystemExit(f'Expected one shoulder-pet render-order block, found {game.count(old_constants)}')
           game = game.replace(old_constants, new_constants, 1)
-
-          old_visibility = """        overlay.mesh.visible = !!enabled && facesCharacterLeft;
-"""
-          new_visibility = """        overlay.mesh.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft;
-"""
+          old_visibility = "        overlay.mesh.visible = !!enabled && facesCharacterLeft;\n"
+          new_visibility = "        overlay.mesh.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft;\n"
           if game.count(old_visibility) != 1:
               raise SystemExit(f'Expected one rear-character overlay visibility assignment, found {game.count(old_visibility)}')
           game = game.replace(old_visibility, new_visibility, 1)
@@ -48,43 +38,18 @@ jobs:
 
           test_path = Path('scripts/test-shoulder-pet-layering.js')
           test = test_path.read_text(encoding='utf-8')
-
-          old_harness = """  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
-  let _playerAvatarFrontMaterial = initialFront;
-  let _playerAvatarBackMaterial = initialBack;
-  let rearCharacterOcclusionEnabled = false;
-  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
-"""
-          new_harness = """  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
-  const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;
-  let _playerAvatarFrontMaterial = initialFront;
-  let _playerAvatarBackMaterial = initialBack;
-  let rearCharacterOcclusionEnabled = false;
-  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
-"""
+          old_harness = "  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;\n  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;\n  let _playerAvatarFrontMaterial = initialFront;\n  let _playerAvatarBackMaterial = initialBack;\n  let rearCharacterOcclusionEnabled = false;\n  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }\n"
+          new_harness = "  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;\n  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;\n  const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;\n  let _playerAvatarFrontMaterial = initialFront;\n  let _playerAvatarBackMaterial = initialBack;\n  let rearCharacterOcclusionEnabled = false;\n  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }\n"
           if test.count(old_harness) != 1:
               raise SystemExit(f'Expected one shoulder-pet layering harness header, found {test.count(old_harness)}')
           test = test.replace(old_harness, new_harness, 1)
-
           old_left_assert = "assert.equal(harness.isRearCharacterOcclusionEnabled(), true, 'character-left facing enables the full rear character occluder');"
           new_left_assert = "assert.equal(harness.isRearCharacterOcclusionEnabled(), false, 'character-left facing keeps the preserved rear character occluder disabled by default');"
           if test.count(old_left_assert) != 1:
               raise SystemExit('Expected the character-left occlusion assertion once')
           test = test.replace(old_left_assert, new_left_assert, 1)
-
-          old_regex = """assert.match(source,
-  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,180}overlay\\.mesh\\.visible = !!enabled && facesCharacterLeft/,
-  'rear occlusion swaps at the turnaround midpoint according to character-relative facing');
-"""
-          new_regex = """assert.match(source,
-  /const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;/,
-  'player-over-pet occlusion is preserved but disabled in production');
-assert.match(source,
-  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,220}overlay\\.mesh\\.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft/,
-  'preserved rear occlusion still tracks the turnaround midpoint but cannot become visible while disabled');
-"""
+          old_regex = "assert.match(source,\n  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,180}overlay\\.mesh\\.visible = !!enabled && facesCharacterLeft/,\n  'rear occlusion swaps at the turnaround midpoint according to character-relative facing');\n"
+          new_regex = "assert.match(source,\n  /const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;/,\n  'player-over-pet occlusion is preserved but disabled in production');\nassert.match(source,\n  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,220}overlay\\.mesh\\.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft/,\n  'preserved rear occlusion still tracks the turnaround midpoint but cannot become visible while disabled');\n"
           if test.count(old_regex) != 1:
               raise SystemExit('Expected the directional overlay source assertion once')
           test = test.replace(old_regex, new_regex, 1)
