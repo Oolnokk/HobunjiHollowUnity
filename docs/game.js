@@ -21404,6 +21404,24 @@
         const zi = _zoneScenes.get('map_southern_cloud_forest');
         zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
       });
+      function applyNearbyVolumeCollisionSettings() {
+        window.NearbyVolumeCollision?.setOptions?.({
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          movement: document.getElementById('settingVolumeCollisionMovement')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+          outsideCombatTrees: document.getElementById('settingVolumeCollisionTrees')?.checked === true,
+        });
+      }
+      for (const settingId of [
+        'settingVolumeCollisionMaster',
+        'settingVolumeCollisionMovement',
+        'settingVolumeCollisionProjectiles',
+        'settingVolumeCollisionAlpha',
+        'settingVolumeCollisionTrees',
+      ]) {
+        document.getElementById(settingId)?.addEventListener('change', applyNearbyVolumeCollisionSettings);
+      }
       document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
         if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
       });
@@ -25677,6 +25695,13 @@
         isCombatActive: () => isPlayerInCombat() ||
           (heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) ||
             (activeTool === 'ranged' && !!equipmentSlots.ranged))),
+        options: {
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          movement: document.getElementById('settingVolumeCollisionMovement')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+          outsideCombatTrees: document.getElementById('settingVolumeCollisionTrees')?.checked === true,
+        },
         debugLog,
       });
 
