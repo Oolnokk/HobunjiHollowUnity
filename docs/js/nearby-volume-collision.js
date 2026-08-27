@@ -4,7 +4,7 @@
 
   const COMBAT_RADIUS_TILES = 12; // Bounds the combat-only cover broad phase so scene traversal stays local.
   const CACHE_MOVE_TILES = 1.25; // Used to avoid rebuilding the local mesh list until the player moves materially.
-  const CACHE_MAX_AGE_MS = 450; // Used to pick up newly spawned/burned props without traversing the scene every frame.
+  const CACHE_MAX_AGE_MS = 3000; // Picks up changed props without repeatedly traversing dense combat scenes.
   const IGNORE_HINT = /avatar|portrait|player|creature|npc|projectile|trail|reticle|shadow|water|ground|terrain|tile|mist|rain|particle|flame|fireeffect|held/i;
 
   let deps = null;
@@ -17,6 +17,13 @@
   let raycaster = null;
   let refreshCount = 0;
   let testedRayCount = 0;
+  let skippedLeafCardCount = 0;
+  let skippedTileCoverCount = 0;
+  let lastSegmentCandidateCount = 0;
+  let maxSegmentCandidateCount = 0;
+  let lastSegmentMs = 0;
+  let maxSegmentMs = 0;
+  let lastRebuildMs = 0;
   let lastBlock = null;
   let options = { enabled: true, projectiles: true, textureAlpha: true }; // Controls combat cover from the mobile-accessible Settings toggles.
   const textureAlphaCache = new WeakMap(); // Stores decoded texture alpha so repeated precise hits never reread the same image pixels.
@@ -55,9 +62,34 @@
     return list.some(entry => entry && entry.visible !== false && Number(entry.opacity ?? 1) > 0.12);
   }
 
+  function isFlatLeafCard(object) {
+    if (!object?.userData?.noOutline) return false;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    return materials.some(material => material && (material.transparent || Number(material.alphaTest) > 0));
+  }
+
+  function hasTileCoverAncestor(object) {
+    let node = object;
+    for (let depth = 0; node && depth < 6; depth++, node = node.parent) {
+      if (node.userData?.projectileCoverUsesTile) return true;
+    }
+    return false;
+  }
+
   function isCandidateMesh(object) {
     if (!object?.isMesh || object.visible === false || !object.geometry?.attributes?.position) return false;
     if (!materialCanBlock(object.material) || hasActorAncestor(object)) return false;
+    if (hasTileCoverAncestor(object)) {
+      skippedTileCoverCount++;
+      return false;
+    }
+    // Procedural leaves are alpha-cutout planes, not 3D volumes. Treating
+    // every card as cover made one nearby tree cost thousands of triangle
+    // tests per projectile frame and made foliage behave like a solid wall.
+    if (isFlatLeafCard(object)) {
+      skippedLeafCardCount++;
+      return false;
+    }
     const data = object.userData || {};
     if (data.nonVolumeCollision || data.noCollision || data.isBillboard || data.isGround || data.isWater ||
         data.isShadow || data.isParticle || data.isProjectile) return false;
@@ -76,13 +108,15 @@
   }
 
   function rebuild(wx, wy) {
+    const rebuildStartedAt = performance.now();
     const scene = deps.getActiveScene?.();
     if (!scene) {
       candidates = [];
       cachedScene = null;
       return;
     }
-    scene.updateMatrixWorld?.(true);
+    // The renderer already keeps world matrices current. Forcing a recursive
+    // update here duplicated the entire scene-graph walk during combat.
     const focus = focusWorld(wx, wy);
     const radiusTiles = COMBAT_RADIUS_TILES;
     const radiusSq = (radiusTiles + 2) * (radiusTiles + 2);
@@ -96,7 +130,7 @@
       const scale = object.getWorldScale(new deps.THREE.Vector3());
       const radius = sphere.radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
       if (center.distanceToSquared(focus) > Math.pow(radiusTiles + radius + 1, 2) && center.distanceToSquared(focus) > radiusSq) return;
-      next.push(object);
+      next.push({ object, center, radius });
     });
     candidates = next;
     cachedScene = scene;
@@ -104,6 +138,7 @@
     cachedFocusX = wx;
     cachedFocusY = wy;
     cacheBuiltAt = performance.now();
+    lastRebuildMs = Number((cacheBuiltAt - rebuildStartedAt).toFixed(2));
     refreshCount++;
   }
 
@@ -165,21 +200,46 @@
     return alpha * Number(material.opacity ?? 1) > threshold;
   }
 
-  function raycast(origin, direction, far) {
-    if (!candidates.length || far <= 0.0001) return null;
+  function raycast(objects, origin, direction, far) {
+    if (!objects.length || far <= 0.0001) return null;
     testedRayCount++;
     raycaster.set(origin, direction);
     raycaster.near = 0.002;
     raycaster.far = far;
-    const hits = raycaster.intersectObjects(candidates, false);
+    const hits = raycaster.intersectObjects(objects, false);
     return hits.find(hit => hit.distance <= far + 0.0001 && hitCanBlock(hit)) || null;
+  }
+
+  function segmentCandidates(start, end, radiusWorld) {
+    const vx = end.x - start.x, vy = end.y - start.y, vz = end.z - start.z;
+    const lengthSq = vx * vx + vy * vy + vz * vz;
+    const nearby = [];
+    for (const entry of candidates) {
+      const cx = entry.center.x - start.x, cy = entry.center.y - start.y, cz = entry.center.z - start.z;
+      const along = lengthSq > 0.00000001
+        ? Math.max(0, Math.min(1, (cx * vx + cy * vy + cz * vz) / lengthSq))
+        : 0;
+      const dx = cx - vx * along, dy = cy - vy * along, dz = cz - vz * along;
+      const reach = entry.radius + radiusWorld + 0.015;
+      if (dx * dx + dy * dy + dz * dz <= reach * reach) nearby.push(entry.object);
+    }
+    return nearby;
   }
 
   function segmentHit(start, end, radiusWorld = 0) {
     if (!deps || !ensureCandidates(deps.player.x, deps.player.y)) return null;
+    const segmentStartedAt = performance.now();
     const direction = end.clone().sub(start);
     const length = direction.length();
     if (length <= 0.0001) return null;
+    const objects = segmentCandidates(start, end, radiusWorld);
+    lastSegmentCandidateCount = objects.length;
+    maxSegmentCandidateCount = Math.max(maxSegmentCandidateCount, objects.length);
+    if (!objects.length) {
+      lastSegmentMs = Number((performance.now() - segmentStartedAt).toFixed(3));
+      maxSegmentMs = Math.max(maxSegmentMs, lastSegmentMs);
+      return null;
+    }
     direction.divideScalar(length);
     const offsets = [new deps.THREE.Vector3()];
     if (radiusWorld > 0.0001) {
@@ -192,9 +252,11 @@
     }
     let nearest = null;
     for (const offset of offsets) {
-      const hit = raycast(start.clone().add(offset), direction, length);
+      const hit = raycast(objects, start.clone().add(offset), direction, length);
       if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit;
     }
+    lastSegmentMs = Number((performance.now() - segmentStartedAt).toFixed(3));
+    maxSegmentMs = Math.max(maxSegmentMs, lastSegmentMs);
     if (!nearest) return null;
     lastBlock = {
       kind: 'projectile',
@@ -212,6 +274,13 @@
       radiusTiles: COMBAT_RADIUS_TILES,
       refreshCount,
       testedRayCount,
+      skippedLeafCardCount,
+      skippedTileCoverCount,
+      lastSegmentCandidateCount,
+      maxSegmentCandidateCount,
+      lastSegmentMs,
+      maxSegmentMs: Number(maxSegmentMs.toFixed(3)),
+      lastRebuildMs,
       cacheAgeMs: cacheBuiltAt ? Math.round(performance.now() - cacheBuiltAt) : null,
       options: { ...options },
       lastBlock: lastBlock ? { ...lastBlock, ageMs: Math.round(performance.now() - lastBlock.at) } : null,
