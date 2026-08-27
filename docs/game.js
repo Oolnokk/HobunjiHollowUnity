@@ -8448,6 +8448,12 @@
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
               const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (isCrownedPine || isShadewood) {
+                // Their visible trunk base is centered on this solid SHRUB
+                // tile. Projectile cover can therefore use the existing tile
+                // collision instead of raycasting the full procedural tree.
+                vegGroup.userData.projectileCoverUsesTile = true;
+              }
               if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
               // Small bushes are short enough that a player standing behind
               // one is still mostly visible over/around it, and they're
