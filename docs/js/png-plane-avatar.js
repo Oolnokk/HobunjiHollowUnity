@@ -594,6 +594,25 @@
     };
     syncMirroredPlaneScale();
 
+    // Shoulder-pet planes must use the already-computed camera-relative
+    // deadzone yaw in world space. Applying only local Y rotation lets the
+    // player/body attachment hierarchy leak its yaw into the cards and make
+    // them appear to change width as the camera catches the opposite face.
+    const applyShoulderPetWorldYaw = plane => {
+      const owner = [...(window.Combat?.deps?.companionObjects || [])].find(companion =>
+        companion?.avatarRef?.group === group && companion.stableRole === 'shoulderPet');
+      if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
+      const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
+      const desiredWorld = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        0,
+        owner.pngRot + (plane === frontMesh ? Math.PI / 2 : -Math.PI / 2),
+        0,
+        'YXZ'));
+      plane.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+    };
+    frontMesh.onBeforeRender = () => applyShoulderPetWorldYaw(frontMesh);
+    backMesh.onBeforeRender = () => applyShoulderPetWorldYaw(backMesh);
+
     return {
       group,
       frontPlane: frontMesh,
