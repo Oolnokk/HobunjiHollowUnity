@@ -14,6 +14,10 @@ const probe = read('docs/js/pixel-probe.js');
 assert(volume.includes('const COMBAT_RADIUS_TILES = 12'), 'combat mesh broad phase is bounded');
 assert(volume.includes('const TREE_RADIUS_TILES = 2.25'), 'outside-combat tree collision uses a tiny radius');
 assert(volume.includes('const treeOnly = !combat'), 'outside combat collects trees only');
+assert(volume.includes('outsideCombatTrees: false'), 'outside-combat tree collision defaults off');
+assert(volume.includes('!options.movement'), 'movement collision has an independent kill switch');
+assert(volume.includes('!options.projectiles'), 'projectile cover has an independent kill switch');
+assert(volume.includes('!options.textureAlpha'), 'texture alpha sampling has an independent kill switch');
 assert(volume.includes('textureAlphaAt'), 'transparent texture pixels are sampled');
 assert(volume.includes('hitCanBlock(hit)'), 'ray hits reject transparent pixels');
 assert(game.includes('NearbyVolumeCollision?.canPlayerOccupy?.(wx, wy'), 'player movement uses precise nearby volumes');
@@ -24,9 +28,11 @@ assert(ranged.includes('updateBanditAimLabel'), 'aiming updates the bandit ident
 assert(ranged.includes("(bandit.name || 'Bandit') + ' · ' + rank"), 'bandit labels include name and rank');
 assert(popup.includes('setAimLabel, clearAimLabel'), 'world popup runtime exposes persistent aimed labels');
 assert(index.indexOf('nearby-volume-collision.js') < index.indexOf('ranged-weapons.js'), 'volume runtime loads before ranged weapons');
+assert(index.includes('settingVolumeCollisionMaster'), 'settings expose the master volume toggle');
+assert(index.includes('settingVolumeCollisionTrees'), 'settings expose the out-of-combat tree toggle');
 assert(probe.includes('Nearby volumes: mode='), 'pixel probe reports volume diagnostics');
 
 for (const [name, source] of [['volume', volume], ['game', game], ['ranged', ranged], ['popup', popup], ['probe', probe]]) {
   assert.doesNotThrow(() => new Function(source), name + ' parses');
 }
-console.log('nearby volume collision/bandit label contracts: 19 checks passed');
+console.log('nearby volume collision/bandit label contracts: 25 checks passed');
