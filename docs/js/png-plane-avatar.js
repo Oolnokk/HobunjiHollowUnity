@@ -607,7 +607,8 @@
       if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
       const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
       const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
-      const worldYaw = owner.pngRot + faceYaw;
+      const behaviorYaw = (Number(owner.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180; // Used below so the render-authoritative matrix preserves the pre-observation turnaround.
+      const worldYaw = owner.pngRot + behaviorYaw + faceYaw;
       // Build the desired world orientation from explicit orthogonal axes:
       // local Y is always world-up, so crossing ±180° can never select an
       // equivalent quaternion with a 180° roll/upside-down presentation.
@@ -632,6 +633,8 @@
       plane.userData.hobunjiShoulderPetRenderDebug = {
         time: performance.now(),
         pngRot: owner.pngRot,
+        behaviorYaw,
+        facingReversed: !!owner.shoulderCuriosity?.facingReversed,
         parentWorldQuaternion: [parentWorld.x, parentWorld.y, parentWorld.z, parentWorld.w],
         desiredWorldQuaternion: [desiredWorld.x, desiredWorld.y, desiredWorld.z, desiredWorld.w],
         localQuaternion: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],

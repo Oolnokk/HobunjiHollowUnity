@@ -520,12 +520,34 @@
 
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
+    const rearCharacterOverlay = deps.getPlayerRearCharacterPetOcclusionOverlay();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+    checks.push(['directional rear character-over-pet overlay', 'present', true, !!rearCharacterOverlay?.mesh]);
+    if (rearCharacterOverlay?.mesh) {
+      const expectedRearVisible = !!liveActivePet && rearCharacterOverlay.facesCharacterLeft === true;
+      checks.push(['directional rear character-over-pet overlay', 'visible', expectedRearVisible, rearCharacterOverlay.mesh.visible]);
+      checks.push(['directional rear character-over-pet overlay', 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER + 1, rearCharacterOverlay.mesh.renderOrder]);
+      lines.push(`Directional rear character-over-pet overlay: mode=${rearCharacterOverlay.skinningMode || '-'} facing=${rearCharacterOverlay.facesCharacterLeft ? 'character-left (character occludes pet)' : 'character-right (pet occludes hood)'} visible=${rearCharacterOverlay.mesh.visible} order=${rearCharacterOverlay.mesh.renderOrder} roleGate=all shoulder pets`);
+    }
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
         checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
+        checks.push([label, 'depthTest', true, mesh.material.depthTest]);
         checks.push([label, 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+      }
+    }
+    const grassHits = hits.filter(hit => {
+      for (let node = hit.object; node; node = node.parent) {
+        if (node.userData?.isBillboard || node.userData?.isWildernessGrassChunk || node.userData?.isRichFoliageBillboard) return true;
+      }
+      return false;
+    });
+    for (const hit of grassHits) {
+      const materials = Array.isArray(hit.object?.material) ? hit.object.material : [hit.object?.material];
+      for (const material of materials.filter(Boolean)) {
+        checks.push(['hit billboard grass', 'depthTest', true, material.depthTest]);
+        checks.push(['hit billboard grass', 'depthWrite', true, material.depthWrite]);
       }
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
@@ -539,18 +561,24 @@
       const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
       const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
-      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}° facingYaw=${Number(curiosity?.currentFacingYawDeg || 0).toFixed(2)}° reversed=${curiosity?.facingReversed ? 'yes' : 'no'}`);
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
       const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
+      const behaviorYaw = (Number(curiosity?.currentFacingYawDeg) || 0) * Math.PI / 180; // The deliberate turnaround is part of the expected final plane yaw.
       const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
       const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
       const backWorldYaw = groupYaw + (liveActivePet.avatarRef.backPlane?.rotation.y || 0); // Used below to compare the mirrored back card against the same billboard yaw.
       const wrapAngle = radians => Math.atan2(Math.sin(radians), Math.cos(radians));
-      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
-      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
+      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + behaviorYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
+      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw + behaviorYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
       lines.push(`Billboard yaw: selected=${Number.isFinite(billboardYaw) ? (billboardYaw * 180 / Math.PI).toFixed(2) + '°' : '-'} group=${(groupYaw * 180 / Math.PI).toFixed(2)}° frontWorld=${(frontWorldYaw * 180 / Math.PI).toFixed(2)}° backWorld=${(backWorldYaw * 180 / Math.PI).toFixed(2)}° error=${Number.isFinite(frontYawError) ? Math.max(frontYawError, backYawError).toFixed(4) : '-'} rad`);
+      const renderedBehaviorYaw = liveActivePet.avatarRef.frontPlane?.userData?.hobunjiShoulderPetRenderDebug?.behaviorYaw;
+      lines.push(`Render-authoritative turn: expected=${(behaviorYaw * 180 / Math.PI).toFixed(2)}° applied=${Number.isFinite(renderedBehaviorYaw) ? (renderedBehaviorYaw * 180 / Math.PI).toFixed(2) + '°' : 'not-rendered-yet'}`);
+      if (Number.isFinite(renderedBehaviorYaw) && Math.abs(wrapAngle(renderedBehaviorYaw - behaviorYaw)) > 0.001) {
+        lines.push('>>> MISMATCH — the final shoulder-pet render matrix erased or lagged behind the behavior turn.');
+      }
       if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
         lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');
       }
