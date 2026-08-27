@@ -6311,6 +6311,20 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
+      function _applyShoulderPetFinalRotation(c, finalGroupRotY) {
+        const group = c.avatarRef?.group;
+        if (!group) return;
+        group.rotation.y = finalGroupRotY;
+        // updateCreatureMesh authored the inner planes against c.groupRot,
+        // but an attack/tool pose can replace the attachment group's yaw in
+        // this later pass. Recompute the local counter-rotation so that
+        // moving the shoulder anchor with bodyYaw does not also rotate the
+        // flat animal card face-on/edge-on and change its projected width.
+        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Used here to preserve the camera-relative plane yaw chosen by updateCreatureMesh.
+        const planeDelta = billboardWorldYaw - finalGroupRotY; // Used below to cancel only the final attachment-group yaw override.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+      }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
@@ -6322,13 +6336,15 @@
             c.avatarRef.group.position.x = playerMesh.position.x + dx;
             c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
             c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y - gripYawRad;
+            const finalGroupRotY = playerMesh.rotation.y - gripYawRad; // Final bodyYaw-aware attachment rotation consumed by the billboard counter-rotation helper.
+            _applyShoulderPetFinalRotation(c, finalGroupRotY);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
             c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
             c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y;
+            const finalGroupRotY = playerMesh.rotation.y; // Final fallback attachment rotation consumed by the same billboard counter-rotation helper.
+            _applyShoulderPetFinalRotation(c, finalGroupRotY);
           }
         }
       }
