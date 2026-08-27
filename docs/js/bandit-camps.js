@@ -624,6 +624,31 @@
     return best;
   }
 
+  function hasNearbyTent() {
+    const zoneId = deps?.getCurrentArea?.(); // Used by desktop Interact to reserve E for the nearby tent hold instead of opening Tool Select.
+    return !!(zoneId && deps.isZoneArea(zoneId) && nearestBanditTent(zoneId));
+  }
+
+  // The action arch needs a concrete context button while the player is
+  // close enough to a tent. The hold itself is still accumulated by
+  // updateBanditTentInteraction(), which reads the shared actionHeldDown flag
+  // for keyboard, controller, and pointer input alike.
+  function getNearbyTentAction() {
+    const zoneId = deps?.getCurrentArea?.();
+    if (!(zoneId && deps.isZoneArea(zoneId))) return null;
+    const tent = nearestBanditTent(zoneId);
+    if (!tent) return null;
+    return {
+      icon: tent.interactable?.lootable ? '🪙' : '🔥',
+      label: tent.interactable?.lootable ? 'Loot Tent' : 'Burn Tent',
+      action: 'bandit_tent_interact',
+      style: 'primary',
+      allowed: true,
+      worldInteraction: true,
+      promptRoot: _banditCampMeshes.get(zoneId)?.get(tent.id)?.mesh || null,
+    };
+  }
+
   function lootBanditTent(zoneId, obj) {
     const gained = deps.rollLootPool('banditTent');
     const parts = grantBanditLoot(gained);
@@ -694,13 +719,13 @@
     const parts = [];
     for (const [key, qty] of Object.entries(gained || {})) {
       if (key === 'gold') {
-        inventory.gold = (inventory.gold || 0) + qty;
+        deps.inventory.gold = (deps.inventory.gold || 0) + qty;
         parts.push('💰' + qty + 'g');
         continue;
       }
-      inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
-      clampInventoryStack(key);
-      parts.push(itemIconForKey(key) + '×' + qty);
+      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + qty);
+      deps.clampInventoryStack(key);
+      parts.push(deps.itemIconForKey(key) + '×' + qty);
     }
     return parts;
   }
@@ -755,6 +780,7 @@
     return {
       id: 'corpse_' + c.id,
       type: 'bandit_corpse',
+      promptRoot: c.avatarRef?.group || null,
       getButtons() {
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
@@ -793,6 +819,8 @@
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,
+    hasNearbyTent,
+    getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
     // Marks a zone as just (re-)entered — the one moment
     // ensureCurrentZoneCamps is allowed to release and re-stamp a cleared

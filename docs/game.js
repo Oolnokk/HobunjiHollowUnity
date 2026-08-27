@@ -731,7 +731,9 @@
         // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
-        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0, lungeHitTest: null,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeHeightUnits: 1.0, // Potion/food effects can adjust the player's vertical leap budget before the next attack.
+        lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -821,9 +823,13 @@
           // a flat Footing hit instead of the velocity impulse below.
           const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
           if (result?.fell) {
-            // footing-damage-recovery-bridge.js doubles every spendFooting
-            // call, so 47.5 here nets the intended 95 Footing damage.
+            // Branch falls are a real landing event: a small Health hit plus
+            // a large Footing hit, with a floor of one remaining Health.
+            const currentHealth = Number(target.health);
+            const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
+            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
           }
           return;
@@ -1082,7 +1088,7 @@
           // no match for a hound's nose.
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff,
+          modelWidth: 1.6, tint: 0xffffff, lungeHeightUnits: 0.08, // Nearly grounded; high aim should shed almost all travel.
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
@@ -1145,7 +1151,7 @@
           attackStaminaCost: 12, attackCooldownS: 0.95,
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, lungeHeightUnits: 2.4, spriteAspect: 523 / 831, tint: 0xffffff,
           // See dabinggi-hound's matching comment.
           defaultSizeClass: 'small',
           mountSpeed: 340,
@@ -1252,7 +1258,7 @@
           attackStaminaCost: 15, attackCooldownS: 1.1,
           attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], spriteAspect: 523 / 831, tint: 0x789078,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], lungeHeightUnits: 2.8, spriteAspect: 523 / 831, tint: 0x789078,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra-den-mother',
         },
@@ -1331,14 +1337,14 @@
           // startup default: both the live cull radius and each fog layer's
           // own radius/opacity are independently Settings-tab sliders (see
           // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
-          // setLayerOpacity) — lowered from 34 to 15 by default since the
+          // setLayerOpacity) — lowered from 34 to 30 by default since the
           // full 34-tile radius was a real contributor to reported
           // choppiness in this zone. At 34, fogDensity above had already
           // made FogExp2 ~97% opaque out there, hiding the vegetation
           // pop-in; at the smaller default the pop-in ring is more likely
           // to be visible, tunable back up via the slider if that matters
           // more than the performance it costs.
-          vegCullRadiusTiles: 15,
+          vegCullRadiusTiles: 30,
           // Previously the only zone with no packSpecies pool at all, so
           // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
           // scratchbones-config.js's wildlife.denMothers) had no zone to
@@ -4161,6 +4167,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
+          promptRoot: c.avatarRef?.group || null,
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -4198,6 +4205,25 @@
         return null;
       }
 
+      // The action arch can be clicked a frame after the reticle has shifted
+      // off the corpse tile (especially in shoulder cam). Keep corpse loot
+      // tied to the same nearby interaction target instead of dropping it on
+      // a stale "No object here" result.
+      function getCorpseObjectForAction(action, col, row) {
+        const exact = getCorpseObjectAt(col, row);
+        if (exact || action !== 'obj_loot_corpse') return exact;
+        let best = null, bestDist = Infinity;
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y);
+          const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
+          if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
+          best = c;
+          bestDist = dist;
+        }
+        return best ? makeCorpseWorldObject(best) : null;
+      }
+
       // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
       // through the resource-afflictions system (bleeding/bruising/wounded
       // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
@@ -4223,7 +4249,28 @@
         return amount * (1 - window.BanditCombat.GUARD_DAMAGE_ABSORB);
       }
 
+      let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        // Player melee must overlap the target vertically as well as pass its
+        // existing top-down cone/range test. Ranged projectiles already run
+        // their own swept 3D Box3 collision and deliberately bypass this.
+        const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
+        if (!dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+          const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
+          if (reach && !reach.reachable) {
+            lastMeleeHeightBlock = {
+              at: Date.now(),
+              target: c.id || c.name || c.def?.id || 'hostile',
+              verticalGap: Number(reach.verticalGap.toFixed(3)),
+              allowance: reach.allowance,
+              playerOnBranch: !!player.onBranch,
+              targetOnBranch: !!c.onBranch,
+            };
+            window.__farmLog?.(`[combat] melee height blocked target=${lastMeleeHeightBlock.target} gap=${lastMeleeHeightBlock.verticalGap}`, 'combat');
+            return false;
+          }
+        }
         // Only the player currently ever calls damageCreature (see
         // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
@@ -4276,6 +4323,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        player._nestTakeActive = false;
         window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -4364,7 +4412,12 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
-          if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
+          if (!window.Combat?.meleeHit?.(player, c, {
+            rangePx: abil.rangePx,
+            halfConeRad: abil.halfConeRad,
+            yaw: player.angle,
+            pitch: currentPlayerMeleeAimPitch(),
+          })) continue;
           damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
           hits++;
           lastName = c.def.label;
@@ -4385,18 +4438,69 @@
       // off the instant a melee weapon isn't actually out (see
       // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
       let meleeAutoTargetOn = false;
+      let meleeAutoTargetFreeAim = false; // Mouse movement releases the lock without turning the targeting toggle off.
+      const MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD = 0.48; // Small 3D radius around the centered reticle used for reacquisition.
+      const DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX = 2; // Ignore sub-pixel noise, but any real desktop mouse movement breaks the lock.
+
+      // Find a hostile whose 3D portrait hitbox is close enough to the centered
+      // reticle. Expanding the same hitbox used by projectiles keeps reacquisition
+      // forgiving without making a target behind the player eligible.
+      function desktopAutoTargetNearReticle(maxDistanceWorld) {
+        const ray = currentPlayerInteractionRay();
+        if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
+          const candidates = Array.from(hostileObjects)
+            .filter(c => c.health > 0 && c.areaId === currentArea)
+            .map(c => {
+              const hitbox = window.RangedWeapons.actorHitbox(c);
+              return hitbox?.box ? {
+                type: 'hostile',
+                id: c.id,
+                data: c,
+                box: hitbox.box.clone().expandByScalar(MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD),
+              } : null;
+            })
+            .filter(Boolean);
+          const focus = window.RangedWeapons.focusCandidates(candidates, maxDistanceWorld / TILE);
+          if (focus?.candidate?.data) return focus.candidate.data;
+        }
+        // Fallback for a not-yet-initialized renderer: use a small ground-space
+        // cone around the current aim bearing rather than nearest hostile.
+        const aim = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const radiusPx = MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD * TILE;
+        let best = null, bestDist = maxDistanceWorld;
+        const fx = Math.cos(aim), fy = Math.sin(aim);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const along = dx * fx + dy * fy;
+          if (along < 0 || along > bestDist) continue;
+          const lateral = Math.abs(dx * fy - dy * fx);
+          if (lateral > radiusPx) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist < bestDist) { best = c; bestDist = dist; }
+        }
+        return best;
+      }
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
-      // Hardened at the source (not left to every caller to remember): auto
-      // target is only ever active while the weapon tool slot is both
-      // selected AND actually has a weapon equipped in it — every caller
-      // gets this for free instead of some checking activeTool alone.
+      // Desktop melee only acquires while the targeting toggle is on. Once
+      // mouse-look releases a lock, it waits for the reticle to pass close to
+      // another hostile before reacquiring.
       function findAutoTarget() {
         const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (!meleeActive && !rangedActive) {
           manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          return null;
+        }
+        if (meleeActive && isDesktop && !meleeAutoTargetOn) {
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
           return null;
         }
         const maxDist = rangedActive
@@ -4408,6 +4512,16 @@
             return manualAutoTarget;
           }
           manualAutoTarget = null;
+        }
+        if (meleeActive && isDesktop && meleeAutoTargetOn) {
+          const reacquired = desktopAutoTargetNearReticle(maxDist);
+          if (reacquired) {
+            manualAutoTarget = reacquired;
+            meleeAutoTargetFreeAim = false;
+            return reacquired;
+          }
+          meleeAutoTargetFreeAim = true;
+          return null;
         }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
@@ -4453,6 +4567,27 @@
         return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
 
+      // Shared player melee direction. A hostile under the centered reticle
+      // converges from the player's body center to that same portrait Box3;
+      // otherwise the camera/facing yaw and pitch remain authoritative.
+      function currentPlayerMeleeAimDirection() {
+        const focused = window.RangedWeapons?.focusedHostile?.(24);
+        if (focused?.candidate?.data && window.Combat?.meleeAimSolution) {
+          const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
+          return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
+        }
+        const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        if (cameraRay?.direction) return { ...cameraRay.direction };
+        const yaw = currentPlayerAimAngle();
+        const pitch = currentPlayerAimPitch();
+        const horizontal = Math.cos(pitch);
+        return { x: Math.cos(yaw) * horizontal, y: Math.sin(pitch), z: Math.sin(yaw) * horizontal };
+      }
+      function currentPlayerMeleeAimPitch() {
+        const direction = currentPlayerMeleeAimDirection();
+        return Math.asin(clamp(Number(direction?.y) || 0, -1, 1));
+      }
+
       // Used by updateAmbientCues() to duck exploration/dawn music during a
       // fight — true whenever any live hostile in the player's current area
       // is actively chasing/attacking (state === 'chase'), regardless of
@@ -4495,6 +4630,7 @@
         }
         if (!best) return false;
         manualAutoTarget = best;
+        meleeAutoTargetFreeAim = false;
         return true;
       }
 
@@ -4537,7 +4673,7 @@
       // looking at and have it pick up from there. No-ops if already on, no
       // melee weapon out, or nothing qualifies.
       function tryAutoEngageMeleeTarget() {
-        if (meleeAutoTargetOn || !meleeWeaponOut()) return;
+        if (isDesktop || meleeAutoTargetOn || !meleeWeaponOut()) return;
         const candidate = meleeAttackTargetCandidate();
         if (!candidate) return;
         manualAutoTarget = candidate;
@@ -4563,6 +4699,7 @@
         let idx = candidates.findIndex(entry => entry.c === current);
         idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
         manualAutoTarget = candidates[idx].c;
+        meleeAutoTargetFreeAim = false;
       }
 
       // Drives melee auto-target's actual aim, once per frame (see its call
@@ -4789,7 +4926,8 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY;
+        const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
@@ -5116,6 +5254,7 @@
           // flicker between equally-near players every frame.
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
@@ -5322,8 +5461,22 @@
                       // pass deliberately doesn't take on. Harmless today
                       // since targetPlayer === player whenever `players` has
                       // one entry.
-                      if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+                      const attackTag = def.attackTag || 'sharp'; // Used to tint the hostile's new 3D swipe and preserve its existing affliction type.
+                      const enemyAim = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing || 0, 0);
+                      const attackHalfConeRad = def.attackHalfConeRad || THREE.MathUtils.degToRad(38); // Shared by this hostile's trail and exact 3D hit test.
+                      const trailColor = attackTag === 'blunt' ? 0xffaa55 : attackTag === 'toxin' || attackTag === 'poison' ? 0x78ff62 : 0xff6a6a;
+                      window.Combat?.spawnMeleeTrail?.({
+                        actor: c, target: targetPlayer,
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        color: trailColor,
+                      });
+                      if (window.Combat?.meleeHit?.(c, targetPlayer, {
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        direction: enemyAim?.direction,
+                      })) {
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -5440,6 +5593,7 @@
             }
           }
           c.facing = aimAngle;
+          if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
@@ -6825,6 +6979,7 @@
           member.cookingState = window.CookingSystem.serialize();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
+          member.wildernessChunkState = serializeWildernessChunkState();
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -7024,6 +7179,10 @@
         _tothalShiftInFlight = true;
         const worldId = _tothalWorldId() || 'default';
         const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
+        if (_wildernessChunkTileStateYear !== null && _wildernessChunkTileStateYear !== year) {
+          _wildernessChunkTileDeltas.clear();
+        }
+        _wildernessChunkTileStateYear = year;
         debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
         try {
           // Each singleton locale should exist exactly once across all four
@@ -7515,8 +7674,10 @@
           const aimAngle = target
             ? Math.atan2(target.y - player.y, target.x - player.x)
             : player.angle;
-          dirX = -Math.cos(aimAngle);
-          dirY = -Math.sin(aimAngle);
+          // A no-input dodge is a forward dodge, matching the direction used
+          // to enter a climb instead of unexpectedly zipping backward.
+          dirX = Math.cos(aimAngle);
+          dirY = Math.sin(aimAngle);
         }
         if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
         else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
@@ -7547,11 +7708,29 @@
       // start swimming needs no separate trigger of its own now that water
       // is a real (slow, non-swimmer) crossing instead of a hard block —
       // see tileSpeedAt.
+      function dodgeInputIsForward() {
+        const kb = getKeyboardVector();
+        const ix = kb.active ? kb.x : input.x;
+        const iy = kb.active ? kb.y : input.y;
+        const length = Math.hypot(ix, iy);
+        if (length < 0.08) return true; // No direction means a forward dodge in facing direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // Shoulder movement is camera-relative: local up (-Y) is forward.
+          return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
+        }
+        const facing = player.angle;
+        const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
+        const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
+        return forward > 0.35 && side < 0.85;
+      }
+
       function performContextAction() {
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
+        // Climbing is now the forward-dodge context action. Sideways/backward
+        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
-        if (climb) { window.ClimbSystem.startClimb(climb); return; }
+        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -7585,12 +7764,26 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
-        player.lungeDirX = Math.cos(player.angle);
-        player.lungeDirY = Math.sin(player.angle);
-        player.lungeDistancePx = distancePx;
-        player.lungeHopUnits = hopUnits;
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
+        const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
+        const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
+        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
+          || { distancePx, hopUnits, pitch: aimPitch };
+        player.lungeDirX = Math.cos(aimYaw);
+        player.lungeDirY = Math.sin(aimYaw);
+        player.lungeDistancePx = lungeProfile.distancePx;
+        player.lungeHopUnits = lungeProfile.hopUnits;
+        player.lungeAimPitch = lungeProfile.pitch;
         player.lungeHitTest = hitTest;
       }
+
+      // Public effect seam: food/potion systems can set or add to the
+      // player's next lunge height without knowing combat's internal state.
+      window.PlayerLunge = {
+        getHeight: () => Math.max(0, Number(player.lungeHeightUnits) || 0),
+        setHeight: (value) => { player.lungeHeightUnits = Math.max(0, Number(value) || 0); },
+        addHeight: (delta) => { player.lungeHeightUnits = Math.max(0, (Number(player.lungeHeightUnits) || 0) + (Number(delta) || 0)); },
+      };
 
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
@@ -7599,7 +7792,12 @@
         if (!hitTest) return false;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
-          if (inCone(player.x, player.y, player.angle, c.x, c.y, hitTest.rangePx, hitTest.halfConeRad)) return true;
+          if (window.Combat?.meleeHit?.(player, c, {
+            rangePx: hitTest.rangePx,
+            halfConeRad: hitTest.halfConeRad,
+            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
+            pitch: player.lungeAimPitch || 0,
+          })) return true;
         }
         return false;
       }
@@ -7967,6 +8165,8 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
+      let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
+      const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -8099,13 +8299,22 @@
       // raising with a shovel/pick — see applyAction) without disposing/
       // rebuilding the whole zone scene. Returns every mesh it added to
       // zScene, so the caller can track and later remove them.
-      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
+      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, options = {}) {
         const meshes = [];
-        const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
-        const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
+        const resetState = options.resetState !== false; // Controls one-time per-zone indexes versus additive chunk builds.
+        const vegetationByTile = resetState ? new Map() : (_zoneVegetationMeshes.get(mapId) || new Map()); // Used for O(1) runtime foliage removal by tile.
+        const mineableRocksByTile = resetState ? new Map() : (_zoneMineableRockMeshes.get(mapId) || new Map()); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
-        window.ClimbSystem?.resetAreaBranches(mapId); // This zone's shadewood instances (below) re-register their climbable branches fresh on every (re)build.
+        if (resetState) window.ClimbSystem?.resetAreaBranches(mapId); // Loaded shadewood chunks re-register their climbable branches below.
+        const bounds = {
+          colStart: Math.max(0, Math.floor(options.bounds?.colStart ?? 0)),
+          rowStart: Math.max(0, Math.floor(options.bounds?.rowStart ?? 0)),
+          colEnd: Math.min(ZCOLS, Math.ceil(options.bounds?.colEnd ?? ZCOLS)),
+          rowEnd: Math.min(ZROWS, Math.ceil(options.bounds?.rowEnd ?? ZROWS)),
+        }; // Restricts tile-owned meshes to one streaming chunk.
+        const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
+        const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -8126,8 +8335,8 @@
           for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
         }
 
-        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
-        if (pathNet) {
+        const pathNet = options.pathNet || buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
+        if (includeGlobalPath && pathNet) {
           // Tiny lift above the plateau mesa lid (which shares this exact
           // tier height wherever a path crosses a plateau — see
           // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
@@ -8146,13 +8355,15 @@
         // below): built once the shared recipe/GLB are ready, chunked and
         // culled by camera corridor rather than tied to this zone's own
         // scene-build timing.
-        ensurePathSurfaceReady().then(() => {
-          const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
-          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
-          if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
-        }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        if (includeGlobalPath) {
+          ensurePathSurfaceReady().then(() => {
+            const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
+            const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
+            if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+          }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        }
 
-        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+        if (includeTiles) for (let r = bounds.rowStart; r < bounds.rowEnd; r++) for (let c = bounds.colStart; c < bounds.colEnd; c++) {
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
@@ -8187,6 +8398,7 @@
                 geometry.computeVertexNormals();
                 const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
+                rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
                 rockGroup.add(rockMesh);
               }
@@ -8337,6 +8549,7 @@
           merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
+          mesh.userData.wildernessChunkOwnsGeometry = true;
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -8344,9 +8557,14 @@
         return meshes;
       }
 
-      function buildZoneScene(mapId) {
+      function buildZoneScene(mapId, focusCol = null, focusRow = null) {
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
-        if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
+        if (_zoneScenes.has(mapId)) {
+          if (Number.isFinite(focusCol) && Number.isFinite(focusRow)) {
+            window.WildernessChunks?.primeZone(mapId, focusCol, focusRow);
+          }
+          return _zoneScenes.get(mapId);
+        }
         const zdef = EXTERIOR_ZONES[mapId];
         const zoneData = _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
@@ -8394,6 +8612,10 @@
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
           if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+        }
+        const restoredChunkTiles = applyWildernessChunkTileDeltas(mapId, zGrid);
+        if (restoredChunkTiles) {
+          debugLog(`[wilderness-chunks] restored ${restoredChunkTiles} edited tile(s) in ${mapId}`);
         }
         // Re-apply any trees felled with the axe that haven't regrown yet
         // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
@@ -8458,7 +8680,17 @@
         // mesh per material — see _buildZoneFloorMeshes. Tracked per-zone so a
         // runtime tile change (digging/filling/raising — see
         // refreshZoneGroundVisuals) can rebuild just this layer later.
-        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        // The route network is one connected, zone-wide topology, so build it
+        // once and keep it outside streamed chunks. Ordinary floor tiles,
+        // removable rocks, trees, ramps, water and grass are built by the
+        // 16x16 chunk factory below.
+        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Reused by every chunk for seam-safe path exclusions.
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
+          includeTiles: false,
+          includeGlobalPath: true,
+          resetState: true,
+          pathNet: zonePathNet,
+        }));
 
         // Each tier transition in the merged plateau stack renders as one continuous
         // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
@@ -8469,18 +8701,10 @@
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
-        window.ZoneTerrainFeatures.buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
-        _zoneWaterMeshes.set(mapId, [
-          ...window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-          ...window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-        ]);
-
-        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
-        window.ZoneGrassBillboards.buildRichFoliageBillboards(zScene, zoneData, zGrid);
+        _zoneWaterMeshes.set(mapId, []);
+        _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
         window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
@@ -8519,8 +8743,119 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null };
         _zoneScenes.set(mapId, info);
+
+        const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
+        const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
+        const removeRefs = (list, values) => {
+          if (!list?.length || !values?.length) return;
+          const removed = new Set(values);
+          for (let i = list.length - 1; i >= 0; i--) if (removed.has(list[i])) list.splice(i, 1);
+        };
+        const buildRuntimeChunk = ({ group, bounds }) => {
+          const floorMeshes = _buildZoneFloorMeshes(group, zGrid, ZCOLS, ZROWS, mapId, {
+            bounds,
+            includeGlobalPath: false,
+            resetState: false,
+            pathNet: zonePathNet,
+          }); // Chunk-owned ground, rocks and vegetation.
+          const featureMeshes = [
+            ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned ramps and solved rock faces.
+          for (const object of [...floorMeshes, ...featureMeshes]) {
+            object.traverse?.(mesh => {
+              if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) {
+                const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+                if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
+              }
+            });
+          }
+          const waterMeshes = [
+            ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned water surfaces and falls.
+          const grassGroups = [
+            window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds),
+            window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds),
+          ].filter(Boolean); // Chunk-owned ordinary and rich foliage billboards.
+          const chunkOcclusionMeshes = [];
+          const chunkCanopyZones = [];
+          const chunkCullables = [];
+          group.traverse(object => {
+            if (object.userData?.cameraObstacle) chunkOcclusionMeshes.push(object);
+            if (object.userData?.canopyClamp) chunkCanopyZones.push(object.userData.canopyClamp);
+            if (object.userData?.cullSphere) chunkCullables.push(object);
+          });
+          return { floorMeshes, featureMeshes, waterMeshes, grassGroups, chunkOcclusionMeshes, chunkCanopyZones, chunkCullables };
+        };
+        const integrateRuntimeChunk = payload => {
+          floorRegistry.push(...payload.floorMeshes);
+          waterRegistry.push(...payload.waterMeshes);
+          info.occlusionMeshes.push(...payload.chunkOcclusionMeshes);
+          info.canopyZones.push(...payload.chunkCanopyZones);
+          info.cullables.push(...payload.chunkCullables);
+        };
+        const detachRuntimeChunk = (payload, bounds, group) => {
+          removeRefs(floorRegistry, payload.floorMeshes);
+          removeRefs(waterRegistry, payload.waterMeshes);
+          removeRefs(info.occlusionMeshes, payload.chunkOcclusionMeshes);
+          removeRefs(info.canopyZones, payload.chunkCanopyZones);
+          removeRefs(info.cullables, payload.chunkCullables);
+          for (const registry of [_zoneVegetationMeshes.get(mapId), _zoneMineableRockMeshes.get(mapId)]) {
+            if (!registry) continue;
+            for (const key of [...registry.keys()]) {
+              const [col, row] = key.split(',').map(Number);
+              if (col >= bounds.colStart && col < bounds.colEnd && row >= bounds.rowStart && row < bounds.rowEnd) registry.delete(key);
+            }
+          }
+          window.ClimbSystem?.removeBranchesInBounds(mapId, bounds);
+          group.traverse(object => {
+            _treeFadeActive.delete(object);
+            for (const material of (object.userData?._fadeMaterials || [])) material.dispose?.();
+          });
+        };
+        const disposeRuntimeChunk = record => {
+          record.group.traverse(object => {
+            if (object.userData?.wildernessChunkOwnsGeometry) object.geometry?.dispose?.();
+            if (object.userData?.wildernessChunkOwnsMaterial) {
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              for (const material of materials) {
+                material?.map?.dispose?.();
+                for (const uniform of Object.values(material?.uniforms || {})) {
+                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                }
+                material?.dispose?.();
+              }
+            }
+            if (object.userData?.mergedWaterStatKey) window.MergedWaterRenderer?.clearStats?.(object.userData.mergedWaterStatKey);
+          });
+        };
+        const arrivalCol = Number.isFinite(focusCol) ? focusCol : (zdef?.entryCol ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        const arrivalRow = Number.isFinite(focusRow) ? focusRow : (zdef?.entryRow ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        if (window.WildernessChunks) {
+          info.chunkController = window.WildernessChunks.createZone({
+            mapId,
+            scene: zScene,
+            cols: ZCOLS,
+            rows: ZROWS,
+            focusCol: arrivalCol,
+            focusRow: arrivalRow,
+            buildChunk: buildRuntimeChunk,
+            onChunkLoaded: record => integrateRuntimeChunk(record.payload),
+            onChunkUnloaded: record => detachRuntimeChunk(record.payload, record.bounds, record.group),
+            disposeChunk: disposeRuntimeChunk,
+          });
+        } else {
+          // Defensive fallback for a stale/cached index that omitted the new
+          // module: preserve complete terrain rather than showing an empty zone.
+          integrateRuntimeChunk(buildRuntimeChunk({
+            group: zScene,
+            bounds: { colStart: 0, rowStart: 0, colEnd: ZCOLS, rowEnd: ZROWS },
+          }));
+        }
         window.TownZoneBuildings.spawnZoneBuildings(mapId);
         window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
         window.FoliageFurnitureRuntime?.spawnForMap(mapId);
@@ -11138,7 +11473,7 @@
           // area silently landed the player on the farm scene instead (see
           // enterZone, which builds/adds to the zone scene the same way on
           // the way in).
-          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea, player.x / TILE, player.y / TILE)?.scene : scene);
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -11161,7 +11496,9 @@
         }
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
-        const zi = buildZoneScene(mapId);
+        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
+        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        const zi = buildZoneScene(mapId, col, row);
         if (!zi) return;
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
@@ -11169,8 +11506,6 @@
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
-        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
-        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2; player.angle = facingAngle;
@@ -11292,6 +11627,95 @@
         return candidates.slice(0, count);
       }
 
+      function wildernessChunkTileSize() {
+        return window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+      }
+
+      function recordWildernessChunkTileDelta(mapId, col, row) {
+        const tile = _zoneScenes.get(mapId)?.grid?.[row]?.[col];
+        if (!tile) return false;
+        const chunkTiles = wildernessChunkTileSize();
+        const chunkKey = Math.floor(col / chunkTiles) + ',' + Math.floor(row / chunkTiles);
+        let zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) _wildernessChunkTileDeltas.set(mapId, zone = new Map());
+        let chunk = zone.get(chunkKey);
+        if (!chunk) zone.set(chunkKey, chunk = new Map());
+        chunk.set(col + ',' + row, {
+          col, row,
+          type: tile.type,
+          elevTier: tile.elevTier || 0,
+          rampElevation: tile.rampElevation || 0,
+          skipFloor: !!tile.skipFloor,
+          incline: !!tile.incline,
+          floraKind: tile.floraKind || null,
+          rockKind: tile.rockKind || null,
+          water: Number(tile.water) || 0,
+          crop: tile.crop,
+          cropAge: Number(tile.cropAge) || 0,
+          cropReady: !!tile.cropReady,
+          stress: tile.stress || '',
+          variation: Number(tile.variation) || 0,
+        });
+        _wildernessChunkTileStateYear = currentTothalYear();
+        return true;
+      }
+
+      function applyWildernessChunkTileDeltas(mapId, zGrid) {
+        if (_wildernessChunkTileStateYear !== currentTothalYear()) return 0;
+        const zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) return 0;
+        let applied = 0;
+        for (const chunk of zone.values()) {
+          for (const delta of chunk.values()) {
+            const tile = zGrid?.[delta.row]?.[delta.col];
+            if (!tile) continue;
+            Object.assign(tile, delta);
+            delete tile.col;
+            delete tile.row;
+            applied++;
+          }
+        }
+        return applied;
+      }
+
+      function serializeWildernessChunkState() {
+        const zones = {};
+        for (const [mapId, chunks] of _wildernessChunkTileDeltas) {
+          const serializedChunks = {};
+          for (const [chunkKey, tiles] of chunks) serializedChunks[chunkKey] = [...tiles.values()];
+          zones[mapId] = serializedChunks;
+        }
+        return { version: 1, year: currentTothalYear(), chunkTiles: wildernessChunkTileSize(), zones };
+      }
+
+      function restoreWildernessChunkState(saved) {
+        _wildernessChunkTileDeltas.clear();
+        const currentYear = currentTothalYear();
+        _wildernessChunkTileStateYear = currentYear;
+        if (!saved || saved.version !== 1 || Number(saved.year) !== currentYear) return;
+        for (const [mapId, chunks] of Object.entries(saved.zones || {})) {
+          const zone = new Map();
+          for (const [chunkKey, tiles] of Object.entries(chunks || {})) {
+            const tileMap = new Map();
+            for (const delta of (Array.isArray(tiles) ? tiles : [])) {
+              if (!Number.isFinite(delta?.col) || !Number.isFinite(delta?.row)) continue;
+              tileMap.set(delta.col + ',' + delta.row, { ...delta });
+            }
+            if (tileMap.size) zone.set(chunkKey, tileMap);
+          }
+          if (zone.size) _wildernessChunkTileDeltas.set(mapId, zone);
+        }
+      }
+
+      window.__wildernessChunkPersistenceDebug = () => {
+        let chunks = 0, tiles = 0;
+        for (const zone of _wildernessChunkTileDeltas.values()) {
+          chunks += zone.size;
+          for (const chunk of zone.values()) tiles += chunk.size;
+        }
+        return { year: _wildernessChunkTileStateYear, chunks, editedTiles: tiles };
+      };
+
       // Save/restore _zoneFelledTreePersist as a plain object — see
       // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
       // _zoneReagentPersist (no day-mismatch staleness check needed here).
@@ -11328,6 +11752,7 @@
       // materials are shared across every map and must outlive this.
       function _disposeZoneScene(mapId) {
         window.FoliageFurnitureRuntime?.disposeMap(mapId);
+        window.WildernessChunks?.destroyZone(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
@@ -11380,7 +11805,7 @@
         const byTile = _zoneVegetationMeshes.get(mapId);
         const vegGroup = byTile?.get(`${col},${row}`);
         if (!zi || !vegGroup) return false;
-        zi.scene.remove(vegGroup);
+        vegGroup.parent?.remove(vegGroup);
         byTile.delete(`${col},${row}`);
         _treeFadeActive.delete(vegGroup);
         for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
@@ -11409,7 +11834,7 @@
         const byTile = _zoneMineableRockMeshes.get(mapId);
         const rockGroup = byTile?.get(`${col},${row}`);
         if (!zi || !rockGroup) return false;
-        zi.scene.remove(rockGroup);
+        rockGroup.parent?.remove(rockGroup);
         byTile.delete(`${col},${row}`);
         rockGroup.traverse(object => object.geometry?.dispose());
 
@@ -11441,7 +11866,7 @@
           tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
           row + 0.5
         );
-        zi.scene.add(patch);
+        if (!window.WildernessChunks?.attachObject(mapId, col, row, patch)) zi.scene.add(patch);
         _markTerrainEdgeId(patch, TileType.GRASS);
         _zoneFloorMeshGroups.get(mapId)?.push(patch);
         return true;
@@ -11461,9 +11886,18 @@
       // alone, so it's safe to call immediately while the player is
       // standing in the zone (unlike a full zone rebuild — see
       // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
-      function refreshZoneGroundVisuals(mapId) {
+      function refreshZoneGroundVisuals(mapId, col = null, row = null) {
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
+        if (zi.chunkController && window.WildernessChunks) {
+          // The live grid already contains the authoritative edit. Rebuild
+          // only its resident chunk plus one-chunk seam halo; unloaded chunks
+          // will naturally read the updated grid when they are next streamed.
+          window.WildernessChunks.rebuildZone(mapId, col, row);
+          rebuildZoneMesaMeshes(mapId);
+          window.WildTreasure.syncZoneInteractivity(mapId);
+          return;
+        }
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
         if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
         const oldGrass = _zoneGrassMeshes.get(mapId);
@@ -13704,12 +14138,22 @@
           // the target is guaranteed to still be within the collider right
           // where the lunge halts instead of the player sliding past it.
           if (isHostileInLungeCone(player.lungeHitTest)) {
-            player.lunging = false;
-            player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
-            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
-            tickLungeTrail(_fsPrevX, _fsPrevY);
-            return;
+            if ((player.lungeHopUnits || 0) > 0.01) {
+              // Keep finishing the vertical arc after reaching an elevated
+              // target, but freeze horizontal travel so the leap cannot
+              // carry through and past that target.
+              player.lungeHitTest = null;
+              player.lungeStartX = player.x;
+              player.lungeStartY = player.y;
+              player.lungeDistancePx = 0;
+            } else {
+              player.lunging = false;
+              player.lungeHopCurrent = 0;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+              tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+              tickLungeTrail(_fsPrevX, _fsPrevY);
+              return;
+            }
           }
           // Gently re-aim the lunge toward the locked target's *current*
           // position each frame, capped at LUNGE_HOMING_RATE so it reads as
@@ -13720,12 +14164,15 @@
           // player right past it.
           const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
           if (lungeTarget) {
-            const desiredLungeAngle = Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
+            const aimed = window.Combat?.meleeAimSolution?.(player, lungeTarget, player.angle, player.lungeAimPitch || 0);
+            const desiredLungeAngle = aimed?.yaw ?? Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
             const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+            const homingT = Math.min(1, LUNGE_HOMING_RATE * dt);
             const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
-            const newLungeAngle = curLungeAngle + lungeDiff * Math.min(1, LUNGE_HOMING_RATE * dt);
+            const newLungeAngle = curLungeAngle + lungeDiff * homingT;
             player.lungeDirX = Math.cos(newLungeAngle);
             player.lungeDirY = Math.sin(newLungeAngle);
+            if (aimed) player.lungeAimPitch += (aimed.pitch - (player.lungeAimPitch || 0)) * homingT;
           }
 
           player.lungeT = Math.max(0, player.lungeT - dt);
@@ -14557,38 +15004,6 @@
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
       }
 
-      function drawCombatConeReticle() {
-        const cfg = combatConfig().combatConeReticle || {};
-        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
-        const abil = weaponAbility('cut');
-        if (!abil) return;
-        const rangeTiles = abil.rangePx / TILE;
-        const baseX = player.x / TILE;
-        const baseZ = player.y / TILE;
-        const y = activeSurfaceYAtWorld(baseX, baseZ) + 0.035;
-        const alpha = Number(cfg.alpha) || 0.24;
-        const lineWidth = Number(cfg.lineWidth) || 2;
-        const color = cfg.color || '#d9ffe0';
-        const left = player.angle - abil.halfConeRad;
-        const right = player.angle + abil.halfConeRad;
-        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-        const origin = worldToOverlay(baseX, y, baseZ);
-        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
-        octx.save();
-        octx.globalAlpha = alpha;
-        octx.strokeStyle = color;
-        octx.lineWidth = lineWidth;
-        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(leftEnd.x, leftEnd.y);
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(rightEnd.x, rightEnd.y);
-        octx.stroke();
-        octx.restore();
-      }
-
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
@@ -14731,11 +15146,16 @@
           return;
         }
 
-        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const { rangePx, halfConeRad, angle, pitch = 0 } = combatSwingCone;
         const rangeTiles = rangePx / TILE;
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
         const y = weaponTrailCenterY();
+        const trailDirection = new THREE.Vector3(
+          Math.cos(angle) * Math.cos(pitch),
+          Math.sin(pitch),
+          Math.sin(angle) * Math.cos(pitch),
+        ).normalize(); // Used to tilt the entire swipe plane toward the 3D aim direction.
         const ids = combatSwingAfflictionIds;
         const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
         // Which tip (u=0 or u=1) the bright spike starts from — mirrors
@@ -14755,23 +15175,23 @@
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
           const posAttr = mesh.geometry.attributes.position;
           const colorAttr = mesh.geometry.attributes.color;
-          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
-            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
-            const a = angle - halfConeRad + (2 * halfConeRad) * u;
-            const cosA = Math.cos(a), sinA = Math.sin(a);
-            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
-            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
-            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
-            const innerR = laneRadius - half, outerR = laneRadius + half;
-            const vi = s * 2;
-            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
-            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+          window.Combat?.writeMeleeTrailRibbon?.(posAttr, {
+            samples: COMBAT_CONE_TRAIL_SAMPLES,
+            origin: new THREE.Vector3(baseX, y, baseZ),
+            direction: trailDirection,
+            rangeTiles: laneRadius,
+            halfConeRad,
+            halfThickness: COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES,
+            archUnits: COMBAT_CONE_TRAIL_ARCH_UNITS,
+          });
+          for (let sample = 0; sample <= COMBAT_CONE_TRAIL_SAMPLES; sample++) {
+            const u = sample / COMBAT_CONE_TRAIL_SAMPLES;
+            const vi = sample * 2;
             const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
             const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
             colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
             colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
           }
-          posAttr.needsUpdate = true;
           colorAttr.needsUpdate = true;
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
@@ -15025,6 +15445,9 @@
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
           // freeze (especially in the Southern Cloud Forest).
+          // Let every branch occupant fall before the decorative tree group
+          // is removed. collapseTree also starts the nest's ground lerp.
+          window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
@@ -15156,12 +15579,13 @@
           refreshActionBar();
           return;
         }
-        if (activeAction === 'climb') {
-          if (player.climbing) return;
-          const climb = window.ClimbSystem.getClimbTarget();
-          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
-          return;
-        }
+        // The frame update owns the five-second aimed nest hold; do not let
+        // the same physical Action 1 press fall through into a weapon swing.
+        if (activeAction === 'nest_take') return;
+        // Climb is no longer an Action 1/tool action. The dodge input owns
+        // the forward-dodge climb context; keep this legacy branch inert for
+        // saved bindings or stale UI events from older sessions.
+        if (activeAction === 'climb') return;
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -15277,7 +15701,7 @@
           // and now sittable furniture — see the mapData.furniture loader).
           const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
             : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
-            : getWorldObjectAt(_r.col, _r.row);
+            : getCorpseObjectForAction(activeAction, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -15364,7 +15788,8 @@
           // per-tile array, so the whole ground+grass layer needs rebuilding
           // (not just this one tile) for the change to actually show up. See
           // refreshZoneGroundVisuals.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -15388,7 +15813,48 @@
       // with the actual point on the ground being targeted, and every
       // consumer needs to agree on that one real point or the head/body/
       // reticle visibly disagree with each other.
+      // Supplies one exact screen-center ray to both combat and world focus.
+      // Shoulder cam always has a meaningful 3D reticle; other camera modes
+      // retain their existing ranged-weapon-only ray behavior.
+      function currentPlayerAimRay() {
+        if (activeCameraMode !== SHOULDER_SURF_MODE
+          && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
+        camera.updateMatrixWorld?.();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
+      function currentPlayerInteractionRay() {
+        if (menuOpen || farmEditMode || dialogueOpen || sitInteraction ||
+            window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
+        camera.updateMatrixWorld?.();
+        // Desktop normal-camera interactions follow the actual cursor reticle;
+        // shoulder/mobile interactions remain screen-centered.
+        const ndc = activeCameraMode === SHOULDER_SURF_MODE ? _screenCenterNDC : _mouseNDC;
+        _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
       function updateShoulderSurfReticleAim() {
+        const rangedAim = heldMode === 'tool' && activeTool === 'ranged'
+          ? window.RangedWeapons?.playerAimSolution?.(equipmentSlots.ranged)
+          : null;
+        const rangedHorizontal = rangedAim ? Math.hypot(rangedAim.direction.x, rangedAim.direction.z) : 0;
+        if (rangedHorizontal > 0.0001) {
+          mouseLookAngle = Math.atan2(rangedAim.direction.z, rangedAim.direction.x);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+          return;
+        }
         _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
@@ -16794,7 +17260,8 @@
 
           if (show) {
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
-            const blocking = !obj.userData.skipOcclusionFade
+            const blocking = activeCameraMode !== SHOULDER_SURF_MODE
+              && !obj.userData.skipOcclusionFade
               && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
             let target = blocking ? TREE_FADE_OPACITY : 1;
             let outlineAllowed = true;
@@ -18579,10 +19046,15 @@
       // than at the hold-start windup) call this directly once those
       // numbers are settled instead of going through triggerWeaponSwingVisual's
       // opts. Pass rangePx == null to clear the cone (no trail to draw).
-      function setCombatSwingCone(rangePx, halfConeRad, angle) {
-        combatSwingCone = (rangePx != null)
-          ? { rangePx, halfConeRad: halfConeRad ?? 0, angle: angle ?? player.angle }
-          : null;
+      function setCombatSwingCone(rangePx, halfConeRad, angle, pitch = null) {
+        if (rangePx == null) { combatSwingCone = null; return; }
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used by the pitched 3D ribbon and the strike's matching cone.
+        combatSwingCone = {
+          rangePx,
+          halfConeRad: halfConeRad ?? 0,
+          angle: angle ?? Math.atan2(aimDirection.z, aimDirection.x),
+          pitch: pitch ?? Math.asin(clamp(aimDirection.y, -1, 1)),
+        };
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -18647,7 +19119,8 @@
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -19042,6 +19515,7 @@
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
         clamp,
         getCurrentArea: () => currentArea,
+        getActiveTool: () => activeTool,
         getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
         getItemDef: itemKey => ITEM_DEFS[itemKey],
@@ -20758,9 +21232,9 @@
       let s_cloudForestBgForest = true;
       // Live Settings-tab slider value for the radial vegetation cull
       // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
-      // vegCullRadiusTiles default (15) but is independently adjustable
+      // vegCullRadiusTiles default (30) but is independently adjustable
       // without touching that config.
-      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 15;
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
       // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
       // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
       // beyond this fraction of the radius a tree ramps from opaque (at the
@@ -20794,6 +21268,9 @@
       const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
       let s_showHitboxes = false;
       try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      const INTERACTION_RAY_DEBUG_STORAGE_KEY = 'hobunjiDebugInteractionRay'; // Persists the separate ray visualization toggle.
+      let s_showInteractionRaycast = false; // Read by DebugHitboxes.draw() independently of Show Hitboxes.
+      try { s_showInteractionRaycast = localStorage.getItem(INTERACTION_RAY_DEBUG_STORAGE_KEY) === '1'; } catch {}
       // Global dev-mode flag — same "flip on once, stays on" persistence as
       // s_showHitboxes above. Currently only gates the +1 Mastery button in
       // each tool's item-info panel (see selectGearTool/selectEquipSlot),
@@ -20876,15 +21353,12 @@
         if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
-        // Existing zone grass groups use this switch for truthful mobile-side perf testing.
-        for (const grassGroup of _zoneGrassMeshes.values()) {
-          if (grassGroup) grassGroup.visible = s_grass;
-        }
-        // Rich foliage is stored separately, so sync its top-level group too.
+        // Streamed zone grass/rich-foliage groups live below their owning
+        // chunk groups, so traverse rather than assuming direct scene children.
         for (const zoneInfo of _zoneScenes.values()) {
-          for (const object of (zoneInfo.scene?.children || [])) {
-            if (object.userData?.isRichFoliageBillboard) object.visible = s_grass;
-          }
+          zoneInfo.scene?.traverse?.(object => {
+            if (object.userData?.isWildernessGrassChunkGroup || object.userData?.isRichFoliageBillboard) object.visible = s_grass;
+          });
         }
         window.BorderTerrain.setGrassVisible(s_grass);
       }
@@ -20972,6 +21446,28 @@
       wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
       wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
       wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // Used by the mobile-friendly reset button to restore every slider in
+      // the Cloud Forest performance-testing group from its HTML default.
+      const CLOUD_FOREST_DEV_SLIDER_IDS = Object.freeze([
+        'settingCloudForestCullRadius',
+        'settingCloudForestFadeStart',
+        'settingCloudForestOutlineRadius',
+        'settingCloudForestFogInnerRadius',
+        'settingCloudForestFogInnerOpacity',
+        'settingCloudForestFogMiddleRadius',
+        'settingCloudForestFogMiddleOpacity',
+        'settingCloudForestFogOuterRadius',
+        'settingCloudForestFogOuterOpacity',
+      ]);
+      document.getElementById('settingCloudForestResetDefaults')?.addEventListener('click', () => {
+        for (const inputId of CLOUD_FOREST_DEV_SLIDER_IDS) {
+          const input = document.getElementById(inputId);
+          if (!input) continue;
+          input.value = input.defaultValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+      });
       // FPS Counter's checkbox is owned entirely by js/performance-debug.js
       // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
       // it used to also be independently wired up right here, which meant
@@ -21045,6 +21541,12 @@
         s_showHitboxes = e.target.checked;
         try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
       });
+      const settingShowInteractionRaycastEl = document.getElementById('settingShowInteractionRaycast');
+      settingShowInteractionRaycastEl.checked = s_showInteractionRaycast;
+      settingShowInteractionRaycastEl.addEventListener('change', e => {
+        s_showInteractionRaycast = e.target.checked;
+        try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
+      });
       const settingDevModeEl = document.getElementById('settingDevMode');
       settingDevModeEl.checked = s_devMode;
       settingDevModeEl.addEventListener('change', e => {
@@ -21116,7 +21618,7 @@
             player.y = (anchor.y + 0.5) * TILE;
             player.vx = 0; player.vy = 0;
             _snapCameraTarget();
-            const toScene = buildZoneScene(zoneId)?.scene;
+            const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
             if (toScene) {
               toScene.add(playerMesh); toScene.add(playerGroundShadow);
               toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -21140,6 +21642,7 @@
         player.y = (anchor.y + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         _snapCameraTarget();
+        window.WildernessChunks?.primeZone(currentArea, anchor.x, anchor.y);
         showToast(`Teleported to a den (${dens.length} on this map).`, true);
         closeMenu();
       }
@@ -21177,6 +21680,7 @@
           player.y = (anchor.y + 0.5) * TILE;
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
+          window.WildernessChunks?.primeZone(zoneId, anchor.x, anchor.y);
         };
         if (currentArea === zoneId) {
           land();
@@ -21190,7 +21694,7 @@
           if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
           currentArea = zoneId;
           land();
-          const toScene = buildZoneScene(zoneId)?.scene;
+          const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -21233,10 +21737,41 @@
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
       }
+      function aimedCavernNest(nest) {
+        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
+        const interactionRay = currentPlayerInteractionRay();
+        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
+        const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
+        const box = new THREE.Box3(
+          new THREE.Vector3(cx / TILE - halfW, groundY, cy / TILE - halfH),
+          new THREE.Vector3(cx / TILE + halfW, groundY + 0.75, cy / TILE + halfH),
+        );
+        const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
+        if (!focus) return null;
+        const hostile = window.RangedWeapons.focusedHostile?.(24);
+        if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+        window.DebugHitboxes?.noteInteractionFocus?.(focus);
+        return nest;
+      }
+      function currentAimedNest() {
+        const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
+        if (branchNest) return branchNest;
+        return aimedCavernNest(_denNests.get(currentArea));
+      }
+      function refreshInteractionFocusDebug() {
+        if (!s_showInteractionRaycast) return;
+        // Match computeActionButtons priority: a nest owns the shared input
+        // before branch climbing is considered.
+        if (currentAimedNest()) return;
+        if (_isZoneArea(currentArea) && !player.climbing) window.ClimbSystem?.getClimbTarget?.();
+      }
       function updateNestInteraction(dt) {
-        const nest = _denNests.get(currentArea);
-        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
-        if (!near || !actionHeldDown) {
+        const nest = currentAimedNest();
+        const taking = nest && activeAction === 'nest_take' && actionHeldDown;
+        player._nestTakeActive = !!taking;
+        if (!taking) {
           if (_nestHoldT > 0) _nestHoldT = 0;
           if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
           return;
@@ -21247,6 +21782,7 @@
         _nestTakeHudEl?.classList.add('visible');
         if (_nestHoldT >= NEST_TAKE_HOLD_S) {
           _nestHoldT = 0;
+          player._nestTakeActive = false;
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
@@ -21377,6 +21913,7 @@
           pollControllerInput();
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          window.WildernessChunks?.update(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -21411,7 +21948,8 @@
             window.CreatureDeath.updateCorpses(dt);
           }
 
-          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          window.ClimbSystem?.updateFallenNests?.(dt);
+          updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -21799,7 +22337,6 @@
           octx.fillRect(0, 0, W, H);
         }
 
-        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
@@ -22618,10 +23155,10 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const nest = _denNests.get(currentArea);
-          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+          const nest = currentAimedNest();
+          if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
@@ -22682,18 +23219,25 @@
           return btnsSpot;
         }
 
-        // Zone: a climbable cliff face straight ahead takes priority over
-        // tool use. Keep the target visible while riding, but disable it so
-        // mobile clearly communicates that the rider must dismount instead
-        // of letting the mount and scripted climb fight over player.x/y.
-        const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
-        if (climbTarget) {
-          const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
-          const isJumpDown = climbTarget.type === 'branchJumpDown';
-          const climbLabel = isJumpDown ? 'Jump Down' : 'Climb';
-          return [{ icon: isJumpDown ? '🤸' : '🧗', label: climbAllowed ? climbLabel : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
+        // A branch nest claims Action 1 only while its 3D volume is under
+        // the centered reticle and its Nestmother is no longer guarding it.
+        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        if (zoneNest) {
+          const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
 
+        // Bandit tents are runtime props rather than worldObjects, so expose
+        // their context action explicitly. Pointer/keyboard holds still feed
+        // the shared actionHeldDown flag consumed by BanditCamps.
+        const banditTentAction = _isZoneArea(currentArea)
+          ? window.BanditCamps?.getNearbyTentAction?.()
+          : null;
+        if (banditTentAction) return [banditTentAction];
+
+        // Climbing is triggered by a forward dodge, not by the tool's
+        // Action 1 slot. Leaving the normal action stack here prevents an
+        // attack/item press from grabbing a nearby trunk.
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
@@ -22795,6 +23339,11 @@
         return btns;
       }
 
+      // Fallback anchor for interactibles without their own Object3D. It is
+      // moved to the aimed tile before the world-space list is synchronized.
+      const _worldInteractionPromptAnchor = new THREE.Object3D(); // Used by refreshActionBar for non-mesh world objects.
+      _worldInteractionPromptAnchor.name = 'world_interaction_prompt_anchor';
+
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
@@ -22817,23 +23366,41 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
-        // Contextual held-item interactions always use the world popup list.
-        // Ordinary world targets use it once they expose more than one choice,
-        // establishing the same path for future actions such as Invite to Dance.
-        const isWorldInteraction = button => button?.contextualHeldItem
+        // Every action supplied by an aimed world object is a world
+        // interaction even if its id predates the obj_* naming convention.
+        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const isWorldInteraction = button => button?.worldInteraction
+          || button?.contextualHeldItem
+          || objectActionIds.has(button?.action)
           || button?.action === npcDialogueAction()
           || button?.action === generalStoreAction()
           || button?.action === carpenterAction()
           || button?.action === 'use_spot'
+          || button?.action === 'nest_take'
+          || button?.action === 'bandit_tent_interact'
           || button?.action?.startsWith('obj_');
-        const interactionRoot = nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        const interactionButton = btns.find(isWorldInteraction) || null;
+        if (interactionButton) {
+          _worldInteractionPromptAnchor.position.set(
+            reticle.col + 0.5,
+            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            reticle.row + 0.5,
+          );
+        }
+        const interactionRoot = interactionButton?.promptRoot
+          || nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
+        const promptKeys = promptActionIds.map((actionId, index) =>
+          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          desktop: isDesktop,
           scene: getActiveScene(),
+          promptKeys,
+          showInputHints: true,
           isWorldInteraction,
         });
         // Dynamic providers (including the asynchronously loaded consumable
@@ -23634,11 +24201,12 @@
       btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         if (!meleeWeaponOut()) return;
-        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; return; }
+        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; manualAutoTarget = null; meleeAutoTargetFreeAim = false; return; }
         const target = findAutoTarget();
         if (!target) return;
         manualAutoTarget = target;
         meleeAutoTargetOn = true;
+        meleeAutoTargetFreeAim = false;
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -23697,6 +24265,7 @@
       }
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
         e: { down: false, held: false, timer: null, arc: 'tool' }
@@ -23817,10 +24386,12 @@
         if (actionPromptEls) return;
         const el = document.getElementById('actionPrompt');
         if (!el) return;
+        // World prompts use the same stacked list-row treatment as merchant
+        // dialogue choices, including when there is only one available action.
         el.innerHTML = `
-          <div class="ap-row">
-            <button class="ap-btn" id="apBtn"></button>
-            <button class="ap-cancel" id="apCancel"></button>
+          <div class="ap-list">
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-btn" id="apBtn"></button>
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-cancel" id="apCancel"></button>
           </div>
           <div class="ap-status" id="apStatus"></div>
           <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
@@ -23883,9 +24454,18 @@
         actionPromptEls.btn.onpointerup = null;
         actionPromptEls.cancel.onpointerup = null;
       }
+      // Resolve the action currently rendered in the physical arch button.
+      // The visible stack is split into tool/item rows, so computeActionButtons()
+      // index 0 is not necessarily btnAction1 anymore.
+      function actionButtonForPhysicalSlot(slotIndex) {
+        const el = document.getElementById('btnAction' + slotIndex);
+        const action = el?.dataset.action;
+        const buttons = computeActionButtons();
+        return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
+      }
       function runActionButtonAtSlot(slotIndex) {
-        const btn = computeActionButtons()[slotIndex - 1];
-        if (!btn) return;
+        const btn = actionButtonForPhysicalSlot(slotIndex);
+        if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
         actionHeldDown = slotIndex === 1;
         useActiveAction();
@@ -23924,6 +24504,14 @@
         if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
+      function visibleActionOverrideForWeaponSlot(actionId) {
+        const slot = weaponActionSlot(actionId);
+        if (!slot) return null;
+        const button = actionButtonForPhysicalSlot(slot); // Preserve the world-context action actually rendered in this physical weapon slot.
+        if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
+        return { slot, button };
+      }
+      const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -24005,6 +24593,7 @@
         }
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
+          if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
@@ -24015,6 +24604,12 @@
         }
         if (menuOpen || farmEditMode) return;
         if (actionId === 'interact') { runInteractAction(); return; }
+        const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
+        if (visibleOverride) {
+          visibleWeaponContextPresses.add(actionId);
+          runActionButtonAtSlot(visibleOverride.slot);
+          return;
+        }
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
@@ -24134,6 +24729,8 @@
         if (down.has('Button11') && meleeWeaponOut()) {
           if (!gamepadState.previous.has('Button11')) {
             meleeAutoTargetOn = !meleeAutoTargetOn;
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = false;
             showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
           }
           down.delete('Button11');
@@ -24255,7 +24852,15 @@
 
         if (key === 'e') {
           event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+          if (isDesktop) {
+            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+              desktopTentInteractHeld = true;
+              actionHeldDown = true;
+              return;
+            }
+            startDesktopHoldKey('e', event);
+            return;
+          }
         }
         if (key === 'q') {
           event.preventDefault();
@@ -24355,6 +24960,11 @@
         }
         if (key === 'e' && isDesktop) {
           event.preventDefault();
+          if (desktopTentInteractHeld) {
+            desktopTentInteractHeld = false;
+            actionHeldDown = false;
+            return;
+          }
           const wasHeld = finishDesktopHoldKey('e');
           if (!wasHeld) runInteractAction();
           return;
@@ -24572,6 +25182,13 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+            const pointerActionId = e.button === 0 ? 'action1' : e.button === 2 ? 'action2' : null; // Used to map mouse presses through the same visible-slot override as keyboard/controller input.
+            const visibleOverride = pointerActionId ? visibleActionOverrideForWeaponSlot(pointerActionId) : null;
+            if (visibleOverride) {
+              visibleWeaponContextPresses.add('mouse:' + e.button);
+              runActionButtonAtSlot(visibleOverride.slot);
+              return;
+            }
             tryAutoEngageMeleeTarget();
             if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
@@ -24590,6 +25207,10 @@
       }
       window.addEventListener('pointerup', (e) => {
         if (e.pointerType !== 'mouse') return;
+        if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
+          if (e.button === 0) actionHeldDown = false;
+          return;
+        }
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
           else if (e.button === 2) { window.Combat.input.pressEnd(2); }
@@ -24611,6 +25232,15 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
+          // Desktop auto-target is intentionally loose: micro pointer noise is
+          // ignored, but any real mouse movement releases the camera from its
+          // current target. The toggle stays on so simply moving the reticle
+          // back over an enemy reacquires it.
+          if (isDesktop && meleeAutoTargetOn && meleeWeaponOut() &&
+              Math.hypot(Number(e.movementX) || 0, Number(e.movementY) || 0) > DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX) {
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = true;
+          }
           // Shoulder-surf gets mouse-look "for free" here: plain mouse
           // movement drives the camera exactly like Shift+drag does
           // everywhere else, no modifier key needed, and freeRotateCameraActive()
@@ -24955,6 +25585,12 @@
           return 0.4;
         },
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        getActiveScene,
+        getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
+        getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
+        getHeldMode: () => heldMode,
+        getActiveTool: () => activeTool,
+        getMeleeReticleTarget: () => findAutoTarget() || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
         inCone,
         damageCreature,
         damagePlayer,
@@ -25034,10 +25670,20 @@
         playerRadius: PLAYER_RADIUS,
         TILE,
         hostileObjects,
+        npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
         getActiveScene,
         getPlayerAimAngle: currentPlayerAimAngle,
         getPlayerAimPitch: currentPlayerAimPitch,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        getPlayerAvatarGroup: () => {
+          let avatarGroup = null;
+          playerMesh?.traverse?.(child => {
+            if (!avatarGroup && Number.isFinite(child.userData?.portraitModelHeight)) avatarGroup = child;
+          });
+          return avatarGroup;
+        },
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
           const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
@@ -25063,6 +25709,7 @@
         getEquippedRangedKey: () => equipmentSlots.ranged,
         showToast,
         random: () => window.GameRandom?.random?.() ?? Math.random(),
+        getLastMeleeHeightBlock: () => lastMeleeHeightBlock,
         debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
       });
 
@@ -25758,6 +26405,7 @@
         getCutscenePreviewActive: () => cutscenePreviewActive,
         buildZoneScene,
         DEN_MOTHER_DEFS,
+        DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
         makeDecorativeFurnitureMesh,
       });
@@ -25838,10 +26486,19 @@
         WMAP_ZONE_LABELS,
       });
 
+      window.WildernessChunks?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        player,
+        TILE,
+      });
+
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
+        hostileObjects,
+        companionObjects,
         facingCardinal,
         getActiveGrid,
         getActiveCols,
@@ -25855,13 +26512,22 @@
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
-        // Raw movement-intent vector, read fresh each call rather than off
-        // player.inputX/Y — those are written later in updateMovement than
-        // the onBranch early-return that leads into updateBranchMovement,
-        // so they'd still hold last frame's value when read from there.
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        // Read fresh input because player.inputX/Y are written after the
+        // on-branch early return. Shoulder cam uses the exact same
+        // camera-relative transform as ordinary ground movement.
         getMovementInput: () => {
           const kb = getKeyboardVector();
-          return kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+          const aim = cameraFacingAngleRad();
+          const sin = Math.sin(aim), cos = Math.cos(aim);
+          return {
+            x: -move.x * sin - move.y * cos,
+            y: move.x * cos - move.y * sin,
+          };
         },
       });
 
@@ -25880,6 +26546,7 @@
       window.DebugHitboxes?.init({
         getActiveTileAt,
         tileSurfaceY,
+        surfaceYAtWorld: activeSurfaceYAtWorld,
         worldToOverlay,
         octx,
         TILE,
@@ -25888,10 +26555,11 @@
         companionObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
+        getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
-        creatureAimColliderReachPx,
-        cameraRelativeCreaturePerps,
-        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
       });
 
       window.RelationshipsPanel?.init({
@@ -26285,6 +26953,9 @@
         showZoneBanner,
         showToast,
         rollLootPool,
+        inventory,
+        clampInventoryStack,
+        itemIconForKey,
         refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
@@ -26440,6 +27111,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreWildernessChunkState(playerData.wildernessChunkState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS

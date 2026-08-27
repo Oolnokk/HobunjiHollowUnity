@@ -20,8 +20,10 @@
     surfaces: {
       trunks: {
         enabled: true,
-        texture: 'assets/textures/wavy_surface.png',
+        texture: 'assets/textures/wibbly_surface.png',
         tint: 'source',
+        // Match rocks' body-sprite PNG tint + unlit render path; trunks keep
+        // cylindrical UVs because their geometry wraps around an axis.
         tintTreatment: 'body-sprite-tint',
         mapping: 'cylindrical-stretch'
       },

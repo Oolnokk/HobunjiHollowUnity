@@ -74,8 +74,8 @@
   // starts ("lerp back to normal scale then zip forward").
   // leap: zips forward at fixed speed along the angle locked in at trigger
   // time — direction can't change once committed, so a player who's moved
-  // out of the line by the time the leap starts simply isn't hit. A cone
-  // collider anchored just ahead of the creature ("the head") sweeps along
+  // out of the line by the time the leap starts simply isn't hit. The shared
+  // pitched pie-prism collider stays centered on the creature's body and sweeps
   // with it every frame; the first living target (the original target, or
   // anything else that happens to be in the way) it catches takes damage and
   // knockback and ends the leap on the spot. If nothing's caught, the leap
@@ -129,14 +129,29 @@
     // windup/uncrouch/leap re-aims it, which is what makes the leap
     // genuinely dodgeable.
     state.angle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
+    state.aimPitch = window.Combat?.meleeAimSolution?.(c, ctx.target, state.angle, 0)?.pitch || 0; // Used by the pounce's real 3D pie-prism collider.
     state.targets = gatherTargets(c, deps);
     state.rangePx = c.def.attackRangePx;
     state.halfConeRad = c.def.attackHalfConeRad;
     state.damage = c.def.attackDamage;
-    state.headOffsetPx = deps.TILE * 0.3;
+    // Preserve pounce's existing target-reaching travel budget, then let
+    // the angled profile shorten/extend that budget from the species height.
+    const baseLungeDistancePx = Math.max(
+      state.rangePx,
+      Math.hypot((ctx.target?.x ?? c.x) - c.x, (ctx.target?.y ?? c.y) - c.y),
+    );
+    state.lungeProfile = window.Combat?.meleeLungeProfile?.(
+      baseLungeDistancePx,
+      state.aimPitch,
+      0,
+      c.def.lungeHeightUnits ?? 1,
+    ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
+    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx);
+    state.traveledPx = 0;
     state.collideRadiusPx = deps.TILE * 0.32;
     c.facing = state.angle;
     c.scaleY = 1;
+    c._banditLungeHopCurrent = 0; // Shared creature renderer slot for the pounce's vertical arc.
   }
 
   function pounceUpdate(c, state, dt, deps) {
@@ -170,25 +185,37 @@
 
     // stage === 'leap'
     const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const stepPx = POUNCE_LEAP_SPEED_PX_S * dt;
+    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
+    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
+    const stepPx = Math.min(POUNCE_LEAP_SPEED_PX_S * dt, remainingPx);
     const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false; // collided; stop in place
+    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; } // collided; stop in place
 
     c.x = nx;
     c.y = ny;
+    state.traveledPx += stepPx;
+    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
+    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
     deps.tickCreatureFootsteps?.(c, stepPx);
 
     const dmgTag = c.def.attackTag || 'sharp';
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
     deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
 
-    const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
     for (const target of state.targets) {
       const ref = target.ref;
       if (ref.health <= 0) continue;
-      if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      const hit = window.Combat?.meleeHit
+        ? window.Combat.meleeHit(c, ref, {
+            rangePx: state.rangePx,
+            halfConeRad: state.halfConeRad,
+            yaw: state.angle,
+            pitch: state.aimPitch,
+          })
+        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
+      if (!hit) continue;
+      if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }
@@ -197,6 +224,7 @@
 
   function pounceCancel(c) {
     c.scaleY = 1;
+    c._banditLungeHopCurrent = 0;
   }
 
   register('pounce', {
@@ -223,6 +251,7 @@
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
+    state.aimPitch = window.Combat?.meleeAimSolution?.(c, ctx.target, state.angle, 0)?.pitch || 0; // Used by the guard charge's shared 3D collider.
     const halfSize = (c.visualModelWidth || c.def.modelWidth || 2) * deps.TILE / 2;
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
@@ -230,7 +259,6 @@
     state.speedPxS = state.distancePx / GUARD_CHARGE_DURATION_S;
     state.rangePx = c.def.attackRangePx;
     state.halfConeRad = c.def.attackHalfConeRad;
-    state.headOffsetPx = deps.TILE * 0.3;
     state.collideRadiusPx = deps.TILE * 0.32;
     state.targets = gatherTargets(c, deps);
     c.facing = state.angle;
@@ -248,15 +276,22 @@
       state.traveledPx += stepPx;
     }
 
-    const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
     for (const target of state.targets) {
       const ref = target.ref;
       if (ref.health <= 0) continue;
-      if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
+      const hit = window.Combat?.meleeHit
+        ? window.Combat.meleeHit(c, ref, {
+            rangePx: state.rangePx,
+            halfConeRad: state.halfConeRad,
+            yaw: state.angle,
+            pitch: state.aimPitch,
+          })
+        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
+      if (!hit) continue;
       const dmgTag = c.def.attackTag || 'blunt';
       const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-      if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      if (target.isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false;
     }

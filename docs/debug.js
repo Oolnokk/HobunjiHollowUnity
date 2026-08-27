@@ -37,7 +37,7 @@
   })();
 
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
-  const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
+  const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','wildlife','chunks','combat','interaction','items','ui','audio','storage']);
 
   function readPrefs() {
     const defaults = Object.fromEntries(DEBUG_CATEGORIES.map(category => [category, true]));
@@ -63,7 +63,11 @@
     const lvl = String(level || 'info').toLowerCase();
     const msg = String(message || '').toLowerCase();
     if (['audio','bgm','cue','bgs'].includes(lvl) || /\b(audio|music|bgm|bgs|sfx|sound)\b/.test(msg)) return 'audio';
-    if (/\b(tree|shadewood|crowned pine|foliage|grass|bush|plant|forest|wildlife|crop)\b/.test(msg)) return 'foliage';
+    if (/\b(wilderness-chunks?|chunk streamer|chunk residency|loaded chunk|unloaded chunk)\b/.test(msg)) return 'chunks';
+    if (/\b(wildlife|creature|animal|den-mother|nestmother|gar-wolf|grehlr|drenkirra|bandit camp)\b/.test(msg)) return 'wildlife';
+    if (/\b(interaction|interactible|raycast|action prompt|corpse loot|nest interaction)\b/.test(msg)) return 'interaction';
+    if (/\b(item|inventory|held-item|item-icon|loot|reagent|potion)\b/.test(msg)) return 'items';
+    if (/\b(tree|shadewood|crowned pine|foliage|grass|bush|plant|forest|crop)\b/.test(msg)) return 'foliage';
     if (/\b(combat|attack|damage|weapon|bandit|bounty|enemy|footing|stamina)\b/.test(msg)) return 'combat';
     if (/\b(render|renderer|shader|mesh|geometry|triangle|texture|three|webgl|outline|draw call)\b/.test(msg)) return 'render';
     if (/\b(asset|gltf|glb|model|loader|load failed|recipe)\b/.test(msg)) return 'assets';
@@ -105,7 +109,7 @@
       case 'info':     return e.lvl === filter && !_isScheduleEntry(e);
       case 'error':    return e.lvl === 'error';
       case 'other':    return !NAMED_LEVELS[e.lvl];
-      default:         return true;
+      default:         return filter.startsWith('cat:') ? e.cat === filter.slice(4) : true;
     }
   }
 
