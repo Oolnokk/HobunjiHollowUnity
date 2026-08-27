@@ -521,8 +521,15 @@
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
     const _playerAvatarBackMaterial = deps.getPlayerAvatarBackMaterial();
+    const _playerBackPetOcclusionOverlay = deps.getPlayerBackPetOcclusionOverlay();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
     if (_playerAvatarBackMaterial) checks.push(['player back plane', 'depthWrite', true, _playerAvatarBackMaterial.depthWrite]);
+    const expectsBackReplay = /skinned_back/i.test(String(_playerAvatarBackMaterial?.name || '')); // Used below because rigid two-plane avatars need no duplicate rear pass.
+    if (expectsBackReplay) checks.push(['player back-over-pet replay', 'present', true, !!_playerBackPetOcclusionOverlay?.mesh]);
+    if (_playerBackPetOcclusionOverlay?.mesh) {
+      checks.push(['player back-over-pet replay', 'visible', !!liveActivePet, _playerBackPetOcclusionOverlay.mesh.visible]);
+      checks.push(['player back-over-pet replay', 'renderOrder', deps.PLAYER_BACK_PLANE_RENDER_ORDER, _playerBackPetOcclusionOverlay.mesh.renderOrder]);
+    }
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
@@ -541,7 +548,7 @@
       const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
       const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
-      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}° facingYaw=${Number(curiosity?.currentFacingYawDeg || 0).toFixed(2)}° reversed=${curiosity?.facingReversed ? 'yes' : 'no'}`);
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
