@@ -13,8 +13,8 @@
 //   6) immediately before each render, the current player low-Footing pitch/
 //      roll is re-published as an additive composer channel after gameplay has
 //      resolved facing/auto-target yaw for the frame;
-//   7) a stopped procedural gait clears its walk-only foot pitch while keeping
-//      any independently composed yaw/roll foot effects intact.
+//   7) procedural gait speed is derived from actual X/Z world displacement so
+//      stale/smoothed caller velocity cannot delay the idle-foot return.
 (() => {
   'use strict';
 
@@ -28,10 +28,10 @@
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
   const DEG = Math.PI / 180;
-  const WALK_STOP_SPEED = 0.02; // Matches procedural-leg-animation.js's gait stop threshold; used to restore neutral foot pitch as soon as locomotion stops.
+  const WALK_STOP_SPEED = 0.02; // Matches procedural-leg-animation.js's own gait stop threshold.
   const banditStateByLegHandle = new WeakMap(); // Binds a pre-entity bandit leg attachment to its entity once makeEntity finishes.
   const banditStates = new Set(); // Iterated only at render time to compose visible sway without touching persistent facing state.
-  let lastStoppedFootPitchReset = null; // Exposed through bridge debug so mobile Pixel Probe can verify the last idle-foot correction without a console.
+  let lastPlayerMotionGaitSample = null; // Used by mobile Pixel Probe/debug to compare stale reported speed against actual rendered movement.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -61,27 +61,61 @@
     entity.telegraphState = null;
   }
 
-  function straightenStoppedFootPitch(handle, speedWorldUnitsPerSecond, suppressed, seatedPose) {
-    const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0); // Compared with the gait module's own stop threshold below.
-    if (speed > WALK_STOP_SPEED || suppressed || seatedPose) return;
-    const pitchesBeforeDeg = {}; // Captures both local foot pitches for the existing in-game debug snapshot.
-    let resetCount = 0; // Counts only feet that actually needed a non-zero walk-pitch correction this update.
-    for (const side of ['left', 'right']) {
-      const foot = handle?.group?.getObjectByName?.(`${side}_foot`); // Resolves the currently active fallback/GLB foot without depending on gait solver internals.
-      if (!foot?.rotation) continue;
-      pitchesBeforeDeg[side] = Number((foot.rotation.x / DEG).toFixed(3));
-      if (Math.abs(foot.rotation.x) <= 1e-7) continue;
-      // Walk gait owns local X pitch. Preserve the current Y/Z Euler values so
-      // independently composed toe yaw/roll (notably drunken sway) survives.
-      foot.rotation.x = 0;
-      foot.updateMatrix?.();
-      resetCount++;
+  function makeWorldMotionSpeedSampler(THREEArg, parent, isPlayer) {
+    const previousWorld = new THREEArg.Vector3(); // Stores the previous gait-update root position for X/Z displacement speed.
+    const currentWorld = new THREEArg.Vector3(); // Reused scratch vector for the current root position; avoids per-frame allocation.
+    let hasPrevious = false; // Prevents treating the first sample after attachment as a movement delta.
+
+    function publishDebug(reportedSpeed, actualSpeed, effectiveSpeed, source, suppressed, seatedPose) {
+      if (!isPlayer) return;
+      lastPlayerMotionGaitSample = {
+        reportedSpeed: Number(reportedSpeed.toFixed(4)),
+        actualSpeed: actualSpeed == null ? null : Number(actualSpeed.toFixed(4)),
+        effectiveSpeed: Number(effectiveSpeed.toFixed(4)),
+        stoppedByWorldMotion: actualSpeed != null && actualSpeed <= WALK_STOP_SPEED && reportedSpeed > WALK_STOP_SPEED,
+        source,
+        suppressed: !!suppressed,
+        seated: !!seatedPose,
+      };
     }
-    lastStoppedFootPitchReset = {
-      speed: Number(speed.toFixed(4)),
-      resetCount,
-      leftBeforeDeg: pitchesBeforeDeg.left ?? null,
-      rightBeforeDeg: pitchesBeforeDeg.right ?? null,
+
+    return function sampleWorldMotionSpeed(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+      const reportedSpeed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
+      const frameDt = Math.max(0, Number(dt) || 0);
+      if (!parent?.getWorldPosition || !(frameDt > 1e-5)) {
+        publishDebug(reportedSpeed, null, reportedSpeed, 'reported-fallback', suppressed, seatedPose);
+        return reportedSpeed;
+      }
+
+      parent.updateWorldMatrix?.(true, false);
+      parent.getWorldPosition(currentWorld);
+      if (!hasPrevious) {
+        previousWorld.copy(currentWorld);
+        hasPrevious = true;
+        publishDebug(reportedSpeed, null, reportedSpeed, 'first-sample', suppressed, seatedPose);
+        return reportedSpeed;
+      }
+
+      const dx = currentWorld.x - previousWorld.x;
+      const dz = currentWorld.z - previousWorld.z;
+      previousWorld.copy(currentWorld);
+      const actualSpeed = Math.hypot(dx, dz) / frameDt;
+
+      // Keep the baseline current while another pose owns the legs, but let
+      // the existing suppressed/seated branches decide how that pose behaves.
+      // This avoids a bogus locomotion spike when control returns to the gait.
+      if (suppressed || seatedPose) {
+        publishDebug(reportedSpeed, actualSpeed, reportedSpeed, 'pose-bypass', suppressed, seatedPose);
+        return reportedSpeed;
+      }
+
+      // The gait solver already has the desired neutral damping. Giving it an
+      // immediate literal zero when the avatar itself stops is enough to start
+      // that lerp on the next gait update instead of waiting for a smoothed or
+      // cached velocity value to decay for several seconds.
+      const effectiveSpeed = actualSpeed <= WALK_STOP_SPEED ? 0 : actualSpeed;
+      publishDebug(reportedSpeed, actualSpeed, effectiveSpeed, 'world-motion', suppressed, seatedPose);
+      return effectiveSpeed;
     };
   }
 
@@ -102,19 +136,11 @@
     // drunk-locomotion owns its own tracked body delta. Give it an off-scene
     // driver instead of the visible/facing root; the render hook copies that
     // delta onto visualRoot only for the actual draw, then restores identity.
-    // This is the bandit equivalent of PlayerBodyTransformComposer's final-
-    // render composition and prevents pitch/roll from feeding back into yaw.
     const driverRoot = new THREEArg.Group();
     driverRoot.name = 'bandit_sway_driver';
     return { entity: null, avatarRoot, visualRoot, driverRoot, handle: null };
   }
 
-  // Drunken Footing normally lowers the effective Footing ceiling. Prone
-  // recovery is the exception: player and hostile get-up logic both wait for
-  // entity.footing >= entity.maxFooting, so a reduced effective maximum makes
-  // a drunken prone entity permanently ineligible to stand. Preserve the
-  // stored drunken affliction, but ignore its cap while prone. The moment
-  // prone clears, the existing drunken cap automatically applies again.
   if (!RS.__proneIgnoresDrunkenFootingCapInstalled) {
     const previousGetEffectiveMax = RS.getEffectiveMax.bind(RS);
     RS.getEffectiveMax = function proneAwareEffectiveMax(entity, key) {
@@ -127,14 +153,12 @@
   }
 
   // Wrap the common procedural-leg attach seam after drunk-locomotion has
-  // already decorated it. Player attachments keep the prone suppression from
-  // this bridge. Bandit legs are identifiable by their dedicated floor pivot;
-  // their low-Footing provider drives the existing gait math, but body tilt is
-  // sent to an off-scene driver and copied onto an isolated portrait child only
-  // during render. The persistent bandit_avatar_group remains yaw-only.
+  // already decorated it. The sampler replaces only the gait's speed input;
+  // the gait solver continues to own phase, stride, lift and neutral damping.
   if (!legApi.__proneSuppressesDrunkGaitInstalled) {
     const previousAttach = legApi.attach.bind(legApi);
     legApi.attach = function proneAwareLegAttach(THREEArg, parent, options = {}) {
+      const isPlayer = String(options.name || '').toLowerCase() === 'player';
       const isBanditLegs = parent?.name === 'bandit_legs_pivot';
       const banditState = isBanditLegs ? makeBanditSwayState(THREEArg, parent) : null;
       const attachOptions = banditState
@@ -148,11 +172,11 @@
       if (!handle) return handle;
 
       if (typeof handle.update === 'function') {
-        const previousLocomotionUpdate = handle.update.bind(handle); // Runs the complete normal+drunk gait before the stopped-foot pitch is normalized.
-        handle.update = function stoppedFootPitchAwareLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
-          const result = previousLocomotionUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
-          straightenStoppedFootPitch(handle, speedWorldUnitsPerSecond, suppressed, seatedPose);
-          return result;
+        const previousLocomotionUpdate = handle.update.bind(handle); // Complete normal+drunk gait; receives actual root-motion speed below.
+        const sampleWorldMotionSpeed = makeWorldMotionSpeedSampler(THREEArg, parent, isPlayer); // Converts root X/Z displacement into the gait's speed input.
+        handle.update = function worldMotionAwareLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+          const effectiveSpeed = sampleWorldMotionSpeed(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
+          return previousLocomotionUpdate(dt, effectiveSpeed, suppressed, seatedPose);
         };
       }
 
@@ -180,7 +204,7 @@
         }
       }
 
-      if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
+      if (!isPlayer || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
         const player = window.Combat?.deps?.player;
@@ -191,9 +215,6 @@
     legApi.__proneSuppressesDrunkGaitInstalled = true;
   }
 
-  // combat-bandit.js loads before this bridge, and a bandit's portrait/legs are
-  // constructed before ResourceSystem.initEntity creates its Footing fields.
-  // Bind the finished entity back to the provider captured above.
   const banditApi = window.BanditCombat;
   if (banditApi?.makeEntity && !banditApi.__lowFootingSwayInstalled) {
     const previousMakeBanditEntity = banditApi.makeEntity.bind(banditApi);
@@ -206,10 +227,6 @@
     banditApi.__lowFootingSwayInstalled = true;
   }
 
-  // updateHostiles already puts its prone branch ahead of knockback and the
-  // bandit AI dispatch. Keep the bandit module safe on its own as well: if a
-  // future caller invokes updateCombatAI directly while prone, it must not
-  // restart a lunge/attack or consume old knockback alongside the knockdown.
   if (banditApi?.updateCombatAI && !banditApi.__proneMotionExclusiveInstalled) {
     const previousBanditCombatAI = banditApi.updateCombatAI.bind(banditApi);
     banditApi.updateCombatAI = function proneExclusiveBanditCombatAI(entity, ...args) {
@@ -237,10 +254,6 @@
       const loss = banditFootingLoss(entity);
       if (!(loss > 0)) continue;
 
-      // The sway transform moves the portrait geometry only. Do not lock a
-      // pre-sway front/back choice or mutate material.side: the portrait's
-      // existing THREE.FrontSide materials must keep ordinary backface culling
-      // authoritative after the final transformed orientation is known.
       const previousRotation = visualRoot.rotation?.clone?.() || null;
       visualRoot.quaternion.copy(state.driverRoot.quaternion);
       undo.push(() => {
@@ -254,9 +267,6 @@
     const player = window.Combat?.deps?.player;
     if (!player) return;
 
-    // Prone/knockdown playback owns the pose completely. Removing only the
-    // unsteady-walk channel leaves the ragdoll/recovery channel and every other
-    // body contribution untouched. Stored drunkenness remains on the entity.
     if (player.prone) {
       composer.clearChannel(DRUNK_CHANNEL);
       return;
@@ -268,11 +278,6 @@
     const roll = Number(debug.rollDeg) * DEG;
     if (!Number.isFinite(pitch) || !Number.isFinite(roll)) return;
 
-    // Reassert at the render boundary, after game.js has resolved this frame's
-    // normal facing/auto-target yaw. The composer then post-composes this local
-    // pitch/roll onto that base orientation, so target tracking cannot replace
-    // the low-Footing lean; it can only rotate the already-leaning body to face
-    // the target. Attack/ragdoll channels continue to compose by priority.
     composer.setChannel(DRUNK_CHANNEL, {
       priority: DRUNK_PRIORITY,
       mode: 'additive',
@@ -280,11 +285,6 @@
     });
   }
 
-  // combat-config-loader makes r128 renderer instances delegate render() to
-  // the prototype specifically so runtime composition modules can safely wrap
-  // this seam. PlayerBodyTransformComposer is already installed when this file
-  // loads. Bandit sway is also composed only for the real render call, then its
-  // portrait child is restored so no tilt can contaminate next frame's yaw.
   const rendererProto = THREE.WebGLRenderer?.prototype;
   if (rendererProto?.render && !rendererProto.__drunkProneCompositionRenderHook) {
     const previousRender = rendererProto.render;
@@ -298,13 +298,6 @@
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
-    // held-object-render-order.js's internal depth-replay passes look for the
-    // TRUE, undecorated render() by walking a chain of __hobunji*Original
-    // markers (see its unwrapRendererRender) — without this marker those
-    // replay passes still ran through this wrap (and, chained beneath it,
-    // PlayerBodyTransformComposer's own wrap) with scene.autoUpdate forced
-    // false around them, so a freshly-applied composed delta never
-    // propagated into descendants' matrixWorld for those passes.
     rendererProto.render.__hobunjiDrunkProneCompositionOriginal = previousRender;
     rendererProto.__drunkProneCompositionRenderHook = true;
   }
@@ -322,7 +315,7 @@
         activeBanditSwayStates: banditStates.size,
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
-        stoppedFootPitchReset: lastStoppedFootPitchReset,
+        motionGaitSpeed: lastPlayerMotionGaitSample,
         drunkWalk: window.HobunjiDrunkWalk?.getDebug?.() || null,
         composer: composer.getDebug?.() || null,
       };
