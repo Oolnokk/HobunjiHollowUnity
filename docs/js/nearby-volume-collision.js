@@ -22,6 +22,7 @@
   let refreshCount = 0;
   let testedRayCount = 0;
   let lastBlock = null;
+  const textureAlphaCache = new WeakMap(); // Stores decoded texture alpha so repeated precise hits never reread the same image pixels.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -127,6 +128,50 @@
     return true;
   }
 
+  function materialForHit(hit) {
+    const material = hit.object?.material;
+    if (!Array.isArray(material)) return material;
+    return material[hit.face?.materialIndex || 0] || material[0];
+  }
+
+  function textureAlphaAt(texture, uv) {
+    const image = texture?.image;
+    if (!image || !uv) return null;
+    let cached = textureAlphaCache.get(texture);
+    if (!cached) {
+      const width = image.naturalWidth || image.videoWidth || image.width;
+      const height = image.naturalHeight || image.videoHeight || image.height;
+      if (!(width > 0 && height > 0)) return null;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.drawImage(image, 0, 0, width, height);
+        cached = { width, height, pixels: context.getImageData(0, 0, width, height).data };
+      } catch (_) {
+        cached = { unavailable: true };
+      }
+      textureAlphaCache.set(texture, cached);
+    }
+    if (cached.unavailable) return null;
+    const sampleUv = uv.clone();
+    texture.transformUv?.(sampleUv);
+    const x = Math.max(0, Math.min(cached.width - 1, Math.floor(sampleUv.x * cached.width)));
+    const y = Math.max(0, Math.min(cached.height - 1, Math.floor((1 - sampleUv.y) * cached.height)));
+    return cached.pixels[(y * cached.width + x) * 4 + 3] / 255;
+  }
+
+  function hitCanBlock(hit) {
+    const material = materialForHit(hit);
+    if (!material || material.visible === false || Number(material.opacity ?? 1) <= 0.12) return false;
+    if (!material.map || !hit.uv) return true;
+    const alpha = textureAlphaAt(material.map, hit.uv);
+    if (alpha == null) return true;
+    const threshold = Math.max(0.08, Number(material.alphaTest) || 0);
+    return alpha * Number(material.opacity ?? 1) > threshold;
+  }
+
   function raycast(origin, direction, far) {
     if (!candidates.length || far <= 0.0001) return null;
     testedRayCount++;
@@ -134,7 +179,7 @@
     raycaster.near = 0.002;
     raycaster.far = far;
     const hits = raycaster.intersectObjects(candidates, false);
-    return hits.find(hit => hit.distance <= far + 0.0001) || null;
+    return hits.find(hit => hit.distance <= far + 0.0001 && hitCanBlock(hit)) || null;
   }
 
   function segmentHit(start, end, radiusWorld = 0) {
