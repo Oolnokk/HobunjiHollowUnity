@@ -22,20 +22,20 @@
   let lastRebuildMs = 0;
   let lastBlock = null;
   let playerHeadCache = { at: -Infinity, value: 1 };
-  let options = { enabled: true, projectiles: true, textureAlpha: true }; // textureAlpha is accepted only for backwards-compatible settings; no texture sampling exists anymore.
+  let options = { enabled: true, projectiles: true, textureAlpha: false }; // textureAlpha is retained only as a backwards-compatible settings field and is permanently disabled.
 
   const proceduralRecipeBounds = new Map(); // Cached once per furniture key; recipes are expressed in tile-relative authored units.
   const authoredRecipeBounds = new Map(); // Cached once per authored furniture key from its runtime part metadata.
 
   function init(injectedDeps) {
     deps = injectedDeps;
-    options = { ...options, ...(injectedDeps.options || {}) };
+    options = { ...options, ...(injectedDeps.options || {}), textureAlpha: false };
     invalidate();
     deps.debugLog?.('Nearby cover: height-only semantic projectile cover enabled; mesh, UV, triangle, and raycast collision are disabled.');
   }
 
   function setOptions(next = {}) {
-    options = { ...options, ...next };
+    options = { ...options, ...next, textureAlpha: false };
     return { ...options };
   }
 
