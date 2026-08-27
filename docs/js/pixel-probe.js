@@ -520,16 +520,7 @@
 
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
-    const _playerAvatarBackMaterial = deps.getPlayerAvatarBackMaterial();
-    const _playerBackPetOcclusionOverlay = deps.getPlayerBackPetOcclusionOverlay();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
-    if (_playerAvatarBackMaterial) checks.push(['player back plane', 'depthWrite', true, _playerAvatarBackMaterial.depthWrite]);
-    const expectsBackReplay = /skinned_back/i.test(String(_playerAvatarBackMaterial?.name || '')); // Used below because rigid two-plane avatars need no duplicate rear pass.
-    if (expectsBackReplay) checks.push(['player back-over-pet replay', 'present', true, !!_playerBackPetOcclusionOverlay?.mesh]);
-    if (_playerBackPetOcclusionOverlay?.mesh) {
-      checks.push(['player back-over-pet replay', 'visible', !!liveActivePet, _playerBackPetOcclusionOverlay.mesh.visible]);
-      checks.push(['player back-over-pet replay', 'renderOrder', deps.PLAYER_BACK_PLANE_RENDER_ORDER, _playerBackPetOcclusionOverlay.mesh.renderOrder]);
-    }
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
@@ -539,7 +530,7 @@
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
     if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
-    else if (checks.length) lines.push('depthWrite/renderOrder on both player portrait faces and the active pet planes all match what updatePetLayering should have set.');
+    else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
 
     if (liveActivePet) {
       const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.
@@ -553,12 +544,13 @@
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
       const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
+      const behaviorYaw = (Number(curiosity?.currentFacingYawDeg) || 0) * Math.PI / 180; // The deliberate turnaround is part of the expected final plane yaw.
       const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
       const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
       const backWorldYaw = groupYaw + (liveActivePet.avatarRef.backPlane?.rotation.y || 0); // Used below to compare the mirrored back card against the same billboard yaw.
       const wrapAngle = radians => Math.atan2(Math.sin(radians), Math.cos(radians));
-      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
-      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
+      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + behaviorYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
+      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw + behaviorYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
       lines.push(`Billboard yaw: selected=${Number.isFinite(billboardYaw) ? (billboardYaw * 180 / Math.PI).toFixed(2) + '°' : '-'} group=${(groupYaw * 180 / Math.PI).toFixed(2)}° frontWorld=${(frontWorldYaw * 180 / Math.PI).toFixed(2)}° backWorld=${(backWorldYaw * 180 / Math.PI).toFixed(2)}° error=${Number.isFinite(frontYawError) ? Math.max(frontYawError, backYawError).toFixed(4) : '-'} rad`);
       if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
         lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');

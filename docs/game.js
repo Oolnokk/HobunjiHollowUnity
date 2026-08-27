@@ -5754,9 +5754,7 @@
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
       const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
-      const SHOULDER_PET_REVERSE_WAIT_MIN_S = 8; // Used by the independent idle turnaround timer below so pets occasionally face the other way without constantly flipping.
-      const SHOULDER_PET_REVERSE_WAIT_MAX_S = 18;
-      const SHOULDER_PET_REVERSE_SPEED_DEG = 540; // A quick readable Y-axis pivot limits the flat card's intentional edge-on interval.
+      const SHOULDER_PET_REVERSE_SPEED_DEG = 540; // A quick turnaround directly precedes each curious observation.
 
       function _companionHeadRestDeg(c) {
         return c.avatarRef?.headRig?.rig?.restDeg ?? 0;
@@ -5846,23 +5844,20 @@
           targetPitchDeg: 0,
           baseFrontRoll: null,
           baseBackRoll: null,
-          reverseTimer: SHOULDER_PET_REVERSE_WAIT_MIN_S + rnd() * (SHOULDER_PET_REVERSE_WAIT_MAX_S - SHOULDER_PET_REVERSE_WAIT_MIN_S),
           currentFacingYawDeg: 0,
           targetFacingYawDeg: 0,
           facingReversed: false,
         });
-        if (!Number.isFinite(state.reverseTimer)) state.reverseTimer = SHOULDER_PET_REVERSE_WAIT_MIN_S + rnd() * (SHOULDER_PET_REVERSE_WAIT_MAX_S - SHOULDER_PET_REVERSE_WAIT_MIN_S);
         if (!Number.isFinite(state.currentFacingYawDeg)) state.currentFacingYawDeg = 0;
         if (!Number.isFinite(state.targetFacingYawDeg)) state.targetFacingYawDeg = state.facingReversed ? 180 : 0;
         state.timer -= dt;
-        state.reverseTimer -= dt;
-        if (state.reverseTimer <= 0) {
-          state.facingReversed = !state.facingReversed;
-          state.targetFacingYawDeg = state.facingReversed ? 180 : 0;
-          state.reverseTimer = SHOULDER_PET_REVERSE_WAIT_MIN_S + rnd() * (SHOULDER_PET_REVERSE_WAIT_MAX_S - SHOULDER_PET_REVERSE_WAIT_MIN_S);
-        }
         if (state.timer <= 0) {
           if (state.phase === 'wait') {
+            state.facingReversed = !state.facingReversed;
+            state.targetFacingYawDeg = state.facingReversed ? 180 : 0;
+            state.phase = 'turn';
+            state.timer = Math.abs(state.targetFacingYawDeg - state.currentFacingYawDeg) / SHOULDER_PET_REVERSE_SPEED_DEG;
+          } else if (state.phase === 'turn') {
             const side = rnd() < 0.5 ? -1 : 1;
             state.phase = 'look';
             state.timer = SHOULDER_PET_CURIOUS_LOOK_MIN_S
@@ -5886,7 +5881,7 @@
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
         state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
         state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
-        const reverseStep = SHOULDER_PET_REVERSE_SPEED_DEG * Math.max(0, dt); // Used here to ease the deliberate 180-degree Y turn independently from the faster head glance.
+        const reverseStep = SHOULDER_PET_REVERSE_SPEED_DEG * Math.max(0, dt);
         state.currentFacingYawDeg += clamp(state.targetFacingYawDeg - state.currentFacingYawDeg, -reverseStep, reverseStep);
         return state;
       }
@@ -6072,7 +6067,7 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (!child.isMesh || !child.material || child.name.includes('hat_xray') || child.userData?.hobunjiShoulderPetBackOcclusionReplay) return;
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
           // A neck-rigged portrait is one SkinnedMesh with separate front/back
           // materials in an array; rigid fallback portraits still expose one
           // material per mesh. Flatten both shapes for the depth arbiter.
@@ -6131,18 +6126,13 @@
       // player's head/shoulder (see the shoulderPet branch below), so a
       // per-frame distance comparison between nearly identical points only
       // creates flicker. Keep depth testing enabled (terrain and buildings
-      // can still occlude the pet), and use this fixed relationship:
-      // front portrait < shoulder pet < back portrait. A neck-rigged player
-      // stores both portrait faces on one SkinnedMesh, so its back face cannot
-      // receive a later renderOrder of its own. Only the front material
-      // defers depth writes; a rear-only skinned replay (built beside the hat
-      // overlays) draws after the pet whenever the back faces the camera.
-      // The rigid fallback still draws its separate back mesh last.
+      // can still occlude the pet), but disable depth writes on both portrait
+      // faces and draw the pet after both faces and hat overlays.
       const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-      // Separate rigid back portraits and the rear-only skinned replay both
-      // draw above the pet at this order.
+      // Keep the back portrait above the front portrait. The pet is
+      // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_FRONT_PLANE_RENDER_ORDER + 1;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -6165,9 +6155,9 @@
         }
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        setPlayerBackPetOcclusion(active);
-        _setLayerDepthWrite(_playerAvatarFrontMaterial, !active);
-        _setLayerDepthWrite(_playerAvatarBackMaterial, true);
+        for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
+          _setLayerDepthWrite(m, !active);
+        }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
         for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
@@ -6497,8 +6487,8 @@
         // this later pass. Recompute the local counter-rotation so that
         // moving the shoulder anchor with bodyYaw does not also rotate the
         // flat animal card face-on/edge-on and change its projected width.
-        const selectedBillboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Used here to preserve the camera-relative plane yaw chosen by updateCreatureMesh.
-        const behaviorYawOffset = (Number(c.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180; // Used below for the pet's occasional deliberate Y-axis turnaround.
+        const selectedBillboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Preserve the camera-relative plane yaw chosen by updateCreatureMesh.
+        const behaviorYawOffset = (Number(c.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180;
         const billboardWorldYaw = selectedBillboardWorldYaw + behaviorYawOffset;
         const planeDelta = billboardWorldYaw - finalGroupRotY; // Used below to cancel only the final attachment-group yaw override.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
@@ -7900,11 +7890,10 @@
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
       let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
-      let _playerBackPetOcclusionOverlay = null; // Rear-only skinned replay that draws the body over an attached pet.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
-      // updateCompanions) to apply the front-vs-pet depth rule without
-      // disturbing the rear-only replay above.
+      // updateCompanions) to make both portrait faces transparent to the
+      // attached pet's depth pass without affecting ordinary world occlusion.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
       // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
@@ -13478,59 +13467,6 @@
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
       }
 
-      function setPlayerBackPetOcclusion(enabled) {
-        const mesh = _playerBackPetOcclusionOverlay?.mesh;
-        if (mesh) mesh.visible = !!enabled;
-      }
-
-      // A neck-rigged portrait combines front and back materials on one
-      // SkinnedMesh, so renderOrder cannot place the pet between its two
-      // faces. Replay only the rear geometry group after the pet instead.
-      // The pet does not write depth, so this copy wins over it; ordinary
-      // world geometry still does write depth, so buildings and terrain
-      // continue to occlude the player normally.
-      function _buildPlayerBackPetOcclusionOverlay(avatarGroup, backBodyCanvas, alphaTest) {
-        const previous = _playerBackPetOcclusionOverlay;
-        if (previous?.mesh) {
-          previous.mesh.parent?.remove(previous.mesh);
-          previous.mesh.geometry?.dispose?.();
-          previous.material?.map?.dispose?.();
-          previous.material?.dispose?.();
-        }
-        _playerBackPetOcclusionOverlay = null;
-
-        const assembly = avatarGroup?.children?.[0];
-        const skinnedSource = avatarGroup?.userData?.neckRig?.available ? avatarGroup.userData.neckRig.skinnedPlane : null; // Used below because rigid avatars already have an independently ordered rear mesh.
-        const sourceGroup = skinnedSource?.geometry?.groups?.[1]; // Used below to replay only the authored back-face triangles.
-        if (!assembly || !skinnedSource?.skeleton || !sourceGroup || !backBodyCanvas) return null;
-
-        const backVariant = window.PNGPlaneAvatar.makeVariantCanvas(backBodyCanvas, { flipX: true }); // Used as an independently owned texture so avatar refresh/disposal cannot invalidate the replay.
-        const texture = new THREE.CanvasTexture(backVariant);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.needsUpdate = true;
-        const material = new THREE.MeshBasicMaterial({
-          name: 'player_avatar_back_pet_occlusion_material', map: texture,
-          transparent: true, alphaTest: alphaTest ?? 0.01, side: THREE.FrontSide,
-          depthWrite: false, depthTest: true,
-        });
-        material.skinning = true;
-        const geometry = skinnedSource.geometry.clone();
-        geometry.clearGroups();
-        geometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
-        const mesh = new THREE.SkinnedMesh(geometry, material);
-        mesh.name = 'player_avatar_back_pet_occlusion_plane';
-        mesh.position.copy(skinnedSource.position);
-        mesh.renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
-        mesh.frustumCulled = false;
-        mesh.visible = !!_petLayeringActive;
-        mesh.userData.hobunjiShoulderPetBackOcclusionReplay = true;
-        mesh.userData.noOutline = true;
-        mesh.bind(skinnedSource.skeleton, skinnedSource.bindMatrix);
-        assembly.add(mesh);
-        _playerBackPetOcclusionOverlay = { mesh, material, skinningMode: 'shared-portrait-skeleton' };
-        return mesh;
-      }
-
       // Ported from the animation-author tool's shoulder-pet hat-xray feature
       // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
       // docs/tools/animation-author/index.html): a shoulder pet perched near
@@ -13545,7 +13481,6 @@
       // this never makes the player see-through, only the hat).
       async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
         try {
-          _buildPlayerBackPetOcclusionOverlay(avatarGroup, backCanvas, alphaTest);
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
           if (!hasHat || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
@@ -13577,7 +13512,6 @@
           // body plane would still occlude normally regardless.
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
-          _buildPlayerBackPetOcclusionOverlay(avatarGroup, hatlessBackCanvas, alphaTest);
 
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
@@ -13663,7 +13597,6 @@
         _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
-        _playerBackPetOcclusionOverlay = null;
         // The old front/back materials this pointed at are about to be
         // disposed by removePlayerAvatarChildren below, and a brand new
         // pair (default depthWrite:true) is coming — force updatePetLayering
@@ -25601,15 +25534,12 @@
         getPetLayeringPet: () => _petLayeringPet,
         getPetLayeringActive: () => _petLayeringActive,
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
-        getPlayerAvatarBackMaterial: () => _playerAvatarBackMaterial,
-        getPlayerBackPetOcclusionOverlay: () => _playerBackPetOcclusionOverlay,
         getSitInteraction: () => sitInteraction,
         getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
         getHeldObjectDebug,
         getItemSpriteIconDebug,
         SHOULDER_PET_PLANE_RENDER_ORDER,
-        PLAYER_BACK_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
         creatureAttachmentAnchor,
         openMenu,

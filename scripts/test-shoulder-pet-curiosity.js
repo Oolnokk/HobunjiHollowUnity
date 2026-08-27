@@ -35,11 +35,11 @@ assert.match(source,
   /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4/,
   'shoulder-pet glances have a cooldown so they remain spontaneous');
 assert.match(source,
-  /const SHOULDER_PET_REVERSE_WAIT_MIN_S = 8[\s\S]{0,220}const SHOULDER_PET_REVERSE_SPEED_DEG = 540/,
-  'shoulder pets have a separate infrequent, eased Y-axis turnaround');
+  /const SHOULDER_PET_REVERSE_SPEED_DEG = 540/,
+  'shoulder pets use a quick, eased Y-axis turnaround');
 assert.match(source,
-  /state\.facingReversed = !state\.facingReversed;[\s\S]{0,180}state\.targetFacingYawDeg = state\.facingReversed \? 180 : 0/,
-  'each turnaround reverses the pet by exactly 180 degrees');
+  /if \(state\.phase === 'wait'\) \{[\s\S]{0,260}state\.facingReversed = !state\.facingReversed;[\s\S]{0,180}state\.phase = 'turn';[\s\S]{0,260}else if \(state\.phase === 'turn'\) \{[\s\S]{0,180}state\.phase = 'look'/,
+  'every curious observation is directly preceded by a 180-degree turnaround phase');
 assert.match(source,
   /const behaviorYawOffset = \(Number\(c\.shoulderCuriosity\?\.currentFacingYawDeg\) \|\| 0\) \* Math\.PI \/ 180;[\s\S]{0,180}selectedBillboardWorldYaw \+ behaviorYawOffset/,
   'the turnaround is applied around Y after camera-relative billboard yaw is selected');
@@ -47,9 +47,9 @@ assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,500}Curiosity: phase=[\s\S]{0,220}facingYaw=/,
   'the mobile pixel probe distinguishes a real genotype-scale overwrite from a curiosity pose');
 
-const tickStart = source.indexOf('function _tickShoulderPetCuriosity'); // Used below to execute the production timer/easing function in isolation.
+const tickStart = source.indexOf('function _tickShoulderPetCuriosity');
 const tickEnd = source.indexOf('function _applyShoulderPetCuriosity', tickStart);
-const tickSource = source.slice(tickStart, tickEnd); // Keeps the behavior check tied to game code rather than a copied implementation.
+const tickSource = source.slice(tickStart, tickEnd);
 const tickCuriosity = new Function(`
   const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3;
   const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7;
@@ -61,8 +61,6 @@ const tickCuriosity = new Function(`
   const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14;
   const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
   const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
-  const SHOULDER_PET_REVERSE_WAIT_MIN_S = 8;
-  const SHOULDER_PET_REVERSE_WAIT_MAX_S = 18;
   const SHOULDER_PET_REVERSE_SPEED_DEG = 540;
   const rnd = () => 0;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -70,18 +68,22 @@ const tickCuriosity = new Function(`
   return _tickShoulderPetCuriosity;
 `)();
 const turningPet = { shoulderCuriosity: {
-  phase: 'wait', timer: 999, currentLeanDeg: 0, targetLeanDeg: 0,
+  phase: 'wait', timer: 0, currentLeanDeg: 0, targetLeanDeg: 0,
   currentPitchDeg: 0, targetPitchDeg: 0, baseFrontRoll: 0, baseBackRoll: 0,
-  reverseTimer: 0, currentFacingYawDeg: 0, targetFacingYawDeg: 0, facingReversed: false,
-} }; // Minimal pet state used to verify a full out-and-back Y-axis turn.
+  currentFacingYawDeg: 0, targetFacingYawDeg: 0, facingReversed: false,
+} };
 tickCuriosity(turningPet, 0.02);
-assert.equal(turningPet.shoulderCuriosity.facingReversed, true, 'elapsed turnaround timer selects the reverse orientation');
+assert.equal(turningPet.shoulderCuriosity.phase, 'turn', 'elapsed observation wait starts the turnaround first');
+assert.equal(turningPet.shoulderCuriosity.facingReversed, true, 'the pre-observation turnaround selects the reverse orientation');
 assert.equal(turningPet.shoulderCuriosity.currentFacingYawDeg, 10.8, 'turnaround eases instead of snapping straight to 180 degrees');
 for (let i = 0; i < 20; i++) tickCuriosity(turningPet, 0.02);
 assert.equal(turningPet.shoulderCuriosity.currentFacingYawDeg, 180, 'turnaround settles at exactly 180 degrees');
-turningPet.shoulderCuriosity.reverseTimer = 0;
+assert.equal(turningPet.shoulderCuriosity.phase, 'look', 'observation begins only after the turnaround');
+turningPet.shoulderCuriosity.phase = 'wait';
+turningPet.shoulderCuriosity.timer = 0;
 tickCuriosity(turningPet, 0.02);
-assert.equal(turningPet.shoulderCuriosity.facingReversed, false, 'the next elapsed timer turns the pet back around');
+assert.equal(turningPet.shoulderCuriosity.phase, 'turn', 'the next observation also starts with a turnaround');
+assert.equal(turningPet.shoulderCuriosity.facingReversed, false, 'the next pre-observation turn faces the pet forward again');
 for (let i = 0; i < 20; i++) tickCuriosity(turningPet, 0.02);
 assert.equal(turningPet.shoulderCuriosity.currentFacingYawDeg, 0, 'return turn settles at the original camera-relative orientation');
 
