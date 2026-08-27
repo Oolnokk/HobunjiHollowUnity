@@ -481,6 +481,32 @@
       if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
         lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');
       }
+      // Compare the two actual rendered cards, not only their shared parent.
+      // This catches child-scale, geometry-size, skinning, and coplanar-depth
+      // problems that can all look like one side suddenly became huge.
+      const planeDetails = [];
+      for (const [label, plane] of [['front', liveActivePet.avatarRef?.frontPlane], ['back', liveActivePet.avatarRef?.backPlane]]) {
+        if (!plane) continue;
+        plane.updateMatrixWorld?.(true);
+        const localScale = plane.scale;
+        const worldScale = plane.getWorldScale ? plane.getWorldScale(new THREE.Vector3()) : null;
+        const params = plane.geometry?.parameters || {};
+        const bounds = plane.geometry?.boundingBox;
+        const size = bounds ? bounds.getSize(new THREE.Vector3()) : null;
+        const worldPos = plane.getWorldPosition ? plane.getWorldPosition(new THREE.Vector3()) : plane.position;
+        planeDetails.push({ label, plane, localScale, worldScale, params, size, worldPos });
+        lines.push('Plane ' + label + ': localScale=(' + [localScale.x, localScale.y, localScale.z].map(v => v.toFixed(4)).join(',') + ') worldScale=(' + (worldScale ? [worldScale.x, worldScale.y, worldScale.z].map(v => v.toFixed(4)).join(',') : '-') + ') geometry=' + (Number.isFinite(params.width) ? params.width.toFixed(4) : '-') + '×' + (Number.isFinite(params.height) ? params.height.toFixed(4) : '-') + ' bounds=' + (size ? [size.x, size.y, size.z].map(v => v.toFixed(4)).join('×') : '-') + ' worldPos=(' + [worldPos.x, worldPos.y, worldPos.z].map(v => v.toFixed(4)).join(',') + ')');
+      }
+      if (planeDetails.length === 2) {
+        const [frontInfo, backInfo] = planeDetails;
+        const scaleDelta = Math.max(Math.abs(frontInfo.localScale.x - backInfo.localScale.x), Math.abs(frontInfo.localScale.y - backInfo.localScale.y), Math.abs(frontInfo.localScale.z - backInfo.localScale.z));
+        const geometryWidthDelta = Math.abs((frontInfo.params.width || frontInfo.size?.x || 0) - (backInfo.params.width || backInfo.size?.x || 0));
+        const geometryHeightDelta = Math.abs((frontInfo.params.height || frontInfo.size?.y || 0) - (backInfo.params.height || backInfo.size?.y || 0));
+        const separation = frontInfo.worldPos.distanceTo(backInfo.worldPos);
+        lines.push('Plane comparison: localScaleΔ=' + scaleDelta.toFixed(6) + ' geometryΔ=' + geometryWidthDelta.toFixed(6) + '×' + geometryHeightDelta.toFixed(6) + ' worldSeparation=' + separation.toFixed(6));
+        if (scaleDelta > 0.001 || geometryWidthDelta > 0.001 || geometryHeightDelta > 0.001) lines.push('>>> MISMATCH — the two rendered shoulder-pet planes do not have identical authored dimensions.');
+        if (separation < 0.0001) lines.push('>>> WARNING — the two rendered shoulder-pet planes are effectively coplanar; camera-angle flicker can alternate their pixels and mimic a scale jump.');
+      }
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
       const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
