@@ -820,7 +820,8 @@
     const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover/movement state copyable on mobile without developer tools.
     if (volumeDebug) {
       const blocked = volumeDebug.lastBlock ? `${volumeDebug.lastBlock.kind}:${volumeDebug.lastBlock.object}@${volumeDebug.lastBlock.distanceWorld}u/${volumeDebug.lastBlock.ageMs}ms` : 'none';
-      lines.push(`Nearby volumes: mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t candidates=${volumeDebug.candidates} refreshes=${volumeDebug.refreshCount} rays=${volumeDebug.testedRayCount} lastBlock=${blocked}`);
+      const flags = volumeDebug.options || {};
+      lines.push(`Nearby volumes: enabled=${flags.enabled} movement=${flags.movement} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} treesOutsideCombat=${flags.outsideCombatTrees} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t candidates=${volumeDebug.candidates} refreshes=${volumeDebug.refreshCount} rays=${volumeDebug.testedRayCount} lastBlock=${blocked}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
