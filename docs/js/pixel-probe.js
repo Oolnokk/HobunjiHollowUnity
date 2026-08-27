@@ -520,19 +520,34 @@
 
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
-    const rearHeadOverlay = deps.getPlayerRearHeadPetOcclusionOverlay();
+    const rearCharacterOverlay = deps.getPlayerRearCharacterPetOcclusionOverlay();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
-    checks.push(['rear head-over-pet overlay', 'present', true, !!rearHeadOverlay?.mesh]);
-    if (rearHeadOverlay?.mesh) {
-      checks.push(['rear head-over-pet overlay', 'visible', !!liveActivePet, rearHeadOverlay.mesh.visible]);
-      checks.push(['rear head-over-pet overlay', 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER + 1, rearHeadOverlay.mesh.renderOrder]);
-      lines.push(`Rear head-over-pet overlay: mode=${rearHeadOverlay.skinningMode || '-'} visible=${rearHeadOverlay.mesh.visible} order=${rearHeadOverlay.mesh.renderOrder} roleGate=all shoulder pets`);
+    checks.push(['directional rear character-over-pet overlay', 'present', true, !!rearCharacterOverlay?.mesh]);
+    if (rearCharacterOverlay?.mesh) {
+      const expectedRearVisible = !!liveActivePet && rearCharacterOverlay.facesCharacterLeft === true;
+      checks.push(['directional rear character-over-pet overlay', 'visible', expectedRearVisible, rearCharacterOverlay.mesh.visible]);
+      checks.push(['directional rear character-over-pet overlay', 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER + 1, rearCharacterOverlay.mesh.renderOrder]);
+      lines.push(`Directional rear character-over-pet overlay: mode=${rearCharacterOverlay.skinningMode || '-'} facing=${rearCharacterOverlay.facesCharacterLeft ? 'character-left (character occludes pet)' : 'character-right (pet occludes hood)'} visible=${rearCharacterOverlay.mesh.visible} order=${rearCharacterOverlay.mesh.renderOrder} roleGate=all shoulder pets`);
     }
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
         checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
+        checks.push([label, 'depthTest', true, mesh.material.depthTest]);
         checks.push([label, 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+      }
+    }
+    const grassHits = hits.filter(hit => {
+      for (let node = hit.object; node; node = node.parent) {
+        if (node.userData?.isBillboard || node.userData?.isWildernessGrassChunk || node.userData?.isRichFoliageBillboard) return true;
+      }
+      return false;
+    });
+    for (const hit of grassHits) {
+      const materials = Array.isArray(hit.object?.material) ? hit.object.material : [hit.object?.material];
+      for (const material of materials.filter(Boolean)) {
+        checks.push(['hit billboard grass', 'depthTest', true, material.depthTest]);
+        checks.push(['hit billboard grass', 'depthWrite', true, material.depthWrite]);
       }
     }
     const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);

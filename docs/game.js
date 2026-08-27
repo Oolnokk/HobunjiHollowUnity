@@ -6067,7 +6067,7 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (!child.isMesh || !child.material || child.name.includes('hat_xray') || child.userData?.hobunjiRearHeadPetOccluder) return;
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray') || child.userData?.hobunjiRearCharacterPetOccluder) return;
           // A neck-rigged portrait is one SkinnedMesh with separate front/back
           // materials in an array; rigid fallback portraits still expose one
           // material per mesh. Flatten both shapes for the depth arbiter.
@@ -6140,6 +6140,11 @@
         material.depthWrite = depthWrite;
         material.needsUpdate = true;
       }
+      function _enforceShoulderPetGrassDepth(active) {
+        if (!active || typeof grassBillboardMat === 'undefined' || !grassBillboardMat) return;
+        if (grassBillboardMat.depthTest !== true) grassBillboardMat.depthTest = true;
+        if (grassBillboardMat.depthWrite !== true) grassBillboardMat.depthWrite = true;
+      }
       function updatePetLayering(active, pet) {
         // A previously-arbitrated pet (deactivated, or swapped for a
         // different creature) needs its own planes restored to normal —
@@ -6155,12 +6160,16 @@
         }
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        setPlayerRearHeadPetOcclusion(active);
+        setPlayerRearCharacterPetOcclusion(active, pet);
+        _enforceShoulderPetGrassDepth(active);
         for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
           _setLayerDepthWrite(m, !active);
         }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) _setLayerDepthWrite(m, !active);
+        for (const m of petMats) {
+          _setLayerDepthWrite(m, !active);
+          if (active && m.depthTest !== true) { m.depthTest = true; m.needsUpdate = true; }
+        }
         if (active && pet) {
           for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
             if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
@@ -7891,7 +7900,7 @@
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
       let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
-      let _playerRearHeadPetOcclusionOverlay = null; // Rear-facing head/cosmetic pass used after the pet when a shoulder pet is active.
+      let _playerRearCharacterPetOcclusionOverlay = null; // Full rear portrait replay used only while the pet faces the character's left.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
       // updateCompanions) to make both portrait faces transparent to the
@@ -13469,42 +13478,37 @@
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
       }
 
-      function setPlayerRearHeadPetOcclusion(enabled) {
-        const mesh = _playerRearHeadPetOcclusionOverlay?.mesh; // Rear-only overlay visibility is reconciled every frame by updatePetLayering.
-        if (mesh) mesh.visible = !!enabled;
+      function setPlayerRearCharacterPetOcclusion(enabled, pet) {
+        const overlay = _playerRearCharacterPetOcclusionOverlay; // Visibility is reconciled every frame so it can switch at the turn's edge-on midpoint.
+        if (!overlay?.mesh) return;
+        const facingYawDeg = Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0; // Used below to identify which of the two settled visual facings is currently nearer.
+        const facesCharacterLeft = Math.cos(facingYawDeg * Math.PI / 180) >= 0; // Yaw 0 is the authored character-left facing; crossing 90° swaps the layer while the card is edge-on.
+        overlay.facesCharacterLeft = facesCharacterLeft;
+        overlay.mesh.visible = !!enabled && facesCharacterLeft;
       }
 
       // The normal player portrait remains below an attached shoulder pet, so
       // the pet x-rays cleanly through it from the front. From behind, replay
-      // only the authored head and head-cosmetic pixels after the pet. This
-      // makes the pet read as tucked behind the head/hood/hat without replaying
-      // the torso or changing the actual attachment position.
-      async function buildPlayerRearHeadPetOcclusionOverlay(avatarGroup, profile, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+      // the complete authored rear portrait after the pet only while the pet
+      // faces the character's left. This includes anatomy sprites such as the
+      // Splayed Knot. When it turns right the replay disappears, letting the
+      // pet occlude the separately managed hood/hat layers instead.
+      function buildPlayerRearCharacterPetOcclusionOverlay(avatarGroup, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
         try {
-          if (!profile || !backCanvas || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
-          const bodyOnlyBackCanvas = document.createElement('canvas'); // Used below as the subtraction source for all rear head and head-cosmetic pixels.
-          bodyOnlyBackCanvas.width = bodyOnlyBackCanvas.height = backCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(bodyOnlyBackCanvas, profile, {
-            portraitView: 'behind', omitHeadSpriteAndCosmetics: true, forceEyesOpen: true,
-          });
+          if (!backCanvas || !window.PNGPlaneAvatar) return;
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
-
-          const fullBackVariant = window.PNGPlaneAvatar.makeVariantCanvas(backCanvas, { flipX: true });
-          const bodyOnlyBackVariant = window.PNGPlaneAvatar.makeVariantCanvas(bodyOnlyBackCanvas, { flipX: true });
-          const rearHeadCanvas = _portraitDiffCanvas(fullBackVariant, bodyOnlyBackVariant);
-          if (!rearHeadCanvas) return;
-
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
-          const neckRig = avatarGroup.userData?.neckRig; // Used below so the isolated head/cosmetic pixels follow the same neck deformation as the portrait.
+          const neckRig = avatarGroup.userData?.neckRig; // Used below so every rear portrait layer follows the same neck deformation as the ordinary portrait.
           const skinnedSource = neckRig?.available ? neckRig.skinnedPlane : null; // Supplies the authored rear-face geometry and shared skeleton when available.
-          const texture = new THREE.CanvasTexture(rearHeadCanvas); // Owned by this overlay and disposed with the avatar subtree.
+          const fullBackVariant = window.PNGPlaneAvatar.makeVariantCanvas(backCanvas, { flipX: true }); // Includes the behind-view base head, Splayed Knot replacement, hood, hat, and body.
+          const texture = new THREE.CanvasTexture(fullBackVariant); // Owned by this overlay and disposed with the avatar subtree.
           texture.colorSpace = THREE.SRGBColorSpace;
           texture.needsUpdate = true;
           const material = new THREE.MeshBasicMaterial({
             map: texture, transparent: true, alphaTest: alphaTest ?? 0.01,
             side: THREE.FrontSide, depthWrite: false, depthTest: true,
-            name: 'player_avatar_back_head_pet_occlusion_material',
+            name: 'player_avatar_back_character_pet_occlusion_material',
           });
           let mesh; // Uses a shared-skeleton SkinnedMesh when possible and a rigid rear card as fallback.
           if (skinnedSource?.geometry && skinnedSource?.skeleton) {
@@ -13528,17 +13532,18 @@
             mesh.position.z = anchorZ - backOffsetZ;
             mesh.rotation.y = Math.PI;
           }
-          mesh.name = 'player_avatar_back_head_pet_occlusion_plane';
+          mesh.name = 'player_avatar_back_character_pet_occlusion_plane';
           mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER + 1;
           mesh.frustumCulled = false;
-          mesh.visible = !!_petLayeringActive;
-          mesh.userData.hobunjiRearHeadPetOccluder = true;
+          mesh.visible = false;
+          mesh.userData.hobunjiRearCharacterPetOccluder = true;
           mesh.userData.noOutline = true;
           assembly.add(mesh);
-          _playerRearHeadPetOcclusionOverlay = { mesh, material, skinningMode: skinnedSource ? 'shared-portrait-skeleton' : 'rigid-fallback' };
-          window.__farmLog?.(`[avatar] rear head-over-pet overlay uses ${_playerRearHeadPetOcclusionOverlay.skinningMode}`, 'info');
+          _playerRearCharacterPetOcclusionOverlay = { mesh, material, facesCharacterLeft: false, skinningMode: skinnedSource ? 'shared-portrait-skeleton' : 'rigid-fallback' };
+          setPlayerRearCharacterPetOcclusion(_petLayeringActive, _petLayeringPet);
+          window.__farmLog?.(`[avatar] directional rear character-over-pet overlay uses ${_playerRearCharacterPetOcclusionOverlay.skinningMode}`, 'info');
         } catch (err) {
-          window.__farmLog?.(`[avatar] rear head-over-pet overlay build failed: ${err.message}`, 'warn');
+          window.__farmLog?.(`[avatar] directional rear character-over-pet overlay build failed: ${err.message}`, 'warn');
         }
       }
 
@@ -13672,7 +13677,7 @@
         _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
-        _playerRearHeadPetOcclusionOverlay = null;
+        _playerRearCharacterPetOcclusionOverlay = null;
         // The old front/back materials this pointed at are about to be
         // disposed by removePlayerAvatarChildren below, and a brand new
         // pair (default depthWrite:true) is coming — force updatePetLayering
@@ -13760,7 +13765,7 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
-        buildPlayerRearHeadPetOcclusionOverlay(avatarGroup, profile, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        buildPlayerRearCharacterPetOcclusionOverlay(avatarGroup, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -20456,7 +20461,7 @@
           uniforms:       sharedUniforms(),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
-          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthTest: true, depthWrite: true,
         });
         applySeasonalGrassAppearance();
         cuttableBillboardGlowMat = new THREE.ShaderMaterial({
@@ -25611,7 +25616,7 @@
         getPetLayeringPet: () => _petLayeringPet,
         getPetLayeringActive: () => _petLayeringActive,
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
-        getPlayerRearHeadPetOcclusionOverlay: () => _playerRearHeadPetOcclusionOverlay,
+        getPlayerRearCharacterPetOcclusionOverlay: () => _playerRearCharacterPetOcclusionOverlay,
         getSitInteraction: () => sitInteraction,
         getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
