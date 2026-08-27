@@ -14452,7 +14452,8 @@
       }
 
       function canPlayerOccupy(wx, wy) {
-        if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
+        if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72) &&
+            window.NearbyVolumeCollision?.canPlayerOccupy?.(wx, wy, PLAYER_RADIUS * 0.72) !== false) return true;
         // Universal "unstuck" escape: if the player's own true position is
         // itself embedded in solid geometry (spawned/teleported into a wall
         // sliver, a boundary tile a mesh fix didn't quite seal, etc.), the
@@ -14467,7 +14468,8 @@
         // position is valid again, so this never opens a lasting way to
         // squeeze through walls.
         if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
-          return tileSpeedAt(wx, wy) !== null;
+          return tileSpeedAt(wx, wy) !== null &&
+            window.NearbyVolumeCollision?.canPlayerOccupy?.(wx, wy, PLAYER_RADIUS * 0.72) !== false;
         }
         return false;
       }
@@ -25665,6 +25667,19 @@
         },
       });
 
+      window.NearbyVolumeCollision?.init({
+        THREE,
+        TILE,
+        player,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        isCombatActive: () => isPlayerInCombat() ||
+          (heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) ||
+            (activeTool === 'ranged' && !!equipmentSlots.ranged))),
+        debugLog,
+      });
+
       window.RangedWeapons?.init({
         player,
         playerRadius: PLAYER_RADIUS,
@@ -25707,6 +25722,10 @@
         getGearInventory: () => gearInventory,
         saveGearInventory,
         getEquippedRangedKey: () => equipmentSlots.ranged,
+        isWeaponAiming: () => heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged)),
+        getAimLabelRangeWorld: () => activeTool === 'ranged'
+          ? (window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7) / TILE
+          : Math.max(3, Number(combatConfig().autoTargetRangeTiles) || 4),
         showToast,
         random: () => window.GameRandom?.random?.() ?? Math.random(),
         getLastMeleeHeightBlock: () => lastMeleeHeightBlock,
