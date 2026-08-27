@@ -24,7 +24,7 @@
     },
   };
   const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
-  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '', conditionCallout: null };
+  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '', conditionCallout: null, aimLabel: null };
   let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
 
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -398,6 +398,66 @@
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
   }
 
+  function clearAimLabel() {
+    if (!state.aimLabel) return;
+    dispose(state.aimLabel);
+    state.aimLabel = null;
+  }
+
+  function setAimLabel(root, text, options = {}) {
+    const label = String(text || '').trim();
+    if (!root || !label || !state.deps) {
+      clearAimLabel();
+      return null;
+    }
+    const scene = options.scene || state.deps.getActiveScene?.();
+    if (!scene) {
+      clearAimLabel();
+      return null;
+    }
+    const signature = (root.uuid || root.name || 'root') + '|' + label;
+    if (state.aimLabel?.signature === signature) {
+      if (state.aimLabel.plane.parent !== scene) {
+        state.aimLabel.plane.parent?.remove(state.aimLabel.plane);
+        scene.add(state.aimLabel.plane);
+      }
+      state.aimLabel.scene = scene;
+      return state.aimLabel.sequence;
+    }
+    clearAimLabel();
+    const parts = makePlane(label, 'interaction', { worldHeight: options.worldHeight || 0.22, textAlign: 'center' });
+    const event = {
+      ...parts, root, scene, text: label, signature,
+      kind: 'interaction', aimLabel: true,
+      sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: Infinity,
+    };
+    scene.add(event.plane);
+    state.aimLabel = event;
+    return event.sequence;
+  }
+
+  function updateAimLabel(camera) {
+    const event = state.aimLabel;
+    if (!event) return;
+    const metrics = avatarMetrics(event.root);
+    if (!metrics || !event.root?.parent) {
+      clearAimLabel();
+      return;
+    }
+    let anchor;
+    if (metrics.avatarRoot?.localToWorld) {
+      const placementRatio = Number(metrics.avatarRoot.userData?.portraitVerticalPlacementRatio ?? 0.5);
+      anchor = new state.deps.THREE.Vector3(0, (placementRatio - 0.5) * metrics.height + metrics.height * 0.68, 0);
+      metrics.avatarRoot.localToWorld(anchor);
+    } else {
+      anchor = metrics.center.clone();
+      anchor.y += metrics.height * 0.68;
+    }
+    event.plane.position.copy(anchor);
+    event.plane.quaternion.copy(camera.quaternion);
+    event.material.opacity = 1;
+  }
+
   function updateConditionCallout(camera, cameraRight) {
     const event = state.conditionCallout;
     if (!event) return;
@@ -449,6 +509,7 @@
       event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop);
     }
     updateConditionCallout(camera, cameraRight);
+    updateAimLabel(camera);
   }
 
   function init(deps) {
@@ -463,6 +524,7 @@
     state.pending.length = 0;
     state.interactionSignature = '';
     clearConditionCallout();
+    clearAimLabel();
   }
 
   function applySettings(settings) {
@@ -475,6 +537,7 @@
     init, update, showChange, queueReward,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
+    setAimLabel, clearAimLabel,
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
   };

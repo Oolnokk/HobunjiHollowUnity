@@ -85,7 +85,13 @@ window.FoliageGenerator = (() => {
       const oy = (fbm3D(0, t * ws + 27.7, 0, seedU32 ^ 0x23456, 4, 2.1, 0.55) - 0.5) * 2;
       const oz = (fbm3D(0, 0, t * ws + 39.9, seedU32 ^ 0x34567, 4, 2.1, 0.55) - 0.5) * 2;
       const amp = Math.max(0, wonk) * 0.18 * (0.35 + 0.65 * length);
-      pts.push(p.clone().add(new T.Vector3(ox, oy, oz).multiplyScalar(amp)));
+      // Keep every procedural spine exactly on its authored origin at the
+      // first ring, then ease the organic displacement in. For tree trunks
+      // that origin is the center of their solid tile, so the visible base
+      // and the tile collision finally agree even on highly wonky variants.
+      const originBlend01 = clamp01(t / 0.18);
+      const originBlend = originBlend01 * originBlend01 * (3 - 2 * originBlend01);
+      pts.push(p.clone().add(new T.Vector3(ox, oy, oz).multiplyScalar(amp * originBlend)));
       tangents.push(dir.clone().normalize());
     }
 

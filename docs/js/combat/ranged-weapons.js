@@ -20,6 +20,17 @@
   const DISORIENT_DURATION_MS = 3000; // Concussive reversed-movement debuff lifetime.
   const HITBOX_MIN_DEPTH_TILES = 0.18; // Prevents very narrow portrait data from collapsing the actor's 3D target volume.
   const AIM_EPSILON = 1e-6; // Shared tolerance for normalized shot rays and slab intersection math.
+  const ACTOR_HITBOX_CACHE_MS = 16; // Reuses portrait-derived hitboxes across all projectile/reticle work in the same rendered frame.
+  const BANDIT_LOS_CACHE_MS = 80; // LOS only needs tactical responsiveness, not a full scene query every render frame for every loaded bandit.
+  const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
+  const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
+  const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
+  const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
+  let wouldHitCacheAt = -Infinity;
+  let wouldHitCacheValue = false;
+  let friendlyFireHits = 0;
+  let losRepositions = 0;
+  let wouldHitCacheHits = 0;
 
   const BASIC_AMMO_EFFECTS = Object.freeze([
     { id: 'bleedingHealth', label: 'Bleeding Health', desc: 'Each bolt applies a small amount of Bleeding Health.', afflictionId: 'bleedingHealth' },
@@ -46,22 +57,16 @@
     }),
   });
 
-  // Shared by both loading weapons so crossbow and scatterbow use the exact
-  // authored Scatterbow Fire pose set supplied by the animation editor.
   const AUTHORED_FIRE_POSE = {
     neutral: { x: 0.23, y: 0.08, z: 0.14, pitch: 16, yaw: 65, bodyYaw: -52, roll: 11, scale: 1.77 },
     windup:  { x: 0.34, y: 0.14, z: 0.11, pitch: -9, yaw: 86, bodyYaw: -76, roll: 12 },
     strike:  { x: 0.33, y: 0.11, z: 0.12, pitch: -9, yaw: 84, bodyYaw: -109, roll: 9 },
   };
-  // Shared by both loading weapons while empty/reloading. Both authored
-  // ranged stances use the same enlarged tool scale.
   const AUTHORED_LOAD_POSE = {
     neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.77 },
     windup:  { x: 0, y: -0.17, z: 0.09, pitch: 77, yaw: 0, bodyYaw: -10, roll: 0 },
     strike:  { x: 0, y: 0.18, z: 0.08, pitch: -11, yaw: 0, bodyYaw: 7, roll: 0 },
   };
-  // Used to give each weapon its own mutable pose objects when config
-  // overrides are merged at runtime.
   function clonePoseSet(source) {
     return {
       neutral: { ...source.neutral },
@@ -70,8 +75,6 @@
     };
   }
 
-  // Used by runtime tuning overrides so changing one channel or phase does
-  // not erase the remaining authored channels in that action's pose set.
   function mergePoseSet(base, incoming = {}) {
     return {
       neutral: { ...base.neutral, ...(incoming.neutral || {}) },
@@ -106,7 +109,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     ensureAmmoState();
-    deps.debugLog?.('Ranged update: portrait-scaled 3D actor hitboxes now share one screen-reticle shot line with live projectile collision.');
+    deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
   function gear() { return deps?.getGearInventory?.() || null; }
@@ -255,7 +258,7 @@
     if (!config) return;
     for (const key of Object.keys(CONFIG)) {
       if (!config[key]) continue;
-      const incoming = config[key]; // Used to merge tuning without discarding either authored action pose set.
+      const incoming = config[key];
       CONFIG[key] = {
         ...CONFIG[key],
         ...incoming,
@@ -282,28 +285,26 @@
   }
 
   function idlePose(itemKey, owner = null) {
-    const def = defFor(itemKey); // Used to select the loaded or empty neutral stance for players and bandits.
+    const def = defFor(itemKey);
     if (!def) return null;
     return (isLoaded(itemKey, owner) ? def.firePose : def.loadPose)?.neutral || null;
   }
 
-  // Interpolated by bandit load/fire visuals; scale stays on the action's
-  // neutral pose and is applied once to the holder instead of lerping.
   const POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw'];
   function lerpPose(a, b, amount) {
-    const k = Math.max(0, Math.min(1, amount)); // Used to keep every authored channel inside its two endpoint poses.
-    const pose = {}; // Used as the complete interpolated transform returned to the bandit holder.
+    const k = Math.max(0, Math.min(1, amount));
+    const pose = {};
     for (const key of POSE_CHANNELS) pose[key] = (a?.[key] ?? 0) + ((b?.[key] ?? 0) - (a?.[key] ?? 0)) * k;
     return pose;
   }
 
   function poseAtAction(def, kind, progress) {
-    const poses = poseForAction(def, kind); // Used as the action-specific neutral/windup/strike source.
-    const t = Math.max(0, Math.min(1, progress)); // Used to safely evaluate the authored phase fractions.
-    const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire'); // Used to decouple action state from pose playback order.
-    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02); // Used as the authored windup arrival point.
-    const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : (def.fireAtFrac ?? 0.18); // Used as the authored strike arrival point.
-    const hf = kind === 'load' ? (def.reloadHoldFrac ?? sf) : (def.fireHoldFrac ?? sf); // Used as the end of the strike hold.
+    const poses = poseForAction(def, kind);
+    const t = Math.max(0, Math.min(1, progress));
+    const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
+    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02);
+    const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : (def.fireAtFrac ?? 0.18);
+    const hf = kind === 'load' ? (def.reloadHoldFrac ?? sf) : (def.fireHoldFrac ?? sf);
     if (sequence === 'attack') {
       if (t <= wf) return lerpPose(poses.neutral, poses.windup, t / Math.max(0.0001, wf));
       if (t <= sf) return lerpPose(poses.windup, poses.strike, (t - wf) / Math.max(0.0001, sf - wf));
@@ -324,23 +325,20 @@
     return isLoaded(itemKey) ? `Fire ${def.label}` : `Load ${def.label}`;
   }
 
-  // Crossbows play one cue. Scatterbows layer the corresponding cue with a
-  // short delay and subtle pitch spread so the six-shot volley reads as a
-  // chorus rather than six perfectly phase-aligned copies of one recording.
   function playRangedActionSfx(itemKey, kind, owner = null) {
-    const audio = window.AudioSystem; // Used to route player cues through global SFX volume and bandit cues through existing distance falloff.
-    const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire']; // Used as the shared recording/config for this action phase.
+    const audio = window.AudioSystem;
+    const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
     if (!cfgEntry) return;
     const delays = itemKey === 'scatterbow'
       ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
-      : [0]; // Used to keep an ordinary crossbow mechanically singular.
-    const layerVolumeScale = itemKey === 'scatterbow' ? (kind === 'load' ? 0.55 : 0.52) : 1; // Used to keep layered scatterbow cues balanced against one full-volume crossbow cue.
+      : [0];
+    const layerVolumeScale = itemKey === 'scatterbow' ? (kind === 'load' ? 0.55 : 0.52) : 1;
     lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
     delays.forEach((delayMs, index) => {
       const playLayer = () => {
-        const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1; // Used to keep delayed layers distinct without changing the source's identity.
+        const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1;
         if (owner) {
-          const spatialCfg = { ...cfgEntry, volume: (Number(cfgEntry.volume) || 0.8) * layerVolumeScale }; // Used because playCreatureSfxAt applies its own distance scale internally.
+          const spatialCfg = { ...cfgEntry, volume: (Number(cfgEntry.volume) || 0.8) * layerVolumeScale };
           audio.playCreatureSfxAt?.(owner, spatialCfg, pitch);
         } else audio.playOneShotSfx?.(cfgEntry, layerVolumeScale, pitch);
       };
@@ -356,7 +354,7 @@
     const kind = loaded ? 'fire' : 'load';
     if (kind === 'fire') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
     const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
-    const pose = poseForAction(def, kind); // Used by the player visual for this specific load/fire action.
+    const pose = poseForAction(def, kind);
     playerAction = { itemKey, def, kind, t: 0, durationS, fired: false };
     deps.triggerRangedWeaponVisual?.(durationS, {
       sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
@@ -384,10 +382,10 @@
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
-      const aim = playerAimSolution(action.itemKey); // Re-resolved at release so the projectile follows the reticle's current screen-center ray, not the windup's stale ground aim.
+      const aim = playerAimSolution(action.itemKey);
       const angle = aim?.angle ?? deps.getPlayerAimAngle();
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
-      const ammoPayload = playerAmmoPayload(action.itemKey); // Resolved once so a scatter volley consumes one resource and every pellet shares its selected ammo.
+      const ammoPayload = playerAmmoPayload(action.itemKey);
       spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch);
       consumeSpecialAmmo(ammoPayload);
     }
@@ -426,18 +424,13 @@
     return root;
   }
 
-  // Enemy arrows retain their sharp baseline. Player payloads come from the
-  // equipped ranged weapon's mastery loadout and are resolved once per volley.
   function projectileAfflictionBonuses(def, team, ammoPayload) {
     if (team === 'player') return { ...(ammoPayload?.afflictionBonuses || {}) };
-    const configured = def.afflictionBonuses; // Used by future ammunition/weapon definitions to declare their exact status payload.
+    const configured = def.afflictionBonuses;
     if (configured && typeof configured === 'object') return { ...configured };
     return { ...(window.ResourceSystem?.afflictionBonusesForTag?.(def.damageType || 'sharp') || {}) };
   }
 
-  // Reuses the resource-ring/melee-trail palette verbatim. An affliction-free
-  // projectile still receives a white comet, matching the melee cone trail's
-  // plain-hit fallback rather than disappearing entirely.
   function projectileTrailColors(afflictionBonuses, overrides) {
     if (Array.isArray(overrides) && overrides.length) {
       return overrides.slice(0, PROJECTILE_TRAIL_MAX_LANES).map(entry => {
@@ -445,22 +438,22 @@
         return { id: entry.id, color: window.ResourceRings?.neonizeColor?.(raw) ?? raw };
       });
     }
-    const ids = Object.keys(afflictionBonuses || {}).filter(id => Number(afflictionBonuses[id]) > 0); // Used as both the visual lane list and mobile debug payload.
+    const ids = Object.keys(afflictionBonuses || {}).filter(id => Number(afflictionBonuses[id]) > 0);
     if (!ids.length) return [{ id: 'plain', color: 0xffffff }];
     return ids.slice(0, PROJECTILE_TRAIL_MAX_LANES).map(id => {
-      const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Used to stay synchronized with resource rings and melee trails.
-      const color = raw == null ? 0xffffff : (window.ResourceRings?.neonizeColor?.(raw) ?? raw); // Stored on the lane for its additive vertex gradient.
+      const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id];
+      const color = raw == null ? 0xffffff : (window.ResourceRings?.neonizeColor?.(raw) ?? raw);
       return { id, color };
     });
   }
 
   function createProjectileTrails(scene, colorEntries, radiusPx) {
-    const trailWidth = Math.max(0.012, radiusPx / deps.TILE * 0.32); // Used as the head width and spacing scale for this projectile's ribbons.
+    const trailWidth = Math.max(0.012, radiusPx / deps.TILE * 0.32);
     return colorEntries.map((entry, laneIndex) => {
-      const geometry = new THREE.BufferGeometry(); // Preallocated once and updated in place while this projectile flies.
-      const positions = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3); // Holds left/right ribbon edges for every path sample.
-      const colors = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3); // Holds the tail-to-head brightness gradient in the affliction hue.
-      const indices = []; // Connects consecutive left/right pairs into the ribbon triangles.
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
+      const colors = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
+      const indices = [];
       for (let i = 0; i < PROJECTILE_TRAIL_MAX_POINTS - 1; i++) {
         const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
         indices.push(a, b, c, b, d, c);
@@ -472,8 +465,8 @@
       const material = new THREE.MeshBasicMaterial({
         transparent: true, opacity: 0.86, depthWrite: false, vertexColors: true,
         blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-      }); // Additive unlit material matches the existing melee trail treatment.
-      const mesh = new THREE.Mesh(geometry, material); // Lives in world space so the tail stays behind as the projectile advances.
+      });
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.name = `projectileCometTrail:${entry.id}`;
       mesh.frustumCulled = false;
       mesh.renderOrder = (deps.heldObjectRenderOrder || 1.5) - 0.01;
@@ -483,31 +476,31 @@
   }
 
   function updateProjectileTrails(p) {
-    const point = { x: p.x / deps.TILE, y: p.mesh.position.y - 0.01, z: p.y / deps.TILE }; // Appended in world space to form the visible comet path.
-    const prior = p.trailPoints[p.trailPoints.length - 1]; // Used to suppress duplicate samples while a projectile is stationary/spawning.
+    const point = { x: p.x / deps.TILE, y: p.mesh.position.y - 0.01, z: p.y / deps.TILE };
+    const prior = p.trailPoints[p.trailPoints.length - 1];
     if (!prior || Math.hypot(point.x - prior.x, point.z - prior.z) > 0.01) p.trailPoints.push(point);
     while (p.trailPoints.length > PROJECTILE_TRAIL_MAX_POINTS) p.trailPoints.shift();
-    const count = p.trailPoints.length; // Controls the active portion of each preallocated ribbon.
+    const count = p.trailPoints.length;
     if (count < 2) return;
 
     for (const lane of p.trailMeshes) {
-      const positionAttr = lane.mesh.geometry.attributes.position; // Updated with the current sampled flight path.
-      const colorAttr = lane.mesh.geometry.attributes.color; // Updated with a dim-tail/bright-head comet gradient.
-      const laneOffset = (lane.laneIndex - (lane.laneCount - 1) / 2) * lane.trailWidth * 1.45; // Separates simultaneous affliction colors without widening one ribbon.
+      const positionAttr = lane.mesh.geometry.attributes.position;
+      const colorAttr = lane.mesh.geometry.attributes.color;
+      const laneOffset = (lane.laneIndex - (lane.laneCount - 1) / 2) * lane.trailWidth * 1.45;
       for (let i = 0; i < count; i++) {
-        const sample = p.trailPoints[i]; // Supplies this ribbon cross-section's world position.
-        const before = p.trailPoints[Math.max(0, i - 1)]; // Supplies a stable tangent at the projectile head.
-        const after = p.trailPoints[Math.min(count - 1, i + 1)]; // Supplies a stable tangent at the projectile tail.
+        const sample = p.trailPoints[i];
+        const before = p.trailPoints[Math.max(0, i - 1)];
+        const after = p.trailPoints[Math.min(count - 1, i + 1)];
         const dx = after.x - before.x, dz = after.z - before.z;
-        const length = Math.hypot(dx, dz) || 1; // Normalizes the path-perpendicular vector safely.
+        const length = Math.hypot(dx, dz) || 1;
         const px = -dz / length, pz = dx / length;
-        const u = i / Math.max(1, count - 1); // Drives the narrow/dim tail into the wider/brighter projectile head.
+        const u = i / Math.max(1, count - 1);
         const halfWidth = lane.trailWidth * (0.18 + u * 0.82);
         const centerX = sample.x + px * laneOffset, centerZ = sample.z + pz * laneOffset;
         const vertex = i * 2;
         positionAttr.setXYZ(vertex, centerX - px * halfWidth, sample.y, centerZ - pz * halfWidth);
         positionAttr.setXYZ(vertex + 1, centerX + px * halfWidth, sample.y, centerZ + pz * halfWidth);
-        const intensity = 0.05 + 0.95 * u * u; // Keeps the tail colored but makes its projectile-adjacent core read brightest.
+        const intensity = 0.05 + 0.95 * u * u;
         colorAttr.setXYZ(vertex, lane.color.r * intensity, lane.color.g * intensity, lane.color.b * intensity);
         colorAttr.setXYZ(vertex + 1, lane.color.r * intensity, lane.color.g * intensity, lane.color.b * intensity);
       }
@@ -518,18 +511,13 @@
     }
   }
 
-  // Vertical aim support: pitch tilts the flight straight-line (no gravity —
-  // arrows already flew dead level before this, this only adds a tilt to
-  // that same line) rather than adding a full ballistic arc. Horizontal
-  // speed is scaled down by cos(pitch) so a steep shot doesn't also fly
-  // unrealistically far along the ground.
   function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
     const mesh = createProjectileMesh(def, def.projectileRadiusPx);
-    const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload); // Passed to both impact damage and comet color selection.
-    const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors); // Special ammo can author non-affliction palette lanes such as Disorient/Footing.
+    const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
+    const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
     const surfaceY = deps.worldSurfaceY(x, y);
     const worldY = surfaceY + 0.55;
     mesh.position.set(x / deps.TILE, worldY, y / deps.TILE);
@@ -539,7 +527,7 @@
       itemKey, def, team, owner, mesh, visual: mesh.userData.visual,
       x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
-      vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE), // Tile-unit world-Y speed to match worldY's units.
+      vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
       angle, pitch, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
@@ -547,7 +535,7 @@
       specialAmmoId: ammoPayload?.specialAmmoId || null,
       knockbackMul: Number(ammoPayload?.knockbackMul) || 1,
       footingDamageMultiplier: Number(ammoPayload?.footingDamageMultiplier) || 0,
-      trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }], // Seeds the comet at the muzzle so it appears on the first moving frame.
+      trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }],
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     p.visual.rotation.y = p.pngRot;
@@ -589,12 +577,11 @@
     return null;
   }
 
-  // Produces an upright THREE.Box3 in world coordinates from the portrait's
-  // authored width/height and grounding offset. getWorldScale applies every
-  // parent/body scale after the PNG builder's species/child portrait scale,
-  // and a square X/Z footprint turns the billboard into a true 3D volume.
   function actorHitbox(actor) {
     if (!deps || !actor) return null;
+    const now = performance.now();
+    const cached = actorHitboxCache.get(actor);
+    if (cached && now - cached.at < ACTOR_HITBOX_CACHE_MS) return cached.value;
     const avatarNode = avatarNodeForActor(actor);
     const portraitWidth = positiveNumber(
       avatarNode?.userData?.portraitModelWidth,
@@ -643,16 +630,15 @@
       new THREE.Vector3(worldPosition.x - halfWidth, worldPosition.y - halfHeight, worldPosition.z - halfDepth),
       new THREE.Vector3(worldPosition.x + halfWidth, worldPosition.y + halfHeight, worldPosition.z + halfDepth),
     );
-    return {
+    const value = {
       actor, box, center: worldPosition.clone(), width, height, depth,
       portraitWidth, portraitHeight, verticalOffset,
       bodyScale: { x: bodyScale.x, y: bodyScale.y, z: bodyScale.z },
     };
+    actorHitboxCache.set(actor, { at: now, value });
+    return value;
   }
 
-  // Slab intersection against a swept-sphere-expanded Box3. The returned
-  // fractions are measured along the supplied segment and are shared by
-  // prediction and actual projectile impacts.
   function segmentHitboxInterval(start, end, hitbox, radius = 0) {
     if (!hitbox?.box) return null;
     let enter = 0, exit = 1;
@@ -706,9 +692,6 @@
     };
   }
 
-  // Generic centered-reticle resolver shared by combat and world
-  // interactions. Each candidate supplies a Box3 directly or the same
-  // actor-hitbox wrapper used by projectiles.
   function interactionAimRay() {
     return normalizedAimRay(deps?.getPlayerInteractionRay?.() || deps?.getPlayerAimRay?.());
   }
@@ -746,9 +729,6 @@
     return focusCandidates(candidates, maxDistanceWorld);
   }
 
-  // Horizontal attack cones remain authoritative for ordinary melee range;
-  // this adds the missing vertical requirement using the same portrait body
-  // volumes that centered aiming and projectile collision already share.
   function meleeReachCheck(attacker, target, verticalAllowanceWorld = 0.4) {
     const attackerHitbox = actorHitbox(attacker);
     const targetHitbox = actorHitbox(target);
@@ -764,9 +744,6 @@
     return meleeReachCheck(attacker, target, verticalAllowanceWorld).reachable;
   }
 
-  // Finds the exact point under the centered HUD reticle. When its camera ray
-  // crosses a hostile portrait box, the projectile converges from the player
-  // muzzle to the middle of that volume; otherwise it converges at max range.
   function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.()) {
     const def = defFor(itemKey);
     if (!def || !deps?.player) return null;
@@ -775,7 +752,6 @@
     let targetPoint = null;
     let reticleTarget = null;
     const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
-    // Acquisition uses the same swept projectile radius as live collision.
     const aimRadius = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
@@ -847,7 +823,7 @@
     if (state.shrapnelUntil > now) {
       const lastX = Number.isFinite(state.shrapnelX) ? state.shrapnelX : entity.x;
       const lastY = Number.isFinite(state.shrapnelY) ? state.shrapnelY : entity.y;
-      const movedTiles = Math.hypot(entity.x - lastX, entity.y - lastY) / Math.max(1, deps.TILE); // Converts only this frame's travel into the self-inflicted status amount.
+      const movedTiles = Math.hypot(entity.x - lastX, entity.y - lastY) / Math.max(1, deps.TILE);
       if (movedTiles > 0 && !(entity.knockbackT > 0)) {
         window.ResourceSystem?.addAffliction?.(entity, 'bleedingHealth', movedTiles * 5);
         window.ResourceSystem?.addAffliction?.(entity, 'woundedStamina', movedTiles * 4);
@@ -868,18 +844,25 @@
     for (const entity of deps.hostileObjects) updateEntityAmmoDebuffs(entity);
   }
 
+  function nearestHostileHit(start, end, projectileRadius, areaId, exclude = null) {
+    let nearest = null;
+    for (const c of deps.hostileObjects) {
+      if (c === exclude || c.id === exclude?.id || c.health <= 0 || (c.areaId && c.areaId !== areaId)) continue;
+      const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
+      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+      nearest = { creature: c, interval };
+    }
+    return nearest;
+  }
+
   function projectileHit(p) {
     const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
+    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     if (p.team === 'player') {
-      let nearest = null;
-      for (const c of deps.hostileObjects) {
-        if (c.health <= 0 || c.areaId && c.areaId !== p.areaId) continue;
-        const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
-        if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
-        nearest = { creature: c, interval };
-      }
+      const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
+      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
       if (!nearest) return false;
       const c = nearest.creature;
       deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
@@ -887,19 +870,31 @@
       deps.awardRangedMastery?.(p.itemKey);
       return true;
     }
-    const playerHit = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
-    if (!playerHit) return false;
+
+    const playerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
+    const friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
+    if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
+      nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
+    }
+    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
+    if (!nearest) return false;
+    if (nearest.kind === 'hostile') {
+      friendlyFireHits++;
+      deps.damageCreature(nearest.actor, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
+      lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
+      return true;
+    }
     deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
     return true;
   }
 
-  function updateProjectileVisual(p, dt) {
-    // This is intentionally the animal PNG-plane rotation path only. The
-    // root sphere's vx/vy and trajectory angle are never changed here.
+  function updateProjectileVisual(p, dt, sharedPerps = null) {
     const rawTargetRotY = -p.angle + Math.PI / 2;
-    const perps = deps.cameraRelativeCreaturePerps();
-    const deadRad = PROJECTILE_PERP_DEAD_RAD; // Dedicated 15-degree window; player and animal portrait tuning remains unchanged.
+    const perps = sharedPerps || deps.cameraRelativeCreaturePerps();
+    const deadRad = PROJECTILE_PERP_DEAD_RAD;
     const mode = window.PerpRotation?.CREATURE_PLANE_ROT_MODE;
     if (mode === 'snap') {
       const result = window.PerpRotation.creatureSnapSwayTarget(p.perpState, rawTargetRotY, perps, deadRad, dt, true);
@@ -932,13 +927,14 @@
   }
 
   function updateProjectiles(dt) {
+    const sharedPerps = projectiles.some(p => !p.dead) ? deps.cameraRelativeCreaturePerps() : null;
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
       p.prevX = p.x; p.prevY = p.y; p.prevWorldY = p.worldY;
       const dx = p.vx * dt, dy = p.vy * dt;
       p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
-      const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08; // A pitched-down shot embeds in the terrain instead of clipping through it.
+      const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
       if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
         disposeProjectile(p);
         continue;
@@ -946,7 +942,7 @@
       p.mesh.position.x = p.x / deps.TILE;
       p.mesh.position.z = p.y / deps.TILE;
       p.mesh.position.y = p.worldY;
-      updateProjectileVisual(p, dt);
+      updateProjectileVisual(p, dt, sharedPerps);
       updateProjectileTrails(p);
     }
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
@@ -961,6 +957,75 @@
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
     lastEvent = `${c.id}:${itemKey}:${kind}-start`;
+  }
+
+  function banditLosSegment(c, targetPlayer) {
+    const shooter = actorHitbox(c);
+    const target = actorHitbox(targetPlayer);
+    const start = shooter?.center?.clone?.() || new THREE.Vector3(c.x / deps.TILE, deps.worldSurfaceY(c.x, c.y) + 0.55, c.y / deps.TILE);
+    const end = target?.center?.clone?.() || new THREE.Vector3(targetPlayer.x / deps.TILE, deps.worldSurfaceY(targetPlayer.x, targetPlayer.y) + 0.55, targetPlayer.y / deps.TILE);
+    return { start, end };
+  }
+
+  function computeBanditLos(c, targetPlayer, def) {
+    const segment = banditLosSegment(c, targetPlayer);
+    const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
+    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null;
+    if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
+
+    let ally = null;
+    for (const other of deps.hostileObjects) {
+      if (other === c || other.id === c.id || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
+      const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
+      if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
+      ally = { actor: other, interval };
+    }
+    if (ally) return { clear: false, kind: 'ally', id: ally.actor.id || ally.actor.name || 'ally' };
+
+    const dxPx = (segment.end.x - segment.start.x) * deps.TILE;
+    const dyPx = (segment.end.z - segment.start.z) * deps.TILE;
+    const distancePx = Math.hypot(dxPx, dyPx);
+    const stepPx = deps.TILE * BANDIT_LOS_TERRAIN_STEP_TILES;
+    if (distancePx > stepPx) {
+      const ux = dxPx / distancePx, uy = dyPx / distancePx;
+      for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
+        const x = c.x + ux * travel;
+        const y = c.y + uy * travel;
+        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx)) return { clear: false, kind: 'tile', id: 'solid-tile' };
+      }
+    }
+    return { clear: true, kind: 'clear', id: null };
+  }
+
+  function banditLosStatus(c, targetPlayer, def) {
+    const now = performance.now();
+    const cached = c._rangedLosCache;
+    const moved = cached ? Math.hypot(c.x - cached.x, c.y - cached.y) : Infinity;
+    const targetMoved = cached ? Math.hypot(targetPlayer.x - cached.tx, targetPlayer.y - cached.ty) : Infinity;
+    if (cached && now - cached.at < BANDIT_LOS_CACHE_MS && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.result;
+    const result = computeBanditLos(c, targetPlayer, def);
+    c._rangedLosCache = { at: now, x: c.x, y: c.y, tx: targetPlayer.x, ty: targetPlayer.y, result };
+    c._rangedLosDebug = { ...result, at: now };
+    return result;
+  }
+
+  function repositionBanditForLos(c, targetPlayer, def, dt, los) {
+    const dx = targetPlayer.x - c.x, dy = targetPlayer.y - c.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const nx = dx / distance, ny = dy / distance;
+    if (c._rangedLosSide !== 1 && c._rangedLosSide !== -1) c._rangedLosSide = ((String(c.id || '').length + Math.floor(c.x / deps.TILE)) & 1) ? 1 : -1;
+    const side = c._rangedLosSide;
+    const strafePx = deps.TILE * BANDIT_LOS_STRAFE_TILES;
+    const targetX = c.x - ny * side * strafePx + nx * deps.TILE * 0.08;
+    const targetY = c.y + nx * side * strafePx + ny * deps.TILE * 0.08;
+    const beforeX = c.x, beforeY = c.y;
+    const moving = deps.moveCreatureToward(c, targetX, targetY, c.def.chaseSpeed, dt);
+    if (Math.hypot(c.x - beforeX, c.y - beforeY) < 0.01) c._rangedLosSide = -side;
+    c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    c.facing = c._rangedAimAngle;
+    c._rangedLosDebug = { ...(c._rangedLosDebug || los), repositioning: true, side: c._rangedLosSide, at: performance.now() };
+    losRepositions++;
+    return moving;
   }
 
   function updateBanditAI(c, dt, targetPlayer, distToPlayer) {
@@ -995,7 +1060,19 @@
       const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt);
       return { aimAngle, moving, handled: true };
     }
-    if (c._rangedCooldownT <= 0) beginBanditAction(c, isLoaded(itemKey, c) ? 'fire' : 'load', targetPlayer);
+
+    if (!isLoaded(itemKey, c)) {
+      if (c._rangedCooldownT <= 0) beginBanditAction(c, 'load', targetPlayer);
+      return { aimAngle, moving: false, handled: true };
+    }
+
+    const los = banditLosStatus(c, targetPlayer, def);
+    if (!los.clear) {
+      const moving = repositionBanditForLos(c, targetPlayer, def, dt, los);
+      return { aimAngle: c._rangedAimAngle, moving, handled: true, seekingLos: true };
+    }
+    c._rangedLosDebug = { ...los, repositioning: false, at: performance.now() };
+    if (c._rangedCooldownT <= 0) beginBanditAction(c, 'fire', targetPlayer);
     return { aimAngle, moving: false, handled: true };
   }
 
@@ -1008,7 +1085,7 @@
     const action = c._rangedAction;
     const def = defFor(c.def.rangedWeaponKey);
     if (!def) return;
-    const actionPose = action ? poseForAction(def, action.kind) : null; // Used for action-specific neutral/windup/strike playback.
+    const actionPose = action ? poseForAction(def, action.kind) : null;
     const neutral = actionPose?.neutral || idlePose(c.def.rangedWeaponKey, c);
     holder.scale.setScalar(Number.isFinite(Number(neutral?.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
     let pose = neutral;
@@ -1022,15 +1099,18 @@
     holder.rotation.set(THREE.MathUtils.degToRad(pose.pitch), vθ + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll), 'YXZ');
   }
 
-  function cancelBanditAction(c) { if (c) { c._rangedAction = null; c._rangedMode = false; } }
+  function cancelBanditAction(c) {
+    if (c) {
+      c._rangedAction = null;
+      c._rangedMode = false;
+      delete c._rangedLosCache;
+      delete c._rangedLosDebug;
+    }
+  }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
-  // Drives the red HUD state with the same shot segment, portrait Box3
-  // volumes, projectile radius, wall test, and terrain-floor test used by
-  // live projectiles. A red reticle therefore means the released center
-  // projectile has an unobstructed 3D body-volume impact.
   const WOULD_HIT_LOS_STEP_PX = 48;
-  function wouldHitHostile() {
+  function computeWouldHitHostile() {
     const itemKey = deps?.getEquippedRangedKey?.();
     const def = defFor(itemKey);
     if (!def || !isLoaded(itemKey)) return false;
@@ -1046,6 +1126,8 @@
       nearest = { hostile, interval };
     }
     if (!nearest) return false;
+    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, projectileRadius) || null;
+    if (coverHit && coverHit.t <= nearest.interval.enter) return false;
     const maxRangePx = def.rangeTiles * deps.TILE;
     const hitDistancePx = nearest.interval.enter * maxRangePx;
     const horizontalDirX = (segment.end.x - segment.start.x) / def.rangeTiles;
@@ -1060,7 +1142,34 @@
     return true;
   }
 
-  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); }
+  function wouldHitHostile() {
+    const now = performance.now();
+    if (now - wouldHitCacheAt < WOULD_HIT_CACHE_MS) {
+      wouldHitCacheHits++;
+      return wouldHitCacheValue;
+    }
+    wouldHitCacheAt = now;
+    wouldHitCacheValue = computeWouldHitHostile();
+    return wouldHitCacheValue;
+  }
+
+  function updateBanditAimLabel() {
+    if (!deps?.isWeaponAiming?.()) {
+      window.WorldPopupText?.clearAimLabel?.();
+      return;
+    }
+    const focused = focusedHostile(deps.getAimLabelRangeWorld?.() ?? 14);
+    const bandit = focused?.candidate?.data;
+    if (!bandit?.isBandit || !bandit.avatarRef?.group) {
+      window.WorldPopupText?.clearAimLabel?.();
+      return;
+    }
+    const rank = window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
+      String(bandit.banditRank || 'bandit').replace(/\b\w/g, letter => letter.toUpperCase());
+    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + ' · ' + rank);
+  }
+
+  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
@@ -1104,19 +1213,23 @@
       const focus = focusedHostile();
       return focus ? { id: focus.candidate.id || null, distanceWorld: focus.distanceWorld } : null;
     },
+    get banditLos() {
+      return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c._rangedLosDebug).map(c => ({ id: c.id || c.name, ...c._rangedLosDebug }));
+    },
     get lastMeleeHeightBlock() { return deps?.getLastMeleeHeightBlock?.() || null; },
     get wouldHitHostile() { return wouldHitHostile(); },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'The centered 3D aim ray now selects enemies, climb trunks, and nests through shared Box3 focus; melee also requires vertically reachable portrait body volumes.',
+      latestChange: 'Enemy bodies now block allied shots and take friendly-fire damage; loaded ranged AI strafes for LOS before firing. Actor hitboxes/projectile perps are shared within the frame and HUD LOS is throttled to 20 Hz.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
       activeProjectiles: projectiles.length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
+      friendlyFireHits, losRepositions, wouldHitCacheHits,
       loaded: Object.fromEntries(playerLoaded),
     }),
   };

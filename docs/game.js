@@ -8448,6 +8448,12 @@
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
               const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (isCrownedPine || isShadewood) {
+                // Their visible trunk base is centered on this solid SHRUB
+                // tile. Projectile cover can therefore use the existing tile
+                // collision instead of raycasting the full procedural tree.
+                vegGroup.userData.projectileCoverUsesTile = true;
+              }
               if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
               // Small bushes are short enough that a player standing behind
               // one is still mostly visible over/around it, and they're
@@ -14333,6 +14339,8 @@
         const desiredY = player.y + player.vy * dt;
         const nextX = clamp(desiredX, minX, maxX);
         const nextY = clamp(desiredY, minY, maxY);
+        const moveStartX = player.x;
+        const moveStartY = player.y;
 
         if (canPlayerOccupy(nextX, player.y)) { player.x = nextX; }
         else { player.vx = 0; }
@@ -14341,6 +14349,13 @@
         if (canPlayerOccupy(player.x, nextY)) { player.y = nextY; }
         else { player.vy = 0; }
         if (desiredY !== nextY) player.vy = 0;
+
+        // When direct tile collision stops both axes, take a tiny consistent
+        // tangent step. This lets held movement naturally slide around a tree
+        // tile without bringing rendered-mesh collision back into movement.
+        if (Math.hypot(player.x - moveStartX, player.y - moveStartY) < 0.001) {
+          tryPlayerTileSidestep(moveStartX, moveStartY, nextX, nextY, minX, maxX, minY, maxY);
+        }
 
         // ── Facing ────────────────────────────────────────────
         // Auto-targeting only engages while an actual weapon item is
@@ -14468,6 +14483,33 @@
         // squeeze through walls.
         if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
           return tileSpeedAt(wx, wy) !== null;
+        }
+        return false;
+      }
+
+      let _playerTileSidestepSide = 1; // Remembers the last successful tangent so a held direction does not jitter left/right each frame.
+      function tryPlayerTileSidestep(startX, startY, desiredX, desiredY, minX, maxX, minY, maxY) {
+        const dx = desiredX - startX, dy = desiredY - startY;
+        const travel = Math.hypot(dx, dy);
+        if (travel < 0.001) return false;
+        const forwardX = dx / travel, forwardY = dy / travel;
+        const sideOrder = [_playerTileSidestepSide, -_playerTileSidestepSide];
+        const sideStep = Math.min(TILE * 0.12, Math.max(TILE * 0.025, travel));
+        for (const side of sideOrder) {
+          const tangentX = -forwardY * side, tangentY = forwardX * side;
+          for (const scale of [0.55, 1, 1.45]) {
+            // A small forward component rounds corners; the tangent-only
+            // fallback still slides along a flat wall when forward is blocked.
+            for (const forwardScale of [0.22, 0]) {
+              const candidateX = clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
+              const candidateY = clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
+              if (!canPlayerOccupy(candidateX, candidateY)) continue;
+              player.x = candidateX;
+              player.y = candidateY;
+              _playerTileSidestepSide = side;
+              return true;
+            }
+          }
         }
         return false;
       }
@@ -21402,6 +21444,20 @@
         const zi = _zoneScenes.get('map_southern_cloud_forest');
         zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
       });
+      function applyNearbyVolumeCollisionSettings() {
+        window.NearbyVolumeCollision?.setOptions?.({
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+        });
+      }
+      for (const settingId of [
+        'settingVolumeCollisionMaster',
+        'settingVolumeCollisionProjectiles',
+        'settingVolumeCollisionAlpha',
+      ]) {
+        document.getElementById(settingId)?.addEventListener('change', applyNearbyVolumeCollisionSettings);
+      }
       document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
         if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
       });
@@ -25665,6 +25721,24 @@
         },
       });
 
+      window.NearbyVolumeCollision?.init({
+        THREE,
+        TILE,
+        player,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        isCombatActive: () => isPlayerInCombat() ||
+          (heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) ||
+            (activeTool === 'ranged' && !!equipmentSlots.ranged))),
+        options: {
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+        },
+        debugLog,
+      });
+
       window.RangedWeapons?.init({
         player,
         playerRadius: PLAYER_RADIUS,
@@ -25707,6 +25781,10 @@
         getGearInventory: () => gearInventory,
         saveGearInventory,
         getEquippedRangedKey: () => equipmentSlots.ranged,
+        isWeaponAiming: () => heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged)),
+        getAimLabelRangeWorld: () => activeTool === 'ranged'
+          ? (window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7) / TILE
+          : Math.max(3, Number(combatConfig().autoTargetRangeTiles) || 4),
         showToast,
         random: () => window.GameRandom?.random?.() ?? Math.random(),
         getLastMeleeHeightBlock: () => lastMeleeHeightBlock,

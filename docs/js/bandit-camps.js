@@ -1,44 +1,11 @@
 (() => {
   'use strict';
 
-  // Bandit camps — a bandit camp is a `placement.mode: "temporary"` locale
-  // (see js/temporary-locales.js) stamped into an already-generated
-  // wilderness zone at runtime: the zone adapter that bridges
-  // TemporaryLocales' own workspace shape to this game's runtime zone
-  // layout, tent props (build/loot/burn), the camp lifecycle (spawn/seed/
-  // reroll per zone visit, in concert with js/combat/combat-bandit.js's
-  // window.BanditCombat.makeEntity for the gang itself), companion
-  // perception (sensing nearby camps/dens for the map), and bandit corpse
-  // loot. Extracted out of game.js following the same window.<Namespace> +
-  // init(deps) pattern already used by js/mount-system.js and
-  // js/combat/combat-bandit.js.
-  //
-  // Deliberately NOT moved here: the Bounty Board (game.js still owns
-  // "hunt down a named captain" quest tracking) and the Wilderness Map
-  // rendering (game.js still owns the minimap/full-map canvas draw) —
-  // both read this module's public API (isCampCleared/campInstances/
-  // perceivedThreats) rather than being pulled in themselves, since
-  // neither is bandit-specific.
+  // Bandit camps — temporary-locale zone adapter, props, lifecycle,
+  // companion perception, tent interaction, and corpse loot.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  // ── Zone adapter for TemporaryLocales ─────────────────────────────
-  //
-  // TemporaryLocales operates on the wilderness generator's own workspace
-  // shape ({cols, rows, tiles: tiles[y][x], objects, entry}). A live
-  // zone's cached layout (deps.zoneLayouts) is a flatter RUNTIME form: a flat
-  // array of {c, r, type, elevTier, incline, floraKind} tile records with
-  // no `objects` list at all, because the generator folds its flora and
-  // resource objects down into tile types on the way out (a copse/bush/
-  // fruitBush/mushroomPatch/beehive all become a SHRUB tile carrying
-  // `floraKind`; ore and boulders become ROCK) -- see terrain-preview.js's
-  // buildMergedZoneGrid and mergeZoneTiles. So the module's
-  // DEFAULT_CLEARABLE_TYPES (which names the generator's pre-fold object
-  // types: 'copse', 'diggableRockOre', ...) can never match anything at
-  // runtime; _BANDIT_CLEARABLE_TYPES is passed as opts.clearableTypes
-  // instead, and this adapter re-inflates the tile grid into the shape
-  // findSite/stamp/release expect. Cached per zone so occupiedBy
-  // reservations from one camp are visible to the next.
   const _BANDIT_CLEARABLE_TYPES = new Set(['shrub']);
   const _banditZoneViews = new Map();
 
@@ -56,8 +23,6 @@
         height: t.elevTier || 0,
         water: deps.WATERWAY_TYPES.has(t.type),
         path: t.type === deps.TileType.PATH,
-        // An incline tile is solid to the game's own movement collision
-        // (tileSpeedAt), so it must never end up under a camp.
         ramp: t.type === deps.TileType.RAMP || !!t.incline,
         waterfall: t.type === deps.TileType.WATERFALL,
         terrain: t.type,
@@ -65,14 +30,6 @@
       };
       tiles[t.r][t.c] = view;
       srcByKey.set(`${t.c},${t.r}`, t);
-      // Flora and resource clutter, re-inflated as clearable objects.
-      // A generated zone's ROCK tiles are always a generator resource
-      // object (diggableRockOre/undiggableBoulder) — mergeZoneTiles
-      // suppresses any stray authored decorative rock back to grass unless
-      // it carries a generatedObjectType — and DEFAULT_CLEARABLE_TYPES
-      // names both, so they're bulldozeable clutter like anything else.
-      // release() puts the node straight back, so a camp only ever hides
-      // a mining spot for as long as it stands.
       if (t.type === deps.TileType.SHRUB || t.type === deps.TileType.ROCK) {
         const id = `zclutter_${t.c}_${t.r}`;
         objects.push({
@@ -86,8 +43,6 @@
     const blockRect = (col, row, w, h) => {
       if (!Number.isFinite(col) || !Number.isFinite(row)) return;
       const id = `zunique_${uniqueSeq++}`;
-      // localeMeta short-circuits isBlocked -- never bulldozeable, whatever
-      // clearableTypes says.
       objects.push({ id, type: 'unique', x: col, y: row, w: w || 1, h: h || 1, localeMeta: true });
       for (let r = row; r < row + (h || 1); r++) {
         for (let cc = col; cc < col + (w || 1); cc++) if (tiles[r]?.[cc]) tiles[r][cc].occupiedBy = id;
@@ -111,11 +66,6 @@
     return view;
   }
 
-  // stamp()/release() only ever touch the adapter view above, so the real
-  // zone layout (and, while the zone is built, its live scene grid) has to
-  // be brought in line by hand: a bulldozed flora tile becomes plain grass
-  // and its tree/bush mesh gets rebuilt away, exactly the way felling a
-  // tree with the axe already does.
   function _syncBanditFlora(zoneId, snapshots, restore) {
     const view = _banditZoneViews.get(zoneId);
     const zi = deps.zoneScenes.get(zoneId);
@@ -141,10 +91,6 @@
 
   // ── Tent props ────────────────────────────────────────────────────
 
-  // Deliberately does not block movement, same as reagent plants and
-  // buried chests -- the tent is a hold-to-interact prop, and making it
-  // solid would need a matching entry in the zone's collision grid that
-  // release()/burning would then have to unpick.
   function buildBanditTentMesh() {
     const group = new THREE.Group();
     const canvas = new THREE.Mesh(
@@ -160,22 +106,57 @@
       new THREE.CylinderGeometry(0.035, 0.035, 1.45, 5),
       new THREE.MeshLambertMaterial({ color: 0x5a4326 }));
     pole.position.y = 0.72;
+    // The height-only projectile cover system reads these semantic values;
+    // the movement collision below uses the stamped tile footprint instead.
+    group.userData.projectileCoverHeightTiles = 1.45;
+    group.userData.projectileCoverRadiusTiles = 0.9;
+    group.userData.projectileCoverKind = 'bandit-tent';
+    group.userData.banditTent = true;
     group.add(canvas, doorway, pole);
     return group;
   }
 
-  // zoneId -> Map<stampedObjectId, { mesh, light, sfxSource }> for every
-  // prop a camp placed (tents plus the locale's own decor).
   const _banditCampMeshes = new Map();
 
   function banditTentCenterPx(obj) {
     return { x: (obj.x + (obj.w || 1) / 2) * deps.TILE, y: (obj.y + (obj.h || 1) / 2) * deps.TILE };
   }
 
-  // Each camp record caches its own tent objects at stamp time (see
-  // spawnBanditCamp) rather than re-filtering the zone view's whole object
-  // list — updateBanditTentInteraction runs this every frame, and a large
-  // zone's view holds one object per flora/rock tile.
+  // Use the game's existing solid ROCK tile path as a cheap runtime collision
+  // mask for a standing tent. The underlying tile type is restored verbatim
+  // when the tent is removed, so no mesh/radius collision runs each frame.
+  function _applyBanditTentGridCollision(zoneId, obj) {
+    const zi = deps.zoneScenes.get(zoneId);
+    if (!zi?.grid || !obj) return [];
+    const snapshots = [];
+    for (let r = obj.y; r < obj.y + (obj.h || 1); r++) {
+      for (let c = obj.x; c < obj.x + (obj.w || 1); c++) {
+        const tile = zi.grid?.[r]?.[c];
+        if (!tile || (tile._banditTentCollisionId && tile._banditTentCollisionId !== obj.id)) continue;
+        if (tile._banditTentCollisionId === obj.id) continue;
+        snapshots.push({ c, r, type: tile.type, floraKind: tile.floraKind, generatedObjectType: tile.generatedObjectType });
+        tile.type = deps.TileType.ROCK;
+        tile.floraKind = null;
+        tile.generatedObjectType = null;
+        tile._banditTentCollisionId = obj.id;
+      }
+    }
+    return snapshots;
+  }
+
+  function _restoreBanditTentGridCollision(zoneId, entry) {
+    const zi = deps.zoneScenes.get(zoneId);
+    if (!zi?.grid || !entry?.collisionTiles?.length) return;
+    for (const snap of entry.collisionTiles) {
+      const tile = zi.grid?.[snap.r]?.[snap.c];
+      if (!tile || tile._banditTentCollisionId !== entry.propId) continue;
+      tile.type = snap.type;
+      tile.floraKind = snap.floraKind;
+      tile.generatedObjectType = snap.generatedObjectType;
+      delete tile._banditTentCollisionId;
+    }
+  }
+
   function _banditZoneTents(zoneId) {
     const out = [];
     for (const rec of (_banditCampInstances.get(zoneId) || [])) {
@@ -185,6 +166,7 @@
   }
 
   function _disposeBanditProp(zoneId, entry) {
+    _restoreBanditTentGridCollision(zoneId, entry);
     const zScene = deps.zoneScenes.get(zoneId)?.scene;
     if (zScene) {
       zScene.remove(entry.mesh);
@@ -192,14 +174,9 @@
     }
     entry.mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
     if (entry.sfxSource) window.Music?.unregisterFurnitureSfxSource(entry.sfxSource);
+    window.NearbyVolumeCollision?.invalidate?.();
   }
 
-  // (Re)builds every prop for whatever camps this zone currently tracks --
-  // idempotent, and re-run on every den-check tick so a zone scene that got
-  // disposed and rebuilt (leaving town and coming back) gets its camps back.
-  // Tents get their own procedural mesh; the locale's plain decor objects
-  // (campfire, supply crates) go through DECORATIVE_FURNITURE_DEFS the same
-  // way authored zone decor does, so the camp fire even lights the place.
   function ensureBanditCampMeshes(zoneId) {
     const zi = deps.zoneScenes.get(zoneId);
     if (!zi) return;
@@ -221,7 +198,9 @@
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
           deps.markOutline(mesh);
           zi.scene.add(mesh);
-          meshes.set(obj.id, { mesh, light: null, sfxSource: null });
+          const collisionTiles = _applyBanditTentGridCollision(zoneId, obj); // Stored on this prop entry so burn/re-roll restores the exact prior tile data.
+          meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
+          window.NearbyVolumeCollision?.invalidate?.();
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
           if (!result) continue;
@@ -248,12 +227,7 @@
 
   // ── Camp lifecycle ────────────────────────────────────────────────
 
-  // zoneId -> [{ zoneId, instance, tier, gangIds: Set<creatureId>,
-  //              props: [stamped tent/decor objects] }]
   const _banditCampInstances = new Map();
-  // Zones the deps.player has just (re-)entered; consumed by
-  // ensureCurrentZoneBanditCamps so a cleared camp only ever re-rolls
-  // between visits, never under the deps.player's feet mid-visit.
   const _banditZoneEntryPending = new Set();
   const _banditZoneWorkInFlight = new Set();
 
@@ -266,12 +240,6 @@
     return deps.clamp(Math.floor(dist / per), 0, maxTier);
   }
 
-  // A camp is cleared once every tent it placed has been burned down AND
-  // every bandit it spawned is dead -- the deps.hostileObjects scan mirrors
-  // deps.isDenPackAlive, keyed on banditCampInstanceId the way a pack member is
-  // keyed on denKey. Looting a tent deliberately does NOT count: it only
-  // strips the tent's supplies (interactable.lootable -> false) and leaves
-  // it standing, so clearing a camp always means burning it out.
   function isBanditCampCleared(rec) {
     const view = _banditZoneViews.get(rec.zoneId);
     if (!view) return false;
@@ -282,21 +250,9 @@
     return true;
   }
 
-  // Location title card ("<Captain>'s Bandit Camp") when the deps.player
-  // crosses INTO a live camp's radius from outside it -- tracks the
-  // inside/outside boolean per instance so it fires again on a real
-  // re-entry (walk away and come back) instead of only ever once per
-  // camp, matching how a genre "Entering X" banner usually behaves.
-  // Independent of updateCompanionPerception's own map-reveal system:
-  // that one requires an active companion and a much larger sensed
-  // range before marking a camp on the map at all; this is a plain
-  // proximity trigger off the deps.player's own position, no companion
-  // needed, since it's just naming what's already visually right
-  // there rather than revealing a hidden threat.
   const BANDIT_CAMP_BANNER_RADIUS_TILES = 10;
   const BANDIT_CAMP_BANNER_CHECK_INTERVAL_S = 0.5;
   let _banditCampBannerAccum = 0;
-  // instance.id -> was the deps.player inside the banner radius last check
   const _banditCampBannerInside = new Map();
   function updateBanditCampBanners(dt) {
     _banditCampBannerAccum += dt;
@@ -316,48 +272,15 @@
       }
       _banditCampBannerInside.set(rec.instance.id, inside);
     }
-    // Drop tracking for any instance no longer live (cleared/re-rolled)
-    // so a brand new camp that happens to reuse a stale id-adjacent
-    // slot starts from a clean "outside" state rather than inheriting
-    // whatever the old, unrelated camp's inside/outside flag was.
     for (const id of _banditCampBannerInside.keys()) {
       if (!live.has(id)) _banditCampBannerInside.delete(id);
     }
   }
 
-  // ── Companion Perception: sensing nearby bandit camps/dens ─────────
-  //
-  // A companion's own species-defined perceptionTiles (see CREATURE_DB —
-  // a hunting dog's nose beats a farm bird's) is how far away it can
-  // sense danger through cover/foliage that fog-of-war alone wouldn't
-  // reveal. An active companion (whistle-summoned, actually present and
-  // following the deps.player — not just sitting in the stable) periodically
-  // checks every live camp/den in the current zone against this range.
-  // The first time one comes into range it's announced once and marked
-  // on the map/minimap with its own danger marker (see
-  // _drawWildernessMapOnCanvas) until the threat is actually cleared —
-  // a camp once every tent is burned and every bandit dead (see
-  // isBanditCampCleared), a den once its current pack is wiped (see
-  // deps.isDenPackAlive). Clearing removes the marker outright rather than
-  // leaving a stale "already handled" icon on the map — a den that
-  // later repopulates needs sensing again from scratch, same as never
-  // having found it the first time.
-  //
-  // Deliberately in-memory only, not saved to localStorage: camps
-  // re-roll to a new spot once cleared and dens are re-seeded per zone
-  // visit already (see forgetZoneBanditState/ensureCurrentZoneDenPacks),
-  // so there's no stable location to persist a reveal against across a
-  // reload the way _loadDiscoveredLocales persists a fixed landmark.
   const PERCEPTION_CHECK_INTERVAL_S = 0.6;
   let _perceptionCheckAccum = 0;
   const DEFAULT_PERCEPTION_TILES = 6;
-  // Global tuning knob on top of each species' own base perceptionTiles
-  // (10 tiles "as the crow flies" read as "it's basically already on top
-  // of you" in actual play, not a meaningful early-warning distance) --
-  // scale every species' range from here rather than re-tuning each
-  // CREATURE_DB entry by hand.
   const PERCEPTION_TILES_MULTIPLIER = 4;
-  // key ('camp:'+instanceId or 'den:'+denKey) -> { kind, zoneId, col, row, label }
   const _perceivedThreats = new Map();
 
   function _companionPerceptionRangePx(c) {
@@ -369,10 +292,6 @@
     if (_perceptionCheckAccum < PERCEPTION_CHECK_INTERVAL_S) return;
     _perceptionCheckAccum = 0;
 
-    // Prune anything that's since been cleared before scanning for new
-    // reveals, so a freshly-repopulated den isn't left permanently
-    // unmarked just because it was sensed once, long ago, before it was
-    // wiped out the first time.
     for (const [key, info] of _perceivedThreats) {
       if (info.kind === 'camp') {
         const rec = (_banditCampInstances.get(info.zoneId) || []).find(r => r.instance.id === info.instanceId);
@@ -386,9 +305,6 @@
     const layout = deps.zoneLayouts.get(deps.getCurrentArea());
     for (const c of deps.companionObjects) {
       if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-      // Only the human deps.player's own perception drives map reveals — an
-      // NPC's or another master's companion sensing danger wouldn't mean
-      // anything to the deps.player.
       if ((c.master || deps.player) !== deps.player) continue;
       const rangePx = _companionPerceptionRangePx(c);
       const label = c.name || c.def?.label || 'Your companion';
@@ -414,17 +330,10 @@
     }
   }
 
-  // Stamps one camp into an already-generated zone and spawns its gang.
-  // Returns the TemporaryLocales instance record, or null if the zone had
-  // no room for the footprint.
   async function spawnBanditCamp(zoneId, localeDef, cfg) {
     const view = _banditZoneView(zoneId);
     if (!view) return null;
     const placement = localeDef.placement || {};
-    // The authored clearance (2 tiles all round) turns a 9x8 camp into a
-    // 13x12 rectangle, which simply does not fit in the two small 22x16
-    // zones once terrain is accounted for -- so fall back through tighter
-    // buffers rather than silently leaving half the wilderness camp-free.
     let instance = null;
     for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
       instance = window.TemporaryLocales.stamp(view, localeDef, {
@@ -442,15 +351,6 @@
     }
     _syncBanditFlora(zoneId, instance.removedObjectSnapshots, false);
 
-    // A bounty pin (see _activeBountyForZone/generateBountyTask) forces
-    // this camp's tier and captain identity to match a wanted poster
-    // already promising a specific captain in this zone, but only
-    // while that zone doesn't already HAVE a camp carrying the pinned
-    // name -- most bounties are generated by adopting an already-live
-    // camp's real identity outright (no pin needed at all), so this
-    // path only matters for the fallback case: a bounty rolled when no
-    // live camp existed anywhere, which has to steer whatever camp
-    // gets generated next instead of naming one that already exists.
     const bountyPin = deps.activeBountyForZone(zoneId);
     const alreadyHasPinnedCaptain = bountyPin
       && (_banditCampInstances.get(zoneId) || []).some(r => r.captainName === bountyPin.captainName);
@@ -473,13 +373,11 @@
       ...Array(lieutenants).fill('lieutenant'),
       ...Array(comp.captains ?? 1).fill('captain'),
     ];
-    // Camp centre in world pixels -- the same homeX/homeY + angle/distance
-    // scatter spawnPackAtDen uses around a den's footprint.
     const homeX = (instance.site.x + instance.site.w / 2) * deps.TILE;
     const homeY = (instance.site.y + instance.site.h / 2) * deps.TILE;
     let spawned = 0;
     for (const rank of roster) {
-      if (zoneId !== deps.getCurrentArea()) break; // deps.player left mid-build; the next visit re-seeds
+      if (zoneId !== deps.getCurrentArea()) break;
       const angle = deps.rnd() * Math.PI * 2;
       const dist = deps.TILE * (1.0 + deps.rnd() * 2.6);
       const c = await window.BanditCombat.makeEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
@@ -491,11 +389,6 @@
       deps.hostileObjects.add(c);
       rec.gangIds.add(c.id);
       spawned++;
-      // _banditName(rank) only appends a surname for rank==='captain'
-      // (see its own comment), so c.name is already the captain's full
-      // "First Last" -- captured here for the camp-entry title banner
-      // (updateBanditCampBanners) rather than re-deriving it. First
-      // captain found wins if gangComposition.captains is ever >1.
       if (rank === 'captain' && !rec.captainName) rec.captainName = c.name;
     }
     window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
@@ -517,10 +410,6 @@
     }
   }
 
-  // Releases each cleared camp's footprint (restoring the flora it
-  // bulldozed) and stamps a fresh one somewhere else in the same zone, with
-  // a brand new gang. Only ever called from the zone-(re)entry branch of
-  // ensureCurrentZoneBanditCamps.
   async function rerollBanditCamps(zoneId, clearedRecs) {
     const [cfg, localeDefs] = await Promise.all([window.BanditCombat.loadGangConfig(), window.BanditCombat.loadCampLocaleDefs()]);
     if (!cfg || !localeDefs.length) return;
@@ -538,12 +427,6 @@
     await seedBanditCampsForZone(zoneId);
   }
 
-  // A Tothal Shift replaces a zone's whole deps.zoneLayouts entry, so the cached
-  // adapter view, every camp instance stamped into it, and every tent mesh
-  // built from it all describe terrain that no longer exists. Mirrors
-  // forgetZoneDenState; the gang itself needs no cleanup here because
-  // performTothalShift's clearHostileObjects() already wipes them, and the
-  // zone scene is disposed/rebuilt with the tent meshes gone.
   function forgetZoneBanditState(zoneId) {
     _banditCampMeshes.delete(zoneId);
     _banditCampInstances.delete(zoneId);
@@ -551,25 +434,13 @@
     _banditZoneEntryPending.delete(zoneId);
   }
 
-  // Perf-testing toggle (Settings → Dev Tools) — see the settingBanditCamps
-  // listener in game.js. Gates only new spawns/re-rolls; a camp already
-  // stamped into a zone before the toggle was switched off is left standing
-  // (unstamping it mid-visit would mean bulldozing its tents and restoring
-  // the gang's occupied tiles out from under a player who might be near or
-  // fighting it), matching how the Cloud Forest toggles apply going forward
-  // rather than retroactively.
   let campsEnabled = true;
 
-  // Called alongside ensureCurrentZoneDenPacks on the shared zone-tick (see
-  // updateHostileSpawning).
   function ensureCurrentZoneBanditCamps() {
     if (!campsEnabled) return;
     const zoneId = deps.getCurrentArea();
     if (!deps.isZoneArea(zoneId) || zoneId === deps.DEV_ARENA_ZONE_ID) return;
     if (!window.TemporaryLocales) return;
-    // Checked before the pending flag is consumed, so a re-entry that lands
-    // while a seed/re-roll is still awaiting its config fetches isn't
-    // swallowed -- it's still pending on the next tick.
     if (_banditZoneWorkInFlight.has(zoneId)) return;
     const reentered = _banditZoneEntryPending.delete(zoneId);
     if (!_banditCampInstances.has(zoneId)) {
@@ -590,22 +461,8 @@
   }
 
   // ── Tent hold actions: loot, then burn ────────────────────────────
-  //
-  // Mirrors the Den-Mother nest's hold-to-take (NEST_TAKE_HOLD_S /
-  // updateNestInteraction): proximity plus the global deps.getActionHeldDown() flag,
-  // no action-bar button to arm first, with a progress bar that resets the
-  // moment the deps.player steps away or lets go. A tent has two held actions
-  // rather than the nest's one, and they're sequential rather than a menu:
-  // the first completed hold LOOTS it (grants the tent's supplies and
-  // clears interactable.lootable, leaving the tent standing), the second
-  // BURNS it (no loot, tent removed from the world). That keeps the nest's
-  // one-action-when-near UX exactly as-is while making both authored
-  // interactable flags meaningful, and means clearing a camp always
-  // requires burning every tent out rather than just rifling through them.
+
   const BANDIT_TENT_HOLD_S = 4;
-  // Computed lazily (not a top-level const) since deps isn't populated
-  // until init() runs, which happens well after this module's own
-  // script loads.
   function banditTentNearPx() { return deps.TILE * 1.7; }
   let _banditTentHoldT = 0;
   let _banditTentHoldId = null;
@@ -625,14 +482,10 @@
   }
 
   function hasNearbyTent() {
-    const zoneId = deps?.getCurrentArea?.(); // Used by desktop Interact to reserve E for the nearby tent hold instead of opening Tool Select.
+    const zoneId = deps?.getCurrentArea?.();
     return !!(zoneId && deps.isZoneArea(zoneId) && nearestBanditTent(zoneId));
   }
 
-  // The action arch needs a concrete context button while the player is
-  // close enough to a tent. The hold itself is still accumulated by
-  // updateBanditTentInteraction(), which reads the shared actionHeldDown flag
-  // for keyboard, controller, and pointer input alike.
   function getNearbyTentAction() {
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
@@ -667,10 +520,6 @@
     if (view) {
       const idx = view.objects.indexOf(obj);
       if (idx >= 0) view.objects.splice(idx, 1);
-      // Hand the tent's tiles back to the instance's own reservation rather
-      // than clearing them outright: the whole padded rect still belongs to
-      // this camp until release() runs, and nulling these would let a
-      // second camp's findSite place itself inside the first one's footprint.
       for (let r = obj.y; r < obj.y + (obj.h || 1); r++) {
         for (let c = obj.x; c < obj.x + (obj.w || 1); c++) {
           if (view.tiles[r]?.[c]?.occupiedBy === obj.id) view.tiles[r][c].occupiedBy = obj.temporaryLocaleInstanceId;
@@ -689,12 +538,8 @@
       if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
       return;
     }
-    // Walking from one tent to another restarts the hold rather than
-    // carrying accumulated progress across to the new one.
     if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
     const looting = !!tent.interactable?.lootable;
-    // The locale authors its own hold duration per tent (interactable.
-    // holdSeconds); BANDIT_TENT_HOLD_S is only the fallback.
     const holdS = Number(tent.interactable?.holdSeconds) > 0
       ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
     _banditTentHoldT += dt;
@@ -711,10 +556,6 @@
 
   // ── Corpse loot ───────────────────────────────────────────────────
 
-  // `gold` is a currency, not an ITEM_DEFS entry (see itemsForScroll's
-  // explicit filter) -- it has no 99-stack cap and no icon lookup, so it
-  // can't go through the ordinary inventory path makeCorpseWorldObject
-  // uses for butchering byproducts.
   function grantBanditLoot(gained) {
     const parts = [];
     for (const [key, qty] of Object.entries(gained || {})) {
@@ -730,11 +571,6 @@
     return parts;
   }
 
-  // deps.getStoreClothingPieces() only lists what the General Store actually
-  // stocks, and the bandit pool includes two items it doesn't
-  // (tankan_bodywrap, riverlandskasa_low) — both of which are in the
-  // account shop catalog with a proper label/price/category, so fall
-  // through to that before resorting to prettifying the raw id.
   function _banditClothingPiece(cosmeticId, rolledSlot) {
     const store = deps.getStoreClothingPieces().find(p => p.id === cosmeticId);
     if (store) return store;
@@ -744,11 +580,6 @@
     return { id: cosmeticId, label: pretty, category: rolledSlot, usesB: false, price: 40 };
   }
 
-  // Rebuilds each worn cosmetic as a deps.getPackClothing() entry -- the exact same
-  // owned-clothing storage a treasure chest's `clothing` bundle grants
-  // through (see makeTreasureChestObject), so a looted bandit's gear shows
-  // up in the pack and can be worn/sold like any other clothing item.
-  // Cosmetics are not ITEM_DEFS inventory keys, so there is no other path.
   function banditWornClothingItems(roster) {
     const catalog = deps.getDyeCatalog();
     const items = [];
@@ -773,9 +604,6 @@
     return items;
   }
 
-  // Same { getButtons(), onAction() } shape as makeCorpseWorldObject, which
-  // branches here for bandits -- so getCorpseObjectAt and the action bar
-  // need no bandit-specific dispatch of their own.
   function makeBanditCorpseWorldObject(c) {
     return {
       id: 'corpse_' + c.id,
@@ -787,9 +615,8 @@
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool));
-        const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Bandits share the same high-chance 0/8 special-ammo resource drop as wildlife.
+        const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
-        // 100% of what they were wearing, on top of the rolled table.
         for (const item of banditWornClothingItems(c.rosterRecord)) {
           deps.getPackClothing().push(item);
           parts.push('👘 ' + item.label);
@@ -822,13 +649,7 @@
     hasNearbyTent,
     getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
-    // Marks a zone as just (re-)entered — the one moment
-    // ensureCurrentZoneCamps is allowed to release and re-stamp a cleared
-    // camp. Called by game.js's enterZone.
     markZoneEntered: (zoneId) => _banditZoneEntryPending.add(zoneId),
-    // Interrupts an in-progress tent loot/burn hold — called by game.js's
-    // damagePlayer, mirroring how getting hit also interrupts a den-nest
-    // egg/baby take (_nestHoldT).
     interruptTentHold: () => { _banditTentHoldT = 0; },
     get campInstances() { return _banditCampInstances; },
     get perceivedThreats() { return _perceivedThreats; },
