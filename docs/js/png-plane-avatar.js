@@ -616,6 +616,11 @@
       const worldZ = new THREE.Vector3(Math.sin(worldYaw), 0, Math.cos(worldYaw));
       const desiredWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(worldX, worldY, worldZ));
       plane.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+      // onBeforeRender runs after the normal scene traversal has already
+      // updated matrixWorld. Rebuild both matrices now so movement cannot
+      // render one frame of the previous parent/plane orientation.
+      plane.updateMatrix();
+      plane.updateMatrixWorld(true);
     };
     frontMesh.onBeforeRender = applyShoulderPetWorldYaw;
     backMesh.onBeforeRender = applyShoulderPetWorldYaw;
