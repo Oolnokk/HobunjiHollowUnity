@@ -1,14 +1,10 @@
-// Precise local collision against rendered world geometry.
+// Precise combat projectile cover against nearby rendered world geometry.
 (() => {
   'use strict';
 
-  const COMBAT_RADIUS_TILES = 12; // Used to bound projectile cover and player-volume collision while a fight is active.
-  const TREE_RADIUS_TILES = 2.25; // Used outside combat so only trees immediately touching the player receive precise collision.
+  const COMBAT_RADIUS_TILES = 12; // Bounds the combat-only cover broad phase so scene traversal stays local.
   const CACHE_MOVE_TILES = 1.25; // Used to avoid rebuilding the local mesh list until the player moves materially.
   const CACHE_MAX_AGE_MS = 450; // Used to pick up newly spawned/burned props without traversing the scene every frame.
-  const MOVEMENT_RAYS = 12;
-  const MOVEMENT_HEIGHTS = [0.10, 0.48, 0.88];
-  const TREE_HINT = /tree|trunk|shadewood|canopy|branch|foliage/i;
   const IGNORE_HINT = /avatar|portrait|player|creature|npc|projectile|trail|reticle|shadow|water|ground|terrain|tile|mist|rain|particle|flame|fireeffect|held/i;
 
   let deps = null;
@@ -22,7 +18,7 @@
   let refreshCount = 0;
   let testedRayCount = 0;
   let lastBlock = null;
-  let options = { enabled: true, movement: true, projectiles: true, textureAlpha: true, outsideCombatTrees: false }; // Controls each costly collision feature from the mobile-accessible Settings toggles.
+  let options = { enabled: true, projectiles: true, textureAlpha: true }; // Controls combat cover from the mobile-accessible Settings toggles.
   const textureAlphaCache = new WeakMap(); // Stores decoded texture alpha so repeated precise hits never reread the same image pixels.
 
   function init(injectedDeps) {
@@ -30,7 +26,7 @@
     raycaster = new deps.THREE.Raycaster();
     options = { ...options, ...(injectedDeps.options || {}) };
     invalidate();
-    deps.debugLog?.('Nearby volume collision: precise combat cover/player collision enabled; out-of-combat checks are tree-only and local.');
+    deps.debugLog?.('Nearby volume collision: precise combat projectile cover enabled; player movement remains tile-only.');
   }
 
   function setOptions(next = {}) {
@@ -43,17 +39,6 @@
     cachedScene = null;
     cacheBuiltAt = 0;
     candidates = [];
-  }
-
-  function objectDescriptor(object) {
-    let text = '';
-    let node = object;
-    for (let depth = 0; node && depth < 5; depth++, node = node.parent) {
-      const data = node.userData || {};
-      text += ' ' + (node.name || '') + ' ' + (data.kind || '') + ' ' + (data.type || '') + ' ' +
-        (data.objectType || '') + ' ' + (data.floraKind || '') + ' ' + (data.furnitureKey || '');
-    }
-    return text;
   }
 
   function hasActorAncestor(object) {
@@ -70,7 +55,7 @@
     return list.some(entry => entry && entry.visible !== false && Number(entry.opacity ?? 1) > 0.12);
   }
 
-  function isCandidateMesh(object, treeOnly) {
+  function isCandidateMesh(object) {
     if (!object?.isMesh || object.visible === false || !object.geometry?.attributes?.position) return false;
     if (!materialCanBlock(object.material) || hasActorAncestor(object)) return false;
     const data = object.userData || {};
@@ -79,7 +64,7 @@
     const dataText = ' ' + (object.name || '') + ' ' + (data.kind || '') + ' ' + (data.type || '') + ' ' +
       (data.objectType || '') + ' ' + (data.floraKind || '') + ' ' + (data.furnitureKey || '');
     if (IGNORE_HINT.test(dataText)) return false;
-    return !treeOnly || TREE_HINT.test(objectDescriptor(object));
+    return true;
   }
 
   function focusWorld(wx, wy) {
@@ -90,7 +75,7 @@
     );
   }
 
-  function rebuild(wx, wy, combat) {
+  function rebuild(wx, wy) {
     const scene = deps.getActiveScene?.();
     if (!scene) {
       candidates = [];
@@ -99,12 +84,11 @@
     }
     scene.updateMatrixWorld?.(true);
     const focus = focusWorld(wx, wy);
-    const radiusTiles = combat ? COMBAT_RADIUS_TILES : TREE_RADIUS_TILES;
+    const radiusTiles = COMBAT_RADIUS_TILES;
     const radiusSq = (radiusTiles + 2) * (radiusTiles + 2);
-    const treeOnly = !combat;
     const next = [];
     scene.traverse(object => {
-      if (!isCandidateMesh(object, treeOnly)) return;
+      if (!isCandidateMesh(object)) return;
       if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere?.();
       const sphere = object.geometry.boundingSphere;
       if (!sphere) return;
@@ -116,24 +100,22 @@
     });
     candidates = next;
     cachedScene = scene;
-    cachedCombat = combat;
+    cachedCombat = true;
     cachedFocusX = wx;
     cachedFocusY = wy;
     cacheBuiltAt = performance.now();
     refreshCount++;
   }
 
-  function ensureCandidates(wx, wy, requireCombat = false) {
-    if (!deps) return false;
-    if (!options.enabled) return false;
+  function ensureCandidates(wx, wy) {
+    if (!deps || !options.enabled || !options.projectiles) return false;
     const combat = !!deps.isCombatActive?.();
-    if (requireCombat && (!combat || !options.projectiles)) return false;
-    if (!combat && !options.outsideCombatTrees) return false;
+    if (!combat) return false;
     const scene = deps.getActiveScene?.();
     const movedPx = Math.hypot(wx - cachedFocusX, wy - cachedFocusY);
     if (scene !== cachedScene || combat !== cachedCombat || !Number.isFinite(movedPx) ||
         movedPx > CACHE_MOVE_TILES * deps.TILE || performance.now() - cacheBuiltAt > CACHE_MAX_AGE_MS) {
-      rebuild(wx, wy, combat);
+      rebuild(wx, wy);
     }
     return true;
   }
@@ -194,7 +176,7 @@
   }
 
   function segmentHit(start, end, radiusWorld = 0) {
-    if (!deps || !ensureCandidates(deps.player.x, deps.player.y, true)) return null;
+    if (!deps || !ensureCandidates(deps.player.x, deps.player.y)) return null;
     const direction = end.clone().sub(start);
     const length = direction.length();
     if (length <= 0.0001) return null;
@@ -223,35 +205,11 @@
     return { t: Math.max(0, Math.min(1, nearest.distance / length)), distanceWorld: nearest.distance, object: nearest.object, point: nearest.point };
   }
 
-  function canPlayerOccupy(wx, wy, radiusPx) {
-    if (!deps || !options.enabled || !options.movement || !ensureCandidates(wx, wy, false) || !candidates.length) return true;
-    const center = focusWorld(wx, wy);
-    const radiusWorld = Math.max(0.04, radiusPx / deps.TILE);
-    const baseY = deps.worldSurfaceY(wx, wy);
-    for (const height of MOVEMENT_HEIGHTS) {
-      center.y = baseY + height;
-      for (let index = 0; index < MOVEMENT_RAYS; index++) {
-        const angle = index * Math.PI * 2 / MOVEMENT_RAYS;
-        const direction = new deps.THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-        const hit = raycast(center, direction, radiusWorld);
-        if (!hit) continue;
-        lastBlock = {
-          kind: cachedCombat ? 'combat movement' : 'tree movement',
-          object: hit.object?.name || hit.object?.parent?.name || '(unnamed mesh)',
-          distanceWorld: Number(hit.distance.toFixed(3)),
-          at: performance.now(),
-        };
-        return false;
-      }
-    }
-    return true;
-  }
-
   function debugSnapshot() {
     return {
-      mode: cachedCombat ? 'combat-all-volumes' : 'nearby-trees-only',
+      mode: deps?.isCombatActive?.() ? 'combat-projectile-cover' : 'inactive',
       candidates: candidates.length,
-      radiusTiles: cachedCombat ? COMBAT_RADIUS_TILES : TREE_RADIUS_TILES,
+      radiusTiles: COMBAT_RADIUS_TILES,
       refreshCount,
       testedRayCount,
       cacheAgeMs: cacheBuiltAt ? Math.round(performance.now() - cacheBuiltAt) : null,
@@ -265,8 +223,7 @@
     setOptions,
     invalidate,
     segmentHit,
-    canPlayerOccupy,
     debugSnapshot,
-    constants: { COMBAT_RADIUS_TILES, TREE_RADIUS_TILES, CACHE_MOVE_TILES, CACHE_MAX_AGE_MS },
+    constants: { COMBAT_RADIUS_TILES, CACHE_MOVE_TILES, CACHE_MAX_AGE_MS },
   };
 })();
