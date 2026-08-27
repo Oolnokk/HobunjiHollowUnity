@@ -573,8 +573,24 @@
     group.add(frontMesh);
     group.add(backMesh);
 
+    // Both rendered faces share one canonical local scale. Genotype size,
+    // attack squash, and shoulder attachment transforms belong on the shared
+    // group; leaving a face with an independent scale makes the pet visibly
+    // change size when the camera reveals the opposite card.
+    const planeScale = Object.freeze({ x: 1, y: 1, z: 1 }); // Authored local face scale used by both mirrored planes.
+    const syncMirroredPlaneScale = () => {
+      frontMesh.scale.set(planeScale.x, planeScale.y, planeScale.z);
+      backMesh.scale.set(planeScale.x, planeScale.y, planeScale.z);
+      return planeScale;
+    };
+    syncMirroredPlaneScale();
+
     return {
       group,
+      frontPlane: frontMesh,
+      backPlane: backMesh,
+      planeScale,
+      syncMirroredPlaneScale,
       dispose() {
         frontGeo.dispose();
         backGeo.dispose();
