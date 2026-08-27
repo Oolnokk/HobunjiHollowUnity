@@ -402,7 +402,8 @@
         const front = summarizePlane('front'), back = summarizePlane('back');
         lines.push('');
         lines.push('=== Shoulder-pet motion transform trace ===');
-        lines.push('Samples=' + petSamples.length + ' movementSpeed=' + Math.max(...petSamples.map(sample => sample.movementSpeed || 0)).toFixed(3) + ' maxGroupYawStep=' + Math.max(...petSamples.slice(1).map((sample, i) => Math.abs(angleDelta(sample.groupYaw, petSamples[i].groupYaw)) * 180 / Math.PI), 0).toFixed(2) + '°');
+        const pausedCount = facingSamples.filter(sample => sample.paused).length;
+        lines.push('Samples=' + petSamples.length + ' movementSpeed=' + Math.max(...petSamples.map(sample => sample.movementSpeed || 0)).toFixed(3) + ' paused=' + pausedCount + '/' + facingSamples.length + ' maxGroupYawStep=' + Math.max(...petSamples.slice(1).map((sample, i) => Math.abs(angleDelta(sample.groupYaw, petSamples[i].groupYaw)) * 180 / Math.PI), 0).toFixed(2) + '°');
         for (const info of [front, back]) lines.push('Plane ' + info.label + ': maxWorldYawStep=' + info.maxYawStep.toFixed(2) + '° maxQuaternionStep=' + info.maxQuatStep.toFixed(2) + '° minWorldUpY=' + info.minUpY.toFixed(4) + ' downFrames=' + info.downFrames + '/' + info.count);
         if (front.downFrames || back.downFrames || front.maxQuatStep > 90 || back.maxQuatStep > 90) lines.push('>>> TRANSFORM FLIP DETECTED — a plane pointed downward or made a >90° world-orientation jump during the sampled motion window.');
       }
@@ -948,13 +949,14 @@
         setTimeout(finish, 200);
       });
       const captureStart = Date.now();
-      for (let i = 0; i < 45 && !deps.getPaused() && (Date.now() - captureStart) < 4000; i++) {
+      for (let i = 0; i < 45 && (Date.now() - captureStart) < 8000; i++) {
         await nextTick();
         glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
         const color = [bufF[0], bufF[1], bufF[2], bufF[3]]; // Frozen before the reused readPixels buffer changes next frame.
         flickerSamples.push(color);
         facingSamples.push({
           color,
+          paused: !!deps.getPaused?.(),
           facing: _pixelProbeCurrentFacingDebug(),
           drunk: window.HobunjiDrunkWalk?.getDebug?.() || null,
           composer: window.PlayerBodyTransformComposer?.getDebug?.() || null,
