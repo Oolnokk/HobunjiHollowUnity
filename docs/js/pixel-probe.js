@@ -520,7 +520,14 @@
 
     const checks = [];
     const _playerAvatarFrontMaterial = deps.getPlayerAvatarFrontMaterial();
+    const rearHeadOverlay = deps.getPlayerRearHeadPetOcclusionOverlay();
     if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+    checks.push(['rear head-over-pet overlay', 'present', true, !!rearHeadOverlay?.mesh]);
+    if (rearHeadOverlay?.mesh) {
+      checks.push(['rear head-over-pet overlay', 'visible', !!liveActivePet, rearHeadOverlay.mesh.visible]);
+      checks.push(['rear head-over-pet overlay', 'renderOrder', deps.SHOULDER_PET_PLANE_RENDER_ORDER + 1, rearHeadOverlay.mesh.renderOrder]);
+      lines.push(`Rear head-over-pet overlay: mode=${rearHeadOverlay.skinningMode || '-'} visible=${rearHeadOverlay.mesh.visible} order=${rearHeadOverlay.mesh.renderOrder} roleGate=all shoulder pets`);
+    }
     if (liveActivePet) {
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
