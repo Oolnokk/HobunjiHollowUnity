@@ -6133,6 +6133,7 @@
       // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
       const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+      const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false; // Used by the preserved rear-character overlay so shoulder pets stay visually above the character by default.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -13484,7 +13485,7 @@
         const facingYawDeg = Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0; // Used below to identify which of the two settled visual facings is currently nearer.
         const facesCharacterLeft = Math.cos(facingYawDeg * Math.PI / 180) >= 0; // Yaw 0 is the authored character-left facing; crossing 90° swaps the layer while the card is edge-on.
         overlay.facesCharacterLeft = facesCharacterLeft;
-        overlay.mesh.visible = !!enabled && facesCharacterLeft;
+        overlay.mesh.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft;
       }
 
       // The normal player portrait remains below an attached shoulder pet, so

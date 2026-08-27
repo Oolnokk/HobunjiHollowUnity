@@ -23,10 +23,11 @@ const layeringSource = source.slice(layeringStart, layeringEnd); // Keeps the re
 const makeHarness = new Function('initialFront', 'initialBack', `
   const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
   const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
+  const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;
   let _playerAvatarFrontMaterial = initialFront;
   let _playerAvatarBackMaterial = initialBack;
   let rearCharacterOcclusionEnabled = false;
-  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
+  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
   ${layeringSource}
   return {
     updatePetLayering,
@@ -46,7 +47,7 @@ const pet = { shoulderCuriosity: { currentFacingYawDeg: 0 }, avatarRef: { frontP
 const harness = makeHarness(front, back);
 
 harness.updatePetLayering(true, pet);
-assert.equal(harness.isRearCharacterOcclusionEnabled(), true, 'character-left facing enables the full rear character occluder');
+assert.equal(harness.isRearCharacterOcclusionEnabled(), false, 'character-left facing keeps the preserved rear character occluder disabled by default');
 assert.equal(front.depthWrite, false, 'active pet disables the real skinned front material depth write');
 assert.equal(back.depthWrite, false, 'active pet disables the real skinned back material depth write');
 assert.equal(pet.avatarRef.frontPlane.material.depthWrite, false, 'active pet front plane defers depth writes');
@@ -76,8 +77,11 @@ assert.match(source,
 assert.match(configSource, /"idIncludes": \["splayedknot"\][\s\S]{0,120}"url": "cosmetics\/appearance\/shared\/splayedknot-behind\.png"/,
   'the full rear portrait resolves the authored Splayed Knot behind-view sprite');
 assert.match(source,
-  /const facesCharacterLeft = Math\.cos\(facingYawDeg \* Math\.PI \/ 180\) >= 0;[\s\S]{0,180}overlay\.mesh\.visible = !!enabled && facesCharacterLeft/,
-  'rear occlusion swaps at the turnaround midpoint according to character-relative facing');
+  /const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;/,
+  'player-over-pet occlusion is preserved but disabled in production');
+assert.match(source,
+  /const facesCharacterLeft = Math\.cos\(facingYawDeg \* Math\.PI \/ 180\) >= 0;[\s\S]{0,220}overlay\.mesh\.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft/,
+  'preserved rear occlusion still tracks the turnaround midpoint but cannot become visible while disabled');
 assert.match(source,
   /function _enforceShoulderPetGrassDepth[\s\S]{0,360}grassBillboardMat\.depthTest = true[\s\S]{0,180}grassBillboardMat\.depthWrite = true/,
   'billboard grass retains a real depth barrier while shoulder-pet x-ray is active');
