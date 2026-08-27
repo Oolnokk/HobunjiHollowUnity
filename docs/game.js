@@ -5728,7 +5728,8 @@
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName, genotypeOrSizeClass = null) { return creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass)?.y ?? null; }
-      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
+      const SHOULDER_PET_PERCH_ANCHOR = 'rightHandShoulder'; // Shared by both shoulder-pet pin passes; this is the same authored shoulder target used by combat hand tracking.
+      // The X/Z half of the player-perch/shoulderGrip alignment math —
       // shared by updateCompanions' shoulderPet branch (which also needs
       // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
       // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
@@ -6237,11 +6238,11 @@
 
           // A shoulder pet doesn't fight or wander off — it stays glued to
           // its master's side, positioned/oriented so its shoulderGrip anchor
-          // coincides with the character's shoulderPerch anchor exactly like
+          // coincides with the character's combat rightHandShoulder anchor exactly like
           // the animation-author tool's own live attachment (see
           // playerAttachmentAnchor/creatureAttachmentAnchor above, and
           // setActorAttachment/updateActorAttachmentAlignment in the tool —
-          // aligning shoulderGrip to shoulderPerch inverts the grip anchor's
+          // aligning shoulderGrip to rightHandShoulder inverts the grip anchor's
           // FULL local transform, position AND rotation together, not just
           // its position, so a grip anchor authored with its own yaw (every
           // stableable creature's shoulderGrip carries -61°) both tilts the
@@ -6249,7 +6250,7 @@
           // position offset lands).
           //
           // Unlike the mount seat (where posterior.x is always authored
-          // centered, so a same-position glue is enough), shoulderPerch is
+          // centered, so a same-position glue is enough), rightHandShoulder is
           // authored OFF-CENTER (it's a specific shoulder, not the spine),
           // so the combined local offset needs rotating into world space by
           // the character's actual current facing — using
@@ -6260,7 +6261,7 @@
           // whether its master is currently moving.
           if (c.stableRole === 'shoulderPet') {
             c.vx = 0; c.vy = 0;
-            const perch = playerAttachmentAnchor('shoulderPerch');
+            const perch = playerAttachmentAnchor(SHOULDER_PET_PERCH_ANCHOR);
             const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
             let dx = null, dz = null, clingDx = null, clingDz = null;
             if (perch && grip) {
@@ -6510,7 +6511,7 @@
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
           if ((c.master || player) !== player) continue; // playerMesh only ever represents the real player
-          const perch = playerAttachmentAnchor('shoulderPerch');
+          const perch = playerAttachmentAnchor(SHOULDER_PET_PERCH_ANCHOR);
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
             const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
