@@ -7,8 +7,16 @@
   const SHELL_LAYER = 1; // Used by the existing inverted-shell outline render pass.
   const SOURCE_SURFACE = 'cliffs'; // Used to identify only the stone skins generated for the farm border.
   const TARGET_SURFACE = 'rocks'; // Used to route farm cliffs through the exact rock natural-surface pipeline.
+  const POSITION_KEY_SCALE = 100000; // Used to match the base terrain's Float32 triangles to the coplanar cliff-skin triangles robustly.
   const patchedApis = new WeakSet(); // Used to prevent wrapping the same BorderTerrain API more than once.
-  const stats = { hookInstalls: 0, farmBuildsCaptured: 0, cliffMeshesRockified: 0, shellMeshesEnabled: 0 }; // Exposed through snapshot() for mobile-friendly verification.
+  const stats = {
+    hookInstalls: 0,
+    farmBuildsCaptured: 0,
+    cliffMeshesRockified: 0,
+    shellMeshesEnabled: 0,
+    baseMeshesTrimmed: 0,
+    coplanarBaseTrianglesRemoved: 0,
+  }; // Exposed through snapshot() for mobile-friendly verification.
   let loggedFirstApply = false; // Used to avoid repeating the one-time render diagnostic message.
 
   function surfaceForMesh(mesh) {
@@ -22,18 +30,91 @@
     return null;
   }
 
+  function collectMeshes(roots) {
+    const meshes = new Set(); // Used to flatten captured roots into unique meshes before geometric matching.
+    const visit = object => { if (object?.isMesh) meshes.add(object); };
+    for (const root of roots) {
+      if (!root) continue;
+      visit(root);
+      root.traverse?.(visit);
+    }
+    return [...meshes];
+  }
+
+  function pointKey(position, index) {
+    const quantize = value => Math.round(value * POSITION_KEY_SCALE); // Used only for topology matching; it does not alter rendered positions.
+    return `${quantize(position.getX(index))},${quantize(position.getY(index))},${quantize(position.getZ(index))}`;
+  }
+
+  function triangleKey(position, a, b, c) {
+    const points = [pointKey(position, a), pointKey(position, b), pointKey(position, c)]; // Sorted so winding/order differences still match the same triangle.
+    points.sort();
+    return points.join('|');
+  }
+
+  function addGeometryTriangleKeys(geometry, output) {
+    const position = geometry?.getAttribute?.('position'); // Used to derive position-only triangle identity across separate geometries.
+    if (!position) return;
+    const index = geometry.index?.array || null; // Uses the authored index when present; non-indexed geometry falls back to sequential triples.
+    if (index) {
+      for (let i = 0; i + 2 < index.length; i += 3) output.add(triangleKey(position, index[i], index[i + 1], index[i + 2]));
+      return;
+    }
+    for (let i = 0; i + 2 < position.count; i += 3) output.add(triangleKey(position, i, i + 1, i + 2));
+  }
+
+  function removeCoplanarBaseTriangles(meshes, cliffMeshes) {
+    const cliffTriangleKeys = new Set(); // Used to identify only base-terrain triangles exactly duplicated by a generated cliff skin.
+    for (const cliffMesh of cliffMeshes) addGeometryTriangleKeys(cliffMesh.geometry, cliffTriangleKeys);
+    if (!cliffTriangleKeys.size) return 0;
+
+    const cliffSet = new Set(cliffMeshes); // Used to exclude the cliff skins themselves from the trimming pass.
+    let removedTotal = 0; // Returned for the render log and accumulated into mobile diagnostics.
+
+    for (const mesh of meshes) {
+      if (!mesh?.isMesh || cliffSet.has(mesh)) continue;
+      const geometry = mesh.geometry;
+      const position = geometry?.getAttribute?.('position');
+      const index = geometry?.index?.array;
+      if (!position || !index || index.length < 3) continue;
+
+      const kept = []; // Becomes the replacement index only when this mesh actually contains duplicate cliff triangles.
+      let removedHere = 0; // Stored on the mesh for direct Pixel Probe/debug inspection.
+      for (let i = 0; i + 2 < index.length; i += 3) {
+        const a = index[i], b = index[i + 1], c = index[i + 2];
+        if (cliffTriangleKeys.has(triangleKey(position, a, b, c))) {
+          removedHere++;
+          continue;
+        }
+        kept.push(a, b, c);
+      }
+      if (!removedHere) continue;
+
+      const IndexArray = index.constructor; // Preserves Uint16/Uint32 index width used by the original border geometry.
+      geometry.setIndex(new THREE.BufferAttribute(new IndexArray(kept), 1));
+      geometry.index.needsUpdate = true;
+      geometry.computeBoundingBox?.();
+      geometry.computeBoundingSphere?.();
+      mesh.userData = Object.assign({}, mesh.userData, {
+        farmCliffCoplanarTrianglesRemoved: removedHere,
+      });
+      stats.baseMeshesTrimmed++;
+      stats.coplanarBaseTrianglesRemoved += removedHere;
+      removedTotal += removedHere;
+    }
+    return removedTotal;
+  }
+
   function applyRockMaterialAndShell(roots) {
     const naturalSurfaces = window.NaturalSurfaceMaterials; // Used to apply the same material factory/config path as ordinary rocks.
     if (!naturalSurfaces?.naturalizeMesh) return 0;
 
-    const seenMeshes = new Set(); // Used to avoid processing a mesh twice when captured roots overlap.
+    const meshes = collectMeshes(roots); // Used both for cliff discovery and for removing the base terrain directly beneath those cliff skins.
+    const cliffMeshes = meshes.filter(mesh => surfaceForMesh(mesh) === SOURCE_SURFACE); // Captured before naturalizeMesh changes their surface tag to rocks.
+    const removedBaseTriangles = removeCoplanarBaseTriangles(meshes, cliffMeshes); // Prevents the hidden green border mesh from depth-occluding the cliff shell.
     let changed = 0; // Returned for diagnostics and used to decide whether to log the first successful application.
 
-    const visit = object => {
-      if (!object?.isMesh || seenMeshes.has(object)) return;
-      seenMeshes.add(object);
-      if (surfaceForMesh(object) !== SOURCE_SURFACE) return;
-
+    for (const object of cliffMeshes) {
       naturalSurfaces.naturalizeMesh(object, TARGET_SURFACE);
       object.layers.enable(SHELL_LAYER);
       object.userData = Object.assign({}, object.userData, {
@@ -43,17 +124,11 @@
       stats.cliffMeshesRockified++;
       stats.shellMeshesEnabled++;
       changed++;
-    };
-
-    for (const root of roots) {
-      if (!root) continue;
-      if (root.isMesh) visit(root);
-      root.traverse?.(visit);
     }
 
-    if (changed && !loggedFirstApply) {
+    if ((changed || removedBaseTriangles) && !loggedFirstApply) {
       loggedFirstApply = true;
-      const message = `[farm-cliff-render] ${changed} farm cliff mesh(es): rock material + shell outline`; // Used by the in-game render log when available.
+      const message = `[farm-cliff-render] ${changed} farm cliff mesh(es): rock material + shell outline; removed ${removedBaseTriangles} coplanar base triangle(s)`; // Used by the in-game render log when available.
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
