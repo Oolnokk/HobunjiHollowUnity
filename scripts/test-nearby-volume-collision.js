@@ -23,6 +23,7 @@ assert(volume.includes('SPATIAL_CELL_TILES'), 'semantic cover is spatially bucke
 assert(volume.includes('projectileCoverUsesTile'), 'native trees use their centered solid tile as cheap cover');
 assert(volume.includes("if (!combat)"), 'cover stays disabled outside combat');
 assert(volume.includes('!options.projectiles'), 'projectile cover retains its kill switch');
+assert(volume.includes('textureAlpha: false'), 'legacy transparent-pixel precision is forcibly disabled');
 assert(!volume.includes('new deps.THREE.Raycaster'), 'cover creates no raycaster');
 assert(!volume.includes('intersectObjects'), 'cover performs no mesh ray intersection');
 assert(!volume.includes('textureAlphaAt'), 'cover performs no texture alpha sampling');
