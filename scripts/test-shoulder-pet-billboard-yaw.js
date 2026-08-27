@@ -5,12 +5,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Guards the production shoulder-pin billboard correction.
+const avatarSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Guards the final onBeforeRender matrix that owns the visible shoulder-pet orientation.
 const helperStart = source.indexOf('function _applyShoulderPetFinalRotation'); // Used below to execute the real helper rather than a copied implementation.
 const helperEnd = source.indexOf('function updateShoulderPetMeshPin()', helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart, 'shoulder-pet final-rotation helper is present');
 
 const helperSource = source.slice(helperStart, helperEnd); // Contains only the production helper and its comments.
 const applyFinalRotation = new Function(`${helperSource}; return _applyShoulderPetFinalRotation;`)();
+assert.match(avatarSource,
+  /const behaviorYaw = \(Number\(owner\.shoulderCuriosity\?\.currentFacingYawDeg\) \|\| 0\) \* Math\.PI \/ 180;[\s\S]{0,180}owner\.pngRot \+ behaviorYaw \+ faceYaw/,
+  'the render-authoritative shoulder-pet matrix preserves the behavior turnaround');
 const plane = () => ({ rotation: { y: 0 } });
 const pet = {
   groupRot: 0.35,

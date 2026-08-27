@@ -552,6 +552,11 @@
       const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + behaviorYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
       const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw + behaviorYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
       lines.push(`Billboard yaw: selected=${Number.isFinite(billboardYaw) ? (billboardYaw * 180 / Math.PI).toFixed(2) + '°' : '-'} group=${(groupYaw * 180 / Math.PI).toFixed(2)}° frontWorld=${(frontWorldYaw * 180 / Math.PI).toFixed(2)}° backWorld=${(backWorldYaw * 180 / Math.PI).toFixed(2)}° error=${Number.isFinite(frontYawError) ? Math.max(frontYawError, backYawError).toFixed(4) : '-'} rad`);
+      const renderedBehaviorYaw = liveActivePet.avatarRef.frontPlane?.userData?.hobunjiShoulderPetRenderDebug?.behaviorYaw;
+      lines.push(`Render-authoritative turn: expected=${(behaviorYaw * 180 / Math.PI).toFixed(2)}° applied=${Number.isFinite(renderedBehaviorYaw) ? (renderedBehaviorYaw * 180 / Math.PI).toFixed(2) + '°' : 'not-rendered-yet'}`);
+      if (Number.isFinite(renderedBehaviorYaw) && Math.abs(wrapAngle(renderedBehaviorYaw - behaviorYaw)) > 0.001) {
+        lines.push('>>> MISMATCH — the final shoulder-pet render matrix erased or lagged behind the behavior turn.');
+      }
       if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
         lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');
       }
