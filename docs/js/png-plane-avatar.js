@@ -615,11 +615,18 @@
       const worldY = new THREE.Vector3(0, 1, 0);
       const worldZ = new THREE.Vector3(Math.sin(worldYaw), 0, Math.cos(worldYaw));
       const desiredWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(worldX, worldY, worldZ));
-      plane.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+      const localWorldCompensated = parentWorld.invert().multiply(desiredWorld);
+      // The main creature loop still assigns plane.rotation.y for ordinary
+      // animals. For shoulder pets, that Euler write is the wrong control
+      // surface: with an attached/animated parent it can be interpreted as
+      // roll when the deadzone changes during movement. Own the local matrix
+      // instead, while retaining the group's position and scale.
+      plane.matrixAutoUpdate = false;
+      plane.matrix.compose(plane.position, localWorldCompensated, plane.scale);
+      plane.matrixWorldNeedsUpdate = true;
       // onBeforeRender runs after the normal scene traversal has already
       // updated matrixWorld. Rebuild both matrices now so movement cannot
       // render one frame of the previous parent/plane orientation.
-      plane.updateMatrix();
       plane.updateMatrixWorld(true);
       const worldElements = plane.matrixWorld.elements;
       plane.userData.hobunjiShoulderPetRenderDebug = {
