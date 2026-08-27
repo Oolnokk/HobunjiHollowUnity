@@ -246,6 +246,56 @@
   const FARM_ANIMAL_WANDER_RADIUS_TILES = 5;
   const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
   const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
+  const LIVESTOCK_LOOK_RANGE_TILES = 3.75;
+
+  // Livestock use the same face-height contract as wild companions, but this
+  // module owns a separate tile-space update loop (farm animals are not in
+  // hostileObjects).  The game supplies the player's smoothed portrait face
+  // point in farm-world units so these animals never aim at the feet/body
+  // center by accident.
+  function _farmAnimalHeadWorldY(animal) {
+    const group = animal.avatarRef?.group;
+    if (!group) return Number(animal.wy) || 0;
+    const rig = animal.avatarRef?.headRig?.rig;
+    const modelHeight = Number(animal.modelHeight) || Number(animal.halfHeight || 0.45) * 2;
+    const scaleY = Number(group.scale?.y) || 1;
+    const pivotY = Number(rig?.pivot?.y);
+    const pivotOffset = Number.isFinite(pivotY) ? (0.5 - pivotY) * modelHeight : modelHeight * 0.08;
+    const planeOffset = Number(animal.avatarRef?.frontPlane?.position?.y) || 0;
+    return (Number(group.position?.y) || Number(animal.wy) || 0) + (planeOffset + pivotOffset) * scaleY;
+  }
+
+  function _farmAnimalFaceLook(animal, dt) {
+    const target = deps.getPlayerFaceTarget?.();
+    if (!target) return null;
+    const targetZ = Number.isFinite(Number(target.z)) ? Number(target.z) : Number(target.y);
+    const dx = Number(target.x) - Number(animal.wx);
+    const dz = targetZ - Number(animal.wz);
+    const distance = Math.hypot(dx, dz);
+    if (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES) return null;
+
+    const targetWorldY = Number(target.worldY);
+    if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
+      const horizontal = Math.max(0.15, distance);
+      const pitchDeg = Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
+      animal.avatarRef.updateHeadRotation(pitchDeg, dt);
+    }
+    return -Math.atan2(dz, dx) + Math.PI / 2;
+  }
+
+  function _restoreFarmAnimalHead(animal, dt) {
+    const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
+    if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
+      animal.avatarRef.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, dt);
+    }
+  }
+
+  function _farmAnimalLookTarget(animal, dt, idle) {
+    const faceTargetRot = _farmAnimalFaceLook(animal, dt);
+    if (faceTargetRot !== null) return faceTargetRot;
+    _restoreFarmAnimalHead(animal, dt);
+    return idle ? deps.nearestAngleAmong(animal.groupRot, deps.cameraRelativePerps()) : animal.targetRot;
+  }
 
   function _farmAnimalPickWanderTarget(animal) {
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -389,6 +439,8 @@
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: 'uumkaoii_' + col + '_' + row,
+      creatureId: 'uumkaoii',
+      headRig: window.CreatureGeneticsRender?.headRigForKind?.('uumkaoii') || undefined,
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
@@ -441,7 +493,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, avatarRef,
+      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -487,7 +539,7 @@
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = idle ? deps.nearestAngleAmong(this.groupRot, deps.cameraRelativePerps()) : this.targetRot;
+        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
         const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
@@ -526,6 +578,8 @@
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
+      creatureId: kind,
+      headRig: window.CreatureGeneticsRender?.headRigForKind?.(kind) || undefined,
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
@@ -574,7 +628,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, avatarRef,
+      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -604,7 +658,7 @@
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = idle ? deps.nearestAngleAmong(this.groupRot, deps.cameraRelativePerps()) : this.targetRot;
+        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
         const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;

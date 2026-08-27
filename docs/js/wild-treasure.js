@@ -296,13 +296,14 @@
   // yet), in the same pixel-space coordinates as creature x/y — used by
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
-    const objs = deps._zoneTreasureObjects.get(mapId);
-    if (!objs) return null;
+    const persisted = deps._zoneTreasurePersist.get(mapId);
+    if (!persisted) return null;
     let best = null, bestDist = Infinity;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(mapId)?.grid[obj.row]?.[obj.col];
+    for (const placement of persisted.placements || []) {
+      if (placement.found) continue;
+      const tile = deps._zoneScenes.get(mapId)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no longer "buried"
-      const x = (obj.col + 0.5) * deps.TILE, y = (obj.row + 0.5) * deps.TILE;
+      const x = (placement.col + 0.5) * deps.TILE, y = (placement.row + 0.5) * deps.TILE;
       const d = Math.hypot(x - fromX, y - fromY);
       if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
     }
@@ -335,8 +336,9 @@
     });
   }
 
-  // Rising sparkle hint for a still-buried chest within a few tiles of
-  // the player — the only surface sign one exists at all, since the
+  // Rising sparkle hint for a still-buried chest within the companion's
+  // treasure-hint radius of the player — the only surface sign one exists
+  // at all, since the
   // chest itself is genuinely hidden under the ground mesh until dug
   // (see _treasureChestBuriedY). Reuses game.js's action-particle
   // overlay system (spawnActionParticles/updateActionParticles/
@@ -344,38 +346,44 @@
   // through the very terrain that's hiding the chest, the way a
   // stylized "something's glowing down there" effect should.
   let _treasureSparkleTimer = 0;
-  const TREASURE_SPARKLE_RANGE_PX_MUL = 3; // "within a few tiles" — × deps.TILE at call time
+  const TREASURE_SPARKLE_RANGE_PX_MUL = 9; // Match the companion's smell radius so the player sees the same site it is announcing.
+  const TREASURE_SPARKLE_PARTICLES = 3; // A single eight-pixel glyph was too easy to miss behind terrain and mobile UI.
   function updateSparkles(dt) {
     const currentArea = deps.getCurrentArea();
     if (!deps.isZoneArea(currentArea)) return;
     _treasureSparkleTimer -= dt;
     if (_treasureSparkleTimer > 0) return;
     _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
-    const objs = deps._zoneTreasureObjects.get(currentArea);
-    if (!objs) return;
+    const persisted = deps._zoneTreasurePersist.get(currentArea);
+    if (!persisted) return;
     const rangePx = deps.TILE * TREASURE_SPARKLE_RANGE_PX_MUL;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(currentArea)?.grid[obj.row]?.[obj.col];
+    for (const placement of persisted.placements || []) {
+      if (placement.found) continue;
+      const tile = deps._zoneScenes.get(currentArea)?.grid[placement.row]?.[placement.col];
       if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no hint needed
-      const cx = obj.col + 0.5, cz = obj.row + 0.5;
+      const cx = placement.col + 0.5, cz = placement.row + 0.5;
       const dPx = Math.hypot(cx * deps.TILE - deps.player.x, cz * deps.TILE - deps.player.y);
       if (dPx > rangePx) continue;
-      const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT;
-      if (deps.actionParticles.length >= deps.ACTION_FX_LIMIT) deps.actionParticles.shift();
-      deps.actionParticles.push({
-        x: cx + (Math.random() - 0.5) * 0.4,
-        y: deps.NORMAL_TOP + tierY + 0.05,
-        z: cz + (Math.random() - 0.5) * 0.4,
-        vx: (Math.random() - 0.5) * 0.12,
-        vy: 0.45 + Math.random() * 0.3,
-        vz: (Math.random() - 0.5) * 0.12,
-        age: 0,
-        maxAge: 1.0 + Math.random() * 0.4,
-        size: 8 + Math.random() * 6,
-        emoji: '✨',
-        color: '#ffe27a',
-        gravity: -0.25, // decelerates the rise gently rather than arcing back down
-      });
+      const surfaceY = deps.tileSurfaceYInArea
+        ? deps.tileSurfaceYInArea(tile, currentArea)
+        : deps.NORMAL_TOP + (tile?.elevTier || 0) * deps.PLATEAU_UNIT;
+      for (let particleIndex = 0; particleIndex < TREASURE_SPARKLE_PARTICLES; particleIndex++) {
+        if (deps.actionParticles.length >= deps.ACTION_FX_LIMIT) deps.actionParticles.shift();
+        deps.actionParticles.push({
+          x: cx + (Math.random() - 0.5) * 0.5,
+          y: surfaceY + 0.08 + particleIndex * 0.025,
+          z: cz + (Math.random() - 0.5) * 0.5,
+          vx: (Math.random() - 0.5) * 0.16,
+          vy: 0.38 + Math.random() * 0.36,
+          vz: (Math.random() - 0.5) * 0.16,
+          age: 0,
+          maxAge: 1.15 + Math.random() * 0.65,
+          size: 13 + Math.random() * 8,
+          emoji: particleIndex === 1 ? '✦' : '✨',
+          color: particleIndex === 1 ? '#fff3a6' : '#ffe27a',
+          gravity: -0.22, // decelerates the rise gently rather than arcing back down
+        });
+      }
     }
   }
 

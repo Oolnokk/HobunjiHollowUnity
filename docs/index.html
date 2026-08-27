@@ -18,7 +18,7 @@
   <script src="config/config.js?v=20260804b"></script>
   <script src="config/scratchbones-config.js?v=20260821alchemy2"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
-  <script src="config/attachment-rig-profiles.js?v=20260821e"></script>
+  <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260826compass1">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
@@ -32,7 +32,7 @@
   <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260821f"></script>
+  <script src="js/png-plane-avatar.js?v=20260826headrig2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -64,7 +64,7 @@
        other), but they're a matched pair. -->
   <script src="js/creature-genetics.js?v=20260821c"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260727b"></script>
+  <script src="js/creature-genetics-render.js?v=20260826headrig2"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
@@ -188,14 +188,14 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260821alchemy1"></script>
+  <script src="js/wild-treasure.js?v=20260826treasure2"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260821alchemy2"></script>
+  <script src="js/farm-animals.js?v=20260826rigv9xray"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -1906,7 +1906,7 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260817b"></script>
+  <script src="js/audio-system.js?v=20260826treasure2"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -1921,7 +1921,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260826compass1"></script>
+  <script src="js/pixel-probe.js?v=20260827petaxis2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1933,7 +1933,7 @@
   <script src="js/world-popup-text.js?v=20260825worldprompt2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20260811a"></script>
+  <script src="js/ambient-dialogue.js?v=20260826treasure2"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -1994,7 +1994,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=branchfalldefense1"></script>
+  <script src="game.js?v=20260827petaxis2"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

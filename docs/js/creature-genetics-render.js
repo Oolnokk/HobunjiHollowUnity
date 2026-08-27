@@ -323,3 +323,98 @@
 
   window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES, recolorPixels, hexToRgb };
 })();
+
+// Species-authored animal head weights. The weight map lives in normalized UV
+// space, so the same rig follows every genotype composite, every animation
+// frame, and any size-only variant such as a Den-Mother without duplicating
+// pattern/frame-specific weights.
+(function installSpeciesAnimalHeadRigs() {
+  'use strict';
+
+  const STORAGE_KEY = window.AnimalHeadRigRuntime?.STORAGE_KEY || 'hobunji_animal_head_rigs_v1'; // Shared with the rig painter so a browser preview can override the committed species rig.
+  const ANIMAL_HEAD_RIGS = Object.freeze({"dabinggi-hound":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.2578125,"y":0.4107142857142857},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[665,256,3,255,10,256,1,0,108,256,11,255,5,256,7,0,102,256,15,255,3,256,9,0,99,256,18,255,1,256,11,0,97,256,19,255,1,256,11,0,96,256,20,255,12,0,94,256,22,255,12,0,93,256,23,255,12,0,91,256,25,255,12,0,90,256,26,255,12,0,90,256,26,255,12,0,89,256,28,255,12,0,88,256,28,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,14,0,84,256,29,255,15,0,84,256,29,255,16,0,83,256,26,255,1,256,18,0,83,256,25,255,20,0,82,256,25,255,21,0,82,256,24,255,22,0,82,256,23,255,23,0,82,256,22,255,23,0,83,256,22,255,22,0,84,256,21,255,22,0,85,256,21,255,21,0,86,256,21,255,21,0,86,256,20,255,22,0,86,256,18,255,2,256,21,0,88,256,16,255,3,256,21,0,89,256,7,255,2,256,4,255,5,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,20,0,108,256,21,0,107,256,21,0,108,256,19,0,109,256,19,0,110,256,18,0,84,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"gar-wolf":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.328125,"y":0.4375},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[657,256,4,255,122,256,9,255,118,256,13,255,114,256,15,255,112,256,17,255,108,256,24,255,102,256,28,255,95,256,35,255,91,256,39,255,89,256,40,255,88,256,41,255,87,256,41,255,87,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,41,255,87,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,39,255,89,256,38,255,90,256,36,255,92,256,35,255,93,256,34,255,94,256,33,255,95,256,31,255,102,256,15,255,1,256,7,255,108,256,12,255,3,256,2,255,111,256,12,255,117,256,11,255,118,256,9,255,120,256,7,255,123,256,3,255,1648,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"drenkirra":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.4375,"y":0.5123456790123457},"weightMap":{"width":128,"height":81,"encoding":"rle-u9","unsetValue":256,"data":[2976,256,6,255,120,256,11,255,116,256,19,255,108,256,22,255,105,256,24,255,103,256,25,255,103,256,26,255,101,256,29,255,99,256,29,255,98,256,31,255,97,256,31,255,96,256,33,255,94,256,34,255,93,256,35,255,92,256,36,255,91,256,36,255,92,256,36,255,91,256,37,255,91,256,37,255,91,256,37,255,91,256,37,255,90,256,38,255,90,256,37,255,91,256,37,255,92,256,36,255,92,256,36,255,92,256,33,255,2,0,93,256,33,255,3,0,93,256,32,255,4,0,92,256,32,255,5,0,92,256,25,255,1,0,3,255,8,0,92,256,25,255,11,0,92,256,25,255,12,0,92,256,15,255,1,0,7,255,13,0,93,256,12,255,3,0,6,255,15,0,94,256,8,255,6,0,5,255,15,0,97,256,3,255,9,0,3,255,16,0,99,256,29,0,98,256,31,0,96,256,32,0,95,256,33,0,94,256,35,0,93,256,35,0,92,256,37,0,91,256,37,0,91,256,37,0,91,256,37,0,90,256,38,0,91,256,37,0,91,256,37,0,91,256,36,0,92,256,35,0,93,256,25,0,1,256,8,0,95,256,23,0,105,256,23,0,105,256,24,0,105,256,23,0,105,256,23,0,78,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"grehlr":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.421875,"y":0.6510416666666666},"weightMap":{"width":128,"height":96,"encoding":"rle-u9","unsetValue":256,"data":[21,256,107,0,20,256,108,0,18,256,110,0,17,256,111,0,16,256,112,0,15,256,113,0,15,256,113,0,14,256,114,0,13,256,115,0,12,256,116,0,11,256,117,0,10,256,118,0,9,256,119,0,8,256,120,0,7,256,121,0,6,256,122,0,6,256,122,0,5,256,123,0,4,256,124,0,4,256,124,0,3,256,125,0,2,256,126,0,1,256,283,0,20,64,106,0,3,64,18,128,8,64,98,0,2,64,3,128,16,191,8,128,3,64,95,0,2,64,2,128,3,191,14,128,8,191,3,128,2,64,93,0,2,64,2,128,2,191,3,128,12,191,8,128,3,191,2,128,2,64,91,0,2,64,2,128,2,191,2,128,3,191,10,255,8,191,3,128,2,191,2,128,1,64,91,0,1,64,2,128,2,191,2,128,2,191,19,255,3,191,2,128,2,191,1,128,1,64,88,0,4,64,1,128,2,191,2,128,2,191,22,255,2,191,2,128,1,191,1,128,1,64,86,0,3,64,4,128,1,191,2,128,2,191,24,255,2,191,1,128,1,191,1,128,1,64,85,0,2,64,3,128,4,191,1,128,2,191,26,255,1,191,1,128,1,191,1,128,1,64,84,0,2,64,2,128,3,191,4,128,1,191,27,255,1,191,1,128,1,191,1,128,1,64,84,0,1,64,2,128,2,191,3,128,4,191,27,255,1,191,1,128,1,191,1,128,1,64,83,0,2,64,1,128,2,191,2,128,3,191,30,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,2,128,1,191,2,128,2,191,32,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,2,191,1,128,2,191,33,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,2,64,1,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,1,64,2,128,1,191,1,128,1,191,34,255,2,191,1,128,1,191,1,128,1,64,82,0,1,64,1,128,2,191,1,128,1,191,34,255,1,191,2,128,1,191,1,128,1,64,81,0,2,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,2,191,1,128,1,64,78,0,4,64,2,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,2,128,1,64,75,0,4,64,4,128,2,191,1,128,1,191,35,255,1,191,1,128,1,191,1,128,2,64,74,0,2,64,4,128,4,191,2,128,1,191,35,255,1,191,1,128,1,191,1,128,1,64,74,0,2,64,2,128,4,191,4,128,2,191,34,255,2,191,1,128,1,191,1,128,1,64,73,0,2,64,2,128,2,191,4,128,4,191,35,255,1,191,2,128,1,191,1,128,1,64,72,0,2,64,2,128,2,191,2,128,4,191,37,255,2,191,1,128,2,191,1,128,1,64,72,0,1,64,2,128,2,191,2,128,2,191,39,255,2,191,2,128,1,191,2,128,1,64,71,0,2,64,1,128,2,191,2,128,2,191,39,255,2,191,2,128,2,191,1,128,2,64,70,0,2,64,2,128,1,191,2,128,2,191,40,255,1,191,2,128,2,191,2,128,1,64,71,0,1,64,2,128,2,191,1,128,2,191,41,255,1,191,1,128,2,191,2,128,2,64,71,0,1,64,1,128,2,191,2,128,1,191,41,255,2,191,1,128,1,191,2,128,2,64,72,0,2,128,1,191,2,128,2,191,41,255,1,191,2,128,1,191,1,128,2,64,73,0,1,128,2,191,1,128,2,191,41,255,2,191,1,128,2,191,1,128,1,64,74,0,1,128,1,191,2,128,1,191,41,255,2,191,2,128,1,191,2,128,1,64,74,0,2,191,1,128,2,191,38,255,4,191,2,128,2,191,1,128,2,64,74,0,1,191,2,128,1,191,38,255,2,191,4,128,2,191,2,128,1,64,75,0,1,191,1,128,2,191,39,255,1,191,1,128,4,191,2,128,2,64,75,0,2,128,1,191,40,255,1,191,1,128,1,191,4,128,2,64,76,0,1,128,2,191,40,255,1,191,1,128,3,191,3,128,4,64,73,0,1,128,1,191,45,255,3,191,4,128,2,64,72,0,1,128,1,191,47,255,4,191,2,128,4,64,69,0,1,128,1,191,50,255,2,191,4,128,3,64,67,0,2,191,51,255,4,191,3,128,3,64,65,0,1,191,55,255,3,191,3,128,2,64,64,0,1,191,57,255,3,191,2,128,2,64,63,0,1,191,59,255,2,191,3,128,63,0,1,191,60,255,3,191,64,0,1,191,62,255,1,191,64,0,1,191,62,255,2,191,63,0,1,191,63,255,2,191,62,0,1,191,64,255,2,191,61,0,1,191,65,255,1,191,61,0,1,191,65,255,2,191,60,0,1,191,66,255,1,191,2,128,58,0,1,191,66,255,2,191,59,0,1,191,67,255,1,191,1,128,58,0,2,191,66,255,1,191,2,128,57,0,1,128,1,191,66,255,2,191,1,128,1,64,56,0,1,128,1,191,67,255,1,191,1,128,1,64,56,0,1,128,2,191,66,255,1,191,1,128,1,64,56,0,2,128,1,191,66,255,1,191,1,128,1,64,56,0,1,191,1,128,1,191,29,255,1,191,36,255,1,191,1,128,1,64,56,0,1,191,1,128,2,191,27,255,2,191,1,128,35,255,1,191,1,128,1,64,56,0,1,191,2,128,1,191,27,255,1,191,2,128,1,191,34,255,1,191,1,128,1,64,56,0,2,191,1,128,2,191,26,255,1,191,1,128,3,191,32,255,2,191,1,128,1,64,56,0,1,128,1,191,2,128,2,191,25,255,1,191,1,128,1,191,1,128,3,191,30,255,1,191,2,128,1,64,56,0,1,128,2,191,2,128,2,191,24,255,1,191,1,128,1,191,3,128,5,191,26,255,1,191,1,128,2,64,56,0,2,128,2,191,2,128,2,191,23,255,1,191,1,128,1,191,1,128,1,64,5,128,2,191,24,255,2,191,1,128,1,64,57,0,1,64,2,128,2,191,2,128,5,191,1,255,1,191,17,255,1,191,1,128,1,191,1,128,5,64,2,128,2,191,22,255,2,191,2,128,1,64,57,0,2,64,2,128,2,191,5,128,3,191,16,255,2,191,1,128,1,191,1,128,1,64,3,0,2,64,2,128,2,191,20,255,2,191,2,128,2,64,58,0,2,64,2,128,5,191,3,128,2,191,15,255,1,191,2,128,1,191,1,128,1,64,4,0,2,64,2,128,2,191,17,255,3,191,2,128,2,64,60,0,2,64,5,128,3,191,2,128,2,191,13,255,2,191,1,128,2,191,1,128,1,64,5,0,2,64,2,128,2,191,15,255,2,191,3,128,2,64,59,0]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48}}); // Exact painter exports supplied for the four authored species.
+  const HEAD_RIG_VARIANT_ALIASES = Object.freeze({
+    'gar-wolf-alpha': 'gar-wolf',
+    'gar-wolf-den-mother': 'gar-wolf',
+    'grehlr-den-mother': 'grehlr',
+    'drenkirra-den-mother': 'drenkirra',
+    'dabinggi-hound-den-mother': 'dabinggi-hound',
+  }); // Scaled/art-identical variants deliberately share their base species' normalized UV weights.
+
+  // Extend the existing genotype alias table with the future-safe Dabinggi
+  // Den-Mother mapping; the other current Den-Mother/alpha aliases already
+  // live there and are intentionally repeated above so head-rig resolution
+  // stays correct even if genetics has not initialized for a standalone tool.
+  if (window.CreatureGenetics?.SPECIES_ALIAS) Object.assign(window.CreatureGenetics.SPECIES_ALIAS, HEAD_RIG_VARIANT_ALIASES);
+
+  function normalizeKind(value) {
+    return String(value || '').trim().toLowerCase().replace(/_/g, '-'); // Converts farm names like gar_wolf_12_3 to the same key space as CREATURE_DB.
+  }
+
+  function knownHeadRigKeys() {
+    const geneticsAliases = window.CreatureGenetics?.SPECIES_ALIAS || {};
+    return [...new Set([
+      ...Object.keys(ANIMAL_HEAD_RIGS),
+      ...Object.keys(HEAD_RIG_VARIANT_ALIASES),
+      ...Object.keys(geneticsAliases),
+      ...Object.values(geneticsAliases),
+    ])].sort((a, b) => b.length - a.length); // Longest-first prevents gar-wolf from stealing gar-wolf-den-mother names.
+  }
+
+  function creatureKindFromOptions(options) {
+    const explicit = normalizeKind(options?.creatureId || options?.animalId); // Preferred stable kind supplied by callers that know it.
+    if (explicit) return explicit;
+    const name = normalizeKind(options?.name); // Legacy/farm callers encode the kind at the front of a unique object name.
+    if (!name) return '';
+    return knownHeadRigKeys().find(key => name === key || name.startsWith(key + '-')) || ''; // Avoids the old split('_')[0] bug for hyphenated species.
+  }
+
+  function baseHeadRigSpecies(kind) {
+    const aliases = window.CreatureGenetics?.SPECIES_ALIAS || {};
+    return aliases[kind] || HEAD_RIG_VARIANT_ALIASES[kind] || kind; // Den-Mothers and alpha resolve to the art-identical base species.
+  }
+
+  function readPainterPreviewRigs() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); // Browser-local authoring overrides must beat committed defaults while testing.
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function headRigForOptions(options) {
+    if (options?.headRig) return options.headRig; // Explicit animation/editor callers always win.
+    const kind = creatureKindFromOptions(options);
+    if (!kind) return null;
+    const baseKind = baseHeadRigSpecies(kind);
+    const preview = readPainterPreviewRigs();
+    return preview[kind] || preview[baseKind] || ANIMAL_HEAD_RIGS[baseKind] || null; // One base UV map drives both normal and scaled variant geometry.
+  }
+
+  function installHeadRigBridge() {
+    const api = window.PNGPlaneAvatar;
+    if (!api?.buildAnimalPlaneAvatarModel || api.__speciesAnimalHeadRigBridgeInstalled) return false;
+    const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Wraps the painted-skin runtime already installed by png-plane-avatar.js.
+    api.buildAnimalPlaneAvatarModel = function buildSpeciesRiggedAnimal(THREE, spriteUrl, options = {}) {
+      const kind = creatureKindFromOptions(options);
+      const rig = headRigForOptions(options);
+      if (!kind && !rig) return priorBuild(THREE, spriteUrl, options);
+      return priorBuild(THREE, spriteUrl, {
+        ...options,
+        ...(kind ? { creatureId: kind } : {}), // Fixes farm hyphenated species even before a rig is consulted downstream.
+        ...(rig ? { headRig: rig } : {}), // Direct injection makes painter previews override any future config-level default.
+      });
+    };
+    api.__speciesAnimalHeadRigBridgeInstalled = true;
+    return true;
+  }
+
+  if (window.CreatureGeneticsRender) {
+    window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS = ANIMAL_HEAD_RIGS; // Mobile/debug tooling can inspect the committed species rig without DevTools-only closure access.
+    window.CreatureGeneticsRender.HEAD_RIG_VARIANT_ALIASES = HEAD_RIG_VARIANT_ALIASES;
+    window.CreatureGeneticsRender.headRigForKind = kind => ANIMAL_HEAD_RIGS[baseHeadRigSpecies(normalizeKind(kind))] || null;
+  }
+  window.HobunjiAnimalHeadRigSpecies = { ANIMAL_HEAD_RIGS, HEAD_RIG_VARIANT_ALIASES, baseSpeciesFor: baseHeadRigSpecies, resolveForOptions: headRigForOptions, install: installHeadRigBridge }; // Small public diagnostic bridge shared by gameplay and authoring tools.
+  installHeadRigBridge();
+})();

@@ -1,7 +1,7 @@
 // Follow-up integration for Grehlr/Drenkirra species attacks.
 // Keeps the existing companion 3x Guard Charge : 1x real-attack cadence,
-// explicitly routes Medium companions to their species attack, and corrects
-// Caustic Pellet's authored X-pitch without duplicating either attack module.
+// explicitly routes Medium companions to their species attack, and preserves
+// the legacy Caustic Pellet body-pitch fallback without duplicating either attack module.
 (() => {
   'use strict';
 
@@ -108,16 +108,23 @@
     const tiltRad = -(Number(tuning.TILT_DEG) || 45) * Math.PI / 180 * amount; // Reverses the old X rotation; zero is exact base X at/after strike.
     const front = creature.avatarRef?.frontPlane; // Used to correct the front sprite plane after the base Pellet update writes its pose.
     const back = creature.avatarRef?.backPlane; // Used to correct the mirrored back sprite plane identically.
-    if (front && state.basePose.front) front.rotation.x = state.basePose.front.rotationX + tiltRad;
-    if (back && state.basePose.back) back.rotation.x = state.basePose.back.rotationX + tiltRad;
+    const hasHeadRig = typeof creature.avatarRef?.updateHeadRotation === 'function'; // Used to keep authored skinned Drenkirra bodies neutral while the Pellet module drives its head bone.
+    if (!hasHeadRig) {
+      if (front && state.basePose.front) front.rotation.x = state.basePose.front.rotationX + tiltRad;
+      if (back && state.basePose.back) back.rotation.x = state.basePose.back.rotationX + tiltRad;
+    }
 
     const progressLabel = state.stage === 'fire'
       ? `${Math.round(clamp01(state.t / Math.max(0.01, Number(tuning.FIRE_DURATION_S) || 1.04)) * 100)}%`
       : `${Math.round(clamp01(state.t / Math.max(0.01, Number(tuning.CHARGE_DURATION_S) || 1.04)) * 100)}%`; // Used only in the throttled mobile diagnostics.
-    updateDebug(`Caustic Pellet ${state.stage} ${progressLabel}\nX pitch ${(tiltRad * 180 / Math.PI).toFixed(1)}° (neutral at strike)`);
+    if (hasHeadRig && Number.isFinite(state.aimPitchDeg)) {
+      updateDebug(`Caustic Pellet ${state.stage} ${progressLabel}\nHead pitch ${state.aimPitchDeg.toFixed(1)}° (authored rig)`);
+    } else {
+      updateDebug(`Caustic Pellet ${state.stage} ${progressLabel}\nX pitch ${(tiltRad * 180 / Math.PI).toFixed(1)}° (neutral at strike)`);
+    }
   }
 
-  const previousUpdate = attacks.update.bind(attacks); // Used to let each registered attack own scale/position/projectiles before the narrowly-scoped X-pitch correction.
+  const previousUpdate = attacks.update.bind(attacks); // Used to let each registered attack own scale/position/projectiles before the narrowly-scoped legacy pose correction.
   attacks.update = function grehlrDrenkirraFollowupUpdate(creature, dt) {
     const activeBefore = creature?._animalAttack; // Used to retain the Pellet state reference even if the underlying update finishes and clears the dispatcher slot.
     const state = activeBefore?.state; // Used to recognize Caustic Pellet by its private state shape without exposing/duplicating the attack registry.

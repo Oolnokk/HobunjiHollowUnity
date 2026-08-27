@@ -50,6 +50,43 @@
     return delta;
   }
 
+  function _pixelProbeShoulderPetTransformDebug() {
+    const pet = [...(deps?.companionObjects || [])].find(c =>
+      c?.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet');
+    if (!pet?.avatarRef?.group) return null;
+    const group = pet.avatarRef.group;
+    group.updateMatrixWorld?.(true);
+    const groupQuat = group.getWorldQuaternion?.(new THREE.Quaternion());
+    const groupEuler = group.getWorldRotation?.(new THREE.Euler(0, 0, 0, 'YXZ'));
+    const planes = {};
+    for (const [label, plane] of [['front', pet.avatarRef.frontPlane], ['back', pet.avatarRef.backPlane]]) {
+      if (!plane) continue;
+      plane.updateMatrixWorld?.(true);
+      const elements = plane.matrixWorld.elements;
+      const worldQuat = plane.getWorldQuaternion?.(new THREE.Quaternion());
+      const up = new THREE.Vector3(elements[4], elements[5], elements[6]).normalize();
+      const normal = new THREE.Vector3(elements[8], elements[9], elements[10]).normalize();
+      planes[label] = {
+        localEuler: [plane.rotation.x, plane.rotation.y, plane.rotation.z],
+        localQuat: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],
+        worldQuat: worldQuat ? [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w] : null,
+        worldYaw: Math.atan2(normal.x, normal.z),
+        upY: up.y,
+        normal: [normal.x, normal.y, normal.z],
+        renderDebug: plane.userData?.hobunjiShoulderPetRenderDebug || null,
+      };
+    }
+    return {
+      time: performance.now(),
+      movementSpeed: Math.hypot(pet.vx || 0, pet.vy || 0),
+      groupYaw: groupEuler?.y ?? group.rotation.y,
+      groupWorldQuaternion: groupQuat ? [groupQuat.x, groupQuat.y, groupQuat.z, groupQuat.w] : null,
+      pngRot: pet.pngRot,
+      groupRot: pet.groupRot,
+      planes,
+    };
+  }
+
   function _pixelProbeCurrentFacingDebug() {
     const clamp = deps.player?.perpState?.pixelProbeDebug || {}; // Last clamp decision made specifically for the player state object.
     const renderYawRad = deps.playerMesh?.rotation?.y; // Final persistent body yaw after clamp and any tool/sweep override.
@@ -336,6 +373,42 @@
       gender: appearance.gender || '-',
       coordinateSpace: 'player-root local + live world',
     });
+    if (facingSamples.length) {
+      const petSamples = facingSamples.map(sample => sample.shoulderPetTransform).filter(Boolean);
+      if (petSamples.length > 1) {
+        const angleDelta = (a, b) => {
+          let d = a - b;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          return d;
+        };
+        const summarizePlane = label => {
+          const entries = petSamples.map(sample => sample.planes?.[label]).filter(Boolean);
+          let maxYawStep = 0, maxQuatStep = 0, minUpY = 1, downFrames = 0;
+          for (let i = 0; i < entries.length; i++) {
+            minUpY = Math.min(minUpY, Number(entries[i].upY));
+            if (entries[i].upY < 0) downFrames++;
+            if (i) {
+              maxYawStep = Math.max(maxYawStep, Math.abs(angleDelta(entries[i].worldYaw, entries[i - 1].worldYaw)) * 180 / Math.PI);
+              const qa = entries[i].worldQuat, qb = entries[i - 1].worldQuat;
+              if (qa && qb) {
+                const dot = Math.min(1, Math.abs(qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3]));
+                maxQuatStep = Math.max(maxQuatStep, 2 * Math.acos(dot) * 180 / Math.PI);
+              }
+            }
+          }
+          return { label, count: entries.length, maxYawStep, maxQuatStep, minUpY, downFrames };
+        };
+        const front = summarizePlane('front'), back = summarizePlane('back');
+        lines.push('');
+        lines.push('=== Shoulder-pet motion transform trace ===');
+        const pausedCount = facingSamples.filter(sample => sample.paused).length;
+        lines.push('Samples=' + petSamples.length + ' movementSpeed=' + Math.max(...petSamples.map(sample => sample.movementSpeed || 0)).toFixed(3) + ' paused=' + pausedCount + '/' + facingSamples.length + ' maxGroupYawStep=' + Math.max(...petSamples.slice(1).map((sample, i) => Math.abs(angleDelta(sample.groupYaw, petSamples[i].groupYaw)) * 180 / Math.PI), 0).toFixed(2) + '°');
+        for (const info of [front, back]) lines.push('Plane ' + info.label + ': maxWorldYawStep=' + info.maxYawStep.toFixed(2) + '° maxQuaternionStep=' + info.maxQuatStep.toFixed(2) + '° minWorldUpY=' + info.minUpY.toFixed(4) + ' downFrames=' + info.downFrames + '/' + info.count);
+        if (front.downFrames || back.downFrames || front.maxQuatStep > 90 || back.maxQuatStep > 90) lines.push('>>> TRANSFORM FLIP DETECTED — a plane pointed downward or made a >90° world-orientation jump during the sampled motion window.');
+      }
+    }
+
     const resultEl = document.getElementById('debugProbeResult');
     if (resultEl) resultEl.textContent = report;
     const screenshotEl = document.getElementById('debugProbeScreenshot');
@@ -460,6 +533,53 @@
     else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
 
     if (liveActivePet) {
+      const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.
+      const expectedScaleY = (Number(liveActivePet.visualScaleY) || 1) * (Number(liveActivePet.scaleY) || 1); // Used below to detect a real renderer scale overwrite rather than apparent foreshortening.
+      const expectedScaleZ = Number(liveActivePet.visualScaleX) || 1; // Used below because animal billboard width is carried on group Z.
+      const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
+      const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
+      lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
+      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
+        lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
+      }
+      const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
+      const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
+      const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
+      const backWorldYaw = groupYaw + (liveActivePet.avatarRef.backPlane?.rotation.y || 0); // Used below to compare the mirrored back card against the same billboard yaw.
+      const wrapAngle = radians => Math.atan2(Math.sin(radians), Math.cos(radians));
+      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
+      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
+      lines.push(`Billboard yaw: selected=${Number.isFinite(billboardYaw) ? (billboardYaw * 180 / Math.PI).toFixed(2) + '°' : '-'} group=${(groupYaw * 180 / Math.PI).toFixed(2)}° frontWorld=${(frontWorldYaw * 180 / Math.PI).toFixed(2)}° backWorld=${(backWorldYaw * 180 / Math.PI).toFixed(2)}° error=${Number.isFinite(frontYawError) ? Math.max(frontYawError, backYawError).toFixed(4) : '-'} rad`);
+      if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
+        lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');
+      }
+      // Compare the two actual rendered cards, not only their shared parent.
+      // This catches child-scale, geometry-size, skinning, and coplanar-depth
+      // problems that can all look like one side suddenly became huge.
+      const planeDetails = [];
+      for (const [label, plane] of [['front', liveActivePet.avatarRef?.frontPlane], ['back', liveActivePet.avatarRef?.backPlane]]) {
+        if (!plane) continue;
+        plane.updateMatrixWorld?.(true);
+        const localScale = plane.scale;
+        const worldScale = plane.getWorldScale ? plane.getWorldScale(new THREE.Vector3()) : null;
+        const params = plane.geometry?.parameters || {};
+        const bounds = plane.geometry?.boundingBox;
+        const size = bounds ? bounds.getSize(new THREE.Vector3()) : null;
+        const worldPos = plane.getWorldPosition ? plane.getWorldPosition(new THREE.Vector3()) : plane.position;
+        planeDetails.push({ label, plane, localScale, worldScale, params, size, worldPos });
+        lines.push('Plane ' + label + ': localScale=(' + [localScale.x, localScale.y, localScale.z].map(v => v.toFixed(4)).join(',') + ') worldScale=(' + (worldScale ? [worldScale.x, worldScale.y, worldScale.z].map(v => v.toFixed(4)).join(',') : '-') + ') geometry=' + (Number.isFinite(params.width) ? params.width.toFixed(4) : '-') + '×' + (Number.isFinite(params.height) ? params.height.toFixed(4) : '-') + ' bounds=' + (size ? [size.x, size.y, size.z].map(v => v.toFixed(4)).join('×') : '-') + ' worldPos=(' + [worldPos.x, worldPos.y, worldPos.z].map(v => v.toFixed(4)).join(',') + ')');
+      }
+      if (planeDetails.length === 2) {
+        const [frontInfo, backInfo] = planeDetails;
+        const scaleDelta = Math.max(Math.abs(frontInfo.localScale.x - backInfo.localScale.x), Math.abs(frontInfo.localScale.y - backInfo.localScale.y), Math.abs(frontInfo.localScale.z - backInfo.localScale.z));
+        const geometryWidthDelta = Math.abs((frontInfo.params.width || frontInfo.size?.x || 0) - (backInfo.params.width || backInfo.size?.x || 0));
+        const geometryHeightDelta = Math.abs((frontInfo.params.height || frontInfo.size?.y || 0) - (backInfo.params.height || backInfo.size?.y || 0));
+        const separation = frontInfo.worldPos.distanceTo(backInfo.worldPos);
+        lines.push('Plane comparison: localScaleΔ=' + scaleDelta.toFixed(6) + ' geometryΔ=' + geometryWidthDelta.toFixed(6) + '×' + geometryHeightDelta.toFixed(6) + ' worldSeparation=' + separation.toFixed(6));
+        if (scaleDelta > 0.001 || geometryWidthDelta > 0.001 || geometryHeightDelta > 0.001) lines.push('>>> MISMATCH — the two rendered shoulder-pet planes do not have identical authored dimensions.');
+        if (separation < 0.0001) lines.push('>>> WARNING — the two rendered shoulder-pet planes are effectively coplanar; camera-angle flicker can alternate their pixels and mimic a scale jump.');
+      }
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
       const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
@@ -863,16 +983,18 @@
         setTimeout(finish, 200);
       });
       const captureStart = Date.now();
-      for (let i = 0; i < 45 && !deps.getPaused() && (Date.now() - captureStart) < 4000; i++) {
+      for (let i = 0; i < 45 && (Date.now() - captureStart) < 8000; i++) {
         await nextTick();
         glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
         const color = [bufF[0], bufF[1], bufF[2], bufF[3]]; // Frozen before the reused readPixels buffer changes next frame.
         flickerSamples.push(color);
         facingSamples.push({
           color,
+          paused: !!deps.getPaused?.(),
           facing: _pixelProbeCurrentFacingDebug(),
           drunk: window.HobunjiDrunkWalk?.getDebug?.() || null,
           composer: window.PlayerBodyTransformComposer?.getDebug?.() || null,
+          shoulderPetTransform: _pixelProbeShoulderPetTransformDebug(),
         });
       }
     } catch (e) { /* best-effort — the rest of the report still stands without it */ }

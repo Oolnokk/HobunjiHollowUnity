@@ -3958,6 +3958,8 @@
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: creatureKey + '_' + idUniq,
+          creatureId: creatureKey,
+          headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
@@ -5045,7 +5047,7 @@
       // 0.18s/frame cadence this replaced.
       const RUN_FRAME_STRIDE_PX = 30;
 
-      function updateCreatureAnimFrame(c, dt, moving) {
+      function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
         // texture re-applied once the async compose finishes, even if the
@@ -5096,7 +5098,9 @@
         // networked peer already has to agree on, so a distance-driven frame
         // index falls out of position sync for free instead of needing its
         // own state kept in lockstep.
-        const movedPx = Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
+        const movedPx = runInPlace
+          ? Math.max(0, c.def.moveSpeed * 0.5 * dt)
+          : Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
         c._animLastX = c.x; c._animLastY = c.y;
         c.runFrameDistPx = (c.runFrameDistPx || 0) + movedPx;
         while (c.runFrameDistPx >= RUN_FRAME_STRIDE_PX) {
@@ -5258,6 +5262,9 @@
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
           const onFleeCooldown = c._fleeCooldownUntil > performance.now();
+          const livestockLookCandidate = def.hostile === false
+            && !onFleeCooldown
+            && distToPlayer <= LIVESTOCK_LOOK_RANGE_PX;
 
           // distFromHome <= leashRangePx is required to re-aggro, not just
           // distToPlayer <= aggroRangePx, specifically to break a real
@@ -5566,6 +5573,25 @@
             // specific direction to look, so settle broadside to the camera.
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
+          // Passive livestock keep their useful movement state, but when the
+          // player comes within approach range they turn their head toward
+          // the character's face. If they are settled (grazing/drinking or
+          // paused between wander legs), their body also squares to that
+          // face target; combat, fleeing, and patrol movement retain priority.
+          if (def.hostile === false) {
+            const canLook = livestockLookCandidate
+              && !c.prone
+              && c.state !== 'return'
+              && c.state !== 'patrol-chase'
+              && !window.Combat?.telegraph?.isBusy(c)
+              && !window.Combat?.animalAttacks?.isBusy(c);
+            if (canLook) {
+              const faceAimAngle = _updateCreatureLookAtFace(c, targetPlayer, dt);
+              if (!moving) aimAngle = faceAimAngle;
+            } else {
+              _restoreCompanionHead(c, dt);
+            }
+          }
           c.facing = aimAngle;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
@@ -5710,6 +5736,276 @@
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
+      const TREASURE_ANNOUNCE_S = 3.2; // Holds the companion player-facing for the full overhead treasure utterance and alert bark.
+      const TREASURE_MARK_ARRIVAL_PX = TILE * 0.55; // Switches the lead into its stationary marking pose near the buried tile center.
+      const TREASURE_MARK_HEAD_DEG = -10; // Drives authored animal head rigs downward while indicating the dig spot.
+      const LIVESTOCK_LOOK_RANGE_PX = TILE * 3.75; // Passive livestock notice the player at a short, readable approach distance.
+      const PLAYER_FACE_HEIGHT_RATIO = 0.76; // Face target measured from the player's floor to the authored portrait height.
+      const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
+      const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
+      const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
+      const SHOULDER_PET_CURIOUS_LOOK_MIN_S = 0.65; // Brief hold after easing into the glance.
+      const SHOULDER_PET_CURIOUS_LOOK_MAX_S = 1.35;
+      const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3.4; // A cooldown keeps the glance spontaneous rather than constant.
+      const SHOULDER_PET_CURIOUS_WAIT_MAX_S = 7.2;
+      const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
+      const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
+      const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
+      const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
+
+      function _companionHeadRestDeg(c) {
+        return c.avatarRef?.headRig?.rig?.restDeg ?? 0;
+      }
+
+      function _fallbackCompanionHeadState(c) {
+        const front = c.avatarRef?.frontPlane;
+        const back = c.avatarRef?.backPlane;
+        if (!front && !back) return null;
+        return c._fallbackHeadPose || (c._fallbackHeadPose = {
+          baseFrontX: front?.rotation?.x || 0,
+          baseBackX: back?.rotation?.x || 0,
+          currentDeg: 0,
+        });
+      }
+
+      function _updateCompanionHeadRotation(c, targetDeg, dt) {
+        if (typeof c.avatarRef?.updateHeadRotation === 'function') {
+          c.avatarRef.updateHeadRotation(targetDeg, dt);
+          return;
+        }
+        // Older saves/preview builds can still have the legacy rigid animal
+        // planes. Keep their fallback pose visible rather than silently making
+        // every head request a no-op until the painted rig is loaded.
+        const state = _fallbackCompanionHeadState(c);
+        if (!state) return;
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentDeg += clamp(targetDeg - state.currentDeg, -step, step);
+        const radians = state.currentDeg * Math.PI / 180;
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.x = state.baseFrontX + radians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.x = state.baseBackX + radians;
+      }
+
+      function _restoreCompanionHead(c, dt) {
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+      }
+
+      // Look targets use the character's face, not the feet/body center. The
+      // horizontal X/Z projection remains the character position in this
+      // top-down world; worldY supplies the portrait face height to the
+      // authored animal head bone so a nearby animal actually lifts its gaze.
+      function _playerFaceTarget(master = player) {
+        const isPlayer = master === player;
+        const modelHeight = isPlayer
+          ? (Number(playerAvatarModelHeight) || 0.9)
+          : (Number(master?.avatarRef?.group?.userData?.portraitModelHeight) || Number(master?.halfHeight || 0.45) * 2);
+        const floorY = isPlayer
+          ? (Number(playerMesh?.position?.y) || 0)
+          : ((Number(master?.avatarRef?.group?.position?.y) || 0) - (Number(master?.halfHeight) || modelHeight / 2));
+        return {
+          x: Number(master?.x) || 0,
+          y: Number(master?.y) || 0,
+          worldY: floorY + modelHeight * PLAYER_FACE_HEIGHT_RATIO,
+        };
+      }
+
+      function _creatureHeadWorldY(c) {
+        const group = c.avatarRef?.group;
+        if (!group) return 0;
+        const rig = c.avatarRef?.headRig?.rig;
+        const modelHeight = Number(c.def?.modelWidth) * Number(c.def?.spriteAspect || (600 / 1375)) || Number(c.halfHeight || 0.45) * 2;
+        const scaleY = Number(group.scale?.y) || 1;
+        const pivotY = Number(rig?.pivot?.y);
+        const pivotOffset = Number.isFinite(pivotY) ? (0.5 - pivotY) * modelHeight : modelHeight * 0.08;
+        const planeOffset = Number(c.avatarRef?.frontPlane?.position?.y) || 0;
+        return (Number(group.position?.y) || 0) + (planeOffset + pivotOffset) * scaleY;
+      }
+
+      function _updateCreatureLookAtFace(c, master, dt) {
+        const target = _playerFaceTarget(master);
+        const dx = target.x - c.x, dy = target.y - c.y;
+        const horizontalPx = Math.hypot(dx, dy);
+        const aimAngle = horizontalPx > 1 ? Math.atan2(dy, dx) : (c.facing || 0);
+        const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
+        const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        _updateCompanionHeadRotation(c, pitchDeg, dt);
+        return aimAngle;
+      }
+
+      function _tickShoulderPetCuriosity(c, dt) {
+        const state = c.shoulderCuriosity || (c.shoulderCuriosity = {
+          phase: 'wait',
+          timer: 1.4 + rnd() * 2.2, // First glance arrives soon enough to be noticed after equipping a pet.
+          currentLeanDeg: 0,
+          targetLeanDeg: 0,
+          currentPitchDeg: 0,
+          targetPitchDeg: 0,
+          baseFrontRoll: null,
+          baseBackRoll: null,
+        });
+        state.timer -= dt;
+        if (state.timer <= 0) {
+          if (state.phase === 'wait') {
+            const side = rnd() < 0.5 ? -1 : 1;
+            state.phase = 'look';
+            state.timer = SHOULDER_PET_CURIOUS_LOOK_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
+            state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
+            state.targetPitchDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG))
+              + (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
+          } else if (state.phase === 'look') {
+            state.phase = 'settle';
+            state.timer = 0.55;
+            state.targetLeanDeg = 0;
+            state.targetPitchDeg = 0;
+          } else {
+            state.phase = 'wait';
+            state.timer = SHOULDER_PET_CURIOUS_WAIT_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_WAIT_MAX_S - SHOULDER_PET_CURIOUS_WAIT_MIN_S);
+          }
+        }
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        return state;
+      }
+
+      function _applyShoulderPetCuriosity(c, dt) {
+        const state = _tickShoulderPetCuriosity(c, dt);
+        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
+        if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
+        if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
+        // updateCreatureMesh owns the attachment root and will be followed by
+        // updateShoulderPetMeshPin. A local Y turn foreshortens these flat
+        // side-view planes and used to look exactly like the small pet was
+        // randomly becoming medium-sized. Roll the mirrored planes within
+        // their own image instead; the authored head bone supplies the real
+        // independent curious turn without disturbing genotype scale.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
+      }
+
+      function _isPlayerGenuinelyIdle() {
+        const keyboard = getKeyboardVector();
+        const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
+        if (rawMoveInput || playerAutoWalk) return false;
+        if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
+        if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
+        if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld || fishThrowActive) return false;
+        if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
+        if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) return false;
+        return !isPlayerInCombat();
+      }
+
+      function _clearCompanionWatchIdle(c, reason) {
+        if (!c.watchPlayerIdle) return;
+        window.__farmLog?.(`[companion-idle] ${c.creatureKey} (${c.id}): watch-player -> cleared (${reason})`, 'wildlife');
+        c.watchPlayerIdle = null;
+      }
+
+      function _startCompanionWatchIdle(c) {
+        c.watchPlayerIdle = { // Holds the one spontaneous stare timer so random sampling cannot restart it every frame.
+          timer: COMPANION_WATCH_IDLE_MIN_S + rnd() * (COMPANION_WATCH_IDLE_MAX_S - COMPANION_WATCH_IDLE_MIN_S),
+        };
+        c.wanderTarget = null;
+        c.vx = 0; c.vy = 0;
+        window.__farmLog?.(`[companion-idle] ${c.creatureKey} (${c.id}): watch-player started`, 'wildlife');
+      }
+
+      function _tickCompanionWatchIdle(c, master, dt) {
+        const watch = c.watchPlayerIdle;
+        if (!watch) return null;
+        watch.timer -= dt;
+        if (watch.timer <= 0) {
+          _clearCompanionWatchIdle(c, 'timer elapsed');
+          return null;
+        }
+        c.vx = 0; c.vy = 0;
+        return { aimAngle: _updateCreatureLookAtFace(c, master, dt) };
+      }
+
+      function _clearCompanionTreasureCue(c, dt, reason) {
+        if (!c.treasureCue) return;
+        window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): ${c.treasureCue.phase} -> cleared (${reason})`, 'wildlife');
+        c.treasureCue = null;
+        c._travelPath = null;
+        c._travelPathTarget = null;
+        _restoreCompanionHead(c, dt);
+      }
+
+      function _treasureCueTargetStillBuried(cue) {
+        if (!cue || cue.mapId !== currentArea || !_isZoneArea(currentArea)) return false;
+        const nearest = window.WildTreasure?.nearestBuriedPixelPos(currentArea, cue.targetX, cue.targetY);
+        return !!nearest && nearest.dist < 1;
+      }
+
+      function _startCompanionTreasureCue(c, treasureHint) {
+        c.treasureCue = { // Tracks one notification so announcement, travel, and marking cannot retrigger independently each frame.
+          phase: 'announce',
+          mapId: currentArea,
+          targetX: treasureHint.x,
+          targetY: treasureHint.y,
+          timer: TREASURE_ANNOUNCE_S,
+          markFacingAngle: Math.atan2(treasureHint.y - c.y, treasureHint.x - c.x), // Seed the exact tile bearing even if the companion is already standing on the site.
+        };
+        c.wanderTarget = null;
+        c._travelPath = null;
+        c._travelPathTarget = null;
+        window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): detected buried treasure; announce -> lead -> mark`, 'wildlife');
+        window.AmbientDialogue?.companionTreasure(c);
+        window.AudioSystem?.playCreatureTreasureAlert?.(c);
+        // Keep the cue readable even when audio is muted/blocked or the
+        // companion's species bark is unfamiliar. This toast is deliberately
+        // emitted alongside (rather than instead of) the existing utterance.
+        showToast(`${c.def.label} found buried treasure!`, true, true);
+      }
+
+      function _tickCompanionTreasureCue(c, master, dt) {
+        const cue = c.treasureCue;
+        let moving = false;
+        let runInPlace = false;
+        let aimAngle = c.facing || 0;
+
+        if (cue.phase === 'announce') {
+          cue.timer -= dt;
+          c.vx = 0; c.vy = 0;
+          aimAngle = _updateCreatureLookAtFace(c, master, dt);
+          if (cue.timer <= 0) {
+            cue.phase = 'lead';
+            window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): announce -> lead`, 'wildlife');
+          }
+        } else if (cue.phase === 'lead') {
+          const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
+          const distToTreasure = Math.hypot(treasureDx, treasureDy);
+          if (distToTreasure > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx); // Preserves the last real bearing if pathing lands exactly on the tile center.
+          aimAngle = cue.markFacingAngle ?? aimAngle;
+          _restoreCompanionHead(c, dt);
+          if (distToTreasure > TREASURE_MARK_ARRIVAL_PX) {
+            moving = travelCreatureToward(c, cue.targetX, cue.targetY, c.def.chaseSpeed, dt);
+          } else {
+            cue.phase = 'mark';
+            c.vx = 0; c.vy = 0;
+            c._travelPath = null;
+            c._travelPathTarget = null;
+            window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): lead -> mark`, 'wildlife');
+          }
+        }
+
+        if (cue.phase === 'mark') {
+          c.vx = 0; c.vy = 0;
+          const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
+          if (Math.hypot(treasureDx, treasureDy) > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx);
+          aimAngle = cue.markFacingAngle ?? aimAngle;
+          _updateCompanionHeadRotation(c, TREASURE_MARK_HEAD_DEG, dt);
+          runInPlace = true;
+        }
+        return { moving, runInPlace, aimAngle };
+      }
 
       // Depth-write priority between the player's own avatar and a freely-
       // roaming companion (NOT a shoulder pet — see updatePetLayering
@@ -5758,7 +6054,12 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
+          // A neck-rigged portrait is one SkinnedMesh with separate front/back
+          // materials in an array; rigid fallback portraits still expose one
+          // material per mesh. Flatten both shapes for the depth arbiter.
+          const childMaterials = Array.isArray(child.material) ? child.material : [child.material]; // Used by updateAvatarDepthPriority below.
+          mats.push(...childMaterials.filter(Boolean));
         });
         _playerAvatarBodyMaterialsCache = mats;
         return mats;
@@ -5809,63 +6110,46 @@
 
       // Shoulder-pet-vs-player layering: fixed, NOT distance-based. A
       // shoulder pet is always glued to the same authored offset near the
-      // player's head/shoulder (see the shoulderPet branch below), so
-      // unlike a companion there's a single visual relationship that's
-      // always correct: the pet sits ON somebody's shoulder, so it belongs
-      // in front of whichever body plane is currently facing the camera —
-      // UNLESS that's the player's own BACK (the player is facing away),
-      // in which case the body itself is between the camera and the pet,
-      // so the back plane has to win instead. That never depends on which
-      // way the camera happens to be looking or how close the pet's
-      // anchor happens to land relative to the body plane this frame — a
-      // per-frame distance comparison between two points that are always
-      // glued within a few centimeters of each other is exactly what kept
-      // flickering (the "winner" of two near-identical camera-space
-      // distances is effectively floating-point noise from one frame to
-      // the next).
-      //
-      // Implemented as a fixed renderOrder stack — front body plane (2,
-      // its unchanged default) < shoulder pet planes (3) < back body
-      // plane (4, bumped in refreshPlayerAvatar) < back hat-xray overlay
-      // (5, bumped in buildPlayerHatXrayOverlay) — plus disabling
-      // depthWrite on whichever layers could otherwise block a later one
-      // via their own real (overlapping/interleaved) depth: the front
-      // body plane and the pet's own planes. depthTest stays on
-      // throughout, so real-world occlusion (trees, buildings) is
-      // untouched; renderOrder only ever arbitrates these specific layers
-      // against each other, never against the rest of the scene.
-      const SHOULDER_PET_PLANE_RENDER_ORDER = 3;
-      // Player back body plane's renderOrder — bumped above the front
-      // plane's unchanged default (2) and the pet's (3) in refreshPlayerAvatar,
-      // so the back plane always wins whenever it's the one facing camera.
-      // Declared here (rather than as a literal in refreshPlayerAvatar) so
-      // buildPlayerHatXrayOverlay's back-facing hat overlay can derive its
-      // own renderOrder from it and stay correctly stacked above it.
+      // player's head/shoulder (see the shoulderPet branch below), so a
+      // per-frame distance comparison between nearly identical points only
+      // creates flicker. Keep depth testing enabled (terrain and buildings
+      // can still occlude the pet), but disable depth writes on both portrait
+      // faces and draw the pet after both faces and hat overlays.
+      const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
+      // Keep the back portrait above the front portrait. The pet is
+      // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
+      function _setLayerDepthWrite(material, depthWrite) {
+        if (!material || material.depthWrite === depthWrite) return;
+        material.depthWrite = depthWrite;
+        material.needsUpdate = true;
+      }
       function updatePetLayering(active, pet) {
-        if (active === _petLayeringActive && pet === _petLayeringPet) return;
         // A previously-arbitrated pet (deactivated, or swapped for a
         // different creature) needs its own planes restored to normal —
         // otherwise a former shoulder pet demoted to a plain wandering
         // companion would be stuck permanently unable to write depth.
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
-            if (m) { m.depthWrite = true; m.needsUpdate = true; }
+            _setLayerDepthWrite(m, true);
           }
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = 2;
+            if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
           }
         }
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        if (_playerAvatarFrontMaterial) { _playerAvatarFrontMaterial.depthWrite = !active; _playerAvatarFrontMaterial.needsUpdate = true; }
+        for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
+          _setLayerDepthWrite(m, !active);
+        }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) { m.depthWrite = !active; m.needsUpdate = true; }
+        for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
           for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+            if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
           }
         }
       }
@@ -5898,6 +6182,8 @@
           const master = c.master || player;
 
           if (master.climbing) {
+            _clearCompanionTreasureCue(c, dt, 'master climbing');
+            _clearCompanionWatchIdle(c, 'master climbing');
             // Teleport-and-stick: an untagged companion can't path through an
             // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
             // so for the duration of the climb it just clings to its master's
@@ -5972,6 +6258,7 @@
             }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
+            _applyShoulderPetCuriosity(c, dt);
             if (perch && grip) {
               // perch.y/grip.y are floor-relative — the same total
               // height-above-playerMesh convention playerToolBaseY already
@@ -6043,8 +6330,29 @@
           if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target) c._stage = null;
 
-          let moving = false, aimAngle = c.facing || 0;
+          if (target && c.treasureCue) _clearCompanionTreasureCue(c, dt, 'combat');
+          if (target && c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'combat');
+          if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
+            _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
+          }
+          if (!target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+            const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
+            if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
+          }
+          const playerIdle = _isPlayerGenuinelyIdle();
+          if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
+          if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
+            const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
+            if (rnd() < startChance) _startCompanionWatchIdle(c);
+          }
+          if (!c.treasureCue
+            && !window.Combat?.animalAttacks?.isBusy(c)
+            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
+
+          let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
+            _clearCompanionTreasureCue(c, dt, 'knockback');
+            _clearCompanionWatchIdle(c, 'knockback');
             // Mirrors updateHostiles' knockback branch — per-axis canOccupyAt
             // check so a companion caught by a stray hit can't get shoved
             // through solid terrain either.
@@ -6105,33 +6413,23 @@
                 }
               }
             }
+          } else if (c.treasureCue) {
+            const cueMotion = _tickCompanionTreasureCue(c, master, dt);
+            moving = cueMotion.moving;
+            runInPlace = cueMotion.runInPlace;
+            aimAngle = cueMotion.aimAngle;
           } else if (distToMaster > FOLLOW_FAR_PX) {
             moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
-          } else {
-            // Fable 2-style treasure hint: with nothing else to do, a
-            // companion bounces toward the nearest still-buried treasure
-            // chest in this zone instead of wandering aimlessly near its
-            // master — "leading you to it". Only wilderness zones carry
-            // buried treasure (see _zoneTreasureObjects), so elsewhere this
-            // is always a no-op and behavior is unchanged.
-            const treasureHint = _isZoneArea(currentArea) ? window.WildTreasure.nearestBuriedPixelPos(currentArea, master.x, master.y) : null;
-            if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
-              if (!c._treasureHintAnnounced) {
-                c._treasureHintAnnounced = true;
-                // The companion keeps the existing Fable-style lead behavior,
-                // but announces the find through its species voice overhead.
-                // Fall back to the old mobile-visible toast if the secondary
-                // dialogue module failed to load for any reason.
-                if (!window.AmbientDialogue?.companionTreasure(c)) {
-                  showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
-                }
-              }
-              moving = wanderTick(c, dt, treasureHint.x, treasureHint.y, TILE * 1.4);
-            } else {
-              c._treasureHintAnnounced = false;
+          } else if (c.watchPlayerIdle) {
+            const watchMotion = _tickCompanionWatchIdle(c, master, dt);
+            if (watchMotion) aimAngle = watchMotion.aimAngle;
+            else {
               moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             }
+          } else {
+            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -6139,7 +6437,7 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
         }
 
         // Run last, after every avatar's position has actually been updated
@@ -6167,6 +6465,20 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
+      function _applyShoulderPetFinalRotation(c, finalGroupRotY) {
+        const group = c.avatarRef?.group;
+        if (!group) return;
+        group.rotation.y = finalGroupRotY;
+        // updateCreatureMesh authored the inner planes against c.groupRot,
+        // but an attack/tool pose can replace the attachment group's yaw in
+        // this later pass. Recompute the local counter-rotation so that
+        // moving the shoulder anchor with bodyYaw does not also rotate the
+        // flat animal card face-on/edge-on and change its projected width.
+        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Used here to preserve the camera-relative plane yaw chosen by updateCreatureMesh.
+        const planeDelta = billboardWorldYaw - finalGroupRotY; // Used below to cancel only the final attachment-group yaw override.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+      }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
@@ -6178,13 +6490,15 @@
             c.avatarRef.group.position.x = playerMesh.position.x + dx;
             c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
             c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y - gripYawRad;
+            const finalGroupRotY = playerMesh.rotation.y - gripYawRad; // Final bodyYaw-aware attachment rotation consumed by the billboard counter-rotation helper.
+            _applyShoulderPetFinalRotation(c, finalGroupRotY);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
             c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
             c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y;
+            const finalGroupRotY = playerMesh.rotation.y; // Final fallback attachment rotation consumed by the same billboard counter-rotation helper.
+            _applyShoulderPetFinalRotation(c, finalGroupRotY);
           }
         }
       }
@@ -7563,9 +7877,8 @@
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
-      // updateCompanions) to toggle the front plane's depthWrite without
-      // disturbing the back plane's, which _playerAvatarBodyMaterials()'s
-      // combined front+back traversal can't do on its own.
+      // updateCompanions) to make both portrait faces transparent to the
+      // attached pet's depth pass without affecting ordinary world occlusion.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
       // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
@@ -13228,14 +13541,14 @@
             // the SAME outward direction that plane already leans relative to
             // anchorZ) so the hat consistently draws on top instead of
             // z-fighting with the now-hatless body layer underneath it.
-            // Front stays at the body planes' shared default (2) — resolved
+            // Front stays at the body plane's shared default — resolved
             // against the front body plane by the Z-nudge above, same as
             // always. Back has to explicitly out-rank the body's own back
             // plane (bumped to PLAYER_BACK_PLANE_RENDER_ORDER in
             // refreshPlayerAvatar, for the shoulder-pet layering rule — see
             // updatePetLayering), since renderOrder is compared before the
             // Z-nudge ever comes into play.
-            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
+            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : PLAYER_FRONT_PLANE_RENDER_ORDER;
             mesh.frustumCulled = false;
             assembly.add(mesh);
             materials.push(material);
@@ -13308,17 +13621,19 @@
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
-        // Direct front/back plane refs for updatePetLayering (see near
-        // updateCompanions) — createSinglePlaneAssembly always nests them
-        // as the assembly's first two children (frontMesh, then backMesh).
-        // The back plane's renderOrder is bumped here (once, unconditionally
-        // — harmless when idle, since front/back are never simultaneously
-        // visible) so it always out-ranks a shoulder pet's planes whenever
-        // it's the one actually facing the camera.
+        // Direct front/back material refs for updatePetLayering. A neck-rigged
+        // avatar is one SkinnedMesh with [front, back] materials, whereas the
+        // fallback assembly keeps two separate meshes. Resolve either shape
+        // instead of writing depth state onto the SkinnedMesh's material array.
         const _bodyAssembly = avatarGroup.children[0];
-        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
-        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
-        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        const _skinnedBodyPlane = avatarGroup.userData?.neckRig?.available ? avatarGroup.userData.neckRig.skinnedPlane : null; // Used here to identify the dual-material portrait shape.
+        const _skinnedBodyMaterials = _skinnedBodyPlane
+          ? (Array.isArray(_skinnedBodyPlane.material) ? _skinnedBodyPlane.material : [_skinnedBodyPlane.material])
+          : null; // Used here to map the skinned mesh's material groups to their front/back faces.
+        _playerAvatarFrontMaterial = _skinnedBodyMaterials?.[0] || _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _skinnedBodyMaterials?.[1] || _bodyAssembly?.children?.[1]?.material || null;
+        if (_skinnedBodyPlane) _skinnedBodyPlane.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        else if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
@@ -25259,6 +25574,17 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        // Named animal projectiles use the same live Three.js elevation as
+        // the player/creature renderers so Drenkirra's vertical spit aim is
+        // based on actual target height, not a flattened ground plane.
+        getActorWorldY: (actor) => {
+          if (actor === player) return playerMesh.position.y;
+          const avatarY = actor?.avatarRef?.group?.position?.y;
+          if (Number.isFinite(avatarY)) return avatarY;
+          if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y)) return activeSurfaceYAtWorld(actor.x / TILE, actor.y / TILE) + 0.4;
+          return 0.4;
+        },
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getActiveScene,
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
@@ -26403,6 +26729,15 @@
         calendar,
         inventory,
         player,
+        // Farm livestock has its own tile-space update loop, so give it the
+        // same explicit face target used by companion/wildlife gaze.  The
+        // horizontal point is in farm tiles; worldY is the player's actual
+        // smoothed portrait face height, never the feet/body center.
+        getPlayerFaceTarget: () => ({
+          x: player.x / TILE,
+          z: player.y / TILE,
+          worldY: playerMesh.position.y + (Number(playerAvatarModelHeight) || 0.9) * PLAYER_FACE_HEIGHT_RATIO,
+        }),
         scene,
         worldObjects,
         angleDiff,
