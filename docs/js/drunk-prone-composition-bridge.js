@@ -12,7 +12,9 @@
 //      stale knockback state are cancelled while the entity is down;
 //   6) immediately before each render, the current player low-Footing pitch/
 //      roll is re-published as an additive composer channel after gameplay has
-//      resolved facing/auto-target yaw for the frame.
+//      resolved facing/auto-target yaw for the frame;
+//   7) a stopped procedural gait clears its walk-only foot pitch while keeping
+//      any independently composed yaw/roll foot effects intact.
 (() => {
   'use strict';
 
@@ -26,8 +28,10 @@
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
   const DEG = Math.PI / 180;
+  const WALK_STOP_SPEED = 0.02; // Matches procedural-leg-animation.js's gait stop threshold; used to restore neutral foot pitch as soon as locomotion stops.
   const banditStateByLegHandle = new WeakMap(); // Binds a pre-entity bandit leg attachment to its entity once makeEntity finishes.
   const banditStates = new Set(); // Iterated only at render time to compose visible sway without touching persistent facing state.
+  let lastStoppedFootPitchReset = null; // Exposed through bridge debug so mobile Pixel Probe can verify the last idle-foot correction without a console.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -55,6 +59,30 @@
     entity._banditAction = null;
     entity._banditComboIndex = 0;
     entity.telegraphState = null;
+  }
+
+  function straightenStoppedFootPitch(handle, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+    const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0); // Compared with the gait module's own stop threshold below.
+    if (speed > WALK_STOP_SPEED || suppressed || seatedPose) return;
+    const pitchesBeforeDeg = {}; // Captures both local foot pitches for the existing in-game debug snapshot.
+    let resetCount = 0; // Counts only feet that actually needed a non-zero walk-pitch correction this update.
+    for (const side of ['left', 'right']) {
+      const foot = handle?.group?.getObjectByName?.(`${side}_foot`); // Resolves the currently active fallback/GLB foot without depending on gait solver internals.
+      if (!foot?.rotation) continue;
+      pitchesBeforeDeg[side] = Number((foot.rotation.x / DEG).toFixed(3));
+      if (Math.abs(foot.rotation.x) <= 1e-7) continue;
+      // Walk gait owns local X pitch. Preserve the current Y/Z Euler values so
+      // independently composed toe yaw/roll (notably drunken sway) survives.
+      foot.rotation.x = 0;
+      foot.updateMatrix?.();
+      resetCount++;
+    }
+    lastStoppedFootPitchReset = {
+      speed: Number(speed.toFixed(4)),
+      resetCount,
+      leftBeforeDeg: pitchesBeforeDeg.left ?? null,
+      rightBeforeDeg: pitchesBeforeDeg.right ?? null,
+    };
   }
 
   function makeBanditSwayState(THREEArg, legsPivot) {
@@ -118,6 +146,15 @@
         : options;
       const handle = previousAttach(THREEArg, parent, attachOptions);
       if (!handle) return handle;
+
+      if (typeof handle.update === 'function') {
+        const previousLocomotionUpdate = handle.update.bind(handle); // Runs the complete normal+drunk gait before the stopped-foot pitch is normalized.
+        handle.update = function stoppedFootPitchAwareLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+          const result = previousLocomotionUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
+          straightenStoppedFootPitch(handle, speedWorldUnitsPerSecond, suppressed, seatedPose);
+          return result;
+        };
+      }
 
       if (banditState) {
         banditState.handle = handle;
@@ -285,6 +322,7 @@
         activeBanditSwayStates: banditStates.size,
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
+        stoppedFootPitchReset: lastStoppedFootPitchReset,
         drunkWalk: window.HobunjiDrunkWalk?.getDebug?.() || null,
         composer: composer.getDebug?.() || null,
       };
