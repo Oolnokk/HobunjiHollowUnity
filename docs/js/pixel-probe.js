@@ -821,7 +821,7 @@
     if (volumeDebug) {
       const blocked = volumeDebug.lastBlock ? `${volumeDebug.lastBlock.kind}:${volumeDebug.lastBlock.object}@${volumeDebug.lastBlock.distanceWorld}u/${volumeDebug.lastBlock.ageMs}ms` : 'none';
       const flags = volumeDebug.options || {};
-      lines.push(`Nearby cover: enabled=${flags.enabled} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t candidates=${volumeDebug.candidates} refreshes=${volumeDebug.refreshCount} rays=${volumeDebug.testedRayCount} lastBlock=${blocked}`);
+      lines.push(`Nearby cover: enabled=${flags.enabled} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t cached=${volumeDebug.candidates} segment=${volumeDebug.lastSegmentCandidateCount}/${volumeDebug.maxSegmentCandidateCount} refreshes=${volumeDebug.refreshCount} rebuild=${volumeDebug.lastRebuildMs}ms rays=${volumeDebug.testedRayCount} rayWork=${volumeDebug.lastSegmentMs}/${volumeDebug.maxSegmentMs}ms tileTrees=${volumeDebug.skippedTileCoverCount} leafCards=${volumeDebug.skippedLeafCardCount} lastBlock=${blocked}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
