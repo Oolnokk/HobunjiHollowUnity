@@ -50,6 +50,43 @@
     return delta;
   }
 
+  function _pixelProbeShoulderPetTransformDebug() {
+    const pet = [...(deps?.companionObjects || [])].find(c =>
+      c?.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet');
+    if (!pet?.avatarRef?.group) return null;
+    const group = pet.avatarRef.group;
+    group.updateMatrixWorld?.(true);
+    const groupQuat = group.getWorldQuaternion?.(new THREE.Quaternion());
+    const groupEuler = group.getWorldRotation?.(new THREE.Euler(0, 0, 0, 'YXZ'));
+    const planes = {};
+    for (const [label, plane] of [['front', pet.avatarRef.frontPlane], ['back', pet.avatarRef.backPlane]]) {
+      if (!plane) continue;
+      plane.updateMatrixWorld?.(true);
+      const elements = plane.matrixWorld.elements;
+      const worldQuat = plane.getWorldQuaternion?.(new THREE.Quaternion());
+      const up = new THREE.Vector3(elements[4], elements[5], elements[6]).normalize();
+      const normal = new THREE.Vector3(elements[8], elements[9], elements[10]).normalize();
+      planes[label] = {
+        localEuler: [plane.rotation.x, plane.rotation.y, plane.rotation.z],
+        localQuat: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],
+        worldQuat: worldQuat ? [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w] : null,
+        worldYaw: Math.atan2(normal.x, normal.z),
+        upY: up.y,
+        normal: [normal.x, normal.y, normal.z],
+        renderDebug: plane.userData?.hobunjiShoulderPetRenderDebug || null,
+      };
+    }
+    return {
+      time: performance.now(),
+      movementSpeed: Math.hypot(pet.vx || 0, pet.vy || 0),
+      groupYaw: groupEuler?.y ?? group.rotation.y,
+      groupWorldQuaternion: groupQuat ? [groupQuat.x, groupQuat.y, groupQuat.z, groupQuat.w] : null,
+      pngRot: pet.pngRot,
+      groupRot: pet.groupRot,
+      planes,
+    };
+  }
+
   function _pixelProbeCurrentFacingDebug() {
     const clamp = deps.player?.perpState?.pixelProbeDebug || {}; // Last clamp decision made specifically for the player state object.
     const renderYawRad = deps.playerMesh?.rotation?.y; // Final persistent body yaw after clamp and any tool/sweep override.
@@ -336,6 +373,41 @@
       gender: appearance.gender || '-',
       coordinateSpace: 'player-root local + live world',
     });
+    if (facingSamples.length) {
+      const petSamples = facingSamples.map(sample => sample.shoulderPetTransform).filter(Boolean);
+      if (petSamples.length > 1) {
+        const angleDelta = (a, b) => {
+          let d = a - b;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          return d;
+        };
+        const summarizePlane = label => {
+          const entries = petSamples.map(sample => sample.planes?.[label]).filter(Boolean);
+          let maxYawStep = 0, maxQuatStep = 0, minUpY = 1, downFrames = 0;
+          for (let i = 0; i < entries.length; i++) {
+            minUpY = Math.min(minUpY, Number(entries[i].upY));
+            if (entries[i].upY < 0) downFrames++;
+            if (i) {
+              maxYawStep = Math.max(maxYawStep, Math.abs(angleDelta(entries[i].worldYaw, entries[i - 1].worldYaw)) * 180 / Math.PI);
+              const qa = entries[i].worldQuat, qb = entries[i - 1].worldQuat;
+              if (qa && qb) {
+                const dot = Math.min(1, Math.abs(qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3]));
+                maxQuatStep = Math.max(maxQuatStep, 2 * Math.acos(dot) * 180 / Math.PI);
+              }
+            }
+          }
+          return { label, count: entries.length, maxYawStep, maxQuatStep, minUpY, downFrames };
+        };
+        const front = summarizePlane('front'), back = summarizePlane('back');
+        lines.push('');
+        lines.push('=== Shoulder-pet motion transform trace ===');
+        lines.push('Samples=' + petSamples.length + ' movementSpeed=' + Math.max(...petSamples.map(sample => sample.movementSpeed || 0)).toFixed(3) + ' maxGroupYawStep=' + Math.max(...petSamples.slice(1).map((sample, i) => Math.abs(angleDelta(sample.groupYaw, petSamples[i].groupYaw)) * 180 / Math.PI), 0).toFixed(2) + '°');
+        for (const info of [front, back]) lines.push('Plane ' + info.label + ': maxWorldYawStep=' + info.maxYawStep.toFixed(2) + '° maxQuaternionStep=' + info.maxQuatStep.toFixed(2) + '° minWorldUpY=' + info.minUpY.toFixed(4) + ' downFrames=' + info.downFrames + '/' + info.count);
+        if (front.downFrames || back.downFrames || front.maxQuatStep > 90 || back.maxQuatStep > 90) lines.push('>>> TRANSFORM FLIP DETECTED — a plane pointed downward or made a >90° world-orientation jump during the sampled motion window.');
+      }
+    }
+
     const resultEl = document.getElementById('debugProbeResult');
     if (resultEl) resultEl.textContent = report;
     const screenshotEl = document.getElementById('debugProbeScreenshot');
@@ -886,6 +958,7 @@
           facing: _pixelProbeCurrentFacingDebug(),
           drunk: window.HobunjiDrunkWalk?.getDebug?.() || null,
           composer: window.PlayerBodyTransformComposer?.getDebug?.() || null,
+          shoulderPetTransform: _pixelProbeShoulderPetTransformDebug(),
         });
       }
     } catch (e) { /* best-effort — the rest of the report still stands without it */ }
