@@ -1,0 +1,117 @@
+name: Temporary rebuild shoulder pet occlusion
+
+on:
+  push:
+    branches:
+      - fix/shoulder-pet-occlusion-disabled-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/shoulder-pet-occlusion-disabled-rebuild
+          fetch-depth: 1
+
+      - name: Disable character-over-pet overlay without removing it
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          game_path = Path('docs/game.js')
+          game = game_path.read_text(encoding='utf-8')
+
+          old_constants = """      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+"""
+          new_constants = """      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+      const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false; // Used by the preserved rear-character overlay so shoulder pets stay visually above the character by default.
+"""
+          if game.count(old_constants) != 1:
+              raise SystemExit(f'Expected one shoulder-pet render-order block, found {game.count(old_constants)}')
+          game = game.replace(old_constants, new_constants, 1)
+
+          old_visibility = """        overlay.mesh.visible = !!enabled && facesCharacterLeft;
+"""
+          new_visibility = """        overlay.mesh.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft;
+"""
+          if game.count(old_visibility) != 1:
+              raise SystemExit(f'Expected one rear-character overlay visibility assignment, found {game.count(old_visibility)}')
+          game = game.replace(old_visibility, new_visibility, 1)
+          game_path.write_text(game, encoding='utf-8')
+
+          test_path = Path('scripts/test-shoulder-pet-layering.js')
+          test = test_path.read_text(encoding='utf-8')
+
+          old_harness = """  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
+  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
+  let _playerAvatarFrontMaterial = initialFront;
+  let _playerAvatarBackMaterial = initialBack;
+  let rearCharacterOcclusionEnabled = false;
+  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
+"""
+          new_harness = """  const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
+  const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
+  const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;
+  let _playerAvatarFrontMaterial = initialFront;
+  let _playerAvatarBackMaterial = initialBack;
+  let rearCharacterOcclusionEnabled = false;
+  function setPlayerRearCharacterPetOcclusion(enabled, pet) { rearCharacterOcclusionEnabled = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && Math.cos((Number(pet?.shoulderCuriosity?.currentFacingYawDeg) || 0) * Math.PI / 180) >= 0; }
+"""
+          if test.count(old_harness) != 1:
+              raise SystemExit(f'Expected one shoulder-pet layering harness header, found {test.count(old_harness)}')
+          test = test.replace(old_harness, new_harness, 1)
+
+          old_left_assert = "assert.equal(harness.isRearCharacterOcclusionEnabled(), true, 'character-left facing enables the full rear character occluder');"
+          new_left_assert = "assert.equal(harness.isRearCharacterOcclusionEnabled(), false, 'character-left facing keeps the preserved rear character occluder disabled by default');"
+          if test.count(old_left_assert) != 1:
+              raise SystemExit('Expected the character-left occlusion assertion once')
+          test = test.replace(old_left_assert, new_left_assert, 1)
+
+          old_regex = """assert.match(source,
+  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,180}overlay\\.mesh\\.visible = !!enabled && facesCharacterLeft/,
+  'rear occlusion swaps at the turnaround midpoint according to character-relative facing');
+"""
+          new_regex = """assert.match(source,
+  /const SHOULDER_PET_PLAYER_OCCLUSION_ENABLED = false;/,
+  'player-over-pet occlusion is preserved but disabled in production');
+assert.match(source,
+  /const facesCharacterLeft = Math\\.cos\\(facingYawDeg \\* Math\\.PI \\/ 180\\) >= 0;[\\s\\S]{0,220}overlay\\.mesh\\.visible = !!enabled && SHOULDER_PET_PLAYER_OCCLUSION_ENABLED && facesCharacterLeft/,
+  'preserved rear occlusion still tracks the turnaround midpoint but cannot become visible while disabled');
+"""
+          if test.count(old_regex) != 1:
+              raise SystemExit('Expected the directional overlay source assertion once')
+          test = test.replace(old_regex, new_regex, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+      - name: Validate inherited shoulder pet behavior
+        shell: bash
+        run: |
+          node --check docs/game.js
+          node --check docs/js/png-plane-avatar.js
+          node --check docs/js/pixel-probe.js
+          node scripts/test-shoulder-pet-curiosity.js
+          node scripts/test-shoulder-pet-layering.js
+          node scripts/test-shoulder-pet-billboard-yaw.js
+          node scripts/test-shoulder-pet-attack-rotation.js
+          node scripts/test-hat-xray-facing.js
+          node scripts/test-avatar-outline-occlusion.js
+          node scripts/test-player-facing-pixel-probe.js
+          node scripts/test-portrait-full-plane-skinning.js
+
+      - name: Commit focused rebuild and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-rebuild-shoulder-pet-occlusion.yml
+          git add docs/game.js scripts/test-shoulder-pet-layering.js
+          git commit -m "Disable character occlusion without reverting pet rotation"
+          git push origin HEAD:fix/shoulder-pet-occlusion-disabled-rebuild
