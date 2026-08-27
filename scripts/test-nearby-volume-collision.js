@@ -13,14 +13,18 @@ const index = read('docs/index.html');
 const probe = read('docs/js/pixel-probe.js');
 
 assert(volume.includes('const COMBAT_RADIUS_TILES = 12'), 'combat mesh broad phase is bounded');
+assert(volume.includes('const CACHE_MAX_AGE_MS = 3000'), 'dense scene traversal is not repeated every few frames');
 assert(volume.includes('!options.projectiles'), 'projectile cover has an independent kill switch');
 assert(volume.includes('!options.textureAlpha'), 'texture alpha sampling has an independent kill switch');
 assert(volume.includes('textureAlphaAt'), 'transparent texture pixels are sampled');
 assert(volume.includes('hitCanBlock(hit)'), 'ray hits reject transparent pixels');
+assert(volume.includes('segmentCandidates(start, end, radiusWorld)'), 'projectile segments prefilter cached meshes before triangle raycasts');
+assert(volume.includes('projectileCoverUsesTile'), 'tree mesh descendants can defer to cheap tile collision');
 assert(volume.includes("if (!combat) return false"), 'rendered cover never scans outside combat');
 assert(!volume.includes('canPlayerOccupy'), 'rendered collision exposes no player-movement API');
 assert(!game.includes('NearbyVolumeCollision?.canPlayerOccupy'), 'player movement no longer calls rendered collision');
 assert(game.includes('tryPlayerTileSidestep'), 'blocked tile movement can sidestep around obstacles');
+assert(game.includes('vegGroup.userData.projectileCoverUsesTile = true'), 'native tree trunks use their centered solid tile for projectile cover');
 assert(game.includes('const sideOrder = [_playerTileSidestepSide, -_playerTileSidestepSide]'), 'sidestep direction remains stable across frames');
 assert(foliage.includes('amp * originBlend'), 'procedural trunk/spine bases stay centered on their authored tile origin');
 assert(!volume.includes('moveCreatureToward'), 'AI movement is not routed through precise mesh collision');
