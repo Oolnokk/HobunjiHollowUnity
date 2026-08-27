@@ -5,6 +5,8 @@
   'use strict';
 
   const GULLET_BREADTH_MULTIPLIER = 1.5; // Used to make the Gullet 1.5x broader perpendicular to its swimming direction without lengthening it.
+  const MAIN_FISH_RING_RADIUS = 96; // Mirrors fishing-minigame's authored main-fish patrol radius so a surfaced Gullet can force the catch fish back onto its reachable ring.
+  const GULLET_ESCAPE_DIVE_LOCK_SEC = 0.35; // Used as a short continuously-refreshed cooldown so the main fish cannot begin another dive while the Gullet is floating away.
   const FALLBACK_FISH_GLOW = 'drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4))'; // Used when the regular fish rig is not yet measurable.
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -94,6 +96,26 @@
     root.setAttribute('transform', `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${headingDeg.toFixed(2)})`);
   }
 
+  function keepMainFishSurfacedDuringGulletEscape() {
+    const gullet = window.FishingFeatureDebug?.status?.(); // Used as the public read-only seam for the independent Gullet state machine.
+    if (gullet?.gulletMode !== 'surface') return;
+    const state = window.Fishing?.state;
+    if (state?.phase !== 'active' || !state.fish || !state.dive) return;
+
+    // A surfaced Gullet is a short time-critical retrieval challenge. If the
+    // ordinary fish happened to be submerged at that exact moment, immediately
+    // bring it back to the normal reachable ring and continuously block fresh
+    // dives until the Gullet's 10-second float-away finishes.
+    state.dive.active = false;
+    state.dive.timer = 0;
+    state.dive.visualOffset = 0;
+    state.dive.inspectTargetAngle = state.fish.angle;
+    state.dive.cooldown = Math.max(Number(state.dive.cooldown) || 0, GULLET_ESCAPE_DIVE_LOCK_SEC);
+    state.fish.renderRadius = MAIN_FISH_RING_RADIUS;
+    state.fish.renderAngle = state.fish.angle;
+    state.fish.dimmed = false;
+  }
+
   function ensureWaterDebugLine() {
     const panel = document.getElementById('fishingFeatureDebug');
     if (!panel) return null;
@@ -127,6 +149,7 @@
   }
 
   function frame() {
+    keepMainFishSurfacedDuringGulletEscape();
     syncGulletVisual();
     updateWaterDebug();
     requestAnimationFrame(frame);
