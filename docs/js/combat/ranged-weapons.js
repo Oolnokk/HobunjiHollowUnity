@@ -872,6 +872,7 @@
     const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
+    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     if (p.team === 'player') {
       let nearest = null;
       for (const c of deps.hostileObjects) {
@@ -880,6 +881,7 @@
         if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
         nearest = { creature: c, interval };
       }
+      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
       if (!nearest) return false;
       const c = nearest.creature;
       deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
@@ -888,6 +890,7 @@
       return true;
     }
     const playerHit = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
+    if (coverHit && (!playerHit || coverHit.t <= playerHit.enter)) return true;
     if (!playerHit) return false;
     deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
@@ -1046,6 +1049,8 @@
       nearest = { hostile, interval };
     }
     if (!nearest) return false;
+    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, projectileRadius) || null;
+    if (coverHit && coverHit.t <= nearest.interval.enter) return false;
     const maxRangePx = def.rangeTiles * deps.TILE;
     const hitDistancePx = nearest.interval.enter * maxRangePx;
     const horizontalDirX = (segment.end.x - segment.start.x) / def.rangeTiles;
@@ -1060,7 +1065,23 @@
     return true;
   }
 
-  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); }
+  function updateBanditAimLabel() {
+    if (!deps?.isWeaponAiming?.()) {
+      window.WorldPopupText?.clearAimLabel?.();
+      return;
+    }
+    const focused = focusedHostile(deps.getAimLabelRangeWorld?.() ?? 14);
+    const bandit = focused?.candidate?.data;
+    if (!bandit?.isBandit || !bandit.avatarRef?.group) {
+      window.WorldPopupText?.clearAimLabel?.();
+      return;
+    }
+    const rank = window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
+      String(bandit.banditRank || 'bandit').replace(/\b\w/g, letter => letter.toUpperCase());
+    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + ' · ' + rank);
+  }
+
+  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
