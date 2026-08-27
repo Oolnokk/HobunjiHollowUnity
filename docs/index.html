@@ -124,7 +124,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/nearby-volume-collision.js?v=20260827volume2"></script>
+  <script src="js/nearby-volume-collision.js?v=20260827volume3"></script>
   <script src="js/combat/ranged-weapons.js?v=20260827volume1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
@@ -1368,20 +1368,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestBgForest" checked><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-section-title" style="margin-top:10px">Nearby 3D Volume Collision (perf testing)</div>
+          <div class="settings-section-title" style="margin-top:10px">Nearby Projectile Cover (perf testing)</div>
           <label class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Precise Nearby Volumes</div>
-              <div class="settings-desc">Master switch for the rendered-mesh collision system</div>
+              <div class="settings-name">Precise Projectile Cover</div>
+              <div class="settings-desc">Master switch for combat-only rendered-geometry cover</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionMaster" checked><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Precise Player Movement</div>
-              <div class="settings-desc">Use nearby rendered geometry for player collision while enabled</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionMovement" checked><span class="toggle-slider"></span></span>
           </label>
           <label class="settings-row">
             <div class="settings-label">
@@ -1393,16 +1386,9 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Transparent-Pixel Precision</div>
-              <div class="settings-desc">Sample PNG alpha so invisible texture gaps do not block movement or shots</div>
+              <div class="settings-desc">Sample PNG alpha so invisible texture gaps do not block shots</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionAlpha" checked><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Trees Outside Combat</div>
-              <div class="settings-desc">Use precise rendered-tree collision outside combat. Off by default because this triggered the severe tree-area slowdown</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionTrees"><span class="toggle-slider"></span></span>
           </label>
           <label class="settings-row">
             <div class="settings-label">
@@ -1958,7 +1944,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260827volume2"></script>
+  <script src="js/pixel-probe.js?v=20260827volume3"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
