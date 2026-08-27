@@ -200,6 +200,15 @@
     const transform = transformSnapshot(node);
     const heightWorld = semantic.heightTiles === Infinity ? Infinity : semantic.heightTiles * Math.abs(transform.sy);
     if (!(heightWorld > 0)) return null;
+    // Rooted at the real terrain surface under the object, not tile-local
+    // y=0 — a footprint sat on elevated ground gets its cover span anchored
+    // where it actually stands. topY === Infinity for tile-cover trees
+    // (their trunk is solid the entire authored height and beyond); every
+    // other candidate gets a real, finite top so a shot arcing above it
+    // (e.g. toward a player up a tree) is free to clear it instead of
+    // being blocked by an object nowhere near that height.
+    const bottomY = finite(deps?.worldSurfaceY?.(transform.x * (deps.TILE || 1), transform.z * (deps.TILE || 1)), 0);
+    const topY = heightWorld === Infinity ? Infinity : bottomY + heightWorld;
     if (semantic.halfTileX != null || semantic.halfTileZ != null) {
       return {
         node,
@@ -209,6 +218,8 @@
         x: transform.x,
         z: transform.z,
         heightWorld,
+        bottomY,
+        topY,
         shape: 'aabb',
         halfX: Math.max(0.02, finite(semantic.halfTileX, 0.5) * Math.abs(transform.sx)),
         halfZ: Math.max(0.02, finite(semantic.halfTileZ, 0.5) * Math.abs(transform.sz)),
@@ -222,6 +233,8 @@
       x: transform.x,
       z: transform.z,
       heightWorld,
+      bottomY,
+      topY,
       shape: 'circle',
       radius: Math.max(0.02, semantic.radiusTiles * Math.max(Math.abs(transform.sx), Math.abs(transform.sz))),
     };
@@ -337,7 +350,7 @@
     const t0 = (-b - root) / (2 * a);
     const t1 = (-b + root) / (2 * a);
     if (t1 < 0 || t0 > 1) return null;
-    return Math.max(0, t0);
+    return { enter: Math.max(0, t0), exit: Math.min(1, t1) };
   }
 
   function segmentAabbEntry(start, end, minX, maxX, minZ, maxZ) {
@@ -355,28 +368,51 @@
       exit = Math.min(exit, b);
       if (enter > exit) return null;
     }
-    return exit >= 0 && enter <= 1 ? Math.max(0, enter) : null;
+    return exit >= 0 && enter <= 1 ? { enter: Math.max(0, enter), exit: Math.min(1, exit) } : null;
+  }
+
+  // Clips an already-found horizontal (X/Z) entry/exit range down to the
+  // sub-range where the segment's own Y also sits within [minY, maxY] — the
+  // real per-shot vertical intersection this cover system was missing. A
+  // fence that only reaches ankle height no longer blocks a shot arcing
+  // toward a player up a tree just because its footprint happens to be in
+  // the way; only cover whose actual vertical span the ray passes through
+  // still counts. Cheap: one more linear range clip per candidate already
+  // being tested, no new per-frame data structures.
+  function clipRangeByY(start, end, range, minY, maxY) {
+    if (!range) return null;
+    if (minY === -Infinity && maxY === Infinity) return range;
+    const deltaY = end.y - start.y;
+    if (Math.abs(deltaY) < 1e-10) {
+      return start.y >= minY && start.y <= maxY ? range : null;
+    }
+    let a = (minY - start.y) / deltaY;
+    let b = (maxY - start.y) / deltaY;
+    if (a > b) [a, b] = [b, a];
+    const enter = Math.max(range.enter, a);
+    const exit = Math.min(range.exit, b);
+    return enter <= exit ? { enter: Math.max(0, enter), exit: Math.min(1, exit) } : null;
   }
 
   function candidateEntry(candidate, start, end, projectileRadius) {
-    if (candidate.shape === 'aabb') {
-      return segmentAabbEntry(
+    const horizontal = candidate.shape === 'aabb'
+      ? segmentAabbEntry(
         start,
         end,
         candidate.x - candidate.halfX - projectileRadius,
         candidate.x + candidate.halfX + projectileRadius,
         candidate.z - candidate.halfZ - projectileRadius,
         candidate.z + candidate.halfZ + projectileRadius,
-      );
-    }
-    return segmentCircleEntry(start, end, candidate.x, candidate.z, candidate.radius + projectileRadius);
+      )
+      : segmentCircleEntry(start, end, candidate.x, candidate.z, candidate.radius + projectileRadius);
+    const vertical = clipRangeByY(start, end, horizontal, candidate.bottomY - projectileRadius - HEIGHT_EPSILON, candidate.topY + projectileRadius + HEIGHT_EPSILON);
+    return vertical ? vertical.enter : null;
   }
 
   function segmentHit(start, end, radiusWorld = 0) {
     if (!deps || !ensureCandidates()) return null;
     const startedAt = performance.now();
     const projectileRadius = Math.max(0, finite(radiusWorld));
-    const headClearance = playerHeadClearanceWorld();
     const nearby = querySegmentCandidates(start, end, projectileRadius);
     lastSegmentCandidateCount = nearby.length;
     maxSegmentCandidateCount = Math.max(maxSegmentCandidateCount, nearby.length);
@@ -384,7 +420,6 @@
     let nearest = null;
     for (const candidate of nearby) {
       if (candidate.node?.visible === false || !candidate.node?.parent) continue;
-      if (candidate.heightWorld + HEIGHT_EPSILON < headClearance) continue;
       const t = candidateEntry(candidate, start, end, projectileRadius);
       if (t == null || (nearest && t >= nearest.t)) continue;
       nearest = { candidate, t };
@@ -402,7 +437,7 @@
       object: candidate.key || candidate.node?.name || '(semantic cover)',
       source: candidate.source,
       heightWorld: candidate.heightWorld === Infinity ? 'inf' : Number(candidate.heightWorld.toFixed(3)),
-      headClearanceWorld: Number(headClearance.toFixed(3)),
+      headClearanceWorld: Number(playerHeadClearanceWorld().toFixed(3)),
       distanceWorld: Number(distanceWorld.toFixed(3)),
       at: performance.now(),
     };

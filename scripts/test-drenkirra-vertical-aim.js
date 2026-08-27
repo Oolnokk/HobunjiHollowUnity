@@ -27,7 +27,7 @@ assert.match(followup, /if \(!hasHeadRig\) \{[\s\S]{0,220}rotation\.x/, 'legacy 
 assert.match(game, /getActorWorldY: \(actor\) =>[\s\S]{0,300}playerMesh\.position\.y/, 'combat receives the player render height');
 assert.match(game, /worldSurfaceY: \(x, y\) => activeSurfaceYAtWorld\(x \/ TILE, y \/ TILE\)/, 'combat receives terrain height for pitched projectile grounding');
 assert.match(game, /if \(!c\.treasureCue[\s\S]{0,160}animalAttacks\?\.isBusy\(c\)/, 'companion head restoration waits until a named attack is no longer active');
-assert.match(loader, /combat-drenkirra-pellet\.js\?v=20260826drenkirra1/, 'pellet module cache key is bumped');
+assert.match(loader, /combat-drenkirra-pellet\.js\?v=20260827treecover1/, 'pellet module cache key is bumped');
 assert.match(loader, /combat-grehlr-drenkirra-followup\.js\?v=20260826drenkirra1/, 'follow-up module cache key is bumped');
 
 for (const file of [

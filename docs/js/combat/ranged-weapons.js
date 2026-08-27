@@ -24,6 +24,7 @@
   const BANDIT_LOS_CACHE_MS = 80; // LOS only needs tactical responsiveness, not a full scene query every render frame for every loaded bandit.
   const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
+  const BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD = 1.7; // A shot only trips a solid ground tile while it's still near that tile's own surface — an upward shot toward a tree sails clean over low terrain it would otherwise be flattened against.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   let wouldHitCacheAt = -Infinity;
@@ -408,6 +409,12 @@
 
     const visual = new THREE.Group();
     visual.name = 'projectilePngDeadzoneVisual';
+    // 'YXZ' composes yaw (rotation.y, the existing camera-relative perp
+    // facing) outermost and pitch (rotation.x, the shot's launch angle)
+    // innermost, so the sprite tips up/down along its own flight axis
+    // instead of tilting around the world's fixed X axis. See
+    // updateProjectileVisual, which drives both channels every frame.
+    visual.rotation.order = 'YXZ';
     const texture = new THREE.TextureLoader().load(def.projectileSprite);
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
@@ -518,7 +525,7 @@
     const mesh = createProjectileMesh(def, def.projectileRadiusPx);
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
-    const surfaceY = deps.worldSurfaceY(x, y);
+    const surfaceY = ownerElevationY(owner, x, y);
     const worldY = surfaceY + 0.55;
     mesh.position.set(x / deps.TILE, worldY, y / deps.TILE);
     scene.add(mesh);
@@ -539,6 +546,7 @@
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     p.visual.rotation.y = p.pngRot;
+    p.visual.rotation.x = p.pitch;
     projectiles.push(p);
     return p;
   }
@@ -672,10 +680,21 @@
     };
   }
 
+  // deps.worldSurfaceY(x, y) is pure terrain height at that column — correct
+  // on the ground, but blind to a shooter standing somewhere else entirely
+  // (a tree branch). deps.getActorWorldY reads the actor's live rendered
+  // mesh height instead (which already tracks onBranch/climbing elevation —
+  // see game.js's updatePlayerMesh), so a shooter up a tree fires from the
+  // branch, not from the ground far below it.
+  function ownerElevationY(owner, x, y) {
+    const rendered = owner ? Number(deps.getActorWorldY?.(owner)) : NaN;
+    return Number.isFinite(rendered) ? rendered : deps.worldSurfaceY(x, y);
+  }
+
   function playerProjectileOrigin() {
     return new THREE.Vector3(
       deps.player.x / deps.TILE,
-      deps.worldSurfaceY(deps.player.x, deps.player.y) + 0.55,
+      ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
       deps.player.y / deps.TILE,
     );
   }
@@ -891,6 +910,11 @@
     return true;
   }
 
+  // Only ever touches p.visual/p.pngRot for the readable camera-relative
+  // facing (plus the launch-pitch tilt added below) — purely cosmetic:
+  // the root sphere's vx/vy and trajectory angle are never changed here,
+  // so this deadzone sway/snap can't steer where the projectile actually
+  // flies or lands.
   function updateProjectileVisual(p, dt, sharedPerps = null) {
     const rawTargetRotY = -p.angle + Math.PI / 2;
     const perps = sharedPerps || deps.cameraRelativeCreaturePerps();
@@ -909,6 +933,12 @@
       else p.pngRot += deps.angleDiff(result.effectiveTarget, p.pngRot) * Math.min(1, dt * 10);
     }
     p.visual.rotation.y = p.pngRot;
+    // Tips the flat sprite up/down to match its launch pitch (there was no
+    // vertical aiming when this projectile visual was first built, so it
+    // only ever carried the horizontal snap/sway rotation above). Constant
+    // per shot — crossbow/scatterbow bolts fly a straight, gravity-free
+    // line, so pitch never changes over a projectile's flight.
+    p.visual.rotation.x = p.pitch;
   }
 
   function disposeProjectile(p) {
@@ -984,6 +1014,7 @@
 
     const dxPx = (segment.end.x - segment.start.x) * deps.TILE;
     const dyPx = (segment.end.z - segment.start.z) * deps.TILE;
+    const dWorldY = segment.end.y - segment.start.y;
     const distancePx = Math.hypot(dxPx, dyPx);
     const stepPx = deps.TILE * BANDIT_LOS_TERRAIN_STEP_TILES;
     if (distancePx > stepPx) {
@@ -991,7 +1022,15 @@
       for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
-        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx)) return { clear: false, kind: 'tile', id: 'solid-tile' };
+        if (deps.canOccupyAt(x, y, def.projectileRadiusPx)) continue;
+        // A blocked ground tile only stops the shot while the ray is still
+        // near that tile's own surface — an elevated shot climbing toward a
+        // tree sails clean over low terrain that would flatten a shot fired
+        // at ground level.
+        const rayWorldY = segment.start.y + dWorldY * (travel / distancePx);
+        if (rayWorldY <= deps.worldSurfaceY(x, y) + BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD) {
+          return { clear: false, kind: 'tile', id: 'solid-tile' };
+        }
       }
     }
     return { clear: true, kind: 'clear', id: null };
@@ -1053,7 +1092,10 @@
 
     const minRange = deps.TILE * 2.25;
     const maxRange = deps.TILE * def.rangeTiles * 0.9;
-    if (distToPlayer < minRange) { c._rangedMode = false; return null; }
+    // distToPlayer is horizontal-only, so a target hiding straight overhead
+    // (up a tree) reads as "close" even though melee can't actually touch
+    // them — only drop to melee once melee could really land the hit.
+    if (distToPlayer < minRange && canMeleeReach(c, targetPlayer)) { c._rangedMode = false; return null; }
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {

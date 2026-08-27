@@ -500,7 +500,7 @@
     return originalStart(creature, resolvedId, context);
   };
 
-  window.HobunjiDrenkirraPellet = { applyConfig, tuning, spritePath: PELLET_SPRITE }; // Used by debug/editor integrations and loader already-loaded checks.
+  window.HobunjiDrenkirraPellet = { applyConfig, tuning, spritePath: PELLET_SPRITE, isDrenkirra }; // Used by debug/editor integrations, loader already-loaded checks, and the wildlife AI's ranged-vs-melee trigger range (see updateHostiles).
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.causticPellet; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);

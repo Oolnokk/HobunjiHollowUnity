@@ -5423,7 +5423,18 @@
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
               const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
-                const triggerRangePx = creatureAimColliderReachPx(c);
+                // Drenkirra's 'pounce' behaviorStage entry actually resolves to
+                // the Caustic Pellet ranged attack (see combat-drenkirra-pellet.js's
+                // attacks.start override) — gating it by the same short melee
+                // lunge reach every other pounceAttempt creature uses meant it
+                // could only ever fire once it had walked up next to its target,
+                // which a target up a tree (or across a gap it can't climb/cross)
+                // is often never close enough for. Use the pellet's own real
+                // range instead so it engages like the ranged attack it is.
+                const isRangedDrenkirra = window.HobunjiDrenkirraPellet?.isDrenkirra?.(c);
+                const triggerRangePx = isRangedDrenkirra
+                  ? TILE * (window.HobunjiDrenkirraPellet.tuning.PROJECTILE_RANGE_TILES * 0.92)
+                  : creatureAimColliderReachPx(c);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
@@ -25747,6 +25758,18 @@
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
         getActiveScene,
+        // Same live render-height lookup Combat.init supplies for named
+        // animal projectiles (see its own getActorWorldY) — a shooter or
+        // target standing somewhere other than flat ground (a tree branch)
+        // fires/gets aimed at from their real height, not the terrain
+        // straight below them.
+        getActorWorldY: (actor) => {
+          if (actor === player) return playerMesh.position.y;
+          const avatarY = actor?.avatarRef?.group?.position?.y;
+          if (Number.isFinite(avatarY)) return avatarY;
+          if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y)) return activeSurfaceYAtWorld(actor.x / TILE, actor.y / TILE) + 0.4;
+          return 0.4;
+        },
         getPlayerAimAngle: currentPlayerAimAngle,
         getPlayerAimPitch: currentPlayerAimPitch,
         getPlayerAimRay: currentPlayerAimRay,
