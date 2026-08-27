@@ -22,13 +22,21 @@
   let refreshCount = 0;
   let testedRayCount = 0;
   let lastBlock = null;
+  let options = { enabled: true, movement: true, projectiles: true, textureAlpha: true, outsideCombatTrees: false }; // Controls each costly collision feature from the mobile-accessible Settings toggles.
   const textureAlphaCache = new WeakMap(); // Stores decoded texture alpha so repeated precise hits never reread the same image pixels.
 
   function init(injectedDeps) {
     deps = injectedDeps;
     raycaster = new deps.THREE.Raycaster();
+    options = { ...options, ...(injectedDeps.options || {}) };
     invalidate();
     deps.debugLog?.('Nearby volume collision: precise combat cover/player collision enabled; out-of-combat checks are tree-only and local.');
+  }
+
+  function setOptions(next = {}) {
+    options = { ...options, ...next };
+    invalidate();
+    return { ...options };
   }
 
   function invalidate() {
@@ -117,8 +125,10 @@
 
   function ensureCandidates(wx, wy, requireCombat = false) {
     if (!deps) return false;
+    if (!options.enabled) return false;
     const combat = !!deps.isCombatActive?.();
-    if (requireCombat && !combat) return false;
+    if (requireCombat && (!combat || !options.projectiles)) return false;
+    if (!combat && !options.outsideCombatTrees) return false;
     const scene = deps.getActiveScene?.();
     const movedPx = Math.hypot(wx - cachedFocusX, wy - cachedFocusY);
     if (scene !== cachedScene || combat !== cachedCombat || !Number.isFinite(movedPx) ||
@@ -166,6 +176,7 @@
     const material = materialForHit(hit);
     if (!material || material.visible === false || Number(material.opacity ?? 1) <= 0.12) return false;
     if (!material.map || !hit.uv) return true;
+    if (!options.textureAlpha) return true;
     const alpha = textureAlphaAt(material.map, hit.uv);
     if (alpha == null) return true;
     const threshold = Math.max(0.08, Number(material.alphaTest) || 0);
@@ -213,7 +224,7 @@
   }
 
   function canPlayerOccupy(wx, wy, radiusPx) {
-    if (!deps || !ensureCandidates(wx, wy, false) || !candidates.length) return true;
+    if (!deps || !options.enabled || !options.movement || !ensureCandidates(wx, wy, false) || !candidates.length) return true;
     const center = focusWorld(wx, wy);
     const radiusWorld = Math.max(0.04, radiusPx / deps.TILE);
     const baseY = deps.worldSurfaceY(wx, wy);
@@ -244,12 +255,14 @@
       refreshCount,
       testedRayCount,
       cacheAgeMs: cacheBuiltAt ? Math.round(performance.now() - cacheBuiltAt) : null,
+      options: { ...options },
       lastBlock: lastBlock ? { ...lastBlock, ageMs: Math.round(performance.now() - lastBlock.at) } : null,
     };
   }
 
   window.NearbyVolumeCollision = {
     init,
+    setOptions,
     invalidate,
     segmentHit,
     canPlayerOccupy,
