@@ -25,6 +25,8 @@ assert(volume.includes('projectileCoverUsesTile'), 'native trees use their cente
 assert(volume.includes("if (!combat)"), 'cover stays disabled outside combat');
 assert(volume.includes('!options.projectiles'), 'projectile cover retains its kill switch');
 assert(volume.includes('textureAlpha: false'), 'legacy transparent-pixel precision is forcibly disabled');
+assert(volume.includes('kind: candidate.kind'), 'semantic hit results expose the cover kind to AI diagnostics');
+assert(volume.includes('key: candidate.key'), 'semantic hit results expose the cover key to AI diagnostics');
 assert(!volume.includes('new deps.THREE.Raycaster'), 'cover creates no raycaster');
 assert(!volume.includes('intersectObjects'), 'cover performs no mesh ray intersection');
 assert(!volume.includes('textureAlphaAt'), 'cover performs no texture alpha sampling');
