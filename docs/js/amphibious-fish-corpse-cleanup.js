@@ -4,24 +4,27 @@
 (() => {
   'use strict';
 
-  const GURUMAHI_LAND_MODEL_WIDTH = 0.22; // Used to keep the Gurumahi land/combat form at one tenth of its original 2.2-unit width.
-  const GURUMAHI_LAND_SPRITE_ASPECT = 1.6; // Used to match the amphibious creature definition's authored plane height/width ratio.
-  const GURUMAHI_LAND_MODEL_HEIGHT = GURUMAHI_LAND_MODEL_WIDTH * GURUMAHI_LAND_SPRITE_ASPECT; // Used by the existing opaque-pixel ground-offset math.
-  const GURUMAHI_SPRITE_PATH = 'assets/objectsprites/fish_gurumahi.png'; // Used as the same source sprite the inventory fish renderer recolors/shades.
-  let corpseDeps = null; // Used to grant/save the fish and fully despawn retrieved corpses through the existing corpse-loot pipeline.
-  let spawnDeps = null; // Used to update live land Gurumahi frames through the ordinary creature renderer.
-  let presentationLoopStarted = false; // Used to install only one live-creature shading/prewarm pass.
-  let activePrewarm = null; // Used to hold exactly one hidden prepared land plane for the amphibious fish currently visible in the minigame.
-  const renderedLandByKey = new Map(); // Used to cache the expensive FishCatalog shade/recolor result per Gurumahi variant; hidden plane instances are still disposable per encounter.
+  const GURUMAHI_LAND_MODEL_WIDTH = 0.33; // 150% of the previous 0.22 land/combat width.
+  const GURUMAHI_LAND_SPRITE_ASPECT = 1.6; // Matches the amphibious creature definition's authored plane height/width ratio.
+  const GURUMAHI_LAND_MODEL_HEIGHT = GURUMAHI_LAND_MODEL_WIDTH * GURUMAHI_LAND_SPRITE_ASPECT;
+  const GURUMAHI_SPRITE_PATH = 'assets/objectsprites/fish_gurumahi.png';
 
-  function wrap(api) {
+  let corpseDeps = null; // Grants/saves the recovered fish and fully despawns its corpse.
+  let spawnDeps = null; // Creature renderer/spawn deps used for grounding and frame updates.
+  let presentationLoopStarted = false;
+  let activePrewarm = null; // One texture reservation for the Gurumahi currently visible in the fishing minigame.
+  const renderedLandByKey = new Map(); // Caches the expensive authored shade/recolor result, never a live world plane.
+
+  function wrapCorpseApi(api) {
     if (!api?.init || !api?.makeCorpseWorldObject || api.__amphibiousFishCorpseCleanupWrapped) return api;
     const originalInit = api.init;
     const originalMake = api.makeCorpseWorldObject;
+
     api.init = injectedDeps => {
       corpseDeps = injectedDeps;
       return originalInit.call(api, injectedDeps);
     };
+
     api.makeCorpseWorldObject = c => {
       if (!c?.isAmphibiousFishCorpse) return originalMake.call(api, c);
       const key = c._amphibiousFishItemKey;
@@ -51,22 +54,29 @@
         },
       };
     };
+
     Object.defineProperty(api, '__amphibiousFishCorpseCleanupWrapped', { value: true, configurable: true });
     return api;
   }
 
   function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
     if (typeof spawnDeps?.creaturePlaneGroundOffset === 'function') {
-      return spawnDeps.creaturePlaneGroundOffset(modelHeight, bottomRatio); // Reuses the exact creature/farm-animal grounding helper when the wildlife deps expose it.
+      return spawnDeps.creaturePlaneGroundOffset(modelHeight, bottomRatio);
     }
-    return -modelHeight * Math.max(0, 1 - bottomRatio); // Same geometry: move the plane down by its transparent bottom margin while leaving the creature prism/root untouched.
+    return -modelHeight * Math.max(0, 1 - bottomRatio);
   }
 
   function groundAvatarPlanes(avatarRef, bottomRatio) {
     if (!avatarRef?.group || !Number.isFinite(bottomRatio)) return;
-    const offsetY = creaturePlaneGroundOffset(GURUMAHI_LAND_MODEL_HEIGHT, bottomRatio); // Used to put the lowest opaque fish pixel exactly on the creature's ground plane.
-    avatarRef.frontPlane = avatarRef.frontPlane || avatarRef.group.children?.find?.(child => child?.name?.endsWith('_front_plane')) || avatarRef.group.children?.[0] || null;
-    avatarRef.backPlane = avatarRef.backPlane || avatarRef.group.children?.find?.(child => child?.name?.endsWith('_back_plane')) || avatarRef.group.children?.[1] || null;
+    const offsetY = creaturePlaneGroundOffset(GURUMAHI_LAND_MODEL_HEIGHT, bottomRatio);
+    avatarRef.frontPlane = avatarRef.frontPlane
+      || avatarRef.group.children?.find?.(child => child?.name?.endsWith('_front_plane'))
+      || avatarRef.group.children?.[0]
+      || null;
+    avatarRef.backPlane = avatarRef.backPlane
+      || avatarRef.group.children?.find?.(child => child?.name?.endsWith('_back_plane'))
+      || avatarRef.group.children?.[1]
+      || null;
     if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
     if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
   }
@@ -77,23 +87,20 @@
       const promise = window.FishCatalog.getRecoloredCanvas(GURUMAHI_SPRITE_PATH, key)
         .then(async canvas => {
           if (!canvas) return null;
-          // This is the same opaque-pixel scan exported for animal/creature
-          // planes by png-plane-avatar.js. Scan the FINAL shaded canvas so
-          // grounding is based on what the player actually sees, not PNG padding.
           const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(canvas);
           const bottomRatio = bounds && canvas.height ? (bounds.bottom + 1) / canvas.height : 1;
           const frameUrl = canvas.toDataURL?.('image/png') || null;
           if (!frameUrl) return null;
 
-          // Decode once while the fish is still in the minigame. TextureLoader
-          // can then consume a hot browser image instead of visibly showing the
-          // raw sprite while FishCatalog shading catches up after reel-in.
+          // Decode while the Gurumahi is still in the minigame. At reel-in the
+          // normal creature factory can therefore build its one and only plane
+          // directly from the already-hot shaded image.
           try {
             const decoded = new Image();
             decoded.src = frameUrl;
             if (typeof decoded.decode === 'function') await decoded.decode();
           } catch (_) {}
-          return { key, canvas, frameUrl, bottomRatio };
+          return { key, frameUrl, bottomRatio };
         })
         .catch(error => {
           renderedLandByKey.delete(key);
@@ -105,35 +112,14 @@
     return renderedLandByKey.get(key);
   }
 
-  function buildHiddenPreparedAvatar(rendered) {
-    if (!rendered?.frameUrl || !window.THREE || !window.PNGPlaneAvatar?.buildAnimalPlaneAvatarModel) return null;
-    const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(window.THREE, rendered.frameUrl, {
-      modelWidth: GURUMAHI_LAND_MODEL_WIDTH,
-      modelHeight: GURUMAHI_LAND_MODEL_HEIGHT,
-      name: `gurumahi_prewarm_${rendered.key}`,
-    });
-    avatarRef.frontPlane = avatarRef.group.children?.[0] || null;
-    avatarRef.backPlane = avatarRef.group.children?.[1] || null;
-    groundAvatarPlanes(avatarRef, rendered.bottomRatio);
-    avatarRef.group.visible = false; // Prepared in memory only; it is never shown unless this exact fish is successfully reeled in.
-    return avatarRef;
-  }
-
-  function disposePreparedAvatar(prepared) {
-    const avatarRef = prepared?.avatarRef;
-    if (!avatarRef) return;
-    avatarRef.group?.parent?.remove?.(avatarRef.group);
-    avatarRef.dispose?.();
-    prepared.avatarRef = null;
-  }
-
   function discardActivePrewarm(reason) {
     const reservation = activePrewarm;
     if (!reservation) return;
     activePrewarm = null;
     reservation.discarded = true;
-    if (reservation.ready) disposePreparedAvatar(reservation.ready);
-    window.__farmLog?.(`[amphibious-fishing] discarded hidden Gurumahi prewarm ${reservation.key}${reason ? ` (${reason})` : ''}`, 'fish');
+    // Nothing exists in the Three scene yet: failed/escaped fish only discard
+    // this reservation. The shaded image cache is inert and reusable.
+    window.__farmLog?.(`[amphibious-fishing] discarded Gurumahi texture prewarm ${reservation.key}${reason ? ` (${reason})` : ''}`, 'fish');
   }
 
   function startPrewarmForState(state) {
@@ -142,14 +128,13 @@
     if (activePrewarm?.state === state && activePrewarm.key === key) return;
     if (activePrewarm) discardActivePrewarm('fish changed');
 
-    const reservation = { state, key, ready: null, consumed: false, discarded: false, promise: null }; // Used to tie one hidden plane to one visible minigame fish, not merely to its species key.
+    const reservation = { state, key, ready: null, consumed: false, discarded: false, promise: null };
     activePrewarm = reservation;
     reservation.promise = renderLandVariant(key).then(rendered => {
       if (!rendered || reservation.discarded || activePrewarm !== reservation) return null;
-      const avatarRef = buildHiddenPreparedAvatar(rendered);
-      reservation.ready = { ...rendered, avatarRef };
-      window.__farmLog?.(`[amphibious-fishing] prewarmed hidden land plane for ${key} bottom=${rendered.bottomRatio.toFixed(3)}`, 'fish');
-      return reservation.ready;
+      reservation.ready = rendered;
+      window.__farmLog?.(`[amphibious-fishing] prewarmed shaded Gurumahi texture for ${key} bottom=${rendered.bottomRatio.toFixed(3)}`, 'fish');
+      return rendered;
     });
   }
 
@@ -159,13 +144,15 @@
       startPrewarmForState(state);
       return;
     }
-    // Keep a caught reservation alive just long enough for amphibious-fishing's
-    // caught-transition handler to call makeCreatureEntity and consume it.
+    // Preserve the reservation through the single caught frame so the
+    // amphibious-fishing transition can consume it while spawning combat form.
     if (activePrewarm && state === activePrewarm.state && state?.phase === 'caught') return;
-    if (activePrewarm && !activePrewarm.consumed) discardActivePrewarm(state ? `phase=${state.phase || 'unknown'}` : 'minigame closed without reel-in');
+    if (activePrewarm && !activePrewarm.consumed) {
+      discardActivePrewarm(state ? `phase=${state.phase || 'unknown'}` : 'minigame closed without reel-in');
+    }
   }
 
-  function consumePreparedAvatarForSpawn() {
+  function consumePreparedRenderForSpawn() {
     const reservation = activePrewarm;
     if (!reservation || reservation.consumed || !reservation.ready) return null;
     reservation.consumed = true;
@@ -173,87 +160,67 @@
     return reservation.ready;
   }
 
-  function clonePreparedCreatureDef(creature, frameUrl) {
+  function cloneCreaturePresentationDef(creature, frameUrl) {
+    if (!creature) return;
     creature.def = {
       ...(creature.def || {}),
       modelWidth: GURUMAHI_LAND_MODEL_WIDTH,
       spriteAspect: GURUMAHI_LAND_SPRITE_ASPECT,
-      sprites: { idle: frameUrl, run: [frameUrl, frameUrl] },
+      ...(frameUrl ? { sprites: { idle: frameUrl, run: [frameUrl, frameUrl] } } : {}),
     };
     creature.visualModelWidth = GURUMAHI_LAND_MODEL_WIDTH;
-    creature.currentFrameUrl = frameUrl;
+    if (frameUrl) creature.currentFrameUrl = frameUrl;
   }
 
-  function installPreparedAvatar(creature, prepared) {
+  function applyPreparedPresentation(creature, prepared) {
     if (!creature || !prepared?.frameUrl) return false;
-    clonePreparedCreatureDef(creature, prepared.frameUrl);
-
-    const replacement = prepared.avatarRef;
-    const existing = creature.avatarRef;
-    const parent = existing?.group?.parent || null;
-    if (replacement?.group && parent) {
-      replacement.group.position.copy(existing.group.position);
-      replacement.group.quaternion.copy(existing.group.quaternion);
-      replacement.group.scale.copy(existing.group.scale);
-      replacement.group.userData = { ...(existing.group.userData || {}), ...(replacement.group.userData || {}) };
-      groundAvatarPlanes(replacement, prepared.bottomRatio);
-      existing.group.removeFromParent?.();
-      existing.dispose?.();
-      parent.add(replacement.group);
-      replacement.group.visible = true;
-      creature.avatarRef = replacement;
-      prepared.avatarRef = null; // Ownership transferred to the creature; failed-catch cleanup must never dispose it now.
-      spawnDeps?._markPngPlane?.(replacement.group);
-    } else {
-      const genotypeKind = spawnDeps?.genotypeKindFor?.(creature) || null;
-      spawnDeps?.setCreatureFrame?.(existing, prepared.frameUrl, genotypeKind, 'idle', creature.genotype);
-      groundAvatarPlanes(existing, prepared.bottomRatio);
-      disposePreparedAvatar(prepared);
-    }
-
-    creature._amphibiousLandPresentationApplied = true;
+    cloneCreaturePresentationDef(creature, prepared.frameUrl);
+    groundAvatarPlanes(creature.avatarRef, prepared.bottomRatio);
     creature._amphibiousLandBottomRatio = prepared.bottomRatio;
-    window.__farmLog?.(`[amphibious-fishing] spawned prewarmed ${prepared.key} land plane grounded at opaque bottom=${prepared.bottomRatio.toFixed(3)}`, 'fish');
+    creature._amphibiousLandPresentationApplied = true;
+    window.__farmLog?.(`[amphibious-fishing] spawned single prewarmed ${prepared.key} avatar width=${GURUMAHI_LAND_MODEL_WIDTH} bottom=${prepared.bottomRatio.toFixed(3)}`, 'fish');
     return true;
   }
 
-  function applyLandPresentation(creature) {
+  function applyFallbackPresentation(creature) {
     const key = creature?._amphibiousFishItemKey;
     if (!key || creature._amphibiousLandPresentationPending || creature._amphibiousLandPresentationApplied) return;
     creature._amphibiousLandPresentationPending = true;
     renderLandVariant(key).then(rendered => {
       creature._amphibiousLandPresentationPending = false;
       if (!rendered || creature.state === 'corpse') return;
-      clonePreparedCreatureDef(creature, rendered.frameUrl);
+      cloneCreaturePresentationDef(creature, rendered.frameUrl);
       const genotypeKind = spawnDeps?.genotypeKindFor?.(creature) || null;
       spawnDeps?.setCreatureFrame?.(creature.avatarRef, rendered.frameUrl, genotypeKind, 'idle', creature.genotype);
       groundAvatarPlanes(creature.avatarRef, rendered.bottomRatio);
       creature._amphibiousLandBottomRatio = rendered.bottomRatio;
       creature._amphibiousLandPresentationApplied = true;
-      window.__farmLog?.(`[amphibious-fishing] fallback-shaded/grounded land ${key} width=${GURUMAHI_LAND_MODEL_WIDTH} bottom=${rendered.bottomRatio.toFixed(3)}`, 'fish');
+      window.__farmLog?.(`[amphibious-fishing] fallback-shaded/grounded land ${key} width=${GURUMAHI_LAND_MODEL_WIDTH}`, 'fish');
     });
   }
 
   function presentationLoop() {
     updateFishingPrewarm();
     for (const creature of spawnDeps?.hostileObjects || []) {
-      if (creature?._amphibiousFishItemKey) applyLandPresentation(creature);
+      if (creature?._amphibiousFishItemKey) applyFallbackPresentation(creature);
     }
     requestAnimationFrame(presentationLoop);
   }
 
   function wrapMakeCreatureEntity(injectedDeps) {
-    if (!injectedDeps?.makeCreatureEntity || injectedDeps.makeCreatureEntity.__gurumahiPrewarmWrapped) return;
+    if (!injectedDeps?.makeCreatureEntity || injectedDeps.makeCreatureEntity.__gurumahiTexturePrewarmWrapped) return;
     const originalMakeCreatureEntity = injectedDeps.makeCreatureEntity;
+
     const wrapped = function prewarmedCreatureFactory(kind, x, y, opts) {
       if (kind !== 'gurumahi') return originalMakeCreatureEntity.call(this, kind, x, y, opts);
 
-      const prepared = consumePreparedAvatarForSpawn(); // Synchronous by design: if prewarm did not finish in time, ordinary async fallback presentation still handles it.
+      const prepared = consumePreparedRenderForSpawn();
       const sharedDef = injectedDeps.CREATURE_DB?.gurumahi;
-      const oldModelWidth = sharedDef?.modelWidth;
-      const oldSpriteAspect = sharedDef?.spriteAspect;
       const oldSprites = sharedDef?.sprites;
       if (sharedDef) {
+        // Keep the scale permanently corrected, but only borrow this exact
+        // fish's shaded sprite during construction so variants cannot overwrite
+        // one another in the shared species definition.
         sharedDef.modelWidth = GURUMAHI_LAND_MODEL_WIDTH;
         sharedDef.spriteAspect = GURUMAHI_LAND_SPRITE_ASPECT;
         if (prepared?.frameUrl) sharedDef.sprites = { idle: prepared.frameUrl, run: [prepared.frameUrl, prepared.frameUrl] };
@@ -263,40 +230,42 @@
       try {
         creature = originalMakeCreatureEntity.call(this, kind, x, y, opts);
       } finally {
-        if (sharedDef) {
-          sharedDef.modelWidth = oldModelWidth;
-          sharedDef.spriteAspect = oldSpriteAspect;
-          sharedDef.sprites = oldSprites;
-        }
+        if (sharedDef) sharedDef.sprites = oldSprites;
       }
-      if (creature && prepared) installPreparedAvatar(creature, prepared);
-      else if (prepared) disposePreparedAvatar(prepared);
+
+      cloneCreaturePresentationDef(creature, prepared?.frameUrl || null);
+      if (creature && prepared) applyPreparedPresentation(creature, prepared);
       return creature;
     };
-    Object.defineProperty(wrapped, '__gurumahiPrewarmWrapped', { value: true });
+
+    Object.defineProperty(wrapped, '__gurumahiTexturePrewarmWrapped', { value: true });
     injectedDeps.makeCreatureEntity = wrapped;
   }
 
   function wrapWildlifeSpawn(api) {
-    if (!api?.init || api.__gurumahiLandScaleWrapped) return api;
+    if (!api?.init || api.__gurumahiLandPresentationWrapped) return api;
     const originalInit = api.init;
+
     api.init = injectedDeps => {
+      // Let amphibious-fishing's earlier wrapper register CREATURE_DB.gurumahi
+      // first, then apply the land-specific rendering layer to those same deps.
+      const result = originalInit.call(api, injectedDeps);
       spawnDeps = injectedDeps;
-      wrapMakeCreatureEntity(injectedDeps);
       const def = injectedDeps?.CREATURE_DB?.gurumahi;
       if (def?.amphibiousFish) {
         def.modelWidth = GURUMAHI_LAND_MODEL_WIDTH;
         def.spriteAspect = GURUMAHI_LAND_SPRITE_ASPECT;
       }
-      const result = originalInit.call(api, injectedDeps);
-      window.__farmLog?.(`[amphibious-fishing] Gurumahi land width=${GURUMAHI_LAND_MODEL_WIDTH}; opaque-ground/prewarm active`, 'fish');
+      wrapMakeCreatureEntity(injectedDeps);
       if (!presentationLoopStarted) {
         presentationLoopStarted = true;
         requestAnimationFrame(presentationLoop);
       }
+      window.__farmLog?.(`[amphibious-fishing] Gurumahi single-avatar prewarm active; land width=${GURUMAHI_LAND_MODEL_WIDTH}`, 'fish');
       return result;
     };
-    Object.defineProperty(api, '__gurumahiLandScaleWrapped', { value: true, configurable: true });
+
+    Object.defineProperty(api, '__gurumahiLandPresentationWrapped', { value: true, configurable: true });
     return api;
   }
 
@@ -318,6 +287,6 @@
     wrapper(window[name]);
   }
 
-  hookWindowApi('BanditCamps', wrap);
+  hookWindowApi('BanditCamps', wrapCorpseApi);
   hookWindowApi('WildlifeSpawn', wrapWildlifeSpawn);
 })();
