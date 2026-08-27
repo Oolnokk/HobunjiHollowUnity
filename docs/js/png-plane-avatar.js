@@ -896,10 +896,10 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX) {
+  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}) {
     const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
-    const width = finite(params.width, 1);
-    const height = finite(params.height, 1);
+    const width = finite(params.width, finite(fallbackDimensions.width, 1));
+    const height = finite(params.height, finite(fallbackDimensions.height, 1));
     const mapAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height) : width / Math.max(0.0001, height);
     const maxSeg = rig.meshResolution; // Authored/runtime mesh detail cap used for the painted deformation surface.
     const segmentsX = mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect));
@@ -926,9 +926,9 @@
     return geometry;
   }
 
-  function upgradeAnimalPlaneToWeightedSkin(THREE, plane, rig, mirrorX) {
+  function upgradeAnimalPlaneToWeightedSkin(THREE, plane, rig, mirrorX, fallbackDimensions = {}) {
     if (!plane?.isMesh || !plane.geometry || !plane.material) return null;
-    const weightedGeometry = buildAnimalWeightedGeometry(THREE, plane.geometry, rig, mirrorX); // Replacement geometry carrying painted body/head weights.
+    const weightedGeometry = buildAnimalWeightedGeometry(THREE, plane.geometry, rig, mirrorX, fallbackDimensions); // Replacement geometry carrying painted body/head weights.
     const material = plane.material; // Reuse the exact legacy material so animation/genotype map swaps and tint updates keep working unchanged.
     material.skinning = true;
     material.needsUpdate = true;
@@ -939,7 +939,9 @@
     headBone.name = `${plane.name}_head_bone`;
     const pivotU = mirrorX ? 1 - rig.pivot.x : rig.pivot.x;
     const params = plane.geometry.parameters || {};
-    headBone.position.set((pivotU - 0.5) * finite(params.width, 1), (0.5 - rig.pivot.y) * finite(params.height, 1), 0);
+    const planeWidth = finite(params.width, finite(fallbackDimensions.width, 1)); // Keeps the mirrored head pivot in the same model dimensions when cloned geometry lacks parameters.
+    const planeHeight = finite(params.height, finite(fallbackDimensions.height, 1)); // Matches the front card's authored height on the reverse card.
+    headBone.position.set((pivotU - 0.5) * planeWidth, (0.5 - rig.pivot.y) * planeHeight, 0);
     torsoBone.add(headBone);
 
     const skinned = new THREE.SkinnedMesh(weightedGeometry, material); // Drop-in replacement: SkinnedMesh still satisfies Mesh checks used elsewhere.
@@ -964,8 +966,13 @@
     const backPlane = group.children?.[1];
     if (!frontPlane || !backPlane) return avatarRef;
 
-    const front = upgradeAnimalPlaneToWeightedSkin(THREE, frontPlane, rig, false); // Source-facing painted skin.
-    const back = upgradeAnimalPlaneToWeightedSkin(THREE, backPlane, rig, true); // Mirrored reverse-facing painted skin.
+    const sourceParams = frontPlane.geometry?.parameters || backPlane.geometry?.parameters || {};
+    const canonicalDimensions = {
+      width: finite(sourceParams.width, 1),
+      height: finite(sourceParams.height, 1),
+    }; // One explicit dimension source prevents a cloned reverse card from falling back to PlaneGeometry's 1×1 default.
+    const front = upgradeAnimalPlaneToWeightedSkin(THREE, frontPlane, rig, false, canonicalDimensions); // Source-facing painted skin.
+    const back = upgradeAnimalPlaneToWeightedSkin(THREE, backPlane, rig, true, canonicalDimensions); // Mirrored reverse-facing painted skin.
     if (!front || !back) return avatarRef;
 
     group.remove(frontPlane);
