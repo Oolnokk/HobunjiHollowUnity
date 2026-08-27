@@ -607,7 +607,14 @@
       if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
       const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
       const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
-      const desiredWorld = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, owner.pngRot + faceYaw, 0, 'YXZ'));
+      const worldYaw = owner.pngRot + faceYaw;
+      // Build the desired world orientation from explicit orthogonal axes:
+      // local Y is always world-up, so crossing ±180° can never select an
+      // equivalent quaternion with a 180° roll/upside-down presentation.
+      const worldX = new THREE.Vector3(Math.cos(worldYaw), 0, -Math.sin(worldYaw));
+      const worldY = new THREE.Vector3(0, 1, 0);
+      const worldZ = new THREE.Vector3(Math.sin(worldYaw), 0, Math.cos(worldYaw));
+      const desiredWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(worldX, worldY, worldZ));
       plane.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
     };
     frontMesh.onBeforeRender = applyShoulderPetWorldYaw;
