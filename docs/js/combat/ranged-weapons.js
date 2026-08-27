@@ -1247,7 +1247,7 @@
     get actorHitboxes() {
       return [
         actorDebugHitbox('player', deps?.player),
-        ...(deps?.hostileObjects || []).filter(c => c.health > 0 && c.areaId === deps.getCurrentArea()).map((c, index) => actorDebugHitbox(c.id || c.name || `hostile-${index}`, c)),
+        ...[...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.areaId === deps.getCurrentArea()).map((c, index) => actorDebugHitbox(c.id || c.name || `hostile-${index}`, c)),
         ...(deps?.npcWalkers || []).filter(npc => npc.area === deps.getCurrentArea()).map((npc, index) => actorDebugHitbox(npc.id || npc.name || `npc-${index}`, npc)),
       ].filter(Boolean);
     },
