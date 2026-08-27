@@ -582,25 +582,52 @@
         if (scaleDelta > 0.001 || geometryWidthDelta > 0.001 || geometryHeightDelta > 0.001) lines.push('>>> MISMATCH — the two rendered shoulder-pet planes do not have identical authored dimensions.');
         if (separation < 0.0001) lines.push('>>> WARNING — the two rendered shoulder-pet planes are effectively coplanar; camera-angle flicker can alternate their pixels and mimic a scale jump.');
       }
-      const perch = deps.playerAttachmentAnchor('shoulderPerch');
-      const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
-      if (perch && grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = deps.playerMesh.rotation.y;
-        const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-        const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
-        const expectedX = deps.playerMesh.position.x + dx, expectedZ = deps.playerMesh.position.z + dz;
-        const expectedY = deps.playerMesh.position.y + perch.y - grip.y;
-        const actual = liveActivePet.avatarRef.group.position;
-        const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
-        lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
-        if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
+      const surfacePerch = liveActivePet.shoulderPetSurfacePerchDebug || null;
+      const actual = liveActivePet.avatarRef.group.position;
+      const fmtPoint = value => Array.isArray(value) && value.length >= 3
+        ? `(${Number(value[0]).toFixed(4)}, ${Number(value[1]).toFixed(4)}, ${Number(value[2]).toFixed(4)})`
+        : '-';
+      if (surfacePerch?.mode === 'deformed-portrait-surface' && Array.isArray(surfacePerch.world) && surfacePerch.gripWorldOffset) {
+        const bindWorld = surfacePerch.bindWorld || null;
+        const deformedWorld = surfacePerch.world;
+        const gripOffset = surfacePerch.gripWorldOffset;
+        const expected = [
+          Number(deformedWorld[0]) - Number(gripOffset.x || 0),
+          Number(deformedWorld[1]) - Number(gripOffset.y || 0),
+          Number(deformedWorld[2]) - Number(gripOffset.z || 0),
+        ];
+        const drift = Math.hypot(actual.x - expected[0], actual.y - expected[1], actual.z - expected[2]);
+        const deformation = Array.isArray(bindWorld)
+          ? Math.hypot(deformedWorld[0] - bindWorld[0], deformedWorld[1] - bindWorld[1], deformedWorld[2] - bindWorld[2])
+          : NaN;
+        const neckYawDeg = Number(surfacePerch.neckYawRad || 0) * 180 / Math.PI;
+        lines.push(`Surface perch: mode=${surfacePerch.mode} anchor=${surfacePerch.anchor || '-'} headWeight=${Number(surfacePerch.headWeight || 0).toFixed(4)} neckYaw=${neckYawDeg >= 0 ? '+' : ''}${neckYawDeg.toFixed(2)}°`);
+        lines.push(`Surface coordinate: bindWorld=${fmtPoint(bindWorld)} -> deformedWorld=${fmtPoint(deformedWorld)} displacement=${Number.isFinite(deformation) ? deformation.toFixed(4) : '-'} world units`);
+        lines.push(`Surface local: bind=${fmtPoint(surfacePerch.bindPlaneLocal)} -> deformed=${fmtPoint(surfacePerch.deformedPlaneLocal)}`);
+        lines.push(`Surface grip pin: gripWorldOffset=(${Number(gripOffset.x || 0).toFixed(4)}, ${Number(gripOffset.y || 0).toFixed(4)}, ${Number(gripOffset.z || 0).toFixed(4)}) expected mesh=${fmtPoint(expected)} actual mesh=(${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)}) drift=${drift.toFixed(6)}`);
+        if (drift > 0.01) lines.push(`>>> MISMATCH — the rendered shoulder-pet group has drifted ${drift.toFixed(4)} world units away from the deformed portrait-surface target.`);
+        else lines.push(`>>> SURFACE PIN MATCH — rendered pet is on the deformed ${surfacePerch.anchor || 'portrait'} coordinate (drift ${drift.toFixed(6)}).`);
       } else {
-        lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
+        const perch = deps.playerAttachmentAnchor(surfacePerch?.anchor || 'rightHandShoulder');
+        const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
+        lines.push(`Surface perch: mode=${surfacePerch?.mode || 'debug-unavailable'} anchor=${surfacePerch?.anchor || 'rightHandShoulder'} — verifying the static fallback only.`);
+        if (perch && grip) {
+          const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+          const invGripYaw = -gripYawRad;
+          const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+          const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+          const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+          const theta = deps.playerMesh.rotation.y;
+          const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+          const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+          const expectedX = deps.playerMesh.position.x + dx, expectedZ = deps.playerMesh.position.z + dz;
+          const expectedY = deps.playerMesh.position.y + perch.y - grip.y;
+          const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
+          lines.push(`Static fallback expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)}) actual mesh=(${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)}) drift=${drift.toFixed(6)}`);
+          if (drift > 0.01) lines.push(`>>> MISMATCH — static fallback pin drift is ${drift.toFixed(4)} world units.`);
+        } else {
+          lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
+        }
       }
     }
     return lines;

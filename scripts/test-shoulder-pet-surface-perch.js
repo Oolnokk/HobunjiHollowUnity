@@ -16,6 +16,11 @@ assert.match(avatar, /function deformLocalPoint\(localPoint, target = new THREE\
 assert.match(avatar, /deformLocalPoint: skinnedRig\.deformLocalPoint/, 'neckRig exposes the point sampler to gameplay attachments');
 assert.match(composer, /function resolvedNeckYawRad\(\)[\s\S]{0,300}resolvedPlayerNeckYawState\(\)\?\.renderedYaw/, 'surface sampler can use the exact render-time physical neck yaw');
 assert.match(probe, /surfacePerch: pet\.shoulderPetSurfacePerchDebug/, 'Pixel Probe exposes bind/deformed/world surface-perch diagnostics');
+assert.match(probe, /Surface grip pin:/, 'Pixel Probe prints the deformed surface target and grip-derived expected mesh position');
+assert.match(probe, /SURFACE PIN MATCH/, 'Pixel Probe verifies actual pet position against the deformed surface target');
+assert.match(probe, /playerAttachmentAnchor\(surfacePerch\?\.anchor \|\| 'rightHandShoulder'\)/, 'static diagnostic fallback uses the same rightHandShoulder anchor as runtime');
+assert.doesNotMatch(probe, /playerAttachmentAnchor\('shoulderPerch'\)/, 'obsolete shoulderPerch checker cannot mislabel intentional surface deformation as drift');
+assert.doesNotMatch(probe, /stale cached anchor/, 'surface-aware diagnostics no longer emit the obsolete stale-cache diagnosis');
 assert.doesNotMatch(game, /_applyShoulderPetCombatPose|shoulderPetCombatPoseDebug/, 'removed combat-pose experiment stays removed');
 assert.doesNotMatch(fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js', 'utf8'), /currentNonNeutralWeight/, 'removed non-Neutral pose plumbing stays removed');
 console.log('Shoulder-pet portrait-surface perch checks passed.');
