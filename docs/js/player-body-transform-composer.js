@@ -121,15 +121,22 @@
   // direction is outside the neck range, adding PI reverses it to the
   // direction the camera itself is FACING. The same ±65° hard limit is then
   // applied to that fallback as well, so neither branch can overtwist.
-  function applyPlayerNeckYawLimit(renderDebug) {
+  function resolvedPlayerNeckYawState() {
     const neckJoint = currentPlayerNeckJoint();
-    if (!neckJoint) return;
+    if (!neckJoint) return null;
     const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
     const sitState = window.__hobunjiFurnitureDebug?.sitInteraction; // Used only to distinguish the seated camera-look fallback from normal aim clamping.
     const seated = sitState?.phase === 'active';
     const outsideLookRange = seated && Math.abs(rawYaw) > PLAYER_HEAD_MAX_YAW_RAD; // Used below to switch from looking at the camera to following its facing direction.
     const requestedYaw = outsideLookRange ? wrapSignedAngle(rawYaw + Math.PI) : rawYaw; // Seated out-of-range target is the camera-facing direction, not the camera position.
     const renderedYaw = THREE.MathUtils.clamp(requestedYaw, -PLAYER_HEAD_MAX_YAW_RAD, PLAYER_HEAD_MAX_YAW_RAD); // Final physical limit shared by every head-turn source.
+    return { neckJoint, rawYaw, requestedYaw, renderedYaw, seated, outsideLookRange };
+  }
+
+  function applyPlayerNeckYawLimit(renderDebug) {
+    const state = resolvedPlayerNeckYawState();
+    if (!state) return;
+    const { neckJoint, rawYaw, requestedYaw, renderedYaw, seated, outsideLookRange } = state;
     neckJoint.rotation.y = renderedYaw;
     renderDebug.neckYaw = {
       rawDeg: THREE.MathUtils.radToDeg(rawYaw),
@@ -433,6 +440,10 @@
     return new THREE.Euler().setFromQuaternion(resolveDelta().rotation, 'YXZ').y;
   }
 
+  function resolvedNeckYawRad() {
+    return resolvedPlayerNeckYawState()?.renderedYaw ?? null; // Lets portrait-surface attachments sample the same neck pose the renderer will physically show.
+  }
+
   window.PlayerBodyTransformComposer = {
     setChannel,
     clearChannel,
@@ -440,6 +451,7 @@
     registerExternalRootProvider,
     captureNextRenderTransforms,
     resolvedYawDeltaRad,
+    resolvedNeckYawRad,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),

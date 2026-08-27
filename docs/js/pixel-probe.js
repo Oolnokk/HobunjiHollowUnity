@@ -84,6 +84,7 @@
       pngRot: pet.pngRot,
       groupRot: pet.groupRot,
       headClearance: pet.shoulderPetHeadClearanceDebug || null, // Shows head-derived dead-zone geometry without implying head-derived pet rotation.
+      surfacePerch: pet.shoulderPetSurfacePerchDebug || null, // Shows the bind/deformed/world portrait coordinate the rendered pet grip is following.
       planes,
     };
   }

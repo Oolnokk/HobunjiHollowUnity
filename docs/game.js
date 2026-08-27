@@ -5748,6 +5748,37 @@
         const theta = playerMesh.rotation.y;
         return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
       }
+
+      function _playerPortraitSurfacePerchWorld(perch) {
+        const rig = playerPortraitNeckRig;
+        const plane = rig?.skinnedPlane;
+        if (!perch || !rig?.available || !plane?.isSkinnedMesh || typeof rig.deformLocalPoint !== 'function') return null;
+        playerMesh.updateWorldMatrix?.(true, true);
+        const bindWorld = playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Authored rightHandShoulder coordinate before skin deformation.
+        const bindPlaneLocal = plane.worldToLocal(bindWorld.clone());
+        const neckYawRad = window.PlayerBodyTransformComposer?.resolvedNeckYawRad?.(); // Matches the render-time ±65°/seated neck resolution rather than the unclamped gameplay request.
+        const sample = rig.deformLocalPoint(bindPlaneLocal, new THREE.Vector3(), { neckYawRad });
+        if (!sample?.point) return null;
+        const world = plane.localToWorld(sample.point.clone());
+        return {
+          world,
+          bindWorld,
+          bindPlaneLocal,
+          deformedPlaneLocal: sample.point.clone(),
+          headWeight: sample.headWeight,
+          neckYawRad: Number.isFinite(neckYawRad) ? neckYawRad : (playerNeckJoint?.rotation?.y || 0),
+        };
+      }
+
+      function _pinShoulderPetGripToWorld(c, grip, perchWorld) {
+        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+        const finalGroupRotY = playerMesh.rotation.y - gripYawRad;
+        const gx = (grip.x || 0) * Math.cos(finalGroupRotY) + (grip.z || 0) * Math.sin(finalGroupRotY);
+        const gz = -(grip.x || 0) * Math.sin(finalGroupRotY) + (grip.z || 0) * Math.cos(finalGroupRotY);
+        c.avatarRef.group.position.set(perchWorld.x - gx, perchWorld.y - (grip.y || 0), perchWorld.z - gz);
+        _applyShoulderPetFinalRotation(c, finalGroupRotY);
+        return { gripYawRad, finalGroupRotY, gripWorldOffset: { x: gx, y: grip.y || 0, z: gz } };
+      }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -6514,12 +6545,29 @@
           const perch = playerAttachmentAnchor(SHOULDER_PET_PERCH_ANCHOR);
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
-            c.avatarRef.group.position.x = playerMesh.position.x + dx;
-            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-            c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            const finalGroupRotY = playerMesh.rotation.y - gripYawRad; // Final bodyYaw-aware attachment rotation consumed by the billboard counter-rotation helper.
-            _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            const surfacePerch = _playerPortraitSurfacePerchWorld(perch); // Preferred: ride the exact skinned portrait coordinate as neck deformation moves it.
+            if (surfacePerch?.world) {
+              const pin = _pinShoulderPetGripToWorld(c, grip, surfacePerch.world);
+              c.shoulderPetSurfacePerchDebug = {
+                mode: 'deformed-portrait-surface',
+                anchor: SHOULDER_PET_PERCH_ANCHOR,
+                headWeight: surfacePerch.headWeight,
+                neckYawRad: surfacePerch.neckYawRad,
+                bindWorld: surfacePerch.bindWorld.toArray(),
+                bindPlaneLocal: surfacePerch.bindPlaneLocal.toArray(),
+                deformedPlaneLocal: surfacePerch.deformedPlaneLocal.toArray(),
+                world: surfacePerch.world.toArray(),
+                gripWorldOffset: pin.gripWorldOffset,
+              };
+            } else {
+              const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Fallback for a portrait whose neck rig could not be built.
+              c.avatarRef.group.position.x = playerMesh.position.x + dx;
+              c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+              c.avatarRef.group.position.z = playerMesh.position.z + dz;
+              const finalGroupRotY = playerMesh.rotation.y - gripYawRad;
+              _applyShoulderPetFinalRotation(c, finalGroupRotY);
+              c.shoulderPetSurfacePerchDebug = { mode: 'static-anchor-fallback', anchor: SHOULDER_PET_PERCH_ANCHOR };
+            }
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
@@ -6527,6 +6575,7 @@
             c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
             const finalGroupRotY = playerMesh.rotation.y; // Final fallback attachment rotation consumed by the same billboard counter-rotation helper.
             _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            c.shoulderPetSurfacePerchDebug = { mode: 'no-rig-data-fallback', anchor: null };
           }
         }
       }
@@ -7898,6 +7947,7 @@
       // staging uses (see faceNpcDialogueParticipants), driven here for the
       // player aim tracking (see updatePlayerHeadAim).
       let playerNeckJoint = null;
+      let playerPortraitNeckRig = null; // Current player portrait skin rig; used by shoulder pets to ride an authored portrait coordinate after neck deformation.
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
@@ -13683,6 +13733,7 @@
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
+        playerPortraitNeckRig = avatarGroup.userData?.neckRig?.available ? avatarGroup.userData.neckRig : null;
         // Direct front/back material refs for updatePetLayering. A neck-rigged
         // avatar is one SkinnedMesh with [front, back] materials, whereas the
         // fallback assembly keeps two separate meshes. Resolve either shape

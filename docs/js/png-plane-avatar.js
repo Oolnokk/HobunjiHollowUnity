@@ -495,11 +495,49 @@
     const skeleton = new THREE.Skeleton([torsoBone, neckJoint]);
     skinnedPlane.bind(skeleton);
 
+    // CPU counterpart to the portrait shader's two-bone skinning. Attachments
+    // can ask where an arbitrary portrait-local coordinate ended up after the
+    // exact same neck deformation instead of remaining pinned to its bind pose.
+    // `neckYawRad` optionally mirrors PlayerBodyTransformComposer's render-time
+    // physical yaw clamp without permanently changing the gameplay-authored bone.
+    const bodySkinMatrix = new THREE.Matrix4();
+    const headSkinMatrix = new THREE.Matrix4();
+    const bodySkinPoint = new THREE.Vector3();
+    const headSkinPoint = new THREE.Vector3();
+    function deformLocalPoint(localPoint, target = new THREE.Vector3(), options = {}) {
+      if (!localPoint) return null;
+      const blendHeight = Math.max(1e-8, Number(geometry.userData?.blendHeight) || modelHeight * .30);
+      const localY = Number(localPoint.y) || 0;
+      const headWeight = smoothstep01((localY - (neckLocal.y - blendHeight * .55)) / blendHeight);
+      const oldYaw = neckJoint.rotation.y;
+      const overrideYaw = Number(options.neckYawRad);
+      const hasYawOverride = Number.isFinite(overrideYaw) && Math.abs(overrideYaw - oldYaw) > 1e-12;
+      if (hasYawOverride) neckJoint.rotation.y = overrideYaw;
+      skinnedPlane.updateWorldMatrix?.(true, true);
+      skeleton.update();
+
+      const skinVertex = target.set(Number(localPoint.x) || 0, localY, Number(localPoint.z) || 0)
+        .applyMatrix4(skinnedPlane.bindMatrix);
+      bodySkinMatrix.fromArray(skeleton.boneMatrices, 0);
+      headSkinMatrix.fromArray(skeleton.boneMatrices, 16);
+      bodySkinPoint.copy(skinVertex).applyMatrix4(bodySkinMatrix).multiplyScalar(1 - headWeight);
+      headSkinPoint.copy(skinVertex).applyMatrix4(headSkinMatrix).multiplyScalar(headWeight);
+      target.copy(bodySkinPoint).add(headSkinPoint).applyMatrix4(skinnedPlane.bindMatrixInverse);
+
+      if (hasYawOverride) {
+        neckJoint.rotation.y = oldYaw;
+        skinnedPlane.updateWorldMatrix?.(true, true);
+        skeleton.update();
+      }
+      return { point: target, headWeight };
+    }
+
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
     return {
       group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
+      deformLocalPoint,
       headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
       detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
       planeBoundsPx: geometry.userData.planeBoundsPx,
@@ -712,6 +750,7 @@
       ? {
           available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone,
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
+          deformLocalPoint: skinnedRig.deformLocalPoint,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,
           detectionMethod: skinnedRig.detectionMethod, coverageMode: skinnedRig.coverageMode,
