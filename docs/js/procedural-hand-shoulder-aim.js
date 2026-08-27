@@ -2,9 +2,9 @@
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
 // authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks. The hand's local +Y
-// is treated as the wrist/top direction. Pitch/yaw/roll use independent 0..1 weights
-// supplied by hand-shoulder-pose-runtime.js, so checkbox changes between animation
-// poses blend smoothly instead of snapping.
+// is treated as the wrist/top direction. Species-model shoulder tracking policy is
+// resolved from hand-model-profiles.js first; legacy per-pose weights remain a fallback
+// for species/models without an explicit policy.
 (function (global) {
   'use strict';
 
@@ -60,7 +60,19 @@
       return rig.group?.getObjectByName?.(`${side}_hand_socket`) || null;
     }
 
+    function speciesTrackingWeights() {
+      return global.HobunjiHandModelProfiles?.shoulderTrackingForSpecies?.(rig.speciesId) || null;
+    }
+
     function weightsFor(side) {
+      const speciesWeights = speciesTrackingWeights();
+      if (speciesWeights) {
+        return {
+          pitch: clamp01(speciesWeights.pitch),
+          yaw: clamp01(speciesWeights.yaw),
+          roll: clamp01(speciesWeights.roll),
+        };
+      }
       const weights = poseRuntime?.currentWeights?.(side) || { pitch: 1, yaw: 0, roll: 1 };
       return { pitch: clamp01(weights.pitch), yaw: clamp01(weights.yaw), roll: clamp01(weights.roll) };
     }
@@ -408,6 +420,7 @@
           mode: 'idempotent-rotation-vector-components',
           localTopAxis: '+Y',
           componentSpace: 'parent',
+          speciesTracking: speciesTrackingWeights(),
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
