@@ -22,7 +22,7 @@
   let lastRebuildMs = 0;
   let lastBlock = null;
   let playerHeadCache = { at: -Infinity, value: 1 };
-  let options = { enabled: true, projectiles: true, textureAlpha: false }; // textureAlpha is retained only as a backwards-compatible settings field and is permanently disabled.
+  let options = { enabled: true, projectiles: true, textureAlpha: false }; // Legacy alpha option is permanently ignored; there is no texture sampling path.
 
   const proceduralRecipeBounds = new Map(); // Cached once per furniture key; recipes are expressed in tile-relative authored units.
   const authoredRecipeBounds = new Map(); // Cached once per authored furniture key from its runtime part metadata.
@@ -77,7 +77,6 @@
     const c = Math.cos(ry), d = Math.sin(ry);
     const e = Math.cos(rz), f = Math.sin(rz);
     const ae = a * e, af = a * f, be = b * e, bf = b * f;
-    // Absolute XYZ-Euler rotation matrix rows applied to authored half sizes.
     const m00 = c * e, m01 = -c * f, m02 = d;
     const m10 = af + be * d, m11 = ae - bf * d, m12 = -b * c;
     const m20 = bf - ae * d, m21 = be + af * d, m22 = a * c;
@@ -257,9 +256,6 @@
       return;
     }
 
-    // Walk semantic object roots only. Once a cover root is found, its child
-    // meshes are deliberately not visited; no geometry, material, UV, or
-    // triangle data participates in projectile cover anymore.
     const stack = [...(scene.children || [])];
     while (stack.length) {
       const node = stack.pop();
@@ -414,6 +410,8 @@
       t: nearest.t,
       distanceWorld,
       object: candidate.node,
+      kind: candidate.kind,
+      key: candidate.key,
       point: start.clone?.().lerp ? start.clone().lerp(end, nearest.t) : null,
     };
   }
