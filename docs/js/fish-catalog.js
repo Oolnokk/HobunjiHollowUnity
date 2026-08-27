@@ -4,6 +4,8 @@
   const SEASON = { spring: 'Stormtide', summer: 'Deadgrass', fall: 'Longpour', winter: 'Coldmuck' };
   const GURUMAHI_IGNORES = [['#7d7d76',22],['#98978e',48],['#706f69',48]];
   const ROCKSCALE_IGNORES = [['#7f6e77',7],['#bababa',45]];
+  const AMPHIBIOUS_SPECIES = new Set(['gurumahi']); // Used to gate dangerous fish to casts made while the player is standing in water.
+  const AMPHIBIOUS_SELL_MULTIPLIER = 3; // Used to compensate amphibious catches for their post-reel combat/retrieval step.
 
   const ROWS = [
     ['gurumahi_tawny','Gurumahi Tawny','gurumahi','#9b6f49',1.06,.25,'smooth',34,['farm','town'],'spring,summer,fall',['day','dusk'],'common',30],
@@ -36,11 +38,15 @@
 
   const FISH = Object.freeze(ROWS.map(r => {
     const axes = silhouetteAxes(r[2], r[4]);
+    const amphibious = AMPHIBIOUS_SPECIES.has(r[2]); // Used by fishing selection, post-reel combat, and inventory metadata.
+    const baseSellPrice = r[12]; // Used to retain the authored pre-risk value for diagnostics/balance comparison.
     return {
       key:r[0], label:r[1], species:r[2], baseColor:r[3],
       minigameScale:r[4], minigameScaleX:axes.x, minigameScaleY:axes.y,
       valueBoost:r[5], fishClass:r[6], difficulty:r[7], zones:r[8],
-      seasons:r[9], timesOfDay:r[10], rarity:r[11], sellPrice:r[12],
+      seasons:r[9], timesOfDay:r[10], rarity:r[11], baseSellPrice,
+      sellPrice:baseSellPrice * (amphibious ? AMPHIBIOUS_SELL_MULTIPLIER : 1),
+      amphibious, amphibiousCreatureKind: amphibious ? 'gurumahi' : null,
       patterns:r[13] ? { base:r[13], stripes:r[14] } : {}
     };
   }));
@@ -54,14 +60,17 @@
   const ignores = f => (f.species === 'gurumahi' ? GURUMAHI_IGNORES : f.species === 'rockscale' ? ROCKSCALE_IGNORES : []).map(([hex,sensitivity]) => ({hex,sensitivity}));
   const seasons = s => s === 'any' ? 'any' : s.split(',').map(x => SEASON[x] || x);
 
-  function buildFishingDefs() {
+  function buildFishingDefs(opts = {}) {
+    const allowAmphibious = opts.allowAmphibious !== false; // Used to strip Gurumahi from the live roll pool while fishing from shore.
     const zones = { farm:[], town:[], northernCliffs:[], cloudForest:[] };
     for (const f of FISH) {
+      if (f.amphibious && !allowAmphibious) continue;
       const d = {
         key:f.key, label:f.label, icon:'🐟', rarity:f.rarity, sellPrice:f.sellPrice,
         seasons:seasons(f.seasons), timesOfDay:[...f.timesOfDay], fishClass:f.fishClass,
         difficulty:f.difficulty, minigameScale:f.minigameScale,
-        minigameScaleX:f.minigameScaleX, minigameScaleY:f.minigameScaleY
+        minigameScaleX:f.minigameScaleX, minigameScaleY:f.minigameScaleY,
+        amphibious:f.amphibious, amphibiousCreatureKind:f.amphibiousCreatureKind
       };
       for (const zone of f.zones) zones[zone]?.push(d);
     }
@@ -71,9 +80,13 @@
   function buildItemDefs() {
     const out = {};
     for (const f of FISH) {
+      const tags = ['Fish','Edible', ...(f.amphibious ? ['Amphibious'] : [])]; // Used by inventory/cooking metadata and future amphibious-fish content.
       out[f.key] = {
         icon:'🐟', label:f.label, cat:'material', category:'Fish', sellPrice:f.sellPrice,
-        tags:['Fish','Edible'], desc:`${f.label}, a fish found around Hobunji Hollow.`,
+        tags, amphibious:f.amphibious,
+        desc:f.amphibious
+          ? `${f.label}, an amphibious fish worth triple normal value because landing it only starts the fight.`
+          : `${f.label}, a fish found around Hobunji Hollow.`,
         spriteIcon:sprite(f), spriteColor:0xffffff, spriteMode:`fish:${f.key}`
       };
     }
@@ -146,12 +159,14 @@
     const init=api.init;
     const beginCast=api.beginCast;
     api.init=d=>{
-      capturedFishingDeps={...(capturedFishingDeps||{}),...(d||{}),FISH_DEFS:buildFishingDefs()};
+      capturedFishingDeps={...(capturedFishingDeps||{}),...(d||{}),FISH_DEFS:buildFishingDefs({allowAmphibious:false})};
       return init(capturedFishingDeps);
     };
     if(typeof beginCast==='function'){
       api.beginCast=(...args)=>{
         ensureSilhouetteAssets();
+        const allowAmphibious = window.AmphibiousFishing?.playerInWater?.() === true; // Used to refresh the live pool from the player's actual footing at cast time.
+        if (capturedFishingDeps) capturedFishingDeps.FISH_DEFS = buildFishingDefs({ allowAmphibious });
         const result=beginCast.apply(api,args);
         startPresentationLoop();
         return result;
@@ -172,7 +187,7 @@
     let n=0;
     const go=()=>{
       if(window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(),buildBasePrices())===true){
-        window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish`,'items');
+        window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish (${FISH.filter(f=>f.amphibious).length} amphibious at ${AMPHIBIOUS_SELL_MULTIPLIER}x value)`,'items');
         return;
       }
       if(n++<40)setTimeout(go,250);
@@ -365,7 +380,7 @@
     requestAnimationFrame(presentationLoop);
   }
 
-  window.FishCatalog={entries:FISH,get:k=>byKey.get(k)||null,buildFishingDefs,buildItemDefs,getRecoloredCanvas};
+  window.FishCatalog={entries:FISH,get:k=>byKey.get(k)||null,buildFishingDefs,buildItemDefs,buildBasePrices,getRecoloredCanvas};
   configureCatchCamera();
   hookFishing();
   registerItems();

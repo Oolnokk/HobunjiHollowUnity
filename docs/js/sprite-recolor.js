@@ -118,66 +118,57 @@
     let img = _imgCache.get(spritePath);
     if (img) return img.__loadPromise || Promise.resolve(img);
     img = new Image();
-    const p = new Promise((resolve, reject) => {
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Failed to load recolorable sprite ' + spritePath));
-    });
-    img.crossOrigin = 'anonymous';
-    img.__loadPromise = p;
-    img.src = spritePath;
-    _imgCache.set(spritePath, img);
+    const p=new Promise((resolve,reject)=>{ img.onload=()=>resolve(img); img.onerror=()=>reject(new Error('Failed to load recolorable sprite '+spritePath)); });
+    img.crossOrigin='anonymous';
+    img.__loadPromise=p;
+    img.src=spritePath;
+    _imgCache.set(spritePath,img);
     return p;
   }
 
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
-    if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) {
-      return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
-    }
-
-    const cacheKey = 'hue-key-value-v2|' + spritePath + '|' + mode + '|' + targetHex;
-    const cached = _canvasCache.get(cacheKey);
-    if (cached) return Promise.resolve(cached);
-    return loadImage(spritePath).then(img => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      recolorImageData(imageData.data, targetHex, mode, opts);
-      ctx.putImageData(imageData, 0, 0);
-      window.__farmLog?.(`[sprite-recolor] ${mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'} ${spritePath} -> #${targetHex.toString(16).padStart(6, '0')}`, 'items');
-      _canvasCache.set(cacheKey, canvas);
-      return canvas;
+    if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
+    const cacheKey='hue-key-value-v2|'+spritePath+'|'+mode+'|'+targetHex;
+    const cached=_canvasCache.get(cacheKey);
+    if(cached)return Promise.resolve(cached);
+    return loadImage(spritePath).then(img=>{
+      const canvas=document.createElement('canvas'); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
+      const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0);
+      const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+      recolorImageData(imageData.data,targetHex,mode,opts); ctx.putImageData(imageData,0,0);
+      window.__farmLog?.(`[sprite-recolor] ${mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'} ${spritePath} -> #${targetHex.toString(16).padStart(6,'0')}`,'items');
+      _canvasCache.set(cacheKey,canvas); return canvas;
     });
   }
 
-  // fish-catalog must run before fishing-minigame.js so it can wrap Fishing.init
-  // before game.js injects the full dependency bag. Because this file itself is
-  // parser-blocking in docs/index.html, document.write keeps the catalog in that
-  // same parser-ordered sequence instead of racing it as an async dynamic script.
-  function loadFishCatalogForGame() {
-    // Rendering helpers are also evaluated by DOM-less Node test harnesses.
-    if (typeof document === 'undefined') return;
-    if (!document.getElementById('fishingOverlay') || window.FishCatalog || document.querySelector('script[data-fish-catalog]')) return;
-    const ownSrc = document.currentScript?.src;
-    const src = ownSrc ? new URL('fish-catalog.js?v=20260814b', ownSrc).href : 'js/fish-catalog.js?v=20260814b';
-    if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-fish-catalog="true"></script>`);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.fishCatalog = 'true';
-    script.onerror = () => console.warn('[sprite-recolor] failed to load fish-catalog.js');
+  function parserOrderedScript(filename,datasetKey,version,alreadyLoaded){
+    if(typeof document==='undefined'||alreadyLoaded?.()||document.querySelector(`script[data-${datasetKey}]`))return;
+    const ownSrc=document.currentScript?.src;
+    const src=ownSrc?new URL(`${filename}?v=${version}`,ownSrc).href:`js/${filename}?v=${version}`;
+    if(document.readyState==='loading'){document.write(`<script src="${src}" data-${datasetKey}="true"></script>`);return;}
+    const script=document.createElement('script'); script.src=src;
+    script.dataset[datasetKey.replace(/-([a-z])/g,(_,ch)=>ch.toUpperCase())]='true';
+    script.onerror=()=>console.warn(`[sprite-recolor] failed to load ${filename}`);
     document.head.appendChild(script);
   }
 
-  window.SpriteRecolor = {
-    getRecoloredCanvas,
-    recolorImageData, relativeLuminance, shadeFillConfig,
-    DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_HUE_TOLERANCE,
-  };
+  function loadFishCatalogForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('fish-catalog.js','fish-catalog','20260826amphib1',()=>!!window.FishCatalog);
+  }
+  function loadFishingEventsForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('fishing-events.js','fishing-events','20260826gullet2');
+  }
+  function loadAmphibiousFishingForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20260826a',()=>!!window.AmphibiousFishing);
+    parserOrderedScript('amphibious-fish-corpse-cleanup.js','amphibious-corpse-cleanup','20260826a');
+    parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
+  }
 
+  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,KEY_HUE_TOLERANCE};
   loadFishCatalogForGame();
+  loadFishingEventsForGame();
+  loadAmphibiousFishingForGame();
 })();
