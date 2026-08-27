@@ -621,6 +621,17 @@
       // render one frame of the previous parent/plane orientation.
       plane.updateMatrix();
       plane.updateMatrixWorld(true);
+      const worldElements = plane.matrixWorld.elements;
+      plane.userData.hobunjiShoulderPetRenderDebug = {
+        time: performance.now(),
+        pngRot: owner.pngRot,
+        parentWorldQuaternion: [parentWorld.x, parentWorld.y, parentWorld.z, parentWorld.w],
+        desiredWorldQuaternion: [desiredWorld.x, desiredWorld.y, desiredWorld.z, desiredWorld.w],
+        localQuaternion: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],
+        worldQuaternion: [plane.getWorldQuaternion(new THREE.Quaternion()).x, plane.getWorldQuaternion(new THREE.Quaternion()).y, plane.getWorldQuaternion(new THREE.Quaternion()).z, plane.getWorldQuaternion(new THREE.Quaternion()).w],
+        worldUp: [worldElements[4], worldElements[5], worldElements[6]],
+        worldNormal: [worldElements[8], worldElements[9], worldElements[10]],
+      };
     };
     frontMesh.onBeforeRender = applyShoulderPetWorldYaw;
     backMesh.onBeforeRender = applyShoulderPetWorldYaw;
