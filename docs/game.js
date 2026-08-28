@@ -15635,6 +15635,14 @@
         // The frame update owns the five-second aimed nest hold; do not let
         // the same physical Action 1 press fall through into a weapon swing.
         if (activeAction === 'nest_take') return;
+        // Same story as nest_take just above: updateBanditTentInteraction
+        // (bandit-camps.js) owns this hold-to-loot/burn timer entirely via
+        // deps.getActionHeldDown(), every frame. Without this guard a tap
+        // fell all the way through to the generic applyAction(tool, action,
+        // col, row) fallback below, which doesn't recognize
+        // 'bandit_tent_interact' as a real tile action and always failed
+        // with "...cannot be used on that tile."
+        if (activeAction === 'bandit_tent_interact') return;
         // Climb is no longer an Action 1/tool action. The dodge input owns
         // the forward-dodge climb context; keep this legacy branch inert for
         // saved bindings or stale UI events from older sessions.

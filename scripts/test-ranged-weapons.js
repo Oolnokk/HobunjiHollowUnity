@@ -56,7 +56,7 @@ assert.match(ranged, /afflictionBonuses:\s*p\.afflictionBonuses/, 'projectile im
 assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S]*activeTrailMeshes:/, 'mobile ranged debug snapshot must report deadzone and comet-trail state');
 assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
-assert.match(index, /ranged-weapons\.js\?v=20260827treecover2/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
+assert.match(index, /ranged-weapons\.js\?v=20260827treecover3/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
 assert.match(index, /scratchbones-config\.js\?v=20260821alchemy2/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
 assert.match(index, /game\.js\?v=20260821alchemy6/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 

@@ -978,6 +978,18 @@
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
   }
 
+  // Real vertical aim for a bandit's shot — targetPlayer.x/y (horizontal)
+  // alone can't tell a level shot from one that needs to climb toward a
+  // player up a tree. Mirrors playerAimSolution's own pitch derivation and
+  // reuses the same muzzle-height convention as spawnProjectile's origin.
+  function banditAimPitch(c, targetPlayer) {
+    const dx = targetPlayer.x - c.x, dy = targetPlayer.y - c.y;
+    const horizontalWorld = Math.hypot(dx, dy) / deps.TILE;
+    const shooterY = ownerElevationY(c, c.x, c.y) + 0.55;
+    const targetY = ownerElevationY(targetPlayer, targetPlayer.x, targetPlayer.y) + 0.55;
+    return Math.atan2(targetY - shooterY, Math.max(horizontalWorld, AIM_EPSILON));
+  }
+
   function beginBanditAction(c, kind, targetPlayer) {
     const itemKey = c.def.rangedWeaponKey;
     const def = defFor(itemKey);
@@ -985,6 +997,7 @@
     c._rangedMode = true;
     c._rangedAction = { kind, t: 0, durationS: kind === 'fire' ? def.fireDurationS : def.reloadDurationS, fired: false };
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
     lastEvent = `${c.id}:${itemKey}:${kind}-start`;
   }
@@ -1061,6 +1074,7 @@
     const moving = deps.moveCreatureToward(c, targetX, targetY, c.def.chaseSpeed, dt);
     if (Math.hypot(c.x - beforeX, c.y - beforeY) < 0.01) c._rangedLosSide = -side;
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     c.facing = c._rangedAimAngle;
     c._rangedLosDebug = { ...(c._rangedLosDebug || los), repositioning: true, side: c._rangedLosSide, at: performance.now() };
     losRepositions++;
@@ -1076,11 +1090,12 @@
     if (action) {
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+      c._rangedAimPitch = banditAimPitch(c, targetPlayer);
       if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * def.fireAtFrac) {
         action.fired = true;
         setLoaded(itemKey, false, c);
         playRangedActionSfx(itemKey, 'fire', c);
-        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c);
+        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0);
       }
       if (action.t >= action.durationS) {
         if (action.kind === 'load') setLoaded(itemKey, true, c);
