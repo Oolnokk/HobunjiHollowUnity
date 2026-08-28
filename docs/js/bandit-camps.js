@@ -315,6 +315,7 @@
         const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
         if (Math.hypot(col * deps.TILE - c.x, row * deps.TILE - c.y) > rangePx) continue;
         _perceivedThreats.set(key, { kind: 'camp', zoneId: deps.getCurrentArea(), instanceId: rec.instance.id, col, row, label: 'Bandit Camp' });
+        window.AudioSystem?.playAnimalVocalization?.(c, 'warning', { reason: 'bandit-camp' });
         deps.showToast(`${label} senses a bandit camp nearby — marked on the map!`, false);
       }
 
@@ -325,6 +326,7 @@
         const col = den.x + (den.w || 1) / 2, row = den.y + (den.h || 1) / 2;
         if (Math.hypot(col * deps.TILE - c.x, row * deps.TILE - c.y) > rangePx) continue;
         _perceivedThreats.set(key, { kind: 'den', zoneId: deps.getCurrentArea(), denKey, col, row, label: 'Animal Den' });
+        window.AudioSystem?.playAnimalVocalization?.(c, 'warning', { reason: 'animal-den' });
         deps.showToast(`${label} senses an animal den nearby — marked on the map!`, false);
       }
     }
