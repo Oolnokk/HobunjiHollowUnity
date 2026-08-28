@@ -6201,8 +6201,20 @@
       // (below) and farm livestock (see farm-animals.js's
       // deps.isPlayerFocusedOnHead, backed by this same math).
       const PLAYER_HEAD_FOCUS_RADIUS_WORLD = 0.7; // Generous on purpose — this is "is the player roughly looking this creature's way," not a pixel-precise headshot hitbox.
+      // Frame-cached (keyed off lastTime, set once per gameLoop tick) since
+      // this is now asked for by every ground companion (twice a frame —
+      // once for the horizon-scan lock, once for the movement freeze below)
+      // and every farm animal (once each, every frame, regardless of
+      // whether anything is actually in range) — without this, a farm with
+      // a couple dozen animals redid this same raycaster setFromCamera call
+      // that many times a frame for an identical answer.
+      let _cachedPlayerLookRay = null;
+      let _cachedPlayerLookRayAt = -1;
       function _currentPlayerLookRay() {
-        return currentPlayerInteractionRay() || currentPlayerAimRay();
+        if (_cachedPlayerLookRayAt === lastTime) return _cachedPlayerLookRay;
+        _cachedPlayerLookRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        _cachedPlayerLookRayAt = lastTime;
+        return _cachedPlayerLookRay;
       }
       function _isPlayerFocusedOnHead(c) {
         const head = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
