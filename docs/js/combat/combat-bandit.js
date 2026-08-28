@@ -1310,8 +1310,14 @@
     const step = BANDIT_NECK_LOOK_TURN_SPEED_DEG * Math.max(0, Number(dt) || 0);
     const diff = clampedTarget - state.currentDeg;
     state.currentDeg += Math.max(-step, Math.min(step, diff));
+    // Front and back share the same sign here, not mirrored -- unlike an
+    // in-plane roll (which reverses handedness under the back card's own
+    // ±90°-opposite baseline rotation), a yaw around the shared world-
+    // vertical axis reads the same real-world direction on both cards
+    // regardless of that baseline difference, so mirroring the sign here
+    // would turn the two cards away from each other instead of in tandem.
     neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
-    neck.back.rotation.y = -state.currentDeg * BANDIT_NECK_LOOK_RAD;
+    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
   }
 
   // Eases the neck glance back to center — called from game.js's hostile
@@ -1319,6 +1325,7 @@
   // therefore _updateBanditLookAtTarget, only ever runs during 'chase').
   function restNeckLook(c, dt) {
     _updateBanditNeckYaw(c, 0, dt);
+    c._lookAtDebug = null;
   }
 
   function _updateBanditLookAtTarget(c, dt, targetPlayer) {
@@ -1326,6 +1333,19 @@
     const rawAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     const residualRad = deps.angleDiff(rawAngle, c.facing || 0); // How far the target sits from wherever this bandit's body/plane is currently facing.
     _updateBanditNeckYaw(c, residualRad * 180 / Math.PI, dt);
+    // Feeds the "Show Interaction Raycast" debug overlay (see
+    // debug-hitboxes.js) — approximates this bandit's own head height off
+    // its shared window.CreatureHeadCache entry (built for animal-shaped
+    // avatarRefs, but its fallbacks degrade gracefully for a bandit's own
+    // portrait-plane avatarRef too).
+    const selfHead = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+    const targetHead = deps.getPlayerFaceTarget?.();
+    if (selfHead && targetHead) {
+      c._lookAtDebug = {
+        head: { x: c.x / deps.TILE, y: selfHead.worldY, z: c.y / deps.TILE },
+        target: { x: targetHead.x / deps.TILE, y: targetHead.worldY, z: targetHead.y / deps.TILE },
+      };
+    }
   }
 
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {

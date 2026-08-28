@@ -32,7 +32,7 @@
   <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260828neck1"></script>
+  <script src="js/png-plane-avatar.js?v=20260828neck2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -142,7 +142,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260828necklook1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260828necklook2"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -203,7 +203,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260828breath1"></script>
+  <script src="js/farm-animals.js?v=20260828breath2"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -277,7 +277,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260825hitbox3"></script>
+  <script src="js/debug-hitboxes.js?v=20260828lookray1"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -2024,7 +2024,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828animtasks1"></script>
+  <script src="game.js?v=20260828animtasks2"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -313,12 +313,20 @@
       const horizontal = Math.max(0.15, distance);
       const pitchDeg = Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
       animal.avatarRef.updateHeadRotation(pitchDeg, dt);
+      // Feeds the "Show Interaction Raycast" debug overlay (docs/js/debug-hitboxes.js) —
+      // already in Three.js world (tile) units, unlike game.js's own
+      // _setLookAtDebug which converts from raw pixels.
+      animal._lookAtDebug = {
+        head: { x: animal.wx, y: _farmAnimalHeadWorldY(animal), z: animal.wz },
+        target: { x: Number(target.x), y: targetWorldY, z: targetZ },
+      };
     }
     return -Math.atan2(dz, dx) + Math.PI / 2;
   }
 
   function _restoreFarmAnimalHead(animal, dt) {
     const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
+    animal._lookAtDebug = null;
     if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
       animal.avatarRef.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, dt);
     }

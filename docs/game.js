@@ -482,8 +482,10 @@
         npcDialogueStaging = null;
         window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+        player._lookAtDebug = null;
         if (_dialogueWalker) {
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
+          _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -5836,6 +5838,7 @@
 
       function _restoreCompanionHead(c, dt) {
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        if (c) c._lookAtDebug = null;
       }
 
       // Look targets use the character's face, not the feet/body center. The
@@ -5854,6 +5857,19 @@
         return window.CreatureHeadCache.getHeadWorld(c, 'animal')?.worldY || 0;
       }
 
+      // Feeds docs/js/debug-hitboxes.js's "Show Interaction Raycast" debug
+      // toggle — every head-look system below records the exact head/target
+      // world points it just aimed at here, in Three.js world (tile) units,
+      // rather than the debug drawer trying to reverse-engineer a direction
+      // out of a rotated (and, for animals, mirrored front/back) bone
+      // transform. Cleared wherever the corresponding look resets to rest.
+      function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        looker._lookAtDebug = {
+          head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
+          target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
+        };
+      }
+
       function _updateCreatureLookAtFace(c, master, dt) {
         const target = _playerFaceTarget(master);
         const dx = target.x - c.x, dy = target.y - c.y;
@@ -5862,6 +5878,7 @@
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
       }
 
@@ -5905,6 +5922,7 @@
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, head.x, head.y, head.worldY);
         // Yaw: corrects for the gap between the target's exact bearing and
         // wherever this creature's body is currently facing (c.facing, one
         // frame stale here — same convention/timing bandit's own
@@ -9479,11 +9497,12 @@
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
       }
 
-      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg) {
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
         if (!neckJoint?.parent) return false;
         neckJoint.parent.updateMatrixWorld(true);
         const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
         const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
         const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
@@ -9518,10 +9537,10 @@
         const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
         const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg);
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
         }
         if (playerNeckJoint) {
-          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg);
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
         }
       }
 
@@ -26273,6 +26292,13 @@
         clamp,
         debugLog,
         TILE,
+        // Used only for the "Show Interaction Raycast" debug overlay's
+        // head-to-target line — a bandit's own combat AI aims at real
+        // hitbox geometry (meleeAimSolution), not this.
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x, y: pos.z, worldY: pos.worldY };
+        },
         PLAYER_RADIUS,
         JUMP_BACK_DUR_S,
         JUMP_BACK_SPEED,
@@ -26949,6 +26975,8 @@
         player,
         hostileObjects,
         companionObjects,
+        npcWalkers,
+        animalObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,

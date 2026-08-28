@@ -1115,15 +1115,22 @@
     // pitch/nod bone rotation.z above — the head bone's local Y, which
     // (since the plane itself is already rotated ±90° about Y to face the
     // camera) reads on-screen as a left/right turn rather than an up/down
-    // nod. Mirrored between front/back exactly like applyDegrees' pitch, so
-    // a turn reads as the same real-world direction from either card. No
-    // authored yawMinDeg/yawMaxDeg exists on the rig today, so this reuses
-    // the same authored minDeg/maxDeg magnitude (already tuned per species
-    // for a readable head motion) rather than inventing a second range.
+    // nod. NOT mirrored between front/back the way applyDegrees' pitch is:
+    // pitch is an in-plane roll (rotation about the card's own normal),
+    // which reverses handedness under the back card's horizontal UV flip
+    // (backTex.repeat.set(-1,1)), so mirroring the sign is what keeps a nod
+    // reading as the same real-world up/down direction from either card.
+    // Yaw has no such reversal — front and back share the same world-space
+    // vertical (Y) rotation axis regardless of which card is currently
+    // camera-facing — so driving both with the SAME sign is what keeps them
+    // turning in tandem instead of away from each other.
+    // No authored yawMinDeg/yawMaxDeg exists on the rig today, so this
+    // reuses the same authored minDeg/maxDeg magnitude (already tuned per
+    // species for a readable head motion) rather than inventing a second range.
     const yawLimitDeg = Math.max(Math.abs(rig.minDeg), Math.abs(rig.maxDeg));
     const applyYawDegrees = degrees => {
       front.headBone.rotation.y = degrees * RAD;
-      back.headBone.rotation.y = -degrees * RAD;
+      back.headBone.rotation.y = degrees * RAD;
     };
 
     avatarRef.setHeadRotation = degrees => {
