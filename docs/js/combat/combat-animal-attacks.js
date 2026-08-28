@@ -31,7 +31,7 @@
     const state = {};
     def.start(c, state, ctx, deps);
     c._animalAttack = { id, def, state };
-    deps?.playCreatureBark?.(c);
+    deps?.requestThreatGrowl?.(c, `attack:${id}`);
     return true;
   }
 
