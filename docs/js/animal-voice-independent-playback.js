@@ -8,11 +8,13 @@
   const MIN_TEMPO = 0.35;
   const MAX_TEMPO = 2;
   const DEFAULT_CONTOUR_SEGMENT_MS = 260;
-  const WSOLA_FRAME_S = 0.048;
-  const WSOLA_OVERLAP_RATIO = 0.5;
-  const WSOLA_SEARCH_S = 0.014;
-  const WSOLA_CORRELATION_STEP = 4;
-  const SEGMENT_CROSSFADE_S = 0.012;
+  const WSOLA_FRAME_S = 0.056;
+  const WSOLA_OVERLAP_RATIO = 0.62;
+  const WSOLA_SEARCH_S = 0.018;
+  const WSOLA_CORRELATION_STEP = 2;
+  const SEGMENT_CROSSFADE_S = 0.026;
+  const OUTPUT_EDGE_FADE_S = 0.006;
+  const OUTPUT_TAIL_PAD_S = 0.018;
   const MAX_RENDER_CACHE = 32;
   const ANALYSIS_RATE = 12000;
   const ANALYSIS_FRAME = 1024;
@@ -51,6 +53,21 @@
     const position = clamp(fraction, 0, 1) * (sorted.length - 1);
     const left = Math.floor(position), right = Math.min(sorted.length - 1, left + 1), mix = position - left;
     return sorted[left] + (sorted[right] - sorted[left]) * mix;
+  }
+  function smoothBlendWeight(index, count) {
+    if (count <= 1) return 1;
+    const t = clamp(index / (count - 1), 0, 1);
+    return 0.5 - 0.5 * Math.cos(Math.PI * t);
+  }
+  function cubicSample(channel, position) {
+    if (!channel?.length) return 0;
+    const i1 = clamp(Math.floor(position), 0, channel.length - 1);
+    const i0 = Math.max(0, i1 - 1), i2 = Math.min(channel.length - 1, i1 + 1), i3 = Math.min(channel.length - 1, i1 + 2);
+    const t = position - Math.floor(position), p0 = channel[i0], p1 = channel[i1], p2 = channel[i2], p3 = channel[i3];
+    const a0 = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
+    const a1 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
+    const a2 = -0.5 * p0 + 0.5 * p2;
+    return clamp(((a0 * t + a1) * t + a2) * t + p1, -1, 1);
   }
   function setPitchPreservation(audio, enabled) {
     try { audio.preservesPitch = enabled; } catch (_) {}
@@ -155,13 +172,7 @@
     const targetLength = Math.max(1, Math.round(sourceLength / safeRatio));
     return channels.map(channel => {
       const output = new Float32Array(targetLength);
-      for (let index = 0; index < targetLength; index++) {
-        const sourcePos = index * safeRatio;
-        const left = clamp(Math.floor(sourcePos), 0, channel.length - 1);
-        const right = Math.min(channel.length - 1, left + 1);
-        const mix = sourcePos - left;
-        output[index] = channel[left] + (channel[right] - channel[left]) * mix;
-      }
+      for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index * safeRatio);
       return output;
     });
   }
@@ -182,11 +193,7 @@
       return channels.map(channel => {
         const output = new Float32Array(targetLength);
         if (targetLength === sourceLength) { output.set(channel); return output; }
-        for (let index = 0; index < targetLength; index++) {
-          const sourcePos = index / safeStretch;
-          const left = clamp(Math.floor(sourcePos), 0, channel.length - 1), right = Math.min(channel.length - 1, left + 1), mix = sourcePos - left;
-          output[index] = channel[left] + (channel[right] - channel[left]) * mix;
-        }
+        for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index / safeStretch);
         return output;
       });
     }
@@ -213,7 +220,7 @@
         const input = channels[channelIndex], output = outputs[channelIndex];
         const usable = Math.min(frame, input.length - bestInputPos, output.length - outputPos), crossfade = Math.min(overlap, usable);
         for (let index = 0; index < crossfade; index++) {
-          const weight = index / Math.max(1, crossfade - 1);
+          const weight = smoothBlendWeight(index, crossfade);
           output[outputPos + index] = output[outputPos + index] * (1 - weight) + input[bestInputPos + index] * weight;
         }
         for (let index = crossfade; index < usable; index++) output[outputPos + index] = input[bestInputPos + index];
@@ -245,7 +252,7 @@
       for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
         const output = outputs[channelIndex], input = segment[channelIndex];
         for (let index = 0; index < overlap; index++) {
-          const weight = index / Math.max(1, overlap - 1);
+          const weight = smoothBlendWeight(index, overlap);
           output[overlapStart + index] = output[overlapStart + index] * (1 - weight) + input[index] * weight;
         }
         output.set(input.subarray(overlap), writePos);
@@ -254,24 +261,45 @@
     }
     return outputs.map(output => output.slice(0, writePos));
   }
+  function applyOutputEdgeEnvelope(channels, sampleRate) {
+    const length = channels[0]?.length || 0;
+    if (!length) return channels;
+    const fadeSamples = Math.min(Math.max(1, Math.round(sampleRate * OUTPUT_EDGE_FADE_S)), Math.max(1, Math.floor(length / 4)));
+    const padSamples = Math.max(1, Math.round(sampleRate * OUTPUT_TAIL_PAD_S));
+    return channels.map(channel => {
+      const output = new Float32Array(length + padSamples);
+      output.set(channel.subarray(0, length));
+      for (let index = 0; index < fadeSamples; index++) {
+        const inGain = smoothBlendWeight(index, fadeSamples);
+        const outGain = 1 - inGain;
+        output[index] *= inGain;
+        output[length - fadeSamples + index] *= outGain;
+      }
+      return output;
+    });
+  }
   function renderProcessedChannels(buffer, opts) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
     const sampleRate = buffer.sampleRate, baseTempo = clampTempo(opts.tempo ?? opts.rate ?? 1), basePitch = clampPitch(opts.pitchSemitones ?? 0);
     const tempoContour = Array.isArray(opts.tempoContour) ? opts.tempoContour.map(clampTempo) : null;
     const pitchContour = Array.isArray(opts.pitchContourSemitones) ? opts.pitchContourSemitones.map(clampPitch) : null;
     const stageCount = Math.max(tempoContour?.length || 0, pitchContour?.length || 0, 1);
-    if (stageCount === 1) return processConstantAxes(channels, sampleRate, baseTempo, basePitch);
-    const segmentMs = Math.max(40, finite(opts.contourSegmentMs, DEFAULT_CONTOUR_SEGMENT_MS)), segments = [];
-    let sourceStart = 0;
-    for (let stage = 0; stage < stageCount && sourceStart < buffer.length; stage++) {
-      const tempo = clampTempo(stageValue(tempoContour, baseTempo, stage)), pitch = clampPitch(stageValue(pitchContour, basePitch, stage));
-      let sourceEnd = buffer.length;
-      if (stage < stageCount - 1) sourceEnd = Math.min(buffer.length, sourceStart + Math.max(1, Math.round(sampleRate * segmentMs / 1000 * tempo)));
-      const sourceSegment = channels.map(channel => channel.slice(sourceStart, sourceEnd));
-      segments.push(processConstantAxes(sourceSegment, sampleRate, tempo, pitch));
-      sourceStart = sourceEnd;
+    let rendered;
+    if (stageCount === 1) rendered = processConstantAxes(channels, sampleRate, baseTempo, basePitch);
+    else {
+      const segmentMs = Math.max(40, finite(opts.contourSegmentMs, DEFAULT_CONTOUR_SEGMENT_MS)), segments = [];
+      let sourceStart = 0;
+      for (let stage = 0; stage < stageCount && sourceStart < buffer.length; stage++) {
+        const tempo = clampTempo(stageValue(tempoContour, baseTempo, stage)), pitch = clampPitch(stageValue(pitchContour, basePitch, stage));
+        let sourceEnd = buffer.length;
+        if (stage < stageCount - 1) sourceEnd = Math.min(buffer.length, sourceStart + Math.max(1, Math.round(sampleRate * segmentMs / 1000 * tempo)));
+        const sourceSegment = channels.map(channel => channel.slice(sourceStart, sourceEnd));
+        segments.push(processConstantAxes(sourceSegment, sampleRate, tempo, pitch));
+        sourceStart = sourceEnd;
+      }
+      rendered = concatenateWithCrossfade(segments, sampleRate);
     }
-    return concatenateWithCrossfade(segments, sampleRate);
+    return applyOutputEdgeEnvelope(rendered, sampleRate);
   }
   function renderCacheKey(url, opts) {
     const arrayKey = value => Array.isArray(value) ? value.map(item => Number(finite(item, 0).toFixed(4))).join(',') : '';
@@ -306,7 +334,7 @@
     try { source.start(startAt); }
     catch (error) { lastPlaybackError = error; opts.onError?.(error); cleanup(); return { stop, durationS: 0, independentPitch: true }; }
     startTimer = setTimeout(() => {
-      if (stopped) return; lastPlaybackError = null; lastBackend = 'WebAudio WSOLA independent pitch'; lastStartedAt = Date.now(); opts.onStarted?.();
+      if (stopped) return; lastPlaybackError = null; lastBackend = 'WebAudio smooth WSOLA independent pitch'; lastStartedAt = Date.now(); opts.onStarted?.();
     }, Math.max(0, Math.round((startAt - context.currentTime) * 1000)));
     finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((buffer.duration + 0.04) * 1000)));
     return { stop, durationS: buffer.duration, independentPitch: true };
