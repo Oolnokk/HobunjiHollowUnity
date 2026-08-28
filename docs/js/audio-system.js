@@ -376,24 +376,230 @@
     playOneShotSfx(cfgEntry, falloff, pitch);
   }
 
-  // Species-keyed pitch lets every creature reuse the same bark asset
-  // (only one exists today) while still sounding distinct — alpha
-  // gar-wolf pitched down, dabinggi-hound pitched up, relative to the
-  // plain gar-wolf's neutral pitch. Future creatures/attacks can add
-  // their own url+species entry without touching this function.
+  // Newly recorded species voices. Variant creature keys (alphas, den
+  // mothers, wild Uumkao'ii, etc.) normalize back to these source pools.
+  const ANIMAL_VOICE_POOLS = Object.freeze({
+    'dabinggi-hound': Object.freeze([
+      'assets/audio/sfx/sfx_dabinggi-hound1.ogg',
+      'assets/audio/sfx/sfx_dabinggi-hound2.ogg',
+    ]),
+    'drenkirra': Object.freeze([
+      'assets/audio/sfx/sfx_drenkirra1.ogg',
+      'assets/audio/sfx/sfx_drenkirra2.ogg',
+    ]),
+    'gar-wolf': Object.freeze([
+      'assets/audio/sfx/sfx_gar-wolf1.ogg',
+      'assets/audio/sfx/sfx_gar-wolf2.ogg',
+    ]),
+    'grehlr': Object.freeze([
+      'assets/audio/sfx/sfx_grehlr1.ogg',
+      'assets/audio/sfx/sfx_grehlr2.ogg',
+    ]),
+    'nelk': Object.freeze([
+      'assets/audio/sfx/sfx_nelk1.ogg',
+    ]),
+    'uumkaoii': Object.freeze([
+      "assets/audio/sfx/sfx_uumkao'ii1.ogg",
+      "assets/audio/sfx/sfx_uumkao'ii2.ogg",
+    ]),
+  });
+
+  // Per-creature vocal timing prevents passive chatter from stacking on top
+  // of warnings/growls. WeakMap keeps the bookkeeping lifetime tied to the
+  // creature object without adding save-state fields.
+  const _animalVoiceState = new WeakMap();
+  const ANIMAL_VOICE_PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
+
+  function animalVoiceSpeciesKey(c) {
+    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    if (raw.includes('dabinggi')) return 'dabinggi-hound';
+    if (raw.includes('gar-wolf')) return 'gar-wolf';
+    if (raw.includes('grehlr')) return 'grehlr';
+    if (raw.includes('drenkirra')) return 'drenkirra';
+    if (raw.includes('uumkao')) return 'uumkaoii';
+    if (raw.includes('nelk')) return 'nelk';
+    return raw;
+  }
+
+  function animalVoicePool(c) {
+    return ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)] || null;
+  }
+
+  function animalVoiceStateFor(c) {
+    let state = _animalVoiceState.get(c);
+    if (!state) {
+      state = { busyUntilMs: 0, priority: 0, chatterCooldownS: 2 + Math.random() * 5 }; // Used by play/tickAnimalVocalization.
+      _animalVoiceState.set(c, state);
+    }
+    return state;
+  }
+
+  function animalVoiceFalloff(c, earshotTiles = 12) {
+    if (!deps || !c || c.areaId !== deps.getCurrentArea()) return 0;
+    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const earshot = Math.max(deps.TILE, deps.TILE * earshotTiles);
+    if (distance > earshot) return 0;
+    return Math.max(0, 1 - distance / earshot);
+  }
+
+  function disablePitchPreservation(snd) {
+    // playbackRate should change both tempo and pitch for these expressive
+    // calls; browsers otherwise try to preserve pitch during speed changes.
+    try { snd.preservesPitch = false; } catch (_) {}
+    try { snd.mozPreservesPitch = false; } catch (_) {}
+    try { snd.webkitPreservesPitch = false; } catch (_) {}
+  }
+
+  function rampAnimalPlaybackRate(snd, from, to, durationMs) {
+    const started = performance.now();
+    const duration = Math.max(40, durationMs || 120);
+    snd.playbackRate = from;
+    const timer = setInterval(() => {
+      if (snd.ended || snd.paused) { clearInterval(timer); return; }
+      const t = Math.min(1, (performance.now() - started) / duration);
+      snd.playbackRate = from + (to - from) * t;
+      if (t >= 1) clearInterval(timer);
+    }, 30);
+    snd.addEventListener('ended', () => clearInterval(timer), { once: true });
+  }
+
+  function playAnimalVoiceUtterance(c, opts = {}) {
+    const pool = animalVoicePool(c);
+    if (!pool?.length) return false;
+    const falloff = animalVoiceFalloff(c, Number(opts.earshotTiles) || 12);
+    if (falloff <= 0) return false;
+    const audioCfg = gameAudioConfig();
+    if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
+
+    const url = pool[Math.floor(Math.random() * pool.length)];
+    const snd = new Audio(url);
+    disablePitchPreservation(snd);
+    const volume = Math.max(0, Math.min(1,
+      (Number(opts.volume) || 0.7) * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
+    if (volume <= 0.002) return false;
+    snd.volume = volume;
+    const rate = Math.max(0.35, Math.min(2.0, Number(opts.rate) || 1));
+    snd.playbackRate = rate;
+
+    if (Array.isArray(opts.rateContour) && opts.rateContour.length >= 2) {
+      const contour = opts.rateContour.map(v => Math.max(0.35, Math.min(2.0, Number(v) || rate)));
+      snd.addEventListener('loadedmetadata', () => {
+        const clipMs = Number.isFinite(snd.duration) && snd.duration > 0
+          ? Math.max(260, snd.duration * 1000 / Math.max(0.35, rate))
+          : 900;
+        const segmentMs = clipMs / (contour.length - 1);
+        for (let i = 0; i < contour.length - 1; i++) {
+          setTimeout(() => {
+            if (!snd.ended && !snd.paused) rampAnimalPlaybackRate(snd, contour[i], contour[i + 1], segmentMs * 0.72);
+          }, segmentMs * i);
+        }
+      }, { once: true });
+    }
+
+    snd.play().catch(() => {});
+    return true;
+  }
+
+  // Semantic animal calls: quiet irregular fast chatter; loud, even warning
+  // repeats; and a single slow low growl that slides/jumps through pitch and
+  // tempo. Higher-priority calls reserve the creature's voice so chatter does
+  // not talk over a warning or threat growl.
+  function playAnimalVocalization(c, meaning = 'chatter', opts = {}) {
+    if (!c || c.health <= 0 || !animalVoicePool(c)) return false;
+    const semantic = meaning === 'discovery' ? 'warning' : meaning;
+    const priority = ANIMAL_VOICE_PRIORITY[semantic] || ANIMAL_VOICE_PRIORITY.chatter;
+    const state = animalVoiceStateFor(c);
+    const now = performance.now();
+    if (now < state.busyUntilMs && priority < state.priority) return false;
+
+    if (semantic === 'growl') {
+      const baseRate = 0.56 + Math.random() * 0.12;
+      state.priority = priority;
+      state.busyUntilMs = now + 1500;
+      return playAnimalVoiceUtterance(c, {
+        earshotTiles: opts.earshotTiles || 10,
+        volume: opts.volume || 0.72,
+        rate: baseRate,
+        rateContour: [baseRate, baseRate * 1.22, baseRate * 0.92],
+      });
+    }
+
+    if (semantic === 'warning') {
+      const repeats = Math.max(1, Math.min(5, Number(opts.repeats) || 3));
+      const intervalMs = Math.max(260, Number(opts.intervalMs) || 520);
+      state.priority = priority;
+      state.busyUntilMs = now + intervalMs * (repeats - 1) + 1100;
+      for (let i = 0; i < repeats; i++) {
+        setTimeout(() => {
+          playAnimalVoiceUtterance(c, {
+            earshotTiles: opts.earshotTiles || 12,
+            volume: opts.volume || 0.92,
+            rate: 0.96 + Math.random() * 0.10,
+          });
+        }, i * intervalMs);
+      }
+      return true;
+    }
+
+    const repeats = Math.max(2, Math.min(6, Number(opts.repeats) || (2 + Math.floor(Math.random() * 4))));
+    let elapsedMs = 0;
+    state.priority = priority;
+    for (let i = 0; i < repeats; i++) {
+      if (i > 0) elapsedMs += 120 + Math.random() * 360;
+      const delayMs = elapsedMs;
+      setTimeout(() => {
+        playAnimalVoiceUtterance(c, {
+          earshotTiles: opts.earshotTiles || 8,
+          volume: opts.volume || (0.16 + Math.random() * 0.10),
+          rate: 1.18 + Math.random() * 0.38,
+        });
+      }, delayMs);
+    }
+    state.busyUntilMs = now + elapsedMs + 850;
+    return true;
+  }
+
+  // Intended to be called from the existing active-creature cadence (next to
+  // tickCreatureFootsteps) rather than from a new world scan. It self-throttles
+  // each creature to occasional passive bursts and avoids chatter while common
+  // threat/attack state fields are active.
+  function tickAnimalVocalization(c, dt) {
+    if (!c || c.health <= 0 || !animalVoicePool(c) || c.areaId !== deps.getCurrentArea()) return;
+    const state = animalVoiceStateFor(c);
+    const threatened = !!(c.target || c.combatTarget || c.attackTarget || c.aggroTarget)
+      || ['attack', 'attacking', 'chase', 'chasing', 'aggro', 'hostile', 'flee', 'fleeing'].includes(String(c.state || '').toLowerCase());
+    if (threatened) {
+      state.chatterCooldownS = Math.max(state.chatterCooldownS, 2.5);
+      return;
+    }
+    state.chatterCooldownS -= Math.max(0, Number(dt) || 0);
+    if (state.chatterCooldownS > 0) return;
+    playAnimalVocalization(c, 'chatter');
+    state.chatterCooldownS = 5 + Math.random() * 9; // Passive group chatter cadence; used only by this tick helper.
+  }
+
+  // Existing combat bark callers now become threat-growl callers when the
+  // species has one of the new recordings; species without a pool retain the
+  // legacy bark path unchanged.
   function playCreatureBark(c) {
+    if (animalVoicePool(c)) {
+      playAnimalVocalization(c, 'growl', { earshotTiles: 10 });
+      return;
+    }
     const cfg = combatSfxConfig().creatureBark;
     const speciesCfg = cfg?.species?.[c.creatureKey];
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
   }
 
-  // Treasure discovery is a player-facing alert, not a combat bark. It needs
-  // a little more reach and headroom than the ordinary creature sound: a
-  // companion can notice a site several tiles away, while the normal bark's
-  // nine-tile falloff would make that notification effectively silent at the
-  // exact range where the hint is useful. The gain boost is intentionally
-  // scoped to this cue so routine combat audio keeps its authored mix.
+  // Treasure discovery is a player-facing alert, not a combat bark. Recorded
+  // species voices use the same loud, evenly repeated warning language that
+  // den/camp companion alerts can call directly; legacy species keep the old
+  // single boosted bark as a fallback.
   function playCreatureTreasureAlert(c) {
+    if (animalVoicePool(c)) {
+      playAnimalVocalization(c, 'warning', { earshotTiles: 12, repeats: 3, intervalMs: 520, volume: 0.95, reason: 'treasure' });
+      return;
+    }
     const cfg = combatSfxConfig().creatureBark;
     if (!cfg || !deps || c?.areaId !== deps.getCurrentArea()) return;
     const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
@@ -478,6 +684,8 @@
     objectSfxConfig,
     playObjectSfx,
     playCreatureSfxAt,
+    playAnimalVocalization,
+    tickAnimalVocalization,
     playCreatureBark,
     playCreatureTreasureAlert,
     playCreatureClawHit,
