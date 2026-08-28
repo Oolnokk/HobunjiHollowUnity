@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260826categories1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260821alchemy2"></script>
+  <script src="config/scratchbones-config.js?v=20260828toolsfx3"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260826compass1">
@@ -1929,7 +1929,7 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260826treasure2"></script>
+  <script src="js/audio-system.js?v=20260828toolsfx3"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -1944,7 +1944,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260827volume4"></script>
+  <script src="js/pixel-probe.js?v=20260828toolsfx3"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2017,7 +2017,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828climbprompt1"></script>
+  <script src="game.js?v=20260828toolsfx3"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -18833,6 +18833,7 @@
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
+      let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
       // True while the primary action input (key/click/button) is physically held
       // down. Drives the multi-stage dig/fill charge below — releasing it, or
@@ -18848,14 +18849,14 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Digging up a dew pile — same held input and same two-animation
       // (thrust/toss) shape as digging a brand-new trench, just at half the
       // base duration per rep.
       const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
@@ -18864,8 +18865,8 @@
       // quick stance reset. Repeats 3x like the old plain fill swings did.
       const REFILL_TURN_ANGLE = Math.PI / 4;
       const REFILL_FLOURISH_REP = [
-        { anim: 'refillTurnOut',    dur: 1.0  },
-        { anim: 'refillStrikeBack', dur: 0.5  },
+        { anim: 'refillTurnOut',    dur: 1.0,  sfxKey: 'dig' },
+        { anim: 'refillStrikeBack', dur: 0.5,  sfxKey: 'dig' },
         { anim: 'refillTwistOut',   dur: 0.25 },
         { anim: 'refillTwistBack',  dur: 0.25 },
         { anim: 'refillReset',      dur: 0.15 },
@@ -18878,7 +18879,13 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
+        pose: true,
+        dirSign,
+        dur: 0.55,
+        sfxKey: 'chop',
+        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
+      }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
@@ -18886,7 +18893,12 @@
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
       // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55 }));
+      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
+        anim: 'thrust',
+        dur: 0.55,
+        sfxKey: 'pick',
+        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
+      }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -19004,7 +19016,16 @@
         // currently closer to, so the turn-out reads as a natural pivot.
         const turnDelta = angleDiff(0, playerFacing);
         const refillTurnSign = turnDelta === 0 ? 1 : Math.sign(turnDelta);
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages, refillTurnSign };
+        chargeAction = {
+          col: reticle.col,
+          row: reticle.row,
+          action: activeAction,
+          tool: activeTool,
+          stage: 0,
+          stages,
+          refillTurnSign,
+          finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
+        };
         beginChargeStage();
       }
 
@@ -19017,6 +19038,7 @@
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
+        chargeStageSfxFired = false;
         pendingAction = null;
         if (stageDef.pose) {
           // Reuses the melee combo's own authored sweep pose (see
@@ -19201,9 +19223,11 @@
       // or cancels it the moment the button is released or the target changes.
       function updateChargeAction() {
         if (!chargeAction) return;
-        if (!actionHeldDown) { cancelChargeAction(); return; }
-        const reticle = getReticleTile();
-        if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        if (!chargeAction.finalStrikeCommitted) {
+          if (!actionHeldDown) { cancelChargeAction(); return; }
+          const reticle = getReticleTile();
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
         if (chargeAction.stage >= chargeAction.stages.length) {
@@ -20217,8 +20241,22 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
+        const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
+        const chargeSfxProgress = activeChargeStage?.sfxAt ?? SF; // Hole-dig thrusts sound at contact start; pick/chop and terminal breaks retain their proven strike endpoint.
+        if (chargeAction && !chargeStageSfxFired && progress >= chargeSfxProgress) {
+          chargeStageSfxFired = true;
+          const stageDef = activeChargeStage; // Used to resolve impact and final-break cues from the same contact frame.
+          const chargeSfxKey = stageDef?.sfxKey;
+          if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
+          if (stageDef?.terminalSfxKey) {
+            chargeAction.finalStrikeCommitted = true;
+            window.AudioSystem?.playObjectSfxKey?.(stageDef.terminalSfxKey);
+          }
+        }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
+          const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
+          if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
