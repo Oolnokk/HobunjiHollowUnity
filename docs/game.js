@@ -15648,6 +15648,22 @@
           window.MusicMinigame?.beginPlayerSession();
           return;
         }
+        // Fires immediately, like the item actions above — the generic
+        // pendingAction/firePendingAction path below only ever gets consumed
+        // by updateToolMesh's tool-swing progress tracker, which explicitly
+        // skips its own body while heldMode === 'item' (it hands off to
+        // updateHeldItemHolder instead), so anything routed through that
+        // path while holding an item — including every other place_*/
+        // plant_* action — never actually fires. Immediate dispatch here
+        // sidesteps that entirely.
+        if (activeAction === 'place_campfire_kit') {
+          const reticle = getReticleTile();
+          const result = window.WildernessCampfire?.placeFromKit(reticle.col, reticle.row) || { ok: false, message: 'Campfires are unavailable right now.' };
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
+          return;
+        }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
@@ -15823,9 +15839,11 @@
 
         const tile = getActiveGrid()[row][col];
         let result;
-        if (action === 'place_campfire_kit') {
-          result = window.WildernessCampfire?.placeFromKit(col, row) || { ok: false, message: 'Campfires are unavailable right now.' };
-        } else if (action.startsWith('place_decor_')) {
+        // place_campfire_kit is NOT handled here — it fires immediately from
+        // useActiveAction() instead (see its own comment there): this
+        // pendingAction path only ever gets consumed while heldMode ===
+        // 'tool', so an item-mode action routed through it would never fire.
+        if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));

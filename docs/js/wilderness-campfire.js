@@ -7,10 +7,11 @@
   // as an ordinary "Campfire Kit" item (DECORATIVE_FURNITURE_DEFS.campfire
   // in game.js — buy the blueprint from the carpenter, build it from Wood
   // + Stone in the Inventory's Crafting tab), then placed by selecting it,
-  // aiming at a tile, and using Action 1 (see computeActionButtons'
-  // isCampfireKit branch and firePendingAction's place_campfire_kit case
-  // in game.js, which call placeFromKit(col, row) below). Only one can
-  // exist at a time — placing a new one silently replaces the old one —
+  // aiming at a tile, and using Action 1 (see computeActionButtons' campfire
+  // branch and useActiveAction's own place_campfire_kit case in game.js,
+  // which calls placeFromKit(col, row) below immediately rather than through
+  // the generic pendingAction path — see that case's own comment for why).
+  // Only one can exist at a time — placing a new one silently replaces it —
   // and it survives an ordinary save/reload as long as the player is still
   // on the same map, but is destroyed outright the moment the player leaves
   // that map (see update(), called every frame with the live current area).
@@ -59,7 +60,7 @@
   }
 
   // Consumes one Campfire Kit from inventory and places it at (col, row) —
-  // called from game.js's firePendingAction when the player aims at a tile
+  // called from game.js's useActiveAction when the player aims at a tile
   // and uses Action 1 while holding the kit.
   function placeFromKit(col, row) {
     const area = deps.getCurrentArea();
