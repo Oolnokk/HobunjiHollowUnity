@@ -12,10 +12,12 @@ const hub = read('docs/tools/index.html');
 const editor = read('docs/tools/ambient-dialogue-editor/index.html');
 const runtime = read('docs/js/ambient-dialogue.js');
 const vocalRuntime = read('docs/js/animal-vocalizations.js');
+const independentPlayback = read('docs/js/animal-voice-independent-playback.js');
 const config = JSON.parse(read('docs/config/dialogue/ambient-dialogue.json'));
 
 assert.doesNotThrow(() => new vm.Script(runtime), 'ambient dialogue runtime parses as JavaScript');
 assert.doesNotThrow(() => new vm.Script(vocalRuntime), 'animal vocal runtime parses as JavaScript');
+assert.doesNotThrow(() => new vm.Script(independentPlayback), 'independent animal playback runtime parses as JavaScript');
 assert(hub.includes('ambient-dialogue-editor/index.html'), 'tool hub links the Ambient Dialogue editor');
 assert(editor.includes('Greeting pool'), 'editor exposes NPC greeting settings');
 assert(editor.includes('Discovery announcements'), 'editor expands the animal treasure announcement section');
@@ -23,7 +25,16 @@ assert(editor.includes('companionTreasureLines'), 'editor preserves and edits th
 assert(editor.includes('Passive chatter'), 'editor exposes per-species passive chatter settings');
 assert(editor.includes('Warning / discovery call'), 'editor exposes per-species warning settings');
 assert(editor.includes('Threat growl'), 'editor exposes per-species growl settings');
-assert(editor.includes('Pitch / tempo min'), 'editor exposes the playback-rate control already used by the runtime');
+assert(editor.includes('Tempo min (×)'), 'editor exposes tempo separately from pitch');
+assert(editor.includes('Pitch min (semitones)'), 'editor exposes pitch as an independent semitone axis');
+assert(editor.includes('Independent growl contours'), 'editor separates growl contour authoring by axis');
+assert(editor.includes('Tempo middle ×'), 'editor exposes an independent growl tempo contour');
+assert(editor.includes('Pitch middle offset (st)'), 'editor exposes an independent growl pitch contour');
+assert(editor.includes('Small pitch offset (st)'), 'editor exposes a Small size-class pitch offset per species');
+assert(editor.includes('Medium pitch offset (st)'), 'editor exposes a Medium size-class pitch offset per species');
+assert(editor.includes('Large pitch offset (st)'), 'editor exposes a Large size-class pitch offset per species');
+assert(editor.includes('previewSizeClass'), 'editor lets the author audition the selected species as Small, Medium, or Large');
+assert(editor.includes('animal-voice-independent-playback.js'), 'editor auditions through the same independent pitch/tempo playback module as runtime');
 assert(editor.includes('Preview sound'), 'editor can audition authored vocal timing with the real recorded pools');
 assert(editor.includes('data-discovery="animal-den"'), 'editor associates animal-den warning sounds with overhead text');
 assert(editor.includes('data-discovery="bandit-camp"'), 'editor associates bandit-camp warning sounds with overhead text');
@@ -51,8 +62,15 @@ assert(runtime.includes("event.textPart.text.slice(0, visibleChars)"), 'revealed
 assert(runtime.includes('hasActiveGreetingFor(speakerId)'), 'an NPC cannot start another greeting until its active greeting has fully faded');
 assert(runtime.includes('greeting: true'), 'proximity greetings are marked separately from companion and crowd speech');
 assert(vocalRuntime.includes("fetch('config/dialogue/ambient-dialogue.json')"), 'vocal behavior reads authoring from the existing ambient dialogue config');
+assert(vocalRuntime.includes('sizePitchSemitones'), 'vocal runtime consumes per-species size-class pitch offsets');
+assert(vocalRuntime.includes('genotype?.sizeClass'), 'vocal runtime uses the existing CreatureGenetics size-class representation');
+assert(vocalRuntime.includes('tempoContour'), 'vocal runtime keeps growl tempo contour separate');
+assert(vocalRuntime.includes('pitchContourSemitones'), 'vocal runtime keeps growl pitch contour separate');
 assert(vocalRuntime.includes('discoveryText'), 'vocal runtime consumes reason-specific animal overhead text');
 assert(vocalRuntime.includes('textEachUtterance'), 'vocal runtime supports per-sequence or per-utterance text association');
+assert(independentPlayback.includes('preservesPitch = enabled'), 'playback adapter explicitly supports pitch-preserving tempo changes');
+assert(independentPlayback.includes('createDelay('), 'playback adapter has a native Web Audio pitch-shifting stage');
+assert(independentPlayback.includes('capturePreparedAnimalElement'), 'playback adapter reuses AudioSystem clip selection/range/volume preparation');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
