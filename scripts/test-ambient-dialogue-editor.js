@@ -68,8 +68,10 @@ assert(vocalRuntime.includes('tempoContour'), 'vocal runtime keeps growl tempo c
 assert(vocalRuntime.includes('pitchContourSemitones'), 'vocal runtime keeps growl pitch contour separate');
 assert(vocalRuntime.includes('discoveryText'), 'vocal runtime consumes reason-specific animal overhead text');
 assert(vocalRuntime.includes('textEachUtterance'), 'vocal runtime supports per-sequence or per-utterance text association');
-assert(independentPlayback.includes('preservesPitch = enabled'), 'playback adapter explicitly supports pitch-preserving tempo changes');
-assert(independentPlayback.includes('createDelay('), 'playback adapter has a native Web Audio pitch-shifting stage');
+assert(independentPlayback.includes('preservesPitch = enabled'), 'playback adapter retains pitch-preserving native fallback support');
+assert(independentPlayback.includes('wsolaStretch'), 'playback adapter uses WSOLA time stretching for higher-quality independent tempo');
+assert(independentPlayback.includes('resampleChannels'), 'playback adapter separates pitch by resampling before WSOLA duration compensation');
+assert(independentPlayback.includes('renderedByKey'), 'processed vocal variants are cached instead of rebuilding every repeated call');
 assert(independentPlayback.includes('capturePreparedAnimalElement'), 'playback adapter reuses AudioSystem clip selection/range/volume preparation');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
