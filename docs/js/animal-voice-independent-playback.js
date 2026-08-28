@@ -15,6 +15,12 @@
   const SEGMENT_CROSSFADE_S = 0.026;
   const OUTPUT_EDGE_FADE_S = 0.006;
   const OUTPUT_TAIL_PAD_S = 0.018;
+  const SPLICE_MIN_SOURCE_S = 0.14;
+  const SPLICE_GRAIN_S = 0.052;
+  const SPLICE_MATCH_S = 0.014;
+  const SPLICE_JOIN_S = 0.018;
+  const SPLICE_PROTECT_RATIO = 0.16;
+  const SPLICE_MIN_SCORE = 0.42;
   const MAX_RENDER_CACHE = 32;
   const ANALYSIS_RATE = 12000;
   const ANALYSIS_FRAME = 1024;
@@ -40,6 +46,8 @@
   let lastStartedAt = null;
   let lastRenderMs = null;
   let lastClipNormalizationSemitones = 0;
+  let lastTempoBackend = 'idle';
+  let lastSpliceScore = null;
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -184,6 +192,121 @@
     }
     return dot / Math.sqrt(refEnergy * candidateEnergy);
   }
+  function rmsRange(channel, start, length) {
+    let sum = 0, count = 0;
+    const end = Math.min(channel?.length || 0, start + Math.max(0, length));
+    for (let index = Math.max(0, start); index < end; index++) { const value = channel[index] || 0; sum += value * value; count++; }
+    return count ? Math.sqrt(sum / count) : 0;
+  }
+  function findStableSpliceRegion(channels, sampleRate) {
+    const reference = channels[0], sourceLength = reference?.length || 0;
+    if (sourceLength < sampleRate * SPLICE_MIN_SOURCE_S) return null;
+    const guard = Math.max(Math.round(sampleRate * 0.02), Math.round(sourceLength * SPLICE_PROTECT_RATIO));
+    const available = sourceLength - guard * 2;
+    if (available < sampleRate * 0.075) return null;
+    const grainLength = Math.max(Math.round(sampleRate * 0.032), Math.min(Math.round(sampleRate * SPLICE_GRAIN_S), Math.floor(available / 2)));
+    const matchLength = Math.max(32, Math.min(Math.round(sampleRate * SPLICE_MATCH_S), Math.floor(grainLength / 3)));
+    const searchStart = guard, searchEnd = sourceLength - guard - grainLength;
+    const step = Math.max(2, Math.round(sampleRate * 0.005));
+    let peakRms = 0;
+    for (let start = searchStart; start <= searchEnd; start += step) peakRms = Math.max(peakRms, rmsRange(reference, start, grainLength));
+    if (peakRms < 0.002) return null;
+    let best = null;
+    for (let start = searchStart; start <= searchEnd; start += step) {
+      const wholeRms = rmsRange(reference, start, grainLength);
+      if (wholeRms < peakRms * 0.22) continue;
+      const headRms = rmsRange(reference, start, matchLength), tailRms = rmsRange(reference, start + grainLength - matchLength, matchLength);
+      const energyStability = 1 - Math.min(1, Math.abs(headRms - tailRms) / Math.max(0.001, Math.max(headRms, tailRms)));
+      const loopCorrelation = correlation(reference, reference, start, start + grainLength - matchLength, matchLength);
+      const energyWeight = Math.min(1, wholeRms / peakRms);
+      const score = loopCorrelation * 0.70 + energyStability * 0.15 + energyWeight * 0.15;
+      if (!best || score > best.score) best = { start, end: start + grainLength, grainLength, score, loopCorrelation, wholeRms };
+    }
+    if (!best || best.score < SPLICE_MIN_SCORE || best.loopCorrelation < 0.28) return null;
+    const editableRadius = Math.max(best.grainLength * 2, Math.round(sampleRate * 0.11));
+    best.editableStart = Math.max(guard, best.start - editableRadius);
+    best.editableEnd = Math.min(sourceLength - guard, best.end + editableRadius);
+    return best;
+  }
+  function bestCutStart(channel, desiredStart, cutLength, minStart, maxStart, sampleRate) {
+    const radius = Math.max(4, Math.round(sampleRate * 0.004));
+    let bestStart = clamp(Math.round(desiredStart), minStart, maxStart), bestScore = Infinity;
+    for (let start = Math.max(minStart, bestStart - radius); start <= Math.min(maxStart, bestStart + radius); start++) {
+      const end = Math.min(channel.length - 1, start + cutLength);
+      const score = Math.abs(channel[start] || 0) + Math.abs(channel[end] || 0);
+      if (score < bestScore) { bestScore = score; bestStart = start; }
+    }
+    return bestStart;
+  }
+  function concatenateWithCrossfade(segments, sampleRate, crossfadeSeconds = SEGMENT_CROSSFADE_S) {
+    if (!segments.length) return [new Float32Array(1)];
+    if (segments.length === 1) return segments[0];
+    const channelCount = segments[0].length, crossfadeSamples = Math.max(1, Math.round(sampleRate * crossfadeSeconds));
+    const nominalLength = segments.reduce((sum, segment) => sum + (segment[0]?.length || 0), 0);
+    const outputs = Array.from({ length: channelCount }, () => new Float32Array(Math.max(1, nominalLength)));
+    let writePos = 0;
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+      const segment = segments[segmentIndex], segmentLength = segment[0]?.length || 0;
+      if (!segmentLength) continue;
+      if (!segmentIndex) {
+        for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) outputs[channelIndex].set(segment[channelIndex]);
+        writePos = segmentLength; continue;
+      }
+      const overlap = Math.min(crossfadeSamples, writePos, segmentLength), overlapStart = writePos - overlap;
+      for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+        const output = outputs[channelIndex], input = segment[channelIndex];
+        for (let index = 0; index < overlap; index++) {
+          const weight = smoothBlendWeight(index, overlap);
+          output[overlapStart + index] = output[overlapStart + index] * (1 - weight) + input[index] * weight;
+        }
+        output.set(input.subarray(overlap), writePos);
+      }
+      writePos += segmentLength - overlap;
+    }
+    return outputs.map(output => output.slice(0, writePos));
+  }
+  function spliceTempoStretch(channels, stretch, sampleRate) {
+    const sourceLength = channels[0]?.length || 0, safeStretch = clamp(finite(stretch, 1), 0.25, 4);
+    if (!sourceLength) return null;
+    const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
+    if (Math.abs(targetLength - sourceLength) <= Math.round(sampleRate * 0.008)) {
+      return { channels: channels.map(channel => channel.slice()), mode: 'splice-neutral', score: 1 };
+    }
+    const region = findStableSpliceRegion(channels, sampleRate);
+    if (!region) return null;
+    const join = Math.max(8, Math.min(Math.round(sampleRate * SPLICE_JOIN_S), Math.floor(region.grainLength / 3)));
+    if (targetLength > sourceLength) {
+      let remaining = targetLength - sourceLength;
+      const prefix = channels.map(channel => channel.slice(0, region.end));
+      const suffix = channels.map(channel => channel.slice(region.end));
+      const inserted = [];
+      let first = true, safety = 0;
+      while (remaining > 0 && safety++ < 64) {
+        const joinCost = first ? join * 2 : join;
+        const wantedLength = remaining + joinCost;
+        const segmentLength = Math.min(region.grainLength, Math.max(joinCost + 1, wantedLength));
+        inserted.push(channels.map(channel => channel.slice(region.start, region.start + segmentLength)));
+        remaining -= Math.max(1, segmentLength - joinCost);
+        first = false;
+      }
+      if (!inserted.length || remaining > Math.round(sampleRate * 0.004)) return null;
+      return { channels: concatenateWithCrossfade([prefix, ...inserted, suffix], sampleRate, SPLICE_JOIN_S), mode: 'splice-repeat', score: region.score };
+    }
+    const removal = sourceLength - targetLength;
+    if (removal <= join) return null;
+    const cutLength = removal - join;
+    const editableLength = region.editableEnd - region.editableStart;
+    if (cutLength < 1 || cutLength > editableLength - join * 2) return null;
+    const center = (region.start + region.end) * 0.5;
+    const desiredStart = center - cutLength * 0.5;
+    const maxCutStart = region.editableEnd - cutLength;
+    if (maxCutStart <= region.editableStart) return null;
+    const cutStart = bestCutStart(channels[0], desiredStart, cutLength, region.editableStart, maxCutStart, sampleRate);
+    const cutEnd = cutStart + cutLength;
+    const left = channels.map(channel => channel.slice(0, cutStart));
+    const right = channels.map(channel => channel.slice(cutEnd));
+    return { channels: concatenateWithCrossfade([left, right], sampleRate, SPLICE_JOIN_S), mode: 'splice-cut', score: region.score };
+  }
   function wsolaStretch(channels, stretch, sampleRate) {
     const sourceLength = channels[0]?.length || 0;
     if (!sourceLength) return channels.map(() => new Float32Array(1));
@@ -232,34 +355,17 @@
   }
   function processConstantAxes(channels, sampleRate, tempo, pitchSt) {
     const pitchRatio = Math.pow(2, clampPitch(pitchSt) / 12);
-    return wsolaStretch(resampleChannels(channels, pitchRatio), pitchRatio / clampTempo(tempo), sampleRate);
-  }
-  function concatenateWithCrossfade(segments, sampleRate) {
-    if (!segments.length) return [new Float32Array(1)];
-    if (segments.length === 1) return segments[0];
-    const channelCount = segments[0].length, crossfadeSamples = Math.max(1, Math.round(sampleRate * SEGMENT_CROSSFADE_S));
-    const totalLength = segments.reduce((sum, segment) => sum + (segment[0]?.length || 0), 0) - crossfadeSamples * (segments.length - 1);
-    const outputs = Array.from({ length: channelCount }, () => new Float32Array(Math.max(1, totalLength)));
-    let writePos = 0;
-    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
-      const segment = segments[segmentIndex], segmentLength = segment[0]?.length || 0;
-      if (!segmentLength) continue;
-      if (!segmentIndex) {
-        for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) outputs[channelIndex].set(segment[channelIndex]);
-        writePos = segmentLength; continue;
-      }
-      const overlap = Math.min(crossfadeSamples, writePos, segmentLength), overlapStart = writePos - overlap;
-      for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-        const output = outputs[channelIndex], input = segment[channelIndex];
-        for (let index = 0; index < overlap; index++) {
-          const weight = smoothBlendWeight(index, overlap);
-          output[overlapStart + index] = output[overlapStart + index] * (1 - weight) + input[index] * weight;
-        }
-        output.set(input.subarray(overlap), writePos);
-      }
-      writePos += segmentLength - overlap;
+    const pitched = resampleChannels(channels, pitchRatio);
+    const requiredStretch = pitchRatio / clampTempo(tempo);
+    const spliced = spliceTempoStretch(pitched, requiredStretch, sampleRate);
+    if (spliced) {
+      lastTempoBackend = spliced.mode;
+      lastSpliceScore = spliced.score;
+      return spliced.channels;
     }
-    return outputs.map(output => output.slice(0, writePos));
+    lastTempoBackend = 'wsola-fallback';
+    lastSpliceScore = null;
+    return wsolaStretch(pitched, requiredStretch, sampleRate);
   }
   function applyOutputEdgeEnvelope(channels, sampleRate) {
     const length = channels[0]?.length || 0;
@@ -334,7 +440,12 @@
     try { source.start(startAt); }
     catch (error) { lastPlaybackError = error; opts.onError?.(error); cleanup(); return { stop, durationS: 0, independentPitch: true }; }
     startTimer = setTimeout(() => {
-      if (stopped) return; lastPlaybackError = null; lastBackend = 'WebAudio smooth WSOLA independent pitch'; lastStartedAt = Date.now(); opts.onStarted?.();
+      if (stopped) return;
+      lastPlaybackError = null;
+      lastBackend = lastTempoBackend === 'wsola-fallback'
+        ? 'WebAudio WSOLA fallback independent pitch'
+        : `WebAudio ${lastTempoBackend} independent pitch`;
+      lastStartedAt = Date.now(); opts.onStarted?.();
     }, Math.max(0, Math.round((startAt - context.currentTime) * 1000)));
     finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((buffer.duration + 0.04) * 1000)));
     return { stop, durationS: buffer.duration, independentPitch: true };
@@ -377,7 +488,7 @@
       fallbackAudio.volume = clamp(finite(effectiveOpts.volume ?? fallbackAudio.volume, 0.7), 0, 1);
       active = playNativeFallback(fallbackAudio, { ...effectiveOpts, onFinished: cleanup }, nativePlay); handle.audio = fallbackAudio; return handle;
     }
-    lastBackend = 'WSOLA decode/render pending';
+    lastBackend = 'splice-tempo decode/render pending';
     decodeUrl(resolved, context).then(decoded => renderBufferFor(resolved, decoded, context, effectiveOpts)).then(rendered => {
       if (stopped) return; lastPlaybackError = null; active = scheduleProcessedBuffer(context, rendered, effectiveOpts, cleanup); handle.independentPitch = true;
     }).catch(error => {
@@ -542,6 +653,8 @@
       installed,
       contextState: sharedContext?.state || 'unavailable',
       backend: lastBackend,
+      tempoBackend: lastTempoBackend,
+      spliceScore: Number.isFinite(lastSpliceScore) ? Number(lastSpliceScore.toFixed(3)) : null,
       previewCount: previewHandles.size,
       decodedClipCount: decodedByUrl.size,
       analyzedClipCount: analysisByUrl.size,
@@ -569,8 +682,8 @@
       document.body.appendChild(dock);
       const text = dock.querySelector('#animalVoiceDiagText'), copy = dock.querySelector('#animalVoiceDiagCopy');
       const update = () => {
-        const snap = debugSnapshot(), error = snap.lastPlaybackError ? ` · error: ${snap.lastPlaybackError}` : '', render = snap.lastRenderMs == null ? '' : ` · render ${snap.lastRenderMs}ms`, normalization = snap.lastClipNormalizationSemitones ? ` · clip ${snap.lastClipNormalizationSemitones > 0 ? '+' : ''}${snap.lastClipNormalizationSemitones.toFixed(1)}st` : '';
-        text.textContent = `${snap.contextState} · ${snap.backend} · previews ${snap.previewCount} · decoded ${snap.decodedClipCount}${normalization}${render}${error}`;
+        const snap = debugSnapshot(), error = snap.lastPlaybackError ? ` · error: ${snap.lastPlaybackError}` : '', render = snap.lastRenderMs == null ? '' : ` · render ${snap.lastRenderMs}ms`, normalization = snap.lastClipNormalizationSemitones ? ` · clip ${snap.lastClipNormalizationSemitones > 0 ? '+' : ''}${snap.lastClipNormalizationSemitones.toFixed(1)}st` : '', splice = snap.spliceScore == null ? '' : ` · splice ${snap.spliceScore.toFixed(2)}`;
+        text.textContent = `${snap.contextState} · ${snap.backend} · ${snap.tempoBackend}${splice} · previews ${snap.previewCount} · decoded ${snap.decodedClipCount}${normalization}${render}${error}`;
       };
       copy.onclick = async () => {
         const payload = JSON.stringify(debugSnapshot(), null, 2);
