@@ -506,7 +506,15 @@
         if (!snd.ended && !snd.paused) snd.playbackRate = nextRate;
       }, segmentMs * (i + 1)));
     }
-    snd.play().catch(() => {});
+    let startNotified = false; // Used by both `playing` and play() resolution so mobile/browser event differences still emit exactly one visual beat.
+    const notifyStarted = () => {
+      if (startNotified) return;
+      startNotified = true;
+      opts.onStarted?.();
+    };
+    snd.addEventListener?.('playing', notifyStarted, { once: true });
+    const playResult = snd.play();
+    if (playResult?.then) playResult.then(notifyStarted).catch(() => {});
     return true;
   }
 

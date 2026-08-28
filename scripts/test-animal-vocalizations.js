@@ -13,10 +13,17 @@ vm.runInNewContext(source, { window, Math, Date }, { filename: 'animal-vocalizat
 
 let clock = 0;
 const rendered = [];
+let autoStartAudio = true; // Disabled by the delayed-start regression below to simulate mobile OGG preparation latency.
+const pendingAudioStarts = [];
 window.AnimalVocalizations.init({
   random: () => 0.5,
   hasVoice: c => c.creatureKey !== 'unsupported',
-  renderUtterance: (c, opts) => { rendered.push({ at: clock, id: c.id, ...opts }); return true; },
+  renderUtterance: (c, opts) => {
+    rendered.push({ at: clock, id: c.id, ...opts });
+    if (autoStartAudio) opts.onStarted();
+    else pendingAudioStarts.push(opts.onStarted);
+    return true;
+  },
 });
 
 function creature(id, creatureKey = 'gar-wolf') {
@@ -66,6 +73,17 @@ tick(growler, 0.2, { threatened: true });
 assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse settles exactly to authored scale');
 assert.equal(window.AnimalVocalizations.headNodOffsetDeg(growler), 0, 'nod settles without leaving a neck offset');
 
+const delayed = creature('delayed');
+autoStartAudio = false;
+assert.equal(window.AnimalVocalizations.threatGrowl(delayed, 'mobile-buffer-test'), true);
+tick(delayed, 0.09, { threatened: true });
+assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed), 0, 'nod must not begin while audio is still preparing');
+assert.equal(pendingAudioStarts.length, 1, 'renderer retains one actual-start callback');
+pendingAudioStarts.shift()();
+tick(delayed, 0.045, { threatened: true });
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) > 0, 'nod begins from the actual audible playback event');
+autoStartAudio = true;
+
 const prioritized = creature('priority');
 assert.equal(window.AnimalVocalizations.warning(prioritized, 'territorial-boundary'), true);
 assert.equal(window.AnimalVocalizations.threatGrowl(prioritized, 'attack'), false, 'growl cannot interrupt a warning');
@@ -86,6 +104,8 @@ const avatarSource = fs.readFileSync(path.join(root, 'docs/js/png-plane-avatar.j
 assert.match(avatarSource, /degrees \+ state\.additiveDeg/, 'head rig composes additive animation over the current base neck pose');
 assert.match(avatarSource, /setHeadAdditiveRotation/, 'head rig exposes a reusable additive animation API');
 const audioSource = fs.readFileSync(path.join(root, 'docs/js/audio-system.js'), 'utf8');
+assert.match(audioSource, /addEventListener\?\.\('playing', notifyStarted/, 'visual beat listens for actual audible media playback');
+assert.match(audioSource, /playResult\.then\(notifyStarted\)/, 'play promise resolution covers mobile event-order differences');
 const barkBody = audioSource.match(/function playCreatureBark\(c\) \{([\s\S]*?)\n  \}/)?.[1] || '';
 assert.doesNotMatch(barkBody, /AnimalVocalizations|growl/, 'legacy bark renderer stays separate from threat growls');
 

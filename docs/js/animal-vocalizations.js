@@ -13,7 +13,7 @@
   const PULSE_DURATION_S = 0.18; // Used by scalePulse/tickCreature to give each rendered utterance one brief visual beat.
   const PULSE_ADD_SCALE = 0.025; // Used by scalePulse as the tiny additive peak above the animal's composed base scale.
   const VOCAL_NOD_UP_DEG = 4; // Used by headNodOffsetDeg for the slight upward neck beat attached to each utterance.
-  const debug = { requested: 0, rendered: 0, pulsed: 0, suppressed: 0, last: null };
+  const debug = { requested: 0, rendered: 0, pulsed: 0, suppressed: 0, lastStartLatencyMs: null, last: null };
 
   function init(injectedDeps) { deps = injectedDeps; }
   function random() { return deps?.random?.() ?? Math.random(); }
@@ -85,11 +85,15 @@
     while (active.nextIndex < active.sequence.length
       && active.sequence[active.nextIndex].atS <= active.elapsedS + 0.0001) {
       const utterance = active.sequence[active.nextIndex++];
-      if (deps.renderUtterance(c, { ...utterance, meaning: active.kind, reason: active.reason })) {
+      const playbackRequestedAtMs = Date.now(); // Compared at actual media start for copyable mobile latency diagnostics.
+      const onStarted = () => {
         state.pulseRemainingS = PULSE_DURATION_S;
-        debug.rendered++;
         debug.pulsed++;
-      }
+        debug.lastStartLatencyMs = Math.max(0, Date.now() - playbackRequestedAtMs);
+      }; // Called by AudioSystem only when the media element actually starts, not when playback is merely requested.
+      if (deps.renderUtterance(c, {
+        ...utterance, meaning: active.kind, reason: active.reason, onStarted,
+      })) debug.rendered++;
     }
     if (active.nextIndex >= active.sequence.length && active.elapsedS >= active.endsAtS) state.active = null;
   }
