@@ -895,9 +895,14 @@
     #arcContainer.arc-hidden { display: none; }
 
     /* ── Outer arch (tool dial + item dial) ─────────────────── */
-    /* R = 10 col (pushed out from 7.8 to clear the action arch). Five evenly
-       spaced controls run clockwise from 9:00 to 12:00: put away, weapon,
-       tool, item, mount. */
+    /* R = 10 col (pushed out from 7.8 to clear the action arch). Six evenly
+       spaced controls run clockwise from 9:00 past 12:00: weapon, tool,
+       item, mount, melee auto-target, utility menu. The put-away button
+       that used to lead this ring is gone — dequip now happens by tapping
+       toolBtn/itemBtn while a tool/item is already out (see their
+       pointerup handlers in game.js) — and every control below shifted one
+       step counter-clockwise (toward 9:00) to fill the gap that left, with
+       the utility menu taking the newly free slot at the far (12:45) end. */
     #toolSelect {
       --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
@@ -906,8 +911,8 @@
     #itemSelect { display: none !important; }
     #toolBtn {
       position: absolute;
-      right:  calc(-1*cos(135deg)*var(--ar2));
-      bottom: calc(   sin(135deg)*var(--ar2));
+      right:  calc(-1*cos(157.5deg)*var(--ar2));
+      bottom: calc(   sin(157.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -924,8 +929,8 @@
     .ts-lbl  { display: none; }
     #itemBtn {
       position: absolute;
-      right:  calc(-1*cos(112.5deg)*var(--ar2));
-      bottom: calc(   sin(112.5deg)*var(--ar2));
+      right:  calc(-1*cos(135deg)*var(--ar2));
+      bottom: calc(   sin(135deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -938,13 +943,15 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
-    /* ── Put-away + weapon controls: first two positions on the outer ring.
-       Put-away preserves assignments/selections; weapon swaps melee/ranged.
-       Always visible — desktop keyboard/gamepad share the same
+    /* ── Weapon quick-switch: first (leftmost, 9:00) position on the outer
+       ring now that put-away is gone. Enters melee from a normal tool, then
+       swaps directly between the dedicated melee/ranged slots. Always
+       visible — desktop keyboard/gamepad share the same
        toggleQuickWeaponSwitch() via the "weaponSwitch" input action. ── */
-    #btnUnequipHeld,
     #btnWeaponSwitch {
       position: absolute;
+      right:  calc(-1*cos(180deg)*var(--ar2));
+      bottom: calc(   sin(180deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -956,27 +963,14 @@
       transition: transform 0.08s; overflow: hidden;
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
-    #btnUnequipHeld {
-      right:  calc(-1*cos(180deg)*var(--ar2));
-      bottom: calc(   sin(180deg)*var(--ar2));
-      background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.34);
-    }
-    #btnWeaponSwitch {
-      right:  calc(-1*cos(157.5deg)*var(--ar2));
-      bottom: calc(   sin(157.5deg)*var(--ar2));
-      background: rgba(255,120,120,0.09); border-color: rgba(255,120,120,0.46);
-    }
-    #btnUnequipHeld:active,
     #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
-    #btnUnequipHeld .abt-icon,
     #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
-    #btnUnequipHeld.active { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.72); }
     #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
-    /* ── Call/dismiss mount: final outer-ring position at 12:00. ── */
+    /* ── Call/dismiss mount. ── */
     #btnCallMount {
       position: absolute;
-      right:  calc(-1*cos(90deg)*var(--ar2));
-      bottom: calc(   sin(90deg)*var(--ar2));
+      right:  calc(-1*cos(112.5deg)*var(--ar2));
+      bottom: calc(   sin(112.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -991,16 +985,15 @@
     #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
     #btnCallMount .abt-icon { font-size: 0.85em; }
     #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
-    /* ── Melee auto-target: sixth outer-ring position, one step further
-       clockwise past Call Mount (12:00 → 12:45). Slightly larger than its
-       ring-mates per spec; hidden via .abt-hidden (see updateMovement's
-       weaponEngaged toggle) whenever melee isn't out. Base/gray = no
-       targetable hostile nearby; .abt-target-ready = one's in view (still
-       off); .active = actually engaged. ── */
+    /* ── Melee auto-target: sits at 12:00, one step past Call Mount.
+       Slightly larger than its ring-mates per spec; hidden via .abt-hidden
+       (see updateMovement's weaponEngaged toggle) whenever melee isn't out.
+       Base/gray = no targetable hostile nearby; .abt-target-ready = one's
+       in view (still off); .active = actually engaged. ── */
     #btnMeleeAutoTarget {
       position: absolute;
-      right:  calc(-1*cos(67.5deg)*var(--ar2));
-      bottom: calc(   sin(67.5deg)*var(--ar2));
+      right:  calc(-1*cos(90deg)*var(--ar2));
+      bottom: calc(   sin(90deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(30px, calc(0.7 * var(--col)), 42px); height: clamp(30px, calc(0.7 * var(--col)), 42px);
       border-radius: 50%;
@@ -1023,6 +1016,28 @@
       background: rgba(255,80,80,0.36); border-color: rgba(255,80,80,0.9);
       color: #fff;
     }
+    /* ── Utility menu: final (12:45) outer-ring position, in the slot freed
+       up by removing put-away. Hold to open the utilities wheel (Return to
+       Camp/Farm, quick-select a Campfire Kit — see game.js's
+       _openUtilitiesArc), drag within it to pick, release to commit; a
+       plain tap does nothing, same as the desktop 'c' key it mirrors. ── */
+    #btnUtilityMenu {
+      position: absolute;
+      right:  calc(-1*cos(67.5deg)*var(--ar2));
+      bottom: calc(   sin(67.5deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+      border-radius: 50%;
+      background: rgba(196,160,255,0.09); border: 1.5px solid rgba(196,160,255,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnUtilityMenu:active { transform: translate(50%,50%) scale(0.92); }
+    #btnUtilityMenu .abt-icon { font-size: 0.85em; }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;

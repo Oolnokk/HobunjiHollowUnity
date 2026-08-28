@@ -20,7 +20,6 @@
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
-      const btnUnequipHeld = document.getElementById('btnUnequipHeld');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
@@ -14392,7 +14391,6 @@
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnUnequipHeld?.classList.toggle('active', heldMode === 'none');
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee auto-target's sixth arch button: hidden entirely unless
         // melee is actually out; otherwise grayed out (base style) until a
@@ -23172,8 +23170,12 @@
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
           else if (!_tHeld && !_tMoved) {
-            // A Tool Select tap always recalls the last valid held tool.
-            window._desktopSelectionArc.recallLastTool();
+            // A Tool Select tap recalls the last valid held tool — unless a
+            // tool is already out, in which case the same tap now dequips
+            // instead (replacing the removed dedicated put-away button; see
+            // its matching case in itemBtn's own pointerup below).
+            if (heldMode === 'tool') putAwayHeldEquipment();
+            else window._desktopSelectionArc.recallLastTool();
           }
           _tHeld = false; _tMoved = false;
         });
@@ -23205,11 +23207,18 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved && heldMode !== 'item') {
-              // Tap while holding a tool or hands-free → switch to item mode.
-              if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
-              heldMode = 'item';
-              refreshItemScroll(); refreshActionBar();
+            else if (!_iHeld && !_iMoved) {
+              if (heldMode === 'item') {
+                // An item is already selected — the same tap now dequips
+                // instead (replacing the removed dedicated put-away button;
+                // see its matching case in toolBtn's own pointerup above).
+                putAwayHeldEquipment();
+              } else {
+                // Tap while holding a tool or hands-free → switch to item mode.
+                if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
+                heldMode = 'item';
+                refreshItemScroll(); refreshActionBar();
+              }
             }
             _iHeld = false; _iMoved = false;
           });
@@ -23219,6 +23228,42 @@
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
             _clearArc(); _iHeld = false; _iMoved = false;
+          });
+        }
+
+        // Utility menu button: sixth/new outer-ring control, replacing the
+        // removed put-away button's old slot (see the CSS angle comment on
+        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
+        // above — it only ever does anything while held, exactly like the
+        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // mirrors their hold-then-drag-to-select pattern but skips their
+        // "what does a plain tap do" branch entirely.
+        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
+        if (btnUtilityMenu) {
+          let _uPtId = null, _uHeld = false, _uTimer = null;
+          btnUtilityMenu.addEventListener('pointerdown', ev => {
+            if (_uPtId !== null) return;
+            _uPtId = ev.pointerId; _uHeld = false;
+            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
+            ev.preventDefault();
+          });
+          btnUtilityMenu.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
+          });
+          btnUtilityMenu.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            if (_arcOpen === 'entries:utilities') _arcUp();
+            _uHeld = false;
+          });
+          btnUtilityMenu.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            _clearArc(); _uHeld = false;
           });
         }
       }
@@ -24334,12 +24379,6 @@
       btnWeaponSwitch?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         toggleQuickWeaponSwitch();
-      });
-
-      // First outer-arch button, mirrored by the desktop Z shortcut.
-      btnUnequipHeld?.addEventListener('pointerdown', ev => {
-        ev.preventDefault();
-        putAwayHeldEquipment();
       });
 
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —

@@ -95,24 +95,26 @@
 }
 
 /* Shared post-base HUD override: preserve the compact 10-degree cadence while
-   shifting the whole five-button outer arch 10 degrees counterclockwise. */
-#btnUnequipHeld {
+   shifting the whole outer arch 10 degrees counterclockwise. Covers only the
+   four always-visible controls (weapon/tool/item/mount) — same as before the
+   put-away button that used to lead this group was removed and everything
+   slid back one slot to fill its place; the occasional/conditional controls
+   (melee auto-target, the utility menu) were never part of this tighter
+   cadence and still fall through to their own wider-spaced base positions
+   in style.css. */
+#btnWeaponSwitch {
   right: calc(-1*cos(165deg)*var(--ar2));
   bottom: calc(sin(165deg)*var(--ar2));
 }
-#btnWeaponSwitch {
+#toolBtn {
   right: calc(-1*cos(155deg)*var(--ar2));
   bottom: calc(sin(155deg)*var(--ar2));
 }
-#toolBtn {
+#itemBtn {
   right: calc(-1*cos(145deg)*var(--ar2));
   bottom: calc(sin(145deg)*var(--ar2));
 }
-#itemBtn {
+#btnCallMount {
   right: calc(-1*cos(135deg)*var(--ar2));
   bottom: calc(sin(135deg)*var(--ar2));
-}
-#btnCallMount {
-  right: calc(-1*cos(125deg)*var(--ar2));
-  bottom: calc(sin(125deg)*var(--ar2));
 }
