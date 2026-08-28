@@ -66,9 +66,9 @@ assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse begins at
 tick(growler, 0.045, { threatened: true });
 assert.ok(window.AnimalVocalizations.scalePulse(growler) > 1
   && window.AnimalVocalizations.scalePulse(growler) <= 1.025, 'generic envelope retains an optional tiny scale-pulse utility');
-assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) > 0
-  && window.AnimalVocalizations.headNodOffsetDeg(growler) <= 4, 'rendered utterance produces a slight upward nod offset');
-assert.ok(window.AnimalVocalizations.debugSnapshot().maxHeadNodDeg > 0, 'mobile diagnostics expose the live nod angle');
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) < 0
+  && window.AnimalVocalizations.headNodOffsetDeg(growler) >= -4, 'rendered utterance produces a slight upward nod in the animal rig convention');
+assert.ok(window.AnimalVocalizations.debugSnapshot().maxHeadNodDeg < 0, 'mobile diagnostics expose the signed upward nod angle');
 tick(growler, 0.2, { threatened: true });
 assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse settles exactly to authored scale');
 assert.equal(window.AnimalVocalizations.headNodOffsetDeg(growler), 0, 'nod settles without leaving a neck offset');
@@ -81,7 +81,7 @@ assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed), 0, 'nod must 
 assert.equal(pendingAudioStarts.length, 1, 'renderer retains one actual-start callback');
 pendingAudioStarts.shift()();
 tick(delayed, 0.045, { threatened: true });
-assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) > 0, 'nod begins from the actual audible playback event');
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) < 0, 'upward nod begins from the actual audible playback event');
 autoStartAudio = true;
 
 const prioritized = creature('priority');
