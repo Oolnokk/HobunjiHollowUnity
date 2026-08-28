@@ -4919,6 +4919,38 @@
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
 
+      // A ground companion settled near the player (see the "settle" branch
+      // of updateCompanions below) used to pick its idle wander points from
+      // a plain disk centered on the player — including points arbitrarily
+      // close to (or right on top of) them. This keeps that same wander
+      // rhythm but samples from a donut instead: its hole is the player's
+      // own "personal space" (1.5x the player's actual rendered portrait
+      // width, so it scales with whatever avatar is currently equipped),
+      // and its outer edge sits one more portrait-width further out, giving
+      // the ring some visible thickness rather than pinning to one exact
+      // distance.
+      function _companionPersonalSpacePx() {
+        return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
+      }
+      function _companionFollowWanderTick(c, dt, master) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          // Kept safely inside FOLLOW_FAR_PX (the "gone too far, catch up"
+          // trigger below) so a freshly-picked wander target never sits
+          // just past it and immediately yanks the companion back into
+          // chase — and the inner/outer clamps guarantee a real ring even
+          // for a hypothetical unusually wide portrait.
+          const maxOuterPx = FOLLOW_FAR_PX * 0.9;
+          const innerPx = Math.min(_companionPersonalSpacePx(), maxOuterPx * 0.8);
+          const outerPx = Math.max(innerPx + TILE * 0.2, Math.min(innerPx + (playerAvatarModelWidth || 0.9) * TILE, maxOuterPx));
+          const ang = rnd() * Math.PI * 2;
+          const r = innerPx + rnd() * (outerPx - innerPx);
+          c.wanderTarget = { x: master.x + Math.cos(ang) * r, y: master.y + Math.sin(ang) * r };
+          c.wanderT = 1.5 + rnd() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
@@ -6723,11 +6755,11 @@
             const watchMotion = _tickCompanionWatchIdle(c, master, dt);
             if (watchMotion) aimAngle = watchMotion.aimAngle;
             else {
-              moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+              moving = _companionFollowWanderTick(c, dt, master);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             }
           } else {
-            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+            moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -8165,6 +8197,12 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // The player's own rendered bust-portrait model WIDTH (avatarWidth in
+      // refreshPlayerAvatar) — same idea as playerAvatarModelHeight above.
+      // Used to size a ground companion's "personal space" donut (see
+      // _companionPersonalSpacePx) so its settle-wander radius scales with
+      // how wide the player's own avatar actually renders.
+      let playerAvatarModelWidth = 0.9;
       // Procedural leg/foot animation handle for the player's own avatar —
       // rebuilt in refreshPlayerAvatar (species/gender can change there),
       // driven each frame from updatePlayerMesh. See
@@ -14059,6 +14097,7 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
+        playerAvatarModelWidth = avatarWidth;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
         // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
         // and bottom-edge pixel row (see handAttachX/handAttachY in
