@@ -56,11 +56,28 @@
     requested: 0, rendered: 0, pulsed: 0, textRendered: 0, suppressed: 0,
     lastStartLatencyMs: null, profilesLoaded: false, last: null,
   };
-  const PLAYBACK_MODULE_SRC = typeof document !== 'undefined' && document.currentScript?.src
-    ? new URL('animal-voice-independent-playback.js?v=20260828pitchsplit1', document.currentScript.src).href
+  const MODULE_BASE_SRC = typeof document !== 'undefined' && document.currentScript?.src
+    ? document.currentScript.src
+    : null;
+  const REVERB_MODULE_SRC = MODULE_BASE_SRC
+    ? new URL('environmental-reverb.js?v=20260828room1', MODULE_BASE_SRC).href
+    : null; // Loaded before gameplay audio so world SFX can inherit the current map's wet reverb profile without replacing their dry path.
+  const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
+    ? new URL('animal-voice-independent-playback.js?v=20260828pitchsplit1', MODULE_BASE_SRC).href
     : null; // Used by requestIndependentPlaybackModule to add the optional Web Audio adapter without changing game.js or AudioSystem load order.
 
+  function requestEnvironmentalReverbModule() {
+    if (!REVERB_MODULE_SRC || window.EnvironmentalReverb || typeof document === 'undefined') return;
+    if (document.querySelector?.('script[data-hobunji-environmental-reverb]')) return;
+    const script = document.createElement('script');
+    script.src = REVERB_MODULE_SRC;
+    script.async = false;
+    script.dataset.hobunjiEnvironmentalReverb = '1';
+    document.head?.appendChild(script);
+  }
+
   function requestIndependentPlaybackModule() {
+    requestEnvironmentalReverbModule();
     if (!PLAYBACK_MODULE_SRC || window.AnimalVoiceIndependentPlayback || typeof document === 'undefined') return;
     if (document.querySelector?.('script[data-hobunji-animal-independent-playback]')) return;
     const script = document.createElement('script'); // Inserted once; if it arrives after an early call, that call simply uses AudioSystem's legacy coupled fallback.
@@ -69,11 +86,13 @@
     script.dataset.hobunjiAnimalIndependentPlayback = '1';
     document.head?.appendChild(script);
   }
+  requestEnvironmentalReverbModule();
   requestIndependentPlaybackModule();
 
   function init(injectedDeps) {
     deps = injectedDeps;
     void loadAuthoredProfiles();
+    requestEnvironmentalReverbModule();
     requestIndependentPlaybackModule();
   }
   function random() { return deps?.random?.() ?? Math.random(); }
