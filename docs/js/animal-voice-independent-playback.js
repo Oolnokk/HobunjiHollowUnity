@@ -18,6 +18,9 @@
   let sharedContext = null; // Used by ensureContext so all short animal utterances share one Web Audio graph/context instead of creating one per sound.
   let installed = false; // Used by installAudioSystemAdapter/isInstalled to prevent wrapping AudioSystem more than once.
   let lastPlaybackError = null; // Used by debugSnapshot/editor diagnostics so blocked mobile playback does not fail silently.
+  let lastBackend = 'idle'; // Used by visible editor diagnostics to show whether the last utterance used independent Web Audio or native fallback.
+  let editorDiagnosticBar = null; // Used only by the Ambient Dialogue Editor so mobile diagnostics stay pinned on-screen while the panel scrolls.
+  let editorDiagnosticTimer = null; // Used by installEditorDiagnostics to refresh the pinned status without coupling the editor to this module's internals.
 
   function finite(value, fallback) {
     const number = Number(value); // Used below as the normalized finite numeric candidate.
@@ -60,11 +63,12 @@
     if (context.state === 'suspended') {
       try {
         const resumed = context.resume();
-        resumed?.catch?.(error => { lastPlaybackError = error; });
+        resumed?.then?.(() => refreshEditorDiagnostics()).catch?.(error => { lastPlaybackError = error; refreshEditorDiagnostics(); });
       } catch (error) {
         lastPlaybackError = error;
       }
     }
+    refreshEditorDiagnostics();
     return context.state === 'running';
   }
 
@@ -245,6 +249,8 @@
       setPitchPreservation(audio, false);
       audio.playbackRate = clampTempo(tempo * Math.pow(2, pitchSemitones / 12));
     }
+    lastBackend = shifter ? 'WebAudio independent pitch' : 'native fallback';
+    refreshEditorDiagnostics();
 
     function applyContourStage(index) {
       if (stopped) return;
@@ -279,6 +285,7 @@
       lastPlaybackError = null;
       scheduleContours();
       opts.onStarted?.();
+      refreshEditorDiagnostics();
     }
 
     function cleanup() {
@@ -289,6 +296,7 @@
       try { source?.disconnect(); } catch (_) {}
       try { output?.disconnect(); } catch (_) {}
       previewHandles.delete(handle);
+      refreshEditorDiagnostics();
     }
 
     function stop() {
@@ -313,12 +321,14 @@
       lastPlaybackError = error;
       opts.onError?.(error);
       cleanup();
+      refreshEditorDiagnostics();
       return handle;
     }
     if (playResult?.then) playResult.then(notifyStarted).catch(error => {
       lastPlaybackError = error;
       opts.onError?.(error);
       cleanup();
+      refreshEditorDiagnostics();
     });
     return handle;
   }
@@ -367,12 +377,14 @@
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
     const handle = playPreparedElement(audio, opts); // Stored so changing species/mode in the editor can stop every active preview cleanly.
     previewHandles.add(handle);
+    refreshEditorDiagnostics();
     return handle;
   }
 
   function stopAllPreviews() {
     for (const handle of [...previewHandles]) handle.stop();
     previewHandles.clear();
+    refreshEditorDiagnostics();
   }
 
   function debugSnapshot() {
@@ -380,9 +392,67 @@
     return {
       installed,
       contextState: context?.state || 'unavailable',
+      backend: lastBackend,
       previewCount: previewHandles.size,
       lastPlaybackError: lastPlaybackError ? String(lastPlaybackError?.message || lastPlaybackError) : null,
     };
+  }
+
+  function isAmbientDialogueEditor() {
+    return /\/tools\/ambient-dialogue-editor(?:\/|\/index\.html|$)/.test(String(window.location?.pathname || '')); // Prevents the pinned diagnostics UI from appearing in the actual game.
+  }
+
+  function diagnosticText(snapshot = debugSnapshot()) {
+    const error = snapshot.lastPlaybackError || 'none'; // Kept short enough to remain readable on a phone while still being copyable in full.
+    return `Audio ${snapshot.contextState} · ${snapshot.backend} · previews ${snapshot.previewCount} · error ${error}`;
+  }
+
+  function refreshEditorDiagnostics() {
+    if (!editorDiagnosticBar) return;
+    const label = editorDiagnosticBar.querySelector('[data-animal-audio-diag-label]');
+    if (label) label.textContent = diagnosticText();
+  }
+
+  function installEditorDiagnostics() {
+    if (!isAmbientDialogueEditor() || typeof document === 'undefined') return;
+    const mount = () => {
+      if (!document.body || document.querySelector('[data-animal-audio-diag]')) return;
+      const bar = document.createElement('div'); // Fixed to the viewport so diagnostics remain visible even while the long Animals panel scrolls on mobile.
+      bar.dataset.animalAudioDiag = '1';
+      bar.style.cssText = 'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:2147483646;display:flex;align-items:center;gap:8px;min-height:34px;padding:6px 8px;border:1px solid rgba(255,255,255,.22);border-radius:9px;background:rgba(7,16,26,.94);box-shadow:0 4px 18px rgba(0,0,0,.45);font:11px system-ui,Segoe UI,sans-serif;color:#dbeafe;backdrop-filter:blur(5px)';
+      const label = document.createElement('div');
+      label.dataset.animalAudioDiagLabel = '1';
+      label.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      label.textContent = diagnosticText();
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy audio probe';
+      copy.style.cssText = 'flex:0 0 auto;padding:5px 7px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:#111b28;color:#edf5ff;font:700 11px system-ui,Segoe UI,sans-serif';
+      copy.addEventListener('click', async () => {
+        const text = JSON.stringify(debugSnapshot(), null, 2); // Copies the untruncated snapshot even though the pinned label is intentionally compact.
+        try {
+          await navigator.clipboard.writeText(text);
+          copy.textContent = 'Copied';
+        } catch (_) {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          try { document.execCommand('copy'); copy.textContent = 'Copied'; } catch (_) { copy.textContent = 'Copy failed'; }
+          area.remove();
+        }
+        setTimeout(() => { copy.textContent = 'Copy audio probe'; }, 1200);
+      });
+      bar.append(label, copy);
+      document.body.appendChild(bar);
+      editorDiagnosticBar = bar;
+      refreshEditorDiagnostics();
+      if (!editorDiagnosticTimer) editorDiagnosticTimer = setInterval(refreshEditorDiagnostics, 250); // Keeps async context resume/error state visible without editor-specific event wiring.
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+    else mount();
   }
 
   window.AnimalVoiceIndependentPlayback = {
@@ -393,9 +463,11 @@
     clampPitch,
     clampTempo,
     debugSnapshot,
+    refreshEditorDiagnostics,
     isInstalled: () => installed,
   };
 
   installGestureUnlock();
   installAudioSystemAdapter();
+  installEditorDiagnostics();
 })();
