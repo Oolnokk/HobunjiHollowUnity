@@ -2,10 +2,9 @@
   'use strict';
 
   // Constant-axis animal voice renderer. The only authored audio transforms are
-  // one fixed tempo and one fixed pitch for the selected recording/utterance.
-  // WSOLA remains only as the minimum DSP needed to keep those two fixed axes
-  // independent; there are no contours, random ranges, normalization or splice
-  // modulation paths.
+  // one fixed tempo/pitch per recording, one fixed tempo/pitch per utterance,
+  // and the global size-class pitch offset. No random ranges, normalization,
+  // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 0.35;
   const MAX_TEMPO = 2;
   const MAX_SHIFT_SEMITONES = 12;
@@ -18,24 +17,40 @@
   const MAX_RENDER_CACHE = 32;
   const ANIMAL_EXTRA_WET = 0.026;
 
+  const POOL_ORDER = Object.freeze({
+    'dabinggi-hound': Object.freeze(['sfx_dabinggi-hound1.ogg', 'sfx_dabinggi-hound2.ogg']),
+    drenkirra: Object.freeze(['sfx_drenkirra1.ogg', 'sfx_drenkirra2.ogg']),
+    'gar-wolf': Object.freeze(['sfx_gar-wolf1.ogg', 'sfx_gar-wolf2.ogg']),
+    grehlr: Object.freeze(['sfx_grehlr1.ogg', 'sfx_grehlr2.ogg']),
+    nelk: Object.freeze(['sfx_nelk1.ogg']),
+    uumkaoii: Object.freeze(["sfx_uumkao'ii1.ogg", "sfx_uumkao'ii2.ogg"]),
+  });
+
   const MODULE_SRC = typeof document !== 'undefined' && document.currentScript?.src
     ? document.currentScript.src
     : null;
   const SIMPLE_EDITOR_SRC = MODULE_SRC
-    ? new URL('animal-voice-simple-editor.js?v=20260828simple1', MODULE_SRC).href
+    ? new URL('animal-voice-simple-editor.js?v=20260828simple2', MODULE_SRC).href
     : null;
 
   const decodedByUrl = new Map();
   const renderedByKey = new Map();
   const previewHandles = new Set();
   let sharedContext = null;
+  let adapterInstalled = false;
   let lastPlaybackError = null;
   let lastBackend = 'idle';
   let lastUrl = null;
   let lastTempo = 1;
   let lastPitchSemitones = 0;
+  let lastClipTempo = 1;
+  let lastClipPitchSemitones = 0;
+  let lastUtteranceTempo = 1;
+  let lastUtterancePitchSemitones = 0;
+  let lastSizePitchSemitones = 0;
   let lastRenderMs = null;
   let lastStartedAt = null;
+  let lastAllowedClips = null;
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -52,6 +67,16 @@
     const resolved = absoluteUrl(url);
     try { return decodeURIComponent(new URL(resolved).pathname.split('/').pop() || '').toLowerCase(); }
     catch (_) { return String(url || '').split('/').pop().toLowerCase(); }
+  }
+  function speciesKey(c) {
+    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    if (raw.includes('dabinggi')) return 'dabinggi-hound';
+    if (raw.includes('gar-wolf')) return 'gar-wolf';
+    if (raw.includes('grehlr')) return 'grehlr';
+    if (raw.includes('drenkirra')) return 'drenkirra';
+    if (raw.includes('uumkao')) return 'uumkaoii';
+    if (raw.includes('nelk')) return 'nelk';
+    return raw;
   }
   function smoothBlendWeight(index, count) {
     if (count <= 1) return 1;
@@ -77,13 +102,8 @@
     if (sharedContext && sharedContext.state !== 'closed') return sharedContext;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return null;
-    try {
-      sharedContext = new AudioCtx();
-      return sharedContext;
-    } catch (error) {
-      lastPlaybackError = error;
-      return null;
-    }
+    try { sharedContext = new AudioCtx(); return sharedContext; }
+    catch (error) { lastPlaybackError = error; return null; }
   }
   function primeAudioContext() {
     const context = ensureContext();
@@ -154,7 +174,6 @@
         return output;
       });
     }
-
     const frame = Math.max(256, Math.min(sourceLength, Math.round(sampleRate * WSOLA_FRAME_S)));
     const overlap = Math.max(64, Math.min(frame - 1, Math.round(frame * WSOLA_OVERLAP_RATIO)));
     const synthesisHop = Math.max(32, frame - overlap);
@@ -164,10 +183,7 @@
     const referenceChannel = channels[0];
     const referenceOutput = outputs[0];
     const firstCount = Math.min(frame, sourceLength, targetLength);
-    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
-      outputs[channelIndex].set(channels[channelIndex].subarray(0, firstCount), 0);
-    }
-
+    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) outputs[channelIndex].set(channels[channelIndex].subarray(0, firstCount), 0);
     let outputPos = synthesisHop;
     let expectedInputPos = analysisHop;
     while (outputPos < targetLength && expectedInputPos < sourceLength - 1) {
@@ -267,7 +283,6 @@
       extraWet: ANIMAL_EXTRA_WET,
       area: opts.area || null,
     }) || null;
-
     function cleanup() {
       if (stopped) return;
       stopped = true;
@@ -294,7 +309,7 @@
     startTimer = setTimeout(() => {
       if (stopped) return;
       lastPlaybackError = null;
-      lastBackend = 'constant tempo+pitch';
+      lastBackend = 'fixed tempo+pitch';
       lastStartedAt = Date.now();
       opts.onStarted?.();
     }, Math.max(0, Math.round((startAt - context.currentTime) * 1000)));
@@ -319,23 +334,29 @@
       setPitchPreservation(audio, true);
       audio.playbackRate = tempo;
     } else {
+      // Emergency fallback only. The normal Web Audio path keeps speed/pitch
+      // independent; browsers without it necessarily couple them here.
       setPitchPreservation(audio, false);
       audio.playbackRate = clamp(tempo * pitchRatio, 0.25, 4);
     }
     let finished = false;
+    let started = false;
+    const notifyStarted = () => {
+      if (started) return;
+      started = true;
+      lastBackend = 'native fallback';
+      lastStartedAt = Date.now();
+      opts.onStarted?.();
+    };
     const cleanup = () => {
       if (finished) return;
       finished = true;
       opts.onFinished?.();
     };
-    audio.addEventListener?.('playing', () => {
-      lastBackend = 'native fallback';
-      lastStartedAt = Date.now();
-      opts.onStarted?.();
-    }, { once: true });
+    audio.addEventListener?.('playing', notifyStarted, { once: true });
     audio.addEventListener?.('ended', cleanup, { once: true });
     const result = audio.play();
-    result?.catch?.(error => {
+    result?.then?.(notifyStarted).catch?.(error => {
       lastPlaybackError = error;
       opts.onError?.(error);
       cleanup();
@@ -359,12 +380,10 @@
     lastUrl = resolved;
     lastTempo = tempo;
     lastPitchSemitones = pitchSemitones;
-
     if (!context || context.state !== 'running') {
       primeAudioContext();
       return playNativeFallback(resolved, { ...opts, tempo, pitchSemitones }, opts.fallbackAudio || null);
     }
-
     let stopped = false;
     let active = null;
     const handle = {
@@ -375,7 +394,7 @@
         active?.stop?.();
       },
     };
-    lastBackend = 'constant render pending';
+    lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
       .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones))
       .then(rendered => {
@@ -390,10 +409,102 @@
     return handle;
   }
 
+  function normalizedAllowed(c, opts) {
+    if (!Array.isArray(opts?.allowedClips)) return null;
+    const canonical = POOL_ORDER[speciesKey(c)] || [];
+    const requested = new Set(opts.allowedClips.map(clipKey).filter(Boolean));
+    return canonical
+      .map((name, index) => ({ name, index }))
+      .filter(entry => requested.has(entry.name.toLowerCase()));
+  }
+
+  function capturePreparedAnimalElement(originalRenderer, c, opts) {
+    const mediaProto = window.HTMLMediaElement?.prototype;
+    if (!mediaProto?.play) return { accepted: false, audio: null };
+    const allowed = normalizedAllowed(c, opts);
+    lastAllowedClips = allowed == null ? null : allowed.map(entry => entry.name);
+    if (allowed && !allowed.length) return { accepted: false, audio: null, silent: true };
+    const canonical = POOL_ORDER[speciesKey(c)] || [];
+    const chosen = allowed?.length ? allowed[Math.floor(Math.random() * allowed.length)] : null;
+    const nativePlay = mediaProto.play;
+    const nativeRandom = Math.random;
+    const blockedResult = Promise.resolve();
+    let captured = null;
+    mediaProto.play = function captureAnimalVoicePlay() {
+      if (!captured) captured = this;
+      return blockedResult;
+    };
+    if (chosen && canonical.length) Math.random = () => (chosen.index + 0.5) / canonical.length;
+    let accepted = false;
+    try {
+      accepted = !!originalRenderer(c, {
+        ...opts,
+        rate: 1,
+        rateContour: undefined,
+        onStarted: undefined,
+      });
+    } finally {
+      mediaProto.play = nativePlay;
+      Math.random = nativeRandom;
+    }
+    return { accepted, audio: captured, chosen: chosen?.name || null };
+  }
+
+  function clipTuningFor(url, opts) {
+    const map = opts?.clipTuning;
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return { tempo: 1, pitchSemitones: 0 };
+    const key = clipKey(url);
+    const value = map[key] ?? map[url] ?? map[absoluteUrl(url)];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { tempo: 1, pitchSemitones: 0 };
+    return {
+      tempo: clampTempo(value.tempo ?? value.speed ?? 1),
+      pitchSemitones: clampPitch(value.pitchSemitones ?? value.pitch ?? 0),
+    };
+  }
+
+  function installAudioSystemAdapter() {
+    const audioSystem = window.AudioSystem;
+    if (!audioSystem?.playAnimalVoiceUtterance) return false;
+    if (audioSystem.__simpleAnimalVoiceWrapped) { adapterInstalled = true; return true; }
+    const originalRenderer = audioSystem.playAnimalVoiceUtterance.bind(audioSystem);
+    audioSystem.playAnimalVoiceUtterance = function simpleAnimalVoiceUtterance(c, opts = {}) {
+      const capture = capturePreparedAnimalElement(originalRenderer, c, opts);
+      if (capture.silent) return false;
+      if (!capture.accepted) return false;
+      if (!capture.audio) return originalRenderer(c, { ...opts, rate: 1, rateContour: undefined });
+      const url = capture.audio.currentSrc || capture.audio.src;
+      const clipTuning = clipTuningFor(url, opts);
+      const utteranceTempo = clampTempo(opts.tempo ?? 1);
+      const utterancePitch = clampPitch(opts.pitchSemitones ?? 0);
+      const sizePitch = clampPitch(opts.sizePitchSemitones ?? 0);
+      const tempo = clampTempo(clipTuning.tempo * utteranceTempo);
+      const pitchSemitones = clampPitch(clipTuning.pitchSemitones + utterancePitch + sizePitch);
+      lastClipTempo = clipTuning.tempo;
+      lastClipPitchSemitones = clipTuning.pitchSemitones;
+      lastUtteranceTempo = utteranceTempo;
+      lastUtterancePitchSemitones = utterancePitch;
+      lastSizePitchSemitones = sizePitch;
+      play(url, {
+        tempo,
+        pitchSemitones,
+        volume: clamp(finite(capture.audio.volume, opts.volume ?? 0.7), 0, 1),
+        area: c?.areaId || null,
+        onStarted: opts.onStarted,
+        onError: opts.onError,
+        fallbackAudio: capture.audio,
+      });
+      return true;
+    };
+    audioSystem.__simpleAnimalVoiceWrapped = true;
+    adapterInstalled = true;
+    return true;
+  }
+
   function preview(url, opts = {}) {
     primeAudioContext();
     const fallbackAudio = typeof Audio === 'function' ? new Audio(url) : null;
-    const handle = play(url, { ...opts, fallbackAudio, onFinished: () => previewHandles.delete(handle) });
+    let handle = null;
+    handle = play(url, { ...opts, fallbackAudio, onFinished: () => previewHandles.delete(handle) });
     if (handle) previewHandles.add(handle);
     return handle;
   }
@@ -404,7 +515,7 @@
 
   function debugSnapshot() {
     return {
-      installed: true,
+      installed: adapterInstalled,
       contextState: sharedContext?.state || 'unavailable',
       backend: lastBackend,
       previewCount: previewHandles.size,
@@ -412,6 +523,12 @@
       renderedVariantCount: renderedByKey.size,
       lastTempo,
       lastPitchSemitones,
+      lastClipTempo,
+      lastClipPitchSemitones,
+      lastUtteranceTempo,
+      lastUtterancePitchSemitones,
+      lastSizePitchSemitones,
+      lastAllowedClips,
       lastRenderMs,
       lastUrl,
       lastStartedAt,
@@ -437,10 +554,13 @@
     clampPitch,
     clampTempo,
     clipKey,
+    installAudioSystemAdapter,
     debugSnapshot,
-    isInstalled: () => true,
+    isInstalled: () => adapterInstalled,
   };
 
   installGestureUnlock();
   requestSimpleEditor();
+  installAudioSystemAdapter();
+  if (typeof window.setInterval === 'function') window.setInterval(installAudioSystemAdapter, 250);
 })();
