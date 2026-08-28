@@ -6058,65 +6058,6 @@
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
 
-      // A shoulder pet's own version of the ground companion's horizon-scan
-      // lock (_findApproachingLivingThing, defined below — shared verbatim,
-      // same detection rule) — but "less vigilant": it notices something
-      // approaching, holds interest only briefly, then drops straight back
-      // to idle curiosity rather than keeping a long ambient lock/sweep
-      // cycle going the way a ground companion does.
-      const SHOULDER_PET_NOTICE_CHECK_MIN_S = 1.0;
-      const SHOULDER_PET_NOTICE_CHECK_MAX_S = 2.2;
-      const SHOULDER_PET_NOTICE_LOCK_MIN_S = 0.5;
-      const SHOULDER_PET_NOTICE_LOCK_MAX_S = 1.1;
-      function _tickShoulderPetNotice(c, master, dt) {
-        const state = c.shoulderNotice || (c.shoulderNotice = {
-          phase: 'idle',
-          timer: 0.8 + rnd() * 1.2, // First notice check arrives soon enough to be seen, not instantly.
-          target: null,
-        });
-        state.timer -= dt;
-        if (state.phase === 'idle' && state.timer <= 0) {
-          const found = _findApproachingLivingThing(master);
-          if (found) {
-            state.phase = 'notice';
-            state.target = found;
-            state.timer = SHOULDER_PET_NOTICE_LOCK_MIN_S + rnd() * (SHOULDER_PET_NOTICE_LOCK_MAX_S - SHOULDER_PET_NOTICE_LOCK_MIN_S);
-          } else {
-            state.timer = SHOULDER_PET_NOTICE_CHECK_MIN_S + rnd() * (SHOULDER_PET_NOTICE_CHECK_MAX_S - SHOULDER_PET_NOTICE_CHECK_MIN_S);
-          }
-        } else if (state.phase === 'notice') {
-          const target = state.target;
-          const targetAlive = target && (target.health === undefined || target.health > 0);
-          const targetArea = target?.areaId || target?.area;
-          if (!targetAlive || targetArea !== currentArea || state.timer <= 0) {
-            state.phase = 'idle';
-            state.target = null;
-            state.timer = SHOULDER_PET_NOTICE_CHECK_MIN_S + rnd() * (SHOULDER_PET_NOTICE_CHECK_MAX_S - SHOULDER_PET_NOTICE_CHECK_MIN_S);
-          }
-        }
-        return state.phase === 'notice' ? state.target : null;
-      }
-
-      // Which of the two broadside ("away from the character's own
-      // front-back centerline") facings the pet's body/plane should turn
-      // to while noticing something, so the existing periodic front/back
-      // plane flip (updateCreatureMesh's camera-relative deadzone) resolves
-      // toward looking at it rather than staying locked to the player's own
-      // facing. Never picks straight ahead or straight behind (through the
-      // body) — only ever one of the two perpendicular sides, whichever is
-      // nearer the target's real bearing. For a target ahead, that reads as
-      // "always turns outward, away from centerline" (neither ±90° option
-      // is ever "through the body"); for a target behind, it's simply
-      // whichever side brings the body (and the head-yaw riding on top of
-      // it) closest to actually facing it — one formula covers both cases
-      // the way they were described.
-      function _shoulderPetNoticeAimAngle(c, master, target) {
-        const playerFacing = master.angle || 0;
-        const targetBearing = Math.atan2(target.y - c.y, target.x - c.x);
-        const rightSide = playerFacing + Math.PI / 2, leftSide = playerFacing - Math.PI / 2;
-        return Math.abs(angleDiff(rightSide, targetBearing)) <= Math.abs(angleDiff(leftSide, targetBearing)) ? rightSide : leftSide;
-      }
-
       function _isPlayerGenuinelyIdle() {
         const keyboard = getKeyboardVector();
         const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
@@ -6645,23 +6586,9 @@
               c.y = master.y + clingDz * TILE;
               c.facing = master.angle;
             }
-            // A living thing entering the surroundings briefly pulls the
-            // pet's attention (see _tickShoulderPetNotice) — while that
-            // holds, its body/plane orientation (not its pinned shoulder
-            // position) turns to the broadside side nearer the target
-            // instead of staying locked to the player's own facing, so the
-            // existing periodic front/back plane flip resolves toward
-            // looking at whatever it noticed. c.facing is kept in sync so
-            // the head-yaw math below (shared with ground companions) still
-            // measures its residual turn from the pet's true current body
-            // orientation, not a stale player-locked one.
-            const noticeTarget = _tickShoulderPetNotice(c, master, dt);
-            const meshAimAngle = noticeTarget ? _shoulderPetNoticeAimAngle(c, master, noticeTarget) : c.facing;
-            if (noticeTarget) c.facing = meshAimAngle;
-            updateCreatureMesh(c, dt, meshAimAngle);
+            updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            if (noticeTarget) _updateCreatureHeadLookAtCombatTarget(c, noticeTarget, dt);
-            else _applyShoulderPetCuriosity(c, dt);
+            _applyShoulderPetCuriosity(c, dt);
             if (perch && grip) {
               // perch.y/grip.y are floor-relative — the same total
               // height-above-playerMesh convention playerToolBaseY already
