@@ -19,6 +19,7 @@
 
   let deps = null;
   let group = null; // Live THREE.Group in the scene, or null when not spawned/visible.
+  let emitterVisuals = []; // Live fire/smoke THREE.Points, one per campfire.json particleEmitters entry — see updateVfx.
   let state = null; // { mapId, x, y, z, ry } in tile-units, or null when no campfire is placed.
   let campfireDataPromise = null;
 
@@ -30,6 +31,8 @@
   }
 
   function removeVisual() {
+    emitterVisuals.forEach(visual => visual?.dispose?.());
+    emitterVisuals = [];
     if (group) { group.parent?.remove(group); group = null; }
   }
 
@@ -43,6 +46,19 @@
     built.rotation.y = state.ry || 0;
     deps.getActiveScene().add(built);
     group = built;
+    // buildGroup only builds the geometry (data.parts) — the fire/smoke
+    // particle systems are a separate live THREE.Points each, driven every
+    // frame by updateVfx below (see makeProcessingFurniture's identical
+    // pattern in game.js, which this mirrors for an always-on, never-job-
+    // gated campfire instead of a processing station's burst/timed VFX).
+    emitterVisuals = (data.particleEmitters || []).map(record => deps.AuthoredFurniture.createEmitterVisual(built, record));
+  }
+
+  // Called every frame (see game.js's main loop) so the fire/smoke keep
+  // animating regardless of area — always "active" (unlike a processing
+  // station's job-gated burst) since a lit campfire has no on/off state.
+  function updateVfx(dt) {
+    for (const visual of emitterVisuals) visual?.update?.(dt, true);
   }
 
   // Places the campfire at an explicit tile (col, row — the aimed reticle
@@ -99,6 +115,20 @@
     if (!state) return Infinity;
     const player = deps.getPlayer();
     return Math.hypot(player.x / deps.TILE - state.x, player.y / deps.TILE - state.z);
+  }
+
+  const NEARBY_TILES = 1.75; // Same "at the campfire" radius the panel's Return row already uses.
+
+  // Walk-up interact prompt — mirrors bandit-camps.js's getNearbyTentAction
+  // (the established pattern for a wilderness-zone proximity interactable).
+  // Action 1 near the placed campfire opens the same panel the corner
+  // button does; see useActiveAction's campfire_menu case in game.js.
+  function getNearbyAction() {
+    if (!isHere() || distanceToPlayerTiles() > NEARBY_TILES) return null;
+    return {
+      icon: '🔥', label: 'Campfire', action: 'campfire_menu', style: 'primary', allowed: true,
+      worldInteraction: true, promptRoot: group,
+    };
   }
 
   function returnToCampfire() {
@@ -202,7 +232,7 @@
   }
 
   window.WildernessCampfire = {
-    init, place, placeFromKit, clear, update, onZoneEntered, isHere, distanceToPlayerTiles, returnToCampfire,
+    init, place, placeFromKit, clear, update, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles, getNearbyAction, returnToCampfire,
     serialize, restore, ensureLoaded, refreshVisibility, toggle,
   };
 })();

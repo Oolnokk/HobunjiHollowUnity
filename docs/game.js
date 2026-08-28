@@ -15664,6 +15664,13 @@
           if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
           return;
         }
+        // Same immediate-dispatch reasoning as place_campfire_kit above —
+        // walking up to a placed campfire and using Action 1 opens its
+        // Save/Return/Cook/Brew panel (same one the corner button opens).
+        if (activeAction === 'campfire_menu') {
+          window.WildernessCampfire?.toggle();
+          return;
+        }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
@@ -22024,6 +22031,7 @@
           updateMovement(dt);
           window.WildernessChunks?.update(dt);
           window.WildernessCampfire?.update(currentArea);
+          window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -23344,6 +23352,14 @@
           ? window.BanditCamps?.getNearbyTentAction?.()
           : null;
         if (banditTentAction) return [banditTentAction];
+
+        // A placed wilderness campfire, same runtime-prop pattern as bandit
+        // tents above — walking up to it and using Action 1 opens the same
+        // Save/Return/Cook/Brew panel the corner button does.
+        const campfireAction = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyAction?.()
+          : null;
+        if (campfireAction) return [campfireAction];
 
         // Climbing is triggered by a forward dodge, not by the tool's
         // Action 1 slot. Leaving the normal action stack here prevents an
