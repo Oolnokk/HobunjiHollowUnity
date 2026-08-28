@@ -124,8 +124,8 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/nearby-volume-collision.js?v=20260827volume4"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260827volume1"></script>
+  <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260828falloff1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -282,7 +282,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=branchfalldefense1"></script>
+  <script src="js/climb-system.js?v=branchfalldefense2"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2017,7 +2017,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260827petaxis2"></script>
+  <script src="game.js?v=20260828climbprompt1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
