@@ -37,11 +37,14 @@
     const own = state.config?.animalVocalizations?.[id]?.clipPitchSemitones;
     return finite(own?.[key] ?? common?.[key], 0);
   }
+  function refreshNormalizationProfiles() {
+    window.AnimalVoiceIndependentPlayback?.setNormalizationProfiles?.(state.config?.animalVocalizations || {});
+  }
   function setOffset(id, url, semitones) {
     const own = ensureAnimalOverride(id);
     own.clipPitchSemitones ||= {};
     own.clipPitchSemitones[clipName(url)] = Number(clamp(finite(semitones, 0), -12, 12).toFixed(2));
-    window.AnimalVoiceIndependentPlayback?.setNormalizationProfiles?.(state.config.animalVocalizations);
+    refreshNormalizationProfiles();
     mark();
   }
   function clearOffsets(id, clips) {
@@ -49,7 +52,7 @@
     if (!own.clipPitchSemitones) return;
     for (const url of clips) delete own.clipPitchSemitones[clipName(url)];
     if (!Object.keys(own.clipPitchSemitones).length) delete own.clipPitchSemitones;
-    window.AnimalVoiceIndependentPlayback?.setNormalizationProfiles?.(state.config.animalVocalizations);
+    refreshNormalizationProfiles();
     mark();
   }
   function normalizedBand(rows) {
@@ -194,9 +197,10 @@
     const originalRenderAnimal = renderAnimal;
     renderAnimal = function renderAnimalWithVoiceAnalysis() {
       originalRenderAnimal();
+      refreshNormalizationProfiles();
       mountPanel();
     };
-    window.AnimalVoiceIndependentPlayback?.setNormalizationProfiles?.(state.config?.animalVocalizations || {});
+    refreshNormalizationProfiles();
     mountPanel();
   }
   install();
