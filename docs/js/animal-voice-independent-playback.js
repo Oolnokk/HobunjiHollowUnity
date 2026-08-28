@@ -16,21 +16,37 @@
   const OUTPUT_TAIL_PAD_S = 0.018;
   const MAX_RENDER_CACHE = 32;
   const ANIMAL_EXTRA_WET = 0.026;
+  const UTTERANCE_BASE = 'assets/audio/sfx/utterances/';
 
-  const POOL_ORDER = Object.freeze({
-    'dabinggi-hound': Object.freeze(['sfx_dabinggi-hound1.ogg', 'sfx_dabinggi-hound2.ogg']),
-    drenkirra: Object.freeze(['sfx_drenkirra1.ogg', 'sfx_drenkirra2.ogg']),
-    'gar-wolf': Object.freeze(['sfx_gar-wolf1.ogg', 'sfx_gar-wolf2.ogg']),
-    grehlr: Object.freeze(['sfx_grehlr1.ogg', 'sfx_grehlr2.ogg']),
-    nelk: Object.freeze(['sfx_nelk1.ogg']),
-    uumkaoii: Object.freeze(["sfx_uumkao'ii1.ogg", "sfx_uumkao'ii2.ogg"]),
+  // Preserve the old species defaults even though the same recordings now
+  // live in the descriptive utterance library under content-based names.
+  const LEGACY_ALIASES = Object.freeze({
+    'sfx_dabinggi-hound1.ogg': 'sfx_rattling_monkey-chirp.ogg',
+    'sfx_dabinggi-hound2.ogg': 'sfx_whine-cacaw.ogg',
+    'sfx_drenkirra1.ogg': 'sfx_rattle-caw.ogg',
+    'sfx_drenkirra2.ogg': 'sfx_rattle-caw-rattle.ogg',
+    'sfx_gar-wolf1.ogg': 'sfx_rattle-bark-rattle.ogg',
+    'sfx_gar-wolf2.ogg': 'sfx_clicky_howl-bark.ogg',
+    'sfx_grehlr1.ogg': 'sfx_rattle-ghostgrowl-rattle.ogg',
+    'sfx_grehlr2.ogg': 'sfx_bark-cricket.ogg',
+    'sfx_nelk1.ogg': 'sfx_spookyghost-ribbit.ogg',
+    "sfx_uumkao'ii1.ogg": 'sfx_grunt-rattle.ogg',
+    "sfx_uumkao'ii2.ogg": 'sfx_chirp-rattle.ogg',
+  });
+  const LEGACY_SPECIES_DEFAULTS = Object.freeze({
+    'dabinggi-hound': Object.freeze(['sfx_rattling_monkey-chirp.ogg', 'sfx_whine-cacaw.ogg']),
+    drenkirra: Object.freeze(['sfx_rattle-caw.ogg', 'sfx_rattle-caw-rattle.ogg']),
+    'gar-wolf': Object.freeze(['sfx_rattle-bark-rattle.ogg', 'sfx_clicky_howl-bark.ogg']),
+    grehlr: Object.freeze(['sfx_rattle-ghostgrowl-rattle.ogg', 'sfx_bark-cricket.ogg']),
+    nelk: Object.freeze(['sfx_spookyghost-ribbit.ogg']),
+    uumkaoii: Object.freeze(['sfx_grunt-rattle.ogg', 'sfx_chirp-rattle.ogg']),
   });
 
   const MODULE_SRC = typeof document !== 'undefined' && document.currentScript?.src
     ? document.currentScript.src
     : null;
   const SIMPLE_EDITOR_SRC = MODULE_SRC
-    ? new URL('animal-voice-simple-editor.js?v=20260828simple2', MODULE_SRC).href
+    ? new URL('animal-voice-simple-editor.js?v=20260828library1', MODULE_SRC).href
     : null;
 
   const decodedByUrl = new Map();
@@ -51,6 +67,7 @@
   let lastRenderMs = null;
   let lastStartedAt = null;
   let lastAllowedClips = null;
+  let lastChosenClip = null;
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -67,6 +84,14 @@
     const resolved = absoluteUrl(url);
     try { return decodeURIComponent(new URL(resolved).pathname.split('/').pop() || '').toLowerCase(); }
     catch (_) { return String(url || '').split('/').pop().toLowerCase(); }
+  }
+  function normalizeLibraryName(value) {
+    const key = clipKey(value);
+    return LEGACY_ALIASES[key] || key;
+  }
+  function utteranceUrl(value) {
+    const name = normalizeLibraryName(value);
+    return absoluteUrl(`${UTTERANCE_BASE}${encodeURIComponent(name).replace(/%27/g, "'")}`);
   }
   function speciesKey(c) {
     const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
@@ -326,6 +351,7 @@
   function playNativeFallback(url, opts, fallbackAudio) {
     const audio = fallbackAudio || (typeof Audio === 'function' ? new Audio(url) : null);
     if (!audio) return null;
+    if (audio.src !== url && audio.currentSrc !== url) audio.src = url;
     const tempo = clampTempo(opts.tempo);
     const pitch = clampPitch(opts.pitchSemitones);
     const pitchRatio = Math.pow(2, pitch / 12);
@@ -410,31 +436,24 @@
   }
 
   function normalizedAllowed(c, opts) {
-    if (!Array.isArray(opts?.allowedClips)) return null;
-    const canonical = POOL_ORDER[speciesKey(c)] || [];
-    const requested = new Set(opts.allowedClips.map(clipKey).filter(Boolean));
-    return canonical
-      .map((name, index) => ({ name, index }))
-      .filter(entry => requested.has(entry.name.toLowerCase()));
+    if (Array.isArray(opts?.allowedClips)) return opts.allowedClips.map(normalizeLibraryName).filter(Boolean);
+    return [...(LEGACY_SPECIES_DEFAULTS[speciesKey(c)] || [])];
   }
 
   function capturePreparedAnimalElement(originalRenderer, c, opts) {
     const mediaProto = window.HTMLMediaElement?.prototype;
     if (!mediaProto?.play) return { accepted: false, audio: null };
     const allowed = normalizedAllowed(c, opts);
-    lastAllowedClips = allowed == null ? null : allowed.map(entry => entry.name);
-    if (allowed && !allowed.length) return { accepted: false, audio: null, silent: true };
-    const canonical = POOL_ORDER[speciesKey(c)] || [];
-    const chosen = allowed?.length ? allowed[Math.floor(Math.random() * allowed.length)] : null;
+    lastAllowedClips = [...allowed];
+    if (!allowed.length) return { accepted: false, audio: null, silent: true };
+    const chosen = allowed[Math.floor(Math.random() * allowed.length)];
     const nativePlay = mediaProto.play;
-    const nativeRandom = Math.random;
     const blockedResult = Promise.resolve();
     let captured = null;
     mediaProto.play = function captureAnimalVoicePlay() {
       if (!captured) captured = this;
       return blockedResult;
     };
-    if (chosen && canonical.length) Math.random = () => (chosen.index + 0.5) / canonical.length;
     let accepted = false;
     try {
       accepted = !!originalRenderer(c, {
@@ -445,16 +464,26 @@
       });
     } finally {
       mediaProto.play = nativePlay;
-      Math.random = nativeRandom;
     }
-    return { accepted, audio: captured, chosen: chosen?.name || null };
+    if (captured && chosen) {
+      const resolved = utteranceUrl(chosen);
+      try { captured.pause?.(); } catch (_) {}
+      captured.src = resolved;
+      try { captured.currentTime = 0; } catch (_) {}
+    }
+    lastChosenClip = chosen || null;
+    return { accepted, audio: captured, chosen: chosen || null };
   }
 
   function clipTuningFor(url, opts) {
     const map = opts?.clipTuning;
     if (!map || typeof map !== 'object' || Array.isArray(map)) return { tempo: 1, pitchSemitones: 0 };
-    const key = clipKey(url);
-    const value = map[key] ?? map[url] ?? map[absoluteUrl(url)];
+    const key = normalizeLibraryName(url);
+    let value = map[key] ?? map[url] ?? map[absoluteUrl(url)];
+    if (!value) {
+      const legacyKey = Object.keys(LEGACY_ALIASES).find(oldKey => LEGACY_ALIASES[oldKey] === key);
+      if (legacyKey) value = map[legacyKey];
+    }
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { tempo: 1, pitchSemitones: 0 };
     return {
       tempo: clampTempo(value.tempo ?? value.speed ?? 1),
@@ -472,7 +501,7 @@
       if (capture.silent) return false;
       if (!capture.accepted) return false;
       if (!capture.audio) return originalRenderer(c, { ...opts, rate: 1, rateContour: undefined });
-      const url = capture.audio.currentSrc || capture.audio.src;
+      const url = capture.audio.currentSrc || capture.audio.src || utteranceUrl(capture.chosen);
       const clipTuning = clipTuningFor(url, opts);
       const utteranceTempo = clampTempo(opts.tempo ?? 1);
       const utterancePitch = clampPitch(opts.pitchSemitones ?? 0);
@@ -529,6 +558,7 @@
       lastUtterancePitchSemitones,
       lastSizePitchSemitones,
       lastAllowedClips,
+      lastChosenClip,
       lastRenderMs,
       lastUrl,
       lastStartedAt,
@@ -554,6 +584,8 @@
     clampPitch,
     clampTempo,
     clipKey,
+    normalizeLibraryName,
+    utteranceUrl,
     installAudioSystemAdapter,
     debugSnapshot,
     isInstalled: () => adapterInstalled,
