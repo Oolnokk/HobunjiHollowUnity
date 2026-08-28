@@ -306,7 +306,14 @@
     const dx = Number(target.x) - Number(animal.wx);
     const dz = targetZ - Number(animal.wz);
     const distance = Math.hypot(dx, dz);
-    if (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES) return null;
+    // "Stare back if you focus on their head" — the player's own aim/cursor
+    // ray (the same one "Show Interaction Raycast" already visualizes)
+    // landing on this animal's actual head point overrides the normal
+    // proximity gate below, same as it does for ground companions
+    // (game.js's _isPlayerFocusedOnHead).
+    const headWorld = { x: Number(animal.wx) || 0, y: _farmAnimalHeadWorldY(animal), z: Number(animal.wz) || 0 };
+    const focused = !!deps.isPlayerFocusedOnHead?.(headWorld);
+    if (!focused && (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES)) return null;
 
     const targetWorldY = Number(target.worldY);
     if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
@@ -317,7 +324,7 @@
       // already in Three.js world (tile) units, unlike game.js's own
       // _setLookAtDebug which converts from raw pixels.
       animal._lookAtDebug = {
-        head: { x: animal.wx, y: _farmAnimalHeadWorldY(animal), z: animal.wz },
+        head: headWorld,
         target: { x: Number(target.x), y: targetWorldY, z: targetZ },
       };
     }

@@ -6121,7 +6121,32 @@
         c.avatarRef.updateHeadYaw(sweepDeg, dt);
       }
 
+      // "Stare back if you focus on their head" — is the player's own
+      // camera/cursor aim ray (the same ray the "Show Interaction Raycast"
+      // debug toggle already visualizes) currently passing close to this
+      // creature's actual head point? Reused by both ground companions
+      // (below) and farm livestock (see farm-animals.js's
+      // deps.isPlayerFocusedOnHead, backed by this same math).
+      const PLAYER_HEAD_FOCUS_RADIUS_WORLD = 0.4;
+      function _currentPlayerLookRay() {
+        return currentPlayerInteractionRay() || currentPlayerAimRay();
+      }
+      function _isPlayerFocusedOnHead(c) {
+        const head = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+        if (!head) return false;
+        const ray = _currentPlayerLookRay();
+        if (!ray) return false;
+        return window.CreatureHeadCache.isRayNearPoint(ray, { x: head.x / TILE, y: head.worldY, z: head.z / TILE }, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+      }
+
       function _tickCompanionHorizonScan(c, master, dt) {
+        // Eye contact on demand takes priority over ambient scanning/
+        // locking — a companion that's deliberately being looked at should
+        // always look back immediately, not wait for its own scan timer.
+        if (_isPlayerFocusedOnHead(c)) {
+          _updateCreatureHeadLookAtCombatTarget(c, player, dt);
+          return;
+        }
         const state = c.horizonScan || (c.horizonScan = {
           phase: 'scan',
           timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
@@ -27272,6 +27297,16 @@
         getPlayerFaceTarget: () => {
           const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
           return { x: pos.x / TILE, z: pos.z / TILE, worldY: pos.worldY };
+        },
+        // "Stare back if you focus on their head" for livestock, backed by
+        // the exact same aim-ray math ground companions use (game.js's
+        // _isPlayerFocusedOnHead). headWorldTileScale is
+        // {x, y, z} in farm tiles (x/z) + real scene worldY (y) — the same
+        // shape _farmAnimalFaceLook already builds for its debug ray.
+        isPlayerFocusedOnHead: (headWorldTileScale) => {
+          const ray = _currentPlayerLookRay();
+          if (!ray || !headWorldTileScale) return false;
+          return window.CreatureHeadCache.isRayNearPoint(ray, headWorldTileScale, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
         },
         scene,
         worldObjects,

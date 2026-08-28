@@ -92,5 +92,30 @@
     return pos;
   }
 
-  window.CreatureHeadCache = { getHeadWorld, PLAYER_FACE_HEIGHT_RATIO };
+  // Is `point` (a real Three.js scene-space {x,y,z} — NOT this module's own
+  // raw-px getHeadWorld() convention; convert x/z by dividing by TILE
+  // first) close to the given camera/aim ray? Used for "is the player
+  // focusing on this creature's head" checks (see game.js's
+  // currentPlayerInteractionRay/currentPlayerAimRay and their deps.get*
+  // exposures) — finds the closest point on the ray ahead of its origin
+  // and tests it against radiusWorld, so a creature only "notices" being
+  // looked at when the aim is actually close to its head, not merely
+  // somewhere in its general direction.
+  function isRayNearPoint(ray, point, radiusWorld) {
+    if (!ray?.origin || !ray?.direction || !point) return false;
+    const ox = Number(ray.origin.x) || 0, oy = Number(ray.origin.y) || 0, oz = Number(ray.origin.z) || 0;
+    let dx = Number(ray.direction.x) || 0, dy = Number(ray.direction.y) || 0, dz = Number(ray.direction.z) || 0;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return false;
+    dx /= len; dy /= len; dz /= len;
+    const px = (Number(point.x) || 0) - ox, py = (Number(point.y) || 0) - oy, pz = (Number(point.z) || 0) - oz;
+    const t = px * dx + py * dy + pz * dz;
+    if (t < 0) return false; // Head is behind the ray's origin (behind the camera) — not being looked at.
+    const cx = ox + dx * t, cy = oy + dy * t, cz = oz + dz * t;
+    const ddx = (Number(point.x) || 0) - cx, ddy = (Number(point.y) || 0) - cy, ddz = (Number(point.z) || 0) - cz;
+    const radius = Number(radiusWorld) || 0.35;
+    return (ddx * ddx + ddy * ddy + ddz * ddz) <= radius * radius;
+  }
+
+  window.CreatureHeadCache = { getHeadWorld, isRayNearPoint, PLAYER_FACE_HEIGHT_RATIO };
 })();

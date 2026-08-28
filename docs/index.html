@@ -68,7 +68,7 @@
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
-  <script src="js/creature-head-cache.js?v=20260828head1"></script>
+  <script src="js/creature-head-cache.js?v=20260828head2"></script>
   <!-- Per-instance eye-blink timer shared by wild/hostile creatures
        (game.js) and farm livestock (farm-animals.js). -->
   <script src="js/creature-blink.js?v=20260828blink1"></script>
@@ -203,7 +203,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260828breath2"></script>
+  <script src="js/farm-animals.js?v=20260828breath3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -2024,7 +2024,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828horizonscan1"></script>
+  <script src="game.js?v=20260828focusstare1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
