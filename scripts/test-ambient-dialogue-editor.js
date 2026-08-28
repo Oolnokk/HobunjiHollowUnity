@@ -76,6 +76,16 @@ assert(independentPlayback.includes('capturePreparedAnimalElement'), 'playback a
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
+const drenkirraVoice = config.animalVocalizations?.drenkirra;
+const grehlrVoice = config.animalVocalizations?.grehlr;
+assert(drenkirraVoice && grehlrVoice, 'Drenkirra and Grehlr have explicit species voice profiles');
+assert(drenkirraVoice.chatter.repeatsMin >= 4 && drenkirraVoice.chatter.intervalMaxMs <= 300, 'Drenkirra keeps dense monkey-like social chatter');
+assert(drenkirraVoice.warning.pitchMinSemitones > 0, 'Drenkirra warning calls stay in an agile raised register');
+assert(grehlrVoice.chatter.repeatsMax <= 3 && grehlrVoice.chatter.intervalMinMs >= 400, 'Grehlr keeps sparse bear-like huffs and grunts');
+assert(grehlrVoice.warning.pitchMaxSemitones < 0, 'Grehlr warning calls stay below the source register');
+assert(grehlrVoice.growl.tempoMax < drenkirraVoice.growl.tempoMin, 'Grehlr growls remain substantially slower than Drenkirra threat calls');
+assert(grehlrVoice.growl.pitchMaxSemitones < drenkirraVoice.growl.pitchMinSemitones, 'Grehlr growls remain substantially deeper than Drenkirra threat calls');
+
 const nick = config.npcNicknames || {};
 assert.equal(nick.sloomi?.kzubug, 'Dad');
 assert.equal(nick.nashka_khibu?.dzahiri_khibu, 'Mom');
