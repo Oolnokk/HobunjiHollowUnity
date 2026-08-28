@@ -7010,6 +7010,12 @@
           member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          // Only ever consumed on the next boot if it lands in a wilderness
+          // zone with a still-active campfire there (see spawnPlayerAvatar) —
+          // saved unconditionally anyway since it's cheap and harmless
+          // otherwise; farm/town/interior/building sessions keep spawning at
+          // the farm's usual default exactly as before.
+          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -7411,6 +7417,12 @@
             // ensureZoneDenPacks/spawnPackAtDen).
             window.WildlifeSpawn.forgetZoneDenState(zoneId);
             window.BanditCamps.forgetZoneState(zoneId);
+            // A campfire the player left standing in this zone (it now
+            // persists indefinitely across leaving — see wilderness-
+            // campfire.js's own header comment) is pinned to terrain that
+            // no longer exists the instant this zone reshapes, whether or
+            // not the player happens to be standing in it right now.
+            window.WildernessCampfire?.clearIfZone(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -22025,7 +22037,6 @@
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           window.WildernessChunks?.update(dt);
-          window.WildernessCampfire?.update(currentArea);
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
@@ -22813,15 +22824,33 @@
         // campfire or the farm, and quick-selecting a Campfire Kit without
         // scrolling the item wheel to find it.
         function _openUtilitiesArc() {
-          const hasCampfire = !!window.WildernessCampfire?.isHere?.();
+          // A placed campfire now persists indefinitely, including outside
+          // its own zone (see wilderness-campfire.js's header comment) —
+          // serialize() is the "does one exist, and where" query for that;
+          // isHere() only ever answers "is it in the CURRENT zone", which
+          // used to be the same question back when leaving destroyed it.
+          const campfire = window.WildernessCampfire?.serialize?.();
           const kitCount = inventory.campfireKitFurniture || 0;
           _openEntries('utilities', [
             {
-              id: 'return-camp', icon: '🏕️', label: hasCampfire ? 'Return to Camp' : 'No Camp Here',
-              disabled: !hasCampfire,
+              id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
+              disabled: !campfire,
               onSelect: () => {
-                const result = window.WildernessCampfire?.returnToCampfire?.();
-                if (result) { showToast(result.message, result.ok); refreshActionBar(); }
+                if (!campfire) return;
+                if (campfire.mapId === currentArea) {
+                  // Already in the right zone — just reposition onto the tile.
+                  const result = window.WildernessCampfire.returnToCampfire();
+                  showToast(result.message, result.ok);
+                  refreshActionBar();
+                } else {
+                  // A different zone (or the farm/town/a building) — travel
+                  // there first, landing exactly on the campfire's own tile
+                  // since its saved x/z are passed straight through as the
+                  // entry col/row (same fire-and-forget async-inside-
+                  // startSceneTransition pattern performTravel's own 'zone'
+                  // case uses for an ordinary authored zone transition).
+                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                }
               },
             },
             {
@@ -27543,6 +27572,32 @@
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {
           console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        // Resume out in the wilderness, exactly where last session left off,
+        // if that's genuinely where the player was: a wilderness zone that
+        // still has this character's own campfire established in it (see
+        // saveMemberWorldData's lastPosition and WildernessCampfire.restore
+        // just above). Nothing else here ever moves the player away from
+        // the farm's fixed boot position, so without this a wilderness trip
+        // always reset to the farm on reload — the same reason a campfire
+        // used to be destroyed just for leaving its own map. Deliberately
+        // narrower than "resume anywhere": farm/town/interior/building all
+        // keep spawning at the usual farm default, since only the
+        // wilderness-with-an-active-camp case is actually being asked for
+        // here, and re-entering a building/cavern/NPC schedule context from
+        // a cold boot has its own preconditions this isn't set up to satisfy.
+        const _lastPos = playerData.lastPosition;
+        const _resumeCampfire = window.WildernessCampfire?.serialize?.();
+        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+            && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
+          await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
+          // enterZone already placed the player at the tile center of the
+          // col/row above — refine to the exact saved sub-tile position/
+          // facing now that the zone (and its campfire, via enterZone's own
+          // onZoneEntered call) has actually finished building.
+          player.x = _lastPos.x; player.y = _lastPos.y;
+          if (Number.isFinite(_lastPos.angle)) { player.angle = _lastPos.angle; facingAngle = _lastPos.angle; }
+          _snapCameraTarget();
         }
         gameStarted = true;
         window.__hobunjiGameStarted = true;

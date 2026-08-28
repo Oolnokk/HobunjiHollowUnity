@@ -12,9 +12,13 @@
   // which calls placeFromKit(col, row) below immediately rather than through
   // the generic pendingAction path — see that case's own comment for why).
   // Only one can exist at a time — placing a new one silently replaces it —
-  // and it survives an ordinary save/reload as long as the player is still
-  // on the same map, but is destroyed outright the moment the player leaves
-  // that map (see update(), called every frame with the live current area).
+  // and it now persists indefinitely once placed, across leaving its map,
+  // other zones, the farm, and an ordinary save/reload (see serialize/
+  // restore), until the player either places a new one or a Tothal Shift
+  // reshapes its own zone's terrain out from under it (see clearIfZone,
+  // called from the shift loop for exactly that reason). The utilities
+  // wheel's Return to Camp travels there from anywhere via game.js's
+  // enterZone when it isn't the current area (see _openUtilitiesArc).
   const KIT_ITEM_KEY = 'campfireKitFurniture';
 
   let deps = null;
@@ -96,10 +100,16 @@
     deps.persist?.();
   }
 
-  // Called every frame with the live current area — destroys the campfire
-  // the instant the player leaves the map it was placed on.
-  function update(currentArea) {
-    if (state && state.mapId !== currentArea) clear();
+  // Called from the Tothal Shift reshape loop for whichever zoneId just got
+  // regenerated, regardless of whether the player is standing in it right
+  // now — a still-active campfire's exact (x,z) is only meaningful against
+  // the terrain it was placed on, and that terrain no longer exists once
+  // this fires. Losing the campfire here (rather than leaving a stale
+  // reference to it) matches how bandit camps/wildlife dens already handle
+  // the same event (see their own forgetZoneState/forgetZoneDenState calls
+  // right next to this one in the shift loop).
+  function clearIfZone(mapId) {
+    if (state && state.mapId === mapId) clear();
   }
 
   // Called once a wilderness zone scene finishes building, to re-attach a
@@ -154,6 +164,12 @@
     deps.openMenu('alchemy');
   }
 
+  // Repositions the player onto the campfire's exact tile — only valid
+  // while already standing in its zone (isHere()). Traveling there from a
+  // different zone/the farm is a separate concern the utility wheel handles
+  // itself (see _openUtilitiesArc's return-camp entry in game.js): it reads
+  // serialize() to get the mapId, calls game.js's own enterZone to actually
+  // travel, and only falls back to this function once already there.
   function returnToCampfire() {
     if (!isHere()) return { ok: false, message: "No campfire here to return to." };
     const player = deps.getPlayer();
@@ -171,7 +187,7 @@
   }
 
   window.WildernessCampfire = {
-    init, place, placeFromKit, clear, update, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
+    init, place, placeFromKit, clear, clearIfZone, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
     getNearbyActions, returnToCampfire, doSave, doCook, doBrew,
     serialize, restore, ensureLoaded,
   };
