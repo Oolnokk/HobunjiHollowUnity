@@ -27229,6 +27229,11 @@
         Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
           ? { ...playerData.nonGearInventory }
           : { ...STARTING_INVENTORY });
+        // Worlds saved before the Campfire Kit blueprint joined
+        // STARTING_INVENTORY never picked it up — backfill it for free,
+        // once, same as existing characters getting the crossbow/scatterbow
+        // slots below, so it's available without a carpenter trip either way.
+        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
