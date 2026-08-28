@@ -5924,22 +5924,32 @@
           if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
           return;
         }
-        const head = _combatTargetHeadWorld(target);
+        // Yaw here corrects for the gap between the target's exact bearing
+        // and wherever this creature's body is currently facing (c.facing,
+        // one frame stale here — same convention/timing bandit's own
+        // _updateBanditLookAtTarget already relies on) -- the body's own
+        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
+        // ever snaps to a handful of discrete facings, so without this the
+        // head can visibly undershoot exactly where the target's face is
+        // even once the body looks "close enough," reading as not locked
+        // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt);
+      }
+
+      // The shared "aim my head at this exact world point" core both
+      // _updateCreatureHeadLookAtWorldPoint's callers rely on: an actual
+      // living combat target (via _combatTargetHeadWorld) or, for the
+      // horizon-scan idle fixation below, a plain fixed {x,y,worldY} point
+      // with no entity behind it at all. Pulled out of
+      // _updateCreatureHeadLookAtCombatTarget so both share the exact same
+      // pitch+yaw+debug-ray math instead of a hand copy.
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt) {
         const dx = head.x - c.x, dy = head.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, head.x, head.y, head.worldY);
-        // Yaw: corrects for the gap between the target's exact bearing and
-        // wherever this creature's body is currently facing (c.facing, one
-        // frame stale here — same convention/timing bandit's own
-        // _updateBanditLookAtTarget already relies on) -- the body's own
-        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
-        // ever snaps to a handful of discrete facings, so without this the
-        // head can visibly undershoot exactly where the target's face is
-        // even once the body looks "close enough," reading as not locked
-        // on at all.
         if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
           const rawBearing = Math.atan2(dy, dx);
           const residualRad = angleDiff(rawBearing, c.facing || 0);
@@ -6068,8 +6078,18 @@
       const COMPANION_SCAN_CHECK_MAX_S = 3.2;
       const COMPANION_SCAN_LOCK_MIN_S = 1.2; // How long a found lock holds before releasing back to scanning.
       const COMPANION_SCAN_LOCK_MAX_S = 2.4;
-      const COMPANION_SCAN_SWEEP_DEG = 45; // Idle side-to-side yaw amplitude while nothing is locked.
-      const COMPANION_SCAN_SWEEP_PERIOD_S = 3.5;
+      // Idle "nothing locked" fixation: rather than a metronomic sweep, the
+      // companion picks a random point out in the world, holds its gaze
+      // fixed there (tracking it as its own body moves) for a random few
+      // seconds, then either picks a new point or relaxes back to rest —
+      // reads as noticing things rather than scanning on a fixed cycle.
+      const COMPANION_SCAN_FOCUS_MIN_S = 1.4;
+      const COMPANION_SCAN_FOCUS_MAX_S = 4.5;
+      const COMPANION_SCAN_FOCUS_REST_CHANCE = 0.3; // Some fixations are just relaxing to a forward rest pose, so the idle scan doesn't read as perpetually alert.
+      const COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG = 100; // How far off its own body-forward a scan point can land — never straight behind.
+      const COMPANION_SCAN_FOCUS_MIN_DIST_PX = TILE * 2.5;
+      const COMPANION_SCAN_FOCUS_MAX_DIST_PX = TILE * 6;
+      const COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE = 0.35; // Incidental up/down variety (world-scene units) so the gaze doesn't sit dead-level every time.
       const COMPANION_SCAN_APPROACH_DROP_PX = TILE * 0.12; // Minimum distance-to-player closed per check interval to count as "coming towards."
       const COMPANION_SCAN_APPROACH_CHECK_MS = 400;
 
@@ -6114,11 +6134,32 @@
         return best;
       }
 
-      function _applyCompanionScanSweep(c, state, dt) {
-        _restoreCompanionHead(c, dt); // Pitch back to rest (also clears any stale look-at debug ray from a prior lock).
-        if (typeof c.avatarRef?.updateHeadYaw !== 'function') return;
-        const sweepDeg = Math.sin((performance.now() / 1000) * (Math.PI * 2 / COMPANION_SCAN_SWEEP_PERIOD_S) + state.sweepPhase) * COMPANION_SCAN_SWEEP_DEG;
-        c.avatarRef.updateHeadYaw(sweepDeg, dt);
+      // A fresh idle fixation point/duration: usually a random point out in
+      // the world (picked relative to the companion's own position and
+      // facing at the moment of picking, then held fixed in world space —
+      // see _tickCompanionHorizonScan, which re-aims at this same {x,y,worldY}
+      // every frame as the companion walks), occasionally just "relax to
+      // rest" so the idle scan doesn't read as perpetually alert.
+      function _pickCompanionScanFocus(c) {
+        if (rnd() < COMPANION_SCAN_FOCUS_REST_CHANCE) return null;
+        const spreadRad = COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG * Math.PI / 180;
+        const angle = (c.facing || 0) + (rnd() * 2 - 1) * spreadRad;
+        const dist = COMPANION_SCAN_FOCUS_MIN_DIST_PX + rnd() * (COMPANION_SCAN_FOCUS_MAX_DIST_PX - COMPANION_SCAN_FOCUS_MIN_DIST_PX);
+        return {
+          x: c.x + Math.cos(angle) * dist,
+          y: c.y + Math.sin(angle) * dist,
+          worldY: _creatureHeadWorldY(c) + (rnd() * 2 - 1) * COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE,
+        };
+      }
+
+      function _applyCompanionScanFixation(c, state, dt) {
+        state.focusTimer -= dt;
+        if (state.focusTimer <= 0) {
+          state.focusPoint = _pickCompanionScanFocus(c);
+          state.focusTimer = COMPANION_SCAN_FOCUS_MIN_S + rnd() * (COMPANION_SCAN_FOCUS_MAX_S - COMPANION_SCAN_FOCUS_MIN_S);
+        }
+        if (state.focusPoint) _updateCreatureHeadLookAtWorldPoint(c, state.focusPoint, dt);
+        else _restoreCompanionHead(c, dt);
       }
 
       // "Stare back if you focus on their head" — is the player's own
@@ -6151,7 +6192,8 @@
           phase: 'scan',
           timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
           lockedTarget: null,
-          sweepPhase: rnd() * Math.PI * 2, // Desyncs multiple companions' idle sweeps from each other.
+          focusPoint: null,
+          focusTimer: 0, // Expired immediately, so the first fixation point is picked on the very first idle tick rather than waiting out a full cycle.
         });
         state.timer -= dt;
         if (state.phase === 'scan' && state.timer <= 0) {
@@ -6181,7 +6223,7 @@
           // combat target.
           _updateCreatureHeadLookAtCombatTarget(c, state.lockedTarget, dt);
         } else {
-          _applyCompanionScanSweep(c, state, dt);
+          _applyCompanionScanFixation(c, state, dt);
         }
       }
 
