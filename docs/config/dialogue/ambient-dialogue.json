@@ -329,6 +329,128 @@
       "Snff-snff!"
     ]
   },
+  "animalVocalizations": {
+    "drenkirra": {
+      "chatter": {
+        "repeatsMin": 4,
+        "repeatsMax": 8,
+        "intervalMinMs": 75,
+        "intervalMaxMs": 260,
+        "volumeMin": 0.17,
+        "volumeMax": 0.3,
+        "tempoMin": 1.12,
+        "tempoMax": 1.42,
+        "pitchMinSemitones": 0.5,
+        "pitchMaxSemitones": 4.5,
+        "initialDelayMinS": 3,
+        "initialDelayMaxS": 8,
+        "cooldownMinS": 4,
+        "cooldownMaxS": 10,
+        "earshotTiles": 8,
+        "tailMs": 260
+      },
+      "warning": {
+        "repeats": 4,
+        "intervalMs": 285,
+        "volumeMin": 0.86,
+        "volumeMax": 0.98,
+        "tempoMin": 1.06,
+        "tempoMax": 1.28,
+        "pitchMinSemitones": 1.5,
+        "pitchMaxSemitones": 5.5,
+        "earshotTiles": 12,
+        "tailMs": 360
+      },
+      "growl": {
+        "repeats": 1,
+        "intervalMs": 0,
+        "volumeMin": 0.72,
+        "volumeMax": 0.86,
+        "tempoMin": 0.72,
+        "tempoMax": 0.92,
+        "pitchMinSemitones": -4,
+        "pitchMaxSemitones": -1,
+        "tempoContour": [
+          1,
+          1.18,
+          0.86
+        ],
+        "pitchContourSemitones": [
+          0,
+          3,
+          -1.5
+        ],
+        "contourSegmentMs": 220,
+        "earshotTiles": 10,
+        "tailMs": 850
+      },
+      "sizePitchSemitones": {
+        "small": 2.5,
+        "medium": 0,
+        "large": -2.5
+      }
+    },
+    "grehlr": {
+      "chatter": {
+        "repeatsMin": 1,
+        "repeatsMax": 3,
+        "intervalMinMs": 460,
+        "intervalMaxMs": 1050,
+        "volumeMin": 0.22,
+        "volumeMax": 0.4,
+        "tempoMin": 0.76,
+        "tempoMax": 0.96,
+        "pitchMinSemitones": -5.5,
+        "pitchMaxSemitones": -2.5,
+        "initialDelayMinS": 6,
+        "initialDelayMaxS": 14,
+        "cooldownMinS": 8,
+        "cooldownMaxS": 18,
+        "earshotTiles": 9,
+        "tailMs": 650
+      },
+      "warning": {
+        "repeats": 2,
+        "intervalMs": 720,
+        "volumeMin": 0.93,
+        "volumeMax": 1,
+        "tempoMin": 0.7,
+        "tempoMax": 0.88,
+        "pitchMinSemitones": -7,
+        "pitchMaxSemitones": -3.5,
+        "earshotTiles": 13,
+        "tailMs": 900
+      },
+      "growl": {
+        "repeats": 1,
+        "intervalMs": 0,
+        "volumeMin": 0.82,
+        "volumeMax": 0.96,
+        "tempoMin": 0.48,
+        "tempoMax": 0.64,
+        "pitchMinSemitones": -10,
+        "pitchMaxSemitones": -6.5,
+        "tempoContour": [
+          1,
+          0.82,
+          0.94
+        ],
+        "pitchContourSemitones": [
+          0,
+          -2,
+          1
+        ],
+        "contourSegmentMs": 390,
+        "earshotTiles": 11,
+        "tailMs": 1450
+      },
+      "sizePitchSemitones": {
+        "small": 2,
+        "medium": 0,
+        "large": -2.5
+      }
+    }
+  },
   "crowdLines": {
     "cheer": [
       "Hooray!",
