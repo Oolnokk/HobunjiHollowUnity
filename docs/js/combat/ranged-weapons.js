@@ -26,6 +26,15 @@
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
   const BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD = 1.7; // A shot only trips a solid ground tile while it's still near that tile's own surface — an upward shot toward a tree sails clean over low terrain it would otherwise be flattened against.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
+  // A shot doesn't just vanish once it passes a weapon's tuned rangeTiles —
+  // it keeps flying, shedding damage/knockback as it goes, until it
+  // actually runs out of momentum at rangeTiles * this multiplier. AI
+  // engagement range, the HUD "would hit" reticle, and bandit LOS all still
+  // key off the base rangeTiles (that's still "the range this weapon is
+  // built to fight at"); this only softens what happens to a shot that
+  // outran its intended reach instead of hard-despawning it.
+  const RANGE_FALLOFF_DISTANCE_MULTIPLIER = 1.6;
+  const RANGE_FALLOFF_MIN_FRACTION = 0.15; // Damage/knockback floor at the true despawn distance — never fully free damage, but a spent arrow still stings.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
@@ -535,7 +544,9 @@
       x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
-      angle, pitch, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
+      angle, pitch, distancePx: 0,
+      effectiveRangePx: def.rangeTiles * deps.TILE,
+      maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
       ammoId: ammoPayload?.ammoId || 'enemy',
@@ -874,17 +885,32 @@
     return nearest;
   }
 
+  // 1 out to effectiveRangePx (the weapon's tuned range), then a linear
+  // taper down to RANGE_FALLOFF_MIN_FRACTION at maxDistancePx (where the
+  // projectile actually despawns — see updateProjectiles). A shot that
+  // hits within its intended range always deals full damage; one that
+  // outran it lands weaker the further past that point it's traveled.
+  function projectileFalloffMultiplier(p) {
+    if (p.distancePx <= p.effectiveRangePx) return 1;
+    const tailPx = Math.max(1, p.maxDistancePx - p.effectiveRangePx);
+    const beyondPx = Math.min(tailPx, p.distancePx - p.effectiveRangePx);
+    return 1 - (beyondPx / tailPx) * (1 - RANGE_FALLOFF_MIN_FRACTION);
+  }
+
   function projectileHit(p) {
     const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
     const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const falloff = projectileFalloffMultiplier(p);
+    const damage = Math.max(1, p.def.damage * falloff);
+    const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
       if (!nearest) return false;
       const c = nearest.creature;
-      deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       deps.awardRangedMastery?.(p.itemKey);
       return true;
@@ -900,12 +926,12 @@
     if (!nearest) return false;
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
-      deps.damageCreature(nearest.actor, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return true;
     }
-    deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
     return true;
   }
