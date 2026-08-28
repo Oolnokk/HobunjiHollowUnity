@@ -26,6 +26,7 @@ assert(editor.includes('Audience reactions'), 'base editor still exposes crowd r
 assert(editor.includes('Nickname this NPC uses'), 'directional NPC nicknames remain authorable');
 assert(editor.includes('ambient-dialogue.json'), 'editor imports/exports the shared runtime config');
 assert(editor.includes('animal-voice-independent-playback.js'), 'animal editor loads the fixed voice playback helper');
+assert.doesNotMatch(editor, /tempoMin|tempoMax|pitchMinSemitones|pitchMaxSemitones|tempoContour|pitchContourSemitones|frequency analysis|normalization/i, 'base editor no longer contains the dead modulation UI');
 
 assert.match(simpleVoiceEditor, /Simple voice model:/, 'Animals tab is replaced by simple fixed voice model');
 assert.match(simpleVoiceEditor, /Recording base tuning/, 'each source sound gets fixed base tuning');
@@ -49,6 +50,13 @@ assert.doesNotMatch(vocalRuntime, /tempoMin|tempoMax|pitchMinSemitones|pitchMaxS
 assert.match(playback, /clipTuning\.tempo \* utteranceTempo/, 'playback combines base recording speed with exact utterance tempo');
 assert.match(playback, /clipTuning\.pitchSemitones \+ utterancePitch \+ sizePitch/, 'playback combines only the three requested pitch layers');
 assert.doesNotMatch(playback, /yinFrame|spectralCentroid|setNormalizationProfiles|spliceTempoChannels/, 'analysis/normalization/splice modulation code is removed');
+
+const animalConfigText = JSON.stringify(config.animalVocalizations || {});
+assert.doesNotMatch(animalConfigText, /tempoMin|tempoMax|pitchMinSemitones|pitchMaxSemitones|tempoContour|pitchContourSemitones/, 'saved config contains only fixed tuning');
+assert.deepEqual(config.animalVocalizations?.default?.sizePitchSemitones, { small: 2.5, medium: 0, large: -2.5 }, 'size-class pitch is one global map');
+assert.equal(config.animalVocalizations?.drenkirra?.clipTuning?.['sfx_drenkirra1.ogg']?.tempo, 1, 'Drenkirra recording base speed is explicit');
+assert.ok(Array.isArray(config.animalVocalizations?.drenkirra?.warning?.utterances), 'Drenkirra warning has explicit utterance rows');
+assert.ok(Array.isArray(config.animalVocalizations?.grehlr?.growl?.utterances), 'Grehlr growl has explicit utterance rows');
 
 assert(runtime.includes('npcGreetings'), 'runtime consumes per-NPC greeting pools');
 assert(runtime.includes('npcNicknames'), 'runtime consumes directional NPC nicknames');
