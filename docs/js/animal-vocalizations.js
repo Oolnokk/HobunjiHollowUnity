@@ -2,9 +2,9 @@
   'use strict';
 
   // Semantic animal-call scheduler. Audio authoring is intentionally simple:
-  // each response owns an explicit list of fixed utterances, each recording
-  // has one fixed base tempo/pitch, and one global size-class pitch map is
-  // added on top. There are no random pitch/tempo ranges or modulation curves.
+  // each response owns an explicit list of fixed utterances, each indexed
+  // recording has one global fixed base tempo/pitch, and one global size-class
+  // pitch map is added on top. There are no random pitch/tempo modulation curves.
   let deps = null;
   let authoredProfiles = {};
   const states = new WeakMap();
@@ -78,7 +78,7 @@
     ? new URL('environmental-reverb.js?v=20260828room1', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-independent-playback.js?v=20260828simple1', MODULE_BASE_SRC).href
+    ? new URL('animal-voice-independent-playback.js?v=20260828library1', MODULE_BASE_SRC).href
     : null;
 
   function requestEnvironmentalReverbModule() {
@@ -182,7 +182,9 @@
       chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
       warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
       growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
-      clipTuning: { ...(common.clipTuning || {}), ...(species.clipTuning || {}) },
+      // Recording base tuning is deliberately global: the same indexed sound
+      // keeps the same base identity no matter which species response uses it.
+      clipTuning: { ...(common.clipTuning || {}) },
       sizePitchSemitones: globalSizePitchMap(),
       discoveryText: {
         ...PROFILE_DEFAULTS.discoveryText,
