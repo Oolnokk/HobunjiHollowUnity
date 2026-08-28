@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ai/tool-impact-sfx
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -35,7 +38,6 @@ jobs:
                   raise SystemExit(f'{label}: expected exactly 1 match, got {count}')
               return text.replace(old, new, 1)
 
-          # Register the new root-level recordings in the existing object-SFX table.
           old_dig = '''      "dig": {
         "files": [
           "assets/audio/sfx/farming/sfx_dig.mp3"
@@ -74,7 +76,6 @@ jobs:
       },'''
           config = replace_once(config, old_dig, new_dig, 'object SFX config')
 
-          # Central helper keeps all tool sounds on AudioSystem's configured gain/fallback path.
           state_anchor = '''      let pendingAction = null;
       let strikeFired   = false;
 '''
@@ -88,7 +89,6 @@ jobs:
 '''
           game = replace_once(game, state_anchor, state_replacement, 'tool SFX helper anchor')
 
-          # Only animation stages that actually make contact get an impact cue.
           thrust_stage = "        { anim: 'thrust', dur },"
           if game.count(thrust_stage) != 2:
               raise SystemExit(f'dig/dew thrust stages: expected 2 matches, got {game.count(thrust_stage)}')
@@ -110,8 +110,6 @@ jobs:
               "      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55, sfxKey: 'pick' }));",
               'mine stages')
 
-          # Held charge sequences intentionally have pendingAction=null. Give them their own
-          # one-shot at the same strike fraction used by ordinary tool actions.
           strike_gate = '''        if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
           firePendingAction();
@@ -131,7 +129,6 @@ jobs:
 '''
           game = replace_once(game, strike_gate, strike_replacement, 'strike timing gate')
 
-          # Terminal cues live in authoritative success branches, never visual cleanup/regrowth.
           axe_pattern = re.compile(r"(if \(tool === 'axe' && action === 'chop' && isChoppableTreeTile\(col, row\)\) \{[\s\S]*?awardToolUseMasteryXp\('axe'\);)")
           game, axe_count = axe_pattern.subn(r"\1\n          playConfiguredToolSfx('breakTree');", game, count=1)
           if axe_count != 1:
@@ -143,10 +140,8 @@ jobs:
 
           test_path.write_text(r'''const fs = require('fs');
 const assert = require('assert');
-
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
-
 for (const file of ['sfx_dig.mp3', 'sfx_pick.mp3', 'sfx_chop.mp3', 'sfx_break_tree.mp3', 'sfx_break_rock.mp3']) {
   assert(config.includes(`assets/audio/sfx/${file}`), `missing configured ${file}`);
 }
