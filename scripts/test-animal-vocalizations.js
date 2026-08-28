@@ -8,7 +8,12 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/animal-vocalizations.js'), 'utf8');
-const window = {};
+const overheadText = [];
+const window = {
+  AmbientDialogue: {
+    show: (rootObject, text, opts) => { overheadText.push({ rootObject, text, opts }); return {}; },
+  },
+};
 vm.runInNewContext(source, { window, Math, Date }, { filename: 'animal-vocalizations.js' });
 
 let clock = 0;
@@ -27,7 +32,7 @@ window.AnimalVocalizations.init({
 });
 
 function creature(id, creatureKey = 'gar-wolf') {
-  return { id, creatureKey, health: 10, state: 'idle' };
+  return { id, creatureKey, health: 10, state: 'idle', avatarRef: { group: { id: `${id}-group` } } };
 }
 function tick(c, seconds, opts) {
   clock += seconds;
@@ -67,7 +72,7 @@ tick(growler, 0.045, { threatened: true });
 assert.ok(window.AnimalVocalizations.scalePulse(growler) > 1
   && window.AnimalVocalizations.scalePulse(growler) <= 1.025, 'generic envelope retains an optional tiny scale-pulse utility');
 assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) < 0
-  && window.AnimalVocalizations.headNodOffsetDeg(growler) >= -4, 'rendered utterance produces a slight upward nod in the animal rig convention');
+  && window.AnimalVocalizations.headNodOffsetDeg(growler) >= -10, 'rendered utterance produces the authored 10-degree upward nod in the animal rig convention');
 assert.ok(window.AnimalVocalizations.debugSnapshot().maxHeadNodDeg < 0, 'mobile diagnostics expose the signed upward nod angle');
 tick(growler, 0.2, { threatened: true });
 assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse settles exactly to authored scale');
@@ -84,6 +89,29 @@ tick(delayed, 0.045, { threatened: true });
 assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) < 0, 'upward nod begins from the actual audible playback event');
 autoStartAudio = true;
 
+window.AnimalVocalizations.setAuthoredProfiles({
+  'gar-wolf': {
+    warning: { repeats: 2, intervalMs: 300, volumeMin: 0.6, volumeMax: 0.6, rateMin: 1.1, rateMax: 1.1 },
+    growl: { rateContour: [1, 1.4, 0.8] },
+    discoveryText: { 'animal-den': ['Den! Den!'] },
+  },
+});
+const authoredProfile = window.AnimalVocalizations.profileForDebug(creature('profile'));
+assert.equal(authoredProfile.warning.repeats, 2, 'species warning repeat count comes from authored profile');
+assert.equal(authoredProfile.warning.intervalMs, 300, 'species warning rhythm comes from authored profile');
+assert.deepEqual(Array.from(authoredProfile.growl.rateContour), [1, 1.4, 0.8], 'species growl contour comes from authored profile');
+const authored = creature('authored');
+const authoredStart = clock;
+assert.equal(window.AnimalVocalizations.companionDiscovery(authored, 'animal-den'), true);
+tick(authored, 0.3, { threatened: false });
+const authoredCalls = rendered.filter(x => x.id === 'authored');
+assert.equal(authoredCalls.length, 2, 'authored warning repeat count drives rendered utterances');
+assert.deepEqual(authoredCalls.map(x => Number((x.at - authoredStart).toFixed(2))), [0, 0.3], 'authored warning interval drives cadence');
+assert.ok(authoredCalls.every(x => x.volume === 0.6 && x.rate === 1.1), 'authored warning volume and rate drive playback');
+assert.equal(overheadText.at(-1)?.text, 'Den! Den!', 'reason-specific animal text is shown with the audible warning');
+assert.equal(window.AnimalVocalizations.debugSnapshot().textRendered > 0, true, 'mobile diagnostics count authored overhead animal text');
+window.AnimalVocalizations.setAuthoredProfiles({});
+
 const prioritized = creature('priority');
 assert.equal(window.AnimalVocalizations.warning(prioritized, 'territorial-boundary'), true);
 assert.equal(window.AnimalVocalizations.threatGrowl(prioritized, 'attack'), false, 'growl cannot interrupt a warning');
@@ -94,6 +122,8 @@ assert.doesNotMatch(banditSource, /AudioSystem/, 'perception producer must not c
 assert.match(banditSource, /requestCompanionDiscovery\?\.\(c, 'bandit-camp'\)/);
 assert.match(banditSource, /requestCompanionDiscovery\?\.\(c, 'animal-den'\)/);
 assert.doesNotMatch(source, /new Audio\s*\(|window\.AudioSystem/, 'semantic coordinator must remain audio-backend agnostic');
+assert.match(source, /config\/dialogue\/ambient-dialogue\.json/, 'semantic coordinator reads per-species authoring from the existing ambient dialogue config');
+assert.match(source, /AmbientDialogue\.show/, 'semantic coordinator can associate an audible utterance with authored overhead text');
 
 const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence drives passive chatter');
