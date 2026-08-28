@@ -15,6 +15,8 @@ assert.match(source, /0\.5 - 0\.5 \* Math\.cos\(Math\.PI \* t\)/, 'splice weight
 assert.match(source, /function cubicSample\(/, 'pitch resampling uses cubic interpolation');
 assert.match(source, /output\[index\] = cubicSample\(channel, index \* safeRatio\)/, 'normal pitch resampling uses cubic samples');
 assert.match(source, /output\[index\] = cubicSample\(channel, index \/ safeStretch\)/, 'short-clip stretch fallback also uses cubic samples');
+assert.match(source, /const WSOLA_OVERLAP_RATIO = 0\.62/, 'WSOLA uses a larger overlap region for smoother joins');
+assert.match(source, /const WSOLA_CORRELATION_STEP = 2/, 'WSOLA searches waveform alignment at a finer resolution');
 assert.match(source, /const SEGMENT_CROSSFADE_S = 0\.026/, 'contour-stage joins use a longer 26 ms crossfade');
 assert.match(source, /const OUTPUT_EDGE_FADE_S = 0\.006/, 'rendered calls get a tiny six millisecond edge ramp');
 assert.match(source, /const OUTPUT_TAIL_PAD_S = 0\.018/, 'rendered calls retain a short silent tail after the release ramp');
