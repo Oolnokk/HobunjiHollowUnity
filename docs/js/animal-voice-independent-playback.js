@@ -17,6 +17,7 @@
   const previewHandles = new Set(); // Used by stopAllPreviews so the authoring tool can stop every in-flight audition cleanly.
   let sharedContext = null; // Used by ensureContext so all short animal utterances share one Web Audio graph/context instead of creating one per sound.
   let installed = false; // Used by installAudioSystemAdapter/isInstalled to prevent wrapping AudioSystem more than once.
+  let lastPlaybackError = null; // Used by debugSnapshot/editor diagnostics so blocked mobile playback does not fail silently.
 
   function finite(value, fallback) {
     const number = Number(value); // Used below as the normalized finite numeric candidate.
@@ -51,6 +52,28 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function primeAudioContext() {
+    const context = ensureContext(); // Created/resumed directly from pointer/key gestures so Android does not leave later timer-driven previews routed into a suspended graph.
+    if (!context || context.state === 'running') return true;
+    if (context.state === 'suspended') {
+      try {
+        const resumed = context.resume();
+        resumed?.catch?.(error => { lastPlaybackError = error; });
+      } catch (error) {
+        lastPlaybackError = error;
+      }
+    }
+    return context.state === 'running';
+  }
+
+  function installGestureUnlock() {
+    if (typeof window.addEventListener !== 'function') return;
+    const unlock = () => { primeAudioContext(); }; // Runs before click handlers/timers, preserving the browser's transient user activation for Web Audio resume.
+    window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+    window.addEventListener('touchstart', unlock, { capture: true, passive: true });
+    window.addEventListener('keydown', unlock, { capture: true });
   }
 
   function createControlBuffers(context) {
@@ -186,9 +209,9 @@
     const tempoContour = Array.isArray(opts.tempoContour) ? opts.tempoContour.map(clampTempo) : null; // Used after audible start for independent within-call tempo changes.
     const pitchContour = Array.isArray(opts.pitchContourSemitones) ? opts.pitchContourSemitones.map(clampPitch) : null; // Used after audible start for independent within-call pitch changes.
     const contourSegmentMs = Math.max(40, finite(opts.contourSegmentMs, CONTOUR_SEGMENT_MS)); // Used by both contour axes so their authored stages stay synchronized.
-    const context = ensureContext(); // Used for independent pitch processing when Web Audio is available.
+    const context = ensureContext(); // Used for independent pitch processing when Web Audio is available and already unlocked.
     const timers = []; // Used by stop/cleanup to cancel scheduled JS contour transitions.
-    let shifter = null; // Created below only when a MediaElementSource can be routed through Web Audio successfully.
+    let shifter = null; // Created below only when a MediaElementSource can be routed through a running Web Audio context successfully.
     let source = null; // Used by cleanup to disconnect the MediaElementSource created for this one utterance.
     let output = null; // Used by cleanup to disconnect this utterance's final gain node.
     let stopped = false; // Used by notifyStarted/cleanup so late events cannot restart state after an explicit stop.
@@ -197,9 +220,12 @@
     setPitchPreservation(audio, true);
     audio.playbackRate = tempo;
 
-    if (context) {
+    if (context?.state === 'suspended') primeAudioContext();
+    // Never route a media element into a still-suspended context: doing so
+    // steals its native output and produces silence on Android. If resume has
+    // not completed yet, fall back to ordinary <audio> for this utterance.
+    if (context?.state === 'running') {
       try {
-        if (context.state === 'suspended') context.resume().catch(() => {});
         source = context.createMediaElementSource(audio);
         output = context.createGain();
         output.gain.value = 1;
@@ -212,9 +238,9 @@
       }
     }
 
-    // If Web Audio is unavailable, keep the sound audible rather than failing.
-    // This fallback necessarily re-couples pitch/speed because basic <audio>
-    // cannot shift pitch independently; supported browsers use the graph above.
+    // If Web Audio is unavailable/not yet unlocked, keep the sound audible
+    // rather than failing. This one-call fallback necessarily re-couples
+    // pitch/speed; the gesture unlock makes later calls independent again.
     if (!shifter && Math.abs(pitchSemitones) > PITCH_EPSILON_SEMITONES) {
       setPitchPreservation(audio, false);
       audio.playbackRate = clampTempo(tempo * Math.pow(2, pitchSemitones / 12));
@@ -250,6 +276,7 @@
     function notifyStarted() {
       if (startNotified || stopped) return;
       startNotified = true;
+      lastPlaybackError = null;
       scheduleContours();
       opts.onStarted?.();
     }
@@ -270,11 +297,29 @@
       cleanup();
     }
 
-    const handle = { audio, stop, setPitchSemitones: value => shifter?.setPitchSemitones(value), setTempo: value => { audio.playbackRate = clampTempo(value); } }; // Returned to the editor so previews can be stopped/re-tuned without touching runtime scheduler state.
+    const handle = {
+      audio,
+      stop,
+      independentPitch: !!shifter,
+      setPitchSemitones: value => shifter?.setPitchSemitones(value),
+      setTempo: value => { audio.playbackRate = clampTempo(value); },
+    }; // Returned to the editor so previews can be stopped/re-tuned without touching runtime scheduler state.
     audio.addEventListener?.('playing', notifyStarted, { once: true });
     audio.addEventListener?.('ended', cleanup, { once: true });
-    const playResult = nativePlay ? nativePlay.call(audio) : audio.play(); // Uses the unpatched native method when invoked from the AudioSystem interception path.
-    if (playResult?.then) playResult.then(notifyStarted).catch(() => cleanup());
+    let playResult = null;
+    try {
+      playResult = nativePlay ? nativePlay.call(audio) : audio.play(); // Uses the unpatched native method when invoked from the AudioSystem interception path.
+    } catch (error) {
+      lastPlaybackError = error;
+      opts.onError?.(error);
+      cleanup();
+      return handle;
+    }
+    if (playResult?.then) playResult.then(notifyStarted).catch(error => {
+      lastPlaybackError = error;
+      opts.onError?.(error);
+      cleanup();
+    });
     return handle;
   }
 
@@ -330,14 +375,27 @@
     previewHandles.clear();
   }
 
+  function debugSnapshot() {
+    const context = sharedContext; // Used by the editor/Pixel Probe to distinguish an audio lock from missing voice data.
+    return {
+      installed,
+      contextState: context?.state || 'unavailable',
+      previewCount: previewHandles.size,
+      lastPlaybackError: lastPlaybackError ? String(lastPlaybackError?.message || lastPlaybackError) : null,
+    };
+  }
+
   window.AnimalVoiceIndependentPlayback = {
     installAudioSystemAdapter,
     preview,
     stopAllPreviews,
+    primeAudioContext,
     clampPitch,
     clampTempo,
+    debugSnapshot,
     isInstalled: () => installed,
   };
 
+  installGestureUnlock();
   installAudioSystemAdapter();
 })();
