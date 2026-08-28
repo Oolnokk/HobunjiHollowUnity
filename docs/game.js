@@ -15503,6 +15503,7 @@
           window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
+          playConfiguredToolSfx('breakTree');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
           const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
@@ -15538,6 +15539,7 @@
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
+          playConfiguredToolSfx('breakRock');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
           return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
         }
@@ -18834,6 +18836,11 @@
       let pendingAction = null;
       let strikeFired   = false;
 
+      function playConfiguredToolSfx(key) {
+        const entry = window.AudioSystem?.objectSfxConfig?.()?.[key]; // Used by strike-stage and terminal tool-result cues below.
+        if (entry) window.AudioSystem?.playObjectSfx(entry);
+      }
+
       // True while the primary action input (key/click/button) is physically held
       // down. Drives the multi-stage dig/fill charge below — releasing it, or
       // retargeting a different tile, mid-charge cancels the whole thing.
@@ -18848,14 +18855,14 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig' },
         { anim: 'toss',   dur },
       ]);
       // Digging up a dew pile — same held input and same two-animation
       // (thrust/toss) shape as digging a brand-new trench, just at half the
       // base duration per rep.
       const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig' },
         { anim: 'toss',   dur },
       ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
@@ -18864,8 +18871,8 @@
       // quick stance reset. Repeats 3x like the old plain fill swings did.
       const REFILL_TURN_ANGLE = Math.PI / 4;
       const REFILL_FLOURISH_REP = [
-        { anim: 'refillTurnOut',    dur: 1.0  },
-        { anim: 'refillStrikeBack', dur: 0.5  },
+        { anim: 'refillTurnOut',    dur: 1.0,  sfxKey: 'dig' },
+        { anim: 'refillStrikeBack', dur: 0.5,  sfxKey: 'dig' },
         { anim: 'refillTwistOut',   dur: 0.25 },
         { anim: 'refillTwistBack',  dur: 0.25 },
         { anim: 'refillReset',      dur: 0.15 },
@@ -18878,7 +18885,7 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55, sfxKey: 'chop' }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
@@ -18886,7 +18893,7 @@
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
       // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55 }));
+      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55, sfxKey: 'pick' }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -20217,8 +20224,15 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
+        if (chargeAction && !strikeFired && progress >= SF) {
+          strikeFired = true;
+          const chargeSfxKey = chargeAction.stages?.[chargeAction.stage]?.sfxKey; // Used to sound only authored contact stages, not toss/twist/reset stages.
+          if (chargeSfxKey) playConfiguredToolSfx(chargeSfxKey);
+        }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
+          const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
+          if (pendingSfxKey) playConfiguredToolSfx(pendingSfxKey);
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;

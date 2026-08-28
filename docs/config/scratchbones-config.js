@@ -3547,7 +3547,7 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.5
           },
           "dig": {
-            "url": "assets/audio/sfx/farming/sfx_dig.mp3",
+            "url": "assets/audio/sfx/sfx_dig.mp3",
             "placeholderUrls": [
               "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
               "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
@@ -3558,6 +3558,22 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.95,
             "pitch": 0.8,
             "gainBoost": 3
+          },
+          "pick": {
+            "url": "assets/audio/sfx/sfx_pick.mp3",
+            "volume": 0.8
+          },
+          "chop": {
+            "url": "assets/audio/sfx/sfx_chop.mp3",
+            "volume": 0.8
+          },
+          "breakTree": {
+            "url": "assets/audio/sfx/sfx_break_tree.mp3",
+            "volume": 0.8
+          },
+          "breakRock": {
+            "url": "assets/audio/sfx/sfx_break_rock.mp3",
+            "volume": 0.8
           },
           "climbStep": {
             "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
