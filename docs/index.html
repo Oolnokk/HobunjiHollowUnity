@@ -32,7 +32,7 @@
   <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260826headrig2"></script>
+  <script src="js/png-plane-avatar.js?v=20260828neck1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -62,9 +62,9 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260821c"></script>
+  <script src="js/creature-genetics.js?v=20260828breath1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260826headrig2"></script>
+  <script src="js/creature-genetics-render.js?v=20260828eyes1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -142,7 +142,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260825hitbox2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260828necklook1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -203,7 +203,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260826rigv9xray"></script>
+  <script src="js/farm-animals.js?v=20260828breath1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -1958,7 +1958,7 @@
        window.DialogueContent.init(...) during its own setup.
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
-  <script src="js/dialogue-content.js?v=20260821alchemy1"></script>
+  <script src="js/dialogue-content.js?v=20260828expr1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260825worldprompt2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
@@ -2024,7 +2024,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828toolsfx3"></script>
+  <script src="game.js?v=20260828animtasks1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

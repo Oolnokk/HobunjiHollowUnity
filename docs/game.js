@@ -483,7 +483,7 @@
         window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
         if (_dialogueWalker) {
-          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -3690,27 +3690,11 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
-        // During dialogue, glance at the NPC's head the same way
-        // faceNpcDialogueParticipants makes the NPC glance back at the
-        // player's — "vice versa" (item 7): the neck targets the FULL
-        // instant angle to the NPC, residual against the body's own
-        // (slower-lerping) current yaw, clamped to the same authored
-        // npcHeadMaxYawDeg config both sides share, rather than the
-        // ordinary player.angle-based aim convention below (which is
-        // already the body's own smoothed target, so it carries no
-        // independent "head leads body" glance of its own).
-        const dialogueWalker = dialogueOpen ? (npcDialogueStaging?.walker || _dialogueWalker) : null;
-        if (dialogueWalker?.root) {
-          const npcX = dialogueWalker.root.position.x, npcZ = dialogueWalker.root.position.z;
-          const playerWorldX = player.x / TILE, playerWorldZ = player.y / TILE;
-          const targetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
-          const targetWorldYaw = -targetAngle + Math.PI / 2;
-          const maxHeadYawRad = (npcDialogueStagingConfig().npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
-          const residual = angleDiff(targetWorldYaw, playerMesh.rotation.y);
-          playerNeckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
-          playerNeckJoint.rotation.x = 0;
-          return;
-        }
+        // During dialogue, faceNpcDialogueParticipants owns the player's
+        // neck bone exclusively (a continuous eye-contact aim at the NPC —
+        // see its own comment) — step aside entirely rather than fighting
+        // it with a second, different rotation write on the same bone.
+        if (dialogueOpen) return;
         // Shoulder-surf: the head locks onto the shared aim point
         // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
         // raycast) rather than the camera's own raw azimuth. Those two agree
@@ -5910,13 +5894,32 @@
       // combat target (player or another creature) via
       // _combatTargetHeadWorld instead of always assuming the player.
       function _updateCreatureHeadLookAtCombatTarget(c, target, dt) {
-        if (!target) { _restoreCompanionHead(c, dt); return; }
+        if (!target) {
+          _restoreCompanionHead(c, dt);
+          if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+          return;
+        }
         const head = _combatTargetHeadWorld(target);
         const dx = head.x - c.x, dy = head.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        // Yaw: corrects for the gap between the target's exact bearing and
+        // wherever this creature's body is currently facing (c.facing, one
+        // frame stale here — same convention/timing bandit's own
+        // _updateBanditLookAtTarget already relies on) -- the body's own
+        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
+        // ever snaps to a handful of discrete facings, so without this the
+        // head can visibly undershoot exactly where the target's face is
+        // even once the body looks "close enough," reading as not locked
+        // on at all.
+        if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
+          const rawBearing = Math.atan2(dy, dx);
+          const residualRad = angleDiff(rawBearing, c.facing || 0);
+          const yawDeg = Math.max(-30, Math.min(30, residualRad * 180 / Math.PI));
+          c.avatarRef.updateHeadYaw(yawDeg, dt);
+        }
       }
 
       function _tickShoulderPetCuriosity(c, dt) {
@@ -7945,6 +7948,14 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
+      // of a dialogue portrait's canvas/profile, kept around so
+      // _tickPlayerPortraitLife can cheaply re-render just the front texture
+      // (blink/breathing) every so often without repeating the full gear/
+      // cosmetic rebuild refreshPlayerAvatar() itself does.
+      let playerAvatarGroup = null;
+      let playerAvatarFrontCanvas = null;
+      let playerAvatarProfile = null;
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
       // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
       // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
@@ -9450,6 +9461,38 @@
         player.vy = 0;
       }
 
+      // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
+      // Author's actor gaze system (aimActorNeckAtTarget/actorEyeWorldPosition
+      // in docs/tools/animation-author/index.html — used there for e.g. the
+      // dance preset, where two actors of different heights still need to
+      // convincingly meet each other's eyes): computes yaw AND pitch together
+      // from the real 3D direction between two eye-height world points, then
+      // transforms that direction into the neck bone's own parent space, so
+      // the result is automatically correct regardless of how the body is
+      // currently rotated — unlike aiming at the residual gap against the
+      // body's own (slower) facing lerp, this doesn't decay back toward zero
+      // once the body catches up. Called every frame, it holds a steady
+      // "looking at you" pose for as long as it keeps being called, which is
+      // what a conversation needs (the gaze should persist for the whole
+      // exchange, not just the moment right after it opens).
+      function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
+        return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg) {
+        if (!neckJoint?.parent) return false;
+        neckJoint.parent.updateMatrixWorld(true);
+        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const horizontal = Math.hypot(direction.x, direction.z);
+        if (direction.lengthSq() < 1e-8) return false;
+        const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        return true;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -9465,15 +9508,20 @@
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
-        // Head rotation: the body above only catches up to npcTargetRot
-        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
-        // neck bone at however much of that gap remains right now (clamped to
-        // a natural-looking max) — the NPC glances at the player immediately
-        // and the head straightens on its own as the body finishes turning.
+        // Eye contact: aims BOTH the NPC's and the player's own neck bone
+        // straight at the other's eyes, held for the whole conversation (see
+        // _aimNeckAtEyeContact above) — this owns the player's neck bone
+        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
+        // for exactly this reason, see its own dialogueOpen guard).
+        walker.root.updateMatrixWorld(true);
+        playerMesh.updateMatrixWorld(true);
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
-          const residual = angleDiff(npcTargetRot, walker.rot);
-          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg);
+        }
+        if (playerNeckJoint) {
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg);
         }
       }
 
@@ -10499,9 +10547,81 @@
         window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
       }
 
+      // ── World-space blink/breathing/default-expression (item 3) ─────────
+      // The dialogue/cutscene portrait canvas already re-renders periodically
+      // with the breathing composer (see runAnimation's own breathTimer just
+      // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
+      // blinks/breathes and shows each NPC's own authored restingExpression
+      // — the WORLD-space walking avatar never did, since makeNpcWalker/
+      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
+      // at spawn/gear-change and never touch it again. This applies that
+      // same periodic-recompose idea (the identical cheap
+      // refreshSinglePlaneAvatarModel texture-only path runAnimation already
+      // uses, not a full geometry rebuild) to both NPC walkers and the
+      // player, at a coarser interval than dialogue's 120ms since many NPCs
+      // can be on screen at once — and only the player's current area's
+      // walkers pay this cost at all (see the area guard below).
+      function _worldPortraitLifeConfig() {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
+        return {
+          enabled: cfg.enabled !== false,
+          intervalS: Number.isFinite(Number(cfg.intervalS)) ? Number(cfg.intervalS) : 0.16,
+        };
+      }
+
+      function _tickNpcPortraitLife(walker, dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || walker.area !== currentArea) return; // Only the player's current scene pays this cost.
+        if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
+        walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
+        if (walker._portraitLifeT < cfg.intervalS) return;
+        walker._portraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
+        if (!walker._portraitLifeExpressionSet) {
+          // The NPC's own authored default expression (rec.restingExpression
+          // — see dialogue-content.js's _npcRestingExpression, now shared via
+          // window.DialogueContent.npcRestingExpression) applies here too, so
+          // a walking NPC shows the same resting face dialogue already gives
+          // them, not a generic neutral one. Set once per walker (this seatId
+          // is stable for its whole lifetime) rather than every tick.
+          composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
+          walker._portraitLifeExpressionSet = true;
+        }
+        if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
+        walker._portraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+        }).then(() => {
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+        }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
+      }
+
+      let _playerPortraitLifeT = 0;
+      let _playerPortraitLifePending = false;
+      function _tickPlayerPortraitLife(dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || _playerPortraitLifePending) return;
+        if (!playerAvatarGroup?.userData?.frontTexture || !playerAvatarFrontCanvas || !playerAvatarProfile) return;
+        _playerPortraitLifeT += dt;
+        if (_playerPortraitLifeT < cfg.intervalS) return;
+        _playerPortraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
+        _playerPortraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
+          breathingComposer: composer, seatId: 'player',
+        }).then(() => {
+          if (generation !== playerAvatarRefreshGeneration) return;
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
+        }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) w.update(dt);
+        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -13773,6 +13893,9 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
+        playerAvatarGroup = avatarGroup;
+        playerAvatarFrontCanvas = frontCanvas;
+        playerAvatarProfile = profile;
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -22353,6 +22476,7 @@
         }
         window.RangedWeapons?.update(dt);
         updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        _tickPlayerPortraitLife(dt);
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
