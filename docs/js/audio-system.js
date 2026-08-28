@@ -9,7 +9,12 @@
   // — the few bgm-side helpers this module needs (isRealMediaError,
   // markAudioUrlFailed, audioUrlFailed) are passed in via deps instead.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
+  let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    preloadConfiguredObjectSfx();
+  }
 
   function gameAudioConfig() {
     const direct = window.SCRATCHBONES_CONFIG?.game?.audio;
@@ -283,6 +288,22 @@
 
   function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
 
+  function preloadConfiguredObjectSfx() {
+    for (const [key, cfgEntry] of Object.entries(objectSfxConfig())) {
+      if (!cfgEntry?.preload || !cfgEntry.url || objectSfxPreloads.has(cfgEntry.url)) continue;
+      const snd = new Audio(cfgEntry.url);
+      snd.preload = 'auto';
+      snd.dataset.objectSfxKey = key;
+      snd.load();
+      objectSfxPreloads.set(cfgEntry.url, snd);
+    }
+  }
+
+  function createObjectSfxAudio(url) {
+    const preloaded = objectSfxPreloads.get(url); // Used to avoid a fresh network/decode start on the first tool strike.
+    return preloaded ? preloaded.cloneNode(true) : new Audio(url);
+  }
+
   // Generic one-shot player for object/machine/UI interaction sfx (see
   // audio.objectSfx in scratchbones-config.js and
   // docs/assets/audio/sfx/README.md) — like playOneShotSfx, but
@@ -350,7 +371,7 @@
     if (!url) return;
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
-    const snd = new Audio(url);
+    const snd = createObjectSfxAudio(url);
     snd.playbackRate = rate;
     if (preferReal && hasPlaceholder) {
       snd.addEventListener('error', () => {
@@ -366,7 +387,28 @@
 
   function playObjectSfxKey(key, volumeScale = 1, pitch = 1) {
     const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
+    const preloaded = cfgEntry?.url ? objectSfxPreloads.get(cfgEntry.url) : null; // Used by the mobile-readable debug snapshot below.
+    lastObjectSfxKeyDebug = {
+      key,
+      found: !!cfgEntry,
+      url: cfgEntry?.url || null,
+      preloaded: !!preloaded,
+      readyState: preloaded?.readyState ?? null,
+      atMs: Math.round(performance.now()),
+    };
     if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
+  }
+
+  function objectSfxDebugSnapshot() {
+    return {
+      last: lastObjectSfxKeyDebug ? { ...lastObjectSfxKeyDebug } : null,
+      preloads: [...objectSfxPreloads.entries()].map(([url, snd]) => ({
+        key: snd.dataset.objectSfxKey || '?',
+        url,
+        readyState: snd.readyState,
+        networkState: snd.networkState,
+      })),
+    };
   }
 
   // Distance falloff for a creature-originated combat sound (bark/claw
@@ -483,6 +525,7 @@
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,
+    objectSfxDebugSnapshot,
     playCreatureSfxAt,
     playCreatureBark,
     playCreatureTreasureAlert,

@@ -15503,7 +15503,6 @@
           window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
-          window.AudioSystem?.playObjectSfxKey?.('breakTree');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
           const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
@@ -15539,7 +15538,6 @@
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
-          window.AudioSystem?.playObjectSfxKey?.('breakRock');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
           return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
         }
@@ -18881,7 +18879,13 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55, sfxKey: 'chop' }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
+        pose: true,
+        dirSign,
+        dur: 0.55,
+        sfxKey: 'chop',
+        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
+      }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
@@ -18889,7 +18893,12 @@
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
       // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55, sfxKey: 'pick' }));
+      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
+        anim: 'thrust',
+        dur: 0.55,
+        sfxKey: 'pick',
+        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
+      }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -19007,7 +19016,16 @@
         // currently closer to, so the turn-out reads as a natural pivot.
         const turnDelta = angleDiff(0, playerFacing);
         const refillTurnSign = turnDelta === 0 ? 1 : Math.sign(turnDelta);
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages, refillTurnSign };
+        chargeAction = {
+          col: reticle.col,
+          row: reticle.row,
+          action: activeAction,
+          tool: activeTool,
+          stage: 0,
+          stages,
+          refillTurnSign,
+          finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
+        };
         beginChargeStage();
       }
 
@@ -19205,9 +19223,11 @@
       // or cancels it the moment the button is released or the target changes.
       function updateChargeAction() {
         if (!chargeAction) return;
-        if (!actionHeldDown) { cancelChargeAction(); return; }
-        const reticle = getReticleTile();
-        if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        if (!chargeAction.finalStrikeCommitted) {
+          if (!actionHeldDown) { cancelChargeAction(); return; }
+          const reticle = getReticleTile();
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
         if (chargeAction.stage >= chargeAction.stages.length) {
@@ -20223,8 +20243,13 @@
 
         if (chargeAction && !chargeStageSfxFired && progress >= SF) {
           chargeStageSfxFired = true;
-          const chargeSfxKey = chargeAction.stages?.[chargeAction.stage]?.sfxKey; // Used to sound only authored contact stages, not toss/twist/reset stages.
+          const stageDef = chargeAction.stages?.[chargeAction.stage]; // Used to resolve impact and final-break cues from the same contact frame.
+          const chargeSfxKey = stageDef?.sfxKey;
           if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
+          if (stageDef?.terminalSfxKey) {
+            chargeAction.finalStrikeCommitted = true;
+            window.AudioSystem?.playObjectSfxKey?.(stageDef.terminalSfxKey);
+          }
         }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
