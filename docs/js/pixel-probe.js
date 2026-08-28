@@ -824,6 +824,11 @@
       const lastCueAgeMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null; // Distinguishes a recent tool cue from unrelated companion footsteps.
       lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${lastCueAgeMs}ms ago found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
     }
+    const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
+    if (animalVoiceDebug) {
+      const last = animalVoiceDebug.last;
+      lines.push(`Animal voices: requested=${animalVoiceDebug.requested} rendered=${animalVoiceDebug.rendered} suppressed=${animalVoiceDebug.suppressed} active=${animalVoiceDebug.active} last=${last ? `${last.kind}/${last.reason || 'none'}/${last.species}` : 'none'}`);
+    }
     const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover state copyable on mobile without developer tools.
     if (volumeDebug) {
       const blocked = volumeDebug.lastBlock ? `${volumeDebug.lastBlock.kind}:${volumeDebug.lastBlock.object}@${volumeDebug.lastBlock.distanceWorld}u/${volumeDebug.lastBlock.ageMs}ms` : 'none';

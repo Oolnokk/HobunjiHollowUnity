@@ -10,10 +10,12 @@
   // markAudioUrlFailed, audioUrlFailed) are passed in via deps instead.
   let deps = null;
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
+  const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   function init(injectedDeps) {
     deps = injectedDeps;
     preloadConfiguredObjectSfx();
+    preloadAnimalVoices();
   }
 
   function gameAudioConfig() {
@@ -434,6 +436,80 @@
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
   }
 
+  const ANIMAL_VOICE_POOLS = Object.freeze({
+    'dabinggi-hound': Object.freeze(['assets/audio/sfx/sfx_dabinggi-hound1.ogg', 'assets/audio/sfx/sfx_dabinggi-hound2.ogg']),
+    drenkirra: Object.freeze(['assets/audio/sfx/sfx_drenkirra1.ogg', 'assets/audio/sfx/sfx_drenkirra2.ogg']),
+    'gar-wolf': Object.freeze(['assets/audio/sfx/sfx_gar-wolf1.ogg', 'assets/audio/sfx/sfx_gar-wolf2.ogg']),
+    grehlr: Object.freeze(['assets/audio/sfx/sfx_grehlr1.ogg', 'assets/audio/sfx/sfx_grehlr2.ogg']),
+    nelk: Object.freeze(['assets/audio/sfx/sfx_nelk1.ogg']),
+    uumkaoii: Object.freeze(["assets/audio/sfx/sfx_uumkao'ii1.ogg", "assets/audio/sfx/sfx_uumkao'ii2.ogg"]),
+  });
+
+  function animalVoiceSpeciesKey(c) {
+    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    if (raw.includes('dabinggi')) return 'dabinggi-hound';
+    if (raw.includes('gar-wolf')) return 'gar-wolf';
+    if (raw.includes('grehlr')) return 'grehlr';
+    if (raw.includes('drenkirra')) return 'drenkirra';
+    if (raw.includes('uumkao')) return 'uumkaoii';
+    if (raw.includes('nelk')) return 'nelk';
+    return raw;
+  }
+
+  function hasAnimalVoice(c) { return !!ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]?.length; }
+
+  function preloadAnimalVoices() {
+    if (typeof Audio !== 'function') return;
+    for (const urls of Object.values(ANIMAL_VOICE_POOLS)) for (const url of urls) {
+      if (animalVoicePreloads.has(url)) continue;
+      const snd = new Audio();
+      snd.preload = 'auto';
+      snd.src = url;
+      // Assigning src with preload=auto is enough to begin browser fetching;
+      // avoid an extra load() restart while startup is also priming tool SFX.
+      animalVoicePreloads.set(url, snd);
+    }
+  }
+
+  function disablePitchPreservation(snd) {
+    try { snd.preservesPitch = false; } catch (_) {}
+    try { snd.mozPreservesPitch = false; } catch (_) {}
+    try { snd.webkitPreservesPitch = false; } catch (_) {}
+  }
+
+  // Low-level renderer only: the vocal coordinator decides what a call
+  // means and when each utterance is due; AudioSystem resolves the asset,
+  // distance mix, tempo/pitch playback, and browser Audio lifecycle.
+  function playAnimalVoiceUtterance(c, opts = {}) {
+    const pool = ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
+    if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
+    const audioCfg = gameAudioConfig();
+    if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
+    const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 12);
+    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    if (distance > earshot) return false;
+    const url = pool[Math.floor(Math.random() * pool.length)];
+    const preload = animalVoicePreloads.get(url);
+    const snd = preload?.cloneNode?.(true) || new Audio(url);
+    disablePitchPreservation(snd);
+    const falloff = Math.max(0, 1 - distance / earshot);
+    const baseVolume = Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : 0.7;
+    snd.volume = Math.max(0, Math.min(1, baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
+    if (snd.volume <= 0.002) return false;
+    const rate = Math.max(0.35, Math.min(2, Number(opts.rate) || 1));
+    snd.playbackRate = rate;
+    const contour = Array.isArray(opts.rateContour)
+      ? opts.rateContour.map(v => Math.max(0.35, Math.min(2, Number(v) || rate))) : null;
+    if (contour?.length >= 2) {
+      const segmentMs = 260;
+      contour.slice(1).forEach((nextRate, i) => setTimeout(() => {
+        if (!snd.ended && !snd.paused) snd.playbackRate = nextRate;
+      }, segmentMs * (i + 1)));
+    }
+    snd.play().catch(() => {});
+    return true;
+  }
+
   // Treasure discovery is a player-facing alert, not a combat bark. It needs
   // a little more reach and headroom than the ordinary creature sound: a
   // companion can notice a site several tiles away, while the normal bark's
@@ -528,6 +604,8 @@
     objectSfxDebugSnapshot,
     playCreatureSfxAt,
     playCreatureBark,
+    hasAnimalVoice,
+    playAnimalVoiceUtterance,
     playCreatureTreasureAlert,
     playCreatureClawHit,
     playWeaponSlashSfx,

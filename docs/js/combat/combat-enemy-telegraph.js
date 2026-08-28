@@ -16,7 +16,7 @@
   function start(c, { windupS, strikeS, onStrike }) {
     c._telegraph = { t: 0, windupS, strikeS, onStrike, struck: false };
     c.telegraphState = 'windup';
-    window.Combat.deps?.playCreatureBark?.(c);
+    window.Combat.deps?.requestThreatGrowl?.(c, 'attack-telegraph');
   }
 
   function update(c, dt) {

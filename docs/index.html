@@ -109,8 +109,8 @@
        animation" script above) and after resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20260828animalvoices1"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260828animalvoices1"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
@@ -141,7 +141,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260825desktop4"></script>
+  <script src="js/bandit-camps.js?v=20260828animalvoices1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -149,7 +149,7 @@
   <script src="js/bounty-board.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260826death1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260828animalvoices1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -1929,7 +1929,10 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260828toolsfx3"></script>
+  <script src="js/audio-system.js?v=20260828animalvoices1"></script>
+  <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
+       AudioSystem above remains the replaceable low-level renderer. -->
+  <script src="js/animal-vocalizations.js?v=20260828animalvoices1"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -1944,7 +1947,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260828toolsfx3"></script>
+  <script src="js/pixel-probe.js?v=20260828animalvoices1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2017,7 +2020,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828toolsfx3"></script>
+  <script src="game.js?v=20260828animalvoices1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
