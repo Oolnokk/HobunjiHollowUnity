@@ -9,13 +9,14 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const reverbSource = fs.readFileSync(path.join(root, 'docs/js/environmental-reverb.js'), 'utf8');
 const vocalSource = fs.readFileSync(path.join(root, 'docs/js/animal-vocalizations.js'), 'utf8');
+const playbackSource = fs.readFileSync(path.join(root, 'docs/js/animal-voice-independent-playback.js'), 'utf8');
 
 assert.doesNotThrow(() => new vm.Script(reverbSource), 'environmental reverb module parses');
 assert.match(vocalSource, /environmental-reverb\.js/, 'animal vocal bootstrap loads environmental reverb');
 assert.match(reverbSource, /parallel wet-only layer/, 'dry playback is intentionally left untouched');
 assert.match(reverbSource, /\/music\\\/|\\\/bgm\\\//, 'score is excluded from world reverb routing');
-assert.match(reverbSource, /ANIMAL_EXTRA_WET/, 'animals receive a small extra reverb tail');
-assert.match(reverbSource, /__independentAnimalVoiceWrapped/, 'animal wet tail waits for the independent WSOLA adapter');
+assert.match(reverbSource, /ANIMAL_EXTRA_WET/, 'environmental reverb retains its animal-tail tuning');
+assert.match(playbackSource, /EnvironmentalReverb\?\.connectWetNode/, 'fixed Web Audio animal playback sends directly into the map reverb bus');
 
 const window = {
   SCRATCHBONES_CONFIG: { game: { audio: { environmentalReverb: {} } } },
