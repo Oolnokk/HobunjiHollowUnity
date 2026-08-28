@@ -15647,6 +15647,16 @@
         // the forward-dodge climb context; keep this legacy branch inert for
         // saved bindings or stale UI events from older sessions.
         if (activeAction === 'climb') return;
+        // Tapping the listed "Climb Tree"/"Climb Down" prompt re-resolves
+        // the climb target fresh (it's proximity/facing based, not tied to
+        // the reticle tile, so the button's own moment-of-press state could
+        // be stale by the time the tap lands) and starts it immediately —
+        // unlike nest_take/bandit_tent_interact this isn't a hold action.
+        if (activeAction === 'climb_branch') {
+          const climb = window.ClimbSystem?.getClimbTarget?.();
+          if (climb) window.ClimbSystem.startClimb(climb);
+          return;
+        }
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -23158,6 +23168,12 @@
       // Buttons are packed into rows of 1, 2, 1, 2... (hex packing).
       // Each button: { icon, label, action, style, allowed }
 
+      // Climb targets are pure data (branchesByArea holds positions, not a
+      // per-branch mesh handle — trees are batched into merged chunk
+      // geometry), so the climb-tree prompt needs its own positioned anchor
+      // rather than the reticle-tile fallback other buttons share.
+      const _climbPromptAnchor = new THREE.Object3D();
+      _climbPromptAnchor.name = 'climb_prompt_anchor';
 
       function computeActionButtons() {
         // Sitting overrides every other action — Stand is the only way out,
@@ -23310,11 +23326,32 @@
           : null;
         if (banditTentAction) return [banditTentAction];
 
-        // Climbing is triggered by a forward dodge, not by the tool's
-        // Action 1 slot. Leaving the normal action stack here prevents an
-        // attack/item press from grabbing a nearby trunk.
+        // Climbing is still triggered by a forward dodge (see
+        // performContextAction) so an attack/item press never grabs a
+        // nearby trunk by accident — but a facing climb target also gets a
+        // listed prompt here purely for discoverability, since the dodge
+        // trigger itself is otherwise silent/undiscoverable.
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
+
+        if (_isZoneArea(currentArea) && !player.climbing) {
+          const climbTarget = window.ClimbSystem?.getClimbTarget?.();
+          if (climbTarget && (climbTarget.type === 'branch' || climbTarget.type === 'branchJumpDown')) {
+            const branch = climbTarget.branch;
+            const anchorX = branch ? (branch.baseX + branch.tipX) / 2 : player.x;
+            const anchorY = branch ? (branch.baseY + branch.tipY) / 2 : player.y;
+            const anchorWorldY = branch
+              ? Math.max(branch.baseWorldY ?? 0, branch.tipWorldY ?? 0) + 0.4
+              : (activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 1.2);
+            _climbPromptAnchor.position.set(anchorX / TILE, anchorWorldY, anchorY / TILE);
+            btns.push({
+              icon: climbTarget.type === 'branchJumpDown' ? '🪂' : '🧗',
+              label: climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree',
+              action: 'climb_branch', style: 'secondary', allowed: true,
+              worldInteraction: true, promptRoot: _climbPromptAnchor,
+            });
+          }
+        }
 
         // 0. World object at reticle — its buttons take priority. Town has
         // no worldObjects of its own (see its "farm-scene-only" comment
@@ -23453,6 +23490,7 @@
           || button?.action === 'use_spot'
           || button?.action === 'nest_take'
           || button?.action === 'bandit_tent_interact'
+          || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
         const interactionButton = btns.find(isWorldInteraction) || null;
         if (interactionButton) {
