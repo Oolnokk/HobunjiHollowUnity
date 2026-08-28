@@ -28,7 +28,6 @@
   let mediaPlayWrapped = false;
   let audioInitWrapped = false;
   let musicInitWrapped = false;
-  let animalRendererWrapped = false;
   let sharedContext = null;
   let lastError = null;
   let lastWetUrl = null;
@@ -39,9 +38,7 @@
     return Number.isFinite(number) ? number : fallback;
   }
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-  function config() {
-    return window.SCRATCHBONES_CONFIG?.game?.audio?.environmentalReverb || {};
-  }
+  function config() { return window.SCRATCHBONES_CONFIG?.game?.audio?.environmentalReverb || {}; }
   function enabled() { return config().enabled !== false; }
   function setAreaResolver(fn) { areaResolver = typeof fn === 'function' ? fn : null; }
   function setArea(area) {
@@ -55,7 +52,6 @@
     } catch (_) {}
     return lastKnownArea;
   }
-
   function mergeProfile(base, override) {
     const result = { ...base, ...(override || {}) };
     result.wet = clamp(finite(result.wet, base.wet), 0, MAX_WET);
@@ -64,7 +60,6 @@
     result.dampingHz = clamp(finite(result.dampingHz, base.dampingHz), 700, 16000);
     return result;
   }
-
   function presetForArea(area) {
     const id = String(area || '').toLowerCase();
     if (/cavern|cave|dungeon|mine|crypt|sewer|tunnel/.test(id)) return 'cavern';
@@ -76,7 +71,6 @@
     if (/cloud.?forest|forest|jungle|wilderness|woods/.test(id)) return 'forest';
     return 'outdoor';
   }
-
   function profileForArea(area = currentArea()) {
     const cfg = config();
     const exact = cfg.byArea?.[area];
@@ -89,7 +83,6 @@
     profile.wet = clamp(profile.wet * Math.max(0, finite(cfg.wetScale, 1)), 0, MAX_WET);
     return profile;
   }
-
   function ensureContext(preferred = null) {
     if (preferred && preferred.state !== 'closed') return preferred;
     if (sharedContext && sharedContext.state !== 'closed') return sharedContext;
@@ -104,7 +97,6 @@
       return null;
     }
   }
-
   function makeImpulse(context, profile) {
     const length = Math.max(1, Math.round(context.sampleRate * profile.decayS));
     const buffer = context.createBuffer(2, length, context.sampleRate);
@@ -121,7 +113,6 @@
     }
     return buffer;
   }
-
   function ensureBus(context, profile) {
     let state = contextBusByContext.get(context);
     if (!state) {
@@ -145,7 +136,6 @@
     }
     return state;
   }
-
   function connectWetNode(context, node, { volume = 1, wetOverride = null, extraWet = 0, area = null } = {}) {
     if (!enabled() || !context || !node?.connect) return null;
     const profile = profileForArea(area || currentArea());
@@ -162,12 +152,10 @@
       return null;
     }
   }
-
   function absoluteUrl(url) {
     try { return new URL(url, document.baseURI).href; }
     catch (_) { return String(url || ''); }
   }
-
   function decodeUrl(url, context) {
     const resolved = absoluteUrl(url);
     if (!resolved) return Promise.reject(new Error('Environmental reverb URL is empty'));
@@ -183,7 +171,6 @@
     while (decodedByUrl.size > MEDIA_DECODE_CACHE_LIMIT) decodedByUrl.delete(decodedByUrl.keys().next().value);
     return pending;
   }
-
   function playWetUrl(url, opts = {}) {
     if (!enabled() || !url) return null;
     const context = ensureContext(opts.context || null);
@@ -226,20 +213,16 @@
     });
     return handle;
   }
-
   function isWorldOneShot(media) {
     if (!media || media.dataset?.environmentalReverb === 'off') return false;
     if (media.loop) return false;
     const src = String(media.currentSrc || media.src || '').toLowerCase();
     if (!src) return false;
-    // Reverb volumes apply to diegetic/world sound. The non-diegetic score
-    // and UI stay dry, matching ordinary game-audio reverb-zone behavior.
     if (/\/music\/|\/bgm\/|\/ui\/|menu|button|click/.test(src)) return false;
     const duration = Number(media.duration);
     if (Number.isFinite(duration) && duration > MAX_ONE_SHOT_SECONDS) return false;
     return true;
   }
-
   function scheduleMediaWet(media) {
     if (!isWorldOneShot(media) || media.__environmentalWetPending) return;
     const volume = clamp(finite(media.volume, 1), 0, 1);
@@ -255,7 +238,6 @@
       });
     });
   }
-
   function installMediaPlayWrapper() {
     if (mediaPlayWrapped || !window.HTMLMediaElement?.prototype?.play) return false;
     const proto = window.HTMLMediaElement.prototype;
@@ -270,7 +252,6 @@
     mediaPlayWrapped = true;
     return true;
   }
-
   function wrapInitWithAreaResolver(namespace, flagName) {
     if (!namespace?.init || namespace[flagName]) return false;
     const original = namespace.init;
@@ -281,7 +262,6 @@
     namespace[flagName] = true;
     return true;
   }
-
   function wrapAreaBearingAudioMethods() {
     const audioSystem = window.AudioSystem;
     if (!audioSystem) return;
@@ -298,44 +278,6 @@
       audioSystem.playHeavyLandingSfx = wrapped;
     }
   }
-
-  function wrapIndependentAnimalRenderer() {
-    const audioSystem = window.AudioSystem;
-    const playback = window.AnimalVoiceIndependentPlayback;
-    if (animalRendererWrapped || !audioSystem?.__independentAnimalVoiceWrapped || !playback?.debugSnapshot) return false;
-    const original = audioSystem.playAnimalVoiceUtterance;
-    if (typeof original !== 'function') return false;
-    audioSystem.playAnimalVoiceUtterance = function environmentalAnimalVoice(c, opts = {}) {
-      if (c?.areaId) setArea(c.areaId);
-      let selectedUrl = null;
-      const originalStarted = opts.onStarted;
-      const wrappedOpts = {
-        ...opts,
-        onStarted: () => {
-          originalStarted?.();
-          const backend = playback.debugSnapshot?.().backend || '';
-          // Native fallback is already caught by the media-play wrapper, so
-          // add only the species' tiny extra tail there. WSOLA playback is a
-          // buffer source, so it receives the map wet amount plus that extra.
-          const nativeFallback = /native/i.test(backend);
-          if (selectedUrl) playWetUrl(selectedUrl, {
-            volume: clamp(finite(opts.volume, 0.7), 0, 1),
-            playbackRate: 1,
-            wetOverride: nativeFallback ? ANIMAL_EXTRA_WET : null,
-            extraWet: nativeFallback ? 0 : ANIMAL_EXTRA_WET,
-            area: c?.areaId || currentArea(),
-          });
-        },
-      };
-      const accepted = original.call(this, c, wrappedOpts);
-      selectedUrl = playback.debugSnapshot?.().lastUrl || null;
-      return accepted;
-    };
-    audioSystem.playAnimalVoiceUtterance.__environmentalReverbWrapped = true;
-    animalRendererWrapped = true;
-    return true;
-  }
-
   function install() {
     installMediaPlayWrapper();
     const audioSystem = window.AudioSystem;
@@ -345,9 +287,7 @@
     }
     const music = window.Music;
     if (music && !musicInitWrapped) musicInitWrapped = wrapInitWithAreaResolver(music, '__environmentalReverbInitWrapped') || musicInitWrapped;
-    wrapIndependentAnimalRenderer();
   }
-
   function debugSnapshot() {
     const profile = profileForArea();
     return {
@@ -360,7 +300,6 @@
       dampingHz: Math.round(profile.dampingHz),
       animalExtraWet: ANIMAL_EXTRA_WET,
       mediaPlayWrapped,
-      animalRendererWrapped,
       decodedWetClipCount: decodedByUrl.size,
       activeWetSources: activeWetSources.size,
       wetPlayCount,
