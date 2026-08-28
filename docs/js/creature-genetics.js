@@ -232,6 +232,21 @@
     );
     return true;
   }
+  // Subtle idle breathing — a small extra Y-scale multiplier layered on
+  // top of genotype size/attack squash (see applyCreatureBillboardScale's
+  // heightMultiplier param), one continuous sine per creature instance so
+  // every animal reads as alive even standing perfectly still. Phase is
+  // randomized once per avatarRef (not per kind/species) so a pack of the
+  // same creature doesn't all breathe in lockstep.
+  const BREATH_PERIOD_MS = 2600; // One full inhale-exhale cycle.
+  const BREATH_AMPLITUDE = 0.018; // ~1.8% peak height change — readable without looking like a squash/stretch animation.
+  function creatureBreathScaleY(avatarRef, nowMs) {
+    if (!avatarRef) return 1;
+    if (!Number.isFinite(avatarRef._breathPhase)) avatarRef._breathPhase = Math.random() * Math.PI * 2;
+    const t = Number.isFinite(nowMs) ? nowMs : performance.now();
+    return 1 + Math.sin((t / BREATH_PERIOD_MS) * Math.PI * 2 + avatarRef._breathPhase) * BREATH_AMPLITUDE;
+  }
+
   function creatureSizeTrait(kind, genotype) {
     const sizeScale = creatureSizeScale(kind, genotype); // Supplies UI labels and the same percentages used in-world.
     const defaultSizeClass = normalizeCreatureSizeClass(deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'); // Flags inherited non-default sizes.
@@ -464,6 +479,7 @@
     creatureSizeClass,
     creatureSizeScale,
     applyCreatureBillboardScale,
+    creatureBreathScaleY,
     creatureSizeTrait,
     genotypeTraits,
     paletteName: _furPaletteName,

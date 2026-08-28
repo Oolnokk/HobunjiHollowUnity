@@ -282,12 +282,36 @@
     backMesh.rotation.y = 0;
     frontMesh.position.z = 0;
     backMesh.position.z = 0;
+
+    // Gives this bandit a genuine neck-turn bone (see item 6: enemies
+    // glancing at their combat target) without touching the rigid
+    // frontPivot/backPivot Group structure the comment above explains --
+    // only frontMesh/backMesh themselves become SkinnedMesh, mirroring
+    // exactly how applyAnimalHeadRig upgrades an animal's front/backPlane
+    // in place. No authored weight map exists for bandit portraits, so
+    // this uses the auto-detected/auto-blended neck rig
+    // buildSkinnedSinglePlaneAssembly already relies on for player/NPC
+    // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
+    // requiring one to be painted per species/gender.
+    const neckPivotPx = window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    const neckPivotNormalized = neckPivotPx
+      ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
+      : null;
+    const frontNeckSkin = neckPivotNormalized
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W })
+      : null;
+    const backNeckSkin = neckPivotNormalized
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W })
+      : null;
+    const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
+    const renderedBackMesh = backNeckSkin?.mesh || backMesh;
+
     const group = new THREE.Group();
     group.name = 'bandit_avatar_group';
     const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
     const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
-    frontPivot.add(frontMesh);
-    backPivot.add(backMesh);
+    frontPivot.add(renderedFrontMesh);
+    backPivot.add(renderedBackMesh);
     // Keeps the portrait's own species/gender grounding offset (the
     // assembly's y position inside the model root) now that the meshes no
     // longer sit under it.
@@ -331,6 +355,11 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       modelWidth, modelHeight,
+      // Neck-turn bones for the combat head-look system (see
+      // combat-bandit.js's _updateBanditLookAtTarget) -- null when no
+      // readable neck pivot could be detected (e.g. a fully transparent
+      // portrait canvas), in which case that system just no-ops.
+      neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
       // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -339,7 +368,14 @@
       // -width/2,height/2 fallback.
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
-      dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+      dispose() {
+        legs?.dispose();
+        frontNeckSkin?.weightedGeometry?.dispose();
+        backNeckSkin?.weightedGeometry?.dispose();
+        frontNeckSkin?.skeleton?.dispose?.();
+        backNeckSkin?.skeleton?.dispose?.();
+        window.PNGPlaneAvatar.disposeAvatarModel?.(group);
+      },
     };
   }
 
@@ -1251,8 +1287,50 @@
 
   // Called from updateHostiles' chase-state branch in place of the
   // plain bite-telegraph/behaviorStage machinery for any c.isBandit.
+  // Neck-turn "look at target" glance for a bandit's own portrait plane
+  // (see buildBanditAvatar's neckJoint) — mirrors the dialogue system's
+  // faceNpcDialogueParticipants (game.js), which drives an NPC walker's
+  // neckJoint by the residual angle still remaining between its coarse,
+  // deadzone-clamped body facing and the true target angle. A bandit's
+  // visible plane facing goes through that exact same deadzone (see
+  // updateCreatureMesh's CREATURE_PLANE_ROT_MODE snap/sway/halt), so
+  // without a head glance it only ever visibly faces one of a handful of
+  // camera-relative directions -- the neck bone fills in the rest,
+  // reading as "eyes on you" even mid-windup/retreat when c.facing itself
+  // is pointed somewhere else for gameplay reasons.
+  const BANDIT_NECK_LOOK_MAX_YAW_DEG = 30;
+  const BANDIT_NECK_LOOK_TURN_SPEED_DEG = 260;
+  const BANDIT_NECK_LOOK_RAD = Math.PI / 180;
+
+  function _updateBanditNeckYaw(c, targetDeg, dt) {
+    const neck = c.avatarRef?.neckJoint;
+    if (!neck?.front || !neck?.back) return;
+    const state = c._banditNeckYaw || (c._banditNeckYaw = { currentDeg: 0 });
+    const clampedTarget = Math.max(-BANDIT_NECK_LOOK_MAX_YAW_DEG, Math.min(BANDIT_NECK_LOOK_MAX_YAW_DEG, Number(targetDeg) || 0));
+    const step = BANDIT_NECK_LOOK_TURN_SPEED_DEG * Math.max(0, Number(dt) || 0);
+    const diff = clampedTarget - state.currentDeg;
+    state.currentDeg += Math.max(-step, Math.min(step, diff));
+    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
+    neck.back.rotation.y = -state.currentDeg * BANDIT_NECK_LOOK_RAD;
+  }
+
+  // Eases the neck glance back to center — called from game.js's hostile
+  // loop whenever this bandit isn't actively chasing (updateCombatAI, and
+  // therefore _updateBanditLookAtTarget, only ever runs during 'chase').
+  function restNeckLook(c, dt) {
+    _updateBanditNeckYaw(c, 0, dt);
+  }
+
+  function _updateBanditLookAtTarget(c, dt, targetPlayer) {
+    if (!targetPlayer || targetPlayer.health <= 0) { restNeckLook(c, dt); return; }
+    const rawAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const residualRad = deps.angleDiff(rawAngle, c.facing || 0); // How far the target sits from wherever this bandit's body/plane is currently facing.
+    _updateBanditNeckYaw(c, residualRad * 180 / Math.PI, dt);
+  }
+
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     const def = c.def, loadout = def.banditAbilityLoadout;
+    _updateBanditLookAtTarget(c, dt, targetPlayer);
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
     if (rangedResult?.handled) return rangedResult;
@@ -1874,6 +1952,7 @@
     // when no live camp exists yet to adopt a captain's real identity from.
     randomName: _banditName,
     updateCombatAI: updateBanditCombatAI,
+    restNeckLook,
     updateToolMesh: updateBanditToolMesh,
     updateTrailArc: updateBanditTrailArc,
     fireCounterRiposte: fireBanditCounterRiposte,

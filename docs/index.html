@@ -65,6 +65,13 @@
   <script src="js/creature-genetics.js?v=20260821c"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260826headrig2"></script>
+  <!-- Shared per-frame "where is this creature/character's head" cache — see
+       its own file header for why. No dependencies of its own; must load
+       before anything that calls window.CreatureHeadCache. -->
+  <script src="js/creature-head-cache.js?v=20260828head1"></script>
+  <!-- Per-instance eye-blink timer shared by wild/hostile creatures
+       (game.js) and farm livestock (farm-animals.js). -->
+  <script src="js/creature-blink.js?v=20260828blink1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
