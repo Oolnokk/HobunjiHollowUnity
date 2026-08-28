@@ -13,11 +13,13 @@ const editor = read('docs/tools/ambient-dialogue-editor/index.html');
 const runtime = read('docs/js/ambient-dialogue.js');
 const vocalRuntime = read('docs/js/animal-vocalizations.js');
 const independentPlayback = read('docs/js/animal-voice-independent-playback.js');
+const analysisEditor = read('docs/js/animal-voice-analysis-editor.js');
 const config = JSON.parse(read('docs/config/dialogue/ambient-dialogue.json'));
 
 assert.doesNotThrow(() => new vm.Script(runtime), 'ambient dialogue runtime parses as JavaScript');
 assert.doesNotThrow(() => new vm.Script(vocalRuntime), 'animal vocal runtime parses as JavaScript');
 assert.doesNotThrow(() => new vm.Script(independentPlayback), 'independent animal playback runtime parses as JavaScript');
+assert.doesNotThrow(() => new vm.Script(analysisEditor), 'animal voice frequency analyzer parses as JavaScript');
 assert(hub.includes('ambient-dialogue-editor/index.html'), 'tool hub links the Ambient Dialogue editor');
 assert(editor.includes('Greeting pool'), 'editor exposes NPC greeting settings');
 assert(editor.includes('Discovery announcements'), 'editor expands the animal treasure announcement section');
@@ -72,7 +74,14 @@ assert(independentPlayback.includes('preservesPitch = enabled'), 'playback adapt
 assert(independentPlayback.includes('wsolaStretch'), 'playback adapter uses WSOLA time stretching for higher-quality independent tempo');
 assert(independentPlayback.includes('resampleChannels'), 'playback adapter separates pitch by resampling before WSOLA duration compensation');
 assert(independentPlayback.includes('renderedByKey'), 'processed vocal variants are cached instead of rebuilding every repeated call');
+assert(independentPlayback.includes('yinFrame'), 'playback module directly analyzes fundamental frequency');
+assert(independentPlayback.includes('spectralCentroid'), 'playback module measures spectral centroid for timbre reference');
+assert(independentPlayback.includes('clipPitchByKey'), 'playback applies persistent per-recording pitch normalization');
 assert(independentPlayback.includes('capturePreparedAnimalElement'), 'playback adapter reuses AudioSystem clip selection/range/volume preparation');
+assert(analysisEditor.includes('Voice-pool frequency analysis'), 'Animals tab receives the frequency-analysis panel');
+assert(analysisEditor.includes('Analyze & apply normalization'), 'frequency analysis can calculate and immediately apply per-recording corrections');
+assert(analysisEditor.includes('MAX_AUTO_SHIFT_ST = 6'), 'automatic normalization caps extreme shifts');
+assert(analysisEditor.includes('VOICE_CLIPS[voiceKey(animal.id)]'), 'analyzer reuses the existing editor voice pool rather than duplicating it');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
