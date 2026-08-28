@@ -170,7 +170,6 @@
         // corner the open menu panel covers — hide it immediately rather
         // than waiting for some other trigger to call refreshActionBar.
         window.FurniturePlacer?.refreshVisibility();
-        window.WildernessCampfire?.refreshVisibility();
       }
       function closeMenu() {
         menuOpen = false;
@@ -180,7 +179,6 @@
         menuPanel.classList.remove('open');
         paused = false;
         window.FurniturePlacer?.refreshVisibility();
-        window.WildernessCampfire?.refreshVisibility();
         // The click that closed the menu is itself a user gesture, so
         // resume shoulder-surf's Pointer Lock immediately rather than
         // waiting for a separate click on the game world.
@@ -15665,12 +15663,12 @@
           return;
         }
         // Same immediate-dispatch reasoning as place_campfire_kit above —
-        // walking up to a placed campfire and using Action 1 opens its
-        // Save/Return/Cook/Brew panel (same one the corner button opens).
-        if (activeAction === 'campfire_menu') {
-          window.WildernessCampfire?.toggle();
-          return;
-        }
+        // each of these fires straight from its own action-bar slot near a
+        // placed campfire (see getNearbyActions in wilderness-campfire.js)
+        // instead of opening a shared panel first.
+        if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
+        if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
+        if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
@@ -21678,7 +21676,6 @@
         // off (see .fp-shifted), so it also needs an immediate refresh.
         window.DevSpawner?.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
-        window.WildernessCampfire?.refreshVisibility();
       });
       // Cycles through a zone's dens in a shuffled, non-repeating order
       // (per zone) instead of an independent random pick every press —
@@ -22812,6 +22809,36 @@
           }))); // Special ammo uses the same ordinary-radius arch primitive.
         }
 
+        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
+        // openDesktopHoldArc below), for quick actions that don't belong on
+        // the per-tile action bar: warping back to a placed wilderness
+        // campfire or the farm, and quick-selecting a Campfire Kit without
+        // scrolling the item wheel to find it.
+        function _openUtilitiesArc() {
+          const hasCampfire = !!window.WildernessCampfire?.isHere?.();
+          const kitCount = inventory.campfireKitFurniture || 0;
+          _openEntries('utilities', [
+            {
+              id: 'return-camp', icon: '🏕️', label: hasCampfire ? 'Return to Camp' : 'No Camp Here',
+              disabled: !hasCampfire,
+              onSelect: () => {
+                const result = window.WildernessCampfire?.returnToCampfire?.();
+                if (result) { showToast(result.message, result.ok); refreshActionBar(); }
+              },
+            },
+            {
+              id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
+              disabled: kitCount <= 0,
+              onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
+            },
+            {
+              id: 'return-farm', icon: '🏡', label: currentArea === 'farm' ? 'Already on Farm' : 'Return to Farm',
+              disabled: currentArea === 'farm',
+              onSelect: () => startSceneTransition(() => performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+            },
+          ]);
+        }
+
         function _openEntries(mode, entries, radius = _outerR()) {
           const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
           _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
@@ -23034,6 +23061,7 @@
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
           openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
           openPotions() { _openPotionRoot(); },
+          openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
           openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
           recallLastTool() {
             const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
@@ -23354,12 +23382,13 @@
         if (banditTentAction) return [banditTentAction];
 
         // A placed wilderness campfire, same runtime-prop pattern as bandit
-        // tents above — walking up to it and using Action 1 opens the same
-        // Save/Return/Cook/Brew panel the corner button does.
-        const campfireAction = _isZoneArea(currentArea)
-          ? window.WildernessCampfire?.getNearbyAction?.()
+        // tents above — walking up to it puts Save/Cook/Brew each on their
+        // own action-bar slot (Return to Camp lives on the utilities wheel
+        // instead — see the 'c' hold-key handling further down).
+        const campfireActions = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
-        if (campfireAction) return [campfireAction];
+        if (campfireActions?.length) return campfireActions;
 
         // Climbing is triggered by a forward dodge, not by the tool's
         // Action 1 slot. Leaving the normal action stack here prevents an
@@ -23477,7 +23506,6 @@
       function refreshActionBar(stacks = getInventoryStackItems()) {
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
-        window.WildernessCampfire?.refreshVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
@@ -24396,13 +24424,25 @@
       let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
-        e: { down: false, held: false, timer: null, arc: 'tool' }
+        e: { down: false, held: false, timer: null, arc: 'tool' },
+        // Utilities wheel — an entries arc like potion/ammo select, not a
+        // tool/item wheel, so it commits via releaseSelection() below
+        // (whichever entry mouse-drag/scroll last highlighted) instead of
+        // close()'s "already applied live, just dismiss" behavior.
+        c: { down: false, held: false, timer: null, arc: 'utilities' },
       };
       function openDesktopHoldArc(key) {
         const state = desktopHoldKeys[key];
         if (!state || !state.down) return;
         state.held = true;
-        if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        if (state.arc === 'utilities') {
+          // Same reasoning as CookingSystem's setInteractionBlocked above —
+          // no visible cursor to pick a wedge with under shoulder-surf's
+          // Pointer Lock otherwise.
+          releaseShoulderSurfPointerLock();
+          window._desktopSelectionArc?.openUtilities();
+        }
+        else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
         else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
         else window._desktopSelectionArc?.openTool();
       }
@@ -24421,7 +24461,8 @@
         const wasHeld = state.held;
         state.held = false;
         if (wasHeld) {
-          if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
+          if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
+          else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
           else window._desktopSelectionArc?.close();
         }
         return wasHeld;
@@ -24965,7 +25006,7 @@
           return;
         }
         const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
           return;
@@ -24998,6 +25039,14 @@
           activeAction = actions[(idx + 1) % actions.length];
           refreshActionBar();
           return;
+        }
+        // C: hold to open the utilities wheel (Return to Camp, quick-select
+        // a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
+        // nothing pattern as E/Q above, but there's no separate tap
+        // behavior to fall back to on release (see the keyup handler).
+        if (key === 'c') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('c', event); return; }
         }
 
         // Legacy unbound primary keys. Configured action bindings return above;
@@ -25074,7 +25123,7 @@
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
         }
         if (key === 'shift') {
@@ -25105,6 +25154,14 @@
             const second = btns.find((b, i) => i > 0 && b.allowed);
             if (second) { activeAction = second.action; useActiveAction(); }
           }
+          return;
+        }
+        if (key === 'c' && isDesktop) {
+          event.preventDefault();
+          // No tap fallback — the utilities wheel only ever does anything
+          // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
+          // branch commits whatever entry was highlighted via releaseSelection()).
+          finishDesktopHoldKey('c');
           return;
         }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
@@ -25153,6 +25210,12 @@
           e.preventDefault();
           openDesktopHoldArc('e');
           window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.c.down) {
+          e.preventDefault();
+          openDesktopHoldArc('c');
+          window._desktopSelectionArc?.scrollEntries(-dir);
           return true;
         }
         if (heldOnly) return false;
@@ -25351,6 +25414,20 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A floating menu (the pause/inventory menu incl. its Alchemy tab,
+          // the cooking hearth/campfire modal via setInteractionBlocked, or
+          // the utilities wheel/an entries arc like potion/ammo select) owns
+          // the cursor while open — without this, mouse movement kept
+          // driving facing/camera rotation underneath it via this same
+          // handler (Shift-drag and shoulder-surf's Pointer Lock read
+          // movementX/Y regardless of what's visually on top), so the
+          // camera spun out from under a menu the player was trying to
+          // click into. entryMenuOpen() covers arcs opened by mouse-button
+          // drag (which the arc's own full-screen backdrop already isolates
+          // from this handler) as well as ones opened by a held key like
+          // 'c' below (which doesn't drag a mouse button, so nothing else
+          // stops this handler from firing while it's up).
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
@@ -26085,7 +26162,15 @@
         random: rnd,
         setInteractionBlocked(blocked) {
           menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
-          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            // Same reasoning as openMenu's own call: without this, a player
+            // in shoulder-surf mode gets no visible cursor at all inside
+            // this modal (Pointer Lock hides the OS cursor and keeps
+            // streaming raw movementX/Y to threeContainer no matter what's
+            // drawn on top of it — see the mousemove guard above).
+            releaseShoulderSurfPointerLock();
+          }
         },
       });
 

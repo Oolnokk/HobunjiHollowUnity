@@ -415,30 +415,8 @@
     #furniturePlacerBtn:hover { background: rgba(255,255,255,0.12); }
     #furniturePlacerBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
-    /* ── Wilderness campfire toggle button — same slot as the farm editor/
-       furniture placer buttons above; never visible at the same time since
-       a campfire only shows in a wilderness zone, and those buttons only
-       show on the farm/in an interior. ── */
-    #wildernessCampfireBtn {
-      position: fixed;
-      left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
-      width: calc(4 * var(--col)); height: calc(2 * var(--row));
-      z-index: 60;
-      border-radius: 0 0 14px 14px;
-      background: var(--glass);
-      border: 1px solid var(--border-bright);
-      border-top: none;
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      color: var(--text); font-size: 15px;
-      display: grid; place-items: center;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-      transition: background 0.15s; cursor: pointer;
-    }
-    #wildernessCampfireBtn:hover { background: rgba(255,255,255,0.12); }
-    #wildernessCampfireBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
-
     /* ── Farm editor panel ───────────────────────────────── */
-    #farmEditorPanel, #devSpawnPanel, #furniturePlacerPanel, #wildernessCampfirePanel {
+    #farmEditorPanel, #devSpawnPanel, #furniturePlacerPanel {
       position: fixed;
       right: 2px;
       top: calc(var(--oy) + 4 * var(--row));
@@ -2946,9 +2924,7 @@
        racing it. */
     body.music-minigame-open #furniturePlacerBtn,
     body.music-minigame-open #farmEditBtn,
-    body.music-minigame-open #furniturePlacerPanel,
-    body.music-minigame-open #wildernessCampfireBtn,
-    body.music-minigame-open #wildernessCampfirePanel {
+    body.music-minigame-open #furniturePlacerPanel {
       display: none !important;
     }
     /* The regular mobile action arch (jump/interact/etc.) has nothing to do

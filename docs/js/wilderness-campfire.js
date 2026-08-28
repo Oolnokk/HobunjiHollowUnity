@@ -117,18 +117,41 @@
     return Math.hypot(player.x / deps.TILE - state.x, player.y / deps.TILE - state.z);
   }
 
-  const NEARBY_TILES = 1.75; // Same "at the campfire" radius the panel's Return row already uses.
+  const NEARBY_TILES = 1.75; // "at the campfire" radius for the interact-list actions below.
 
-  // Walk-up interact prompt — mirrors bandit-camps.js's getNearbyTentAction
-  // (the established pattern for a wilderness-zone proximity interactable).
-  // Action 1 near the placed campfire opens the same panel the corner
-  // button does; see useActiveAction's campfire_menu case in game.js.
-  function getNearbyAction() {
+  // Walk-up interact buttons — mirrors bandit-camps.js's getNearbyTentAction
+  // (the established pattern for a wilderness-zone proximity interactable),
+  // but returns up to three buttons at once instead of one, so Save/Cook/
+  // Brew each land on their own action-bar slot (see useActiveAction's
+  // campfire_save/campfire_cook/campfire_brew cases in game.js) instead of
+  // behind a single button that used to open a floating panel.
+  function getNearbyActions() {
     if (!isHere() || distanceToPlayerTiles() > NEARBY_TILES) return null;
-    return {
-      icon: '🔥', label: 'Campfire', action: 'campfire_menu', style: 'primary', allowed: true,
-      worldInteraction: true, promptRoot: group,
-    };
+    const cookRank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
+    const brewRank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
+    return [
+      { icon: '💾', label: 'Save Game', action: 'campfire_save', style: 'primary', allowed: true, worldInteraction: true, promptRoot: group },
+      { icon: '🍲', label: cookRank ? 'Cook Here' : 'Cook Here (needs Survivalist)', action: 'campfire_cook', style: 'secondary', allowed: !!cookRank, worldInteraction: true, promptRoot: group },
+      { icon: '⚗️', label: brewRank ? 'Make Potions Here' : 'Make Potions Here (needs Herbalist)', action: 'campfire_brew', style: 'secondary', allowed: !!brewRank, worldInteraction: true, promptRoot: group },
+    ];
+  }
+
+  function doSave() {
+    deps.persist?.();
+    deps.showToast('💾 Game saved.', true);
+  }
+
+  function doCook() {
+    const rank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
+    if (!rank) { deps.showToast('You need the Foraging Survivalist perk to cook at a campfire.', false); return; }
+    window.CookingSystem?.openAtHearth({ maxIngredients: rank });
+  }
+
+  function doBrew() {
+    const rank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
+    if (!rank) { deps.showToast('You need the Alchemy Herbalist perk to mix potions at a campfire.', false); return; }
+    window.AlchemySystem?.setCampfireBrewing(true);
+    deps.openMenu('alchemy');
   }
 
   function returnToCampfire() {
@@ -147,92 +170,9 @@
     removeVisual(); // The visual spawns lazily the next time onZoneEntered fires for this map.
   }
 
-  // ── Small corner button + panel, same pattern as FurniturePlacer ─────
-  let _open = false;
-
-  function refreshVisibility() {
-    const btn = document.getElementById('wildernessCampfireBtn');
-    if (!btn) return;
-    const show = !deps.isPaused() && deps.isZoneArea(deps.getCurrentArea());
-    btn.style.display = show ? '' : 'none';
-    if (!show && _open) toggle();
-  }
-
-  function toggle() {
-    const panel = document.getElementById('wildernessCampfirePanel');
-    const btn = document.getElementById('wildernessCampfireBtn');
-    _open = panel?.style.display !== 'flex';
-    if (panel) panel.style.display = _open ? 'flex' : 'none';
-    if (btn) btn.classList.toggle('fed-open', _open);
-    if (_open) render();
-  }
-
-  function close() {
-    if (_open) toggle();
-  }
-
-  function doSave() {
-    deps.persist?.();
-    deps.showToast('💾 Game saved.', true);
-    render();
-  }
-
-  function doReturn() {
-    const result = returnToCampfire();
-    deps.showToast(result.message, result.ok);
-    if (result.ok) close();
-  }
-
-  function doCook() {
-    const rank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
-    if (!rank) { deps.showToast('You need the Foraging Survivalist perk to cook at a campfire.', false); return; }
-    close();
-    window.CookingSystem?.openAtHearth({ maxIngredients: rank });
-  }
-
-  function doBrew() {
-    const rank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
-    if (!rank) { deps.showToast('You need the Alchemy Herbalist perk to mix potions at a campfire.', false); return; }
-    close();
-    window.AlchemySystem?.setCampfireBrewing(true);
-    deps.openMenu('alchemy');
-  }
-
-  function render() {
-    const list = document.getElementById('wildernessCampfireList');
-    if (!list) return;
-    const nearby = distanceToPlayerTiles() < 1.75;
-    const cookRank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
-    const brewRank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
-    list.innerHTML = '';
-    const row = (label, note, fn, disabled) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'farm-row';
-      wrap.innerHTML = `<span class="farm-row-name">${label}</span>${note ? `<span class="farm-note">${note}</span>` : ''}`;
-      const btn = document.createElement('button');
-      btn.className = 'settings-small-btn';
-      btn.textContent = 'Use';
-      btn.disabled = !!disabled;
-      btn.addEventListener('click', fn);
-      wrap.appendChild(btn);
-      list.appendChild(wrap);
-    };
-    if (isHere()) {
-      row('↩️ Return to Campfire', nearby ? 'already here' : '', doReturn, nearby);
-      row('💾 Save Game', '', doSave, false);
-      row('🍲 Cook Here', cookRank ? `up to ${cookRank} ingredients` : 'needs Survivalist perk', doCook, !cookRank);
-      row('⚗️ Mix Potions Here', brewRank ? `${brewRank * 20}% precision` : 'needs Herbalist perk', doBrew, !brewRank);
-    } else {
-      const hint = document.createElement('div');
-      hint.className = 'farm-note';
-      hint.style.padding = '4px 2px';
-      hint.textContent = 'Select a Campfire Kit (crafted in the Inventory\'s Crafting tab), aim at open ground, and use Action 1 to make camp.';
-      list.appendChild(hint);
-    }
-  }
-
   window.WildernessCampfire = {
-    init, place, placeFromKit, clear, update, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles, getNearbyAction, returnToCampfire,
-    serialize, restore, ensureLoaded, refreshVisibility, toggle,
+    init, place, placeFromKit, clear, update, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
+    getNearbyActions, returnToCampfire, doSave, doCook, doBrew,
+    serialize, restore, ensureLoaded,
   };
 })();
