@@ -1180,6 +1180,7 @@
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       skillExperience:   { ...(char.skillExperience || {}) },
+      perkRanks:         { ...(char.perkRanks || {}) },
       stats:             { ...char.stats },
       // Character-scoped personal livestock collection (companions) — travels
       // with the character between worlds, unlike farm livestock which
@@ -1513,6 +1514,7 @@
         })(),
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
+        perkRanks:        {},
         stats:            makeDefaultStats(),
         stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
         activeCompanionId: null,

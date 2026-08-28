@@ -32,6 +32,7 @@
   const FISHING_BAIT_FLIGHT_S = 0.6; // matches spawnFishingBaitToss's ~0.5-0.62s particle flight time
   const FISHING_BITE_WAIT_MIN_S = 1.2;
   const FISHING_BITE_WAIT_MAX_S = 3.0;
+  const AMPHIBIOUS_BASE_FOOTING_COST = 20; // Full Footing cost of reeling in a catch before the Amphibious Fish perk discounts it.
   // Escape/respawn sequence timings, ported from the prototype's fishRespawn
   // state: when panic maxes out the fish doesn't just end the round, it visibly
   // slides into the central pool, shrinks away, waits, then a freshly rolled
@@ -270,7 +271,9 @@
       (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
     if (!pool.length) pool = list;
     const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
-    const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1));
+    const rareFishPerkRank = window.PerkSystem?.rank('fishing', 'increaseRareFishChance') || 0; // Increased Chance of Rare Fish perk.
+    const perkMul = { common: 1, uncommon: 1 + rareFishPerkRank * 0.2, rare: 1 + rareFishPerkRank * 0.45 };
+    const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1) * (perkMul[f.rarity] || 1));
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < pool.length; i++) {
       r -= weights[i];
@@ -587,7 +590,7 @@
       phase: 'cast',
       phaseTimer: 0,
       floatSpawnTimer: 0,
-      biteAt: FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S),
+      biteAt: (FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S)) * (1 - Math.min(0.6, (window.PerkSystem?.rank('fishing', 'increaseBiteRate') || 0) * 0.12)), // Increased Bite Rate perk.
       anchorWorld,
       fishDef: fish,
       zoneKey,
@@ -794,11 +797,21 @@
   function resolveFishingRound(fm, caught) {
     if (caught) {
       fm.resolved = true;
-      deps.inventory[fm.fishDef.key] = Math.min(99, (deps.inventory[fm.fishDef.key] || 0) + 1);
+      // Amphibious Fish: reeling in a catch costs the player Footing,
+      // scaled down by the perk's own rank (80%/60%/40%/20% of the base cost).
+      const amphibiousRank = window.PerkSystem?.rank('fishing', 'amphibiousFish') || 0;
+      if (amphibiousRank > 0) {
+        const footingFraction = [1, 0.8, 0.6, 0.4, 0.2][Math.min(4, amphibiousRank)];
+        const player = deps.getPlayer?.();
+        if (player) window.ResourceSystem?.spendFooting?.(player, AMPHIBIOUS_BASE_FOOTING_COST * footingFraction, 'reeling in a catch');
+      }
+      const doubleCatchChance = Math.min(0.5, (window.PerkSystem?.rank('fishing', 'doubleCatchChance') || 0) * 0.12); // Chance to Get Double Catches perk.
+      const catchCount = (deps.random || Math.random)() < doubleCatchChance ? 2 : 1;
+      deps.inventory[fm.fishDef.key] = Math.min(99, (deps.inventory[fm.fishDef.key] || 0) + catchCount);
       const stars = deps.rollItemStars('fishing');
-      deps.recordItemQuality?.(fm.fishDef.key, stars, 1);
+      deps.recordItemQuality?.(fm.fishDef.key, stars, catchCount);
       deps.awardFishingXp?.();
-      fm.message = `Caught a ${deps.starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
+      fm.message = `Caught ${catchCount > 1 ? `${catchCount}× ` : 'a '}${deps.starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
       fm.messageType = 'good';
       deps.setLastActionMessage(fm.message);
       deps.awardToolUseMasteryXp('harpoon');
@@ -1071,7 +1084,10 @@
         // so there's nothing to clean up here.
         resolveFishingRound(fm, true);
       } else {
-        fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
+        const extraTries = window.PerkSystem?.rank('fishing', 'extraHarpoonTries') || 0; // Gain 1-5 extra harpoon tries perk.
+        const baseTries = FISHING_RING.panicMax / FISHING_RING.panicStep; // Misses tolerated with no perk ranks.
+        const panicStep = FISHING_RING.panicMax / (baseTries + extraTries); // Stretches each miss's panic cost so the total tolerated misses grows by extraTries.
+        fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + panicStep);
         if (fm.panic >= FISHING_RING.panicMax) {
           resolveFishingRound(fm, false);
         } else {

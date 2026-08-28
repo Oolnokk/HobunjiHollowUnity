@@ -232,11 +232,13 @@
   const removeAfflictionsByTag = (entity, tag, amount) => removeAfflictions(entity, afflictionIdsByTag(tag), amount);
 
   function getEffectiveMax(entity, key) {
-    const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion buffs only to their consumer.
-    const staminaMul = entity === player ? window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1 : 1; // Used by Endurance.
-    const footingMul = entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
+    const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
+    const isPlayer = entity === player;
+    const staminaMul = isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1; // Used by Endurance / Increase Stamina.
+    const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
+    const footingMul = isPlayer ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
-    if (key === "health") return clamp((entity.maxHealth || 0) - getAffliction(entity, "congealedHealth"), 0, entity.maxHealth || 0);
+    if (key === "health") return clamp((entity.maxHealth || 0) * healthMul - getAffliction(entity, "congealedHealth"), 0, (entity.maxHealth || 0) * healthMul);
     if (key === "footing") return (entity.maxFooting || 0) * footingMul;
     return 0;
   }
@@ -300,7 +302,10 @@
   // Exhausted, entity.stamina reads 0, so those checks keep working.
   function spendStamina(entity, amount, reason = "action") {
     entity.lastAttackAttemptAt = nowMs();
-    if (entity === window.Combat?.deps?.player) amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
+    if (entity === window.Combat?.deps?.player) {
+      amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
+      amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
+    }
     if (!(amount > 0)) return { spent: 0, excess: 0 };
 
     if (entity.exhaustion.active) {
@@ -331,6 +336,7 @@
   function spendFooting(entity, amount, reason = "hit") {
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
+    if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
     const before = entity.footing;
     entity.footing = round1(clamp(before - amount, 0, getEffectiveMax(entity, "footing")));
     return round1(before - entity.footing);
@@ -392,8 +398,12 @@
     const lost = round1(before - entity.health);
 
     if (opts.afflictionBonuses) {
+      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (AFFLICTIONS[id] && mul > 0) addAffliction(entity, id, finalDamage * mul);
+        if (!AFFLICTIONS[id] || !(mul > 0)) continue;
+        const perkId = FAMILY_PERK[AFFLICTIONS[id].family];
+        const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
+        addAffliction(entity, id, finalDamage * mul * familyMul);
       }
     }
 

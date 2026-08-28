@@ -8,10 +8,10 @@
     farming: { label: 'Farming', icon: '🌾', effect: 'Better crop/animal goods and faster digging.' },
     fishing: { label: 'Fishing', icon: '🎣', effect: 'Rarer fish encounters and better fish quality.' },
     combat: { label: 'Combat', icon: '⚔️', effect: 'Higher attack power and better meat quality.' },
-    crafting: { label: 'Crafting', icon: '🛠️', effect: 'Better food and a chance to save ingredients.' },
+    cooking: { label: 'Cooking', icon: '🍲', effect: 'Better food and a chance to save ingredients.' },
     alchemy: { label: 'Alchemy', icon: '⚗️', effect: 'More reliable targeted reactions and stronger brewed potency tiers.' },
   }; // Used by progression, food-skill buffs, and the Skills tab.
-  const LEGACY_SKILL_MAP = { cooking: 'crafting' }; // Used to preserve only old Cooking progress under Crafting; Alchemy is now a real skill.
+  const LEGACY_SKILL_MAP = { crafting: 'cooking' }; // Used to preserve pre-rename Crafting saves under the same skill, now called Cooking.
   const XP_GAINS = {
     forage: 4, tree: 8, rock: 8, dig: 1, crop: 6, animalGood: 5,
     fish: 10, combatHit: 1, combatKill: 8, cook: 8,
@@ -44,11 +44,13 @@
     const savedLevels = playerData.skillLevels && typeof playerData.skillLevels === 'object'
       ? playerData.skillLevels : {}; // Used for migration from the original stub fields.
     for (const key of Object.keys(SKILLS)) {
-      let value = Number(savedXp[key]); // Used when this character has already saved real XP.
-      if (!Number.isFinite(value)) {
-        const legacyLevels = Object.entries(LEGACY_SKILL_MAP).filter(([, modern]) => modern === key).map(([legacy]) => Number(savedLevels[legacy]) || 0); // Used to map both old creation skills into Crafting.
+      const legacyKeys = Object.entries(LEGACY_SKILL_MAP).filter(([, modern]) => modern === key).map(([legacy]) => legacy); // Used to find this skill's pre-rename save key(s), e.g. 'crafting' -> 'cooking'.
+      let value = Number(savedXp[key]); // Used when this character has already saved real XP under the current key.
+      if (!Number.isFinite(value)) value = Math.max(0, ...legacyKeys.map(legacy => Number(savedXp[legacy]) || 0)); // Used to preserve real XP saved under a pre-rename key.
+      if (!Number.isFinite(value) || !value) {
+        const legacyLevels = legacyKeys.map(legacy => Number(savedLevels[legacy]) || 0); // Used to map old creation skills into their modern equivalent.
         const savedLevel = Math.max(Number(savedLevels[key]) || 0, ...legacyLevels, 0); // Used to preserve the highest compatible pre-system level.
-        value = xpForLevel(savedLevel);
+        value = Math.max(Number(value) || 0, xpForLevel(savedLevel));
       }
       experience[key] = Math.max(0, Math.floor(value));
     }
@@ -122,8 +124,8 @@
   }
 
   function craftIngredientSaveChance() {
-    const clarityStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('clarity')) || 0); // Used to give Clarity food a small crafting benefit.
-    return Math.min(0.25, normalizedPower('crafting') * 0.2 + clarityStacks * 0.003);
+    const clarityStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('clarity')) || 0); // Used to give Clarity food a small cooking benefit.
+    return Math.min(0.25, normalizedPower('cooking') * 0.2 + clarityStacks * 0.003);
   }
 
   function weightedBaseQuality() {

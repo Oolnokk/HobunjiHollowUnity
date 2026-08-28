@@ -72,7 +72,8 @@
       onAction(action) {
         if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
         const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-herb chance.
-        const amount = 1 + bonus;
+        const doubleRank = window.PerkSystem?.rank('foraging', 'doubleForageables') || 0; // Double Forageables perk.
+        const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
         deps.inventory[reagentKey] = Math.min(99, (deps.inventory[reagentKey] || 0) + amount);
         deps.awardForagingXp?.();
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);

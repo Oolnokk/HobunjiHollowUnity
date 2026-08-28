@@ -155,6 +155,7 @@
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260821alchemy1"></script>
+  <script src="js/perk-system.js?v=20260828a"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -350,6 +351,11 @@
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
   <script src="js/furniture-placer.js?v=20260809c"></script>
+  <!-- Player-craftable wilderness campfire (window.WildernessCampfire) —
+       only one at a time, cleared on any map change. Self-contained aside
+       from deps injected via init(); must load before game.js, which calls
+       window.WildernessCampfire.init(...) during its own setup. -->
+  <script src="js/wilderness-campfire.js?v=20260828a"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -577,6 +583,22 @@
     <div class="fed-scroll">
       <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
       <div id="furniturePlacerList" class="farm-list" style="padding:0 10px 10px;"></div>
+    </div>
+  </div>
+
+  <!-- Wilderness campfire toggle button — shown only while standing on the
+       map where the player's placed campfire lives; see
+       js/wilderness-campfire.js -->
+  <button id="wildernessCampfireBtn" aria-label="Toggle campfire menu" title="Campfire" onclick="window.WildernessCampfire?.toggle()" style="display:none;">🔥</button>
+
+  <!-- Wilderness Campfire Panel -->
+  <div id="wildernessCampfirePanel" style="display:none;" aria-label="Campfire">
+    <div class="fed-header">
+      <span>🔥 Campfire</span>
+      <button class="fed-close" onclick="window.WildernessCampfire?.toggle()" title="Close">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div id="wildernessCampfireList" class="farm-list" style="padding:0 10px 10px;"></div>
     </div>
   </div>
 
@@ -1164,8 +1186,13 @@
             <div class="skill-row"><span class="skill-icon">🌾</span><div class="skill-name">Farming</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">🎣</span><div class="skill-name">Fishing</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">⚔️</span><div class="skill-name">Combat</div><div class="skill-level">Lv 0</div></div>
-            <div class="skill-row"><span class="skill-icon">🛠️</span><div class="skill-name">Crafting</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🍲</span><div class="skill-name">Cooking</div><div class="skill-level">Lv 0</div></div>
           </div>
+          <div class="progress-section-header perk-section-header">
+            <span class="progress-section-title">Perks</span>
+            <span class="progress-save-badge">Character-saved</span>
+          </div>
+          <div class="perk-trees" id="perkTrees"></div>
         </div>
       </div><!-- /mpProgress -->
 

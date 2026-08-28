@@ -64,7 +64,7 @@
     "farming": "Farming",
     "fishing": "Fishing",
     "foraging": "Foraging",
-    "crafting": "Crafting",
+    "cooking": "Cooking",
     "mining": "Mining"
   },
   "effectPrefixVariants": {
@@ -128,11 +128,11 @@
       "Trailwise",
       "Woodland"
     ],
-    "crafting": [
-      "Crafter's",
-      "Handmade",
-      "Artisan",
-      "Workshop"
+    "cooking": [
+      "Cook's",
+      "Homestyle",
+      "Hearth-Made",
+      "Kitchen"
     ],
     "mining": [
       "Miner's",
@@ -881,7 +881,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Mustard",
         "Hot",
@@ -900,7 +900,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Mustard",
         "Fresh",
@@ -918,7 +918,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Flour",
         "Needlegrain",
@@ -935,7 +935,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Flour",
         "Heftroot",
@@ -1557,7 +1557,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Nut",
         "Oil",
@@ -1574,7 +1574,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Nut",
         "Oil",
@@ -1592,7 +1592,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Nut",
         "Oil",
@@ -1610,7 +1610,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "crafting",
+      "primaryEffect": "cooking",
       "tags": [
         "Nut",
         "Butter",

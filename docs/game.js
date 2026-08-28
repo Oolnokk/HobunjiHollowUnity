@@ -170,6 +170,7 @@
         // corner the open menu panel covers — hide it immediately rather
         // than waiting for some other trigger to call refreshActionBar.
         window.FurniturePlacer?.refreshVisibility();
+        window.WildernessCampfire?.refreshVisibility();
       }
       function closeMenu() {
         menuOpen = false;
@@ -179,6 +180,7 @@
         menuPanel.classList.remove('open');
         paused = false;
         window.FurniturePlacer?.refreshVisibility();
+        window.WildernessCampfire?.refreshVisibility();
         // The click that closed the menu is itself a user gesture, so
         // resume shoulder-surf's Pointer Lock immediately rather than
         // waiting for a separate click on the game world.
@@ -1987,6 +1989,21 @@
           character.skillExperience = { ...snapshot.experience };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           Object.assign(window.__hobunjiPlayerProfile, { skillLevels: character.skillLevels, skillExperience: character.skillExperience });
+        } catch {}
+      }
+
+      // Perk ranks are character-scoped, same as skill levels/XP above — a
+      // Combat/Alchemy/Foraging/Fishing perk build follows the character
+      // across worlds rather than staying behind with one farm.
+      function savePerkProgress(snapshot) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId);
+          if (!character) return;
+          character.perkRanks = snapshot;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          Object.assign(window.__hobunjiPlayerProfile, { perkRanks: character.perkRanks });
         } catch {}
       }
 
@@ -4277,10 +4294,11 @@
         // captain's riposte target without needing a passed-in attacker.
         amount *= window.SkillSystem?.attackMultiplier?.() || 1;
         amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
         amount = banditTryGuard(c, amount, player);
         window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = window.AlchemySystem?.getFootingDamageMultiplier?.() || 1; // Potion of Impact's shared outgoing stagger hook.
+        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
         resourceDamage.footing *= impactMultiplier;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
@@ -6980,6 +6998,7 @@
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.wildernessChunkState = serializeWildernessChunkState();
+          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -11536,6 +11555,7 @@
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
+        window.WildernessCampfire?.onZoneEntered(mapId);
       }
 
       // Town/zone building mesh spawning (detectTownBuildings/
@@ -21619,6 +21639,7 @@
         // off (see .fp-shifted), so it also needs an immediate refresh.
         window.DevSpawner?.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
+        window.WildernessCampfire?.refreshVisibility();
       });
       // Cycles through a zone's dens in a shuffled, non-repeating order
       // (per zone) instead of an independent random pick every press —
@@ -21970,6 +21991,7 @@
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           window.WildernessChunks?.update(dt);
+          window.WildernessCampfire?.update(currentArea);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -23406,6 +23428,7 @@
       function refreshActionBar(stacks = getInventoryStackItems()) {
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
+        window.WildernessCampfire?.refreshVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
@@ -25863,6 +25886,7 @@
         rollItemStars,
         starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
         awardToolUseMasteryXp,
@@ -26024,6 +26048,8 @@
         debugLog,
         isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
       });
+
+      window.PerkSystem?.init({ savePerkProgress });
 
       window.AlchemySystem?.init({
         ITEM_DEFS,
@@ -26419,6 +26445,24 @@
         esc,
         isPaused: () => paused,
         isDevMode: () => s_devMode,
+      });
+
+      window.WildernessCampfire?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getActiveScene,
+        getPlayer: () => player,
+        getFacingAngle: () => facingAngle,
+        surfaceYAt: activeSurfaceYAtWorld,
+        TILE,
+        AuthoredFurniture: window.AuthoredFurniture,
+        persist: saveMemberWorldData,
+        showToast,
+        openMenu,
+        isPaused: () => paused,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
       });
 
       window.TownZoneBuildings?.init({
@@ -27174,6 +27218,7 @@
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);
+        window.PerkSystem?.restore(playerData);
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
@@ -27190,6 +27235,7 @@
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreWildernessChunkState(playerData.wildernessChunkState);
+        window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
