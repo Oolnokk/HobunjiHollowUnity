@@ -1101,13 +1101,20 @@
     group.add(back.mesh);
 
     const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
-    const state = { rig, frontHeadBone: front.headBone, backHeadBone: back.headBone, currentDeg: rig.restDeg, targetDeg: rig.restDeg, currentYawDeg: 0, targetYawDeg: 0 }; // Runtime rotation state shared by immediate/smoothed setters.
+    const state = {
+      rig, frontHeadBone: front.headBone, backHeadBone: back.headBone,
+      currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
+      currentYawDeg: 0, targetYawDeg: 0,
+    }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
     group.userData.hobunjiAnimalHeadRig = state;
     avatarRef.headRig = state;
 
     const applyDegrees = degrees => {
-      front.headBone.rotation.z = degrees * RAD;
-      back.headBone.rotation.z = -degrees * RAD;
+      const composedDeg = clamp(degrees + state.additiveDeg, rig.minDeg, rig.maxDeg); // Keeps additive nods inside the authored neck's safe range.
+      state.appliedDeg = composedDeg;
+      front.headBone.rotation.z = composedDeg * RAD;
+      back.headBone.rotation.z = -composedDeg * RAD;
+      return composedDeg;
     };
     applyDegrees(rig.restDeg);
 
@@ -1161,6 +1168,11 @@
       state.targetYawDeg = target;
       applyYawDegrees(state.currentYawDeg);
       return state.currentYawDeg;
+    };
+
+    avatarRef.setHeadAdditiveRotation = degrees => {
+      state.additiveDeg = finite(degrees, 0); // Consumed by applyDegrees on top of whichever AI/attack/idle neck pose is current.
+      return applyDegrees(state.currentDeg);
     };
 
     avatarRef.dispose = () => {

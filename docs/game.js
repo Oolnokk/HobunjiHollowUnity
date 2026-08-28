@@ -4965,6 +4965,8 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
+        const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
+        c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
@@ -5293,6 +5295,7 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          window.AnimalVocalizations?.tickCreature?.(c, dt);
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
@@ -6300,7 +6303,9 @@
         c._travelPathTarget = null;
         window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): detected buried treasure; announce -> lead -> mark`, 'wildlife');
         window.AmbientDialogue?.companionTreasure(c);
-        window.AudioSystem?.playCreatureTreasureAlert?.(c);
+        if (!window.AnimalVocalizations?.companionDiscovery?.(c, 'treasure')) {
+          window.AudioSystem?.playCreatureTreasureAlert?.(c); // Legacy species without a recorded voice pool.
+        }
         // Keep the cue readable even when audio is muted/blocked or the
         // companion's species bark is unfamiliar. This toast is deliberately
         // emitted alongside (rather than instead of) the existing utterance.
@@ -6515,6 +6520,9 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          window.AnimalVocalizations?.tickCreature?.(c, dt, {
+            allowPassive: c.stableRole !== 'mount',
+          });
 
           // The entity this companion follows/defends — the real player for
           // an ordinary whistle-summoned companion, but not necessarily: see
@@ -26186,6 +26194,12 @@
         audioUrlFailed: (...a) => window.Music?.audioUrlFailed(...a),
       });
 
+      window.AnimalVocalizations?.init({
+        random: rnd,
+        hasVoice: (c) => window.AudioSystem?.hasAnimalVoice?.(c),
+        renderUtterance: (c, opts) => window.AudioSystem?.playAnimalVoiceUtterance?.(c, opts),
+      });
+
       window.Combat?.init({
         player,
         players,
@@ -26232,6 +26246,8 @@
         setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
+        requestThreatGrowl: (c, reason) => window.AnimalVocalizations?.threatGrowl?.(c, reason)
+          || window.AudioSystem?.playCreatureBark?.(c),
         playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
         playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
         playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
@@ -27623,6 +27639,8 @@
         player,
         showZoneBanner,
         showToast,
+        requestCompanionDiscovery: (c, reason) => window.AnimalVocalizations?.companionDiscovery?.(c, reason)
+          || window.AudioSystem?.playCreatureTreasureAlert?.(c),
         rollLootPool,
         inventory,
         clampInventoryStack,

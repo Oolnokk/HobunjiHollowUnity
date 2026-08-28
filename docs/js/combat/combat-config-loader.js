@@ -101,7 +101,7 @@
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/combat-drenkirra-pellet.js?v=20260827treecover1', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
-    ['js/wildlife-territorial.js?v=20260817a', () => !!window.HobunjiTerritorialWildlife],
+    ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
   ];
 
