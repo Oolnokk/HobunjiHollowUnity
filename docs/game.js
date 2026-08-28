@@ -15503,7 +15503,7 @@
           window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
-          playConfiguredToolSfx('breakTree');
+          window.AudioSystem?.playObjectSfxKey?.('breakTree');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
           const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
@@ -15539,7 +15539,7 @@
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
-          playConfiguredToolSfx('breakRock');
+          window.AudioSystem?.playObjectSfxKey?.('breakRock');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
           return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
         }
@@ -18835,11 +18835,7 @@
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
-
-      function playConfiguredToolSfx(key) {
-        const entry = window.AudioSystem?.objectSfxConfig?.()?.[key]; // Used by strike-stage and terminal tool-result cues below.
-        if (entry) window.AudioSystem?.playObjectSfx(entry);
-      }
+      let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
       // True while the primary action input (key/click/button) is physically held
       // down. Drives the multi-stage dig/fill charge below — releasing it, or
@@ -19024,6 +19020,7 @@
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
+        chargeStageSfxFired = false;
         pendingAction = null;
         if (stageDef.pose) {
           // Reuses the melee combo's own authored sweep pose (see
@@ -20224,15 +20221,15 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
-        if (chargeAction && !strikeFired && progress >= SF) {
-          strikeFired = true;
+        if (chargeAction && !chargeStageSfxFired && progress >= SF) {
+          chargeStageSfxFired = true;
           const chargeSfxKey = chargeAction.stages?.[chargeAction.stage]?.sfxKey; // Used to sound only authored contact stages, not toss/twist/reset stages.
-          if (chargeSfxKey) playConfiguredToolSfx(chargeSfxKey);
+          if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
         }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
           const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
-          if (pendingSfxKey) playConfiguredToolSfx(pendingSfxKey);
+          if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;

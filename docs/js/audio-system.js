@@ -364,6 +364,11 @@
     playSfxAudioElement(snd, volume, gainBoost);
   }
 
+  function playObjectSfxKey(key, volumeScale = 1, pitch = 1) {
+    const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
+    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
+  }
+
   // Distance falloff for a creature-originated combat sound (bark/claw
   // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
   function playCreatureSfxAt(c, cfgEntry, pitch) {
@@ -477,6 +482,7 @@
     playOneShotSfx,
     objectSfxConfig,
     playObjectSfx,
+    playObjectSfxKey,
     playCreatureSfxAt,
     playCreatureBark,
     playCreatureTreasureAlert,
