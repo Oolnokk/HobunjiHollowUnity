@@ -6,14 +6,7 @@
   "textWorldHeight": 0.28,
   "chatheadWorldSize": 0.48,
   "anchorLiftTiles": 0.18,
-  "friendGroups": [
-    [
-      "gorobi_ginju",
-      "gikali_ginju",
-      "aliri_ginju",
-      "gantami_ginju"
-    ]
-  ],
+  "friendGroups": [],
   "npcNicknames": {
     "sloomi": {
       "kzubug": "Dad"
@@ -77,25 +70,41 @@
       "player": [
         "Howdy there, partner!"
       ],
-      "friends": {}
+      "friends": {
+        "gikali_ginju": [],
+        "aliri_ginju": [],
+        "gantami_ginju": []
+      }
     },
     "gikali_ginju": {
       "player": [
         "Good {dayPart}!"
       ],
-      "friends": {}
+      "friends": {
+        "gorobi_ginju": [],
+        "aliri_ginju": [],
+        "gantami_ginju": []
+      }
     },
     "aliri_ginju": {
       "player": [
         "Howdy-hey, {targetName}!"
       ],
-      "friends": {}
+      "friends": {
+        "gorobi_ginju": [],
+        "gikali_ginju": [],
+        "gantami_ginju": []
+      }
     },
     "gantami_ginju": {
       "player": [
         "Hi!"
       ],
-      "friends": {}
+      "friends": {
+        "gorobi_ginju": [],
+        "gikali_ginju": [],
+        "aliri_ginju": []
+      }
     },
     "leaf": {
       "player": [
@@ -300,6 +309,19 @@
         "No, thank you.",
         "Not right now."
       ]
+    },
+    "garanki_gabu": {
+      "acceptMode": "always",
+      "acceptConditions": {},
+      "acceptLines": [
+        "Gladly.",
+        "Don't mind if I do.",
+        "Just one swig."
+      ],
+      "refuseLines": [
+        "No, thank you.",
+        "Not right now."
+      ]
     }
   },
   "companionTreasureLines": {
@@ -338,18 +360,8 @@
       }
     },
     "drenkirra": {
-      "clipTuning": {
-        "sfx_drenkirra1.ogg": {
-          "tempo": 1,
-          "pitchSemitones": 0
-        },
-        "sfx_drenkirra2.ogg": {
-          "tempo": 1,
-          "pitchSemitones": 0
-        }
-      },
       "chatter": {
-        "intervalMs": 168,
+        "intervalMs": 200,
         "volume": 0.235,
         "initialDelayMinS": 3,
         "initialDelayMaxS": 8,
@@ -358,12 +370,18 @@
         "earshotTiles": 8,
         "tailMs": 260,
         "utterances": [
-          { "tempo": 1.27, "pitchSemitones": 2.5 },
-          { "tempo": 1.27, "pitchSemitones": 2.5 },
-          { "tempo": 1.27, "pitchSemitones": 2.5 },
-          { "tempo": 1.27, "pitchSemitones": 2.5 },
-          { "tempo": 1.27, "pitchSemitones": 2.5 },
-          { "tempo": 1.27, "pitchSemitones": 2.5 }
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "allowedClips": [
+          "sfx_growl-squeak-chirp.ogg",
+          "sfx_rattle-caw.ogg"
         ]
       },
       "warning": {
@@ -372,35 +390,78 @@
         "earshotTiles": 12,
         "tailMs": 360,
         "utterances": [
-          { "tempo": 1.17, "pitchSemitones": 3.5 },
-          { "tempo": 1.17, "pitchSemitones": 3.5 },
-          { "tempo": 1.17, "pitchSemitones": 3.5 },
-          { "tempo": 1.17, "pitchSemitones": 3.5 }
+          {
+            "tempo": 1.17,
+            "pitchSemitones": 3.5
+          },
+          {
+            "tempo": 1.17,
+            "pitchSemitones": 3.5
+          },
+          {
+            "tempo": 1.17,
+            "pitchSemitones": 3.5
+          },
+          {
+            "tempo": 1.17,
+            "pitchSemitones": 3.5
+          }
+        ],
+        "allowedClips": [
+          "sfx_growl-squeak-chirp.ogg",
+          "sfx_rattle-caw-rattle.ogg",
+          "sfx_rattle-caw.ogg",
+          "sfx_rattling_monkey-chirp.ogg"
         ]
       },
       "growl": {
-        "intervalMs": 0,
+        "intervalMs": 400,
         "volume": 0.79,
         "earshotTiles": 10,
         "tailMs": 850,
         "utterances": [
-          { "tempo": 0.82, "pitchSemitones": -2.5 }
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": -1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": -1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          }
+        ],
+        "allowedClips": [
+          "sfx_rattle-caw-rattle.ogg",
+          "sfx_rattle-caw.ogg"
         ]
       }
     },
     "grehlr": {
-      "clipTuning": {
-        "sfx_grehlr1.ogg": {
-          "tempo": 1,
-          "pitchSemitones": 0
-        },
-        "sfx_grehlr2.ogg": {
-          "tempo": 1,
-          "pitchSemitones": 0
-        }
-      },
       "chatter": {
-        "intervalMs": 755,
+        "intervalMs": 200,
         "volume": 0.31,
         "initialDelayMinS": 6,
         "initialDelayMaxS": 14,
@@ -409,27 +470,184 @@
         "earshotTiles": 9,
         "tailMs": 650,
         "utterances": [
-          { "tempo": 0.86, "pitchSemitones": -4 },
-          { "tempo": 0.86, "pitchSemitones": -4 }
+          {
+            "tempo": 0.6,
+            "pitchSemitones": -9
+          }
+        ],
+        "allowedClips": [
+          "sfx_grunt-rattle.ogg"
         ]
       },
       "warning": {
-        "intervalMs": 720,
+        "intervalMs": 300,
         "volume": 0.965,
         "earshotTiles": 13,
         "tailMs": 900,
         "utterances": [
-          { "tempo": 0.79, "pitchSemitones": -5.25 },
-          { "tempo": 0.79, "pitchSemitones": -5.25 }
+          {
+            "tempo": 0.9,
+            "pitchSemitones": -3
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "allowedClips": [
+          "sfx_rattle-ghostgrowl-rattle.ogg"
         ]
       },
       "growl": {
-        "intervalMs": 0,
+        "intervalMs": 1200,
         "volume": 0.89,
         "earshotTiles": 11,
         "tailMs": 1450,
         "utterances": [
-          { "tempo": 0.56, "pitchSemitones": -8.25 }
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1.15,
+            "pitchSemitones": 2
+          }
+        ],
+        "allowedClips": [
+          "sfx_hollowhiss_rattling.ogg"
+        ]
+      }
+    },
+    "gar-wolf": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_bark-yap.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 300
+      },
+      "warning": {
+        "allowedClips": [
+          "sfx_bark-yap.ogg",
+          "sfx_rattle-bark-rattle.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 420
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_hound_growl.ogg",
+          "sfx_rattle-ghostgrowl-rattle.ogg",
+          "sfx_whine-cacaw.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 500
+      }
+    },
+    "dabinggi-hound": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_bark-cricket.ogg",
+          "sfx_clicky_howl-bark.ogg",
+          "sfx_syrinx_yaps.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 600
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_bark-cricket.ogg",
+          "sfx_hound_growl.ogg",
+          "sfx_whine-cacaw.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": -1
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": -1
+          }
+        ],
+        "intervalMs": 200
+      },
+      "warning": {
+        "allowedClips": [
+          "sfx_rattling_monkey-chirp.ogg",
+          "sfx_syrinx_yaps.ogg"
         ]
       }
     }
