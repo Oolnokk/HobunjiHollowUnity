@@ -11,12 +11,23 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const hub = read('docs/tools/index.html');
 const editor = read('docs/tools/ambient-dialogue-editor/index.html');
 const runtime = read('docs/js/ambient-dialogue.js');
+const vocalRuntime = read('docs/js/animal-vocalizations.js');
 const config = JSON.parse(read('docs/config/dialogue/ambient-dialogue.json'));
 
 assert.doesNotThrow(() => new vm.Script(runtime), 'ambient dialogue runtime parses as JavaScript');
+assert.doesNotThrow(() => new vm.Script(vocalRuntime), 'animal vocal runtime parses as JavaScript');
 assert(hub.includes('ambient-dialogue-editor/index.html'), 'tool hub links the Ambient Dialogue editor');
 assert(editor.includes('Greeting pool'), 'editor exposes NPC greeting settings');
-assert(editor.includes('Treasure announcements'), 'editor exposes animal treasure announcements');
+assert(editor.includes('Discovery announcements'), 'editor expands the animal treasure announcement section');
+assert(editor.includes('companionTreasureLines'), 'editor preserves and edits the existing companion treasure-line variable');
+assert(editor.includes('Passive chatter'), 'editor exposes per-species passive chatter settings');
+assert(editor.includes('Warning / discovery call'), 'editor exposes per-species warning settings');
+assert(editor.includes('Threat growl'), 'editor exposes per-species growl settings');
+assert(editor.includes('Pitch / tempo min'), 'editor exposes the playback-rate control already used by the runtime');
+assert(editor.includes('Preview sound'), 'editor can audition authored vocal timing with the real recorded pools');
+assert(editor.includes('data-discovery="animal-den"'), 'editor associates animal-den warning sounds with overhead text');
+assert(editor.includes('data-discovery="bandit-camp"'), 'editor associates bandit-camp warning sounds with overhead text');
+assert(editor.includes('textEachUtterance'), 'editor can choose whether repeated calls repeat their overhead text');
 assert(editor.includes('Audience reactions'), 'editor exposes cheers and jeers');
 assert(editor.includes('Nickname this NPC uses'), 'editor exposes directional NPC-to-NPC nickname settings');
 assert(editor.includes('Blank ='), 'editor explains the first-name fallback for NPC targets');
@@ -39,6 +50,9 @@ assert(runtime.includes('SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewrite
 assert(runtime.includes("event.textPart.text.slice(0, visibleChars)"), 'revealed letters accumulate instead of replacing one another');
 assert(runtime.includes('hasActiveGreetingFor(speakerId)'), 'an NPC cannot start another greeting until its active greeting has fully faded');
 assert(runtime.includes('greeting: true'), 'proximity greetings are marked separately from companion and crowd speech');
+assert(vocalRuntime.includes("fetch('config/dialogue/ambient-dialogue.json')"), 'vocal behavior reads authoring from the existing ambient dialogue config');
+assert(vocalRuntime.includes('discoveryText'), 'vocal runtime consumes reason-specific animal overhead text');
+assert(vocalRuntime.includes('textEachUtterance'), 'vocal runtime supports per-sequence or per-utterance text association');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
