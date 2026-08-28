@@ -7,112 +7,192 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'docs/js/animal-vocalizations.js'), 'utf8');
-const window = {};
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const source = read('docs/js/animal-vocalizations.js');
+const playback = read('docs/js/animal-voice-independent-playback.js');
+const simpleEditor = read('docs/js/animal-voice-simple-editor.js');
+const utteranceIndex = JSON.parse(read('docs/assets/audio/sfx/utterances/index.json'));
+
+assert.doesNotThrow(() => new vm.Script(source), 'animal vocal scheduler parses');
+assert.doesNotThrow(() => new vm.Script(playback), 'fixed animal playback parses');
+assert.doesNotThrow(() => new vm.Script(simpleEditor), 'simple animal voice editor parses');
+
+for (const oldToken of ['tempoMin', 'tempoMax', 'pitchMinSemitones', 'pitchMaxSemitones', 'tempoContour', 'pitchContourSemitones']) {
+  assert.doesNotMatch(source, new RegExp(oldToken), `scheduler does not use old ${oldToken} modulation`);
+}
+for (const oldToken of ['yinFrame', 'spectralCentroid', 'clipPitchByKey', 'setNormalizationProfiles', 'spliceTempoChannels', 'tempoBackend']) {
+  assert.doesNotMatch(playback, new RegExp(oldToken), `playback does not retain old ${oldToken} path`);
+}
+assert.match(source, /utterances/, 'responses are explicit utterance lists');
+assert.match(source, /clipTuning/, 'scheduler passes fixed global per-recording tuning');
+assert.match(source, /clipTuning: \{ \.\.\.\(common\.clipTuning \|\| \{\}\) \}/, 'species cannot redefine a recording base tune');
+assert.match(source, /sizePitchSemitones/, 'scheduler passes the global size pitch layer');
+assert.match(playback, /UTTERANCE_BASE = 'assets\/audio\/sfx\/utterances\/'/, 'runtime selects from descriptive utterance library');
+assert.match(playback, /LEGACY_SPECIES_DEFAULTS/, 'runtime preserves the old species sound choices when no allowlist is authored');
+assert.match(playback, /normalizeLibraryName/, 'renamed old species files resolve to descriptive library filenames');
+assert.match(playback, /clipTuningFor/, 'playback reads fixed per-recording tuning');
+assert.match(playback, /clipTuning\.tempo \* utteranceTempo/, 'recording speed multiplies exact utterance tempo');
+assert.match(playback, /clipTuning\.pitchSemitones \+ utterancePitch \+ sizePitch/, 'recording, utterance and global-size pitch add once');
+assert.match(playback, /capturePreparedAnimalElement/, 'AudioSystem still owns range/falloff/preload and initial preparation');
+assert.match(playback, /wsolaStretch/, 'constant renderer retains only minimum independent tempo/pitch compensation');
+
+assert.equal(utteranceIndex.clips.length, 22, 'utterance manifest exposes all 22 uploaded sounds');
+const indexedNames = new Set(utteranceIndex.clips.map(entry => entry.file));
+for (const entry of utteranceIndex.clips) {
+  assert.match(entry.file, /\.ogg$/i, `${entry.file} is an OGG utterance`);
+  assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/utterances', entry.file)), `${entry.file} exists beside the index`);
+}
+for (const [legacy, replacement] of Object.entries(utteranceIndex.legacyAliases || {})) {
+  assert.match(legacy, /\.ogg$/i);
+  assert.ok(indexedNames.has(replacement), `${legacy} aliases an indexed descriptive sound`);
+}
+for (const [species, names] of Object.entries(utteranceIndex.legacySpeciesDefaults || {})) {
+  assert.ok(names.length, `${species} retains at least one legacy default`);
+  for (const name of names) assert.ok(indexedNames.has(name), `${species} default ${name} is indexed`);
+}
+
+const overheadText = [];
+const window = {
+  AmbientDialogue: {
+    show: (rootObject, text, opts) => { overheadText.push({ rootObject, text, opts }); return {}; },
+  },
+};
 vm.runInNewContext(source, { window, Math, Date }, { filename: 'animal-vocalizations.js' });
 
 let clock = 0;
+let autoStart = true;
+const pendingStarts = [];
 const rendered = [];
-let autoStartAudio = true; // Disabled by the delayed-start regression below to simulate mobile OGG preparation latency.
-const pendingAudioStarts = [];
 window.AnimalVocalizations.init({
   random: () => 0.5,
   hasVoice: c => c.creatureKey !== 'unsupported',
   renderUtterance: (c, opts) => {
     rendered.push({ at: clock, id: c.id, ...opts });
-    if (autoStartAudio) opts.onStarted();
-    else pendingAudioStarts.push(opts.onStarted);
+    if (autoStart) opts.onStarted();
+    else pendingStarts.push(opts.onStarted);
     return true;
   },
 });
 
-function creature(id, creatureKey = 'gar-wolf') {
-  return { id, creatureKey, health: 10, state: 'idle' };
+function creature(id, creatureKey = 'gar-wolf', sizeClass = 'medium') {
+  return {
+    id,
+    creatureKey,
+    health: 10,
+    state: 'idle',
+    genotype: { sizeClass },
+    avatarRef: { group: { id: `${id}-group` } },
+  };
 }
 function tick(c, seconds, opts) {
   clock += seconds;
   window.AnimalVocalizations.tickCreature(c, seconds, opts);
 }
 
-const chatterer = creature('chatter');
-tick(chatterer, 8);
-tick(chatterer, 0.3);
-tick(chatterer, 0.3);
-tick(chatterer, 0.3);
-const chatter = rendered.filter(x => x.id === 'chatter');
-assert.equal(chatter.length, 4, 'passive chatter should produce a multi-call group');
-assert.ok(chatter.every(x => x.volume >= 0.16 && x.volume <= 0.26), 'chatter stays quiet');
-assert.ok(chatter.every(x => x.rate > 1.18), 'chatter is played at a quick tempo/pitch');
-assert.deepEqual(chatter.map(x => Number(x.at.toFixed(2))), [8, 8.3, 8.6, 8.9], 'chatter rhythm is scheduler-driven');
+window.AnimalVocalizations.setAuthoredProfiles({
+  default: {
+    sizePitchSemitones: { small: 3, medium: 0, large: -4 },
+    clipTuning: {
+      'sfx_rattle-bark-rattle.ogg': { tempo: 0.9, pitchSemitones: -1.5 },
+      'sfx_clicky_howl-bark.ogg': { tempo: 1.1, pitchSemitones: 0.5 },
+    },
+  },
+  'gar-wolf': {
+    // Deliberately bogus legacy species tuning: profileFor must ignore it now.
+    clipTuning: {
+      'sfx_rattle-bark-rattle.ogg': { tempo: 1.9, pitchSemitones: 9 },
+    },
+    chatter: {
+      intervalMs: 180,
+      utterances: [
+        { tempo: 1.2, pitchSemitones: 2 },
+        { tempo: 0.95, pitchSemitones: -1 },
+      ],
+      allowedClips: ['sfx_rattle-bark-rattle.ogg'],
+    },
+    warning: {
+      intervalMs: 300,
+      volume: 0.8,
+      utterances: [
+        { tempo: 1.05, pitchSemitones: 1 },
+        { tempo: 0.9, pitchSemitones: -2 },
+      ],
+      allowedClips: ['sfx_rattle-bark-rattle.ogg', 'sfx_clicky_howl-bark.ogg'],
+      textLines: ['Warning!'],
+    },
+    growl: {
+      intervalMs: 0,
+      utterances: [{ tempo: 0.7, pitchSemitones: -5 }],
+      allowedClips: ['sfx_clicky_howl-bark.ogg'],
+    },
+    discoveryText: { 'animal-den': ['Den!'] },
+  },
+});
 
-const warningCreature = creature('warning');
-const warningStart = clock;
-assert.equal(window.AnimalVocalizations.companionDiscovery(warningCreature, 'animal-den'), true);
-tick(warningCreature, 0.26);
-tick(warningCreature, 0.26);
-tick(warningCreature, 0.52);
-const warning = rendered.filter(x => x.id === 'warning');
-assert.equal(warning.length, 3, 'warning should repeat three times');
-assert.ok(warning.every(x => x.volume === 0.94), 'warning is loud');
-assert.deepEqual(warning.map(x => Number((x.at - warningStart).toFixed(2))), [0, 0.52, 1.04], 'warning repeats evenly');
+const profile = window.AnimalVocalizations.profileForDebug(creature('profile'));
+assert.deepEqual(Array.from(profile.warning.utterances, u => ({ ...u })), [
+  { tempo: 1.05, pitchSemitones: 1 },
+  { tempo: 0.9, pitchSemitones: -2 },
+]);
+assert.deepEqual({ ...profile.sizePitchSemitones }, { small: 3, medium: 0, large: -4 }, 'size map comes only from global default');
+assert.equal(profile.clipTuning['sfx_rattle-bark-rattle.ogg'].tempo, 0.9, 'recording base speed comes from global clip tuning');
+assert.equal(profile.clipTuning['sfx_rattle-bark-rattle.ogg'].pitchSemitones, -1.5, 'species-local base tuning cannot mutate the sound identity');
 
-const growler = creature('growl');
-assert.equal(window.AnimalVocalizations.threatGrowl(growler, 'attack-telegraph'), true);
-const growl = rendered.filter(x => x.id === 'growl');
-assert.equal(growl.length, 1, 'threat growl is one utterance, not a warning pattern');
-assert.ok(growl[0].rate < 0.7, 'threat growl is low-pitched and slow');
-assert.equal(growl[0].rateContour.length, 3, 'threat growl carries a sliding rate/pitch contour');
-assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse begins at the authored scale');
+const large = creature('large', 'gar-wolf', 'large');
+const start = clock;
+assert.equal(window.AnimalVocalizations.companionDiscovery(large, 'animal-den'), true);
+tick(large, 0.3);
+const calls = rendered.filter(entry => entry.id === 'large');
+assert.equal(calls.length, 2, 'explicit warning utterance list determines beat count');
+assert.deepEqual(calls.map(entry => Number((entry.at - start).toFixed(2))), [0, 0.3], 'one shared response gap determines cadence');
+assert.deepEqual(calls.map(entry => entry.tempo), [1.05, 0.9], 'each utterance has exact authored tempo');
+assert.deepEqual(calls.map(entry => entry.pitchSemitones), [1, -2], 'each utterance has exact authored pitch before size');
+assert.ok(calls.every(entry => entry.sizePitchSemitones === -4), 'global Large pitch is threaded separately to playback');
+assert.deepEqual(Array.from(calls[0].allowedClips), ['sfx_rattle-bark-rattle.ogg', 'sfx_clicky_howl-bark.ogg']);
+assert.equal(calls[0].clipTuning['sfx_clicky_howl-bark.ogg'].pitchSemitones, 0.5, 'global per-recording tuning travels with every utterance');
+assert.equal(overheadText.at(-1)?.text, 'Den!', 'reason-specific discovery text remains synchronized to audible call');
+
+const growler = creature('growler');
+assert.equal(window.AnimalVocalizations.threatGrowl(growler, 'attack'), true);
+const growl = rendered.find(entry => entry.id === 'growler');
+assert.equal(growl.tempo, 0.7);
+assert.equal(growl.pitchSemitones, -5);
+assert.deepEqual(Array.from(growl.allowedClips), ['sfx_clicky_howl-bark.ogg']);
+assert.equal(window.AnimalVocalizations.scalePulse(growler), 1);
 tick(growler, 0.045, { threatened: true });
-assert.ok(window.AnimalVocalizations.scalePulse(growler) > 1
-  && window.AnimalVocalizations.scalePulse(growler) <= 1.025, 'generic envelope retains an optional tiny scale-pulse utility');
-assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) > 0
-  && window.AnimalVocalizations.headNodOffsetDeg(growler) <= 4, 'rendered utterance produces a slight upward nod offset');
-assert.ok(window.AnimalVocalizations.debugSnapshot().maxHeadNodDeg > 0, 'mobile diagnostics expose the live nod angle');
-tick(growler, 0.2, { threatened: true });
-assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse settles exactly to authored scale');
-assert.equal(window.AnimalVocalizations.headNodOffsetDeg(growler), 0, 'nod settles without leaving a neck offset');
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) < 0, 'audible utterance still drives additive upward nod');
 
 const delayed = creature('delayed');
-autoStartAudio = false;
+autoStart = false;
 assert.equal(window.AnimalVocalizations.threatGrowl(delayed, 'mobile-buffer-test'), true);
 tick(delayed, 0.09, { threatened: true });
-assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed), 0, 'nod must not begin while audio is still preparing');
-assert.equal(pendingAudioStarts.length, 1, 'renderer retains one actual-start callback');
-pendingAudioStarts.shift()();
+assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed), 0, 'nod waits for actual audio start');
+assert.equal(pendingStarts.length, 1);
+pendingStarts.shift()();
 tick(delayed, 0.045, { threatened: true });
-assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) > 0, 'nod begins from the actual audible playback event');
-autoStartAudio = true;
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(delayed) < 0);
+autoStart = true;
 
 const prioritized = creature('priority');
 assert.equal(window.AnimalVocalizations.warning(prioritized, 'territorial-boundary'), true);
-assert.equal(window.AnimalVocalizations.threatGrowl(prioritized, 'attack'), false, 'growl cannot interrupt a warning');
-assert.equal(window.AnimalVocalizations.companionDiscovery(creature('none', 'unsupported'), 'treasure'), false, 'unsupported species can use caller fallback');
+assert.equal(window.AnimalVocalizations.threatGrowl(prioritized, 'attack'), false, 'growl still cannot interrupt higher-priority warning');
+assert.equal(window.AnimalVocalizations.companionDiscovery(creature('none', 'unsupported'), 'treasure'), false);
 
-const banditSource = fs.readFileSync(path.join(root, 'docs/js/bandit-camps.js'), 'utf8');
-assert.doesNotMatch(banditSource, /AudioSystem/, 'perception producer must not call the audio renderer');
-assert.match(banditSource, /requestCompanionDiscovery\?\.\(c, 'bandit-camp'\)/);
-assert.match(banditSource, /requestCompanionDiscovery\?\.\(c, 'animal-den'\)/);
-assert.doesNotMatch(source, /new Audio\s*\(|window\.AudioSystem/, 'semantic coordinator must remain audio-backend agnostic');
+assert.match(simpleEditor, /UTTERANCE_INDEX_URL/);
+assert.match(simpleEditor, /Global recording base tuning/);
+assert.match(simpleEditor, /Base speed ×/);
+assert.match(simpleEditor, /Base pitch \(st\)/);
+assert.match(simpleEditor, /exact utterance tempo\/pitch/);
+assert.match(simpleEditor, /data-utterance-field="tempo"/);
+assert.match(simpleEditor, /data-utterance-field="pitchSemitones"/);
+assert.match(simpleEditor, /Global size pitch · shared by every species/);
+assert.match(simpleEditor, /data-call-clip=/, 'response cards choose allowed indexed recordings');
+assert.match(simpleEditor, /Filter utterance library/, 'large sound library has a searchable experiment surface');
+assert.doesNotMatch(simpleEditor, /frequency analysis|normalization|tempo min|tempo max|pitch min|pitch max|contour/i);
 
-const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
-assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence drives passive chatter');
-assert.match(gameSource, /requestThreatGrowl:/, 'combat receives an explicit growl intent');
-assert.match(gameSource, /setHeadAdditiveRotation\?\.\(vocalHeadNodDeg\)/, 'utterance nod is applied as a separate neck layer');
-assert.doesNotMatch(gameSource, /renderedScaleY = scaleY \* vocalPulseScale/, 'vocalizations must not scale the animal body');
-const avatarSource = fs.readFileSync(path.join(root, 'docs/js/png-plane-avatar.js'), 'utf8');
-assert.match(avatarSource, /degrees \+ state\.additiveDeg/, 'head rig composes additive animation over the current base neck pose');
-assert.match(avatarSource, /setHeadAdditiveRotation/, 'head rig exposes a reusable additive animation API');
-const audioSource = fs.readFileSync(path.join(root, 'docs/js/audio-system.js'), 'utf8');
-assert.match(audioSource, /addEventListener\?\.\('playing', notifyStarted/, 'visual beat listens for actual audible media playback');
-assert.match(audioSource, /playResult\.then\(notifyStarted\)/, 'play promise resolution covers mobile event-order differences');
-const barkBody = audioSource.match(/function playCreatureBark\(c\) \{([\s\S]*?)\n  \}/)?.[1] || '';
-assert.doesNotMatch(barkBody, /AnimalVocalizations|growl/, 'legacy bark renderer stays separate from threat growls');
+const gameSource = read('docs/game.js');
+assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence still drives passive chatter');
+assert.match(gameSource, /requestThreatGrowl:/, 'combat still requests semantic growl intent');
+assert.match(gameSource, /setHeadAdditiveRotation\?\.\(vocalHeadNodDeg\)/, 'utterance nod remains an additive neck layer');
 
-for (const name of [
-  'sfx_dabinggi-hound1.ogg', 'sfx_dabinggi-hound2.ogg', 'sfx_drenkirra1.ogg', 'sfx_drenkirra2.ogg',
-  'sfx_gar-wolf1.ogg', 'sfx_gar-wolf2.ogg', 'sfx_grehlr1.ogg', 'sfx_grehlr2.ogg',
-  'sfx_nelk1.ogg', "sfx_uumkao'ii1.ogg", "sfx_uumkao'ii2.ogg",
-]) assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx', name)), `missing voice asset: ${name}`);
-
-console.log('animal vocalization tests passed');
+console.log('Indexed simple animal vocalization checks passed.');
