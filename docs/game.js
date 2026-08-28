@@ -8087,7 +8087,15 @@
         const edgeSigns = perps.map(perp => {
           const positiveEdge = perp + baseDeadRad;
           const negativeEdge = perp - baseDeadRad;
-          return Math.abs(angleDiff(characterLeftYaw, positiveEdge)) <= Math.abs(angleDiff(characterLeftYaw, negativeEdge)) ? 1 : -1;
+          // Compare the candidate card's FRONT NORMAL, not its raw yaw. When a
+          // camera-perp center itself equals characterLeftYaw, the two yaw edges
+          // are necessarily equidistant and floating-point noise used to decide
+          // which side expanded. The plane-facing normals remain distinct: pick
+          // the edge whose card faces character-left so that inward-facing edge
+          // is the one pushed farther away from the head.
+          const positiveFaceYaw = positiveEdge + Math.PI / 2;
+          const negativeFaceYaw = negativeEdge + Math.PI / 2;
+          return Math.abs(angleDiff(characterLeftYaw, positiveFaceYaw)) <= Math.abs(angleDiff(characterLeftYaw, negativeFaceYaw)) ? 1 : -1;
         });
         return {
           ...window.PerpRotation.expandOneSidedDeadzone(perps, baseDeadRad, edgeSigns, headTurnMagnitudeRad),

@@ -48,6 +48,12 @@ assert.match(game,
 assert.match(game,
   /const composerYawDelta = window\.PlayerBodyTransformComposer\?\.resolvedYawDeltaRad\?\.\(\) \|\| 0;[\s\S]{0,260}const characterLeftYaw = renderedBodyYaw \+ Math\.PI \/ 2;/,
   'protected side follows the visibly composed torso, including stance body-yaw');
+assert.match(game,
+  /const positiveFaceYaw = positiveEdge \+ Math\.PI \/ 2;[\s\S]{0,220}const negativeFaceYaw = negativeEdge \+ Math\.PI \/ 2;[\s\S]{0,320}angleDiff\(characterLeftYaw, positiveFaceYaw\)/,
+  'expanded edge is selected from candidate plane-facing normals, avoiding equal-distance yaw ties at character-left perps');
+assert.doesNotMatch(game,
+  /angleDiff\(characterLeftYaw, positiveEdge\)[\s\S]{0,160}angleDiff\(characterLeftYaw, negativeEdge\)/,
+  'raw candidate-yaw proximity cannot choose the protected edge');
 assert.doesNotMatch(game, /behaviorYawOffset/, 'player/companion head yaw is never added to final shoulder-pet billboard yaw');
 assert.doesNotMatch(game, /currentFacingYawDeg|targetFacingYawDeg|SHOULDER_PET_REVERSE_SPEED_DEG/, 'PR #268 turn-state behavior is absent from the clean rebuild');
 assert.match(game,
