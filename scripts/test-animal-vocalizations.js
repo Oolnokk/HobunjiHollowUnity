@@ -55,6 +55,16 @@ const growl = rendered.filter(x => x.id === 'growl');
 assert.equal(growl.length, 1, 'threat growl is one utterance, not a warning pattern');
 assert.ok(growl[0].rate < 0.7, 'threat growl is low-pitched and slow');
 assert.equal(growl[0].rateContour.length, 3, 'threat growl carries a sliding rate/pitch contour');
+assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse begins at the authored scale');
+tick(growler, 0.045, { threatened: true });
+assert.ok(window.AnimalVocalizations.scalePulse(growler) > 1
+  && window.AnimalVocalizations.scalePulse(growler) <= 1.025, 'generic envelope retains an optional tiny scale-pulse utility');
+assert.ok(window.AnimalVocalizations.headNodOffsetDeg(growler) > 0
+  && window.AnimalVocalizations.headNodOffsetDeg(growler) <= 4, 'rendered utterance produces a slight upward nod offset');
+assert.ok(window.AnimalVocalizations.debugSnapshot().maxHeadNodDeg > 0, 'mobile diagnostics expose the live nod angle');
+tick(growler, 0.2, { threatened: true });
+assert.equal(window.AnimalVocalizations.scalePulse(growler), 1, 'pulse settles exactly to authored scale');
+assert.equal(window.AnimalVocalizations.headNodOffsetDeg(growler), 0, 'nod settles without leaving a neck offset');
 
 const prioritized = creature('priority');
 assert.equal(window.AnimalVocalizations.warning(prioritized, 'territorial-boundary'), true);
@@ -70,6 +80,11 @@ assert.doesNotMatch(source, /new Audio\s*\(|window\.AudioSystem/, 'semantic coor
 const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence drives passive chatter');
 assert.match(gameSource, /requestThreatGrowl:/, 'combat receives an explicit growl intent');
+assert.match(gameSource, /setHeadAdditiveRotation\?\.\(vocalHeadNodDeg\)/, 'utterance nod is applied as a separate neck layer');
+assert.doesNotMatch(gameSource, /renderedScaleY = scaleY \* vocalPulseScale/, 'vocalizations must not scale the animal body');
+const avatarSource = fs.readFileSync(path.join(root, 'docs/js/png-plane-avatar.js'), 'utf8');
+assert.match(avatarSource, /degrees \+ state\.additiveDeg/, 'head rig composes additive animation over the current base neck pose');
+assert.match(avatarSource, /setHeadAdditiveRotation/, 'head rig exposes a reusable additive animation API');
 const audioSource = fs.readFileSync(path.join(root, 'docs/js/audio-system.js'), 'utf8');
 const barkBody = audioSource.match(/function playCreatureBark\(c\) \{([\s\S]*?)\n  \}/)?.[1] || '';
 assert.doesNotMatch(barkBody, /AnimalVocalizations|growl/, 'legacy bark renderer stays separate from threat growls');

@@ -827,7 +827,7 @@
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
-      lines.push(`Animal voices: requested=${animalVoiceDebug.requested} rendered=${animalVoiceDebug.rendered} suppressed=${animalVoiceDebug.suppressed} active=${animalVoiceDebug.active} last=${last ? `${last.kind}/${last.reason || 'none'}/${last.species}` : 'none'}`);
+      lines.push(`Animal voices: requested=${animalVoiceDebug.requested} rendered=${animalVoiceDebug.rendered} nods=${animalVoiceDebug.pulsed} nodding=${animalVoiceDebug.pulsing} maxNod=${animalVoiceDebug.maxHeadNodDeg}° suppressed=${animalVoiceDebug.suppressed} active=${animalVoiceDebug.active} last=${last ? `${last.kind}/${last.reason || 'none'}/${last.species}` : 'none'}`);
     }
     const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover state copyable on mobile without developer tools.
     if (volumeDebug) {

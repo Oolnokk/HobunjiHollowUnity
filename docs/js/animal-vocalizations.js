@@ -10,7 +10,10 @@
   const states = new WeakMap();
   const tracked = new Set();
   const PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
-  const debug = { requested: 0, rendered: 0, suppressed: 0, last: null };
+  const PULSE_DURATION_S = 0.18; // Used by scalePulse/tickCreature to give each rendered utterance one brief visual beat.
+  const PULSE_ADD_SCALE = 0.025; // Used by scalePulse as the tiny additive peak above the animal's composed base scale.
+  const VOCAL_NOD_UP_DEG = 4; // Used by headNodOffsetDeg for the slight upward neck beat attached to each utterance.
+  const debug = { requested: 0, rendered: 0, pulsed: 0, suppressed: 0, last: null };
 
   function init(injectedDeps) { deps = injectedDeps; }
   function random() { return deps?.random?.() ?? Math.random(); }
@@ -19,7 +22,7 @@
   function stateFor(c) {
     let state = states.get(c);
     if (!state) {
-      state = { active: null, nextChatterS: 4 + random() * 8 };
+      state = { active: null, nextChatterS: 4 + random() * 8, pulseRemainingS: 0 };
       states.set(c, state);
       tracked.add(c);
     }
@@ -82,7 +85,11 @@
     while (active.nextIndex < active.sequence.length
       && active.sequence[active.nextIndex].atS <= active.elapsedS + 0.0001) {
       const utterance = active.sequence[active.nextIndex++];
-      if (deps.renderUtterance(c, { ...utterance, meaning: active.kind, reason: active.reason })) debug.rendered++;
+      if (deps.renderUtterance(c, { ...utterance, meaning: active.kind, reason: active.reason })) {
+        state.pulseRemainingS = PULSE_DURATION_S;
+        debug.rendered++;
+        debug.pulsed++;
+      }
     }
     if (active.nextIndex >= active.sequence.length && active.elapsedS >= active.endsAtS) state.active = null;
   }
@@ -91,6 +98,7 @@
     if (!deps || !c || c.health <= 0 || !hasVoice(c)) return;
     const state = stateFor(c);
     const step = Math.max(0, Number(dt) || 0);
+    state.pulseRemainingS = Math.max(0, state.pulseRemainingS - step);
     if (state.active) {
       state.active.elapsedS += step;
       renderDue(c, state);
@@ -122,14 +130,39 @@
     return request(c, 'warning', { ...opts, reason });
   }
 
+  function pulseEnvelope(c) {
+    const remainingS = states.get(c)?.pulseRemainingS || 0; // Read by the optional scale helper and the live vocal head-nod layer.
+    if (remainingS <= 0) return 0;
+    const progress = Math.max(0, Math.min(1, 1 - remainingS / PULSE_DURATION_S));
+    return Math.sin(progress * Math.PI);
+  }
+
+  // Reusable visual envelope for future effects. Vocalizations currently use
+  // the additive head nod below, but callers that genuinely want a tiny body
+  // pulse later can compose this scale without changing the scheduler.
+  function scalePulse(c, additiveScale = PULSE_ADD_SCALE) {
+    return 1 + pulseEnvelope(c) * Math.max(0, Number(additiveScale) || 0);
+  }
+
+  function headNodOffsetDeg(c) {
+    return pulseEnvelope(c) * VOCAL_NOD_UP_DEG;
+  }
+
   function debugSnapshot() {
-    let active = 0;
+    let active = 0, pulsing = 0, maxHeadNodDeg = 0;
     for (const c of tracked) {
       if (!c || c.health <= 0) { tracked.delete(c); continue; }
       if (states.get(c)?.active) active++;
+      if ((states.get(c)?.pulseRemainingS || 0) > 0) {
+        pulsing++;
+        maxHeadNodDeg = Math.max(maxHeadNodDeg, headNodOffsetDeg(c));
+      }
     }
-    return { ...debug, active };
+    return { ...debug, active, pulsing, maxHeadNodDeg: Number(maxHeadNodDeg.toFixed(2)) };
   }
 
-  window.AnimalVocalizations = { init, tickCreature, companionDiscovery, threatGrowl, warning, debugSnapshot };
+  window.AnimalVocalizations = {
+    init, tickCreature, companionDiscovery, threatGrowl, warning,
+    pulseEnvelope, scalePulse, headNodOffsetDeg, debugSnapshot,
+  };
 })();
