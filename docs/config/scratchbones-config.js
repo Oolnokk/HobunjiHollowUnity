@@ -3547,7 +3547,7 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.5
           },
           "dig": {
-            "url": "assets/audio/sfx/sfx_dig.mp3?v=20260828trim1",
+            "url": "assets/audio/sfx/sfx_dig.mp3?v=20260828loud2",
             "placeholderUrls": [
               "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
               "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
@@ -3555,9 +3555,7 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
               "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
             ],
-            "volume": 0.95,
-            "pitch": 0.8,
-            "gainBoost": 3,
+            "volume": 1,
             "preload": true
           },
           "pick": {

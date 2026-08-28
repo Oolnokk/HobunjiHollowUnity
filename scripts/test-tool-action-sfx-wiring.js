@@ -11,8 +11,9 @@ assert(!config.includes('assets/audio/sfx/farming/sfx_dig.mp3'), 'dig must not u
 assert(game.includes("sfxKey: 'dig'"), 'shovel contact stages need dig SFX');
 assert(game.includes("sfxKey: 'chop'"), 'axe chop stages need chop SFX');
 assert(game.includes("sfxKey: 'pick'"), 'pick mine stages need pick SFX');
-assert(game.includes("chargeAction && !chargeStageSfxFired && progress >= SF"), 'held stage SFX need an independent one-shot latch');
+assert(game.includes("chargeAction && !chargeStageSfxFired && progress >= chargeSfxProgress"), 'held stage SFX need an independent one-shot latch and contact point');
 assert(!game.includes("chargeAction && !strikeFired && progress >= SF"), 'held stage SFX must not share the gameplay action latch');
+assert((game.match(/sfxKey: 'dig', sfxAt: 0\.16/g) || []).length === 2, 'hole and dew dig thrusts must sound at contact start');
 assert(game.includes("pendingAction.tool === 'shovel'"), 'single-strike shovel actions need dig SFX');
 assert(audio.includes('function playObjectSfxKey('), 'AudioSystem needs a configured-key playback boundary');
 assert(audio.includes('preloadConfiguredObjectSfx()'), 'tool cues need eager preload support');

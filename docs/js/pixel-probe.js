@@ -821,7 +821,8 @@
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;
       const ready = objectSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
-      lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key} found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+      const lastCueAgeMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null; // Distinguishes a recent tool cue from unrelated companion footsteps.
+      lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${lastCueAgeMs}ms ago found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
     }
     const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover state copyable on mobile without developer tools.
     if (volumeDebug) {

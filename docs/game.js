@@ -18849,14 +18849,14 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
-        { anim: 'thrust', dur, sfxKey: 'dig' },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Digging up a dew pile — same held input and same two-animation
       // (thrust/toss) shape as digging a brand-new trench, just at half the
       // base duration per rep.
       const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
-        { anim: 'thrust', dur, sfxKey: 'dig' },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
@@ -20241,9 +20241,11 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
-        if (chargeAction && !chargeStageSfxFired && progress >= SF) {
+        const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
+        const chargeSfxProgress = activeChargeStage?.sfxAt ?? SF; // Hole-dig thrusts sound at contact start; pick/chop and terminal breaks retain their proven strike endpoint.
+        if (chargeAction && !chargeStageSfxFired && progress >= chargeSfxProgress) {
           chargeStageSfxFired = true;
-          const stageDef = chargeAction.stages?.[chargeAction.stage]; // Used to resolve impact and final-break cues from the same contact frame.
+          const stageDef = activeChargeStage; // Used to resolve impact and final-break cues from the same contact frame.
           const chargeSfxKey = stageDef?.sfxKey;
           if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
           if (stageDef?.terminalSfxKey) {
