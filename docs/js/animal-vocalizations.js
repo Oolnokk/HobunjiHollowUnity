@@ -12,7 +12,7 @@
   const PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
   const PULSE_DURATION_S = 0.18; // Used by scalePulse/tickCreature to give each rendered utterance one brief visual beat.
   const PULSE_ADD_SCALE = 0.025; // Used by scalePulse as the tiny additive peak above the animal's composed base scale.
-  const VOCAL_NOD_UP_DEG = 4; // Used by headNodOffsetDeg for the slight upward neck beat attached to each utterance.
+  const VOCAL_NOD_UP_DEG = -4; // Used by headNodOffsetDeg; negative Z pitch is upward in the animal head-rig convention.
   const debug = { requested: 0, rendered: 0, pulsed: 0, suppressed: 0, lastStartLatencyMs: null, last: null };
 
   function init(injectedDeps) { deps = injectedDeps; }
@@ -159,7 +159,8 @@
       if (states.get(c)?.active) active++;
       if ((states.get(c)?.pulseRemainingS || 0) > 0) {
         pulsing++;
-        maxHeadNodDeg = Math.max(maxHeadNodDeg, headNodOffsetDeg(c));
+        const nodDeg = headNodOffsetDeg(c); // Keeps the strongest live signed nod so mobile diagnostics preserve direction.
+        if (Math.abs(nodDeg) > Math.abs(maxHeadNodDeg)) maxHeadNodDeg = nodDeg;
       }
     }
     return { ...debug, active, pulsing, maxHeadNodDeg: Number(maxHeadNodDeg.toFixed(2)) };
