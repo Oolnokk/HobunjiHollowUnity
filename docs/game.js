@@ -482,8 +482,10 @@
         npcDialogueStaging = null;
         window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+        player._lookAtDebug = null;
         if (_dialogueWalker) {
-          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
+          _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -3690,6 +3692,11 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
+        // During dialogue, faceNpcDialogueParticipants owns the player's
+        // neck bone exclusively (a continuous eye-contact aim at the NPC —
+        // see its own comment) — step aside entirely rather than fighting
+        // it with a second, different rotation write on the same bone.
+        if (dialogueOpen) return;
         // Shoulder-surf: the head locks onto the shared aim point
         // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
         // raycast) rather than the camera's own raw azimuth. Those two agree
@@ -3810,7 +3817,7 @@
       // forever, one full composeFrame call at a time, competing with every
       // other creature's real compose work for the same main thread).
       const _genotypeUnsupportedKinds = new Set();
-      function _getGenotypeTextures(kind, frame, genotype) {
+      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
           window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
@@ -3824,7 +3831,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}`;
+        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
         if (_genotypeTexCache.front.has(key)) {
           return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
         }
@@ -3840,9 +3847,9 @@
           _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
-            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" — kicking off composeFrame`, 'wildlife');
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          renderer.composeFrame(kind, frame, genotype).then(canvas => {
+          renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
@@ -3877,8 +3884,8 @@
       // frame/genotype completed, permanently stranding it on the plain
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
-      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of avatarRef.group.children) {
@@ -4912,6 +4919,38 @@
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
 
+      // A ground companion settled near the player (see the "settle" branch
+      // of updateCompanions below) used to pick its idle wander points from
+      // a plain disk centered on the player — including points arbitrarily
+      // close to (or right on top of) them. This keeps that same wander
+      // rhythm but samples from a donut instead: its hole is the player's
+      // own "personal space" (1.5x the player's actual rendered portrait
+      // width, so it scales with whatever avatar is currently equipped),
+      // and its outer edge sits one more portrait-width further out, giving
+      // the ring some visible thickness rather than pinning to one exact
+      // distance.
+      function _companionPersonalSpacePx() {
+        return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
+      }
+      function _companionFollowWanderTick(c, dt, master) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          // Kept safely inside FOLLOW_FAR_PX (the "gone too far, catch up"
+          // trigger below) so a freshly-picked wander target never sits
+          // just past it and immediately yanks the companion back into
+          // chase — and the inner/outer clamps guarantee a real ring even
+          // for a hypothetical unusually wide portrait.
+          const maxOuterPx = FOLLOW_FAR_PX * 0.9;
+          const innerPx = Math.min(_companionPersonalSpacePx(), maxOuterPx * 0.8);
+          const outerPx = Math.max(innerPx + TILE * 0.2, Math.min(innerPx + (playerAvatarModelWidth || 0.9) * TILE, maxOuterPx));
+          const ang = rnd() * Math.PI * 2;
+          const r = innerPx + rnd() * (outerPx - innerPx);
+          c.wanderTarget = { x: master.x + Math.cos(ang) * r, y: master.y + Math.sin(ang) * r };
+          c.wanderT = 1.5 + rnd() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
@@ -4948,7 +4987,8 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY); // Preserves both authored size axes through attack squash.
+        const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now());
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -5067,6 +5107,15 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        // Item 3: eyes-open/eyes-shut blinking, layered into the same
+        // genotype composite pass above the eyes' own layer (see
+        // composeFrame's blinkShut param) — only meaningful for
+        // genotype-bearing creatures, since a plain (no-genotype) creature
+        // never goes through composeFrame at all. blinkFrameKey folds the
+        // blink state into the readiness/retry bookkeeping below so a
+        // blink toggle forces a re-apply even though the underlying
+        // idle/run frame key hasn't changed.
+        const blinkShut = genotypeKind ? (window.CreatureBlink?.isShut(c, performance.now()) || false) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -5075,17 +5124,19 @@
         if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
-          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-          if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+          if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
           }
-          if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
-            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
+          if (c.currentFrameUrl !== c.def.sprites.idle || c._blinkAppliedShut !== blinkShut || needsRetry) {
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut);
             c.currentFrameUrl = c.def.sprites.idle;
+            c._blinkAppliedShut = blinkShut;
             if (genotypeKind && applied) {
-              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
             }
           }
           // Not tracking ground covered while idle, so resuming movement
@@ -5111,17 +5162,19 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-        if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+        if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
         }
-        if (c.currentFrameUrl !== url || needsRetry) {
-          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
+        if (c.currentFrameUrl !== url || c._blinkAppliedShut !== blinkShut || needsRetry) {
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut);
           c.currentFrameUrl = url;
+          c._blinkAppliedShut = blinkShut;
           if (genotypeKind && applied) {
-            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
           }
         }
       }
@@ -5331,7 +5384,10 @@
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
-            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+            if (c.isBandit) {
+              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              window.BanditCombat?.restNeckLook?.(c, dt);
+            }
           }
 
           let moving = false, aimAngle = c.facing || 0;
@@ -5605,6 +5661,20 @@
             } else {
               _restoreCompanionHead(c, dt);
             }
+          } else if (!c.isBandit) {
+            // A genuinely hostile animal creature: nod its head (the
+            // authored rig's Z/pitch "nod" axis, see
+            // _updateCreatureHeadLookAtCombatTarget) toward whatever it's
+            // currently engaged with — the player during a chase, or the
+            // grazing prey it's stalking during patrol-chase. Bandits are
+            // excluded here; their own head-look (a neck yaw, not this
+            // pitch rig) is driven separately by
+            // combat-bandit.js's _updateBanditLookAtTarget.
+            const combatTarget = c.state === 'patrol-chase' ? c.targetCreature
+              : c.state === 'chase' ? c.targetPlayer
+              : null;
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt);
+            else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
@@ -5803,6 +5873,7 @@
 
       function _restoreCompanionHead(c, dt) {
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        if (c) c._lookAtDebug = null;
       }
 
       // Look targets use the character's face, not the feet/body center. The
@@ -5811,29 +5882,27 @@
       // authored animal head bone so a nearby animal actually lifts its gaze.
       function _playerFaceTarget(master = player) {
         const isPlayer = master === player;
-        const modelHeight = isPlayer
-          ? (Number(playerAvatarModelHeight) || 0.9)
-          : (Number(master?.avatarRef?.group?.userData?.portraitModelHeight) || Number(master?.halfHeight || 0.45) * 2);
-        const floorY = isPlayer
-          ? (Number(playerMesh?.position?.y) || 0)
-          : ((Number(master?.avatarRef?.group?.position?.y) || 0) - (Number(master?.halfHeight) || modelHeight / 2));
-        return {
-          x: Number(master?.x) || 0,
-          y: Number(master?.y) || 0,
-          worldY: floorY + modelHeight * PLAYER_FACE_HEIGHT_RATIO,
-        };
+        const pos = isPlayer
+          ? window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight })
+          : window.CreatureHeadCache.getHeadWorld(master, 'companion-portrait');
+        return { x: pos.x, y: pos.z, worldY: pos.worldY };
       }
 
       function _creatureHeadWorldY(c) {
-        const group = c.avatarRef?.group;
-        if (!group) return 0;
-        const rig = c.avatarRef?.headRig?.rig;
-        const modelHeight = Number(c.def?.modelWidth) * Number(c.def?.spriteAspect || (600 / 1375)) || Number(c.halfHeight || 0.45) * 2;
-        const scaleY = Number(group.scale?.y) || 1;
-        const pivotY = Number(rig?.pivot?.y);
-        const pivotOffset = Number.isFinite(pivotY) ? (0.5 - pivotY) * modelHeight : modelHeight * 0.08;
-        const planeOffset = Number(c.avatarRef?.frontPlane?.position?.y) || 0;
-        return (Number(group.position?.y) || 0) + (planeOffset + pivotOffset) * scaleY;
+        return window.CreatureHeadCache.getHeadWorld(c, 'animal')?.worldY || 0;
+      }
+
+      // Feeds docs/js/debug-hitboxes.js's "Show Interaction Raycast" debug
+      // toggle — every head-look system below records the exact head/target
+      // world points it just aimed at here, in Three.js world (tile) units,
+      // rather than the debug drawer trying to reverse-engineer a direction
+      // out of a rotated (and, for animals, mirrored front/back) bone
+      // transform. Cleared wherever the corresponding look resets to rest.
+      function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        looker._lookAtDebug = {
+          head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
+          target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
+        };
       }
 
       function _updateCreatureLookAtFace(c, master, dt) {
@@ -5844,7 +5913,84 @@
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
+      }
+
+      // Where a living thing's "head" is, in the raw-px + worldY convention
+      // _updateCreatureHeadLookAtCombatTarget/companion horizon-scan both
+      // use (see below). The player has a real authored face height
+      // (_playerFaceTarget); an NPC walker has the same eye-position math
+      // dialogue's eye contact uses (_dialogueEyeWorldPosition), just
+      // converted out of its native tile-scale units into this function's
+      // raw-px convention; any other creature (patrol-chase predator/prey,
+      // a horizon-scan lock) doesn't carry anything that precise, so its
+      // head is approximated as its own head-rig pivot's height, nudged 5%
+      // of its own sprite width toward its face/snout (the authored sprites
+      // all face the same "front" edge of their own local frame) rather
+      // than sitting dead-center on the pivot.
+      const COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC = 0.05;
+      function _combatTargetHeadWorld(target) {
+        if (target === player) {
+          const t = _playerFaceTarget(target);
+          return { x: t.x, y: t.y, worldY: t.worldY };
+        }
+        if (target?.root?.position && Number.isFinite(Number(target?.avatarHeight))) {
+          const eye = _dialogueEyeWorldPosition(target.root.position, target.avatarHeight);
+          return { x: eye.x * TILE, y: eye.z * TILE, worldY: eye.y };
+        }
+        const modelWidth = Number(target?.def?.modelWidth) || Number(target?.visualModelWidth) || Number(target?.modelHeight) || 1.5;
+        return {
+          x: (Number(target?.x) || 0) - COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC * modelWidth * TILE,
+          y: Number(target?.y) || 0,
+          worldY: _creatureHeadWorldY(target),
+        };
+      }
+
+      // Head-nod (Z/pitch axis on the authored animal head rig) toward
+      // whichever target this creature is currently engaged with in combat
+      // — see updateHostiles' hostile branch below. Mirrors
+      // _updateCreatureLookAtFace's math exactly, just generalized to any
+      // combat target (player or another creature) via
+      // _combatTargetHeadWorld instead of always assuming the player.
+      function _updateCreatureHeadLookAtCombatTarget(c, target, dt) {
+        if (!target) {
+          _restoreCompanionHead(c, dt);
+          if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+          return;
+        }
+        // Yaw here corrects for the gap between the target's exact bearing
+        // and wherever this creature's body is currently facing (c.facing,
+        // one frame stale here — same convention/timing bandit's own
+        // _updateBanditLookAtTarget already relies on) -- the body's own
+        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
+        // ever snaps to a handful of discrete facings, so without this the
+        // head can visibly undershoot exactly where the target's face is
+        // even once the body looks "close enough," reading as not locked
+        // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt);
+      }
+
+      // The shared "aim my head at this exact world point" core both
+      // _updateCreatureHeadLookAtWorldPoint's callers rely on: an actual
+      // living combat target (via _combatTargetHeadWorld) or, for the
+      // horizon-scan idle fixation below, a plain fixed {x,y,worldY} point
+      // with no entity behind it at all. Pulled out of
+      // _updateCreatureHeadLookAtCombatTarget so both share the exact same
+      // pitch+yaw+debug-ray math instead of a hand copy.
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt) {
+        const dx = head.x - c.x, dy = head.y - c.y;
+        const horizontalPx = Math.hypot(dx, dy);
+        const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
+        const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, head.x, head.y, head.worldY);
+        if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
+          const rawBearing = Math.atan2(dy, dx);
+          const residualRad = angleDiff(rawBearing, c.facing || 0);
+          const yawDeg = Math.max(-30, Math.min(30, residualRad * 180 / Math.PI));
+          c.avatarRef.updateHeadYaw(yawDeg, dt);
+        }
       }
 
       function _tickShoulderPetCuriosity(c, dt) {
@@ -5855,6 +6001,8 @@
           targetLeanDeg: 0,
           currentPitchDeg: 0,
           targetPitchDeg: 0,
+          currentYawDeg: 0,
+          targetYawDeg: 0,
           baseFrontRoll: null,
           baseBackRoll: null,
         });
@@ -5867,14 +6015,21 @@
               + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
             state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
               + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
-            state.targetPitchDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
-              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG))
-              + (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
+            // The actual "turns its head to look" motion is yaw (the same
+            // axis a real head-shake/head-turn rotates on), driven through
+            // the authored head rig's Y-axis bone (see
+            // png-plane-avatar.js's updateHeadYaw) — kept separate from the
+            // small up/down pitch jitter below, which stays on the rig's
+            // existing Z/nod axis.
+            state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG));
+            state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           } else if (state.phase === 'look') {
             state.phase = 'settle';
             state.timer = 0.55;
             state.targetLeanDeg = 0;
             state.targetPitchDeg = 0;
+            state.targetYawDeg = 0;
           } else {
             state.phase = 'wait';
             state.timer = SHOULDER_PET_CURIOUS_WAIT_MIN_S
@@ -5884,6 +6039,7 @@
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
         state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
         state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -5893,14 +6049,16 @@
         if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
         if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
         // updateCreatureMesh owns the attachment root and will be followed by
-        // updateShoulderPetMeshPin. A local Y turn foreshortens these flat
-        // side-view planes and used to look exactly like the small pet was
-        // randomly becoming medium-sized. Roll the mirrored planes within
-        // their own image instead; the authored head bone supplies the real
-        // independent curious turn without disturbing genotype scale.
+        // updateShoulderPetMeshPin. A local Y turn on the whole plane
+        // foreshortens these flat side-view planes and used to look exactly
+        // like the small pet was randomly becoming medium-sized. Roll the
+        // mirrored planes within their own image instead; the authored head
+        // rig's own Y-axis bone (below) supplies the real independent
+        // curious head-turn without disturbing genotype scale or plane width.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
+        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -5941,6 +6099,179 @@
         }
         c.vx = 0; c.vy = 0;
         return { aimAngle: _updateCreatureLookAtFace(c, master, dt) };
+      }
+
+      // ── Companion horizon scan ────────────────────────────────────────
+      // A ground companion (not a shoulder pet — those keep their own
+      // curiosity system, see _tickShoulderPetCuriosity) spends its idle
+      // head time alternating between a slow "scanning" sweep and briefly
+      // locking eyes on a nearby living thing (a wild creature, bandit, or
+      // friendly NPC) that's actually approaching the player, rather than
+      // sitting dead-still whenever it isn't in combat.
+      const COMPANION_SCAN_RANGE_PX = TILE * 7;
+      const COMPANION_SCAN_CHECK_MIN_S = 1.6; // How long a "nothing found" scan waits before checking again.
+      const COMPANION_SCAN_CHECK_MAX_S = 3.2;
+      const COMPANION_SCAN_LOCK_MIN_S = 1.2; // How long a found lock holds before releasing back to scanning.
+      const COMPANION_SCAN_LOCK_MAX_S = 2.4;
+      // Idle "nothing locked" fixation: rather than a metronomic sweep, the
+      // companion picks a random point out in the world, holds its gaze
+      // fixed there (tracking it as its own body moves) for a random few
+      // seconds, then either picks a new point or relaxes back to rest —
+      // reads as noticing things rather than scanning on a fixed cycle.
+      const COMPANION_SCAN_FOCUS_MIN_S = 1.4;
+      const COMPANION_SCAN_FOCUS_MAX_S = 4.5;
+      const COMPANION_SCAN_FOCUS_REST_CHANCE = 0.3; // Some fixations are just relaxing to a forward rest pose, so the idle scan doesn't read as perpetually alert.
+      const COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG = 100; // How far off its own body-forward a scan point can land — never straight behind.
+      const COMPANION_SCAN_FOCUS_MIN_DIST_PX = TILE * 2.5;
+      const COMPANION_SCAN_FOCUS_MAX_DIST_PX = TILE * 6;
+      const COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE = 0.35; // Incidental up/down variety (world-scene units) so the gaze doesn't sit dead-level every time.
+      const COMPANION_SCAN_APPROACH_DROP_PX = TILE * 0.12; // Minimum distance-to-player closed per check interval to count as "coming towards."
+      const COMPANION_SCAN_APPROACH_CHECK_MS = 400;
+
+      // Shared (not per-companion) so every companion checking the same
+      // candidate reuses one tracked distance history instead of each
+      // maintaining its own — "is this thing approaching the player" is a
+      // property of the candidate, not of whichever companion is looking.
+      const _companionScanApproachCache = new WeakMap(); // candidate -> { lastDist, lastCheckedAt, approaching }
+      function _isApproachingPlayer(candidate, master, cx, cy) {
+        const now = performance.now();
+        const dist = Math.hypot(master.x - cx, master.y - cy);
+        const cached = _companionScanApproachCache.get(candidate);
+        if (!cached || now - cached.lastCheckedAt >= COMPANION_SCAN_APPROACH_CHECK_MS) {
+          const approaching = cached ? (cached.lastDist - dist) > COMPANION_SCAN_APPROACH_DROP_PX : false;
+          _companionScanApproachCache.set(candidate, { lastDist: dist, lastCheckedAt: now, approaching });
+          return approaching;
+        }
+        return cached.approaching;
+      }
+
+      // Nearest living thing within range that's actually closing distance
+      // on the player right now — wild/hostile creatures and friendly NPCs
+      // alike (not other companions/shoulder pets; staring at each other
+      // isn't the point of this).
+      function _findApproachingLivingThing(master) {
+        let best = null, bestDist = COMPANION_SCAN_RANGE_PX;
+        for (const h of hostileObjects) {
+          if (h.health <= 0 || h.areaId !== currentArea) continue;
+          const dist = Math.hypot(h.x - master.x, h.y - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(h, master, h.x, h.y)) continue;
+          best = h; bestDist = dist;
+        }
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea || !w.root) continue;
+          const wx = w.root.position.x * TILE, wz = w.root.position.z * TILE; // walker positions are tile-scale; match hostileObjects' raw-px convention.
+          const dist = Math.hypot(wx - master.x, wz - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(w, master, wx, wz)) continue;
+          best = w; bestDist = dist;
+        }
+        return best;
+      }
+
+      // A fresh idle fixation point/duration: usually a random point out in
+      // the world (picked relative to the companion's own position and
+      // facing at the moment of picking, then held fixed in world space —
+      // see _tickCompanionHorizonScan, which re-aims at this same {x,y,worldY}
+      // every frame as the companion walks), occasionally just "relax to
+      // rest" so the idle scan doesn't read as perpetually alert.
+      function _pickCompanionScanFocus(c) {
+        if (rnd() < COMPANION_SCAN_FOCUS_REST_CHANCE) return null;
+        const spreadRad = COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG * Math.PI / 180;
+        const angle = (c.facing || 0) + (rnd() * 2 - 1) * spreadRad;
+        const dist = COMPANION_SCAN_FOCUS_MIN_DIST_PX + rnd() * (COMPANION_SCAN_FOCUS_MAX_DIST_PX - COMPANION_SCAN_FOCUS_MIN_DIST_PX);
+        return {
+          x: c.x + Math.cos(angle) * dist,
+          y: c.y + Math.sin(angle) * dist,
+          worldY: _creatureHeadWorldY(c) + (rnd() * 2 - 1) * COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE,
+        };
+      }
+
+      function _applyCompanionScanFixation(c, state, dt) {
+        state.focusTimer -= dt;
+        if (state.focusTimer <= 0) {
+          state.focusPoint = _pickCompanionScanFocus(c);
+          state.focusTimer = COMPANION_SCAN_FOCUS_MIN_S + rnd() * (COMPANION_SCAN_FOCUS_MAX_S - COMPANION_SCAN_FOCUS_MIN_S);
+        }
+        if (state.focusPoint) _updateCreatureHeadLookAtWorldPoint(c, state.focusPoint, dt);
+        else _restoreCompanionHead(c, dt);
+      }
+
+      // "Stare back if you focus on their head" — is the player's own
+      // camera/cursor aim ray (the same ray the "Show Interaction Raycast"
+      // debug toggle already visualizes) currently passing close to this
+      // creature's actual head point? Reused by both ground companions
+      // (below) and farm livestock (see farm-animals.js's
+      // deps.isPlayerFocusedOnHead, backed by this same math).
+      const PLAYER_HEAD_FOCUS_RADIUS_WORLD = 0.7; // Generous on purpose — this is "is the player roughly looking this creature's way," not a pixel-precise headshot hitbox.
+      // Frame-cached (keyed off lastTime, set once per gameLoop tick) since
+      // this is now asked for by every ground companion (twice a frame —
+      // once for the horizon-scan lock, once for the movement freeze below)
+      // and every farm animal (once each, every frame, regardless of
+      // whether anything is actually in range) — without this, a farm with
+      // a couple dozen animals redid this same raycaster setFromCamera call
+      // that many times a frame for an identical answer.
+      let _cachedPlayerLookRay = null;
+      let _cachedPlayerLookRayAt = -1;
+      function _currentPlayerLookRay() {
+        if (_cachedPlayerLookRayAt === lastTime) return _cachedPlayerLookRay;
+        _cachedPlayerLookRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        _cachedPlayerLookRayAt = lastTime;
+        return _cachedPlayerLookRay;
+      }
+      function _isPlayerFocusedOnHead(c) {
+        const head = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+        if (!head) return false;
+        const ray = _currentPlayerLookRay();
+        if (!ray) return false;
+        return window.CreatureHeadCache.isRayNearPoint(ray, { x: head.x / TILE, y: head.worldY, z: head.z / TILE }, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+      }
+
+      function _tickCompanionHorizonScan(c, master, dt) {
+        // Eye contact on demand takes priority over ambient scanning/
+        // locking — a companion that's deliberately being looked at should
+        // always look back immediately, not wait for its own scan timer.
+        if (_isPlayerFocusedOnHead(c)) {
+          _updateCreatureHeadLookAtCombatTarget(c, player, dt);
+          return;
+        }
+        const state = c.horizonScan || (c.horizonScan = {
+          phase: 'scan',
+          timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
+          lockedTarget: null,
+          focusPoint: null,
+          focusTimer: 0, // Expired immediately, so the first fixation point is picked on the very first idle tick rather than waiting out a full cycle.
+        });
+        state.timer -= dt;
+        if (state.phase === 'scan' && state.timer <= 0) {
+          const found = _findApproachingLivingThing(master);
+          if (found) {
+            state.phase = 'lock';
+            state.lockedTarget = found;
+            state.timer = COMPANION_SCAN_LOCK_MIN_S + rnd() * (COMPANION_SCAN_LOCK_MAX_S - COMPANION_SCAN_LOCK_MIN_S);
+          } else {
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        } else if (state.phase === 'lock') {
+          const target = state.lockedTarget;
+          const targetAlive = target && (target.health === undefined || target.health > 0);
+          const targetArea = target?.areaId || target?.area;
+          if (!targetAlive || targetArea !== currentArea || state.timer <= 0) {
+            state.phase = 'scan';
+            state.lockedTarget = null;
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        }
+        if (state.phase === 'lock' && state.lockedTarget) {
+          // Reuses the exact pitch+yaw+debug-ray logic combat head-lock
+          // already uses (see updateHostiles) — a horizon-scan lock is the
+          // same "aim my head at this living thing's head" behavior, just
+          // triggered by ambient noticing instead of being someone's
+          // combat target.
+          _updateCreatureHeadLookAtCombatTarget(c, state.lockedTarget, dt);
+        } else {
+          _applyCompanionScanFixation(c, state, dt);
+        }
       }
 
       function _clearCompanionTreasureCue(c, dt, reason) {
@@ -6366,7 +6697,7 @@
           }
           if (!c.treasureCue
             && !window.Combat?.animalAttacks?.isBusy(c)
-            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
+            && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -6440,15 +6771,23 @@
           } else if (distToMaster > FOLLOW_FAR_PX) {
             moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
+          } else if (_isPlayerFocusedOnHead(c)) {
+            // The player is staring right at its head — hold position and
+            // let them approach instead of drifting back out to the donut
+            // ring or dropping into a separate watch-idle animation.
+            // _tickCompanionHorizonScan (called above, same trigger) already
+            // has the head staring back; this just keeps the body from
+            // fighting that by wandering away mid-approach.
+            c.vx = 0; c.vy = 0;
           } else if (c.watchPlayerIdle) {
             const watchMotion = _tickCompanionWatchIdle(c, master, dt);
             if (watchMotion) aimAngle = watchMotion.aimAngle;
             else {
-              moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+              moving = _companionFollowWanderTick(c, dt, master);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             }
           } else {
-            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+            moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -7866,6 +8205,14 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
+      // of a dialogue portrait's canvas/profile, kept around so
+      // _tickPlayerPortraitLife can cheaply re-render just the front texture
+      // (blink/breathing) every so often without repeating the full gear/
+      // cosmetic rebuild refreshPlayerAvatar() itself does.
+      let playerAvatarGroup = null;
+      let playerAvatarFrontCanvas = null;
+      let playerAvatarProfile = null;
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
       // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
       // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
@@ -7878,6 +8225,12 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // The player's own rendered bust-portrait model WIDTH (avatarWidth in
+      // refreshPlayerAvatar) — same idea as playerAvatarModelHeight above.
+      // Used to size a ground companion's "personal space" donut (see
+      // _companionPersonalSpacePx) so its settle-wander radius scales with
+      // how wide the player's own avatar actually renders.
+      let playerAvatarModelWidth = 0.9;
       // Procedural leg/foot animation handle for the player's own avatar —
       // rebuilt in refreshPlayerAvatar (species/gender can change there),
       // driven each frame from updatePlayerMesh. See
@@ -9371,6 +9724,39 @@
         player.vy = 0;
       }
 
+      // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
+      // Author's actor gaze system (aimActorNeckAtTarget/actorEyeWorldPosition
+      // in docs/tools/animation-author/index.html — used there for e.g. the
+      // dance preset, where two actors of different heights still need to
+      // convincingly meet each other's eyes): computes yaw AND pitch together
+      // from the real 3D direction between two eye-height world points, then
+      // transforms that direction into the neck bone's own parent space, so
+      // the result is automatically correct regardless of how the body is
+      // currently rotated — unlike aiming at the residual gap against the
+      // body's own (slower) facing lerp, this doesn't decay back toward zero
+      // once the body catches up. Called every frame, it holds a steady
+      // "looking at you" pose for as long as it keeps being called, which is
+      // what a conversation needs (the gaze should persist for the whole
+      // exchange, not just the moment right after it opens).
+      function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
+        return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        if (!neckJoint?.parent) return false;
+        neckJoint.parent.updateMatrixWorld(true);
+        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const horizontal = Math.hypot(direction.x, direction.z);
+        if (direction.lengthSq() < 1e-8) return false;
+        const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        return true;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -9386,15 +9772,20 @@
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
-        // Head rotation: the body above only catches up to npcTargetRot
-        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
-        // neck bone at however much of that gap remains right now (clamped to
-        // a natural-looking max) — the NPC glances at the player immediately
-        // and the head straightens on its own as the body finishes turning.
+        // Eye contact: aims BOTH the NPC's and the player's own neck bone
+        // straight at the other's eyes, held for the whole conversation (see
+        // _aimNeckAtEyeContact above) — this owns the player's neck bone
+        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
+        // for exactly this reason, see its own dialogueOpen guard).
+        walker.root.updateMatrixWorld(true);
+        playerMesh.updateMatrixWorld(true);
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
-          const residual = angleDiff(npcTargetRot, walker.rot);
-          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+        }
+        if (playerNeckJoint) {
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
         }
       }
 
@@ -10420,9 +10811,81 @@
         window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
       }
 
+      // ── World-space blink/breathing/default-expression (item 3) ─────────
+      // The dialogue/cutscene portrait canvas already re-renders periodically
+      // with the breathing composer (see runAnimation's own breathTimer just
+      // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
+      // blinks/breathes and shows each NPC's own authored restingExpression
+      // — the WORLD-space walking avatar never did, since makeNpcWalker/
+      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
+      // at spawn/gear-change and never touch it again. This applies that
+      // same periodic-recompose idea (the identical cheap
+      // refreshSinglePlaneAvatarModel texture-only path runAnimation already
+      // uses, not a full geometry rebuild) to both NPC walkers and the
+      // player, at a coarser interval than dialogue's 120ms since many NPCs
+      // can be on screen at once — and only the player's current area's
+      // walkers pay this cost at all (see the area guard below).
+      function _worldPortraitLifeConfig() {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
+        return {
+          enabled: cfg.enabled !== false,
+          intervalS: Number.isFinite(Number(cfg.intervalS)) ? Number(cfg.intervalS) : 0.16,
+        };
+      }
+
+      function _tickNpcPortraitLife(walker, dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || walker.area !== currentArea) return; // Only the player's current scene pays this cost.
+        if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
+        walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
+        if (walker._portraitLifeT < cfg.intervalS) return;
+        walker._portraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
+        if (!walker._portraitLifeExpressionSet) {
+          // The NPC's own authored default expression (rec.restingExpression
+          // — see dialogue-content.js's _npcRestingExpression, now shared via
+          // window.DialogueContent.npcRestingExpression) applies here too, so
+          // a walking NPC shows the same resting face dialogue already gives
+          // them, not a generic neutral one. Set once per walker (this seatId
+          // is stable for its whole lifetime) rather than every tick.
+          composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
+          walker._portraitLifeExpressionSet = true;
+        }
+        if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
+        walker._portraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+        }).then(() => {
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+        }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
+      }
+
+      let _playerPortraitLifeT = 0;
+      let _playerPortraitLifePending = false;
+      function _tickPlayerPortraitLife(dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || _playerPortraitLifePending) return;
+        if (!playerAvatarGroup?.userData?.frontTexture || !playerAvatarFrontCanvas || !playerAvatarProfile) return;
+        _playerPortraitLifeT += dt;
+        if (_playerPortraitLifeT < cfg.intervalS) return;
+        _playerPortraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
+        _playerPortraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
+          breathingComposer: composer, seatId: 'player',
+        }).then(() => {
+          if (generation !== playerAvatarRefreshGeneration) return;
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
+        }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) w.update(dt);
+        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -13662,6 +14125,7 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
+        playerAvatarModelWidth = avatarWidth;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
         // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
         // and bottom-edge pixel row (see handAttachX/handAttachY in
@@ -13694,6 +14158,9 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
+        playerAvatarGroup = avatarGroup;
+        playerAvatarFrontCanvas = frontCanvas;
+        playerAvatarProfile = profile;
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -22274,6 +22741,7 @@
         }
         window.RangedWeapons?.update(dt);
         updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        _tickPlayerPortraitLife(dt);
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
@@ -26078,6 +26546,13 @@
         clamp,
         debugLog,
         TILE,
+        // Used only for the "Show Interaction Raycast" debug overlay's
+        // head-to-target line — a bandit's own combat AI aims at real
+        // hitbox geometry (meleeAimSolution), not this.
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x, y: pos.z, worldY: pos.worldY };
+        },
         PLAYER_RADIUS,
         JUMP_BACK_DUR_S,
         JUMP_BACK_SPEED,
@@ -26754,6 +27229,8 @@
         player,
         hostileObjects,
         companionObjects,
+        npcWalkers,
+        animalObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
@@ -26934,11 +27411,20 @@
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual
         // smoothed portrait face height, never the feet/body center.
-        getPlayerFaceTarget: () => ({
-          x: player.x / TILE,
-          z: player.y / TILE,
-          worldY: playerMesh.position.y + (Number(playerAvatarModelHeight) || 0.9) * PLAYER_FACE_HEIGHT_RATIO,
-        }),
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x / TILE, z: pos.z / TILE, worldY: pos.worldY };
+        },
+        // "Stare back if you focus on their head" for livestock, backed by
+        // the exact same aim-ray math ground companions use (game.js's
+        // _isPlayerFocusedOnHead). headWorldTileScale is
+        // {x, y, z} in farm tiles (x/z) + real scene worldY (y) — the same
+        // shape _farmAnimalFaceLook already builds for its debug ray.
+        isPlayerFocusedOnHead: (headWorldTileScale) => {
+          const ray = _currentPlayerLookRay();
+          if (!ray || !headWorldTileScale) return false;
+          return window.CreatureHeadCache.isRayNearPoint(ray, headWorldTileScale, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+        },
         scene,
         worldObjects,
         angleDiff,

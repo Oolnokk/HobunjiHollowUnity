@@ -142,6 +142,46 @@
     return { ok: true, message: troughIndex != null ? `${rec.name} assigned to trough ${troughIndex + 1}.` : `${rec.name} unassigned from its trough.` };
   }
 
+  // Composites a genotype's textures onto an animal's front/back planes —
+  // shared by both factories' initial one-shot compose below and their
+  // per-frame blink-toggle recompose (item 3): a farm animal never runs,
+  // so there's no per-frame retry loop the way the wild/companion
+  // CREATURE_DB path needs via updateCreatureAnimFrame, but blinking still
+  // needs a fresh compose each time window.CreatureBlink's eyes-open/shut
+  // state actually flips. Resolves true once a real composited texture
+  // got applied, false otherwise (no genotype, no renderer, or a failed
+  // compose) — callers use this to know whether to retry.
+  function _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut) {
+    if (!genotype || !window.CreatureGeneticsRender) return Promise.resolve(false);
+    return window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+      if (!canvas) return false;
+      const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+      const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+      backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+      for (const child of avatarRef.group.children) {
+        if (!child.material) continue;
+        if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+      }
+      return true;
+    }).catch(() => false);
+  }
+
+  // Ticks a farm animal's eye-blink state and kicks off a recompose only
+  // when window.CreatureBlink's eyes-open/shut state actually flips —
+  // guarded by _blinkComposePending so an in-flight compose can't overlap
+  // with another one kicked off before it resolves.
+  function _tickFarmAnimalBlink(animal) {
+    if (!animal.genotype || !window.CreatureGeneticsRender || animal._blinkComposePending) return;
+    const blinkShut = window.CreatureBlink?.isShut(animal, performance.now()) || false;
+    if (animal._blinkAppliedShut === blinkShut) return;
+    animal._blinkComposePending = true;
+    _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, 'idle', animal.genotype, blinkShut).then(applied => {
+      animal._blinkComposePending = false;
+      if (applied) animal._blinkAppliedShut = blinkShut;
+    });
+  }
+
   function canSpawnAt(col, row) {
     const grid = deps.getGrid();
     const tile = grid[row]?.[col];
@@ -254,15 +294,9 @@
   // point in farm-world units so these animals never aim at the feet/body
   // center by accident.
   function _farmAnimalHeadWorldY(animal) {
-    const group = animal.avatarRef?.group;
-    if (!group) return Number(animal.wy) || 0;
-    const rig = animal.avatarRef?.headRig?.rig;
-    const modelHeight = Number(animal.modelHeight) || Number(animal.halfHeight || 0.45) * 2;
-    const scaleY = Number(group.scale?.y) || 1;
-    const pivotY = Number(rig?.pivot?.y);
-    const pivotOffset = Number.isFinite(pivotY) ? (0.5 - pivotY) * modelHeight : modelHeight * 0.08;
-    const planeOffset = Number(animal.avatarRef?.frontPlane?.position?.y) || 0;
-    return (Number(group.position?.y) || Number(animal.wy) || 0) + (planeOffset + pivotOffset) * scaleY;
+    // See docs/js/creature-head-cache.js — same formula, now shared and
+    // cached per-frame rather than a hand copy local to this module.
+    return window.CreatureHeadCache?.getHeadWorld(animal, 'animal')?.worldY ?? (Number(animal.wy) || 0);
   }
 
   function _farmAnimalFaceLook(animal, dt) {
@@ -272,19 +306,34 @@
     const dx = Number(target.x) - Number(animal.wx);
     const dz = targetZ - Number(animal.wz);
     const distance = Math.hypot(dx, dz);
-    if (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES) return null;
+    // "Stare back if you focus on their head" — the player's own aim/cursor
+    // ray (the same one "Show Interaction Raycast" already visualizes)
+    // landing on this animal's actual head point overrides the normal
+    // proximity gate below, same as it does for ground companions
+    // (game.js's _isPlayerFocusedOnHead).
+    const headWorld = { x: Number(animal.wx) || 0, y: _farmAnimalHeadWorldY(animal), z: Number(animal.wz) || 0 };
+    const focused = !!deps.isPlayerFocusedOnHead?.(headWorld);
+    if (!focused && (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES)) return null;
 
     const targetWorldY = Number(target.worldY);
     if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
       const horizontal = Math.max(0.15, distance);
       const pitchDeg = Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
       animal.avatarRef.updateHeadRotation(pitchDeg, dt);
+      // Feeds the "Show Interaction Raycast" debug overlay (docs/js/debug-hitboxes.js) —
+      // already in Three.js world (tile) units, unlike game.js's own
+      // _setLookAtDebug which converts from raw pixels.
+      animal._lookAtDebug = {
+        head: headWorld,
+        target: { x: Number(target.x), y: targetWorldY, z: targetZ },
+      };
     }
     return -Math.atan2(dz, dx) + Math.PI / 2;
   }
 
   function _restoreFarmAnimalHead(animal, dt) {
     const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
+    animal._lookAtDebug = null;
     if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
       animal.avatarRef.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, dt);
     }
@@ -471,19 +520,7 @@
     // idle-only composite below (a farm animal never runs, so there's no
     // per-frame retry loop to wire up the way the wild/companion
     // CREATURE_DB path needs via updateCreatureAnimFrame).
-    if (genotype && window.CreatureGeneticsRender) {
-      window.CreatureGeneticsRender.composeFrame('uumkaoii', 'idle', genotype).then(canvas => {
-        if (!canvas) return;
-        const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-        const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-        backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-        for (const child of avatarRef.group.children) {
-          if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-          else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-        }
-      }).catch(() => {});
-    }
+    if (genotype && window.CreatureGeneticsRender) _applyGenotypeCompositeTexture(avatarRef, 'uumkaoii', 'idle', genotype, false);
 
     const animal = {
       id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
@@ -535,6 +572,8 @@
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
+        _tickFarmAnimalBlink(this);
 
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
@@ -606,19 +645,7 @@
       if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
     });
 
-    if (genotype && window.CreatureGeneticsRender) {
-      window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
-        if (!canvas) return;
-        const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-        const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-        backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-        for (const child of avatarRef.group.children) {
-          if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-          else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-        }
-      }).catch(() => {});
-    }
+    if (genotype && window.CreatureGeneticsRender) _applyGenotypeCompositeTexture(avatarRef, kind, 'idle', genotype, false);
 
     const animal = {
       id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
@@ -656,6 +683,8 @@
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
+        _tickFarmAnimalBlink(this);
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
         const lookTarget = _farmAnimalLookTarget(this, dt, idle);
