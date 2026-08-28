@@ -23678,7 +23678,17 @@
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
-              if (isNavAction || toolSwingT <= 0) useActiveAction();
+              // Same reasoning again for every item-mode action (place_campfire_kit,
+              // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
+              // tool swings either, so a leftover toolSwingT from whatever tool was
+              // out before switching to item mode — which updateToolMesh never
+              // decays while heldMode === 'item' (it early-returns before reaching
+              // that logic) — would otherwise silently eat every item-mode tap on
+              // mobile until the player switched back to a tool and let the stale
+              // timer run out. Desktop's direct pointerdown→useActiveAction() click
+              // path never had this gate at all, which is why this only ever
+              // surfaced as "the button doesn't work" on touch.
+              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
             }
 
             // Weapon tool-action buttons (cut/slash) route taps through the

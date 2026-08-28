@@ -1824,15 +1824,27 @@
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
-      <!-- Melee auto-target toggle: continuing the same clockwise sweep one
-           more step past Call Mount. Melee-only and hidden until a melee
-           weapon is out (see updateMovement's weaponEngaged/activeTool
-           checks); grayed out with no targetable hostile nearby, lights up
-           white the instant one is (see .abt-target-ready), and turns solid
-           red once actually engaged (see .active, matching the other
-           outer-ring toggles' convention). Tap targets the closest hostile
-           and turns the toggle on; the hidden camera joystick's left/right
-           then swaps targets instead of rotating the camera while it's on. -->
+      <!-- Utility menu: final SAFE control on the outer ring, taking the
+           12:00 slot Call Mount used to occupy (see the #btnUtilityMenu CSS
+           comment for why it isn't past 12:00 the way melee auto-target
+           below is — an always-visible button out there would go off-screen).
+           Hold to open the utilities wheel (Return to Camp, quick-select a
+           Campfire Kit, Return to Farm — see game.js's _openUtilitiesArc)
+           and drag to pick, release to commit; a plain tap does nothing,
+           same as the desktop 'c' key it mirrors. -->
+      <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
+        <span class="abt-icon">🧭</span>
+      </button>
+      <!-- Melee auto-target toggle: sits one step past 12:00, its own
+           original position unrelated to the ring shift above (see the CSS
+           comment). Melee-only and hidden until a melee weapon is out (see
+           updateMovement's weaponEngaged/activeTool checks); grayed out
+           with no targetable hostile nearby, lights up white the instant
+           one is (see .abt-target-ready), and turns solid red once
+           actually engaged (see .active, matching the other outer-ring
+           toggles' convention). Tap targets the closest hostile and turns
+           the toggle on; the hidden camera joystick's left/right then swaps
+           targets instead of rotating the camera while it's on. -->
       <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
         <span class="abt-icon">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -1842,15 +1854,6 @@
           </svg>
         </span>
         <span class="abt-label">Auto-Target</span>
-      </button>
-      <!-- Utility menu: final control on the outer ring, in the slot freed
-           up by removing put-away and sliding the rest of the ring back one
-           step. Hold to open the utilities wheel (Return to Camp,
-           quick-select a Campfire Kit, Return to Farm — see game.js's
-           _openUtilitiesArc) and drag to pick, release to commit; a plain
-           tap does nothing, same as the desktop 'c' key it mirrors. -->
-      <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
-        <span class="abt-icon">🧭</span>
       </button>
     </div>
     <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->

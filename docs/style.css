@@ -895,14 +895,27 @@
     #arcContainer.arc-hidden { display: none; }
 
     /* ── Outer arch (tool dial + item dial) ─────────────────── */
-    /* R = 10 col (pushed out from 7.8 to clear the action arch). Six evenly
-       spaced controls run clockwise from 9:00 past 12:00: weapon, tool,
-       item, mount, melee auto-target, utility menu. The put-away button
-       that used to lead this ring is gone — dequip now happens by tapping
-       toolBtn/itemBtn while a tool/item is already out (see their
-       pointerup handlers in game.js) — and every control below shifted one
-       step counter-clockwise (toward 9:00) to fill the gap that left, with
-       the utility menu taking the newly free slot at the far (12:45) end. */
+    /* R = 10 col (pushed out from 7.8 to clear the action arch). Five evenly
+       spaced controls run clockwise from 9:00 to 12:00: weapon, tool, item,
+       mount, utility menu. The put-away button that used to lead this ring
+       is gone — dequip now happens by tapping toolBtn/itemBtn while a
+       tool/item is already out (see their pointerup handlers in game.js) —
+       and weapon/tool/item/mount each shifted one step counter-clockwise
+       (toward 9:00) to fill the gap that left, with the utility menu taking
+       the fifth slot. IMPORTANT: cooking-ui.css loads after this file and
+       unconditionally overrides all five of these buttons' actual right/
+       bottom values with its own tighter, already on-screen-tested cadence
+       — the angles below only apply if that override is ever missing, so
+       treat them as a documented fallback, not the live layout (see that
+       file's own comment for why, and why #btnUtilityMenu needed an entry
+       added there too). Melee auto-target keeps its own original, unrelated
+       12:45 position past 12:00, untouched by any of this and NOT covered
+       by the override — cos() goes negative that far past 12:00, pushing
+       the button out past the container's right edge rather than in from
+       it, which is only tolerable there because it's conditional (hidden
+       outside melee combat); an always-visible button that far out would
+       be genuinely invisible, which is exactly the bug this whole comment
+       exists to flag if anyone's tempted to move something else out there. */
     #toolSelect {
       --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
@@ -985,15 +998,17 @@
     #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
     #btnCallMount .abt-icon { font-size: 0.85em; }
     #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
-    /* ── Melee auto-target: sits at 12:00, one step past Call Mount.
-       Slightly larger than its ring-mates per spec; hidden via .abt-hidden
-       (see updateMovement's weaponEngaged toggle) whenever melee isn't out.
-       Base/gray = no targetable hostile nearby; .abt-target-ready = one's
-       in view (still off); .active = actually engaged. ── */
+    /* ── Melee auto-target: sits one step past 12:00 (see the outer-arch
+       comment above for why this — and only this — button lives past the
+       safe edge). Slightly larger than its ring-mates per spec; hidden via
+       .abt-hidden (see updateMovement's weaponEngaged toggle) whenever
+       melee isn't out. Base/gray = no targetable hostile nearby;
+       .abt-target-ready = one's in view (still off); .active = actually
+       engaged. ── */
     #btnMeleeAutoTarget {
       position: absolute;
-      right:  calc(-1*cos(90deg)*var(--ar2));
-      bottom: calc(   sin(90deg)*var(--ar2));
+      right:  calc(-1*cos(67.5deg)*var(--ar2));
+      bottom: calc(   sin(67.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(30px, calc(0.7 * var(--col)), 42px); height: clamp(30px, calc(0.7 * var(--col)), 42px);
       border-radius: 50%;
@@ -1016,15 +1031,22 @@
       background: rgba(255,80,80,0.36); border-color: rgba(255,80,80,0.9);
       color: #fff;
     }
-    /* ── Utility menu: final (12:45) outer-ring position, in the slot freed
-       up by removing put-away. Hold to open the utilities wheel (Return to
+    /* ── Utility menu: final (12:00) outer-ring position — mount's old spot.
+       This does NOT sit past 12:00 the way melee auto-target does (see the
+       outer-arch comment above), but 90deg alone still isn't enough margin
+       on a real phone: cos(90deg) is 0, so there's no inward offset left to
+       counteract the button's own translate(50%,50%) recentering, and it
+       renders with its right half already past the screen edge. The value
+       here is a fallback only — cooking-ui.css's override (loaded after
+       this file, wins the cascade) is what actually keeps it on-screen; see
+       that file's comment. Hold to open the utilities wheel (Return to
        Camp/Farm, quick-select a Campfire Kit — see game.js's
        _openUtilitiesArc), drag within it to pick, release to commit; a
        plain tap does nothing, same as the desktop 'c' key it mirrors. ── */
     #btnUtilityMenu {
       position: absolute;
-      right:  calc(-1*cos(67.5deg)*var(--ar2));
-      bottom: calc(   sin(67.5deg)*var(--ar2));
+      right:  calc(-1*cos(90deg)*var(--ar2));
+      bottom: calc(   sin(90deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
