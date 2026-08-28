@@ -96,17 +96,26 @@
     return true;
   }
 
+  // Foraging, Combat, and Fishing no longer get an automatic bonus purely
+  // from leveling up (that used to scale with normalizedPower(skillKey)) —
+  // each such bonus now only exists behind its own perk in PerkSystem's
+  // tree for that skill (see docs/js/perk-system.js), so leveling those
+  // three only grants perk points rather than free passive power. Mining,
+  // Farming, and Cooking have no perk tree yet, so they keep the original
+  // automatic level-based curve below unchanged.
   function bonusYieldChance(skillKey) {
-    return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by herbs, logs, stone, and future ore rewards.
+    if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1); // Increase Yield Chance perk.
+    return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by stone and future ore rewards.
   }
 
   function actionSpeedMultiplier(skillKey) {
-    return 1 + normalizedPower(skillKey) * 0.5; // Used to shorten axe, pick, and digging action stages.
+    if (skillKey === 'foraging') return 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1; // Increase Foraging Speed perk.
+    return 1 + normalizedPower(skillKey) * 0.5; // Used to shorten pick and digging action stages.
   }
 
   function attackMultiplier() {
-    const strengthStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('strength')) || 0); // Used to combine Combat progression with Strength food.
-    return 1 + normalizedPower('combat') * 0.5 + Math.min(0.5, strengthStacks * 0.02);
+    const strengthStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('strength')) || 0); // Used to combine Empower Raw Damage (see PerkSystem.combatDamageMultiplier, applied separately in game.js) with Strength food.
+    return 1 + Math.min(0.5, strengthStacks * 0.02);
   }
 
   function damageTakenMultiplier() {
@@ -116,7 +125,7 @@
 
   function rareFishWeightMultiplier(rarity) {
     const perceptionStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('perception')) || 0); // Used to let Perception food contribute to fish selection.
-    const power = normalizedPower('fishing') + Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries.
+    const power = Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries; the Increased Chance of Rare Fish perk applies its own separate multiplier (see fishing-minigame.js).
     const alchemyPerception = window.AlchemySystem?.getPerceptionMultiplier?.() || 1; // Reuses the existing fishing Perception check.
     if (rarity === 'rare') return (1 + power * 2.5) * alchemyPerception;
     if (rarity === 'uncommon') return (1 + power * 1.1) * alchemyPerception;
@@ -139,9 +148,16 @@
     return 3;
   }
 
+  const QUALITY_PERKS = { combat: 'increaseLootQuality', foraging: 'increaseForagingQuality', fishing: 'increaseFishQuality' }; // Skills whose quality bonus is perk-gated rather than automatic.
+
+  function qualityPower(skillKey) {
+    const perkId = QUALITY_PERKS[skillKey];
+    return perkId ? Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2) : normalizedPower(skillKey);
+  }
+
   function rollQuality(skillKey) {
     const random = deps?.random || Math.random; // Used for skill-driven quality improvement chances.
-    const power = normalizedPower(skillKey); // Used to scale two independent one-star improvement rolls.
+    const power = qualityPower(skillKey); // Used to scale two independent one-star improvement rolls.
     let stars = weightedBaseQuality(); // Used as the original quality result before skill improvement.
     if (random() < power * 0.55) stars++;
     if (random() < power * 0.15) stars++;

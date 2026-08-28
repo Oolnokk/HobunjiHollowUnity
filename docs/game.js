@@ -2141,6 +2141,13 @@
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
+        // A portable camp, not ordinary decor — customPlace opts it out of
+        // the generic tile-grid "Place" button/canPlaceDecorativeFurnitureAt
+        // path (computeActionButtons/firePendingAction give it its own
+        // "Set Up Campfire" button and window.WildernessCampfire.placeFromKit
+        // instead), since only one can ever be placed and it's aimed
+        // anywhere in the wild rather than snapped to farm/interior tiles.
+        campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2198,7 +2205,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough',
+        'feedGrinder', 'trough', 'campfire',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -15811,7 +15818,9 @@
 
         const tile = getActiveGrid()[row][col];
         let result;
-        if (action.startsWith('place_decor_')) {
+        if (action === 'place_campfire_kit') {
+          result = window.WildernessCampfire?.placeFromKit(col, row) || { ok: false, message: 'Campfires are unavailable right now.' };
+        } else if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));
@@ -23373,6 +23382,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -23400,7 +23410,7 @@
             });
           }
           const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
-          if (decorKey) {
+          if (decorKey && !DECORATIVE_FURNITURE_DEFS[decorKey]?.customPlace) {
             const def = DECORATIVE_FURNITURE_DEFS[decorKey];
             const count = inventory[item.key] || 0;
             const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
@@ -26463,6 +26473,7 @@
         inventory,
         clampInventoryStack,
         buildInventoryGrid,
+        refreshItemScroll,
       });
 
       window.TownZoneBuildings?.init({

@@ -271,8 +271,8 @@
       (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
     if (!pool.length) pool = list;
     const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
-    const rareFishPerkRank = window.PerkSystem?.rank('fishing', 'increaseRareFishChance') || 0; // Increased Chance of Rare Fish perk.
-    const perkMul = { common: 1, uncommon: 1 + rareFishPerkRank * 0.2, rare: 1 + rareFishPerkRank * 0.45 };
+    const rareFishPerkRank = window.PerkSystem?.rank('fishing', 'increaseRareFishChance') || 0; // Increased Chance of Rare Fish perk — the sole source of this bonus now that Fishing no longer scales it automatically by level.
+    const perkMul = { common: 1, uncommon: 1 + rareFishPerkRank * 0.25, rare: 1 + rareFishPerkRank * 0.55 };
     const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1) * (perkMul[f.rarity] || 1));
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < pool.length; i++) {

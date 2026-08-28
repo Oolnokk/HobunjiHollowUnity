@@ -2726,13 +2726,20 @@
     .perk-tree-points { font-size: 10px; color: var(--accent); flex-shrink: 0; }
     .perk-tree-caret { font-size: 9px; color: var(--muted); transition: transform 0.2s; flex-shrink: 0; }
     .perk-tree.open .perk-tree-caret { transform: rotate(90deg); }
-    .perk-tree-body { display: none; flex-direction: column; gap: 4px; padding: 6px 8px 8px; }
+    .perk-tree-body { display: none; flex-direction: column; gap: 10px; padding: 6px 8px 8px; }
     .perk-tree.open .perk-tree-body { display: flex; }
+    .perk-tier { display: flex; flex-direction: column; gap: 4px; }
+    .perk-tier-label {
+      font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+      padding-bottom: 2px; border-bottom: 1px dashed var(--border);
+    }
+    .perk-tier.locked .perk-tier-label { color: var(--accent); opacity: 0.8; }
     .perk-row {
       display: flex; align-items: center; gap: 8px;
       padding: 5px 6px; border-radius: 6px; background: rgba(255,255,255,0.02);
     }
     .perk-row.maxed { background: rgba(249,226,138,0.08); }
+    .perk-row.locked { opacity: 0.4; }
     .perk-copy { flex: 1; min-width: 0; }
     .perk-name { font-size: 11px; color: var(--text); }
     .perk-desc { margin-top: 1px; color: var(--muted); font-size: 9px; line-height: 1.3; }

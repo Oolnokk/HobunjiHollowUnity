@@ -3,12 +3,18 @@
 
   // A player-craftable campfire that can be set up anywhere in the wilderness
   // (any zone area — not farm/town/interior). Reuses the "campfire" authored
-  // furniture piece (docs/config/furniture-authored/campfire.json). Only one
-  // can exist at a time — placing a new one silently replaces the old one —
+  // furniture piece (docs/config/furniture-authored/campfire.json). Crafted
+  // as an ordinary "Campfire Kit" item (DECORATIVE_FURNITURE_DEFS.campfire
+  // in game.js — buy the blueprint from the carpenter, build it from Wood
+  // + Stone in the Inventory's Crafting tab), then placed by selecting it,
+  // aiming at a tile, and using Action 1 (see computeActionButtons'
+  // isCampfireKit branch and firePendingAction's place_campfire_kit case
+  // in game.js, which call placeFromKit(col, row) below). Only one can
+  // exist at a time — placing a new one silently replaces the old one —
   // and it survives an ordinary save/reload as long as the player is still
   // on the same map, but is destroyed outright the moment the player leaves
   // that map (see update(), called every frame with the live current area).
-  const CRAFT_COST = { wood: 5, stone: 3 }; // Consumed from any log type (see craftAndPlace) + stone.
+  const KIT_ITEM_KEY = 'campfireKitFurniture';
 
   let deps = null;
   let group = null; // Live THREE.Group in the scene, or null when not spawned/visible.
@@ -38,38 +44,32 @@
     group = built;
   }
 
-  function place() {
+  // Places the campfire at an explicit tile (col, row — the aimed reticle
+  // tile, same tile-unit convention docs/js/reagent-plants.js uses: world
+  // x/z is col+0.5/row+0.5, no TILE division). Internal — callers go
+  // through placeFromKit(), which also consumes the held item.
+  function place(col, row) {
     const area = deps.getCurrentArea();
     if (!deps.isZoneArea(area)) return { ok: false, message: "You can only set up a campfire out in the wilderness." };
-    const player = deps.getPlayer();
-    const wx = player.x / deps.TILE, wz = player.y / deps.TILE;
+    const wx = col + 0.5, wz = row + 0.5;
     state = { mapId: area, x: wx, y: deps.surfaceYAt(wx, wz), z: wz, ry: deps.getFacingAngle() };
     ensureLoaded().then(spawnVisual);
     deps.persist?.();
     return { ok: true, message: "🔥 Campfire set up. You can save, cook, mix potions, and return here." };
   }
 
-  function ownedWood() { return (deps.inventory.pineLog || 0) + (deps.inventory.shadewoodLog || 0); }
-
-  function craftAndPlace() {
+  // Consumes one Campfire Kit from inventory and places it at (col, row) —
+  // called from game.js's firePendingAction when the player aims at a tile
+  // and uses Action 1 while holding the kit.
+  function placeFromKit(col, row) {
     const area = deps.getCurrentArea();
-    if (!deps.isZoneArea(area)) return { ok: false, message: "You can only craft a campfire out in the wilderness." };
-    if (ownedWood() < CRAFT_COST.wood || (deps.inventory.stone || 0) < CRAFT_COST.stone) {
-      return { ok: false, message: `Need ${CRAFT_COST.wood} Wood (Pine/Shadewood Log) and ${CRAFT_COST.stone} Stone to craft a campfire.` };
-    }
-    let remainingWood = CRAFT_COST.wood;
-    for (const key of ['pineLog', 'shadewoodLog']) {
-      if (remainingWood <= 0) break;
-      const have = deps.inventory[key] || 0;
-      const take = Math.min(have, remainingWood);
-      deps.inventory[key] = have - take;
-      deps.clampInventoryStack?.(key);
-      remainingWood -= take;
-    }
-    deps.inventory.stone -= CRAFT_COST.stone;
-    deps.clampInventoryStack?.('stone');
+    if (!deps.isZoneArea(area)) return { ok: false, message: "You can only set up a campfire out in the wilderness." };
+    if ((deps.inventory[KIT_ITEM_KEY] || 0) < 1) return { ok: false, message: 'No Campfire Kit to use.' };
+    deps.inventory[KIT_ITEM_KEY] -= 1;
+    deps.clampInventoryStack?.(KIT_ITEM_KEY);
     deps.buildInventoryGrid?.();
-    return place();
+    deps.refreshItemScroll?.();
+    return place(col, row);
   }
 
   function clear() {
@@ -140,12 +140,6 @@
     if (_open) toggle();
   }
 
-  function doCraft() {
-    const result = craftAndPlace();
-    deps.showToast(result.message, result.ok);
-    render();
-  }
-
   function doSave() {
     deps.persist?.();
     deps.showToast('💾 Game saved.', true);
@@ -192,18 +186,22 @@
       wrap.appendChild(btn);
       list.appendChild(wrap);
     };
-    const canCraft = ownedWood() >= CRAFT_COST.wood && (deps.inventory.stone || 0) >= CRAFT_COST.stone;
-    row(state ? '🔥 Craft a New Campfire' : '🔥 Craft Campfire Here', `${CRAFT_COST.wood} Wood, ${CRAFT_COST.stone} Stone${state ? ' — replaces the current one' : ''}`, doCraft, !canCraft);
     if (isHere()) {
       row('↩️ Return to Campfire', nearby ? 'already here' : '', doReturn, nearby);
       row('💾 Save Game', '', doSave, false);
       row('🍲 Cook Here', cookRank ? `up to ${cookRank} ingredients` : 'needs Survivalist perk', doCook, !cookRank);
       row('⚗️ Mix Potions Here', brewRank ? `${brewRank * 20}% precision` : 'needs Herbalist perk', doBrew, !brewRank);
+    } else {
+      const hint = document.createElement('div');
+      hint.className = 'farm-note';
+      hint.style.padding = '4px 2px';
+      hint.textContent = 'Select a Campfire Kit (crafted in the Inventory\'s Crafting tab), aim at open ground, and use Action 1 to make camp.';
+      list.appendChild(hint);
     }
   }
 
   window.WildernessCampfire = {
-    init, place, clear, update, onZoneEntered, isHere, distanceToPlayerTiles, returnToCampfire,
+    init, place, placeFromKit, clear, update, onZoneEntered, isHere, distanceToPlayerTiles, returnToCampfire,
     serialize, restore, ensureLoaded, refreshVisibility, toggle,
   };
 })();
