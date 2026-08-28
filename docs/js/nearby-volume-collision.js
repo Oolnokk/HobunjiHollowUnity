@@ -181,6 +181,7 @@
     if (elements?.length >= 16) {
       return {
         x: finite(elements[12]),
+        y: finite(elements[13]),
         z: finite(elements[14]),
         sx: Math.hypot(elements[0], elements[1], elements[2]) || 1,
         sy: Math.hypot(elements[4], elements[5], elements[6]) || 1,
@@ -189,6 +190,7 @@
     }
     return {
       x: finite(node?.position?.x),
+      y: finite(node?.position?.y),
       z: finite(node?.position?.z),
       sx: Math.abs(finite(node?.scale?.x, 1)) || 1,
       sy: Math.abs(finite(node?.scale?.y, 1)) || 1,
@@ -200,14 +202,21 @@
     const transform = transformSnapshot(node);
     const heightWorld = semantic.heightTiles === Infinity ? Infinity : semantic.heightTiles * Math.abs(transform.sy);
     if (!(heightWorld > 0)) return null;
-    // Rooted at the real terrain surface under the object, not tile-local
-    // y=0 — a footprint sat on elevated ground gets its cover span anchored
-    // where it actually stands. topY === Infinity for tile-cover trees
+    // Rooted at the object's own placed world Y (its authored base/pivot —
+    // heightTiles is measured up from that same local origin, see
+    // boundsFromParts) rather than a separately re-derived terrain height.
+    // Re-deriving it from outdoor ground height broke for anything not
+    // placed flush on flat exterior terrain — a tent on a built-up camp
+    // pad, furniture inside a building, anything on a step or plateau edge
+    // — so a shot arcing above the object's real height still read as
+    // blocked. Reading the node's actual placement instead matches
+    // wherever the renderer really put it, with no separate terrain
+    // lookup to fall out of sync. topY === Infinity for tile-cover trees
     // (their trunk is solid the entire authored height and beyond); every
     // other candidate gets a real, finite top so a shot arcing above it
     // (e.g. toward a player up a tree) is free to clear it instead of
     // being blocked by an object nowhere near that height.
-    const bottomY = finite(deps?.worldSurfaceY?.(transform.x * (deps.TILE || 1), transform.z * (deps.TILE || 1)), 0);
+    const bottomY = transform.y;
     const topY = heightWorld === Infinity ? Infinity : bottomY + heightWorld;
     if (semantic.halfTileX != null || semantic.halfTileZ != null) {
       return {
