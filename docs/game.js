@@ -5882,19 +5882,27 @@
         return aimAngle;
       }
 
-      // Where a combat target's "head" is, for the head-nod look below.
-      // The player has a real authored face height (_playerFaceTarget);
-      // another creature (patrol-chase predator/prey) doesn't carry
-      // anything that precise, so its head is approximated as its own
-      // head-rig pivot's height, nudged 5% of its own sprite width toward
-      // its face/snout (the authored sprites all face the same "front"
-      // edge of their own local frame) rather than sitting dead-center on
-      // the pivot.
+      // Where a living thing's "head" is, in the raw-px + worldY convention
+      // _updateCreatureHeadLookAtCombatTarget/companion horizon-scan both
+      // use (see below). The player has a real authored face height
+      // (_playerFaceTarget); an NPC walker has the same eye-position math
+      // dialogue's eye contact uses (_dialogueEyeWorldPosition), just
+      // converted out of its native tile-scale units into this function's
+      // raw-px convention; any other creature (patrol-chase predator/prey,
+      // a horizon-scan lock) doesn't carry anything that precise, so its
+      // head is approximated as its own head-rig pivot's height, nudged 5%
+      // of its own sprite width toward its face/snout (the authored sprites
+      // all face the same "front" edge of their own local frame) rather
+      // than sitting dead-center on the pivot.
       const COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC = 0.05;
       function _combatTargetHeadWorld(target) {
         if (target === player) {
           const t = _playerFaceTarget(target);
           return { x: t.x, y: t.y, worldY: t.worldY };
+        }
+        if (target?.root?.position && Number.isFinite(Number(target?.avatarHeight))) {
+          const eye = _dialogueEyeWorldPosition(target.root.position, target.avatarHeight);
+          return { x: eye.x * TILE, y: eye.z * TILE, worldY: eye.y };
         }
         const modelWidth = Number(target?.def?.modelWidth) || Number(target?.visualModelWidth) || Number(target?.modelHeight) || 1.5;
         return {
@@ -6046,6 +6054,110 @@
         }
         c.vx = 0; c.vy = 0;
         return { aimAngle: _updateCreatureLookAtFace(c, master, dt) };
+      }
+
+      // ── Companion horizon scan ────────────────────────────────────────
+      // A ground companion (not a shoulder pet — those keep their own
+      // curiosity system, see _tickShoulderPetCuriosity) spends its idle
+      // head time alternating between a slow "scanning" sweep and briefly
+      // locking eyes on a nearby living thing (a wild creature, bandit, or
+      // friendly NPC) that's actually approaching the player, rather than
+      // sitting dead-still whenever it isn't in combat.
+      const COMPANION_SCAN_RANGE_PX = TILE * 7;
+      const COMPANION_SCAN_CHECK_MIN_S = 1.6; // How long a "nothing found" scan waits before checking again.
+      const COMPANION_SCAN_CHECK_MAX_S = 3.2;
+      const COMPANION_SCAN_LOCK_MIN_S = 1.2; // How long a found lock holds before releasing back to scanning.
+      const COMPANION_SCAN_LOCK_MAX_S = 2.4;
+      const COMPANION_SCAN_SWEEP_DEG = 45; // Idle side-to-side yaw amplitude while nothing is locked.
+      const COMPANION_SCAN_SWEEP_PERIOD_S = 3.5;
+      const COMPANION_SCAN_APPROACH_DROP_PX = TILE * 0.12; // Minimum distance-to-player closed per check interval to count as "coming towards."
+      const COMPANION_SCAN_APPROACH_CHECK_MS = 400;
+
+      // Shared (not per-companion) so every companion checking the same
+      // candidate reuses one tracked distance history instead of each
+      // maintaining its own — "is this thing approaching the player" is a
+      // property of the candidate, not of whichever companion is looking.
+      const _companionScanApproachCache = new WeakMap(); // candidate -> { lastDist, lastCheckedAt, approaching }
+      function _isApproachingPlayer(candidate, master, cx, cy) {
+        const now = performance.now();
+        const dist = Math.hypot(master.x - cx, master.y - cy);
+        const cached = _companionScanApproachCache.get(candidate);
+        if (!cached || now - cached.lastCheckedAt >= COMPANION_SCAN_APPROACH_CHECK_MS) {
+          const approaching = cached ? (cached.lastDist - dist) > COMPANION_SCAN_APPROACH_DROP_PX : false;
+          _companionScanApproachCache.set(candidate, { lastDist: dist, lastCheckedAt: now, approaching });
+          return approaching;
+        }
+        return cached.approaching;
+      }
+
+      // Nearest living thing within range that's actually closing distance
+      // on the player right now — wild/hostile creatures and friendly NPCs
+      // alike (not other companions/shoulder pets; staring at each other
+      // isn't the point of this).
+      function _findApproachingLivingThing(master) {
+        let best = null, bestDist = COMPANION_SCAN_RANGE_PX;
+        for (const h of hostileObjects) {
+          if (h.health <= 0 || h.areaId !== currentArea) continue;
+          const dist = Math.hypot(h.x - master.x, h.y - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(h, master, h.x, h.y)) continue;
+          best = h; bestDist = dist;
+        }
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea || !w.root) continue;
+          const wx = w.root.position.x * TILE, wz = w.root.position.z * TILE; // walker positions are tile-scale; match hostileObjects' raw-px convention.
+          const dist = Math.hypot(wx - master.x, wz - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(w, master, wx, wz)) continue;
+          best = w; bestDist = dist;
+        }
+        return best;
+      }
+
+      function _applyCompanionScanSweep(c, state, dt) {
+        _restoreCompanionHead(c, dt); // Pitch back to rest (also clears any stale look-at debug ray from a prior lock).
+        if (typeof c.avatarRef?.updateHeadYaw !== 'function') return;
+        const sweepDeg = Math.sin((performance.now() / 1000) * (Math.PI * 2 / COMPANION_SCAN_SWEEP_PERIOD_S) + state.sweepPhase) * COMPANION_SCAN_SWEEP_DEG;
+        c.avatarRef.updateHeadYaw(sweepDeg, dt);
+      }
+
+      function _tickCompanionHorizonScan(c, master, dt) {
+        const state = c.horizonScan || (c.horizonScan = {
+          phase: 'scan',
+          timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
+          lockedTarget: null,
+          sweepPhase: rnd() * Math.PI * 2, // Desyncs multiple companions' idle sweeps from each other.
+        });
+        state.timer -= dt;
+        if (state.phase === 'scan' && state.timer <= 0) {
+          const found = _findApproachingLivingThing(master);
+          if (found) {
+            state.phase = 'lock';
+            state.lockedTarget = found;
+            state.timer = COMPANION_SCAN_LOCK_MIN_S + rnd() * (COMPANION_SCAN_LOCK_MAX_S - COMPANION_SCAN_LOCK_MIN_S);
+          } else {
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        } else if (state.phase === 'lock') {
+          const target = state.lockedTarget;
+          const targetAlive = target && (target.health === undefined || target.health > 0);
+          const targetArea = target?.areaId || target?.area;
+          if (!targetAlive || targetArea !== currentArea || state.timer <= 0) {
+            state.phase = 'scan';
+            state.lockedTarget = null;
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        }
+        if (state.phase === 'lock' && state.lockedTarget) {
+          // Reuses the exact pitch+yaw+debug-ray logic combat head-lock
+          // already uses (see updateHostiles) — a horizon-scan lock is the
+          // same "aim my head at this living thing's head" behavior, just
+          // triggered by ambient noticing instead of being someone's
+          // combat target.
+          _updateCreatureHeadLookAtCombatTarget(c, state.lockedTarget, dt);
+        } else {
+          _applyCompanionScanSweep(c, state, dt);
+        }
       }
 
       function _clearCompanionTreasureCue(c, dt, reason) {
@@ -6466,7 +6578,7 @@
           }
           if (!c.treasureCue
             && !window.Combat?.animalAttacks?.isBusy(c)
-            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
+            && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
