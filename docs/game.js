@@ -1449,6 +1449,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
+        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
         gold: 40,
       };
 
@@ -2244,7 +2245,11 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
-        price: Math.max(5, Math.round(item.price * 0.5)),
+        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
+        // building from a blueprint only ever spends Wood/Stone, never the
+        // blueprint itself), so it's priced above the finished piece's own
+        // price rather than a fraction of it.
+        price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item.price),
         category,
       }));
@@ -12962,7 +12967,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
           };
         }
       });
