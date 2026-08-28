@@ -465,14 +465,14 @@
     } finally {
       mediaProto.play = nativePlay;
     }
-    if (captured && chosen) {
-      const resolved = utteranceUrl(chosen);
+    const selectedUrl = chosen ? utteranceUrl(chosen) : null;
+    if (captured && selectedUrl) {
       try { captured.pause?.(); } catch (_) {}
-      captured.src = resolved;
+      captured.src = selectedUrl;
       try { captured.currentTime = 0; } catch (_) {}
     }
     lastChosenClip = chosen || null;
-    return { accepted, audio: captured, chosen: chosen || null };
+    return { accepted, audio: captured, chosen: chosen || null, selectedUrl };
   }
 
   function clipTuningFor(url, opts) {
@@ -500,8 +500,10 @@
       const capture = capturePreparedAnimalElement(originalRenderer, c, opts);
       if (capture.silent) return false;
       if (!capture.accepted) return false;
-      if (!capture.audio) return originalRenderer(c, { ...opts, rate: 1, rateContour: undefined });
-      const url = capture.audio.currentSrc || capture.audio.src || utteranceUrl(capture.chosen);
+      if (!capture.audio || !capture.selectedUrl) return originalRenderer(c, { ...opts, rate: 1, rateContour: undefined });
+      // Use the explicit library URL carried out of capture. currentSrc can
+      // still report the pre-swap legacy asset for a short browser task.
+      const url = capture.selectedUrl;
       const clipTuning = clipTuningFor(url, opts);
       const utteranceTempo = clampTempo(opts.tempo ?? 1);
       const utterancePitch = clampPitch(opts.pitchSemitones ?? 0);
