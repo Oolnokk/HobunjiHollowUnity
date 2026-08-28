@@ -1,9 +1,9 @@
-// Khymeryyan bandit-captain naming forge ported from the approved standalone name-forge prototype.
+// Khymeryyan bandit naming forge ported from the approved standalone name-forge prototype.
 // Co-located here so the existing static bounty-board load order remains unchanged and no runtime script injection is needed.
 (() => {
 'use strict';
-// Bandit-captain runtime port of khymeryyan_all_culture_name_forge.html.
-// Used by bounty-board.js after a captain's actual species/gender are known.
+// Bandit runtime port of khymeryyan_all_culture_name_forge.html.
+// Used after a bandit's actual species/gender are known.
 const FIRST=['Ash','Bitter','Black','Bog','Bronze','Broken','Copper','Crooked','Dagger','Dead','Flat','Grim','Long','Mangrove','Marsh','Mud','Night','Quick','Ragged','Red','River','Rot','Salt','Short','Soot','Split','Stone','Storm','Thorn'];
 const SECOND=['Crook','Cutter','Dagger','Drench','Gash','Hook','Hound','Knife','Lash','Murk','Notch','Prowler','Rat','Rend','Ripper','Scratcher','Slinker','Snap','Snarl','Squall','Thorn','Wood'];
 const SPECIES={mashtzarr:'mashtzarr','mao-ao':'mao_ao',kenkari:'kenkari',tletingan:'slagothim',slagothim:'slagothim','engh-sho':'engh_sho'};
@@ -19,12 +19,12 @@ function tc(s){s=String(s||'').toLowerCase();return s?s[0].toUpperCase()+s.slice
 function tcc(s){return String(s||'').split(/([-' ])/).map(x=>/^[a-z]/i.test(x)?tc(x):x).join('')}
 function randSeed(prefix){const c=globalThis.crypto;if(c?.getRandomValues){const a=new Uint32Array(2);c.getRandomValues(a);return`${prefix}:${a[0].toString(36)}:${a[1].toString(36)}`}return`${prefix}:${Date.now().toString(36)}:${Math.floor(Math.random()*0x100000000).toString(36)}`}
 
-// Mashtzarr source pools/constraints; used when a captain's speciesId is mashtzarr.
+// Mashtzarr source pools/constraints; used when a bandit's speciesId is mashtzarr.
 const M={refs:new Set(['Dzibim','Kzubug','Gaz','Kragzid','Tzatzul','Nashkha','Khibu','Rikhid','Tshibir','Tshazhum','Bazug','Banug','Tziz','Kharrar','Makharr','Khizu','Ikhid','Ganag'].map(x=>x.toLowerCase())),v:{a:9,i:8,u:7},on:{'':1,b:3,dz:2,g:2,kh:4,kr:2,kz:2,m:2,n:2,r:2,tsh:3,tz:3},br:{b:5,gz:1,kh:4,n:3,rr:2,shkh:1,tz:2,z:3,zh:2},mc:{d:4,g:6,l:2,m:4,r:5,rr:1,z:4},fs:{a:1,i:1},ms:{1:2,2:16},ws:{2:15,3:3},ss:{1:2,2:16,3:3},sc:{'':5,d:4,g:6,l:2,m:4,r:5,rr:1,z:4}};
 function masWord(seed,gender,surname=false){const r=rng(`${seed}:mashtzarr:${surname?'surname':`given:${gender}`}`);for(let a=0;a<160;a++){const on=gender==='female'&&!surname?Object.fromEntries(Object.entries(M.on).filter(([k])=>!k.includes('kr'))):M.on,br=gender==='female'&&!surname?Object.fromEntries(Object.entries(M.br).filter(([k])=>!k.includes('kr'))):M.br,sw=surname?M.ss:(gender==='female'?M.ws:M.ms),n=Number(wp(r,sw));let v=wp(r,M.v),s=wp(r,on)+v;for(let i=0;i<Math.max(0,n-1);i++){const b=wp(r,br);if(gender==='female'&&!surname&&i===n-2){const nv=wp(r,M.fs);s+=b+nv;v=nv}else{const alt=Object.fromEntries(Object.entries(M.v).filter(([k])=>k!==v)),nv=r()<.38?wp(r,M.v):wp(r,Object.keys(alt).length?alt:M.v);s+=b+nv;v=nv}}if(surname){const cod=/[iu]$/i.test(s)?M.sc:Object.fromEntries(Object.entries(M.sc).filter(([k])=>k!=='z'&&k!=='l')),c=wp(r,cod);if(c)s+=c}else if(gender==='male'){if(n>1&&r()<.12){if(!s.endsWith('u'))s=s.slice(0,-1)+'u'}else s+=wp(r,M.mc)}else if(n<=1)s+=wp(r,M.fs);const name=tc(s),low=name.toLowerCase(),vowels=(name.match(/[aiu]/gi)||[]).length,cluster=/[^aiu]{2,}/i.test(name),genderOk=surname||(gender==='female'?/[ai]$/i.test(name)&&!low.includes('kr'):!/[ai]$/i.test(name)),endOk=!surname||!(/([aeiou])([zl])$/i.test(name)&&!/[iu]/.test(name.match(/([aeiou])([zl])$/i)?.[1]||'')),valid=name.length>=3&&name.length<=14&&/^[a-z]+$/i.test(name)&&/[aiu]/i.test(name)&&!/[aiu]{2}/i.test(name)&&!/(.)\1\1/i.test(name)&&!/^(rr|shkh|zh)/i.test(name)&&vowels===n&&cluster&&endOk&&genderOk&&!M.refs.has(low);if(valid)return name}throw Error('Mashtzarr name generation failed')}
 function mashtzarr(seed,gender){const given=masWord(`${seed}:given`,gender,false),surname=masWord(`${seed}:surname`,gender,true);return{givenName:given,surname,loreName:`${given} ${surname}`}}
 
-// Mao-ao source phonemes and positioned-syllable rules; used by mao-ao captains.
+// Mao-ao source phonemes and positioned-syllable rules; used by mao-ao bandits.
 const MAO={c:['w','r','t','y','p','s','f','g','h','j','b','n','m','k','d'],cl:['sh','hy','br','dr','fr','gr','pr','sr','shr','tr'],v:['a','e','i','o','u','ai','ao'],dip:['ai','ao']};
 function maoSyl(r,pattern,opt={}){if(!pattern.includes('V'))return pattern;const m=pattern.match(/^(.*)\{([^}]+)\}$/),base=m?m[1]:pattern,forced=m?m[2].split('|'):null,startCV=base.startsWith('CV'),coda=base.slice(startCV?2:1);let ons=MAO.c.concat(MAO.cl);if(opt.usedR)ons=ons.filter(x=>!(x.length>1&&x.endsWith('r')));let vs=MAO.v.slice();if(opt.middle||opt.usedDip)vs=vs.filter(x=>!MAO.dip.includes(x));if(opt.surnameFirst)vs=vs.filter(x=>x!=='ai');if(forced)vs=vs.filter(x=>forced.includes(x));if(coda)vs=vs.filter(x=>!MAO.dip.includes(x));const v=pick(r,vs),force=String(opt.force||'').toLowerCase(),o=startCV?(force&&MAO.c.includes(force)?force:pick(r,ons)):'';return o+v+coda}
 function maoJoin(a){let s=a[0];for(let i=1;i<a.length;i++){let n=a[i];if(s.endsWith('n')&&n.startsWith('n')&&!n.startsWith('ng'))n=n.slice(1);const ev=MAO.v.some(v=>s.endsWith(v)),sv=MAO.v.some(v=>n.startsWith(v));s+=(ev&&sv?"'":'')+n}return s}
@@ -38,11 +38,11 @@ function kenPart(r,t,i,last,marked,after){let vs=K.v.slice();if(!marked)vs=vs.fi
 function kenGiven(r,gender){for(let a=0;a<40;a++){const t=kentpl(r),parts=[];for(let i=0;i<t.length;i++){const last=i===t.length-1,used=parts.some(x=>/ai|ey|ao/.test(x)),marked=last?r()<.28:(!used&&r()<.18);parts.push(kenPart(r,t[i],i,last,marked,i>0&&t[i-1]==="'V"))}const n=parts.join('').replace(/e(?=')/g,'ey'),first=parts[0]||'',c=/^[bgkhmnprt]/.test(first)?first[0]:'';const conflict=gender==='female'&&(n.includes('p')||c==='r'||c==='t')||gender==='male'&&/(mi|mey)$/i.test(n);let seenI=false,badIA=false;for(const p of parts){if(seenI&&/a/.test(p))badIA=true;if(/i/.test(p))seenI=true}if(!/e$/i.test(n)&&(n.match(/'/g)||[]).length<=1&&(n.match(/ai|ey|ao/g)||[]).length<=1&&!/(pey|ora)$/i.test(n)&&!badIA&&!conflict)return n}throw Error('Kenkari name generation failed')}
 function kenkari(seed,gender){const r=rng(seed),given=tcc(kenGiven(r,gender)),father=tcc(kenGiven(r,'male')),surname=`${gender==='female'?'u':'ao'} ${father}`;return{givenName:given,surname,loreName:`${given} ${surname}`}}
 
-// Tletingan/Slagothim source Sl-/suffix/place rules; used by tletingan captains.
+// Tletingan/Slagothim source Sl-/suffix/place rules; tletingans deliberately use Slagothim naming culture.
 const S={loc:['Ikinga','Bahangi','Hatonga','Rahingi',"B'bonga",'Niringi','Ununga','Gorungi'],c1:['b','g','n','p','t','d','k','m','sl','shr','tr','gr','br','gl'],v:['a','e','i','o','u'],c2:['b','g','p','t','d','k','r','n','ng']};
 function slag(seed,gender){const r=rng(seed);for(let a=0;a<80;a++){const sl=r()<.58,suf=sl?r()<.2:true,c1=sl?'sl':pick(r,S.c1),v1=pick(r,S.v),c2=r()<.08?'mn':pick(r,S.c2),allows=['ng','r','mn'].includes(c2),forces=c2==='mn';let v2='',end='';if(suf){if(forces||(allows&&r()<.55))v2=pick(r,S.v);end=gender==='female'?'mira':'mir'}else{if(!sl||!allows)continue;v2=pick(r,gender==='female'?['a','i']:['o','u'])}const given=tc(c1+v1+c2+v2+end),low=given.toLowerCase();if(gender==='male'){if(!(low.startsWith('sl')||low.endsWith('mir')))continue;if(low.startsWith('sl')&&!low.endsWith('mir')&&!/[ou]$/i.test(given))continue}else{if(!(low.startsWith('sl')||low.endsWith('mira')))continue;if(low.startsWith('sl')&&!low.endsWith('mira')&&!/[ai]$/i.test(given))continue}const surname=`tley ${tcc(pick(r,S.loc))}`;return{givenName:given,surname,loreName:`${given} ${surname}`}}throw Error('Slagothim name generation failed')}
 
-// Engh-sho source object lexicon and weighted surname phonology; used by engh-sho captains.
+// Engh-sho source object lexicon and weighted surname phonology; used by engh-sho bandits.
 const E=['acorn','ael','aestel','amber','amethyst','awl','bar','barb','bead','bean','bell','beryl','billet','bit','blade','bladelet','blank','block','bodkin','bone','borer','boss','brad','brooch','buckle','bud','burin','burr','button','cake','carnelian','catch','catchplate','chalcedony','chape','chisel','chip','clasp','coil','coin','comb','cone','core','counter','cramp','crucible','crystal','cube','cup','cupel','cylinder','die','disc','dowel','drop','dyse','earring','emerald','eyelet','farthing','ferrule','file','firestone','flan','flint','fork','garnet','gem','gim','gimstan','gouge','grain','graver','hasp','hinge','hobnail','hone','hook','hring','husk','hwirfel','ingot','jasper','jewel','kernel','key','knife','knob','knucklebone','lamp','leaf','link','lock','lodestone','loop','matrix','mirror','mount','naegl','nail','needle','nut','obol','onyx','opal','peg','pendant','pening','penny','pin','pinhead','pip','pit','plaque','plug','pod','point','preon','probe','punch','quartz','reed','rind','ring','rivet','rod','root','roundel','ruby','sapphire','sceat','sceatt','scraper','seed','shell','sherd','shuttle','sliver','socket','spatula','spindle','spinel','spool','spoon','sprig','stalk','stan','stem','sticca','stone','stud','styca','stylus','tablet','tack','tag','tally','terminal','tessera','thimble','thorn','tip','toggle','token','tooth','tube','twig','wedge','weight','whetstone','whorl','wire'];
 const ER={m:{amber:'gold-resin',amethyst:'purple-stone',barb:'sharp-point',beryl:'green-gem',crystal:'clear-stone',emerald:'green-jewel',jewel:'fine-gem',opal:'milk-gem',ruby:'red-gem',sapphire:'blue-gem'},f:{brad:'small-nail',bud:'new-leaf',jasper:'spotted-stone',stan:'grey-stone'},o:{n:16,m:13,k:13,t:13,p:11,l:5,w:4,y:4,h:4},v:{a:20,u:16,i:4},fin:{k:22,p:14,t:8,b:2,d:2,g:2,kk:10,pp:6,tt:4,nk:10,mp:6,nt:5,lk:4,rk:4}};
 function engh(seed,gender){const r=rng(seed),raw=pick(r,E),given=tcc((gender==='female'?ER.f:ER.m)[raw]||raw),n=2+Math.floor(r()*2);let sn='';for(let i=0;i<n-1;i++)sn+=(i===0&&r()<.1?'':wp(r,ER.o))+wp(r,ER.v)+(r()<.5?pick(r,['k','n','p']):'');sn+=wp(r,ER.o)+wp(r,ER.v)+wp(r,ER.fin);const surname=tc(sn);return{givenName:given,surname,loreName:`${given} ${surname}`}}
@@ -54,17 +54,20 @@ function nickname(seed){const pairs=[];for(const a of FIRST)for(const b of SECON
 function insert(lore,nick){const p=String(lore).split(/\s+/).filter(Boolean);return p.length<=1?`${lore} “${nick}”`:`${p[0]} “${nick}” ${p.slice(1).join(' ')}`}
 function loreIdentity(seed,gender,culture){if(culture==='mashtzarr')return mashtzarr(seed,gender);if(culture==='mao_ao')return mao(seed,gender);if(culture==='kenkari')return kenkari(seed,gender);if(culture==='slagothim')return slag(seed,gender);if(culture==='engh_sho')return engh(seed,gender);throw Error(`Unknown culture ${culture}`)}
 
-// Public generator used for live captain entities after their appearance has already been rolled.
-function generateCaptainIdentity(o={}){const speciesId=String(o.speciesId||'').toLowerCase(),culture=SPECIES[speciesId];if(!culture)throw Error(`Unsupported captain species "${speciesId||'unknown'}"`);const gender=['male','female'].includes(o.gender)?o.gender:(rng(`${o.seed}:gender`)()<.5?'male':'female'),seed=String(o.seed||randSeed(`bandit:${speciesId}:${gender}`)),base=loreIdentity(seed,gender,culture),nick=nickname(seed),nicknameOnly=o.forceNicknameOnly||rng(`${seed}:nick:format`)()<Math.max(0,Math.min(1,Number(o.nicknameOnlyChance??.2)));const display=nicknameOnly?nick.name:insert(base.loreName,nick.name);return{speciesId,cultureId:culture,gender,seed,...base,nickname:nick.name,nicknameSyllables:nick.syllables,nicknameOnly,display,name:display}}
+// Shared species/gender-aware generator for any bandit. This is the nickname-free cultural identity ordinary grunts/lieutenants use.
+function generateCulturalIdentity(o={}){const speciesId=String(o.speciesId||'').toLowerCase(),culture=SPECIES[speciesId];if(!culture)throw Error(`Unsupported bandit species "${speciesId||'unknown'}"`);const gender=['male','female'].includes(o.gender)?o.gender:(rng(`${o.seed}:gender`)()<.5?'male':'female'),seed=String(o.seed||randSeed(`bandit:${speciesId}:${gender}`)),base=loreIdentity(seed,gender,culture);return{speciesId,cultureId:culture,gender,seed,...base,display:base.loreName,name:base.loreName}}
+
+// Captain generator layers the existing bandit nickname rules over the same cultural identity.
+function generateCaptainIdentity(o={}){const base=generateCulturalIdentity(o),nick=nickname(base.seed),nicknameOnly=o.forceNicknameOnly||rng(`${base.seed}:nick:format`)()<Math.max(0,Math.min(1,Number(o.nicknameOnlyChance??.2))),display=nicknameOnly?nick.name:insert(base.loreName,nick.name);return{...base,nickname:nick.name,nicknameSyllables:nick.syllables,nicknameOnly,display,name:display}}
 
 // Public alias generator used before a bounty target has any species/gender; nickname-only is explicitly culture-independent in the forge.
 function generateNicknameOnly(o={}){const seed=String(o.seed||randSeed('bandit-bounty')),n=nickname(seed);return{seed,display:n.name,name:n.name,nickname:n.name,nicknameSyllables:n.syllables,nicknameOnly:true}}
 
 // Mobile-friendly deterministic smoke test and sample report are routed into the game's existing debug log by BountyBoard.
-function selfTest(n=6){n=Math.max(1,Math.min(20,Math.floor(Number(n)||6)));const errors=[],ids=Object.keys(SPECIES);for(const speciesId of ids)for(const gender of ['male','female'])for(let i=0;i<n;i++){const seed=`test:${speciesId}:${gender}:${i}`;try{const a=generateCaptainIdentity({speciesId,gender,seed}),b=generateCaptainIdentity({speciesId,gender,seed});if(!a.display||a.display!==b.display||!a.nickname||a.nicknameSyllables>=4||banned(a.nickname))errors.push(`${speciesId}/${gender}/${i}`)}catch(e){errors.push(`${speciesId}/${gender}: ${e.message}`)}}return{ok:!errors.length,errors,samples:ids.length*2*n}}
+function selfTest(n=6){n=Math.max(1,Math.min(20,Math.floor(Number(n)||6)));const errors=[],ids=Object.keys(SPECIES);for(const speciesId of ids)for(const gender of ['male','female'])for(let i=0;i<n;i++){const seed=`test:${speciesId}:${gender}:${i}`;try{const cultural=generateCulturalIdentity({speciesId,gender,seed}),a=generateCaptainIdentity({speciesId,gender,seed}),b=generateCaptainIdentity({speciesId,gender,seed});if(!cultural.loreName||cultural.display!==cultural.loreName||a.display!==b.display||!a.nickname||a.nicknameSyllables>=4||banned(a.nickname))errors.push(`${speciesId}/${gender}/${i}`)}catch(e){errors.push(`${speciesId}/${gender}: ${e.message}`)}}return{ok:!errors.length,errors,samples:ids.length*2*n}}
 function debugSampleText(n=1){n=Math.max(1,Math.min(4,Math.floor(Number(n)||1)));const out=[];for(const speciesId of Object.keys(SPECIES))for(const gender of ['male','female'])for(let i=0;i<n;i++){const x=generateCaptainIdentity({speciesId,gender,seed:`debug:${speciesId}:${gender}:${i}`});out.push(`${speciesId}/${gender}: ${x.display}`)}return out.join('\n')}
 
-window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',generateCaptainIdentity,generateNicknameOnly,selfTest,debugSampleText,cultureIdForSpecies:id=>SPECIES[String(id||'').toLowerCase()]||null};
+window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',generateCulturalIdentity,generateCaptainIdentity,generateNicknameOnly,selfTest,debugSampleText,cultureIdForSpecies:id=>SPECIES[String(id||'').toLowerCase()]||null};
 })();
 
 (() => {
@@ -90,12 +93,12 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     void _loadBanditGangConfig();
     const forge = window.BanditNameForge;
     if (!forge) {
-      deps.debugLog?.('Bandit captain name forge unavailable at BountyBoard.init().', 'warn');
+      deps.debugLog?.('Bandit name forge unavailable at BountyBoard.init().', 'warn');
       return;
     }
     const result = forge.selfTest(8);
-    if (result.ok) deps.debugLog?.(`Bandit captain name forge self-test passed (${result.samples} generated identities).`, 'info');
-    else deps.debugLog?.(`Bandit captain name forge self-test FAILED: ${result.errors.join(' | ')}`, 'warn');
+    if (result.ok) deps.debugLog?.(`Bandit name forge self-test passed (${result.samples} generated identities).`, 'info');
+    else deps.debugLog?.(`Bandit name forge self-test FAILED: ${result.errors.join(' | ')}`, 'warn');
   }
 
   const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
@@ -140,14 +143,37 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     candidate?.groundShadow?.removeFromParent?.();
   }
 
-  // Installs the captain-only naming/appearance adapter around the existing
-  // combat module. Ordinary bandit roster/combat generation stays untouched.
+  function _applyOrdinaryBanditCulturalName(entity, rank, opts, forge) {
+    if (!entity || rank === 'captain') return entity;
+    try {
+      const speciesId = entity.rosterRecord?.appearance?.speciesId;
+      const gender = entity.rosterRecord?.appearance?.gender;
+      const identity = forge.generateCulturalIdentity({
+        speciesId,
+        gender,
+        seed: `live-bandit:${opts?.zoneId || entity.areaId || 'unknown'}:${entity.id}`,
+      });
+      entity.name = identity.loreName;
+      entity.banditNameIdentity = identity;
+      if (entity.rosterRecord) {
+        entity.rosterRecord.name = identity.loreName;
+        entity.rosterRecord.nameForge = identity;
+      }
+    } catch (error) {
+      deps?.debugLog?.(`[bandits] cultural name forge failed for ${rank}; keeping fallback "${entity.name}": ${error.message}`, 'warn');
+    }
+    return entity;
+  }
+
+  // Installs the shared cultural naming adapter around the existing combat module.
+  // Ordinary bandits receive a species/gender-correct lore name; captains retain
+  // the existing bounty pinning and nickname layer on top of those same rules.
   function _installCaptainNameForgeAdapter() {
     const combat = window.BanditCombat;
     const forge = window.BanditNameForge;
     if (!combat?.makeEntity || !forge || combat.__captainNameForgeAdapterInstalled) return;
     const originalMakeEntity = combat.makeEntity; // Called for every real entity after any bounty appearance pin is prepared.
-    const originalRandomName = combat.randomName; // Preserved for non-captain callers.
+    const originalRandomName = combat.randomName; // Preserved for compatibility callers without species/gender context.
 
     combat.makeEntity = async function(cfg, rank, tier, x, y, opts = {}) {
       const bountyPin = rank === 'captain' && opts.nameOverride && opts.zoneId
@@ -155,7 +181,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
         : null; // Used below to force the already-posted captain's appearance as well as their name.
       const desiredSpecies = bountyPin?.captainSpeciesId;
       const desiredGender = bountyPin?.captainGender;
-      let captain = null; // Holds the accepted generated captain returned to bandit-camps.
+      let captain = null; // Holds the accepted generated entity returned to bandit-camps.
 
       if (desiredSpecies && (desiredGender === 'male' || desiredGender === 'female')) {
         const forcedCfg = { ...cfg, speciesWeights: { [desiredSpecies]: 1 } }; // Forces species through the roster's existing weighted picker.
@@ -179,7 +205,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
         captain = await originalMakeEntity.call(combat, cfg, rank, tier, x, y, opts);
       }
 
-      if (!captain || rank !== 'captain') return captain;
+      if (!captain) return null;
+      if (rank !== 'captain') return _applyOrdinaryBanditCulturalName(captain, rank, opts, forge);
 
       if (opts.nameOverride) {
         const pinnedIdentity = {
@@ -373,7 +400,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   function debugCaptainNames(perSpecies = 2) {
     const forge = window.BanditNameForge;
     if (!forge) {
-      const message = 'Bandit captain name forge is unavailable.';
+      const message = 'Bandit name forge is unavailable.';
       deps?.debugLog?.(message, 'warn');
       return message;
     }
