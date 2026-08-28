@@ -12,12 +12,13 @@
   const states = new WeakMap();
   const tracked = new Set();
   const PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
-  const PULSE_DURATION_S = 0.18; // Used by scalePulse/tickCreature to give each rendered utterance one brief visual beat.
-  const PULSE_ADD_SCALE = 0.025; // Used by scalePulse as the tiny additive peak above the animal's composed base scale.
-  const VOCAL_NOD_UP_DEG = -10; // Used by headNodOffsetDeg; negative Z pitch is upward in the animal head-rig convention.
-  const SIZE_CLASSES = Object.freeze(['small', 'medium', 'large']); // Used by creatureSizeClass/sizePitchOffsetSemitones to match CreatureGenetics' canonical class names.
-  const ZERO_SIZE_PITCH = Object.freeze({ small: 0, medium: 0, large: 0 }); // Used as the backwards-compatible default until a species authors size-dependent pitch.
-  const RATE_TO_ST = rate => 12 * Math.log2(Math.max(0.01, Number(rate) || 1)); // Used only to migrate the old coupled playback-rate authoring into separate pitch values.
+  const PULSE_DURATION_S = 0.18;
+  const PULSE_ADD_SCALE = 0.025;
+  const VOCAL_NOD_UP_DEG = -10;
+  const SIZE_CLASSES = Object.freeze(['small', 'medium', 'large']);
+  const ZERO_SIZE_PITCH = Object.freeze({ small: 0, medium: 0, large: 0 });
+  const RATE_TO_ST = rate => 12 * Math.log2(Math.max(0.01, Number(rate) || 1));
+
   const PROFILE_DEFAULTS = Object.freeze({
     chatter: Object.freeze({
       repeatsMin: 2, repeatsMax: 5,
@@ -52,19 +53,24 @@
     sizePitchSemitones: ZERO_SIZE_PITCH,
     discoveryText: Object.freeze({ 'animal-den': Object.freeze([]), 'bandit-camp': Object.freeze([]) }),
   });
+
   const debug = {
     requested: 0, rendered: 0, pulsed: 0, textRendered: 0, suppressed: 0,
     lastStartLatencyMs: null, profilesLoaded: false, last: null,
   };
+
   const MODULE_BASE_SRC = typeof document !== 'undefined' && document.currentScript?.src
     ? document.currentScript.src
     : null;
   const REVERB_MODULE_SRC = MODULE_BASE_SRC
     ? new URL('environmental-reverb.js?v=20260828room1', MODULE_BASE_SRC).href
-    : null; // Loaded before gameplay audio so world SFX can inherit the current map's wet reverb profile without replacing their dry path.
+    : null;
+  const CLIP_FILTER_MODULE_SRC = MODULE_BASE_SRC
+    ? new URL('animal-voice-call-clip-filter.js?v=20260828callclips1', MODULE_BASE_SRC).href
+    : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
     ? new URL('animal-voice-independent-playback.js?v=20260828pitchsplit1', MODULE_BASE_SRC).href
-    : null; // Used by requestIndependentPlaybackModule to add the optional Web Audio adapter without changing game.js or AudioSystem load order.
+    : null;
 
   function requestEnvironmentalReverbModule() {
     if (!REVERB_MODULE_SRC || window.EnvironmentalReverb || typeof document === 'undefined') return;
@@ -76,25 +82,40 @@
     document.head?.appendChild(script);
   }
 
+  function requestCallClipFilterModule() {
+    if (!CLIP_FILTER_MODULE_SRC || window.AnimalVoiceCallClipFilter || typeof document === 'undefined') return;
+    if (document.querySelector?.('script[data-hobunji-animal-call-clips]')) return;
+    const script = document.createElement('script');
+    script.src = CLIP_FILTER_MODULE_SRC;
+    script.async = false;
+    script.dataset.hobunjiAnimalCallClips = '1';
+    document.head?.appendChild(script);
+  }
+
   function requestIndependentPlaybackModule() {
     requestEnvironmentalReverbModule();
+    requestCallClipFilterModule();
     if (!PLAYBACK_MODULE_SRC || window.AnimalVoiceIndependentPlayback || typeof document === 'undefined') return;
     if (document.querySelector?.('script[data-hobunji-animal-independent-playback]')) return;
-    const script = document.createElement('script'); // Inserted once; if it arrives after an early call, that call simply uses AudioSystem's legacy coupled fallback.
+    const script = document.createElement('script');
     script.src = PLAYBACK_MODULE_SRC;
     script.async = true;
     script.dataset.hobunjiAnimalIndependentPlayback = '1';
     document.head?.appendChild(script);
   }
+
   requestEnvironmentalReverbModule();
+  requestCallClipFilterModule();
   requestIndependentPlaybackModule();
 
   function init(injectedDeps) {
     deps = injectedDeps;
     void loadAuthoredProfiles();
     requestEnvironmentalReverbModule();
+    requestCallClipFilterModule();
     requestIndependentPlaybackModule();
   }
+
   function random() { return deps?.random?.() ?? Math.random(); }
   function hasVoice(c) { return !!deps?.hasVoice?.(c); }
   function finite(value, fallback) {
@@ -122,13 +143,13 @@
   }
 
   function creatureSizeClass(c) {
-    const raw = String(c?.genotype?.sizeClass || c?.sizeClass || c?.def?.defaultSizeClass || '').toLowerCase(); // Reads the same genotype.sizeClass/defaultSizeClass representation used by CreatureGenetics.
+    const raw = String(c?.genotype?.sizeClass || c?.sizeClass || c?.def?.defaultSizeClass || '').toLowerCase();
     return SIZE_CLASSES.includes(raw) ? raw : 'medium';
   }
 
   function migrateKindAuthoring(kind, authored) {
     if (!authored || typeof authored !== 'object' || Array.isArray(authored)) return authored || {};
-    const migrated = { ...authored }; // Used to preserve authored fields while filling only the new independent tempo/pitch names.
+    const migrated = { ...authored };
     if (migrated.tempoMin == null && migrated.rateMin != null) migrated.tempoMin = migrated.rateMin;
     if (migrated.tempoMax == null && migrated.rateMax != null) migrated.tempoMax = migrated.rateMax;
     if (migrated.pitchMinSemitones == null && migrated.rateMin != null) migrated.pitchMinSemitones = RATE_TO_ST(migrated.rateMin);
@@ -165,8 +186,14 @@
   }
 
   function sizePitchOffsetSemitones(c, profile) {
-    const sizeClass = creatureSizeClass(c); // Used to select this individual's Small/Medium/Large species pitch offset.
+    const sizeClass = creatureSizeClass(c);
     return finite(profile?.sizePitchSemitones?.[sizeClass], 0);
+  }
+
+  function authoredAllowedClips(cfg, opts) {
+    if (Array.isArray(opts?.allowedClips)) return [...opts.allowedClips];
+    if (Array.isArray(cfg?.allowedClips)) return [...cfg.allowedClips];
+    return null;
   }
 
   function setAuthoredProfiles(profiles) {
@@ -181,10 +208,7 @@
       if (!response.ok) return;
       const config = await response.json();
       setAuthoredProfiles(config?.animalVocalizations || {});
-    } catch (_) {
-      // The defaults above deliberately preserve the pre-authoring behavior
-      // when the config is unavailable or an older save/build has no profiles.
-    }
+    } catch (_) {}
   }
 
   function stateFor(c) {
@@ -203,12 +227,24 @@
   }
 
   function vocalAxes(c, cfg, opts, profile) {
-    const tempo = Number.isFinite(Number(opts.tempo)) ? Number(opts.tempo) : randomRange(cfg.tempoMin, cfg.tempoMax); // Passed to pitch-preserving HTMLMediaElement playback only.
+    const tempo = Number.isFinite(Number(opts.tempo)) ? Number(opts.tempo) : randomRange(cfg.tempoMin, cfg.tempoMax);
     const basePitch = Number.isFinite(Number(opts.pitchSemitones))
       ? Number(opts.pitchSemitones)
-      : randomRange(cfg.pitchMinSemitones, cfg.pitchMaxSemitones); // Passed only to the independent Web Audio pitch shifter.
-    const sizePitch = sizePitchOffsetSemitones(c, profile); // Added to pitch only, never tempo, so a Large animal can sound deeper without speaking more slowly.
+      : randomRange(cfg.pitchMinSemitones, cfg.pitchMaxSemitones);
+    const sizePitch = sizePitchOffsetSemitones(c, profile);
     return { tempo, pitchSemitones: basePitch + sizePitch, sizePitchSemitones: sizePitch };
+  }
+
+  function commonUtteranceFields(cfg, opts, axes) {
+    return {
+      volume: Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : randomRange(cfg.volumeMin, cfg.volumeMax),
+      tempo: axes.tempo,
+      pitchSemitones: axes.pitchSemitones,
+      sizePitchSemitones: axes.sizePitchSemitones,
+      rate: axes.tempo,
+      earshotTiles: finite(opts.earshotTiles, cfg.earshotTiles),
+      allowedClips: authoredAllowedClips(cfg, opts),
+    };
   }
 
   function buildSequence(c, kind, opts, profile) {
@@ -217,59 +253,40 @@
       const repeats = clamp(Math.round(finite(opts.repeats, cfg.repeats)), 1, 6);
       const intervalS = Math.max(0, finite(opts.intervalMs, cfg.intervalMs) / 1000);
       return Array.from({ length: repeats }, (_, i) => {
-        const axes = vocalAxes(c, cfg, opts, profile); // Used below to keep the selected tempo and pitch independent for this growl utterance.
-        const tempoMultipliers = Array.isArray(opts.tempoContour) ? opts.tempoContour : cfg.tempoContour; // Multiplies tempo only during growl contour stages.
-        const pitchOffsets = Array.isArray(opts.pitchContourSemitones) ? opts.pitchContourSemitones : cfg.pitchContourSemitones; // Adds semitones only during growl contour stages.
+        const axes = vocalAxes(c, cfg, opts, profile);
+        const tempoMultipliers = Array.isArray(opts.tempoContour) ? opts.tempoContour : cfg.tempoContour;
+        const pitchOffsets = Array.isArray(opts.pitchContourSemitones) ? opts.pitchContourSemitones : cfg.pitchContourSemitones;
         const tempoContour = (Array.isArray(tempoMultipliers) && tempoMultipliers.length ? tempoMultipliers : [1])
           .map(multiplier => axes.tempo * finite(multiplier, 1));
         const pitchContourSemitones = (Array.isArray(pitchOffsets) && pitchOffsets.length ? pitchOffsets : [0])
           .map(offset => axes.pitchSemitones + finite(offset, 0));
         return {
           atS: i * intervalS,
-          volume: Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : randomRange(cfg.volumeMin, cfg.volumeMax),
-          tempo: axes.tempo,
-          pitchSemitones: axes.pitchSemitones,
-          sizePitchSemitones: axes.sizePitchSemitones,
+          ...commonUtteranceFields(cfg, opts, axes),
           tempoContour,
           pitchContourSemitones,
           contourSegmentMs: finite(opts.contourSegmentMs, cfg.contourSegmentMs),
-          rate: axes.tempo, // Legacy fallback only: old AudioSystem still hears a usable speed if the independent adapter has not loaded yet.
-          earshotTiles: finite(opts.earshotTiles, cfg.earshotTiles),
         };
       });
     }
+
     if (kind === 'warning') {
       const repeats = clamp(Math.round(finite(opts.repeats, cfg.repeats)), 1, 8);
       const intervalS = Math.max(0.08, finite(opts.intervalMs, cfg.intervalMs) / 1000);
       return Array.from({ length: repeats }, (_, i) => {
-        const axes = vocalAxes(c, cfg, opts, profile); // Used below so warning tempo and pitch can be randomized independently per call.
-        return {
-          atS: i * intervalS,
-          volume: Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : randomRange(cfg.volumeMin, cfg.volumeMax),
-          tempo: axes.tempo,
-          pitchSemitones: axes.pitchSemitones,
-          sizePitchSemitones: axes.sizePitchSemitones,
-          rate: axes.tempo,
-          earshotTiles: finite(opts.earshotTiles, cfg.earshotTiles),
-        };
+        const axes = vocalAxes(c, cfg, opts, profile);
+        return { atS: i * intervalS, ...commonUtteranceFields(cfg, opts, axes) };
       });
     }
+
     const repeats = opts.repeats == null
       ? clamp(randomInt(cfg.repeatsMin, cfg.repeatsMax), 1, 10)
       : clamp(Math.round(finite(opts.repeats, 3)), 1, 10);
     let atS = 0;
     return Array.from({ length: repeats }, (_, i) => {
       if (i) atS += randomRange(cfg.intervalMinMs, cfg.intervalMaxMs) / 1000;
-      const axes = vocalAxes(c, cfg, opts, profile); // Used below so each irregular chatter syllable may vary independently in tempo and pitch.
-      return {
-        atS,
-        volume: Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : randomRange(cfg.volumeMin, cfg.volumeMax),
-        tempo: axes.tempo,
-        pitchSemitones: axes.pitchSemitones,
-        sizePitchSemitones: axes.sizePitchSemitones,
-        rate: axes.tempo,
-        earshotTiles: finite(opts.earshotTiles, cfg.earshotTiles),
-      };
+      const axes = vocalAxes(c, cfg, opts, profile);
+      return { atS, ...commonUtteranceFields(cfg, opts, axes) };
     });
   }
 
@@ -296,16 +313,11 @@
       kind, reason: opts.reason || null, species: speciesProfileKey(c) || '?',
       sizeClass: creatureSizeClass(c), at: Date.now(),
     };
-    // The first sound is intentionally rendered synchronously with the
-    // gameplay event; later repeats are advanced by tickCreature.
     renderDue(c, state);
     return true;
   }
 
   function textLinesFor(active) {
-    // Treasure already has a dedicated, backwards-compatible text path in
-    // AmbientDialogue.companionTreasure(), called by the detector before this
-    // warning request. Do not duplicate that popup here.
     if (active.reason === 'treasure') return [];
     const reasonLines = active.reason ? active.profile.discoveryText?.[active.reason] : null;
     if (Array.isArray(reasonLines) && reasonLines.length) return reasonLines;
@@ -336,13 +348,13 @@
       && active.sequence[active.nextIndex].atS <= active.elapsedS + 0.0001) {
       const utteranceIndex = active.nextIndex;
       const utterance = active.sequence[active.nextIndex++];
-      const playbackRequestedAtMs = Date.now(); // Compared at actual media start for copyable mobile latency diagnostics.
+      const playbackRequestedAtMs = Date.now();
       const onStarted = () => {
         state.pulseRemainingS = PULSE_DURATION_S;
         debug.pulsed++;
         debug.lastStartLatencyMs = Math.max(0, Date.now() - playbackRequestedAtMs);
         showUtteranceText(c, active, utteranceIndex);
-      }; // Called by AudioSystem/its independent playback adapter only when the media element actually starts.
+      };
       if (deps.renderUtterance(c, {
         ...utterance, meaning: active.kind, reason: active.reason, onStarted,
       })) debug.rendered++;
@@ -378,29 +390,22 @@
   function companionDiscovery(c, reason, opts = {}) {
     return request(c, 'warning', { ...opts, reason });
   }
-
   function threatGrowl(c, reason, opts = {}) {
     return request(c, 'growl', { ...opts, reason });
   }
-
   function warning(c, reason, opts = {}) {
     return request(c, 'warning', { ...opts, reason });
   }
 
   function pulseEnvelope(c) {
-    const remainingS = states.get(c)?.pulseRemainingS || 0; // Read by the optional scale helper and the live vocal head-nod layer.
+    const remainingS = states.get(c)?.pulseRemainingS || 0;
     if (remainingS <= 0) return 0;
     const progress = Math.max(0, Math.min(1, 1 - remainingS / PULSE_DURATION_S));
     return Math.sin(progress * Math.PI);
   }
-
-  // Reusable visual envelope for future effects. Vocalizations currently use
-  // the additive head nod below, but callers that genuinely want a tiny body
-  // pulse later can compose this scale without changing the scheduler.
   function scalePulse(c, additiveScale = PULSE_ADD_SCALE) {
     return 1 + pulseEnvelope(c) * Math.max(0, Number(additiveScale) || 0);
   }
-
   function headNodOffsetDeg(c) {
     return pulseEnvelope(c) * VOCAL_NOD_UP_DEG;
   }
@@ -412,13 +417,14 @@
       if (states.get(c)?.active) active++;
       if ((states.get(c)?.pulseRemainingS || 0) > 0) {
         pulsing++;
-        const nodDeg = headNodOffsetDeg(c); // Keeps the strongest live signed nod so mobile diagnostics preserve direction.
+        const nodDeg = headNodOffsetDeg(c);
         if (Math.abs(nodDeg) > Math.abs(maxHeadNodDeg)) maxHeadNodDeg = nodDeg;
       }
     }
     return {
       ...debug, active, pulsing,
       independentPlayback: !!window.AnimalVoiceIndependentPlayback?.isInstalled?.(),
+      callClipFilter: window.AnimalVoiceCallClipFilter?.debugSnapshot?.() || null,
       maxHeadNodDeg: Number(maxHeadNodDeg.toFixed(2)),
     };
   }
