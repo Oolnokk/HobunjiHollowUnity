@@ -36,8 +36,9 @@ approx(capped.expandedEdgeRad, deg(85), 'head clearance caps before opposing cam
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(game,
-  /const headLeftTurnRad = Math\.max\(0, Number\(playerNeckJoint\?\.rotation\?\.y\) \|\| 0\)/,
-  'only character-left player head yaw enlarges shoulder-pet clearance');
+  /const headTurnMagnitudeRad = Math\.abs\(Number\(playerNeckJoint\?\.rotation\?\.y\) \|\| 0\)/,
+  'either player head-turn direction enlarges the fixed character-left shoulder-pet clearance edge');
+assert.doesNotMatch(game, /headLeftTurnRad/, 'clearance cannot silently ignore negative neck yaw');
 assert.match(game,
   /function shoulderPetHeadClearanceDeadzone[\s\S]{0,1800}expandOneSidedDeadzone/,
   'head-clearance wrapper owns the one-sided deadzone expansion');
@@ -54,3 +55,6 @@ assert.match(game,
   'final shoulder-pet rotation remains derived from the normal camera-relative pngRot selection');
 
 console.log('Shoulder-pet head-clearance deadzone checks passed.');
+
+const probe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
+assert.match(probe, /Head clearance: magnitude=/, 'Pixel Probe prints effective asymmetric shoulder-pet deadzone geometry');

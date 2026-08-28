@@ -4995,7 +4995,7 @@
           pngPerps = clearance.perps;
           pngDeadRad = clearance.deadRad;
           c.shoulderPetHeadClearanceDebug = {
-            headLeftTurnRad: clearance.headLeftTurnRad || 0,
+            headTurnMagnitudeRad: clearance.headTurnMagnitudeRad || 0,
             appliedExtraRad: clearance.appliedExtraRad || 0,
             baseDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
             effectiveDeadRad: pngDeadRad,
@@ -8077,8 +8077,8 @@
       // The one-sided interval is converted back to shifted symmetric perps so
       // snap/sway/halt continue using their existing implementations unchanged.
       function shoulderPetHeadClearanceDeadzone(perps, baseDeadRad) {
-        const headLeftTurnRad = Math.max(0, Number(playerNeckJoint?.rotation?.y) || 0); // Positive neck yaw is character-left because updatePlayerHeadAim stores angleDiff(targetWorldYaw, renderedBodyYaw).
-        if (!(headLeftTurnRad > 1e-6) || !window.PerpRotation?.expandOneSidedDeadzone) {
+        const headTurnMagnitudeRad = Math.abs(Number(playerNeckJoint?.rotation?.y) || 0); // Either neck-turn direction enlarges the one protected character-left edge; head yaw magnitude changes dead-zone geometry, never pet yaw.
+        if (!(headTurnMagnitudeRad > 1e-6) || !window.PerpRotation?.expandOneSidedDeadzone) {
           return { perps, deadRad: baseDeadRad, appliedExtraRad: 0, edgeSigns: perps.map(() => 1) };
         }
         const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0; // Keeps left/right tied to the visibly rotated torso during one-handed/combat stances.
@@ -8090,9 +8090,9 @@
           return Math.abs(angleDiff(characterLeftYaw, positiveEdge)) <= Math.abs(angleDiff(characterLeftYaw, negativeEdge)) ? 1 : -1;
         });
         return {
-          ...window.PerpRotation.expandOneSidedDeadzone(perps, baseDeadRad, edgeSigns, headLeftTurnRad),
+          ...window.PerpRotation.expandOneSidedDeadzone(perps, baseDeadRad, edgeSigns, headTurnMagnitudeRad),
           edgeSigns,
-          headLeftTurnRad,
+          headTurnMagnitudeRad,
           renderedBodyYaw,
           characterLeftYaw,
         };

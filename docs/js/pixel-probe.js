@@ -542,6 +542,17 @@
       const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
       lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      const headClearance = liveActivePet.shoulderPetHeadClearanceDebug || null;
+      if (headClearance) {
+        const radToDeg = value => Number(value || 0) * 180 / Math.PI;
+        const edgeSigns = Array.isArray(headClearance.edgeSigns) ? headClearance.edgeSigns.map(value => Number(value) < 0 ? '-' : '+').join('') : '-';
+        const fmtYawList = values => Array.isArray(values) ? values.map(value => `${radToDeg(value).toFixed(2)}°`).join(',') : '-';
+        const baseEdgeDeg = radToDeg(headClearance.baseDeadRad);
+        const extraDeg = radToDeg(headClearance.appliedExtraRad);
+        const expandedEdgeDeg = baseEdgeDeg + extraDeg;
+        lines.push(`Head clearance: magnitude=${radToDeg(headClearance.headTurnMagnitudeRad).toFixed(2)}° baseEdge=${baseEdgeDeg.toFixed(2)}° expandedCharacterLeftEdge=${expandedEdgeDeg.toFixed(2)}° appliedExtra=${extraDeg.toFixed(2)}° effectiveSymmetricRadius=${radToDeg(headClearance.effectiveDeadRad).toFixed(2)}° edgeSigns=${edgeSigns}`);
+        lines.push(`Head clearance yaw: renderedBody=${headClearance.renderedBodyYaw == null ? '-' : radToDeg(headClearance.renderedBodyYaw).toFixed(2) + '°'} characterLeft=${headClearance.characterLeftYaw == null ? '-' : radToDeg(headClearance.characterLeftYaw).toFixed(2) + '°'} basePerps=[${fmtYawList(headClearance.basePerps)}] effectivePerps=[${fmtYawList(headClearance.effectivePerps)}]`);
+      }
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
