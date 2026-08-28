@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/animal-vocalizations.js'), 'utf8');
 const independentPlaybackSource = fs.readFileSync(path.join(root, 'docs/js/animal-voice-independent-playback.js'), 'utf8');
+const analysisEditorSource = fs.readFileSync(path.join(root, 'docs/js/animal-voice-analysis-editor.js'), 'utf8');
 const overheadText = [];
 const window = {
   AmbientDialogue: {
@@ -16,6 +17,7 @@ const window = {
   },
 };
 assert.doesNotThrow(() => new vm.Script(independentPlaybackSource), 'independent animal playback module parses as JavaScript');
+assert.doesNotThrow(() => new vm.Script(analysisEditorSource), 'animal voice analysis editor module parses as JavaScript');
 vm.runInNewContext(source, { window, Math, Date }, { filename: 'animal-vocalizations.js' });
 
 let clock = 0;
@@ -164,13 +166,19 @@ assert.match(source, /animal-voice-independent-playback\.js/, 'semantic coordina
 assert.match(source, /config\/dialogue\/ambient-dialogue\.json/, 'semantic coordinator reads per-species authoring from the existing ambient dialogue config');
 assert.match(source, /AmbientDialogue\.show/, 'semantic coordinator can associate an audible utterance with authored overhead text');
 
-assert.match(independentPlaybackSource, /preservesPitch\s*=\s*enabled/, 'independent renderer explicitly enables native pitch preservation for tempo changes');
-assert.match(independentPlaybackSource, /createDelay\(/, 'independent renderer uses a native Web Audio variable-delay pitch stage');
-assert.match(independentPlaybackSource, /pitchSemitones/, 'independent renderer consumes a pitch axis distinct from tempo');
-assert.match(independentPlaybackSource, /tempoContour/, 'independent renderer can change growl tempo independently');
-assert.match(independentPlaybackSource, /pitchContourSemitones/, 'independent renderer can change growl pitch independently');
+assert.match(independentPlaybackSource, /preservesPitch\s*=\s*enabled/, 'independent renderer keeps a pitch-preserving native fallback');
+assert.match(independentPlaybackSource, /wsolaStretch/, 'independent renderer uses WSOLA for higher-quality time stretching');
+assert.match(independentPlaybackSource, /resampleChannels/, 'independent renderer separates pitch by resampling before WSOLA duration compensation');
+assert.match(independentPlaybackSource, /yinFrame/, 'voice analyzer uses YIN-style fundamental-frequency detection');
+assert.match(independentPlaybackSource, /spectralCentroid/, 'voice analyzer measures spectral brightness as well as F0');
+assert.match(independentPlaybackSource, /pitchReliable/, 'voice analyzer can reject noisy or unpitched material');
+assert.match(independentPlaybackSource, /clipPitchByKey/, 'playback owns a per-recording baseline pitch-normalization layer');
+assert.match(independentPlaybackSource, /setNormalizationProfiles/, 'editor/runtime can refresh per-recording normalization without coupling the semantic scheduler');
 assert.match(independentPlaybackSource, /capturePreparedAnimalElement/, 'adapter reuses AudioSystem selection/falloff instead of duplicating its private mixing logic');
 assert.doesNotMatch(independentPlaybackSource, /ANIMAL_VOICE_POOLS/, 'independent renderer does not duplicate AudioSystem species clip pools');
+assert.match(analysisEditorSource, /Analyze & apply normalization/, 'Animals editor exposes one-tap pool frequency analysis');
+assert.match(analysisEditorSource, /MAX_AUTO_SHIFT_ST = 6/, 'automatic normalization refuses extreme source-mismatch pitch shifts');
+assert.match(analysisEditorSource, /VOICE_CLIPS\[voiceKey\(animal\.id\)\]/, 'analysis editor reuses the existing editor voice pool instead of duplicating clip lists');
 
 const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence drives passive chatter');
