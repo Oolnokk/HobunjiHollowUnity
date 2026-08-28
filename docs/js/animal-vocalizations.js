@@ -1,12 +1,10 @@
 (() => {
   'use strict';
 
-  // Converts gameplay meaning into a timed sequence of utterances. This
-  // module deliberately owns no Audio objects and knows no asset paths:
-  // producers request chatter/warning/growl intents, while AudioSystem is
-  // injected as the renderer. Species authoring is read from the existing
-  // ambient-dialogue config so sound semantics and overhead text can be
-  // tuned together without coupling either system to browser audio loading.
+  // Semantic animal-call scheduler. Audio authoring is intentionally simple:
+  // each response owns an explicit list of fixed utterances, each recording
+  // has one fixed base tempo/pitch, and one global size-class pitch map is
+  // added on top. There are no random pitch/tempo ranges or modulation curves.
   let deps = null;
   let authoredProfiles = {};
   const states = new WeakMap();
@@ -16,47 +14,61 @@
   const PULSE_ADD_SCALE = 0.025;
   const VOCAL_NOD_UP_DEG = -10;
   const SIZE_CLASSES = Object.freeze(['small', 'medium', 'large']);
-  const ZERO_SIZE_PITCH = Object.freeze({ small: 0, medium: 0, large: 0 });
-  const RATE_TO_ST = rate => 12 * Math.log2(Math.max(0.01, Number(rate) || 1));
+  const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 });
+  const DEFAULT_UTTERANCE = Object.freeze({ tempo: 1, pitchSemitones: 0 });
 
   const PROFILE_DEFAULTS = Object.freeze({
     chatter: Object.freeze({
-      repeatsMin: 2, repeatsMax: 5,
-      intervalMinMs: 120, intervalMaxMs: 480,
-      volumeMin: 0.16, volumeMax: 0.26,
-      tempoMin: 1.18, tempoMax: 1.56,
-      pitchMinSemitones: 2.8654, pitchMaxSemitones: 7.6986,
-      earshotTiles: 8, tailMs: 350,
-      initialDelayMinS: 4, initialDelayMaxS: 12,
-      cooldownMinS: 5, cooldownMaxS: 14,
-      textEachUtterance: false, textLines: [],
+      intervalMs: 180,
+      volume: 0.24,
+      earshotTiles: 8,
+      tailMs: 320,
+      initialDelayMinS: 4,
+      initialDelayMaxS: 10,
+      cooldownMinS: 5,
+      cooldownMaxS: 12,
+      utterances: Object.freeze([
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+      ]),
+      textEachUtterance: false,
+      textLines: Object.freeze([]),
     }),
     warning: Object.freeze({
-      repeats: 3, intervalMs: 520,
-      volumeMin: 0.94, volumeMax: 0.94,
-      tempoMin: 0.96, tempoMax: 1.06,
-      pitchMinSemitones: -0.7067, pitchMaxSemitones: 1.0088,
-      earshotTiles: 12, tailMs: 500,
-      textEachUtterance: false, textLines: [],
+      intervalMs: 420,
+      volume: 0.94,
+      earshotTiles: 12,
+      tailMs: 500,
+      utterances: Object.freeze([
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+        Object.freeze({ tempo: 1, pitchSemitones: 0 }),
+      ]),
+      textEachUtterance: false,
+      textLines: Object.freeze([]),
     }),
     growl: Object.freeze({
-      repeats: 1, intervalMs: 0,
-      volumeMin: 0.76, volumeMax: 0.76,
-      tempoMin: 0.56, tempoMax: 0.68,
-      pitchMinSemitones: -10.038, pitchMaxSemitones: -6.6767,
-      tempoContour: Object.freeze([1, 1.22, 0.92]),
-      pitchContourSemitones: Object.freeze([0, 3.4426, -1.4435]),
-      contourSegmentMs: 260,
-      earshotTiles: 10, tailMs: 1200,
-      textEachUtterance: false, textLines: [],
+      intervalMs: 0,
+      volume: 0.82,
+      earshotTiles: 10,
+      tailMs: 900,
+      utterances: Object.freeze([Object.freeze({ tempo: 1, pitchSemitones: 0 })]),
+      textEachUtterance: false,
+      textLines: Object.freeze([]),
     }),
-    sizePitchSemitones: ZERO_SIZE_PITCH,
     discoveryText: Object.freeze({ 'animal-den': Object.freeze([]), 'bandit-camp': Object.freeze([]) }),
   });
 
   const debug = {
-    requested: 0, rendered: 0, pulsed: 0, textRendered: 0, suppressed: 0,
-    lastStartLatencyMs: null, profilesLoaded: false, last: null,
+    requested: 0,
+    rendered: 0,
+    pulsed: 0,
+    textRendered: 0,
+    suppressed: 0,
+    lastStartLatencyMs: null,
+    profilesLoaded: false,
+    last: null,
   };
 
   const MODULE_BASE_SRC = typeof document !== 'undefined' && document.currentScript?.src
@@ -65,11 +77,8 @@
   const REVERB_MODULE_SRC = MODULE_BASE_SRC
     ? new URL('environmental-reverb.js?v=20260828room1', MODULE_BASE_SRC).href
     : null;
-  const CLIP_FILTER_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-call-clip-filter.js?v=20260828callclips1', MODULE_BASE_SRC).href
-    : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-independent-playback.js?v=20260828pitchsplit1', MODULE_BASE_SRC).href
+    ? new URL('animal-voice-independent-playback.js?v=20260828simple1', MODULE_BASE_SRC).href
     : null;
 
   function requestEnvironmentalReverbModule() {
@@ -82,19 +91,8 @@
     document.head?.appendChild(script);
   }
 
-  function requestCallClipFilterModule() {
-    if (!CLIP_FILTER_MODULE_SRC || window.AnimalVoiceCallClipFilter || typeof document === 'undefined') return;
-    if (document.querySelector?.('script[data-hobunji-animal-call-clips]')) return;
-    const script = document.createElement('script');
-    script.src = CLIP_FILTER_MODULE_SRC;
-    script.async = false;
-    script.dataset.hobunjiAnimalCallClips = '1';
-    document.head?.appendChild(script);
-  }
-
-  function requestIndependentPlaybackModule() {
+  function requestPlaybackModule() {
     requestEnvironmentalReverbModule();
-    requestCallClipFilterModule();
     if (!PLAYBACK_MODULE_SRC || window.AnimalVoiceIndependentPlayback || typeof document === 'undefined') return;
     if (document.querySelector?.('script[data-hobunji-animal-independent-playback]')) return;
     const script = document.createElement('script');
@@ -105,15 +103,13 @@
   }
 
   requestEnvironmentalReverbModule();
-  requestCallClipFilterModule();
-  requestIndependentPlaybackModule();
+  requestPlaybackModule();
 
   function init(injectedDeps) {
     deps = injectedDeps;
     void loadAuthoredProfiles();
     requestEnvironmentalReverbModule();
-    requestCallClipFilterModule();
-    requestIndependentPlaybackModule();
+    requestPlaybackModule();
   }
 
   function random() { return deps?.random?.() ?? Math.random(); }
@@ -126,11 +122,6 @@
   function randomRange(min, max) {
     const lo = finite(min, 0), hi = finite(max, lo);
     return Math.min(lo, hi) + random() * Math.max(0, Math.abs(hi - lo));
-  }
-  function randomInt(min, max) {
-    const lo = Math.round(Math.min(finite(min, 1), finite(max, 1)));
-    const hi = Math.round(Math.max(finite(min, 1), finite(max, 1)));
-    return lo + Math.floor(random() * (hi - lo + 1));
   }
 
   function speciesProfileKey(c) {
@@ -147,36 +138,52 @@
     return SIZE_CLASSES.includes(raw) ? raw : 'medium';
   }
 
-  function migrateKindAuthoring(kind, authored) {
-    if (!authored || typeof authored !== 'object' || Array.isArray(authored)) return authored || {};
-    const migrated = { ...authored };
-    if (migrated.tempoMin == null && migrated.rateMin != null) migrated.tempoMin = migrated.rateMin;
-    if (migrated.tempoMax == null && migrated.rateMax != null) migrated.tempoMax = migrated.rateMax;
-    if (migrated.pitchMinSemitones == null && migrated.rateMin != null) migrated.pitchMinSemitones = RATE_TO_ST(migrated.rateMin);
-    if (migrated.pitchMaxSemitones == null && migrated.rateMax != null) migrated.pitchMaxSemitones = RATE_TO_ST(migrated.rateMax);
-    if (kind === 'growl' && Array.isArray(migrated.rateContour)) {
-      if (!Array.isArray(migrated.tempoContour)) migrated.tempoContour = [...migrated.rateContour];
-      if (!Array.isArray(migrated.pitchContourSemitones)) migrated.pitchContourSemitones = migrated.rateContour.map(RATE_TO_ST);
-    }
-    return migrated;
+  function normalizeUtterance(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : DEFAULT_UTTERANCE;
+    return {
+      tempo: clamp(finite(source.tempo, 1), 0.35, 2),
+      pitchSemitones: clamp(finite(source.pitchSemitones, 0), -12, 12),
+    };
   }
 
-  function mergeKind(kind, base, common, species) {
-    return { ...base, ...migrateKindAuthoring(kind, common), ...migrateKindAuthoring(kind, species) };
+  function normalizeUtterances(value, fallback) {
+    const source = Array.isArray(value) ? value : fallback;
+    if (!Array.isArray(source) || !source.length) return [];
+    return source.slice(0, 12).map(normalizeUtterance);
+  }
+
+  function mergeKind(base, common, species) {
+    const merged = { ...base, ...(common || {}), ...(species || {}) };
+    const authoredUtterances = Array.isArray(species?.utterances)
+      ? species.utterances
+      : Array.isArray(common?.utterances)
+        ? common.utterances
+        : base.utterances;
+    merged.utterances = normalizeUtterances(authoredUtterances, base.utterances);
+    if (Array.isArray(species?.allowedClips)) merged.allowedClips = [...species.allowedClips];
+    else if (Array.isArray(common?.allowedClips)) merged.allowedClips = [...common.allowedClips];
+    else delete merged.allowedClips;
+    return merged;
+  }
+
+  function globalSizePitchMap() {
+    const authored = authoredProfiles.default?.sizePitchSemitones;
+    return {
+      small: clamp(finite(authored?.small, DEFAULT_SIZE_PITCH.small), -12, 12),
+      medium: clamp(finite(authored?.medium, DEFAULT_SIZE_PITCH.medium), -12, 12),
+      large: clamp(finite(authored?.large, DEFAULT_SIZE_PITCH.large), -12, 12),
+    };
   }
 
   function profileFor(c) {
     const common = authoredProfiles.default || {};
     const species = authoredProfiles[speciesProfileKey(c)] || {};
     return {
-      chatter: mergeKind('chatter', PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
-      warning: mergeKind('warning', PROFILE_DEFAULTS.warning, common.warning, species.warning),
-      growl: mergeKind('growl', PROFILE_DEFAULTS.growl, common.growl, species.growl),
-      sizePitchSemitones: {
-        ...PROFILE_DEFAULTS.sizePitchSemitones,
-        ...(common.sizePitchSemitones || {}),
-        ...(species.sizePitchSemitones || {}),
-      },
+      chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
+      warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
+      growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
+      clipTuning: { ...(common.clipTuning || {}), ...(species.clipTuning || {}) },
+      sizePitchSemitones: globalSizePitchMap(),
       discoveryText: {
         ...PROFILE_DEFAULTS.discoveryText,
         ...(common.discoveryText || {}),
@@ -186,8 +193,7 @@
   }
 
   function sizePitchOffsetSemitones(c, profile) {
-    const sizeClass = creatureSizeClass(c);
-    return finite(profile?.sizePitchSemitones?.[sizeClass], 0);
+    return finite(profile?.sizePitchSemitones?.[creatureSizeClass(c)], 0);
   }
 
   function authoredAllowedClips(cfg, opts) {
@@ -226,68 +232,21 @@
     return state;
   }
 
-  function vocalAxes(c, cfg, opts, profile) {
-    const tempo = Number.isFinite(Number(opts.tempo)) ? Number(opts.tempo) : randomRange(cfg.tempoMin, cfg.tempoMax);
-    const basePitch = Number.isFinite(Number(opts.pitchSemitones))
-      ? Number(opts.pitchSemitones)
-      : randomRange(cfg.pitchMinSemitones, cfg.pitchMaxSemitones);
-    const sizePitch = sizePitchOffsetSemitones(c, profile);
-    return { tempo, pitchSemitones: basePitch + sizePitch, sizePitchSemitones: sizePitch };
-  }
-
-  function commonUtteranceFields(cfg, opts, axes) {
-    return {
-      volume: Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : randomRange(cfg.volumeMin, cfg.volumeMax),
-      tempo: axes.tempo,
-      pitchSemitones: axes.pitchSemitones,
-      sizePitchSemitones: axes.sizePitchSemitones,
-      rate: axes.tempo,
-      earshotTiles: finite(opts.earshotTiles, cfg.earshotTiles),
-      allowedClips: authoredAllowedClips(cfg, opts),
-    };
-  }
-
   function buildSequence(c, kind, opts, profile) {
     const cfg = profile[kind];
-    if (kind === 'growl') {
-      const repeats = clamp(Math.round(finite(opts.repeats, cfg.repeats)), 1, 6);
-      const intervalS = Math.max(0, finite(opts.intervalMs, cfg.intervalMs) / 1000);
-      return Array.from({ length: repeats }, (_, i) => {
-        const axes = vocalAxes(c, cfg, opts, profile);
-        const tempoMultipliers = Array.isArray(opts.tempoContour) ? opts.tempoContour : cfg.tempoContour;
-        const pitchOffsets = Array.isArray(opts.pitchContourSemitones) ? opts.pitchContourSemitones : cfg.pitchContourSemitones;
-        const tempoContour = (Array.isArray(tempoMultipliers) && tempoMultipliers.length ? tempoMultipliers : [1])
-          .map(multiplier => axes.tempo * finite(multiplier, 1));
-        const pitchContourSemitones = (Array.isArray(pitchOffsets) && pitchOffsets.length ? pitchOffsets : [0])
-          .map(offset => axes.pitchSemitones + finite(offset, 0));
-        return {
-          atS: i * intervalS,
-          ...commonUtteranceFields(cfg, opts, axes),
-          tempoContour,
-          pitchContourSemitones,
-          contourSegmentMs: finite(opts.contourSegmentMs, cfg.contourSegmentMs),
-        };
-      });
-    }
-
-    if (kind === 'warning') {
-      const repeats = clamp(Math.round(finite(opts.repeats, cfg.repeats)), 1, 8);
-      const intervalS = Math.max(0.08, finite(opts.intervalMs, cfg.intervalMs) / 1000);
-      return Array.from({ length: repeats }, (_, i) => {
-        const axes = vocalAxes(c, cfg, opts, profile);
-        return { atS: i * intervalS, ...commonUtteranceFields(cfg, opts, axes) };
-      });
-    }
-
-    const repeats = opts.repeats == null
-      ? clamp(randomInt(cfg.repeatsMin, cfg.repeatsMax), 1, 10)
-      : clamp(Math.round(finite(opts.repeats, 3)), 1, 10);
-    let atS = 0;
-    return Array.from({ length: repeats }, (_, i) => {
-      if (i) atS += randomRange(cfg.intervalMinMs, cfg.intervalMaxMs) / 1000;
-      const axes = vocalAxes(c, cfg, opts, profile);
-      return { atS, ...commonUtteranceFields(cfg, opts, axes) };
-    });
+    const utterances = normalizeUtterances(cfg.utterances, PROFILE_DEFAULTS[kind].utterances);
+    const intervalS = Math.max(0, finite(opts.intervalMs, cfg.intervalMs) / 1000);
+    const sizePitch = sizePitchOffsetSemitones(c, profile);
+    return utterances.map((utterance, index) => ({
+      atS: index * intervalS,
+      volume: clamp(finite(opts.volume, cfg.volume), 0, 1),
+      tempo: utterance.tempo,
+      pitchSemitones: utterance.pitchSemitones,
+      sizePitchSemitones: sizePitch,
+      earshotTiles: Math.max(1, finite(opts.earshotTiles, cfg.earshotTiles)),
+      allowedClips: authoredAllowedClips(cfg, opts),
+      clipTuning: profile.clipTuning,
+    }));
   }
 
   function request(c, requestedKind, opts = {}) {
@@ -302,16 +261,26 @@
     }
     const profile = profileFor(c);
     const sequence = buildSequence(c, kind, opts, profile);
+    if (!sequence.length) return false;
     const tailS = Math.max(0.05, finite(profile[kind].tailMs, 350) / 1000);
     state.active = {
-      kind, priority, reason: opts.reason || null, elapsedS: 0, nextIndex: 0,
-      sequence, profile, endsAtS: sequence[sequence.length - 1].atS + tailS,
+      kind,
+      priority,
+      reason: opts.reason || null,
+      elapsedS: 0,
+      nextIndex: 0,
+      sequence,
+      profile,
+      endsAtS: sequence[sequence.length - 1].atS + tailS,
     };
     if (kind !== 'chatter') state.nextChatterS = Math.max(state.nextChatterS, 2.5);
     debug.requested++;
     debug.last = {
-      kind, reason: opts.reason || null, species: speciesProfileKey(c) || '?',
-      sizeClass: creatureSizeClass(c), at: Date.now(),
+      kind,
+      reason: opts.reason || null,
+      species: speciesProfileKey(c) || '?',
+      sizeClass: creatureSizeClass(c),
+      at: Date.now(),
     };
     renderDue(c, state);
     return true;
@@ -356,7 +325,11 @@
         showUtteranceText(c, active, utteranceIndex);
       };
       if (deps.renderUtterance(c, {
-        ...utterance, meaning: active.kind, reason: active.reason, onStarted,
+        ...utterance,
+        meaning: active.kind,
+        reason: active.reason,
+        utteranceIndex,
+        onStarted,
       })) debug.rendered++;
     }
     if (active.nextIndex >= active.sequence.length && active.elapsedS >= active.endsAtS) state.active = null;
@@ -387,15 +360,9 @@
     state.nextChatterS = randomRange(chatter.cooldownMinS, chatter.cooldownMaxS);
   }
 
-  function companionDiscovery(c, reason, opts = {}) {
-    return request(c, 'warning', { ...opts, reason });
-  }
-  function threatGrowl(c, reason, opts = {}) {
-    return request(c, 'growl', { ...opts, reason });
-  }
-  function warning(c, reason, opts = {}) {
-    return request(c, 'warning', { ...opts, reason });
-  }
+  function companionDiscovery(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
+  function threatGrowl(c, reason, opts = {}) { return request(c, 'growl', { ...opts, reason }); }
+  function warning(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
 
   function pulseEnvelope(c) {
     const remainingS = states.get(c)?.pulseRemainingS || 0;
@@ -406,9 +373,7 @@
   function scalePulse(c, additiveScale = PULSE_ADD_SCALE) {
     return 1 + pulseEnvelope(c) * Math.max(0, Number(additiveScale) || 0);
   }
-  function headNodOffsetDeg(c) {
-    return pulseEnvelope(c) * VOCAL_NOD_UP_DEG;
-  }
+  function headNodOffsetDeg(c) { return pulseEnvelope(c) * VOCAL_NOD_UP_DEG; }
 
   function debugSnapshot() {
     let active = 0, pulsing = 0, maxHeadNodDeg = 0;
@@ -422,16 +387,26 @@
       }
     }
     return {
-      ...debug, active, pulsing,
-      independentPlayback: !!window.AnimalVoiceIndependentPlayback?.isInstalled?.(),
-      callClipFilter: window.AnimalVoiceCallClipFilter?.debugSnapshot?.() || null,
+      ...debug,
+      active,
+      pulsing,
+      playback: window.AnimalVoiceIndependentPlayback?.debugSnapshot?.() || null,
       maxHeadNodDeg: Number(maxHeadNodDeg.toFixed(2)),
     };
   }
 
   window.AnimalVocalizations = {
-    init, tickCreature, companionDiscovery, threatGrowl, warning,
-    pulseEnvelope, scalePulse, headNodOffsetDeg, debugSnapshot,
-    setAuthoredProfiles, profileForDebug: profileFor, creatureSizeClass,
+    init,
+    tickCreature,
+    companionDiscovery,
+    threatGrowl,
+    warning,
+    pulseEnvelope,
+    scalePulse,
+    headNodOffsetDeg,
+    debugSnapshot,
+    setAuthoredProfiles,
+    profileForDebug: profileFor,
+    creatureSizeClass,
   };
 })();
