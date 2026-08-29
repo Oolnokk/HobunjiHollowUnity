@@ -3723,6 +3723,11 @@
         // see its own comment) — step aside entirely rather than fighting
         // it with a second, different rotation write on the same bone.
         if (dialogueOpen) return;
+        if (characterViewMode.enabled) {
+          playerNeckJoint.rotation.x = characterViewMode.lockedNeckX;
+          playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
+          return;
+        }
         // Shoulder-surf: the head locks onto the shared aim point
         // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
         // raycast) rather than the camera's own raw azimuth. Those two agree
@@ -14469,6 +14474,43 @@
       // facingAngle is what the reticle and sprite actually use.
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
       let facingAngle = -Math.PI / 2;   // starts facing north
+      const characterViewMode = {
+        enabled: false,
+        lockedFacingAngle: facingAngle,
+        lockedPlayerAngle: facingAngle,
+        lockedPlayerFacing: 0,
+        lockedNeckX: 0,
+        lockedNeckY: 0,
+        lastChangeReason: 'boot',
+        changedAtMs: 0,
+      }; // Used by the utility-wheel viewer to pin logical facing, rendered body yaw, and neck aim while the camera orbits independently.
+      function publishCharacterViewStatus() {
+        window.HOBUNJI_CHARACTER_VIEW_STATUS = {
+          enabled: characterViewMode.enabled,
+          lastChangeReason: characterViewMode.lastChangeReason,
+          changedAtMs: characterViewMode.changedAtMs,
+          facingAngleDeg: characterViewMode.lockedFacingAngle * 180 / Math.PI,
+          bodyYawDeg: characterViewMode.lockedPlayerFacing * 180 / Math.PI,
+          neckYawDeg: characterViewMode.lockedNeckY * 180 / Math.PI,
+        }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
+      }
+      function setCharacterViewMode(enabled, reason = 'utility-wheel') {
+        const nextEnabled = Boolean(enabled);
+        if (nextEnabled === characterViewMode.enabled) return;
+        if (nextEnabled) {
+          characterViewMode.lockedFacingAngle = facingAngle;
+          characterViewMode.lockedPlayerAngle = player.angle;
+          characterViewMode.lockedPlayerFacing = playerFacing;
+          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
+          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
+        }
+        characterViewMode.enabled = nextEnabled;
+        characterViewMode.lastChangeReason = reason;
+        characterViewMode.changedAtMs = Date.now();
+        publishCharacterViewStatus();
+        showToast(nextEnabled ? 'Character View: On' : (reason === 'movement' ? 'Character View: Off — movement' : 'Character View: Off'), true, false);
+      }
+      publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
       // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
@@ -14627,6 +14669,14 @@
       }
 
       function updateMovement(dt) {
+        const viewModeKeyboard = getKeyboardVector();
+        const viewModeMoveMagnitude = viewModeKeyboard.active
+          ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
+          : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
+        const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || Math.hypot(player.vx, player.vy) > 1;
+        if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
+          setCharacterViewMode(false, 'movement');
+        }
         // Every mode below that takes over movement/input outright (dialogue,
         // fishing, the music minigame, sitting, mounted, prone...) should
         // drop a walk-to-NPC in progress rather than silently resuming it
@@ -14976,7 +15026,10 @@
         // flows through the exact same catch-up branches below/above rather
         // than a separate override. Ranged weapons are unaffected — see
         // getPlayerAimAngle/currentPlayerAimAngle for their own aim.
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
+        if (characterViewMode.enabled) {
+          facingAngle = characterViewMode.lockedFacingAngle;
+          player.angle = characterViewMode.lockedPlayerAngle;
+        } else if (activeCameraMode === SHOULDER_SURF_MODE) {
           // The body doesn't chase raw movement DIRECTION here (that's what
           // every other mode does below) — moving camera-relative already
           // means walking backward/strafing shouldn't spin the character to
@@ -21677,6 +21730,10 @@
         if (window.Fishing?.state?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (characterViewMode.enabled) {
+          playerFacing = characterViewMode.lockedPlayerFacing;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           // Seated: the body stays pinned to the chair's own facing — no
           // perpClamp/dead-zone tracking of the camera at all (unlike the
@@ -23428,8 +23485,8 @@
         // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
         // openDesktopHoldArc below), for quick actions that don't belong on
         // the per-tile action bar: warping back to a placed wilderness
-        // campfire or the farm, and quick-selecting a Campfire Kit without
-        // scrolling the item wheel to find it.
+        // campfire or the farm, quick-selecting a Campfire Kit without
+        // scrolling the item wheel, or orbiting around the stationary player.
         function _openUtilitiesArc() {
           // A placed campfire now persists indefinitely, including outside
           // its own zone (see wilderness-campfire.js's header comment) —
@@ -23439,6 +23496,11 @@
           const campfire = window.WildernessCampfire?.serialize?.();
           const kitCount = inventory.campfireKitFurniture || 0;
           _openEntries('utilities', [
+            {
+              id: 'character-view', icon: '👁️', label: characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
+              active: characterViewMode.enabled,
+              onSelect: () => setCharacterViewMode(!characterViewMode.enabled),
+            },
             {
               id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
               disabled: !campfire,
@@ -25753,8 +25815,8 @@
           refreshActionBar();
           return;
         }
-        // C: hold to open the utilities wheel (Return to Camp, quick-select
-        // a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
+        // C: hold to open the utilities wheel (Character View, Return to Camp,
+        // quick-select a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
         // nothing pattern as E/Q above, but there's no separate tap
         // behavior to fall back to on release (see the keyup handler).
         if (key === 'c') {
@@ -26002,10 +26064,10 @@
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
       // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players get genuine 360° horizontal orbit instead — see the 'seated'
-      // camera mode's freeRotate flag in scratchbones-config.js.
+      // players and the utility-wheel Character View get genuine 360°
+      // horizontal orbit instead.
       function freeRotateCameraActive() {
-        return cameraModeConfig(activeCameraMode).freeRotate === true;
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -26355,6 +26417,8 @@
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
+        setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),
         get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
         get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
         get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },

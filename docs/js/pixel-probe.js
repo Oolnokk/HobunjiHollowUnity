@@ -909,6 +909,10 @@
       if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const characterView = window.HOBUNJI_CHARACTER_VIEW_STATUS; // Published by game.js so mobile reports can verify the private camera/body lock state.
+    if (characterView) {
+      lines.push(`Character View: ${characterView.enabled ? 'ON' : 'off'} reason=${characterView.lastChangeReason || '-'} facing=${Number(characterView.facingAngleDeg || 0).toFixed(2)}° body=${Number(characterView.bodyYawDeg || 0).toFixed(2)}° neck=${Number(characterView.neckYawDeg || 0).toFixed(2)}°`);
+    }
     if (facingAtClick) {
       lines.push('');
       lines.push('=== Player facing state at the clicked frame (captured before probe-forced renders) ===');
