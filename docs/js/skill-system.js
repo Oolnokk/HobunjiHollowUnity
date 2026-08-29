@@ -14,15 +14,19 @@
   const LEGACY_SKILL_MAP = { crafting: 'cooking' }; // Used to preserve pre-rename Crafting saves under the same skill, now called Cooking.
   const XP_GAINS = {
     forage: 4, tree: 8, rock: 8, dig: 1, crop: 6, animalGood: 5,
-    fish: 10, combatHit: 1, combatKill: 8, cook: 8,
+    fish: 10, combatHit: 0, combatKill: 16, cook: 8,
     alchemyBrew: 8, alchemyDiscovery: 18, alchemyTarget: 5,
-  }; // Used by game actions so balance remains centralized.
+  }; // Used by game actions so balance remains centralized; Combat XP is kill-only and requires a player tag.
   const XP_GAIN_MULTIPLIERS = {
     combat: 0.25,
-  }; // Used by award() to slow event-dense skill lines independently without changing the shared level curve or existing character XP.
+  }; // Used by award() to keep Combat progression slow independently without changing the shared level curve or existing character XP.
 
   let deps = null; // Used to access saving, random rolls, popups, and food stacks.
   const experience = Object.fromEntries(Object.keys(SKILLS).map(key => [key, 0])); // Used as character-scoped cumulative skill XP, including fractional XP created by skill-specific gain multipliers.
+  const combatTaggedTargets = new WeakSet(); // Used to remember which live enemy objects the player has personally tagged for eventual kill XP.
+  let pendingCombatTag = false; // Used to bridge game.js's landed-hit notification to ResourceSystem.applyDamage(), where the actual enemy object is available.
+  let combatDamageHookInstalled = false; // Used to prevent wrapping ResourceSystem.applyDamage() more than once.
+  let combatDeathHookInstalled = false; // Used to prevent wrapping CreatureDeath.begin() more than once.
 
   function xpForLevel(level) {
     const safeLevel = Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(level) || 0))); // Used to keep thresholds inside the supported level range.
@@ -36,8 +40,46 @@
     return result;
   }
 
+  function combatTargetLabel(target) {
+    return target?.def?.label || target?.name || target?.id || 'enemy'; // Used only by mobile-readable skill diagnostics for tag/death events.
+  }
+
+  function installCombatTagHooks() {
+    const resourceSystem = window.ResourceSystem; // Used to capture the exact enemy object immediately after game.js reports a landed player hit.
+    if (!combatDamageHookInstalled && resourceSystem?.applyDamage) {
+      const originalApplyDamage = resourceSystem.applyDamage; // Used by the wrapper below to preserve the shared resource/affliction damage implementation.
+      resourceSystem.applyDamage = function skillTaggedApplyDamage(target, ...args) {
+        if (pendingCombatTag) {
+          pendingCombatTag = false;
+          if (target && typeof target === 'object') {
+            combatTaggedTargets.add(target);
+            deps?.debugLog?.(`[skills] Combat tagged ${combatTargetLabel(target)} for kill XP`);
+          }
+        }
+        return originalApplyDamage.call(this, target, ...args);
+      };
+      combatDamageHookInstalled = true;
+    }
+
+    const creatureDeath = window.CreatureDeath; // Used as the authoritative one-time death event so tagged credit is independent of which later source lands the killing blow.
+    if (!combatDeathHookInstalled && creatureDeath?.begin) {
+      const originalDeathBegin = creatureDeath.begin; // Used by the wrapper below to preserve corpse/death handling after Combat XP resolves.
+      creatureDeath.begin = function skillTaggedDeathBegin(target, ...args) {
+        if (target && !target.isCompanion && combatTaggedTargets.has(target)) {
+          combatTaggedTargets.delete(target);
+          award('combat', XP_GAINS.combatKill, `tagged ${combatTargetLabel(target)} defeated`);
+        }
+        return originalDeathBegin.call(this, target, ...args);
+      };
+      combatDeathHookInstalled = true;
+    }
+
+    return combatDamageHookInstalled && combatDeathHookInstalled;
+  }
+
   function init(injectedDeps = {}) {
     deps = injectedDeps; // Used by every side-effecting operation after game boot.
+    installCombatTagHooks();
     render();
   }
 
@@ -55,7 +97,7 @@
         const savedLevel = Math.max(Number(savedLevels[key]) || 0, ...legacyLevels, 0); // Used to preserve the highest compatible pre-system level.
         value = Math.max(Number(value) || 0, xpForLevel(savedLevel));
       }
-      experience[key] = Math.max(0, value); // Used to preserve fractional XP across saves so scaled Combat hit XP is never lost on reload.
+      experience[key] = Math.max(0, value); // Used to preserve fractional XP across saves so scaled progression is never lost on reload.
     }
     persist(false);
     render();
@@ -91,6 +133,12 @@
 
   function award(skillKey, amount, reason = '', applyRateScale = true) {
     if (!SKILLS[skillKey]) return false;
+    if (skillKey === 'combat' && reason === 'landed hit') {
+      installCombatTagHooks();
+      pendingCombatTag = true;
+      return true;
+    }
+    if (skillKey === 'combat' && reason === 'defeated creature') return false; // Legacy game.js kill award is replaced by the tagged CreatureDeath hook above.
     const rawGain = Math.max(0, Math.floor(Number(amount) || 0)); // Used as the original whole-XP event value before optional skill-specific pacing is applied.
     if (!rawGain) return false;
     const gainMultiplier = applyRateScale ? xpGainMultiplier(skillKey) : 1; // Used to let gameplay awards use pacing while explicit diagnostic grants remain exact.
@@ -207,10 +255,11 @@
   }
 
   function diagnosticsText() {
+    const hookStatus = `Combat tags: damage hook ${combatDamageHookInstalled ? 'ready' : 'missing'}, death hook ${combatDeathHookInstalled ? 'ready' : 'missing'}`; // Used to verify tag+kill plumbing in-game without a desktop console.
     return Object.entries(SKILLS).map(([key, definition]) => {
       const current = level(key); // Used to report base and effective values without desktop developer tools.
       return `${definition.label}: level ${current}, effective ${effectiveLevel(key)}, XP ${experience[key]}${current < MAX_LEVEL ? `/${xpForLevel(current + 1)}` : ' (max)'}`;
-    }).join('\n');
+    }).join('\n') + `\n${hookStatus}`;
   }
 
   window.SkillSystem = {
@@ -235,5 +284,6 @@
     render,
     snapshot: persist,
     diagnosticsText,
+    installCombatTagHooks,
   };
 })();
