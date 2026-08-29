@@ -5157,7 +5157,14 @@
         // blink state into the readiness/retry bookkeeping below so a
         // blink toggle forces a re-apply even though the underlying
         // idle/run frame key hasn't changed.
-        const blinkShut = genotypeKind ? (window.CreatureBlink?.isShut(c, performance.now()) || false) : false;
+        // A sleeping drenkirra (js/wildlife-cloud-forest-behavior.js's
+        // beginGoToSleep/_cfDrenkirra.mode) should stay eyes-shut the whole
+        // time it's asleep, not keep cycling open/closed on the normal
+        // ambient blink timer — CreatureBlink has no notion of sleep, so
+        // short-circuit it here instead of teaching a shared, per-instance
+        // timer about one species' mode field.
+        const asleep = c._cfDrenkirra?.mode === 'sleeping';
+        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
