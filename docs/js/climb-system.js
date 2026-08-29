@@ -518,6 +518,14 @@
     registerBranch,
     removeBranchesInBounds,
     debugBranchesFor: (mapId) => (branchesByArea.get(mapId) || []).slice(),
+    // Ground height at a world point, in the same THREE-unit convention as
+    // branch.baseWorldY/tipWorldY — used by wildlife-cloud-forest-
+    // behavior.js to tell how far a given branch actually sits above its
+    // own local terrain (each tree's single climbable branch attaches at
+    // a fixed ~42% up ITS OWN trunk, so a short-generated tree's branch
+    // can end up barely above the ground despite being architecturally
+    // "a branch").
+    groundYAt: (wx, wy) => deps?.worldSurfaceY?.(wx, wy) ?? 0,
     get debug() {
       return {
         playerClimbing: !!deps?.player?.climbing,

@@ -38,6 +38,15 @@
   const FRUIT_EAT_DURATION_HOURS = 0.5; // "a solid 30 in-game minutes" to eat one in place
   const FRUIT_RESPAWN_HOURS = 18;
   const FORAGE_CHECK_INTERVAL_HOURS = 0.25; // how often an idle drenkirra re-rolls for a nearby fruit
+  // A tree's single climbable branch (foliage-generator.js's
+  // climbBranchChance) attaches at a fixed ~42% up ITS OWN trunk, not a
+  // fixed world height — a short-generated tree's branch can end up only
+  // barely above the ground, which reads on screen as "sitting at the
+  // roots" rather than perched in the tree. Both fruit-eating and sleep
+  // branch selection require a branch to clear this far above its own
+  // local ground before it's eligible, so a drenkirra never gets parked
+  // somewhere that doesn't actually look like a branch.
+  const MIN_PERCH_HEIGHT_WORLD = 1.5;
 
   // ── LOD ─────────────────────────────────────────────────────────────
   const LOD_NEAR_RANGE_TILES = 14;
@@ -180,9 +189,14 @@
   // ── Fruit: selection, meshes, respawn ────────────────────────────────
   function branchKey(b) { return `${b.col},${b.row}`; }
 
+  function isPerchWorthy(branch) {
+    const groundY = window.ClimbSystem?.groundYAt?.(branch.baseX, branch.baseY) ?? 0;
+    return (branch.baseWorldY - groundY) >= MIN_PERCH_HEIGHT_WORLD;
+  }
+
   const _fruitSelectionCache = new Map(); // zoneId -> [branchKey,...]
   function eligibleFruitBranches(zoneId) {
-    const all = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(b => !b.felled && !b.nest);
+    const all = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(b => !b.felled && !b.nest && isPerchWorthy(b));
     const liveByKey = new Map(all.map(b => [branchKey(b), b]));
     let selectedKeys = _fruitSelectionCache.get(zoneId);
     // A Tothal Shift regenerates the zone's trees under new tile keys — if
@@ -401,7 +415,7 @@
       return { branch: b, t: b._cfSleepSlotT?.get(creature) ?? 0.5 };
     }
     const candidates = branches
-      .filter(b => b !== nestBranch && !b.nest && (!b._cfSleepSlots || b._cfSleepSlots.length < 2))
+      .filter(b => b !== nestBranch && !b.nest && isPerchWorthy(b) && (!b._cfSleepSlots || b._cfSleepSlots.length < 2))
       .map(b => ({ b, d: Math.hypot(b.baseX - nestBranch.baseX, b.baseY - nestBranch.baseY) }))
       .sort((a, b) => a.d - b.d);
     const pick = candidates[0]?.b;
