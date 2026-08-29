@@ -1409,13 +1409,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
   }
-  // A one-shot bake (a world avatar's static front/back canvas, built once at
-  // spawn/gear-change and never re-rendered) has no chance to ever move past
-  // whatever frame it's given — advancing shouldRenderBlink's timing state
-  // for it risks permanently baking in a closed-eye frame (see
-  // forceEyesOpen callers: makeNpcWalker/refreshPlayerAvatar's world avatar
-  // builds). A continuously-refreshed canvas (dialogue portraits, cutscenes)
-  // doesn't set this and blinks normally.
+  // A one-shot or initial world-avatar bake has no reason to advance the blink
+  // clock and can otherwise flash closed eyes before its live refresh loop is
+  // attached. Continuously refreshed world/dialogue/cutscene canvases omit
+  // forceEyesOpen and blink normally afterward.
   const forceEyesOpen = renderOptions?.forceEyesOpen === true;
   const isBlinkFrame = !forceEyesOpen && shouldRenderBlink(headUrl, nowMs, blinkIdentity);
   const resolveXform = (layer) => layer.xformPreset
