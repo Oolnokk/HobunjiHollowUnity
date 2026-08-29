@@ -133,6 +133,17 @@
     }
     return best;
   }
+  // Read-only listing for the Wildlife tab's behavior map (see
+  // js/wildlife-behavior-map.js) — every currently live berry bush's
+  // position/kind/reserved state, without exposing the live objects
+  // themselves (a caller mutating one of those would affect real
+  // gameplay bookkeeping; this returns plain copies).
+  function listBerries(mapId) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    if (!objs?.size) return [];
+    return [...objs.values()].map(obj => ({ col: obj.col, row: obj.row, berryKey: obj.berryKey, reserved: !!obj.reserved }));
+  }
+
   function removeBerryBush(mapId, col, row) {
     const objs = deps._zoneBerryObjects.get(mapId);
     const obj = objs?.get(col + ',' + row);
@@ -216,5 +227,6 @@
     restoreState,
     nearestAvailableBerry,
     removeBerryBush,
+    listBerries,
   };
 })();

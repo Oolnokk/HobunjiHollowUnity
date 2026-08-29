@@ -525,5 +525,9 @@
     isPackOffShift,
     updateBranchDweller,
     fruitObjectAt,
+    // Read by js/wildlife-behavior-map.js's LOD near/far ring — exported
+    // rather than duplicated so retuning this constant here keeps the
+    // debug map honest about where the real boundary actually is.
+    get LOD_NEAR_RANGE_TILES() { return LOD_NEAR_RANGE_TILES; },
   };
 })();

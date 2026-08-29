@@ -215,7 +215,7 @@
         if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') window.WildlifeDebugPanel.render();
+        if (id === 'wildlife') { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); }
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -22358,7 +22358,7 @@
 
       // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
       // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
-      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); });
       document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
         await checkTothalShift(true);
         window.WildlifeDebugPanel.render();
@@ -27223,6 +27223,16 @@
         esc,
         _zoneLayouts,
         hostileObjects,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
+      });
+
+      window.WildlifeBehaviorMap?.init({
+        TILE,
+        TileType,
+        player,
+        hostileObjects,
+        zoneLayouts: _zoneLayouts,
         getCurrentArea: () => currentArea,
         _isZoneArea,
       });
