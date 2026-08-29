@@ -13981,6 +13981,27 @@
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
       }
 
+      function freezePlayerAvatarPortraitComposer(nowMs) {
+        const source = window.portraitBreathingComposer;
+        if (!source) return null;
+        return {
+          getExpression(seatId) {
+            return typeof source.getExpression === 'function' ? source.getExpression(seatId, nowMs) : 'neutral';
+          },
+          getOverlayOnlyPoints(_ignoredNowMs, seatId) {
+            return typeof source.getOverlayOnlyPoints === 'function' ? source.getOverlayOnlyPoints(nowMs, seatId) : null;
+          },
+          getInterpolatedPoints(speciesId, gender, _ignoredNowMs, phaseOffsetMs, seatId) {
+            return typeof source.getInterpolatedPoints === 'function'
+              ? source.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId)
+              : null;
+          },
+          getAnimData(speciesId, gender) {
+            return typeof source.getAnimData === 'function' ? source.getAnimData(speciesId, gender) : null;
+          },
+        };
+      } // Freezes every full/hatless canvas in one avatar rebuild to the same deformation sample so the xray pixel diff contains only hat pixels.
+
       // Ported from the animation-author tool's shoulder-pet hat-xray feature
       // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
       // docs/tools/animation-author/index.html): a shoulder pet perched near
@@ -13993,7 +14014,7 @@
       // specifically, without touching how the hat occludes anything else,
       // and without ever affecting the body layer's own normal occlusion (so
       // this never makes the player see-through, only the hat).
-      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration, staticRenderOptions) {
         try {
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
@@ -14001,11 +14022,11 @@
           const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, staticRenderOptions);
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
           const hatlessBackCanvas = document.createElement('canvas');
           hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { ...staticRenderOptions, portraitView: 'behind' });
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
 
           // Diff through the SAME per-face variant transform (front: as-is;
@@ -14129,20 +14150,24 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        const staticRenderOptions = {
+          forceEyesOpen: true,
+          breathingComposer: freezePlayerAvatarPortraitComposer(Date.now()),
+        }; // Shared by the full and hatless renders below so cold-cache load time cannot leak hood/poncho deformation into the hat-only overlay.
         // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
         // this bakes one static texture and never re-renders it, so an
         // unlucky blink-timing roll here would leave the player's own world
         // model stuck with its eyes shut until the next gear/cosmetic change
         // happens to trigger a fresh bake.
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { ...staticRenderOptions, onlyHeadSprite: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { ...staticRenderOptions, portraitView: 'behind' });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
@@ -14202,7 +14227,7 @@
         playerAvatarGroup = avatarGroup;
         playerAvatarFrontCanvas = frontCanvas;
         playerAvatarProfile = profile;
-        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration, staticRenderOptions);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
         // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
