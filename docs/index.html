@@ -1835,8 +1835,9 @@
            12:00 slot Call Mount used to occupy (see the #btnUtilityMenu CSS
            comment for why it isn't past 12:00 the way melee auto-target
            below is — an always-visible button out there would go off-screen).
-           Hold to open the utilities wheel (Return to Camp, quick-select a
-           Campfire Kit, Return to Farm — see game.js's _openUtilitiesArc)
+           Hold to open the utilities wheel (Character View, Return to Camp,
+           quick-select a Campfire Kit, Return to Farm — see game.js's
+           _openUtilitiesArc)
            and drag to pick, release to commit; a plain tap does nothing,
            same as the desktop 'c' key it mirrors. -->
       <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
@@ -1974,7 +1975,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260829combatsfx1"></script>
+  <script src="js/pixel-probe.js?v=20260829charview2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2047,7 +2048,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260829combatsfx1"></script>
+  <script src="game.js?v=20260829charview2"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
