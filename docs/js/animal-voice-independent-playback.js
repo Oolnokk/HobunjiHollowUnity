@@ -294,6 +294,11 @@
   function scheduleProcessedBuffer(context, buffer, opts, onFinished) {
     const source = context.createBufferSource();
     const master = context.createGain();
+    // Dry path only — the reverb send below taps `master` directly, same as
+    // before, so panning the dry signal doesn't touch how directional the
+    // echo itself sounds (a real distant jungle echo reads as diffuse, not
+    // pinned to one side).
+    const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
     const startAt = context.currentTime + 0.012;
     let stopped = false;
     let finishTimer = null;
@@ -302,10 +307,19 @@
     source.buffer = buffer;
     master.gain.value = clamp(finite(opts.volume, 0.7), 0, 1);
     source.connect(master);
-    master.connect(context.destination);
+    if (panner) {
+      panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
+      master.connect(panner);
+      panner.connect(context.destination);
+    } else {
+      master.connect(context.destination);
+    }
+    // extraWetBoost (see audio-system.js's creatureAudioSpatial) grows with
+    // distance on top of the fixed baseline — "farther away sounds more
+    // echoey," not just quieter.
     wet = window.EnvironmentalReverb?.connectWetNode?.(context, master, {
       volume: 1,
-      extraWet: ANIMAL_EXTRA_WET,
+      extraWet: ANIMAL_EXTRA_WET + Math.max(0, finite(opts.extraWetBoost, 0)),
       area: opts.area || null,
     }) || null;
     function cleanup() {
@@ -315,6 +329,7 @@
       clearTimeout(startTimer);
       try { source.disconnect(); } catch (_) {}
       try { master.disconnect(); } catch (_) {}
+      try { panner?.disconnect(); } catch (_) {}
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
@@ -515,11 +530,18 @@
       lastUtteranceTempo = utteranceTempo;
       lastUtterancePitchSemitones = utterancePitch;
       lastSizePitchSemitones = sizePitch;
+      // Even a creature too far away to be worth simulating in detail still
+      // has a real tile position (den/nest/wherever it's currently
+      // patrolling) — pan and extra echo are both derived straight from
+      // that, so the call always originates from the right direction.
+      const spatial = audioSystem.creatureAudioSpatial?.(c) || { panX: 0, extraWetBoost: 0 };
       play(url, {
         tempo,
         pitchSemitones,
         volume: clamp(finite(capture.audio.volume, opts.volume ?? 0.7), 0, 1),
         area: c?.areaId || null,
+        panX: spatial.panX,
+        extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
         onError: opts.onError,
         fallbackAudio: capture.audio,

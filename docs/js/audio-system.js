@@ -477,6 +477,38 @@
     try { snd.webkitPreservesPitch = false; } catch (_) {}
   }
 
+  // How much extra reverb-send "wet" a call gains by the time it's a full
+  // chunk away, on top of animal-voice-independent-playback.js's fixed
+  // ANIMAL_EXTRA_WET baseline — direct sound attenuates with distance much
+  // faster than reflected/reverberant sound does, so a distant jungle call
+  // reads as proportionally more echo, not just quieter.
+  const ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX = 0.16;
+
+  // Directional/echo spatialization for a creature's vocalization — this
+  // module's own playAnimalVoiceUtterance below only ever renders a plain
+  // HTMLAudioElement with a distance-derived volume, no panning or reverb
+  // graph of its own (see its comment). js/animal-voice-independent-
+  // playback.js's WebAudio render path is what actually applies these:
+  // panX through a StereoPannerNode, extraWetBoost added on top of its
+  // fixed ANIMAL_EXTRA_WET reverb send — "even if too far to render in
+  // detail, still originate the sound from the right direction, and sound
+  // farther away/more echoey the farther it actually is."
+  //
+  // panX reuses tickCreatureFootsteps' plain-world-X-difference convention
+  // (see FOOTSTEP_PAN_RANGE_PX above) rather than rotating into the
+  // player's facing direction — this game's camera doesn't track player
+  // facing tightly enough for a facing-relative pan to read as more
+  // correct, and every other panned sound in this file already uses raw
+  // world X.
+  function creatureAudioSpatial(c) {
+    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0 };
+    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const panX = Math.max(-1, Math.min(1, (c.x - deps.player.x) / Math.max(1, ANIMAL_VOICE_PAN_RANGE_PX)));
+    const chunkPx = (window.WildernessChunks?.constants?.CHUNK_TILES || 16) * deps.TILE;
+    const wetT = Math.max(0, Math.min(1, distance / Math.max(1, chunkPx)));
+    return { panX, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance };
+  }
+
   // Low-level renderer only: the vocal coordinator decides what a call
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
@@ -485,7 +517,7 @@
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
-    const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 12);
+    const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 16);
     const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
     if (distance > earshot) return false;
     const url = pool[Math.floor(Math.random() * pool.length)];
@@ -581,11 +613,19 @@
   let FOOTSTEP_EARSHOT_PX = 0;
   let FOOTSTEP_PAN_RANGE_PX = 0;
   let FOOTSTEP_PLAYER_STRIDE_PX = 0;
+  // A call is audible from much farther than a footstep (see
+  // animal-vocalizations.js's PROFILE_DEFAULTS.*.earshotTiles, now roughly
+  // a wilderness chunk's length), so it needs its own, wider pan range —
+  // reusing FOOTSTEP_PAN_RANGE_PX's 5 tiles would pin every call from more
+  // than a few tiles off to the side at hard-left/right regardless of how
+  // far ahead-vs-beside it actually is.
+  let ANIMAL_VOICE_PAN_RANGE_PX = 0;
 
   function initDerivedConstants() {
     FOOTSTEP_STRIDE_PX = deps.TILE * 0.45;
     FOOTSTEP_EARSHOT_PX = deps.TILE * 9;
     FOOTSTEP_PAN_RANGE_PX = deps.TILE * 5;
+    ANIMAL_VOICE_PAN_RANGE_PX = deps.TILE * 10;
     // The player moves much faster (px/s) than NPCs/creatures, so the same
     // per-distance stride would trigger footsteps far more often in real
     // time than it does for them — use a longer player-only stride so the
@@ -613,6 +653,7 @@
     playCreatureSfxAt,
     playCreatureBark,
     hasAnimalVoice,
+    creatureAudioSpatial,
     playAnimalVoiceUtterance,
     playCreatureTreasureAlert,
     playCreatureClawHit,
@@ -620,6 +661,7 @@
     playWeaponHitSfx,
     get FOOTSTEP_EARSHOT_PX() { return FOOTSTEP_EARSHOT_PX; },
     get FOOTSTEP_PAN_RANGE_PX() { return FOOTSTEP_PAN_RANGE_PX; },
+    get ANIMAL_VOICE_PAN_RANGE_PX() { return ANIMAL_VOICE_PAN_RANGE_PX; },
     get FOOTSTEP_QUIET_SCALE() { return FOOTSTEP_QUIET_SCALE; },
     get FOOTSTEP_PLAYER_STRIDE_PX() { return FOOTSTEP_PLAYER_STRIDE_PX; },
   };
