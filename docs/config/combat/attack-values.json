@@ -8,7 +8,7 @@
   },
 
   "combo": {
-    "RANGE_SCALE": 0.6, "LUNGE_SCALE": 1.5, "COMBO_RESET_S": 0.9,
+    "RANGE_SCALE": 0.6, "LUNGE_SCALE": 1.5, "COMBO_RESET_S": 1.8,
     "sfxPitchByStep": [1.0, 1.5, 2.0],
     "swingCombo": [
       { "name": "Forehand Swing", "damageMul": 1.0,  "halfConeDeg": 26, "rangeMul": 1.0,  "knockbackMul": 0.45, "staminaCost": 16, "windupS": 0.23,  "strikeS": 0.07,  "anim": "sweep", "dirSign": 1,  "holdS": 1, "dmgTag": "blunt", "lungeMul": 2.0 },

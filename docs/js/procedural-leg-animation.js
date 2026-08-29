@@ -873,6 +873,7 @@
       rightTarget: new THREE.Vector3(initialIdleRightX, radius * sphereScaleY, 0),
       leftRoll: 0,
       rightRoll: 0,
+      wasGaiting: false,
       disposed: false,
     };
 
@@ -1188,14 +1189,22 @@
         return;
       }
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
+      const isGaiting = speed > 0.02; // Used here to detect the exact moving-to-stopped edge and clear the final stride pose without a multi-second damping tail.
+      if (!isGaiting && state.wasGaiting) {
+        state.gaitStrength = 0;
+        state.phase = 0;
+        placeIdleTarget('left', state.leftContactY);
+        placeIdleTarget('right', state.rightContactY);
+      }
+      state.wasGaiting = isGaiting;
       const referenceSpeed = Number(c.referenceSpeedWorldUnitsPerSecond) || 4.3;
       const speedRatio = Math.max(0, Math.min(1.25, speed / Math.max(0.1, referenceSpeed)));
-      const gaitTarget = speed > 0.02 ? Math.sqrt(speedRatio) : 0;
+      const gaitTarget = isGaiting ? Math.sqrt(speedRatio) : 0;
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
       const fullStride = modelHeight * (0.24 + 0.34 * Math.sqrt(speedRatio));
       const strideLength = fullStride * state.gaitStrength;
-      const cadenceHz = speed > 0.02 && fullStride > 0.001
+      const cadenceHz = isGaiting && fullStride > 0.001
         ? Math.max(0.55, Math.min(3.2, (speed * STANCE_FRACTION) / fullStride))
         : 0;
       const liftHeight = (radius * (0.35 + 1.35 * Math.sqrt(speedRatio)) + modelHeight * 0.012 * speedRatio) * state.gaitStrength;
@@ -1203,7 +1212,7 @@
 
       const leftPose = stridePoseAtPhase(state.phase, strideLength, liftHeight, STANCE_FRACTION);
       const rightPose = stridePoseAtPhase(state.phase + 0.5, strideLength, liftHeight, STANCE_FRACTION);
-      const response = speed > 0.02 ? 18 + cadenceHz * 3 : 11;
+      const response = isGaiting ? 18 + cadenceHz * 3 : 11;
       applyPose('left', state.leftContactY, state.idleLeftX, leftPose, response, dt);
       applyPose('right', state.rightContactY, state.idleRightX, rightPose, response, dt);
     }

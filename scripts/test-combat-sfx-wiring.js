@@ -5,6 +5,7 @@ const vm = require('vm');
 const read = (path) => fs.readFileSync(path, 'utf8');
 const config = read('docs/config/scratchbones-config.js');
 const audio = read('docs/js/audio-system.js');
+const attackValues = JSON.parse(read('docs/config/combat/attack-values.json'));
 const core = read('docs/js/combat/combat-core.js');
 const combo = read('docs/js/combat/combat-combo.js');
 const quick = read('docs/js/combat/combat-quickattacks.js');
@@ -27,6 +28,8 @@ for (const file of expectedAssets) {
 }
 
 assert(core.includes('action.data?.comboStep'), 'staged swing playback must receive the combo step');
+assert.equal(attackValues.combo.COMBO_RESET_S, 1.8, 'authored combo reset window must be doubled to 1.8 seconds');
+assert(combo.includes('let COMBO_RESET_S = 1.8'), 'runtime fallback combo reset window must match the authored value');
 assert(combo.includes("['small', 'medium', 'large'][comboStep]"), 'combo impacts must map steps 1/2/3 to small/medium/large');
 assert(quick.includes("conditionBonusUsed ? 'huge' : 'small'"), 'only bonus-qualified quick attacks should use huge');
 assert(charged.includes("undefined, 'huge'"), 'charged heavy attacks should use huge');

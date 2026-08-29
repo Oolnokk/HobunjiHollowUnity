@@ -13,9 +13,9 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-combo.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  // Mirrors the sandbox's 0.92s window: tap again within this long and the
+  // A deliberately forgiving 1.8s window: tap again within this long and the
   // combo advances to its next step; wait longer and it resets to step 1.
-  let COMBO_RESET_S = 0.9;
+  let COMBO_RESET_S = 1.8;
 
   // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) read as oversized in practice; shrink it here
