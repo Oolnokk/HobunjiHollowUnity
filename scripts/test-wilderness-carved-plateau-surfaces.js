@@ -77,6 +77,10 @@ assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
 assert.match(gameSource, /tileIndexRanges[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
   'the route grass apron must retain per-tile index ranges for surgical runtime hole updates');
+assert.doesNotMatch(gameSource, /if \(isExcluded\(tci, tcj\)\) continue/,
+  'route geometry must reserve restorable triangles even for tiles carved when the zone first loads');
+assert.match(gameSource, /bindGlobalGroundMesh\(mesh\)[\s\S]{0,900}EXCLUDED\.has\(srcGrid\[r\]\?\.\[c\]\?\.type\)\) this\.refreshTile\(c, r\)/,
+  'initially carved route tiles must be collapsed before the first rendered frame');
 assert.match(gameSource, /zi\.pathNet\?\.refreshTile\?\.\(col, row\)/,
   'runtime wilderness edits must toggle only the edited route-apron tile');
 assert.doesNotMatch(gameSource, /zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
@@ -85,6 +89,8 @@ assert.match(gameSource, /buildTerrainTileGeo\(c, r, tile\.type, zGrid, \{ inclu
   'wilderness trench meshes must request their own visible cut walls');
 assert.match(gameSource, /const wallIdx = \[\][\s\S]{0,4000}dirtIdx\.push\(\.\.\.wallIdx\)/,
   'trench cut walls must be included in the dirt geometry');
+assert.match(gameSource, /const isCutWaterBasin = options\.includeCutWalls && WATERWAY_TYPES\.has\(type\)[\s\S]{0,4200}if \(isDepression && options\.includeCutWalls\)/,
+  'wilderness waterways must use the trench-style full-depth basin and cut walls');
 assert.match(grassSource, /\[deps\.TileType\.GRASS, deps\.TileType\.SHRUB, deps\.TileType\.WEEDS\]\.includes\(liveTile\.type\)/,
   'rich grass patches must reject trenches and other carved runtime tiles');
 

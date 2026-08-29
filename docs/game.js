@@ -12486,13 +12486,14 @@
           // entire route heightfield (which previously froze large wilderness
           // maps for several seconds). Filling/smoothing restores the original
           // indices through the same path.
-          zi.pathNet?.refreshTile?.(col, row);
+          const routeApronUpdated = zi.pathNet?.refreshTile?.(col, row) || false; // Reported in the mobile-visible debug log below.
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
-          window.WildernessChunks.rebuildZone(mapId, col, row);
+          const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
           rebuildZoneMesaMeshes(mapId);
           window.WildTreasure.syncZoneInteractivity(mapId);
+          debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
           return;
         }
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
@@ -18771,7 +18772,6 @@
         const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
-        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
 
         // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
         // average their path-membership so the mask starts as a clean 0 /
@@ -18867,7 +18867,6 @@
           for (let ci = 0; ci < GW-1; ci++) {
             const tci = Math.min(bw-1, Math.floor(ci / CELLS));
             const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
-            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
             const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
             const target = isPath ? pathIdx : grassIdx;
@@ -18901,6 +18900,15 @@
           bindGlobalGroundMesh(mesh) {
             this.globalGroundMesh = mesh;
             this.originalGroundIndex = mesh?.geometry?.index?.array?.slice?.() || null;
+            // Every bounding-box tile owns reserved route-apron triangles,
+            // including cells already carved when the zone loads. Collapse
+            // those now, before the first frame; keeping their originals lets
+            // a later fill restore them and a subsequent redig remove them
+            // again without rebuilding the zone-wide heightfield.
+            for (const key of tileIndexRanges.keys()) {
+              const [c, r] = key.split(',').map(Number);
+              if (EXCLUDED.has(srcGrid[r]?.[c]?.type)) this.refreshTile(c, r);
+            }
           },
           refreshTile(c, r) {
             const indexAttr = this.globalGroundMesh?.geometry?.index;
@@ -19330,26 +19338,23 @@
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
         // A dug TRENCH is a deliberate, hand-cut square pit — full depth to
-        // every edge, not a natural waterway that should taper into its
-        // banks. Force every side/diagonal "open" for it regardless of the
-        // actual neighbor, so a lone dug tile still reads as a real cut
-        // square instead of shrinking to a small dirt patch surrounded by
-        // grass sloping down to it (the old behavior, shared with RIVER/
-        // STREAM/WATERFALL, which DO still want that natural blend/taper).
-        // Adjacent trench tiles were already "open" toward each other via
-        // sameWaterway (a === b) — this only changes trench-vs-non-trench
-        // edges, i.e. a chain's outer boundary and any isolated tile.
+        // every edge. Wilderness waterways opt into the same basin profile
+        // through includeCutWalls, while town waterways retain their softer
+        // bank blend. Adjacent basin cells omit their internal walls below,
+        // leaving one continuous bottom with walls only along the outer bank.
         const isTrench = type === TileType.TRENCH;
-        const openN = isTrench || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
-        const openS = isTrench || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
-        const openW = isTrench || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
-        const openE = isTrench || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
+        const isCutWaterBasin = options.includeCutWalls && WATERWAY_TYPES.has(type); // Gives wilderness water the same full-depth basin treatment as its trenches.
+        const isCutBasin = isTrench || isCutWaterBasin;
+        const openN = isCutBasin || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
+        const openS = isCutBasin || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
+        const openW = isCutBasin || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
+        const openE = isCutBasin || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
 
         // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = isTrench || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
-        const diagNE = isTrench || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
-        const diagSW = isTrench || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
-        const diagSE = isTrench || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
+        const diagNW = isCutBasin || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
+        const diagNE = isCutBasin || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
+        const diagSW = isCutBasin || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
+        const diagSE = isCutBasin || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -19406,7 +19411,10 @@
         // each quad front-facing toward the surrounding ground and share edge
         // vertices so normals remain smooth along the wall.
         const wallIdx = [];
-        if (type === TileType.TRENCH && options.includeCutWalls) {
+        if (isDepression && options.includeCutWalls) {
+          const sharesBasin = neighborType => isTrench
+            ? neighborType === TileType.TRENCH
+            : WATERWAY_TYPES.has(neighborType);
           const appendWall = (samples, horizontal) => {
             const first = positions.length / 3;
             for (let i = 0; i < samples.length; i++) {
@@ -19425,10 +19433,10 @@
               wallIdx.push(top0, bottom0, bottom1, top0, bottom1, top1);
             }
           };
-          if (srcGrid[row - 1]?.[col]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
-          if (srcGrid[row + 1]?.[col]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
-          if (srcGrid[row]?.[col - 1]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
-          if (srcGrid[row]?.[col + 1]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
+          if (!sharesBasin(srcGrid[row - 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
+          if (!sharesBasin(srcGrid[row + 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
+          if (!sharesBasin(srcGrid[row]?.[col - 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
+          if (!sharesBasin(srcGrid[row]?.[col + 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
         }
 
         // Split cells: dirt where significantly depressed (trench) or elevated (raised);
