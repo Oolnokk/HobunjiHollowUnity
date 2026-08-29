@@ -4344,6 +4344,21 @@
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        // A passive creature (drenkirra, uumkaoii-wild, etc. — hostile:false,
+        // so it never picks up player aggro at all, see updateHostiles'
+        // aggro-pickup check) had no reaction to being attacked whatsoever
+        // before this: knockback/stagger applied below, then it carried on
+        // with whatever it was already doing — no flee, no fight-back.
+        // Reuses the exact 'fleeing-low-health' state wildlife-vs-wildlife
+        // skirmishes already use (see wildlife-spawn.js's
+        // applyWildlifeSkirmishDamage) — beelines home ignoring aggro/prey
+        // detection, then starts a re-aggro cooldown once settled. Excludes
+        // companions so an incidental hit on a passive-type follower doesn't
+        // make it bolt from the player.
+        if (c.def?.hostile === false && !c.isCompanion) {
+          c.state = 'fleeing-low-health';
+          c.targetCreature = null;
+        }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
@@ -5714,6 +5729,12 @@
             else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
+          // Grehlr foraging (js/wildlife-grehlr-foraging.js) — deliberately
+          // placed after the livestock-look/combat-head-nod block above so
+          // its eating-dip/fishing-lookdown head pitch wins this frame's
+          // interpolation target instead of being immediately smoothed back
+          // to rest by that block's own unconditional _restoreCompanionHead.
+          window.HobunjiGrehlrForaging?.applyForagingPose?.(c, dt);
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);

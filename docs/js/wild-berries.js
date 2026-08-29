@@ -111,6 +111,41 @@
     };
   }
 
+  // Wildlife-forage read/consume pair, used by js/wildlife-grehlr-foraging.js
+  // so a grehlr can eat a wild berry bush the same way a player picks one —
+  // reuses the exact same live object/mesh/persisted-placement bookkeeping
+  // _makeBerryBushObject's own onAction already maintains, just without the
+  // player-facing inventory grant/toast/harvest sfx that reusing onAction
+  // directly would incorrectly trigger for a wild animal eating it itself.
+  // col/row are tile-index units (this file's own convention throughout),
+  // not TILE-scaled world pixels — callers convert their own creature
+  // position first. `.reserved` isn't set by this module; a forage caller
+  // is expected to flag/clear it directly on the returned object so two
+  // animals don't both walk toward the same bush.
+  function nearestAvailableBerry(mapId, col, row) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    if (!objs?.size) return null;
+    let best = null, bestD = Infinity;
+    for (const obj of objs.values()) {
+      if (obj.reserved) continue;
+      const d = Math.hypot(obj.col - col, obj.row - row);
+      if (d < bestD) { bestD = d; best = obj; }
+    }
+    return best;
+  }
+  function removeBerryBush(mapId, col, row) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    const obj = objs?.get(col + ',' + row);
+    if (!obj) return false;
+    deps._zoneScenes.get(mapId)?.scene.remove(obj.mesh);
+    objs.delete(col + ',' + row);
+    const groups = deps._zoneBerryMeshGroups.get(mapId);
+    if (groups) { const i = groups.indexOf(obj.mesh); if (i >= 0) groups.splice(i, 1); }
+    const persisted = deps._zoneBerryPersist.get(mapId);
+    if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+    return true;
+  }
+
   function _clearZoneBerryMeshes(mapId) {
     const scene = deps._zoneScenes.get(mapId)?.scene;
     const groups = deps._zoneBerryMeshGroups.get(mapId);
@@ -179,5 +214,7 @@
     respawnAll,
     serializeState,
     restoreState,
+    nearestAvailableBerry,
+    removeBerryBush,
   };
 })();
