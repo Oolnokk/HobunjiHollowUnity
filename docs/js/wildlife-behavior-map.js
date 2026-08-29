@@ -53,9 +53,23 @@
     ctx.fill();
   }
 
+  // Toggled on every render() call regardless of what changed on the grid —
+  // creatures spend long stretches genuinely motionless (denning, sleeping,
+  // grazing/eating in place, guarding a fishing spot), so a picture with
+  // nothing visibly moving doesn't mean the refresh loop stalled. This is
+  // the tell.
+  let pulseOn = false;
+  function tickPulse() {
+    const dot = document.getElementById('wildlifeBehaviorMapPulse');
+    if (!dot) return;
+    pulseOn = !pulseOn;
+    dot.style.opacity = pulseOn ? '1' : '0.25';
+  }
+
   function render() {
     const canvas = document.getElementById('wildlifeBehaviorMap');
     if (!canvas || !deps) return;
+    tickPulse();
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
