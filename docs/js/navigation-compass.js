@@ -19,6 +19,13 @@
     return delta;
   }
 
+  function normalizeAngle(angle) {
+    let value = Number(angle) || 0; // Used by camera-azimuth conversion so equivalent headings share the same stable -PI..PI range.
+    while (value > Math.PI) value -= Math.PI * 2;
+    while (value <= -Math.PI) value += Math.PI * 2;
+    return value;
+  }
+
   function markerSize(distanceTiles) {
     const distance = Math.max(0, Number(distanceTiles) || 0); // Used to make nearby symbols conspicuously larger than distant ones.
     return Math.max(9, Math.min(25, 25 - Math.log2(distance + 1) * 3.35));
@@ -35,15 +42,24 @@
     return Math.atan2(z, x);
   }
 
+  function headingFromCameraAzimuthDeg(azimuthDeg) {
+    const value = Number(azimuthDeg); // activeCameraAzimuth is the target-to-camera THREE.js Y rotation; the compass needs the opposite camera-look direction.
+    if (!Number.isFinite(value)) return null;
+    const azimuthRad = value * Math.PI / 180;
+    return normalizeAngle(-azimuthRad - Math.PI / 2); // azimuth 0 = camera south looking north, so compass heading is -PI/2.
+  }
+
   function currentHeading(deps, player) {
+    const cameraAzimuthHeading = headingFromCameraAzimuthDeg(window.__hobunjiFurnitureDebug?.activeCameraAzimuthDeg); // True rendered camera orbit; unlike the gameplay aim ray, this changes on the farm even while the character stays fixed.
+    if (cameraAzimuthHeading != null) return { heading: cameraAzimuthHeading, source: 'camera-azimuth' };
     try {
-      const ray = deps?.getPlayerAimRay?.(); // Existing gameplay camera ray; follows camera orbit even when Character View deliberately freezes player.angle.
+      const ray = deps?.getPlayerAimRay?.(); // Secondary fallback for boot paths where the camera debug bridge has not published its azimuth yet.
       const heading = headingFromDirection(ray?.direction);
       if (heading != null) return { heading, source: 'camera-ray' };
     } catch (_) {
       // Camera-ray creation can be unavailable during scene transitions; the player fallback below keeps the HUD stable until the next frame.
     }
-    const playerHeading = Number(player?.angle); // Defensive boot/transition fallback only; normal gameplay should resolve the camera ray above.
+    const playerHeading = Number(player?.angle); // Defensive boot/transition fallback only; normal gameplay should resolve the camera azimuth above.
     return { heading: Number.isFinite(playerHeading) ? playerHeading : 0, source: 'player-fallback' };
   }
 
@@ -125,7 +141,7 @@
       lastDebug = { ...lastDebug, visible: false, areaId };
       return;
     }
-    const { heading, source: headingSource } = currentHeading(deps, player); // Camera-derived horizontal heading; independent from character/body rotation.
+    const { heading, source: headingSource } = currentHeading(deps, player); // True camera-orbit heading; independent from character/body rotation on the farm and in Character View.
     const playerCol = player.x / deps.TILE;
     const playerRow = player.y / deps.TILE;
     const { targets, offAreaQuestTargets } = collectTargets(areaId);
@@ -143,6 +159,6 @@
   window.NavigationCompass = Object.freeze({
     update,
     getDebug: () => ({ ...lastDebug, markers: lastDebug.markers.map(marker => ({ ...marker })) }),
-    _test: Object.freeze({ angleDiff, markerSize, headingFromDirection, currentHeading, collectTargets }),
+    _test: Object.freeze({ angleDiff, normalizeAngle, markerSize, headingFromDirection, headingFromCameraAzimuthDeg, currentHeading, collectTargets }),
   });
 })();
