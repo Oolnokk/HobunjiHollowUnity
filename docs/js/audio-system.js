@@ -509,6 +509,28 @@
     return { panX, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance };
   }
 
+  // A zone that was just entered is still doing its own expensive
+  // synchronous work (chunk build-out, den/nest-pack spawning) — an animal
+  // call landing in that same window means paying for a full decode+WSOLA
+  // render+WebAudio-graph (see animal-voice-independent-playback.js) right
+  // on top of it. Suppressing calls for a few seconds after each area
+  // change costs nothing perceptible (wildlife wasn't audible yet anyway
+  // at the old close-range earshot either) and keeps that startup window
+  // free of extra main-thread contention. Tracked here, not via a
+  // WildlifeSpawn.onZoneEntered hook, so it applies to every area (farm/
+  // town/caverns too), not just wilderness zones with den packs.
+  const ZONE_ENTRY_VOICE_GRACE_MS = 4000;
+  let _voiceGraceArea = null;
+  let _voiceGraceUntilMs = 0;
+  function zoneEntryVoiceGraceActive(areaId) {
+    const now = Date.now();
+    if (areaId !== _voiceGraceArea) {
+      _voiceGraceArea = areaId;
+      _voiceGraceUntilMs = now + ZONE_ENTRY_VOICE_GRACE_MS;
+    }
+    return now < _voiceGraceUntilMs;
+  }
+
   // Low-level renderer only: the vocal coordinator decides what a call
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
@@ -517,6 +539,7 @@
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
+    if (zoneEntryVoiceGraceActive(c.areaId)) return false;
     const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 16);
     const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
     if (distance > earshot) return false;
