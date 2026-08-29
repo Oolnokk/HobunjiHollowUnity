@@ -119,7 +119,7 @@
             // Sharp/blunt comes from whichever tool occupies the weapon
             // slot (see combat-combo.js's matching comment) -- this used to
             // hardcode 'sharp' regardless of the equipped weapon.
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), category: 'defensiveHold', afflictionBonuses: effects.afflictions });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;

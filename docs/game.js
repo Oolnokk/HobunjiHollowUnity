@@ -20,7 +20,6 @@
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
-      const btnUnequipHeld = document.getElementById('btnUnequipHeld');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
@@ -1449,6 +1448,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
+        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
         gold: 40,
       };
 
@@ -1992,6 +1992,21 @@
         } catch {}
       }
 
+      // Perk ranks are character-scoped, same as skill levels/XP above — a
+      // Combat/Alchemy/Foraging/Fishing perk build follows the character
+      // across worlds rather than staying behind with one farm.
+      function savePerkProgress(snapshot) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId);
+          if (!character) return;
+          character.perkRanks = snapshot;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          Object.assign(window.__hobunjiPlayerProfile, { perkRanks: character.perkRanks });
+        } catch {}
+      }
+
       // Persists the personal stable (companions) — mirrors saveGearInventory()'s
       // pattern exactly, since both are character-scoped and touch hobunjiSaveMeta
       // directly rather than round-tripping through onboarding.js.
@@ -2126,6 +2141,13 @@
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
+        // A portable camp, not ordinary decor — customPlace opts it out of
+        // the generic tile-grid "Place" button/canPlaceDecorativeFurnitureAt
+        // path (computeActionButtons/firePendingAction give it its own
+        // "Set Up Campfire" button and window.WildernessCampfire.placeFromKit
+        // instead), since only one can ever be placed and it's aimed
+        // anywhere in the wild rather than snapped to farm/interior tiles.
+        campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2183,7 +2205,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough',
+        'feedGrinder', 'trough', 'campfire',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -2222,7 +2244,11 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
-        price: Math.max(5, Math.round(item.price * 0.5)),
+        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
+        // building from a blueprint only ever spends Wood/Stone, never the
+        // blueprint itself), so it's priced above the finished piece's own
+        // price rather than a fraction of it.
+        price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item.price),
         category,
       }));
@@ -4284,10 +4310,11 @@
         // captain's riposte target without needing a passed-in attacker.
         amount *= window.SkillSystem?.attackMultiplier?.() || 1;
         amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
         amount = banditTryGuard(c, amount, player);
         window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = window.AlchemySystem?.getFootingDamageMultiplier?.() || 1; // Potion of Impact's shared outgoing stagger hook.
+        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
         resourceDamage.footing *= impactMultiplier;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
@@ -7338,8 +7365,15 @@
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.wildernessChunkState = serializeWildernessChunkState();
+          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          // Only ever consumed on the next boot if it lands in a wilderness
+          // zone with a still-active campfire there (see spawnPlayerAvatar) —
+          // saved unconditionally anyway since it's cheap and harmless
+          // otherwise; farm/town/interior/building sessions keep spawning at
+          // the farm's usual default exactly as before.
+          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -7741,6 +7775,12 @@
             // ensureZoneDenPacks/spawnPackAtDen).
             window.WildlifeSpawn.forgetZoneDenState(zoneId);
             window.BanditCamps.forgetZoneState(zoneId);
+            // A campfire the player left standing in this zone (it now
+            // persists indefinitely across leaving — see wilderness-
+            // campfire.js's own header comment) is pinned to terrain that
+            // no longer exists the instant this zone reshapes, whether or
+            // not the player happens to be standing in it right now.
+            window.WildernessCampfire?.clearIfZone(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -12018,6 +12058,7 @@
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
+        window.WildernessCampfire?.onZoneEntered(mapId);
       }
 
       // Town/zone building mesh spawning (detectTownBuildings/
@@ -13417,7 +13458,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
           };
         }
       });
@@ -14848,7 +14889,6 @@
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnUnequipHeld?.classList.toggle('active', heldMode === 'none');
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee auto-target's sixth arch button: hidden entirely unless
         // melee is actually out; otherwise grayed out (base style) until a
@@ -16102,6 +16142,29 @@
           window.MusicMinigame?.beginPlayerSession();
           return;
         }
+        // Fires immediately, like the item actions above — the generic
+        // pendingAction/firePendingAction path below only ever gets consumed
+        // by updateToolMesh's tool-swing progress tracker, which explicitly
+        // skips its own body while heldMode === 'item' (it hands off to
+        // updateHeldItemHolder instead), so anything routed through that
+        // path while holding an item — including every other place_*/
+        // plant_* action — never actually fires. Immediate dispatch here
+        // sidesteps that entirely.
+        if (activeAction === 'place_campfire_kit') {
+          const reticle = getReticleTile();
+          const result = window.WildernessCampfire?.placeFromKit(reticle.col, reticle.row) || { ok: false, message: 'Campfires are unavailable right now.' };
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
+          return;
+        }
+        // Same immediate-dispatch reasoning as place_campfire_kit above —
+        // each of these fires straight from its own action-bar slot near a
+        // placed campfire (see getNearbyActions in wilderness-campfire.js)
+        // instead of opening a shared panel first.
+        if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
+        if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
+        if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
@@ -16295,6 +16358,10 @@
 
         const tile = getActiveGrid()[row][col];
         let result;
+        // place_campfire_kit is NOT handled here — it fires immediately from
+        // useActiveAction() instead (see its own comment there): this
+        // pendingAction path only ever gets consumed while heldMode ===
+        // 'tool', so an item-mode action routed through it would never fire.
         if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
@@ -22512,6 +22579,7 @@
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           window.WildernessChunks?.update(dt);
+          window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -23293,6 +23361,54 @@
           }))); // Special ammo uses the same ordinary-radius arch primitive.
         }
 
+        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
+        // openDesktopHoldArc below), for quick actions that don't belong on
+        // the per-tile action bar: warping back to a placed wilderness
+        // campfire or the farm, and quick-selecting a Campfire Kit without
+        // scrolling the item wheel to find it.
+        function _openUtilitiesArc() {
+          // A placed campfire now persists indefinitely, including outside
+          // its own zone (see wilderness-campfire.js's header comment) —
+          // serialize() is the "does one exist, and where" query for that;
+          // isHere() only ever answers "is it in the CURRENT zone", which
+          // used to be the same question back when leaving destroyed it.
+          const campfire = window.WildernessCampfire?.serialize?.();
+          const kitCount = inventory.campfireKitFurniture || 0;
+          _openEntries('utilities', [
+            {
+              id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
+              disabled: !campfire,
+              onSelect: () => {
+                if (!campfire) return;
+                if (campfire.mapId === currentArea) {
+                  // Already in the right zone — just reposition onto the tile.
+                  const result = window.WildernessCampfire.returnToCampfire();
+                  showToast(result.message, result.ok);
+                  refreshActionBar();
+                } else {
+                  // A different zone (or the farm/town/a building) — travel
+                  // there first, landing exactly on the campfire's own tile
+                  // since its saved x/z are passed straight through as the
+                  // entry col/row (same fire-and-forget async-inside-
+                  // startSceneTransition pattern performTravel's own 'zone'
+                  // case uses for an ordinary authored zone transition).
+                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                }
+              },
+            },
+            {
+              id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
+              disabled: kitCount <= 0,
+              onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
+            },
+            {
+              id: 'return-farm', icon: '🏡', label: currentArea === 'farm' ? 'Already on Farm' : 'Return to Farm',
+              disabled: currentArea === 'farm',
+              onSelect: () => startSceneTransition(() => performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+            },
+          ]);
+        }
+
         function _openEntries(mode, entries, radius = _outerR()) {
           const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
           _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
@@ -23515,6 +23631,7 @@
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
           openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
           openPotions() { _openPotionRoot(); },
+          openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
           openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
           recallLastTool() {
             const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
@@ -23625,8 +23742,12 @@
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
           else if (!_tHeld && !_tMoved) {
-            // A Tool Select tap always recalls the last valid held tool.
-            window._desktopSelectionArc.recallLastTool();
+            // A Tool Select tap recalls the last valid held tool — unless a
+            // tool is already out, in which case the same tap now dequips
+            // instead (replacing the removed dedicated put-away button; see
+            // its matching case in itemBtn's own pointerup below).
+            if (heldMode === 'tool') putAwayHeldEquipment();
+            else window._desktopSelectionArc.recallLastTool();
           }
           _tHeld = false; _tMoved = false;
         });
@@ -23658,11 +23779,18 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved && heldMode !== 'item') {
-              // Tap while holding a tool or hands-free → switch to item mode.
-              if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
-              heldMode = 'item';
-              refreshItemScroll(); refreshActionBar();
+            else if (!_iHeld && !_iMoved) {
+              if (heldMode === 'item') {
+                // An item is already selected — the same tap now dequips
+                // instead (replacing the removed dedicated put-away button;
+                // see its matching case in toolBtn's own pointerup above).
+                putAwayHeldEquipment();
+              } else {
+                // Tap while holding a tool or hands-free → switch to item mode.
+                if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
+                heldMode = 'item';
+                refreshItemScroll(); refreshActionBar();
+              }
             }
             _iHeld = false; _iMoved = false;
           });
@@ -23672,6 +23800,42 @@
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
             _clearArc(); _iHeld = false; _iMoved = false;
+          });
+        }
+
+        // Utility menu button: sixth/new outer-ring control, replacing the
+        // removed put-away button's old slot (see the CSS angle comment on
+        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
+        // above — it only ever does anything while held, exactly like the
+        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // mirrors their hold-then-drag-to-select pattern but skips their
+        // "what does a plain tap do" branch entirely.
+        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
+        if (btnUtilityMenu) {
+          let _uPtId = null, _uHeld = false, _uTimer = null;
+          btnUtilityMenu.addEventListener('pointerdown', ev => {
+            if (_uPtId !== null) return;
+            _uPtId = ev.pointerId; _uHeld = false;
+            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
+            ev.preventDefault();
+          });
+          btnUtilityMenu.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
+          });
+          btnUtilityMenu.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            if (_arcOpen === 'entries:utilities') _arcUp();
+            _uHeld = false;
+          });
+          btnUtilityMenu.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            _clearArc(); _uHeld = false;
           });
         }
       }
@@ -23840,6 +24004,15 @@
           : null;
         if (banditTentAction) return [banditTentAction];
 
+        // A placed wilderness campfire, same runtime-prop pattern as bandit
+        // tents above — walking up to it puts Save/Cook/Brew each on their
+        // own action-bar slot (Return to Camp lives on the utilities wheel
+        // instead — see the 'c' hold-key handling further down).
+        const campfireActions = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyActions?.()
+          : null;
+        if (campfireActions?.length) return campfireActions;
+
         // Climbing is still triggered by a forward dodge (see
         // performContextAction) so an attack/item press never grabs a
         // nearby trunk by accident — but a facing climb target also gets a
@@ -23921,6 +24094,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -23948,7 +24122,7 @@
             });
           }
           const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
-          if (decorKey) {
+          if (decorKey && !DECORATIVE_FURNITURE_DEFS[decorKey]?.customPlace) {
             const def = DECORATIVE_FURNITURE_DEFS[decorKey];
             const count = inventory[item.key] || 0;
             const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
@@ -24104,7 +24278,17 @@
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
-              if (isNavAction || toolSwingT <= 0) useActiveAction();
+              // Same reasoning again for every item-mode action (place_campfire_kit,
+              // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
+              // tool swings either, so a leftover toolSwingT from whatever tool was
+              // out before switching to item mode — which updateToolMesh never
+              // decays while heldMode === 'item' (it early-returns before reaching
+              // that logic) — would otherwise silently eat every item-mode tap on
+              // mobile until the player switched back to a tool and let the stale
+              // timer run out. Desktop's direct pointerdown→useActiveAction() click
+              // path never had this gate at all, which is why this only ever
+              // surfaced as "the button doesn't work" on touch.
+              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
             }
 
             // Weapon tool-action buttons (cut/slash) route taps through the
@@ -24807,12 +24991,6 @@
         toggleQuickWeaponSwitch();
       });
 
-      // First outer-arch button, mirrored by the desktop Z shortcut.
-      btnUnequipHeld?.addEventListener('pointerdown', ev => {
-        ev.preventDefault();
-        putAwayHeldEquipment();
-      });
-
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
@@ -24895,13 +25073,25 @@
       let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
-        e: { down: false, held: false, timer: null, arc: 'tool' }
+        e: { down: false, held: false, timer: null, arc: 'tool' },
+        // Utilities wheel — an entries arc like potion/ammo select, not a
+        // tool/item wheel, so it commits via releaseSelection() below
+        // (whichever entry mouse-drag/scroll last highlighted) instead of
+        // close()'s "already applied live, just dismiss" behavior.
+        c: { down: false, held: false, timer: null, arc: 'utilities' },
       };
       function openDesktopHoldArc(key) {
         const state = desktopHoldKeys[key];
         if (!state || !state.down) return;
         state.held = true;
-        if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        if (state.arc === 'utilities') {
+          // Same reasoning as CookingSystem's setInteractionBlocked above —
+          // no visible cursor to pick a wedge with under shoulder-surf's
+          // Pointer Lock otherwise.
+          releaseShoulderSurfPointerLock();
+          window._desktopSelectionArc?.openUtilities();
+        }
+        else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
         else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
         else window._desktopSelectionArc?.openTool();
       }
@@ -24920,7 +25110,8 @@
         const wasHeld = state.held;
         state.held = false;
         if (wasHeld) {
-          if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
+          if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
+          else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
           else window._desktopSelectionArc?.close();
         }
         return wasHeld;
@@ -25464,7 +25655,7 @@
           return;
         }
         const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
           return;
@@ -25497,6 +25688,14 @@
           activeAction = actions[(idx + 1) % actions.length];
           refreshActionBar();
           return;
+        }
+        // C: hold to open the utilities wheel (Return to Camp, quick-select
+        // a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
+        // nothing pattern as E/Q above, but there's no separate tap
+        // behavior to fall back to on release (see the keyup handler).
+        if (key === 'c') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('c', event); return; }
         }
 
         // Legacy unbound primary keys. Configured action bindings return above;
@@ -25573,7 +25772,7 @@
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
         }
         if (key === 'shift') {
@@ -25604,6 +25803,14 @@
             const second = btns.find((b, i) => i > 0 && b.allowed);
             if (second) { activeAction = second.action; useActiveAction(); }
           }
+          return;
+        }
+        if (key === 'c' && isDesktop) {
+          event.preventDefault();
+          // No tap fallback — the utilities wheel only ever does anything
+          // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
+          // branch commits whatever entry was highlighted via releaseSelection()).
+          finishDesktopHoldKey('c');
           return;
         }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
@@ -25652,6 +25859,12 @@
           e.preventDefault();
           openDesktopHoldArc('e');
           window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.c.down) {
+          e.preventDefault();
+          openDesktopHoldArc('c');
+          window._desktopSelectionArc?.scrollEntries(-dir);
           return true;
         }
         if (heldOnly) return false;
@@ -25850,6 +26063,20 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A floating menu (the pause/inventory menu incl. its Alchemy tab,
+          // the cooking hearth/campfire modal via setInteractionBlocked, or
+          // the utilities wheel/an entries arc like potion/ammo select) owns
+          // the cursor while open — without this, mouse movement kept
+          // driving facing/camera rotation underneath it via this same
+          // handler (Shift-drag and shoulder-surf's Pointer Lock read
+          // movementX/Y regardless of what's visually on top), so the
+          // camera spun out from under a menu the player was trying to
+          // click into. entryMenuOpen() covers arcs opened by mouse-button
+          // drag (which the arc's own full-screen backdrop already isolates
+          // from this handler) as well as ones opened by a held key like
+          // 'c' below (which doesn't drag a mouse button, so nothing else
+          // stops this handler from firing while it's up).
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
@@ -26454,6 +26681,7 @@
         rollItemStars,
         starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
         awardToolUseMasteryXp,
@@ -26610,7 +26838,15 @@
         random: rnd,
         setInteractionBlocked(blocked) {
           menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
-          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            // Same reasoning as openMenu's own call: without this, a player
+            // in shoulder-surf mode gets no visible cursor at all inside
+            // this modal (Pointer Lock hides the OS cursor and keeps
+            // streaming raw movementX/Y to threeContainer no matter what's
+            // drawn on top of it — see the mousemove guard above).
+            releaseShoulderSurfPointerLock();
+          }
         },
       });
 
@@ -26622,6 +26858,8 @@
         debugLog,
         isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
       });
+
+      window.PerkSystem?.init({ savePerkProgress });
 
       window.AlchemySystem?.init({
         ITEM_DEFS,
@@ -27017,6 +27255,25 @@
         esc,
         isPaused: () => paused,
         isDevMode: () => s_devMode,
+      });
+
+      window.WildernessCampfire?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getActiveScene,
+        getPlayer: () => player,
+        getFacingAngle: () => facingAngle,
+        surfaceYAt: activeSurfaceYAtWorld,
+        TILE,
+        AuthoredFurniture: window.AuthoredFurniture,
+        persist: saveMemberWorldData,
+        showToast,
+        openMenu,
+        isPaused: () => paused,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
       });
 
       window.TownZoneBuildings?.init({
@@ -27780,11 +28037,17 @@
         Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
           ? { ...playerData.nonGearInventory }
           : { ...STARTING_INVENTORY });
+        // Worlds saved before the Campfire Kit blueprint joined
+        // STARTING_INVENTORY never picked it up — backfill it for free,
+        // once, same as existing characters getting the crossbow/scatterbow
+        // slots below, so it's available without a carpenter trip either way.
+        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);
+        window.PerkSystem?.restore(playerData);
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
@@ -27801,6 +28064,7 @@
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreWildernessChunkState(playerData.wildernessChunkState);
+        window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
@@ -27919,6 +28183,32 @@
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {
           console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        // Resume out in the wilderness, exactly where last session left off,
+        // if that's genuinely where the player was: a wilderness zone that
+        // still has this character's own campfire established in it (see
+        // saveMemberWorldData's lastPosition and WildernessCampfire.restore
+        // just above). Nothing else here ever moves the player away from
+        // the farm's fixed boot position, so without this a wilderness trip
+        // always reset to the farm on reload — the same reason a campfire
+        // used to be destroyed just for leaving its own map. Deliberately
+        // narrower than "resume anywhere": farm/town/interior/building all
+        // keep spawning at the usual farm default, since only the
+        // wilderness-with-an-active-camp case is actually being asked for
+        // here, and re-entering a building/cavern/NPC schedule context from
+        // a cold boot has its own preconditions this isn't set up to satisfy.
+        const _lastPos = playerData.lastPosition;
+        const _resumeCampfire = window.WildernessCampfire?.serialize?.();
+        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+            && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
+          await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
+          // enterZone already placed the player at the tile center of the
+          // col/row above — refine to the exact saved sub-tile position/
+          // facing now that the zone (and its campfire, via enterZone's own
+          // onZoneEntered call) has actually finished building.
+          player.x = _lastPos.x; player.y = _lastPos.y;
+          if (Number.isFinite(_lastPos.angle)) { player.angle = _lastPos.angle; facingAngle = _lastPos.angle; }
+          _snapCameraTarget();
         }
         gameStarted = true;
         window.__hobunjiGameStarted = true;

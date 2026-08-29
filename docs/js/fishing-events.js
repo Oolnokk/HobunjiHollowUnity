@@ -311,11 +311,15 @@
     return { width, height, maxWidthScale };
   }
 
+  function gulletDriftMultiplier() {
+    return 1 - Math.min(0.6, (window.PerkSystem?.rank('fishing', 'decreaseGulletDriftSpeed') || 0) * 0.12); // Decrease Gullet Fish Drift Speed perk.
+  }
+
   function setGulletLocomotionPhase(phase) {
     const sprinting = phase === 'sprint'; // Used to switch between the exhausted recovery bout and the erratic sprint bout.
     gulletState.locomotionPhase = sprinting ? 'sprint' : 'recovery';
     gulletState.locomotionPhaseRemaining = randomRange(sprinting ? GULLET_CONFIG.sprintDurationSec : GULLET_CONFIG.recoveryDurationSec);
-    const speed = randomRange(sprinting ? GULLET_CONFIG.sprintSpeedDegPerSec : GULLET_CONFIG.recoverySpeedDegPerSec); // Used as this bout's ring travel speed.
+    const speed = randomRange(sprinting ? GULLET_CONFIG.sprintSpeedDegPerSec : GULLET_CONFIG.recoverySpeedDegPerSec) * gulletDriftMultiplier(); // Used as this bout's ring travel speed.
     gulletState.orbitSpeedDegPerSec = speed * gulletState.orbitDirection;
     gulletState.sprintFlipRemaining = sprinting ? randomRange(GULLET_CONFIG.sprintFlipIntervalSec) : Infinity;
   }
@@ -329,7 +333,7 @@
       gulletState.sprintFlipRemaining -= dt;
       if (gulletState.sprintFlipRemaining <= 0) {
         gulletState.orbitDirection *= -1;
-        gulletState.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.sprintSpeedDegPerSec) * gulletState.orbitDirection; // Used to make each sprint reversal slightly different instead of metronomic.
+        gulletState.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.sprintSpeedDegPerSec) * gulletDriftMultiplier() * gulletState.orbitDirection; // Used to make each sprint reversal slightly different instead of metronomic.
         gulletState.sprintFlipRemaining = randomRange(GULLET_CONFIG.sprintFlipIntervalSec);
       }
     }
@@ -745,7 +749,8 @@
     if (typeof originalBeginCast === 'function') {
       api.beginCast = (...args) => {
         currentCastFrenzy = frenzyAtReticle();
-        gulletState.pendingForCast = forceNextGullet || Math.random() < GULLET_CONFIG.spawnChance;
+        const gulletSpawnChance = Math.min(0.9, GULLET_CONFIG.spawnChance * (1 + (window.PerkSystem?.rank('fishing', 'increaseGulletSpawnRate') || 0) * 0.35)); // Increase Gullet Fish Spawn Rate perk.
+        gulletState.pendingForCast = forceNextGullet || Math.random() < gulletSpawnChance;
         forceNextGullet = false;
         const result = originalBeginCast.apply(api, args); // Used to run the untouched fish selection/cast setup after Frenzy state is known.
         const state = api.state; // Used to shorten only this cast's existing bite timer when the target is a Frenzy tile.

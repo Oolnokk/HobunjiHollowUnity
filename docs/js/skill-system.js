@@ -8,10 +8,10 @@
     farming: { label: 'Farming', icon: '🌾', effect: 'Better crop/animal goods and faster digging.' },
     fishing: { label: 'Fishing', icon: '🎣', effect: 'Rarer fish encounters and better fish quality.' },
     combat: { label: 'Combat', icon: '⚔️', effect: 'Higher attack power and better meat quality.' },
-    crafting: { label: 'Crafting', icon: '🛠️', effect: 'Better food and a chance to save ingredients.' },
+    cooking: { label: 'Cooking', icon: '🍲', effect: 'Better food and a chance to save ingredients.' },
     alchemy: { label: 'Alchemy', icon: '⚗️', effect: 'More reliable targeted reactions and stronger brewed potency tiers.' },
   }; // Used by progression, food-skill buffs, and the Skills tab.
-  const LEGACY_SKILL_MAP = { cooking: 'crafting' }; // Used to preserve only old Cooking progress under Crafting; Alchemy is now a real skill.
+  const LEGACY_SKILL_MAP = { crafting: 'cooking' }; // Used to preserve pre-rename Crafting saves under the same skill, now called Cooking.
   const XP_GAINS = {
     forage: 4, tree: 8, rock: 8, dig: 1, crop: 6, animalGood: 5,
     fish: 10, combatHit: 1, combatKill: 8, cook: 8,
@@ -44,11 +44,13 @@
     const savedLevels = playerData.skillLevels && typeof playerData.skillLevels === 'object'
       ? playerData.skillLevels : {}; // Used for migration from the original stub fields.
     for (const key of Object.keys(SKILLS)) {
-      let value = Number(savedXp[key]); // Used when this character has already saved real XP.
-      if (!Number.isFinite(value)) {
-        const legacyLevels = Object.entries(LEGACY_SKILL_MAP).filter(([, modern]) => modern === key).map(([legacy]) => Number(savedLevels[legacy]) || 0); // Used to map both old creation skills into Crafting.
+      const legacyKeys = Object.entries(LEGACY_SKILL_MAP).filter(([, modern]) => modern === key).map(([legacy]) => legacy); // Used to find this skill's pre-rename save key(s), e.g. 'crafting' -> 'cooking'.
+      let value = Number(savedXp[key]); // Used when this character has already saved real XP under the current key.
+      if (!Number.isFinite(value)) value = Math.max(0, ...legacyKeys.map(legacy => Number(savedXp[legacy]) || 0)); // Used to preserve real XP saved under a pre-rename key.
+      if (!Number.isFinite(value) || !value) {
+        const legacyLevels = legacyKeys.map(legacy => Number(savedLevels[legacy]) || 0); // Used to map old creation skills into their modern equivalent.
         const savedLevel = Math.max(Number(savedLevels[key]) || 0, ...legacyLevels, 0); // Used to preserve the highest compatible pre-system level.
-        value = xpForLevel(savedLevel);
+        value = Math.max(Number(value) || 0, xpForLevel(savedLevel));
       }
       experience[key] = Math.max(0, Math.floor(value));
     }
@@ -94,17 +96,26 @@
     return true;
   }
 
+  // Foraging, Combat, and Fishing no longer get an automatic bonus purely
+  // from leveling up (that used to scale with normalizedPower(skillKey)) —
+  // each such bonus now only exists behind its own perk in PerkSystem's
+  // tree for that skill (see docs/js/perk-system.js), so leveling those
+  // three only grants perk points rather than free passive power. Mining,
+  // Farming, and Cooking have no perk tree yet, so they keep the original
+  // automatic level-based curve below unchanged.
   function bonusYieldChance(skillKey) {
-    return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by herbs, logs, stone, and future ore rewards.
+    if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1); // Increase Yield Chance perk.
+    return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by stone and future ore rewards.
   }
 
   function actionSpeedMultiplier(skillKey) {
-    return 1 + normalizedPower(skillKey) * 0.5; // Used to shorten axe, pick, and digging action stages.
+    if (skillKey === 'foraging') return 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1; // Increase Foraging Speed perk.
+    return 1 + normalizedPower(skillKey) * 0.5; // Used to shorten pick and digging action stages.
   }
 
   function attackMultiplier() {
-    const strengthStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('strength')) || 0); // Used to combine Combat progression with Strength food.
-    return 1 + normalizedPower('combat') * 0.5 + Math.min(0.5, strengthStacks * 0.02);
+    const strengthStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('strength')) || 0); // Used to combine Empower Raw Damage (see PerkSystem.combatDamageMultiplier, applied separately in game.js) with Strength food.
+    return 1 + Math.min(0.5, strengthStacks * 0.02);
   }
 
   function damageTakenMultiplier() {
@@ -114,7 +125,7 @@
 
   function rareFishWeightMultiplier(rarity) {
     const perceptionStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('perception')) || 0); // Used to let Perception food contribute to fish selection.
-    const power = normalizedPower('fishing') + Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries.
+    const power = Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries; the Increased Chance of Rare Fish perk applies its own separate multiplier (see fishing-minigame.js).
     const alchemyPerception = window.AlchemySystem?.getPerceptionMultiplier?.() || 1; // Reuses the existing fishing Perception check.
     if (rarity === 'rare') return (1 + power * 2.5) * alchemyPerception;
     if (rarity === 'uncommon') return (1 + power * 1.1) * alchemyPerception;
@@ -122,8 +133,8 @@
   }
 
   function craftIngredientSaveChance() {
-    const clarityStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('clarity')) || 0); // Used to give Clarity food a small crafting benefit.
-    return Math.min(0.25, normalizedPower('crafting') * 0.2 + clarityStacks * 0.003);
+    const clarityStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('clarity')) || 0); // Used to give Clarity food a small cooking benefit.
+    return Math.min(0.25, normalizedPower('cooking') * 0.2 + clarityStacks * 0.003);
   }
 
   function weightedBaseQuality() {
@@ -137,9 +148,16 @@
     return 3;
   }
 
+  const QUALITY_PERKS = { combat: 'increaseLootQuality', foraging: 'increaseForagingQuality', fishing: 'increaseFishQuality' }; // Skills whose quality bonus is perk-gated rather than automatic.
+
+  function qualityPower(skillKey) {
+    const perkId = QUALITY_PERKS[skillKey];
+    return perkId ? Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2) : normalizedPower(skillKey);
+  }
+
   function rollQuality(skillKey) {
     const random = deps?.random || Math.random; // Used for skill-driven quality improvement chances.
-    const power = normalizedPower(skillKey); // Used to scale two independent one-star improvement rolls.
+    const power = qualityPower(skillKey); // Used to scale two independent one-star improvement rolls.
     let stars = weightedBaseQuality(); // Used as the original quality result before skill improvement.
     if (random() < power * 0.55) stars++;
     if (random() < power * 0.15) stars++;

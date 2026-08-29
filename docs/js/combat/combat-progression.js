@@ -304,6 +304,11 @@
         }
       }
     }
+    // Increase AoE / Increase Lunge Distance perks apply here so every
+    // ability (which already reads stats.rangeMul/lungeMul off this same
+    // returned object) picks them up uniformly.
+    stats.rangeMul = (stats.rangeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1;
+    stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
     return { afflictions, stats };
   }
 

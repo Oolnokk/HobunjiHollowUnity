@@ -64,7 +64,7 @@
       spriteIcon: 'jar_liquid.png',
       spriteColor: oil.color,
       spriteMode: 'keyed',
-      ...quickProcessedMetadata(input, ['oil', 'butter'], 'crafting'),
+      ...quickProcessedMetadata(input, ['oil', 'butter'], 'cooking'),
     };
   }
 
