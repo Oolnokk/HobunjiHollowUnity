@@ -176,7 +176,7 @@
   function combatDamageMultiplier(dmgOpts = {}) {
     let mul = 1 + rank('combat', 'empowerRawDamage') * 0.08;
     if (dmgOpts?.category === 'quickAttack') mul *= 1 + rank('combat', 'empowerQuickAttacks') * 0.08;
-    if (dmgOpts?.defensiveHold) mul *= 1 + rank('combat', 'empowerDefensiveAttacks') * 0.08;
+    if (dmgOpts?.category === 'defensiveHold') mul *= 1 + rank('combat', 'empowerDefensiveAttacks') * 0.08;
     if (dmgOpts?.heavy) mul *= 1 + rank('combat', 'empowerHeavyAttacks') * 0.08;
     return mul;
   }
