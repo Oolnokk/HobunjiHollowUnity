@@ -10,13 +10,20 @@
     { id: 'north', label: 'N', angle: -Math.PI / 2 },
   ]);
   let lastUpdateAt = 0; // Used to throttle the module's lightweight requestAnimationFrame bridge.
-  let lastDebug = { visible: false, areaId: '', headingDeg: 0, markers: [], offAreaQuestTargets: 0 }; // Used by mobile Pixel Probe reports.
+  let lastDebug = { visible: false, areaId: '', headingDeg: 0, headingSource: 'none', markers: [], offAreaQuestTargets: 0 }; // Used by mobile Pixel Probe reports.
 
   function angleDiff(target, source) {
     let delta = target - source;
     while (delta > Math.PI) delta -= Math.PI * 2;
     while (delta < -Math.PI) delta += Math.PI * 2;
     return delta;
+  }
+
+  function normalizeAngle(angle) {
+    let value = Number(angle) || 0; // Used by camera-azimuth conversion so equivalent headings share the same stable -PI..PI range.
+    while (value > Math.PI) value -= Math.PI * 2;
+    while (value <= -Math.PI) value += Math.PI * 2;
+    return value;
   }
 
   function markerSize(distanceTiles) {
@@ -26,6 +33,34 @@
 
   function currentDeps() {
     return window.Combat?.deps || null;
+  }
+
+  function headingFromDirection(direction) {
+    const x = Number(direction?.x); // Used with z below to project a camera/aim ray onto the game's horizontal X/Z plane.
+    const z = Number(direction?.z); // Used with x above so pitch never changes the compass heading.
+    if (!Number.isFinite(x) || !Number.isFinite(z) || Math.hypot(x, z) < 1e-6) return null;
+    return Math.atan2(z, x);
+  }
+
+  function headingFromCameraAzimuthDeg(azimuthDeg) {
+    const value = Number(azimuthDeg); // activeCameraAzimuth is the target-to-camera THREE.js Y rotation; the compass needs the opposite camera-look direction.
+    if (!Number.isFinite(value)) return null;
+    const azimuthRad = value * Math.PI / 180;
+    return normalizeAngle(-azimuthRad - Math.PI / 2); // azimuth 0 = camera south looking north, so compass heading is -PI/2.
+  }
+
+  function currentHeading(deps, player) {
+    const cameraAzimuthHeading = headingFromCameraAzimuthDeg(window.__hobunjiFurnitureDebug?.activeCameraAzimuthDeg); // True rendered camera orbit; unlike the gameplay aim ray, this changes on the farm even while the character stays fixed.
+    if (cameraAzimuthHeading != null) return { heading: cameraAzimuthHeading, source: 'camera-azimuth' };
+    try {
+      const ray = deps?.getPlayerAimRay?.(); // Secondary fallback for boot paths where the camera debug bridge has not published its azimuth yet.
+      const heading = headingFromDirection(ray?.direction);
+      if (heading != null) return { heading, source: 'camera-ray' };
+    } catch (_) {
+      // Camera-ray creation can be unavailable during scene transitions; the player fallback below keeps the HUD stable until the next frame.
+    }
+    const playerHeading = Number(player?.angle); // Defensive boot/transition fallback only; normal gameplay should resolve the camera azimuth above.
+    return { heading: Number.isFinite(playerHeading) ? playerHeading : 0, source: 'player-fallback' };
   }
 
   function questTargets() {
@@ -106,13 +141,13 @@
       lastDebug = { ...lastDebug, visible: false, areaId };
       return;
     }
-    const heading = Number(player.angle) || 0; // Used as the stable gameplay heading without hostile auto-target snapping.
+    const { heading, source: headingSource } = currentHeading(deps, player); // True camera-orbit heading; independent from character/body rotation on the farm and in Character View.
     const playerCol = player.x / deps.TILE;
     const playerRow = player.y / deps.TILE;
     const { targets, offAreaQuestTargets } = collectTargets(areaId);
     const entries = [...CARDINALS.map(cardinal => ({ ...cardinal, symbol: cardinal.label })), ...targets];
     const markers = renderIndicators(layer, entries, heading, playerCol, playerRow);
-    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), markers, offAreaQuestTargets };
+    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), headingSource, markers, offAreaQuestTargets };
   }
 
   function frame(now) {
@@ -124,6 +159,6 @@
   window.NavigationCompass = Object.freeze({
     update,
     getDebug: () => ({ ...lastDebug, markers: lastDebug.markers.map(marker => ({ ...marker })) }),
-    _test: Object.freeze({ angleDiff, markerSize, collectTargets }),
+    _test: Object.freeze({ angleDiff, normalizeAngle, markerSize, headingFromDirection, headingFromCameraAzimuthDeg, currentHeading, collectTargets }),
   });
 })();
