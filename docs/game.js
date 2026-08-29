@@ -24311,26 +24311,41 @@
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
-        // Update activeAction even without DOM rebuild. Skips a
-        // style:'secondary' button (e.g. climb_branch, pushed first in
-        // computeActionButtons purely for discoverability — see its own
-        // comment: "Climbing is still triggered by a forward dodge... an
-        // attack/item press never grabs a nearby trunk by accident") so
-        // array order alone can't hand it the primary click/Action 1 slot
-        // over whatever the held tool's own action actually is — a facing
-        // climb target otherwise silently ate every tool-action click near
-        // a climbable tree, axes included. Only falls through to a
-        // secondary button when it's truly the only allowed action at all.
-        const first = btns.find(b => b.allowed && b.style !== 'secondary') || btns.find(b => b.allowed) || btns[0];
+        // Update activeAction even without DOM rebuild. climb_branch
+        // (pushed first in computeActionButtons purely to feed the 3D
+        // floating world-space prompt over a climbable branch — see its
+        // own comment) is excluded outright here, not just deprioritized:
+        // climbing is only ever supposed to trigger from a forward dodge
+        // (see performContextAction), never from Action 1/a tool press —
+        // an earlier "prefer non-secondary, fall back to secondary only if
+        // it's the sole allowed action" version of this still let a lone
+        // climb target win Action 1 whenever nothing else was interactable
+        // (e.g. no tool equipped), which is exactly the case a player
+        // facing a tree is most likely to be in.
+        const climbBtn = btns.find(b => b.action === 'climb_branch');
+        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
+        // The dodge button is climbing's only real trigger, so it's the
+        // one that should visually say so — swaps to the climb/climb-down
+        // icon+label while a target's in reach, back to the plain dodge
+        // icon otherwise.
+        if (dodgeBtn) {
+          const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
+          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
+          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+        }
 
         if (!needsRebuild) return;
 
-        // Split tool actions from item-owned consume/plant/place/harvest actions.
+        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // climb_branch is excluded from every arch slot below for the same
+        // reason it's excluded from activeAction above — it still stays in
+        // the full btns array so the 3D world-space prompt keeps working.
         const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
-        const toolBtns = btns.filter(b => !isItemButton(b));
-        const itemBtns = btns.filter(isItemButton);
+        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
+        const itemBtns = nonClimbBtns.filter(isItemButton);
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -24543,11 +24558,12 @@
 
         if (heldMode === 'item') {
           // Item mode: all actions spread across all 5 arch positions
-          applyAbt('btnAction1',    btns[0], 0);
-          applyAbt('btnAction2',    btns[1], 1);
-          applyAbt('btnAction3',    btns[2], 2);
-          applyAbt('btnItemAction1', btns[3], 3);
-          applyAbt('btnItemAction2', btns[4], 4);
+          // (climb_branch excluded — see nonClimbBtns above)
+          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
+          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
+          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
+          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
+          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
         } else {
           applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
           applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
