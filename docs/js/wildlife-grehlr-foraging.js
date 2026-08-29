@@ -23,7 +23,11 @@
   const SEEK_TIMEOUT_HOURS = 2; // safety net — releases a reservation if travel never actually arrives (e.g. denKey/night takes priority over the herbivore-branch reuse — see maybeStartForaging)
   const BERRY_EAT_DURATION_HOURS = 0.25; // a quick snack, much smaller than drenkirra's whole climbed-up fruit
   const FISH_SESSION_DURATION_HOURS = 0.4;
-  const BERRY_LOOKDOWN_PITCH_DEG = -25;
+  // Positive — this rig's own convention is negative degrees = up,
+  // positive = down (confirmed via the vocalization head-nod, see
+  // png-plane-avatar.js's applyDegrees), the opposite of what the name
+  // suggests at a glance.
+  const BERRY_LOOKDOWN_PITCH_DEG = 25;
 
   // Fishing pantomime phase durations, real seconds — "attack an empty
   // tile, then look down on the ground as if eating it, on a slow paced
@@ -40,7 +44,8 @@
   const FISH_SETTLE_S = 0.8;
   const FISH_LOOKDOWN_S = 3.2;
   const FISH_RESTORE_S = 0.6;
-  const FISH_LOOKDOWN_PITCH_DEG = -42;
+  // Positive — see BERRY_LOOKDOWN_PITCH_DEG above.
+  const FISH_LOOKDOWN_PITCH_DEG = 42;
   const FISH_STRIKE_SCALE_Y = 0.72;
 
   const BEHAVIOR_STEP_S = 0.5;
