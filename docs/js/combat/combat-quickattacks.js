@@ -113,7 +113,8 @@
       const target = deps.findAutoTarget();
       const cond = getConditions(deps, target);
       const tech = buildTechnique(def, cond);
-      const cost = tech.sourceText === 'no condition bonus' ? COST_BASE : COST_BONUS;
+      const conditionBonusUsed = tech.sourceText !== 'no condition bonus'; // Selects both the higher stamina cost and the reserved huge impact cue.
+      const cost = conditionBonusUsed ? COST_BONUS : COST_BASE;
 
       // Every affliction this jab can inflict, and every stat bonus on top
       // of the base numbers below, comes from the player's own chosen
@@ -167,7 +168,7 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), category: 'quickAttack', afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
             lastName = c.def.label;
           }
@@ -177,7 +178,7 @@
               ? `${tech.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
-          // has its own weaponSlash/creatureClawHit sfx.
+          // has its own weapon swing/impact sfx.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },

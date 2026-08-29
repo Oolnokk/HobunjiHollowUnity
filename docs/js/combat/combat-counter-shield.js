@@ -63,6 +63,7 @@
       // big hit can overdraw straight into Exhausted (see resource-
       // system.js's spendStamina) instead of failing to absorb the hit.
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
+      deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter(effects);
@@ -120,7 +121,7 @@
             // slot (see combat-combo.js's matching comment) -- this used to
             // hardcode 'sharp' regardless of the equipped weapon.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), category: 'defensiveHold', afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, 'large');
             hits++;
             lastName = c.def.label;
           }

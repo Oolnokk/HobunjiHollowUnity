@@ -897,6 +897,13 @@
     return 1 - (beyondPx / tailPx) * (1 - RANGE_FALLOFF_MIN_FRACTION);
   }
 
+  function playProjectileImpactSfx(p, segmentT = 1) {
+    const t = Math.max(0, Math.min(1, Number(segmentT) || 0));
+    const x = p.prevX + (p.x - p.prevX) * t;
+    const y = p.prevY + (p.y - p.prevY) * t;
+    window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
+  }
+
   function projectileHit(p) {
     const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
@@ -907,9 +914,13 @@
     const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
-      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
+      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+        playProjectileImpactSfx(p, coverHit.t);
+        return true;
+      }
       if (!nearest) return false;
       const c = nearest.creature;
+      playProjectileImpactSfx(p, nearest.interval.enter);
       deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       deps.awardRangedMastery?.(p.itemKey);
@@ -922,8 +933,12 @@
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
-    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
+    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+      playProjectileImpactSfx(p, coverHit.t);
+      return true;
+    }
     if (!nearest) return false;
+    playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
       deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });

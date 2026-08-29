@@ -422,7 +422,7 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
-    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch);
+    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep);
     if (action.onStrike) action.onStrike(action);
   }
 

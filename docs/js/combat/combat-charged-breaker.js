@@ -160,7 +160,7 @@
             // slot (see combat-combo.js's matching comment) -- this used to
             // hardcode 'blunt' regardless of the equipped weapon.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), heavy: true, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, 'huge');
             hits++;
             lastName = c.def.label;
           }
@@ -171,7 +171,7 @@
               ? `Charged Breaker (${pct}% charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
-          // has its own weaponSlash/creatureClawHit sfx.
+          // has its own weapon swing/impact sfx.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },

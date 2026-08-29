@@ -10,11 +10,14 @@
   // markAudioUrlFailed, audioUrlFailed) are passed in via deps instead.
   let deps = null;
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
+  const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
+  let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
   function init(injectedDeps) {
     deps = injectedDeps;
     preloadConfiguredObjectSfx();
+    preloadConfiguredCombatSfx();
     preloadAnimalVoices();
   }
 
@@ -272,7 +275,65 @@
 
   function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
 
-  // One-shot combat SFX player (weapon slash / creature bark / claw hit) —
+  const COMBAT_SFX_POOL_SIZE = 2;
+  const COMBAT_SFX_MAX_START_DELAY_MS = 140;
+
+  function preloadConfiguredCombatSfx() {
+    if (typeof Audio !== 'function') return;
+    for (const [key, cfgEntry] of Object.entries(combatSfxConfig())) {
+      if (!cfgEntry?.preload || !cfgEntry.url || combatSfxPreloads.has(cfgEntry.url)) continue;
+      const pool = [];
+      for (let i = 0; i < COMBAT_SFX_POOL_SIZE; i++) {
+        const snd = new Audio(cfgEntry.url);
+        snd.preload = 'auto';
+        snd.dataset.combatSfxKey = key;
+        snd.dataset.combatPoolIndex = String(i);
+        snd.load();
+        pool.push(snd);
+      }
+      combatSfxPreloads.set(cfgEntry.url, pool);
+    }
+  }
+
+  function acquireCombatSfxAudio(url) {
+    const pool = combatSfxPreloads.get(url);
+    if (!pool?.length) return null;
+    const available = pool.find(snd => snd.paused || snd.ended);
+    const snd = available || pool.reduce((oldest, candidate) =>
+      (candidate._combatRequestedAt || 0) < (oldest._combatRequestedAt || 0) ? candidate : oldest);
+    if (!snd.paused) snd.pause();
+    try { snd.currentTime = 0; } catch (_) {}
+    snd._combatRequestedAt = performance.now();
+    return snd;
+  }
+
+  // A mobile browser may accept play() but delay it until much later. That
+  // stale request is worse than a dropped transient cue because several of
+  // them erupt together after the fight has moved on. Pooled combat voices
+  // therefore get a strict start deadline and are recycled instead of queued.
+  function playPooledCombatSfx(snd, volume) {
+    const requestId = (snd._combatRequestId || 0) + 1;
+    snd._combatRequestId = requestId;
+    snd.volume = Math.min(1, volume);
+    let started = false;
+    const markStarted = () => {
+      if (snd._combatRequestId !== requestId) return;
+      started = true;
+      if (performance.now() - snd._combatRequestedAt <= COMBAT_SFX_MAX_START_DELAY_MS) return;
+      snd.pause();
+      try { snd.currentTime = 0; } catch (_) {}
+    };
+    snd.addEventListener?.('playing', markStarted, { once: true });
+    const playResult = snd.play();
+    if (playResult?.then) playResult.then(markStarted).catch(() => {});
+    setTimeout(() => {
+      if (started || snd._combatRequestId !== requestId) return;
+      snd.pause();
+      try { snd.currentTime = 0; } catch (_) {}
+    }, COMBAT_SFX_MAX_START_DELAY_MS);
+  }
+
+  // One-shot combat SFX player (weapon swing/impact, block, bark, claw hit) —
   // simpler than playFootstepSfx since these always have a real audio
   // file staged (no procedural WebAudio fallback needed).
   function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
@@ -282,10 +343,11 @@
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
       * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
     if (volume <= 0.002) return;
-    const snd = new Audio(cfgEntry.url);
+    const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
-    playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
+    if (snd._combatRequestedAt != null && !(Number(cfgEntry.gainBoost) > 1)) playPooledCombatSfx(snd, volume);
+    else playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
   }
 
   function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
@@ -545,11 +607,27 @@
     playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
   }
 
-  function playWeaponSlashSfx(pitch) {
-    playOneShotSfx(combatSfxConfig().weaponSlash, 1, pitch);
+  function recordCombatSfx(key, cfgEntry, detail = null) {
+    const pool = cfgEntry?.url ? combatSfxPreloads.get(cfgEntry.url) : null;
+    const preloaded = pool?.[0] || null;
+    lastCombatSfxDebug = {
+      key, detail, url: cfgEntry?.url || null, preloaded: !!pool?.length,
+      readyState: preloaded?.readyState ?? null, atMs: Math.round(performance.now()),
+    };
   }
 
-  // Impact sound for any WEAPON hit landing (player Combo/Quick Attack/
+  // Combo steps are zero-based and map exactly to swing files 1/2/3.
+  // Every other melee attack deliberately chooses one of the three anew.
+  function playWeaponSlashSfx(pitch, comboStep) {
+    const step = Number.isInteger(comboStep) && comboStep >= 0 && comboStep < 3
+      ? comboStep : Math.floor(Math.random() * 3);
+    const key = `weaponSwing${step + 1}`;
+    const cfgEntry = combatSfxConfig()[key];
+    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null });
+    playOneShotSfx(cfgEntry, 1, pitch);
+  }
+
+  // Sized impact sound for any WEAPON hit landing (player Combo/Quick Attack/
   // Charged Breaker/Counter Shield riposte, or a bandit's own mirror of
   // the same abilities) -- distinct from playCreatureClawHit, which
   // stays wildlife-bite-only. tag is the attacker's own weapon dmgType
@@ -559,15 +637,54 @@
   // Takes a plain x/y/areaId instead of a creature-shaped object so it
   // works equally for a bandit attacker (which has all three already)
   // and the player attacker (which has no .areaId field of its own --
-  // see combat-core.js's deps.getCurrentArea()).
-  function playWeaponHitSfx(tag, x, y, areaId, pitch) {
+  // see combat-core.js's deps.getCurrentArea()). size is authored by the
+  // attack: combos use small/medium/large, while huge stays reserved for
+  // true heavy strikes and quick attacks that earned their condition bonus.
+  function playWeaponHitSfx(tag, x, y, areaId, pitch, size = 'medium') {
     if (areaId !== deps.getCurrentArea()) return;
-    const cfgEntry = combatSfxConfig()[tag === 'blunt' ? 'weaponHitBlunt' : 'weaponHitSharp'];
+    const normalizedSize = ['small', 'medium', 'large', 'huge'].includes(size) ? size : 'medium';
+    const family = tag === 'blunt' ? 'Blunt' : 'Sharp';
+    const key = `weaponHit${family}${normalizedSize[0].toUpperCase()}${normalizedSize.slice(1)}`;
+    const cfgEntry = combatSfxConfig()[key];
     if (!cfgEntry) return;
     const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
     if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
     const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize });
     playOneShotSfx(cfgEntry, falloff, pitch);
+  }
+
+  function playCounterShieldBlockSfx(x, y, areaId) {
+    if (areaId !== deps.getCurrentArea()) return;
+    const cfgEntry = combatSfxConfig().counterShieldBlock;
+    if (!cfgEntry) return;
+    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
+    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    recordCombatSfx('counterShieldBlock', cfgEntry, { block: true });
+    playOneShotSfx(cfgEntry, falloff);
+  }
+
+  function playRangedImpactSfx(x, y, areaId) {
+    if (areaId !== deps.getCurrentArea()) return;
+    const cfgEntry = combatSfxConfig().rangedImpact;
+    if (!cfgEntry) return;
+    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
+    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true });
+    playOneShotSfx(cfgEntry, falloff);
+  }
+
+  function combatSfxDebugSnapshot() {
+    return {
+      last: lastCombatSfxDebug ? { ...lastCombatSfxDebug } : null,
+      maxStartDelayMs: COMBAT_SFX_MAX_START_DELAY_MS,
+      preloads: [...combatSfxPreloads.entries()].flatMap(([url, pool]) => pool.map(snd => ({
+        key: snd.dataset.combatSfxKey || '?', url, poolIndex: Number(snd.dataset.combatPoolIndex) || 0,
+        readyState: snd.readyState, networkState: snd.networkState,
+      }))),
+    };
   }
 
   // Beyond this distance from the player, a creature-originated sound
@@ -618,6 +735,9 @@
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,
+    playCounterShieldBlockSfx,
+    playRangedImpactSfx,
+    combatSfxDebugSnapshot,
     get FOOTSTEP_EARSHOT_PX() { return FOOTSTEP_EARSHOT_PX; },
     get FOOTSTEP_PAN_RANGE_PX() { return FOOTSTEP_PAN_RANGE_PX; },
     get FOOTSTEP_QUIET_SCALE() { return FOOTSTEP_QUIET_SCALE; },

@@ -13,9 +13,9 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-combo.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  // Mirrors the sandbox's 0.92s window: tap again within this long and the
+  // A deliberately forgiving 1.8s window: tap again within this long and the
   // combo advances to its next step; wait longer and it resets to step 1.
-  let COMBO_RESET_S = 0.9;
+  let COMBO_RESET_S = 1.8;
 
   // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) read as oversized in practice; shrink it here
@@ -217,7 +217,7 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: step.heavy, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch);
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
             hits++;
             lastName = c.def.label;
           }
@@ -226,7 +226,7 @@
             : vegetationCleared > 0
               ? `${step.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `${step.name} connects with nothing.`;
-          // silent: every swing already has its own weaponSlash/creatureClawHit
+          // silent: every swing already has its own weapon swing/impact
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);

@@ -832,7 +832,7 @@
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
       onComplete: () => {
@@ -890,7 +890,7 @@
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, tech.sourceText === 'no condition bonus' ? 'small' : 'huge');
         }
       },
       onComplete: () => {
@@ -945,7 +945,7 @@
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'huge');
         }
       },
       onComplete: () => {
@@ -997,7 +997,7 @@
         spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle, aimPitch);
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: aimAngle, pitch: aimPitch })) {
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
     });

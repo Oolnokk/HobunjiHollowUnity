@@ -824,6 +824,13 @@
       const lastCueAgeMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null; // Distinguishes a recent tool cue from unrelated companion footsteps.
       lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${lastCueAgeMs}ms ago found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
     }
+    const combatSfxDebug = window.AudioSystem?.combatSfxDebugSnapshot?.(); // Copyable proof of the chosen swing/impact/block cue on mobile.
+    if (combatSfxDebug) {
+      const lastCue = combatSfxDebug.last;
+      const ready = combatSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
+      const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
+      lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+    }
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
