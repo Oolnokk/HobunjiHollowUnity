@@ -375,15 +375,17 @@
   const pendingNestTreeRespawn = new Set();
   const nestTreeLastKnownAlive = new Map();
   const NEST_TREE_ZONE_ID = 'map_southern_cloud_forest';
-  // A HARD CAP on how many nest trees a zone can ever have, not a fraction
-  // of however many climbable branches happen to exist — a dense shadewood
-  // forest can easily carry hundreds of registered branches (see
+  // The UPPER BOUND on how many nest trees a zone can ever have, not a
+  // fraction of however many climbable branches happen to exist — a dense
+  // shadewood forest can easily carry hundreds of registered branches (see
   // foliage-generator.js's climbBranchChance, rolled per shared tree shape,
   // so it's common for most trees in the zone to have one), and spawning a
   // full pack + Nestmother at every one of them independently blew up
   // hostileObjects into the hundreds the moment the zone loaded — the cause
-  // of the severe slowdown entering this zone. Capped to roughly the same
-  // scale a zone's normal den count already runs at.
+  // of the severe slowdown entering this zone. eligibleNestBranches further
+  // clamps this down to the zone's own actual den count so nests end up
+  // about as common as gar-wolf dens, not just nominally capped at the
+  // same number.
   const NEST_TREE_MAX_PER_ZONE = 5;
   const NEST_PACK_SIZE_MIN = 2;
   const NEST_PACK_SIZE_MAX = 4;
@@ -425,12 +427,23 @@
     const branches = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(branch => !branch.felled);
     let selected = _nestTreeSelectionCache.get(zoneId);
     if (!selected) {
+      // Nest trees should be about as common as gar-wolf dens in this same
+      // zone — a flat NEST_TREE_MAX_PER_ZONE cap regardless of how many
+      // dens the terrain generator actually managed to place (placeAnimalDens'
+      // border/elevation constraints routinely place fewer than its own
+      // nominal target) made nests noticeably outnumber dens in practice
+      // even though both nominally capped at "5". Falls back to the flat
+      // cap only if this zone somehow has no den data at all (e.g. an
+      // authored fallback layout — see game.js's other _zoneLayouts.set
+      // call site, which always sets dens: []).
+      const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
+      const maxNestTrees = Math.max(1, Math.min(NEST_TREE_MAX_PER_ZONE, denCount || NEST_TREE_MAX_PER_ZONE));
       const scored = branches.map(branch => {
         const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${branch.col}_${branch.row}`);
         return { branch, key: branchTileKey(branch), score: rng ? rng() : deps.rnd() };
       });
       scored.sort((a, b) => a.score - b.score);
-      selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE)
+      selected = scored.slice(0, maxNestTrees)
         .map(({ key, branch }) => ({ key, branch }));
       _nestTreeSelectionCache.set(zoneId, selected);
     }
