@@ -70,9 +70,16 @@ for (const key of carvedByKey.keys()) {
 }
 
 const gameSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf8');
+const grassSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-grass-billboards.js'), 'utf8');
 assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key, \{ \.\.\.staked, type: t\.type \}\)/,
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
+assert.match(gameSource, /wildernessGlobalPathGround[\s\S]{0,1300}zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
+  'runtime wilderness edits must remove and rebuild the zone-wide route grass apron');
+assert.match(gameSource, /includePathBricks: false/,
+  'runtime route-apron refresh must not duplicate the separately managed paved bricks');
+assert.match(grassSource, /\[deps\.TileType\.GRASS, deps\.TileType\.SHRUB, deps\.TileType\.WEEDS\]\.includes\(liveTile\.type\)/,
+  'rich grass patches must reject trenches and other carved runtime tiles');
 
 console.log('wilderness carved plateau surface regression checks passed');

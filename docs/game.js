@@ -8771,6 +8771,7 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
+        const includePathBricks = options.includePathBricks !== false; // Prevents a runtime grass-apron refresh from registering duplicate paved-path chunks.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -8811,7 +8812,7 @@
         // below): built once the shared recipe/GLB are ready, chunked and
         // culled by camera corridor rather than tied to this zone's own
         // scene-build timing.
-        if (includeGlobalPath) {
+        if (includeGlobalPath && includePathBricks) {
           ensurePathSurfaceReady().then(() => {
             const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
             const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
@@ -9012,6 +9013,7 @@
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
           mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (includeGlobalPath && !includeTiles) mesh.userData.wildernessGlobalPathGround = true;
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -9146,7 +9148,7 @@
         // once and keep it outside streamed chunks. Ordinary floor tiles,
         // removable rocks, trees, ramps, water and grass are built by the
         // 16x16 chunk factory below.
-        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Reused by every chunk for seam-safe path exclusions.
+        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Initial route apron; info.pathNet below becomes its runtime-mutable owner.
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
           includeTiles: false,
           includeGlobalPath: true,
@@ -9205,7 +9207,7 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null };
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
@@ -9220,7 +9222,7 @@
             bounds,
             includeGlobalPath: false,
             resetState: false,
-            pathNet: zonePathNet,
+            pathNet: info.pathNet,
           }); // Chunk-owned ground, rocks and vegetation.
           const featureMeshes = [
             ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
@@ -12476,6 +12478,31 @@
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
         if (zi.chunkController && window.WildernessChunks) {
+          // The route network owns one zone-wide grass apron outside the
+          // streamed chunk groups. Rebuilding only the edited chunk therefore
+          // cannot remove apron triangles over a newly dug trench. Replace that
+          // small global layer from the live grid first, and let subsequent
+          // chunk builds share its refreshed exclusion lookup. Paved brick
+          // chunks are unchanged: digging is disallowed on PATH itself, and
+          // includePathBricks:false avoids registering a duplicate set.
+          const floorRegistry = _zoneFloorMeshGroups.get(mapId) || []; // Holds global path ground plus all currently resident chunk floor objects.
+          for (let i = floorRegistry.length - 1; i >= 0; i--) {
+            const mesh = floorRegistry[i];
+            if (!mesh?.userData?.wildernessGlobalPathGround) continue;
+            mesh.parent?.remove(mesh);
+            mesh.geometry?.dispose?.();
+            floorRegistry.splice(i, 1);
+          }
+          zi.pathNet = buildPathNetworkGeo(zi.grid, zi.cols, zi.rows);
+          const refreshedPathGround = _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId, {
+            includeTiles: false,
+            includeGlobalPath: true,
+            includePathBricks: false,
+            resetState: false,
+            pathNet: zi.pathNet,
+          }); // Replaces only the zone-wide route grass/path ground meshes.
+          floorRegistry.push(...refreshedPathGround);
+          _zoneFloorMeshGroups.set(mapId, floorRegistry);
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
