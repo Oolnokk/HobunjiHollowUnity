@@ -145,11 +145,20 @@
       children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
     }
 
+    const isCarvedPlateauOverride = t => !!(t?.plateau && CARVED_TILE_TYPES.has(t.type)); // Mirrors game.js's preservation of real cuts inside plateau masks.
     for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
       const t = m.tiles?.[`${c},${r}`];
       const key = `${c + offsetC},${r + offsetR}`;
-      if (!t || t.plateau) {
+      if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
         if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+        continue;
+      }
+      if (isCarvedPlateauOverride(t)) {
+        // Keep the mask's previously-staked elevation and incline metadata,
+        // but retain the carved type so preview geometry cuts the same hole in
+        // the mesa lid that the live renderer does.
+        const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false };
+        outTiles.set(key, { ...staked, type: t.type });
         continue;
       }
       let type = t.type || 'grass';

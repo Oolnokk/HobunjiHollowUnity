@@ -11212,11 +11212,24 @@
             // override), must NOT stomp the ring/interior staking already written
             // above — only default to flat grass if no caller has touched this
             // world cell yet.
+            const isCarvedPlateauOverride = t => !!(t?.plateau && CARVED_TILE_TYPES.has(t.type)); // Used below so authored/generated cuts survive the plateau footprint fold.
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
               const key = `${c + offsetC},${r + offsetR}`;
-              if (!t || t.plateau) {
+              if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
                 if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+                continue;
+              }
+              if (isCarvedPlateauOverride(t)) {
+                // Generated waterways retain their plateau group so they still
+                // participate in the mesa footprint. They are also real surface
+                // overrides, though: discarding their type here turns the mesa's
+                // continuous grass lid back on over rivers, waterfalls, and dug
+                // holes. Preserve the already-staked tier/ring flags and replace
+                // only the surface type; buildPlateauMesa then omits this cell's
+                // lid while _buildZoneFloorMeshes supplies its carved geometry.
+                const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false };
+                outTiles.set(key, { ...staked, type: t.type });
                 continue;
               }
               let type = t.type || 'grass';
@@ -18739,7 +18752,12 @@
         const CELLS = 6, STEP = 1 / CELLS;
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
-        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
+        // The path mesh owns a broad grass apron around the route, so every
+        // surface with its own relief/water geometry must punch through that
+        // apron too. Reuse the mesa-lid carve set to keep waterfalls (formerly
+        // omitted here) in parity with rivers/streams/trenches/raised beds;
+        // ramps and paddies likewise own their complete surface.
+        const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
         const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
