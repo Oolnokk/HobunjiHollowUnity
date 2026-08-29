@@ -583,20 +583,19 @@
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
       const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = deps.playerMesh.rotation.y;
-        const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-        const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
-        const expectedX = deps.playerMesh.position.x + dx, expectedZ = deps.playerMesh.position.z + dz;
-        const expectedY = deps.playerMesh.position.y + perch.y - grip.y;
-        const actual = liveActivePet.avatarRef.group.position;
-        const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
-        lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
-        if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
+        const attachmentDebug = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetAttachment; // Final face-relative transform recorded by updateShoulderPetMeshPin for mobile diagnosis.
+        const expected = attachmentDebug?.expectedWorldPosition; // Avoids comparing the new quaternion alignment against the obsolete yaw-only probe formula.
+        const expectedX = Number(expected?.[0]), expectedY = Number(expected?.[1]), expectedZ = Number(expected?.[2]);
+        const actual = liveActivePet.avatarRef.group.getWorldPosition(new THREE.Vector3()); // Compares world-to-world even if an area scene later gains its own transform.
+        const drift = Number.isFinite(expectedX) && Number.isFinite(expectedY) && Number.isFinite(expectedZ)
+          ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
+          : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
+        lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
+        if (Number.isFinite(drift)) {
+          lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
+          if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the final face-relative rig-anchor transform says it should be (drift ${drift.toFixed(4)} world units).`);
+        }
+        if (attachmentDebug?.recentChange) lines.push(`Most recent shoulder-pet change: ${attachmentDebug.recentChange}`);
       } else {
         lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
       }

@@ -5822,24 +5822,37 @@
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName, genotypeOrSizeClass = null) { return creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass)?.y ?? null; }
-      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
-      // shared by updateCompanions' shoulderPet branch (which also needs
-      // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
-      // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
-      // RENDERED position after updatePlayerMesh — see that function's own
-      // comment for why it exists). A pure function of the player's current
-      // rig anchor + facing, not of playerMesh.position itself, so it's
-      // cheap (rig anchors are cached — see playerAttachmentAnchor/
-      // creatureAttachmentAnchor) and safe to call twice a frame rather than
-      // needing dx/dz stashed as extra state on the creature.
-      function _shoulderPetOffsetXZ(perch, grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = playerMesh.rotation.y;
-        return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
+      // Resolves the authored shoulder attachment as a real transform instead
+      // of the old yaw-only shortcut. The perch POSITION remains in the
+      // player's body-local frame (it is a shoulder coordinate), while its
+      // authored ROTATION is interpreted relative to the live face/neck bone.
+      // This lets a perched animal turn and nod with the face without making
+      // the shoulder coordinate itself orbit around the neck pivot.
+      function _shoulderPetFaceRelativeTransform(perch, grip) {
+        const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
+          const degrees = rotationDeg || {};
+          return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            THREE.MathUtils.degToRad(Number(degrees.x) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.y) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.z) || 0),
+            'YXZ',
+          ));
+        };
+        const faceRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Supplies the live face frame, with a body-frame fallback for rigs that have no neck bone.
+        playerMesh.updateWorldMatrix?.(true, false);
+        faceRotationSource.updateWorldMatrix?.(true, false);
+        const faceWorldQuaternion = faceRotationSource.getWorldQuaternion(new THREE.Quaternion()); // Carries the current face yaw/pitch into the authored perch rotation.
+        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotation, now local to the live face.
+        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
+        const worldQuaternion = faceWorldQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet root orientation: face × perch × inverse grip.
+        const perchWorldPosition = playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Keeps the perch point fixed to the body-local shoulder coordinate.
+        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Moves the pet origin so its rotated grip still lands exactly on the fixed perch point.
+        return {
+          worldPosition: perchWorldPosition.sub(gripWorldOffset),
+          worldQuaternion,
+          faceWorldQuaternion,
+          faceRotationSource: faceRotationSource === playerNeckJoint ? 'player-neck-bone' : 'player-body-fallback',
+        };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
@@ -6854,19 +6867,37 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
-      function _applyShoulderPetFinalRotation(c, finalGroupRotY) {
+      function _applyShoulderPetFinalTransform(c, finalTransform) {
         const group = c.avatarRef?.group;
-        if (!group) return;
-        group.rotation.y = finalGroupRotY;
+        if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
+        const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
+        parent?.updateWorldMatrix?.(true, false);
+        const parentWorldQuaternion = parent?.getWorldQuaternion
+          ? parent.getWorldQuaternion(new THREE.Quaternion())
+          : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
+        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the requested face-relative world rotation.
+        const localPosition = parent?.worldToLocal
+          ? parent.worldToLocal(finalTransform.worldPosition.clone())
+          : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
+        group.position.copy(localPosition);
+        group.quaternion.copy(localQuaternion);
         // updateCreatureMesh authored the inner planes against c.groupRot,
-        // but an attack/tool pose can replace the attachment group's yaw in
-        // this later pass. Recompute the local counter-rotation so that
-        // moving the shoulder anchor with bodyYaw does not also rotate the
-        // flat animal card face-on/edge-on and change its projected width.
-        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Used here to preserve the camera-relative plane yaw chosen by updateCreatureMesh.
-        const planeDelta = billboardWorldYaw - finalGroupRotY; // Used below to cancel only the final attachment-group yaw override.
+        // but the face-relative attachment can now replace the root's full
+        // pitch/yaw/roll in this later pass. The onBeforeRender compensation
+        // in png-plane-avatar.js owns the exact world-facing plane matrix;
+        // this Euler write remains the first-frame/legacy fallback.
+        const finalGroupRotY = new THREE.Euler().setFromQuaternion(localQuaternion, 'YXZ').y; // Supplies the legacy plane fallback with the new attachment root's local yaw.
+        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Preserves the camera-relative plane yaw chosen by updateCreatureMesh.
+        const planeDelta = billboardWorldYaw - finalGroupRotY; // Cancels the final attachment-group yaw in the legacy plane fallback.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final face-relative pin.
+          recentChange: 'Authored shoulderPerch rotation is face-relative and follows the live face.',
+          rotationSource: finalTransform.faceRotationSource,
+          expectedWorldPosition: finalTransform.worldPosition.toArray(),
+          faceWorldQuaternion: finalTransform.faceWorldQuaternion?.toArray?.() || null,
+          finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
+        };
       }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
@@ -6875,19 +6906,23 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
-            c.avatarRef.group.position.x = playerMesh.position.x + dx;
-            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-            c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            const finalGroupRotY = playerMesh.rotation.y - gripYawRad; // Final bodyYaw-aware attachment rotation consumed by the billboard counter-rotation helper.
-            _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            const finalTransform = _shoulderPetFaceRelativeTransform(perch, grip); // Composes live face × authored perch × inverse authored grip.
+            _applyShoulderPetFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
-            c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
-            const finalGroupRotY = playerMesh.rotation.y; // Final fallback attachment rotation consumed by the same billboard counter-rotation helper.
-            _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            const fallbackWorldPosition = new THREE.Vector3( // Supplies the no-authored-anchor path to the shared full-transform helper.
+              playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3,
+              c.avatarRef.group.position.y,
+              playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3,
+            );
+            const fallbackWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Keeps legacy pets body-relative when either authored anchor is absent.
+            _applyShoulderPetFinalTransform(c, {
+              worldPosition: fallbackWorldPosition,
+              worldQuaternion: fallbackWorldQuaternion,
+              faceWorldQuaternion: fallbackWorldQuaternion,
+              faceRotationSource: 'player-body-fallback-no-authored-anchors',
+            });
           }
         }
       }
