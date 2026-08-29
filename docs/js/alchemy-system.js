@@ -20,21 +20,21 @@
   const recipe = (id, humour, drive, magnetism, data) => Object.freeze({ // Central recipe metadata constructor.
     id, traits: Object.freeze({ humour, drive, magnetism }),
     traitKey: `${humour}.${drive}.${magnetism}`,
-    basePotency: 1, elementalTuning: magnetism, ...data,
+    basePotency: 1, elementalTuning: magnetism, baseBatch: 1, ...data,
   });
 
   const RECIPE_DEFS = Object.freeze({
-    healingPotion: recipe('healingPotion', 'flesh', 'restore', 'water', { label: 'Healing Potion', icon: '🧪', useMode: 'drink', application: 'restoreHealth', amount: 32, desc: 'Instantly restores Health.' }),
-    greaterHealingPotion: recipe('greaterHealingPotion', 'flesh', 'restore', 'fire', { label: 'Greater Healing Potion', icon: '🧪', useMode: 'drink', application: 'restoreHealth', amount: 68, desc: 'Instantly restores substantially more Health.' }),
-    staminaPotion: recipe('staminaPotion', 'breath', 'restore', 'water', { label: 'Stamina Potion', icon: '⚗️', useMode: 'drink', application: 'restoreStamina', amount: 34, exhaustionAmount: 28, desc: 'Restores Stamina and black-Stamina debt.' }),
-    greaterStaminaPotion: recipe('greaterStaminaPotion', 'breath', 'restore', 'fire', { label: 'Greater Stamina Potion', icon: '⚗️', useMode: 'drink', application: 'restoreStamina', amount: 72, exhaustionAmount: 62, desc: 'Restores substantially more Stamina and Exhaustion.' }),
-    potionOfBalance: recipe('potionOfBalance', 'bones', 'restore', 'water', { label: 'Potion of Balance', icon: '⚖️', useMode: 'drink', application: 'restoreFooting', amount: 45, desc: 'Restores Footing.' }),
-    controlRemedy: recipe('controlRemedy', 'bones', 'restore', 'earth', { label: 'Control Remedy', icon: '🪨', useMode: 'drink', application: 'cleanseFamily', family: 'control', amount: 42, desc: 'Removes Control-family afflictions.' }),
-    woundRemedy: recipe('woundRemedy', 'blood', 'restore', 'water', { label: 'Wound Remedy', icon: '🩹', useMode: 'drink', application: 'cleanseFamily', family: 'damage', amount: 48, desc: 'Removes Damage-family afflictions.' }),
-    mendingDraught: recipe('mendingDraught', 'flesh', 'restore', 'earth', { label: 'Mending Draught', icon: '🫗', useMode: 'drink', application: 'cleanseFamily', family: 'offensiveDebuff', amount: 42, desc: 'Removes Offensive-Debuff-family afflictions.' }),
-    potionOfClarity: recipe('potionOfClarity', 'senses', 'restore', 'water', { label: 'Potion of Clarity', icon: '👁️', useMode: 'drink', application: 'cleanseFamily', family: 'defensiveDebuff', amount: 42, desc: 'Removes Defensive-Debuff-family afflictions.' }),
-    antidote: recipe('antidote', 'bile', 'restore', 'water', { label: 'Antidote', icon: '🌿', useMode: 'drink', application: 'cleanseTag', tag: 'toxin', amount: 50, desc: 'Removes toxin-tagged afflictions across families.' }),
-    soberingDraught: recipe('soberingDraught', 'bile', 'restore', 'fire', { label: 'Sobering Draught', icon: '☕', useMode: 'drink', application: 'cleanseTag', tag: 'alcohol', amount: 65, desc: 'Rapidly reduces drunkenness.' }),
+    healingPotion: recipe('healingPotion', 'flesh', 'restore', 'water', { baseBatch: 2, label: 'Healing Potion', icon: '🧪', useMode: 'drink', application: 'restoreHealth', amount: 32, desc: 'Instantly restores Health.' }),
+    greaterHealingPotion: recipe('greaterHealingPotion', 'flesh', 'restore', 'fire', { baseBatch: 2, label: 'Greater Healing Potion', icon: '🧪', useMode: 'drink', application: 'restoreHealth', amount: 68, desc: 'Instantly restores substantially more Health.' }),
+    staminaPotion: recipe('staminaPotion', 'breath', 'restore', 'water', { baseBatch: 2, label: 'Stamina Potion', icon: '⚗️', useMode: 'drink', application: 'restoreStamina', amount: 34, exhaustionAmount: 28, desc: 'Restores Stamina and black-Stamina debt.' }),
+    greaterStaminaPotion: recipe('greaterStaminaPotion', 'breath', 'restore', 'fire', { baseBatch: 2, label: 'Greater Stamina Potion', icon: '⚗️', useMode: 'drink', application: 'restoreStamina', amount: 72, exhaustionAmount: 62, desc: 'Restores substantially more Stamina and Exhaustion.' }),
+    potionOfBalance: recipe('potionOfBalance', 'bones', 'restore', 'water', { baseBatch: 2, label: 'Potion of Balance', icon: '⚖️', useMode: 'drink', application: 'restoreFooting', amount: 45, desc: 'Restores Footing.' }),
+    controlRemedy: recipe('controlRemedy', 'bones', 'restore', 'earth', { baseBatch: 2, label: 'Control Remedy', icon: '🪨', useMode: 'drink', application: 'cleanseFamily', family: 'control', amount: 42, desc: 'Removes Control-family afflictions.' }),
+    woundRemedy: recipe('woundRemedy', 'blood', 'restore', 'water', { baseBatch: 2, label: 'Wound Remedy', icon: '🩹', useMode: 'drink', application: 'cleanseFamily', family: 'damage', amount: 48, desc: 'Removes Damage-family afflictions.' }),
+    mendingDraught: recipe('mendingDraught', 'flesh', 'restore', 'earth', { baseBatch: 2, label: 'Mending Draught', icon: '🫗', useMode: 'drink', application: 'cleanseFamily', family: 'offensiveDebuff', amount: 42, desc: 'Removes Offensive-Debuff-family afflictions.' }),
+    potionOfClarity: recipe('potionOfClarity', 'senses', 'restore', 'water', { baseBatch: 2, label: 'Potion of Clarity', icon: '👁️', useMode: 'drink', application: 'cleanseFamily', family: 'defensiveDebuff', amount: 42, desc: 'Removes Defensive-Debuff-family afflictions.' }),
+    antidote: recipe('antidote', 'bile', 'restore', 'water', { baseBatch: 2, label: 'Antidote', icon: '🌿', useMode: 'drink', application: 'cleanseTag', tag: 'toxin', amount: 50, desc: 'Removes toxin-tagged afflictions across families.' }),
+    soberingDraught: recipe('soberingDraught', 'bile', 'restore', 'fire', { baseBatch: 2, label: 'Sobering Draught', icon: '☕', useMode: 'drink', application: 'cleanseTag', tag: 'alcohol', amount: 65, desc: 'Rapidly reduces drunkenness.' }),
 
     breedingGigantism: recipe('breedingGigantism', 'bones', 'greaten', 'water', { label: 'Breeding Potion of Gigantism', icon: '🐘', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: 1, desc: "Raises the affected animal's next offspring by one Size class." }),
     potionOfPoise: recipe('potionOfPoise', 'bones', 'greaten', 'earth', { label: 'Potion of Poise', icon: '🗿', useMode: 'drink', application: 'buff', stat: 'maxFooting', magnitude: 0.35, durationS: 90, desc: 'Temporarily increases maximum Footing.' }),
@@ -53,13 +53,13 @@
     potionOfSpeed: recipe('potionOfSpeed', 'bones', 'lighten', 'wind', { label: 'Potion of Speed', icon: '🏃', useMode: 'drink', application: 'buff', stat: 'movementSpeed', magnitude: 0.45, durationS: 52, desc: 'Increases movement speed.' }),
     potionOfEfficiency: recipe('potionOfEfficiency', 'breath', 'lighten', 'wind', { label: 'Potion of Efficiency', icon: '🪶', useMode: 'drink', application: 'buff', stat: 'staminaSpend', magnitude: 0.38, durationS: 52, desc: 'Reduces Stamina costs.' }),
 
-    hemorrhageFlask: recipe('hemorrhageFlask', 'blood', 'afflict', 'fire', { label: 'Hemorrhage Flask', icon: '🧨', useMode: 'throw', application: 'affliction', afflictionId: 'bleedingHealth', amount: 48, splashRadius: 1.45, particleColors: ['#b3132b', '#ff5668'], particleIntensity: 1.35, desc: 'Applies a large amount of Bleeding Health in a splash.' }),
-    woundingFlask: recipe('woundingFlask', 'blood', 'afflict', 'water', { label: 'Wounding Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'woundedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#6aa8d9', '#bb263f'], desc: 'Applies Wounded Stamina in a splash.' }),
-    congealingFlask: recipe('congealingFlask', 'blood', 'afflict', 'earth', { label: 'Congealing Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'congealedHealth', amount: 30, splashRadius: 1.3, particleColors: ['#6d2c31', '#9b7452'], desc: 'Applies Congealed Health in a splash.' }),
-    bruisingFlask: recipe('bruisingFlask', 'flesh', 'afflict', 'earth', { label: 'Bruising Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'bruisedHealth', amount: 34, splashRadius: 1.3, particleColors: ['#5c427f', '#bf8c72'], desc: 'Applies Bruised Health in a splash.' }),
-    venomFlask: recipe('venomFlask', 'bile', 'afflict', 'fire', { label: 'Venom Flask', icon: '☠️', useMode: 'throw', application: 'affliction', afflictionId: 'poisonedHealth', amount: 46, splashRadius: 1.4, particleColors: ['#8cff37', '#8433ad'], particleIntensity: 1.35, desc: 'Applies a high amount of Poisoned Health in a splash.' }),
-    sickeningFlask: recipe('sickeningFlask', 'bile', 'afflict', 'water', { label: 'Sickening Flask', icon: '🤢', useMode: 'throw', application: 'affliction', afflictionId: 'infectedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#7aae70', '#89d7c5'], desc: 'Applies Infected Stamina in a splash.' }),
-    windingFlask: recipe('windingFlask', 'breath', 'afflict', 'earth', { label: 'Winding Flask', icon: '💨', useMode: 'throw', application: 'affliction', afflictionId: 'windedStamina', amount: 32, splashRadius: 1.3, particleColors: ['#f1d66e', '#7b9f9c'], desc: 'Applies Winded Stamina in a splash.' }),
+    hemorrhageFlask: recipe('hemorrhageFlask', 'blood', 'afflict', 'fire', { baseBatch: 2, label: 'Hemorrhage Flask', icon: '🧨', useMode: 'throw', application: 'affliction', afflictionId: 'bleedingHealth', amount: 48, splashRadius: 1.45, particleColors: ['#b3132b', '#ff5668'], particleIntensity: 1.35, desc: 'Applies a large amount of Bleeding Health in a splash.' }),
+    woundingFlask: recipe('woundingFlask', 'blood', 'afflict', 'water', { baseBatch: 2, label: 'Wounding Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'woundedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#6aa8d9', '#bb263f'], desc: 'Applies Wounded Stamina in a splash.' }),
+    congealingFlask: recipe('congealingFlask', 'blood', 'afflict', 'earth', { baseBatch: 2, label: 'Congealing Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'congealedHealth', amount: 30, splashRadius: 1.3, particleColors: ['#6d2c31', '#9b7452'], desc: 'Applies Congealed Health in a splash.' }),
+    bruisingFlask: recipe('bruisingFlask', 'flesh', 'afflict', 'earth', { baseBatch: 2, label: 'Bruising Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'bruisedHealth', amount: 34, splashRadius: 1.3, particleColors: ['#5c427f', '#bf8c72'], desc: 'Applies Bruised Health in a splash.' }),
+    venomFlask: recipe('venomFlask', 'bile', 'afflict', 'fire', { baseBatch: 2, label: 'Venom Flask', icon: '☠️', useMode: 'throw', application: 'affliction', afflictionId: 'poisonedHealth', amount: 46, splashRadius: 1.4, particleColors: ['#8cff37', '#8433ad'], particleIntensity: 1.35, desc: 'Applies a high amount of Poisoned Health in a splash.' }),
+    sickeningFlask: recipe('sickeningFlask', 'bile', 'afflict', 'water', { baseBatch: 2, label: 'Sickening Flask', icon: '🤢', useMode: 'throw', application: 'affliction', afflictionId: 'infectedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#7aae70', '#89d7c5'], desc: 'Applies Infected Stamina in a splash.' }),
+    windingFlask: recipe('windingFlask', 'breath', 'afflict', 'earth', { baseBatch: 2, label: 'Winding Flask', icon: '💨', useMode: 'throw', application: 'affliction', afflictionId: 'windedStamina', amount: 32, splashRadius: 1.3, particleColors: ['#f1d66e', '#7b9f9c'], desc: 'Applies Winded Stamina in a splash.' }),
     rushNarcotic: recipe('rushNarcotic', 'bones', 'afflict', 'wind', { label: 'Rush Narcotic', icon: '🌀', useMode: 'drink', application: 'narcotic', stat: 'movementSpeed', magnitude: 0.75, durationS: 52, drawback: { type: 'footing', amount: 35 }, desc: 'Greatly increases speed while sacrificing Footing.' }),
     frenzyNarcotic: recipe('frenzyNarcotic', 'flesh', 'afflict', 'wind', { label: 'Frenzy Narcotic', icon: '😈', useMode: 'drink', application: 'narcotic', stat: 'attackSpeed', magnitude: 0.72, durationS: 52, drawback: { type: 'affliction', id: 'bruisedHealth', amount: 24 }, desc: 'Greatly increases attack speed while applying Bruised Health.' }),
   });
@@ -134,16 +134,41 @@
   function targetingProbability(level = alchemyLevel(), possibleCount = 2) {
     if (possibleCount <= 1) return 1;
     const ratio = Math.max(0, Math.min(1, Number(level) / 20)); // One centralized reliability curve.
-    return TARGET_CHANCE_MIN + (TARGET_CHANCE_MAX - TARGET_CHANCE_MIN) * ratio;
+    const perkBonus = (window.PerkSystem?.rank('alchemy', 'increasePrecision') || 0) * 0.03; // Increase Precision perk.
+    return Math.min(0.99, TARGET_CHANCE_MIN + (TARGET_CHANCE_MAX - TARGET_CHANCE_MIN) * ratio + perkBonus);
   }
   function setTargetRecipe(recipeId) { targetedRecipeId = recipeId && discoveredRecipes.has(recipeId) && RECIPE_DEFS[recipeId] ? recipeId : null; renderPanel(); return targetedRecipeId; }
-  function chooseOutcome(outcomes, targetId = targetedRecipeId, random = deps?.random || window.GameRandom?.random || Math.random) {
+  function chooseOutcome(outcomes, targetId = targetedRecipeId, random = deps?.random || window.GameRandom?.random || Math.random, levelOverride = null) {
     if (!outcomes.length) return null;
     const target = outcomes.find(outcome => outcome.recipeId === targetId); // Produce target only when ingredients allow it.
     if (!target) return outcomes[Math.floor(random() * outcomes.length)];
-    if (outcomes.length === 1 || random() < targetingProbability(alchemyLevel(), outcomes.length)) return target;
+    if (outcomes.length === 1 || random() < targetingProbability(levelOverride ?? alchemyLevel(), outcomes.length)) return target;
     const alternatives = outcomes.filter(outcome => outcome.recipeId !== target.recipeId); // Failed targeting still brews.
     return alternatives[Math.floor(random() * alternatives.length)];
+  }
+  // Empower Flasks / Empower Healing Potions and Cures / Empower Buff Potions —
+  // each scales both the applied magnitude (here) and, for Flasks/Healing &
+  // Cures, the batch size a single brew yields (see batchCountFor below).
+  function empowerRankFor(definition) {
+    const isFlask = definition.useMode === 'throw';
+    const isHealingCure = definition.application === 'restoreHealth' || definition.application === 'cleanseFamily' || definition.application === 'cleanseTag';
+    const isBuff = definition.application === 'buff' || definition.application === 'narcotic';
+    const perkId = isFlask ? 'empowerFlasks' : isHealingCure ? 'empowerHealingCures' : isBuff ? 'empowerBuffPotions' : null;
+    return perkId ? (window.PerkSystem?.rank('alchemy', perkId) || 0) : 0;
+  }
+  function empowerFactor(definition) { return 1 + empowerRankFor(definition) * 0.15; }
+  // Every potion/flask recipe now brews a base batch (recipe.baseBatch, most
+  // commonly 2 for medicine potions and flasks) instead of a single item.
+  // Empower Flasks/Empower Healing Potions and Cures each further multiply
+  // that batch: rank 1 doubles it, rank 2 triples it.
+  function batchCountFor(recipeId) {
+    const definition = RECIPE_DEFS[recipeId];
+    if (!definition) return 1;
+    const isFlask = definition.useMode === 'throw';
+    const isHealingCure = definition.application === 'restoreHealth' || definition.application === 'cleanseFamily' || definition.application === 'cleanseTag';
+    const rank = isFlask ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : isHealingCure ? (window.PerkSystem?.rank('alchemy', 'empowerHealingCures') || 0) : 0;
+    const batchMultiplier = 1 + Math.min(2, rank); // rank0 = base, rank1 = double, rank2 = triple.
+    return Math.max(1, Math.round((definition.baseBatch || 1) * batchMultiplier));
   }
   function discoverRecipe(recipeId, reason = 'discovered recipe') {
     if (!RECIPE_DEFS[recipeId] || discoveredRecipes.has(recipeId)) return false;
@@ -241,23 +266,38 @@
     const outcomes = enumerateRecipes(keys); // Shared runtime/UI/compatibility enumerator.
     if (!outcomes.length) return { ok: false, message: 'These ingredients have no valid mixed-source reaction.', consumed: [], outcomes };
     const target = options.targetRecipeId ?? targetedRecipeId; // Optional intentional recipe.
-    const chosen = chooseOutcome(outcomes, target, options.random); // Always a valid defined recipe.
+    const targetLevel = options.targetAlchemyLevel ?? alchemyLevel(); // Herbalist caps this away from a real Alchemy Table; potency below stays at the real level.
+    const chosen = chooseOutcome(outcomes, target, options.random, targetLevel); // Always a valid defined recipe.
     const tier = potencyTierForLevel(options.alchemyLevel ?? alchemyLevel()); // Potency fixed at creation.
     keys.forEach(key => { deps.inventory[key]--; deps.clampInventoryStack?.(key); });
     const itemKey = ensureRecipeItemDef(chosen.recipeId, tier, keys); // One recipe per result.
-    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + 1);
+    const batch = batchCountFor(chosen.recipeId); // Base batch (see recipe.baseBatch), scaled by Empower Flasks/Healing & Cures.
+    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + batch);
     const discovered = discoverRecipe(chosen.recipeId, 'brewed new recipe'); // One-time discovery XP.
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
     if (target && chosen.recipeId === target) window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyTarget || 5, 'targeted recipe');
-    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(options.alchemyLevel ?? alchemyLevel(), outcomes.length) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
+    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes.length) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
     document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: 'brew', recipeId: chosen.recipeId, itemKey } }));
-    return { ok: true, message: `⚗️ Brewed ${RECIPE_DEFS[chosen.recipeId].label}${discovered ? ' — new reaction discovered!' : ''}`, consumed: keys, recipeId: chosen.recipeId, itemKey, potencyTier: tier, outcomes };
+    return { ok: true, message: `⚗️ Brewed ${batch > 1 ? `${batch}× ` : ''}${RECIPE_DEFS[chosen.recipeId].label}${discovered ? ' — new reaction discovered!' : ''}`, consumed: keys, recipeId: chosen.recipeId, itemKey, potencyTier: tier, batch, outcomes };
   }
-  function brew() { const result = brewFrom(selectedReagents); if (result.ok) selectedReagents = []; deps?.refreshItemScroll?.(); return result; } // Existing table adapter.
+  let campfireBrewing = false; // Set while the Alchemy panel was opened via the Herbalist campfire flow.
+  function setCampfireBrewing(active) { campfireBrewing = !!active; }
+  function herbalistPrecisionFraction() {
+    const rank = window.PerkSystem?.rank('alchemy', 'herbalist') || 0;
+    return Math.max(0, Math.min(1, rank * 0.2)); // Rank 1-5 = 20%-100% of normal precision.
+  }
+  function brew() {
+    const brewOptions = campfireBrewing ? { targetAlchemyLevel: alchemyLevel() * herbalistPrecisionFraction() } : {};
+    const result = brewFrom(selectedReagents, brewOptions);
+    if (result.ok) selectedReagents = [];
+    deps?.refreshItemScroll?.();
+    return result;
+  } // Existing table adapter; also used by the campfire Herbalist flow via setCampfireBrewing.
   function playerEntity() { return deps?.getPlayer?.() || window.Combat?.deps?.player || null; }
   function addTimedEffect(definition, factor, tier = 0) {
     const now = performance.now() / 1000; // Absolute runtime expiry basis.
-    const durationS = definition.durationS || ELEMENT_DURATION_S[definition.traits?.magnetism] || 60; // Shared elemental duration.
+    const durationPerkRank = window.PerkSystem?.rank('alchemy', 'increasePotionDuration') || 0; // Increase Potion Duration perk.
+    const durationS = (definition.durationS || ELEMENT_DURATION_S[definition.traits?.magnetism] || 60) * (1 + durationPerkRank * 0.15); // Shared elemental duration.
     const effect = { recipeId: definition.id, key: definition.id, label: definition.label, icon: definition.icon, kind: 'boon', stat: definition.stat, secondaryStat: definition.secondaryStat, magnitude: (Number(definition.magnitude) || 0) * factor, durationS, expiresAt: now + durationS, potencyTier: tier }; // HUD/query payload.
     const existing = activeEffects.find(entry => entry.recipeId === definition.id); // Refresh same buff.
     if (existing) Object.assign(existing, effect); else activeEffects.push(effect);
@@ -266,6 +306,7 @@
   function applyRecipeToEntity(recipeId, factor = 1, entity = playerEntity(), options = {}) {
     const definition = RECIPE_DEFS[recipeId]; // Authoritative effect record.
     if (!definition || !entity || !(factor > 0)) return { ok: false, message: 'That alchemical reaction cannot be applied.' };
+    factor *= empowerFactor(definition); // Empower Flasks/Healing & Cures/Buff Potions.
     const amount = (Number(definition.amount) || 0) * factor; // Instant magnitude.
     if (definition.application === 'restoreHealth') entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount);
     else if (definition.application === 'restoreStamina') {
@@ -418,7 +459,7 @@
     TRAIT_CATEGORIES,HUMOURS,DRIVES,MAGNETISMS,ELEMENT_DURATION_S,RAW_POTENCY_FACTOR,POTENCY_TIER_MULTIPLIERS,DEFAULT_SPLASH_RADIUS_TILES,FAMILY_ORDER,
     RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,POTION_ITEMS,
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canAddReagent,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
-    brewFrom,brew,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
+    brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
     itemKeyForRecipe,parseBrewedItemKey,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,

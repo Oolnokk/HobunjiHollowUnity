@@ -167,7 +167,7 @@
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), category: 'quickAttack', afflictionBonuses: effects.afflictions });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
             lastName = c.def.label;

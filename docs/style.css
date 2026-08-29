@@ -896,8 +896,26 @@
 
     /* ── Outer arch (tool dial + item dial) ─────────────────── */
     /* R = 10 col (pushed out from 7.8 to clear the action arch). Five evenly
-       spaced controls run clockwise from 9:00 to 12:00: put away, weapon,
-       tool, item, mount. */
+       spaced controls run clockwise from 9:00 to 12:00: weapon, tool, item,
+       mount, utility menu. The put-away button that used to lead this ring
+       is gone — dequip now happens by tapping toolBtn/itemBtn while a
+       tool/item is already out (see their pointerup handlers in game.js) —
+       and weapon/tool/item/mount each shifted one step counter-clockwise
+       (toward 9:00) to fill the gap that left, with the utility menu taking
+       the fifth slot. IMPORTANT: cooking-ui.css loads after this file and
+       unconditionally overrides all five of these buttons' actual right/
+       bottom values with its own tighter, already on-screen-tested cadence
+       — the angles below only apply if that override is ever missing, so
+       treat them as a documented fallback, not the live layout (see that
+       file's own comment for why, and why #btnUtilityMenu needed an entry
+       added there too). Melee auto-target keeps its own original, unrelated
+       12:45 position past 12:00, untouched by any of this and NOT covered
+       by the override — cos() goes negative that far past 12:00, pushing
+       the button out past the container's right edge rather than in from
+       it, which is only tolerable there because it's conditional (hidden
+       outside melee combat); an always-visible button that far out would
+       be genuinely invisible, which is exactly the bug this whole comment
+       exists to flag if anyone's tempted to move something else out there. */
     #toolSelect {
       --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
@@ -906,8 +924,8 @@
     #itemSelect { display: none !important; }
     #toolBtn {
       position: absolute;
-      right:  calc(-1*cos(135deg)*var(--ar2));
-      bottom: calc(   sin(135deg)*var(--ar2));
+      right:  calc(-1*cos(157.5deg)*var(--ar2));
+      bottom: calc(   sin(157.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -924,8 +942,8 @@
     .ts-lbl  { display: none; }
     #itemBtn {
       position: absolute;
-      right:  calc(-1*cos(112.5deg)*var(--ar2));
-      bottom: calc(   sin(112.5deg)*var(--ar2));
+      right:  calc(-1*cos(135deg)*var(--ar2));
+      bottom: calc(   sin(135deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -938,13 +956,15 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
-    /* ── Put-away + weapon controls: first two positions on the outer ring.
-       Put-away preserves assignments/selections; weapon swaps melee/ranged.
-       Always visible — desktop keyboard/gamepad share the same
+    /* ── Weapon quick-switch: first (leftmost, 9:00) position on the outer
+       ring now that put-away is gone. Enters melee from a normal tool, then
+       swaps directly between the dedicated melee/ranged slots. Always
+       visible — desktop keyboard/gamepad share the same
        toggleQuickWeaponSwitch() via the "weaponSwitch" input action. ── */
-    #btnUnequipHeld,
     #btnWeaponSwitch {
       position: absolute;
+      right:  calc(-1*cos(180deg)*var(--ar2));
+      bottom: calc(   sin(180deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -956,27 +976,14 @@
       transition: transform 0.08s; overflow: hidden;
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
-    #btnUnequipHeld {
-      right:  calc(-1*cos(180deg)*var(--ar2));
-      bottom: calc(   sin(180deg)*var(--ar2));
-      background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.34);
-    }
-    #btnWeaponSwitch {
-      right:  calc(-1*cos(157.5deg)*var(--ar2));
-      bottom: calc(   sin(157.5deg)*var(--ar2));
-      background: rgba(255,120,120,0.09); border-color: rgba(255,120,120,0.46);
-    }
-    #btnUnequipHeld:active,
     #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
-    #btnUnequipHeld .abt-icon,
     #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
-    #btnUnequipHeld.active { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.72); }
     #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
-    /* ── Call/dismiss mount: final outer-ring position at 12:00. ── */
+    /* ── Call/dismiss mount. ── */
     #btnCallMount {
       position: absolute;
-      right:  calc(-1*cos(90deg)*var(--ar2));
-      bottom: calc(   sin(90deg)*var(--ar2));
+      right:  calc(-1*cos(112.5deg)*var(--ar2));
+      bottom: calc(   sin(112.5deg)*var(--ar2));
       transform: translate(50%, 50%);
       width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
@@ -991,12 +998,13 @@
     #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
     #btnCallMount .abt-icon { font-size: 0.85em; }
     #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
-    /* ── Melee auto-target: sixth outer-ring position, one step further
-       clockwise past Call Mount (12:00 → 12:45). Slightly larger than its
-       ring-mates per spec; hidden via .abt-hidden (see updateMovement's
-       weaponEngaged toggle) whenever melee isn't out. Base/gray = no
-       targetable hostile nearby; .abt-target-ready = one's in view (still
-       off); .active = actually engaged. ── */
+    /* ── Melee auto-target: sits one step past 12:00 (see the outer-arch
+       comment above for why this — and only this — button lives past the
+       safe edge). Slightly larger than its ring-mates per spec; hidden via
+       .abt-hidden (see updateMovement's weaponEngaged toggle) whenever
+       melee isn't out. Base/gray = no targetable hostile nearby;
+       .abt-target-ready = one's in view (still off); .active = actually
+       engaged. ── */
     #btnMeleeAutoTarget {
       position: absolute;
       right:  calc(-1*cos(67.5deg)*var(--ar2));
@@ -1023,6 +1031,35 @@
       background: rgba(255,80,80,0.36); border-color: rgba(255,80,80,0.9);
       color: #fff;
     }
+    /* ── Utility menu: final (12:00) outer-ring position — mount's old spot.
+       This does NOT sit past 12:00 the way melee auto-target does (see the
+       outer-arch comment above), but 90deg alone still isn't enough margin
+       on a real phone: cos(90deg) is 0, so there's no inward offset left to
+       counteract the button's own translate(50%,50%) recentering, and it
+       renders with its right half already past the screen edge. The value
+       here is a fallback only — cooking-ui.css's override (loaded after
+       this file, wins the cascade) is what actually keeps it on-screen; see
+       that file's comment. Hold to open the utilities wheel (Return to
+       Camp/Farm, quick-select a Campfire Kit — see game.js's
+       _openUtilitiesArc), drag within it to pick, release to commit; a
+       plain tap does nothing, same as the desktop 'c' key it mirrors. ── */
+    #btnUtilityMenu {
+      position: absolute;
+      right:  calc(-1*cos(90deg)*var(--ar2));
+      bottom: calc(   sin(90deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+      border-radius: 50%;
+      background: rgba(196,160,255,0.09); border: 1.5px solid rgba(196,160,255,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnUtilityMenu:active { transform: translate(50%,50%) scale(0.92); }
+    #btnUtilityMenu .abt-icon { font-size: 0.85em; }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
@@ -2689,6 +2726,46 @@
       .skill-row { flex-wrap: wrap; }
       .skill-bar-wrap { order: 4; width: calc(100% - 40px); margin-left: 22px; }
     }
+
+    /* ── Perk trees (Progress pane) ──────────────────────── */
+    .perk-section-header { margin-top: 4px; }
+    .perk-trees { display: flex; flex-direction: column; gap: 10px; }
+    .perk-tree { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .perk-tree-head {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      padding: 7px 9px; background: rgba(255,255,255,0.03); border: none; cursor: pointer;
+      color: var(--text); font: inherit; text-align: left;
+    }
+    .perk-tree-head .skill-icon { font-size: 14px; }
+    .perk-tree-title { flex: 1; font-size: 12px; }
+    .perk-tree-points { font-size: 10px; color: var(--accent); flex-shrink: 0; }
+    .perk-tree-caret { font-size: 9px; color: var(--muted); transition: transform 0.2s; flex-shrink: 0; }
+    .perk-tree.open .perk-tree-caret { transform: rotate(90deg); }
+    .perk-tree-body { display: none; flex-direction: column; gap: 10px; padding: 6px 8px 8px; }
+    .perk-tree.open .perk-tree-body { display: flex; }
+    .perk-tier { display: flex; flex-direction: column; gap: 4px; }
+    .perk-tier-label {
+      font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+      padding-bottom: 2px; border-bottom: 1px dashed var(--border);
+    }
+    .perk-tier.locked .perk-tier-label { color: var(--accent); opacity: 0.8; }
+    .perk-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 6px; border-radius: 6px; background: rgba(255,255,255,0.02);
+    }
+    .perk-row.maxed { background: rgba(249,226,138,0.08); }
+    .perk-row.locked { opacity: 0.4; }
+    .perk-copy { flex: 1; min-width: 0; }
+    .perk-name { font-size: 11px; color: var(--text); }
+    .perk-desc { margin-top: 1px; color: var(--muted); font-size: 9px; line-height: 1.3; }
+    .perk-rank { font-size: 10px; color: var(--muted); min-width: 30px; text-align: center; flex-shrink: 0; }
+    .perk-btn {
+      flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px;
+      border: 1px solid var(--border); background: var(--glass); color: var(--text);
+      font-size: 13px; line-height: 1; cursor: pointer;
+    }
+    .perk-btn:disabled { opacity: 0.3; cursor: default; }
+    .perk-tree-reset { align-self: flex-end; font-size: 9px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; cursor: pointer; }
 
     /* ── Farm pane: identity/progression hub tied to the world save ──── */
     .farm-pane {

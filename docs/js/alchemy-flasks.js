@@ -140,7 +140,8 @@
     const tile = deps.TILE || 64; // Three-unit to gameplay-pixel conversion.
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
-    const radiusTiles = projectile.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
+    const empowerFlasksRank = window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0; // Widens the splash alongside its magnitude/batch bonuses.
+    const radiusTiles = (projectile.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + empowerFlasksRank * 0.1); // Authored radius.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
     let affected = 0; // Impact diagnostic count.
     entities.forEach(entity => {

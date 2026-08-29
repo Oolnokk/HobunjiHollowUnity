@@ -95,24 +95,39 @@
 }
 
 /* Shared post-base HUD override: preserve the compact 10-degree cadence while
-   shifting the whole five-button outer arch 10 degrees counterclockwise. */
-#btnUnequipHeld {
+   shifting the whole outer arch 10 degrees counterclockwise. This is the
+   ring's real, on-screen-tested positioning — it loads after style.css and
+   wins the cascade for every ID below, so style.css's own (much more
+   widely-spaced, 22.5-degree) values for these same buttons never actually
+   apply; treat style.css as a fallback-only baseline for these five, not
+   the live layout. Originally covered put-away/weapon/tool/item/mount; now
+   that put-away is gone, weapon/tool/item/mount each kept sliding back one
+   slot into the gap, and the utility menu fills the resulting fifth slot —
+   it needs an entry here for the same reason the other four do: at
+   style.css's own un-overridden 90-degree position it sits close enough to
+   the container's corner (see that file's #btnUtilityMenu comment on why
+   cos() near 90deg leaves almost nothing for the button to be inset by)
+   that it went visibly off-screen on a real phone. Melee auto-target is
+   the one control that was never part of this cadence, on either side of
+   the put-away removal — it keeps its own original wider-spaced position
+   in style.css, past 12:00, unrelated to any of this. */
+#btnWeaponSwitch {
   right: calc(-1*cos(165deg)*var(--ar2));
   bottom: calc(sin(165deg)*var(--ar2));
 }
-#btnWeaponSwitch {
+#toolBtn {
   right: calc(-1*cos(155deg)*var(--ar2));
   bottom: calc(sin(155deg)*var(--ar2));
 }
-#toolBtn {
+#itemBtn {
   right: calc(-1*cos(145deg)*var(--ar2));
   bottom: calc(sin(145deg)*var(--ar2));
 }
-#itemBtn {
+#btnCallMount {
   right: calc(-1*cos(135deg)*var(--ar2));
   bottom: calc(sin(135deg)*var(--ar2));
 }
-#btnCallMount {
+#btnUtilityMenu {
   right: calc(-1*cos(125deg)*var(--ar2));
   bottom: calc(sin(125deg)*var(--ar2));
 }

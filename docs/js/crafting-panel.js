@@ -38,14 +38,17 @@
     });
   }
 
+  // Blueprints are a permanent, reusable unlock (bought once from the
+  // carpenter — see FURNITURE_BLUEPRINT_CATALOG's price, which is priced
+  // higher than the old one-build-per-copy scheme to account for that) —
+  // building from one only ever consumes Wood/Stone, never the blueprint
+  // itself.
   function craftFurnitureFromBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
     if (!bp) return;
     if ((deps.inventory[bp.key] || 0) < 1) { deps.showToast('No blueprint to build from.', false); return; }
     if (ownedWoodCount() < bp.craftCost.wood) { deps.showToast(`Not enough wood — need ${bp.craftCost.wood} (Pine/Shadewood Log).`, false); return; }
     if ((deps.inventory.stone || 0) < bp.craftCost.stone) { deps.showToast(`Not enough stone — need ${bp.craftCost.stone}.`, false); return; }
-    deps.inventory[bp.key] -= 1;
-    deps.clampInventoryStack(bp.key);
     consumeWood(bp.craftCost.wood);
     deps.inventory.stone -= bp.craftCost.stone;
     deps.clampInventoryStack('stone');
@@ -73,7 +76,6 @@
     const haveWood = ownedWoodCount();
     const haveStone = deps.inventory.stone || 0;
     owned.forEach(bp => {
-      const ownedCount = deps.inventory[bp.key] || 0;
       const canBuild = haveWood >= bp.craftCost.wood && haveStone >= bp.craftCost.stone;
       const row = document.createElement('div');
       row.className = 'shop-row';
@@ -81,7 +83,7 @@
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)}</div>
-          <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — Blueprints owned: ${ownedCount}</div>
+          <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — blueprint known, build as many as you like</div>
         </div>
         <button class="shop-buy-btn" data-bp="${bp.key}" ${canBuild ? '' : 'disabled'}>Build</button>
       `;

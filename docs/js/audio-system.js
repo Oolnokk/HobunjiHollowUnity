@@ -10,7 +10,7 @@
   // markAudioUrlFailed, audioUrlFailed) are passed in via deps instead.
   let deps = null;
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
-  const combatSfxPreloads = new Map(); // Retains rapid melee cues so mobile attacks do not wait on network/decode startup.
+  const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
@@ -275,412 +275,54 @@
 
   function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
 
+  const COMBAT_SFX_POOL_SIZE = 2;
+  const COMBAT_SFX_MAX_START_DELAY_MS = 140;
+
   function preloadConfiguredCombatSfx() {
     if (typeof Audio !== 'function') return;
     for (const [key, cfgEntry] of Object.entries(combatSfxConfig())) {
       if (!cfgEntry?.preload || !cfgEntry.url || combatSfxPreloads.has(cfgEntry.url)) continue;
-      const snd = new Audio(cfgEntry.url);
-      snd.preload = 'auto';
-      snd.dataset.combatSfxKey = key;
-      snd.load();
-      combatSfxPreloads.set(cfgEntry.url, snd);
+      const pool = [];
+      for (let i = 0; i < COMBAT_SFX_POOL_SIZE; i++) {
+        const snd = new Audio(cfgEntry.url);
+        snd.preload = 'auto';
+        snd.dataset.combatSfxKey = key;
+        snd.dataset.combatPoolIndex = String(i);
+        snd.load();
+        pool.push(snd);
+      }
+      combatSfxPreloads.set(cfgEntry.url, pool);
     }
   }
 
-  // One-shot combat SFX player (weapon swing/impact, block, bark, claw hit) —
-  // simpler than playFootstepSfx since these always have a real audio
-  // file staged (no procedural WebAudio fallback needed).
-  function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
-    const audioCfg = gameAudioConfig();
-    if (audioCfg.enabled === false || !cfgEntry?.url) return;
-    if (combatSfxConfig().enabled === false) return;
-    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-      * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
-    if (volume <= 0.002) return;
-    const preloaded = combatSfxPreloads.get(cfgEntry.url);
-    const snd = preloaded?.cloneNode?.(true) || new Audio(cfgEntry.url);
-    const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
-    snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
-    playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
+  function acquireCombatSfxAudio(url) {
+    const pool = combatSfxPreloads.get(url);
+    if (!pool?.length) return null;
+    const available = pool.find(snd => snd.paused || snd.ended);
+    const snd = available || pool.reduce((oldest, candidate) =>
+      (candidate._combatRequestedAt || 0) < (oldest._combatRequestedAt || 0) ? candidate : oldest);
+    if (!snd.paused) snd.pause();
+    try { snd.currentTime = 0; } catch (_) {}
+    snd._combatRequestedAt = performance.now();
+    return snd;
   }
 
-  function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
-
-  function preloadConfiguredObjectSfx() {
-    for (const [key, cfgEntry] of Object.entries(objectSfxConfig())) {
-      if (!cfgEntry?.preload || !cfgEntry.url || objectSfxPreloads.has(cfgEntry.url)) continue;
-      const snd = new Audio(cfgEntry.url);
-      snd.preload = 'auto';
-      snd.dataset.objectSfxKey = key;
-      snd.load();
-      objectSfxPreloads.set(cfgEntry.url, snd);
-    }
-  }
-
-  function createObjectSfxAudio(url) {
-    const preloaded = objectSfxPreloads.get(url); // Used to avoid a fresh network/decode start on the first tool strike.
-    return preloaded ? preloaded.cloneNode(true) : new Audio(url);
-  }
-
-  // Generic one-shot player for object/machine/UI interaction sfx (see
-  // audio.objectSfx in scratchbones-config.js and
-  // docs/assets/audio/sfx/README.md) — like playOneShotSfx, but
-  // fallback-aware: every cfgEntry names a real recording (cfgEntry.url,
-  // not committed yet — a human needs to source it) *and* a placeholder
-  // that's played instead whenever the real file is missing/fails to
-  // load — either a single generated cfgEntry.placeholderUrl (see
-  // scripts/generate-placeholder-sfx.js), or a cfgEntry.placeholderUrls
-  // array to pick a random one from (several processing sfx reuse the
-  // real grasstep/gravelstep/waterstep footstep recordings this way,
-  // pitched/volumed for the moment — a real recording doing double duty
-  // reads better than a from-scratch synth attempt). cfgEntry.pitch is
-  // an optional baseline playback-rate multiplier on top of the
-  // `pitch` param, e.g. for pitching a footstep-derived placeholder
-  // down into something heavier. Failures are remembered via the same
-  // _audioFailedUrls/markAudioUrlFailed/audioUrlFailed bookkeeping the
-  // bgm system already uses (see deps), so later calls for the same cue
-  // go straight to the placeholder instead of re-attempting (and
-  // re-404ing) the missing real file every time.
-  // A plain <audio>.volume tops out at 1.0 (its natural recorded
-  // loudness) no matter what — there's no way to make a quiet source
-  // clip louder than that through the element alone. cfgEntry.gainBoost
-  // (a multiplier > 1, e.g. 3 for "300% volume") routes playback
-  // through the shared footstep AudioContext's GainNode instead, whose
-  // gain can genuinely exceed 1.0 and amplify the source — same trick
-  // playHeavyFilteredClip uses for a heavy landing thud, minus the
-  // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
-  // is unavailable or gainBoost isn't set.
-  function playSfxAudioElement(snd, volume, gainBoost) {
-    if (!(gainBoost > 1)) {
-      snd.volume = Math.min(1, volume);
-      snd.play().catch(() => {});
-      return;
-    }
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) throw new Error('no AudioContext');
-      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createMediaElementSource(snd);
-      const gain = ctx.createGain();
-      gain.gain.value = Math.max(0, volume * gainBoost);
-      source.connect(gain).connect(ctx.destination);
-      snd.play().catch(() => {});
-    } catch (e) {
-      snd.volume = Math.min(1, volume);
-      snd.play().catch(() => {});
-    }
-  }
-
-  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
-    const audioCfg = gameAudioConfig();
-    if (audioCfg.enabled === false || !cfgEntry) return;
-    if (objectSfxConfig().enabled === false) return;
-    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-      * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
-    if (volume <= 0.002) return;
-    const gainBoost = Number(cfgEntry.gainBoost) || 1;
-    const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
-      ? cfgEntry.placeholderUrls[Math.floor(Math.random() * cfgEntry.placeholderUrls.length)]
-      : cfgEntry.placeholderUrl;
-    const hasPlaceholder = !!(cfgEntry.placeholderUrl || cfgEntry.placeholderUrls?.length);
-    const preferReal = cfgEntry.url && !deps.audioUrlFailed(cfgEntry.url);
-    const url = preferReal ? cfgEntry.url : pickPlaceholder();
-    if (!url) return;
-    const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
-    const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
-    const snd = createObjectSfxAudio(url);
-    snd.playbackRate = rate;
-    if (preferReal && hasPlaceholder) {
-      snd.addEventListener('error', () => {
-        if (!deps.isRealMediaError(snd)) return;
-        deps.markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
-        const fallback = new Audio(pickPlaceholder());
-        fallback.playbackRate = rate;
-        playSfxAudioElement(fallback, volume, gainBoost);
-      }, { once: true });
-    }
-    playSfxAudioElement(snd, volume, gainBoost);
-  }
-
-  function playObjectSfxKey(key, volumeScale = 1, pitch = 1) {
-    const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
-    const preloaded = cfgEntry?.url ? objectSfxPreloads.get(cfgEntry.url) : null; // Used by the mobile-readable debug snapshot below.
-    lastObjectSfxKeyDebug = {
-      key,
-      found: !!cfgEntry,
-      url: cfgEntry?.url || null,
-      preloaded: !!preloaded,
-      readyState: preloaded?.readyState ?? null,
-      atMs: Math.round(performance.now()),
+  // A mobile browser may accept play() but delay it until much later. That
+  // stale request is worse than a dropped transient cue because several of
+  // them erupt together after the fight has moved on. Pooled combat voices
+  // therefore get a strict start deadline and are recycled instead of queued.
+  function playPooledCombatSfx(snd, volume) {
+    const requestId = (snd._combatRequestId || 0) + 1;
+    snd._combatRequestId = requestId;
+    snd.volume = Math.min(1, volume);
+    let started = false;
+    const markStarted = () => {
+      if (snd._combatRequestId !== requestId) return;
+      started = true;
+      if (performance.now() - snd._combatRequestedAt <= COMBAT_SFX_MAX_START_DELAY_MS) return;
+      snd.pause();
+      try { snd.currentTime = 0; } catch (_) {}
     };
-    if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
-  }
-
-  function objectSfxDebugSnapshot() {
-    return {
-      last: lastObjectSfxKeyDebug ? { ...lastObjectSfxKeyDebug } : null,
-      preloads: [...objectSfxPreloads.entries()].map(([url, snd]) => ({
-        key: snd.dataset.objectSfxKey || '?',
-        url,
-        readyState: snd.readyState,
-        networkState: snd.networkState,
-      })),
-    };
-  }
-
-  // Distance falloff for a creature-originated combat sound (bark/claw
-  // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
-  function playCreatureSfxAt(c, cfgEntry, pitch) {
-    if (!cfgEntry || c.areaId !== deps.getCurrentArea()) return;
-    const distToPlayer = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    // Linear, not squared — squared falloff made anything past ~30% of
-    // earshot drop to near-silence, which was most of the usable range.
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    playOneShotSfx(cfgEntry, falloff, pitch);
-  }
-
-  // Species-keyed pitch lets every creature reuse the same bark asset
-  // (only one exists today) while still sounding distinct — alpha
-  // gar-wolf pitched down, dabinggi-hound pitched up, relative to the
-  // plain gar-wolf's neutral pitch. Future creatures/attacks can add
-  // their own url+species entry without touching this function.
-  function playCreatureBark(c) {
-    const cfg = combatSfxConfig().creatureBark;
-    const speciesCfg = cfg?.species?.[c.creatureKey];
-    playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
-  }
-
-  const ANIMAL_VOICE_POOLS = Object.freeze({
-    'dabinggi-hound': Object.freeze(['assets/audio/sfx/sfx_dabinggi-hound1.ogg', 'assets/audio/sfx/sfx_dabinggi-hound2.ogg']),
-    drenkirra: Object.freeze(['assets/audio/sfx/sfx_drenkirra1.ogg', 'assets/audio/sfx/sfx_drenkirra2.ogg']),
-    'gar-wolf': Object.freeze(['assets/audio/sfx/sfx_gar-wolf1.ogg', 'assets/audio/sfx/sfx_gar-wolf2.ogg']),
-    grehlr: Object.freeze(['assets/audio/sfx/sfx_grehlr1.ogg', 'assets/audio/sfx/sfx_grehlr2.ogg']),
-    nelk: Object.freeze(['assets/audio/sfx/sfx_nelk1.ogg']),
-    uumkaoii: Object.freeze(["assets/audio/sfx/sfx_uumkao'ii1.ogg", "assets/audio/sfx/sfx_uumkao'ii2.ogg"]),
-  });
-
-  function animalVoiceSpeciesKey(c) {
-    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
-    if (raw.includes('dabinggi')) return 'dabinggi-hound';
-    if (raw.includes('gar-wolf')) return 'gar-wolf';
-    if (raw.includes('grehlr')) return 'grehlr';
-    if (raw.includes('drenkirra')) return 'drenkirra';
-    if (raw.includes('uumkao')) return 'uumkaoii';
-    if (raw.includes('nelk')) return 'nelk';
-    return raw;
-  }
-
-  function hasAnimalVoice(c) { return !!ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]?.length; }
-
-  function preloadAnimalVoices() {
-    if (typeof Audio !== 'function') return;
-    for (const urls of Object.values(ANIMAL_VOICE_POOLS)) for (const url of urls) {
-      if (animalVoicePreloads.has(url)) continue;
-      const snd = new Audio();
-      snd.preload = 'auto';
-      snd.src = url;
-      // Assigning src with preload=auto is enough to begin browser fetching;
-      // avoid an extra load() restart while startup is also priming tool SFX.
-      animalVoicePreloads.set(url, snd);
-    }
-  }
-
-  function disablePitchPreservation(snd) {
-    try { snd.preservesPitch = false; } catch (_) {}
-    try { snd.mozPreservesPitch = false; } catch (_) {}
-    try { snd.webkitPreservesPitch = false; } catch (_) {}
-  }
-
-  // Low-level renderer only: the vocal coordinator decides what a call
-  // means and when each utterance is due; AudioSystem resolves the asset,
-  // distance mix, tempo/pitch playback, and browser Audio lifecycle.
-  function playAnimalVoiceUtterance(c, opts = {}) {
-    const pool = ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
-    if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
-    const audioCfg = gameAudioConfig();
-    if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
-    const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 12);
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
-    if (distance > earshot) return false;
-    const url = pool[Math.floor(Math.random() * pool.length)];
-    const preload = animalVoicePreloads.get(url);
-    const snd = preload?.cloneNode?.(true) || new Audio(url);
-    disablePitchPreservation(snd);
-    const falloff = Math.max(0, 1 - distance / earshot);
-    const baseVolume = Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : 0.7;
-    snd.volume = Math.max(0, Math.min(1, baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
-    if (snd.volume <= 0.002) return false;
-    const rate = Math.max(0.35, Math.min(2, Number(opts.rate) || 1));
-    snd.playbackRate = rate;
-    const contour = Array.isArray(opts.rateContour)
-      ? opts.rateContour.map(v => Math.max(0.35, Math.min(2, Number(v) || rate))) : null;
-    if (contour?.length >= 2) {
-      const segmentMs = 260;
-      contour.slice(1).forEach((nextRate, i) => setTimeout(() => {
-        if (!snd.ended && !snd.paused) snd.playbackRate = nextRate;
-      }, segmentMs * (i + 1)));
-    }
-    let startNotified = false; // Used by both `playing` and play() resolution so mobile/browser event differences still emit exactly one visual beat.
-    const notifyStarted = () => {
-      if (startNotified) return;
-      startNotified = true;
-      opts.onStarted?.();
-    };
-    snd.addEventListener?.('playing', notifyStarted, { once: true });
+    snd.addEventListener?.('playing', markStarted, { once: true });
     const playResult = snd.play();
-    if (playResult?.then) playResult.then(notifyStarted).catch(() => {});
-    return true;
-  }
-
-  // Treasure discovery is a player-facing alert, not a combat bark. It needs
-  // a little more reach and headroom than the ordinary creature sound: a
-  // companion can notice a site several tiles away, while the normal bark's
-  // nine-tile falloff would make that notification effectively silent at the
-  // exact range where the hint is useful. The gain boost is intentionally
-  // scoped to this cue so routine combat audio keeps its authored mix.
-  function playCreatureTreasureAlert(c) {
-    const cfg = combatSfxConfig().creatureBark;
-    if (!cfg || !deps || c?.areaId !== deps.getCurrentArea()) return;
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
-    const earshot = deps.TILE * 12;
-    if (distance > earshot) return;
-    const speciesCfg = cfg.species?.[c.creatureKey] || {};
-    const falloff = 0.42 + 0.58 * Math.max(0, 1 - distance / earshot);
-    const alertCfg = {
-      ...cfg,
-      ...speciesCfg,
-      volume: Math.min(1, (Number(cfg.volume) || 0.8) * 1.15),
-      gainBoost: Math.max(1.8, Number(cfg.gainBoost) || 1),
-    };
-    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1);
-  }
-
-  function playCreatureClawHit(c) {
-    playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
-  }
-
-  function recordCombatSfx(key, cfgEntry, detail = null) {
-    const preloaded = cfgEntry?.url ? combatSfxPreloads.get(cfgEntry.url) : null;
-    lastCombatSfxDebug = {
-      key, detail, url: cfgEntry?.url || null, preloaded: !!preloaded,
-      readyState: preloaded?.readyState ?? null, atMs: Math.round(performance.now()),
-    };
-  }
-
-  // Combo steps are zero-based and map exactly to swing files 1/2/3.
-  // Every other melee attack deliberately chooses one of the three anew.
-  function playWeaponSlashSfx(pitch, comboStep) {
-    const step = Number.isInteger(comboStep) && comboStep >= 0 && comboStep < 3
-      ? comboStep : Math.floor(Math.random() * 3);
-    const key = `weaponSwing${step + 1}`;
-    const cfgEntry = combatSfxConfig()[key];
-    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null });
-    playOneShotSfx(cfgEntry, 1, pitch);
-  }
-
-  // Sized impact sound for any WEAPON hit landing (player Combo/Quick Attack/
-  // Charged Breaker/Counter Shield riposte, or a bandit's own mirror of
-  // the same abilities) -- distinct from playCreatureClawHit, which
-  // stays wildlife-bite-only. tag is the attacker's own weapon dmgType
-  // ('sharp'/'blunt', already threaded through every one of those
-  // abilities' damageCreature/damagePlayer calls as dmgOpts.tag), not
-  // the target's -- "chosen based on the attacker's weapon" per design.
-  // Takes a plain x/y/areaId instead of a creature-shaped object so it
-  // works equally for a bandit attacker (which has all three already)
-  // and the player attacker (which has no .areaId field of its own --
-  // see combat-core.js's deps.getCurrentArea()). size is authored by the
-  // attack: combos use small/medium/large, while huge stays reserved for
-  // true heavy strikes and quick attacks that earned their condition bonus.
-  function playWeaponHitSfx(tag, x, y, areaId, pitch, size = 'medium') {
-    if (areaId !== deps.getCurrentArea()) return;
-    const normalizedSize = ['small', 'medium', 'large', 'huge'].includes(size) ? size : 'medium';
-    const family = tag === 'blunt' ? 'Blunt' : 'Sharp';
-    const key = `weaponHit${family}${normalizedSize[0].toUpperCase()}${normalizedSize.slice(1)}`;
-    const cfgEntry = combatSfxConfig()[key];
-    if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize });
-    playOneShotSfx(cfgEntry, falloff, pitch);
-  }
-
-  function playCounterShieldBlockSfx(x, y, areaId) {
-    if (areaId !== deps.getCurrentArea()) return;
-    const cfgEntry = combatSfxConfig().counterShieldBlock;
-    if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    recordCombatSfx('counterShieldBlock', cfgEntry, { block: true });
-    playOneShotSfx(cfgEntry, falloff);
-  }
-
-  function combatSfxDebugSnapshot() {
-    return {
-      last: lastCombatSfxDebug ? { ...lastCombatSfxDebug } : null,
-      preloads: [...combatSfxPreloads.entries()].map(([url, snd]) => ({
-        key: snd.dataset.combatSfxKey || '?', url,
-        readyState: snd.readyState, networkState: snd.networkState,
-      })),
-    };
-  }
-
-  // Beyond this distance from the player, a creature-originated sound
-  // (footstep/bark/claw hit/weapon hit) is inaudible. NPC/enemy footsteps
-  // pan hard left/right within FOOTSTEP_PAN_RANGE_PX — keeps them clearly
-  // directional without needing real spatial audio. Both are read
-  // externally by game.js's tickCreatureFootsteps/NPC walker class, since
-  // those compute their own falloff/pan before handing off to
-  // playFootstepSfx — exposed here (fixed TILE-derived values, resolved
-  // once init() has deps.TILE) rather than duplicated.
-  let FOOTSTEP_EARSHOT_PX = 0;
-  let FOOTSTEP_PAN_RANGE_PX = 0;
-  let FOOTSTEP_PLAYER_STRIDE_PX = 0;
-
-  function initDerivedConstants() {
-    FOOTSTEP_STRIDE_PX = deps.TILE * 0.45;
-    FOOTSTEP_EARSHOT_PX = deps.TILE * 9;
-    FOOTSTEP_PAN_RANGE_PX = deps.TILE * 5;
-    // The player moves much faster (px/s) than NPCs/creatures, so the same
-    // per-distance stride would trigger footsteps far more often in real
-    // time than it does for them — use a longer player-only stride so the
-    // cadence (not the tone) matches how often NPC footsteps land.
-    FOOTSTEP_PLAYER_STRIDE_PX = deps.TILE * 1.35;
-  }
-
-  window.AudioSystem = {
-    init(injectedDeps) {
-      init(injectedDeps);
-      initDerivedConstants();
-    },
-    gameAudioConfig,
-    footstepSurfaceKey,
-    footstepTileAt,
-    footstepAdvance,
-    playFootstepSfx,
-    playHeavyLandingSfx,
-    combatSfxConfig,
-    playOneShotSfx,
-    objectSfxConfig,
-    playObjectSfx,
-    playObjectSfxKey,
-    objectSfxDebugSnapshot,
-    playCreatureSfxAt,
-    playCreatureBark,
-    hasAnimalVoice,
-    playAnimalVoiceUtterance,
-    playCreatureTreasureAlert,
-    playCreatureClawHit,
-    playWeaponSlashSfx,
-    playWeaponHitSfx,
-    playCounterShieldBlockSfx,
-    combatSfxDebugSnapshot,
-    get FOOTSTEP_EARSHOT_PX() { return FOOTSTEP_EARSHOT_PX; },
-    get FOOTSTEP_PAN_RANGE_PX() { return FOOTSTEP_PAN_RANGE_PX; },
-    get FOOTSTEP_QUIET_SCALE() { return FOOTSTEP_QUIET_SCALE; },
-    get FOOTSTEP_PLAYER_STRIDE_PX() { return FOOTSTEP_PLAYER_STRIDE_PX; },
-  };
-})();
+    

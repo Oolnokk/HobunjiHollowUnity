@@ -19,6 +19,7 @@ const expectedAssets = [
   'sfx_sharp_hit_small.mp3', 'sfx_sharp_hit_medium.mp3', 'sfx_sharp_hit_large.ogg', 'sfx_sharp_hit_huge.mp3',
   'sfx_blunt_hit_small.mp3', 'sfx_blunt_hit_medium.mp3', 'sfx_blunt_hit_large.mp3', 'sfx_blunt_hit_huge.mp3',
   'sfx_block.mp3',
+  'sfx_arrow_hit.mp3',
 ];
 for (const file of expectedAssets) {
   assert(fs.existsSync(`docs/assets/audio/sfx/combat/${file}`), `missing combat asset ${file}`);
@@ -42,11 +43,13 @@ class FakeAudio {
     this.dataset = {};
     this.readyState = 4;
     this.networkState = 1;
+    this.paused = true;
+    this.ended = false;
   }
   load() { FakeAudio.loads++; }
-  cloneNode() { return new FakeAudio(this.src); }
+  pause() { this.paused = true; }
   addEventListener() {}
-  play() { FakeAudio.plays++; return Promise.resolve(); }
+  play() { FakeAudio.plays++; this.paused = false; return Promise.resolve(); }
 }
 
 const combatSfx = {
@@ -56,10 +59,12 @@ const combatSfx = {
   weaponSwing3: { url: 'swing3.mp3', volume: 1, preload: true },
   weaponHitSharpHuge: { url: 'sharp-huge.mp3', volume: 1, preload: true },
   counterShieldBlock: { url: 'block.mp3', volume: 1, preload: true },
+  rangedImpact: { url: 'arrow-hit.mp3', volume: 1, preload: true },
 };
 const context = {
   Audio: FakeAudio,
   performance: { now: () => 1000 },
+  setTimeout: () => 0,
   window: { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx } } } },
 };
 vm.runInNewContext(audio, context);
@@ -71,7 +76,7 @@ context.window.AudioSystem.init({
   isRealMediaError: () => false,
   markAudioUrlFailed: () => {},
 });
-assert.equal(FakeAudio.loads, 5, 'every configured low-latency combat cue should preload once');
+assert.equal(FakeAudio.loads, 12, 'each configured low-latency combat cue should fill its two-voice pool');
 
 context.window.AudioSystem.playWeaponSlashSfx(undefined, 0);
 let debug = context.window.AudioSystem.combatSfxDebugSnapshot();
@@ -87,6 +92,12 @@ context.window.AudioSystem.playCounterShieldBlockSfx(0, 0, 'farm');
 debug = context.window.AudioSystem.combatSfxDebugSnapshot();
 assert.equal(debug.last.key, 'counterShieldBlock');
 assert.equal(debug.last.detail.block, true);
-assert.equal(FakeAudio.plays, 3, 'swing, impact, and block should each render exactly once');
+
+context.window.AudioSystem.playRangedImpactSfx(0, 0, 'farm');
+debug = context.window.AudioSystem.combatSfxDebugSnapshot();
+assert.equal(debug.last.key, 'rangedImpact');
+assert.equal(debug.last.detail.rangedImpact, true);
+assert.equal(debug.maxStartDelayMs, 140, 'stale mobile combat play requests need a strict deadline');
+assert.equal(FakeAudio.plays, 4, 'swing, melee impact, block, and arrow impact should each render exactly once');
 
 console.log('combat SFX wiring: ok');
