@@ -27193,6 +27193,8 @@
         esc,
         _zoneLayouts,
         hostileObjects,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
       });
 
       window.ShippingPanel?.init({

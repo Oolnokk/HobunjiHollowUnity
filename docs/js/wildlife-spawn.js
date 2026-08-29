@@ -604,6 +604,22 @@
     _zoneEntryAnimalLogPending = mapId;
   }
 
+  // Debug/verification readout for "nest trees should be about as common
+  // as gar-wolf dens" (see eligibleNestBranches' den-count clamp above) —
+  // surfaced in the 🧬 Wildlife dev tab (js/wildlife-debug-panel.js) so
+  // that claim is checkable against a live zone/seed instead of taken on
+  // faith. nestTreeCap is the already-den-clamped resolved count for this
+  // zone this session (<= NEST_TREE_MAX_PER_ZONE), not the flat constant.
+  function denNestCensus(zoneId) {
+    const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
+    const selectedNestBranches = eligibleNestBranches(zoneId);
+    let nestTreesAlive = 0;
+    for (const branch of selectedNestBranches) {
+      if (isNestTreeAlive(nestTreeKeyFor(zoneId, branch))) nestTreesAlive++;
+    }
+    return { denCount, nestTreeCap: selectedNestBranches.length, nestTreesAlive };
+  }
+
   window.WildlifeSpawn = {
     init,
     applyWildlifeSkirmishDamage,
@@ -617,6 +633,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
+    denNestCensus,
     // Also clears pendingNestTreeRespawn — a wiped nest tree waits for the
     // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
     // so it rides the same day-advance call sites as den respawn instead of

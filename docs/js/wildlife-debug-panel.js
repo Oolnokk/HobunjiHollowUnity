@@ -8,11 +8,29 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // "Nest trees should be about as common as gar-wolf dens" is a claim
+  // about the CURRENT zone (see wildlife-spawn.js's eligibleNestBranches),
+  // not something the per-den genotype list below shows directly — this
+  // small readout makes it checkable against the actual live zone/seed.
+  function renderDenNestCensus() {
+    const zoneId = deps.getCurrentArea?.();
+    if (!zoneId || !deps._isZoneArea?.(zoneId)) return '';
+    const census = window.WildlifeSpawn.denNestCensus?.(zoneId);
+    if (!census) return '';
+    return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(106,167,255,.08);border:1px solid rgba(106,167,255,.25);border-radius:6px;font-size:12px">
+      <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Den / Nest Census — ${deps.esc(zoneId)}</div>
+      <div>Gar-wolf dens generated: <b>${census.denCount}</b></div>
+      <div>Drenkirra nest-tree cap (clamped to den count): <b>${census.nestTreeCap}</b></div>
+      <div>Nest trees currently populated: <b>${census.nestTreesAlive}</b></div>
+    </div>`;
+  }
+
   function renderWildlifeDebugPanel() {
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
+    const censusHtml = renderDenNestCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
-      container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
+      container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
       return;
     }
     const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${deps.esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
@@ -62,7 +80,7 @@
         ${teleportBtn}
       </div>`);
     }
-    container.innerHTML = rows.join('');
+    container.innerHTML = censusHtml + rows.join('');
   }
 
   window.WildlifeDebugPanel = { init, render: renderWildlifeDebugPanel };
