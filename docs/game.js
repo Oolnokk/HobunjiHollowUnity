@@ -10880,10 +10880,10 @@
         walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
         if (walker._portraitLifeT < cfg.intervalS) return;
         walker._portraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const composer = window.portraitBreathingComposer || null;
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
-        if (!walker._portraitLifeExpressionSet) {
+        if (composer && !walker._portraitLifeExpressionSet) {
           // The NPC's own authored default expression (rec.restingExpression
           // — see dialogue-content.js's _npcRestingExpression, now shared via
           // window.DialogueContent.npcRestingExpression) applies here too, so
@@ -10895,9 +10895,9 @@
         }
         if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
         walker._portraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
-          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-        }).then(() => {
+        const liveRenderOptions = { seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs };
+        if (composer) liveRenderOptions.breathingComposer = composer; // Blinking remains available when the optional breathing composer is absent.
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, liveRenderOptions).then(() => {
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
         }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
       }
@@ -10911,13 +10911,13 @@
         _playerPortraitLifeT += dt;
         if (_playerPortraitLifeT < cfg.intervalS) return;
         _playerPortraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const composer = window.portraitBreathingComposer || null;
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
         _playerPortraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
-          breathingComposer: composer, seatId: 'player',
-        }).then(() => {
+        const liveRenderOptions = { seatId: 'player' };
+        if (composer) liveRenderOptions.breathingComposer = composer; // Blinking does not depend on breathing initialization succeeding.
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, liveRenderOptions).then(() => {
           if (generation !== playerAvatarRefreshGeneration) return;
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
         }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });

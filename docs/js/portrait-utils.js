@@ -168,7 +168,9 @@ function _isRandomizableSpeciesGender(speciesId, gender) {
   return !genders || genders.includes(String(gender || '').toLowerCase());
 }
 
-const BLINK_STATE_BY_HEAD_URL = new Map();
+// A head sprite can be shared by the player and many NPCs. Include the stable
+// portrait seat in the key so those characters do not all blink in lockstep.
+const BLINK_STATE_BY_IDENTITY = new Map();
 
 function getBlinkConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.blink || {};
@@ -189,20 +191,26 @@ function blinkUrlFor(headOverlayUrl) {
   return headOverlayUrl.replace(/\.png$/i, '_blink.png');
 }
 
-function getBlinkState(headUrl) {
+function blinkStateKey(headUrl, blinkIdentity) {
+  const identity = String(blinkIdentity || '').trim();
+  return identity ? `${headUrl}::${identity}` : headUrl;
+}
+
+function getBlinkState(headUrl, blinkIdentity) {
   if (!headUrl) return null;
-  let state = BLINK_STATE_BY_HEAD_URL.get(headUrl);
+  const stateKey = blinkStateKey(headUrl, blinkIdentity);
+  let state = BLINK_STATE_BY_IDENTITY.get(stateKey);
   if (!state) {
     state = { supported: null, nextBlinkAtMs: 0, closeUntilMs: 0, flurryBlinksLeft: 0 };
-    BLINK_STATE_BY_HEAD_URL.set(headUrl, state);
+    BLINK_STATE_BY_IDENTITY.set(stateKey, state);
   }
   return state;
 }
 
-function shouldRenderBlink(headUrl, nowMs) {
+function shouldRenderBlink(headUrl, nowMs, blinkIdentity) {
   const cfg = getBlinkConfig();
   if (!cfg.enabled || !headUrl) return false;
-  const state = getBlinkState(headUrl);
+  const state = getBlinkState(headUrl, blinkIdentity);
   if (!state || state.supported !== true) return false;
   const minGap = Math.min(cfg.minIntervalMs, cfg.maxIntervalMs);
   const maxGap = Math.max(cfg.minIntervalMs, cfg.maxIntervalMs);
@@ -1148,6 +1156,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
   const seatId = renderOptions?.seatId ?? null;
+  // blinkId is optional for non-dialogue callers; seatId is already stable for
+  // the player and each NPC walker, and the head URL remains the legacy fallback.
+  const blinkIdentity = renderOptions?.blinkId ?? seatId;
   // Permanent quad deform: array of 24 [dx,dy] offsets, applied additively with breathing.
   const staticDeform = (Array.isArray(profile.bodyDeform) && profile.bodyDeform.length > 0)
     ? profile.bodyDeform
@@ -1388,7 +1399,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   // Capture current time after image loading so blink-state timing is accurate.
   const nowMs = Date.now();
-  const headBlinkState = getBlinkState(headUrl);
+  const headBlinkState = getBlinkState(headUrl, blinkIdentity);
   if (headBlinkState) {
     headBlinkState.supported = false;
     for (const blinkUrl of blinkOverlayUrlsByBase.values()) {
@@ -1406,7 +1417,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   // builds). A continuously-refreshed canvas (dialogue portraits, cutscenes)
   // doesn't set this and blinks normally.
   const forceEyesOpen = renderOptions?.forceEyesOpen === true;
-  const isBlinkFrame = !forceEyesOpen && shouldRenderBlink(headUrl, nowMs);
+  const isBlinkFrame = !forceEyesOpen && shouldRenderBlink(headUrl, nowMs, blinkIdentity);
   const resolveXform = (layer) => layer.xformPreset
     ? getPortraitXformPreset(layer.xformPreset)
     : {
