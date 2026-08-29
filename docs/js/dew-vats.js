@@ -25,11 +25,77 @@
   // state, so (unlike grid) they're captured once at init() rather than
   // read through a getter every call.
   let deps = null, COLS, ROWS, TileType;
+  const DEW_SHOVEL_SFX_URL = 'assets/audio/sfx/sfx_shovel_dew.mp3'; // Used instead of the ordinary dirt-dig cue while the live shovel reticle is on Uumkao'ii dew.
+  let dewShovelSfxPreload = null; // Retains one eagerly loaded element so repeated held-action thrusts start immediately.
+  let lastDewShovelSfxDebug = null; // Mobile-readable diagnostic exported below.
+
   function init(injectedDeps) {
     deps = injectedDeps;
     COLS = deps.COLS; ROWS = deps.ROWS; TileType = deps.TileType;
+    _preloadDewShovelSfx();
+    _installDewShovelSfxOverride();
     _pruneInvalidVatAssignments();
     _installSqueezingVatStartGuards();
+  }
+
+  function _preloadDewShovelSfx() {
+    if (dewShovelSfxPreload || typeof Audio !== 'function') return;
+    const snd = new Audio();
+    snd.preload = 'auto';
+    snd.src = DEW_SHOVEL_SFX_URL;
+    snd.load?.();
+    dewShovelSfxPreload = snd;
+  }
+
+  function _targetedDewPile() {
+    const debug = window.__hobunjiFurnitureDebug; // Existing always-on game-state bridge; keeps this module from duplicating game.js's private targeting state.
+    if (!debug || debug.getCurrentArea?.() !== 'farm') return null;
+    const playerState = debug.playerState; // Used to reproduce getReticleTile's authored 0.62-tile ground probe.
+    const angleDeg = Number(debug.targetAimAngleDeg); // Uses the same targetAimAngle that desktop mouse, controller look, and mobile action drag update.
+    if (![playerState?.x, playerState?.y, angleDeg].every(Number.isFinite)) return null;
+    const orbitRadiusTiles = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.orbitRadiusTiles);
+    const orbit = Number.isFinite(orbitRadiusTiles) ? orbitRadiusTiles : 0.62;
+    const angle = angleDeg * Math.PI / 180;
+    const tileSize = 64; // Player positions in this bridge are world pixels; farm tile size is the game's canonical 64 px.
+    const col = Math.max(0, Math.min(COLS - 1, Math.floor((playerState.x + Math.cos(angle) * tileSize * orbit) / tileSize)));
+    const row = Math.max(0, Math.min(ROWS - 1, Math.floor((playerState.y + Math.sin(angle) * tileSize * orbit) / tileSize)));
+    const tile = debug.farmGridTileAt?.(col, row);
+    return tile?.dewPile ? { col, row, colorKey: tile.dewPile } : null;
+  }
+
+  function _playDewShovelSfx(volumeScale = 1, pitch = 1) {
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {};
+    if (audioCfg.enabled === false) return false;
+    const snd = dewShovelSfxPreload?.cloneNode?.(true) || (typeof Audio === 'function' ? new Audio(DEW_SHOVEL_SFX_URL) : null);
+    if (!snd) return false;
+    snd.volume = Math.max(0, Math.min(1, 0.9 * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, Number(volumeScale) || 0)));
+    snd.playbackRate = Math.max(0.3, Number(pitch) || 1);
+    snd.play().catch(() => {});
+    const target = _targetedDewPile();
+    lastDewShovelSfxDebug = {
+      atMs: Math.round(performance.now()),
+      target,
+      url: DEW_SHOVEL_SFX_URL,
+      readyState: dewShovelSfxPreload?.readyState ?? null,
+    };
+    window.__farmLog?.(`[dew-sfx] shovelDew at ${target ? `${target.col},${target.row}` : '?'} ready=${lastDewShovelSfxDebug.readyState ?? '?'}`, 'audio');
+    return true;
+  }
+
+  function _installDewShovelSfxOverride() {
+    const audio = window.AudioSystem;
+    if (!audio?.playObjectSfxKey || audio.__hobunjiDewShovelSfxOverride) return false;
+    const originalPlayObjectSfxKey = audio.playObjectSfxKey.bind(audio); // Preserves every existing keyed cue unchanged outside dew digging.
+    audio.playObjectSfxKey = function dewAwareObjectSfxKey(key, volumeScale = 1, pitch = 1) {
+      if (key === 'dig' && _targetedDewPile()) return _playDewShovelSfx(volumeScale, pitch);
+      return originalPlayObjectSfxKey(key, volumeScale, pitch);
+    };
+    audio.__hobunjiDewShovelSfxOverride = true;
+    return true;
+  }
+
+  function dewShovelSfxDebugSnapshot() {
+    return lastDewShovelSfxDebug ? { ...lastDewShovelSfxDebug } : null;
   }
 
   // ── Dew piles ──────────────────────────────────────────────────────
@@ -345,5 +411,6 @@
     unassignFromVat,
     retargetAssignments,
     autoSqueezeAtVat,
+    dewShovelSfxDebugSnapshot,
   };
 })();
