@@ -113,7 +113,7 @@
       const target = deps.findAutoTarget();
       const cond = getConditions(deps, target);
       const tech = buildTechnique(def, cond);
-      const conditionBonusUsed = tech.sourceText !== 'no condition bonus'; // Selects both the higher stamina cost and the reserved huge impact cue.
+      const conditionBonusUsed = tech.sourceText !== 'no condition bonus'; // Selects the higher stamina cost, huge impact cue, and power-hit vulnerability consumption.
       const cost = conditionBonusUsed ? COST_BONUS : COST_BASE;
 
       // Every affliction this jab can inflict, and every stat bonus on top
@@ -167,7 +167,12 @@
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), category: 'quickAttack', afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              tag: deps.currentWeaponDamageType(),
+              category: 'quickAttack',
+              consumeHealthVulnerability: conditionBonusUsed,
+              afflictionBonuses: effects.afflictions,
+            });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
             lastName = c.def.label;

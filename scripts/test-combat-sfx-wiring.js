@@ -13,6 +13,8 @@ const charged = read('docs/js/combat/combat-charged-breaker.js');
 const counter = read('docs/js/combat/combat-counter-shield.js');
 const flurry = read('docs/js/combat/combat-flurry.js');
 const bandit = read('docs/js/combat/combat-bandit.js');
+const corroded = read('docs/js/combat/combat-corroded-health.js');
+const progression = read('docs/js/combat/combat-progression.js');
 const game = read('docs/game.js');
 
 const expectedAssets = [
@@ -30,12 +32,17 @@ for (const file of expectedAssets) {
 assert(core.includes('action.data?.comboStep'), 'staged swing playback must receive the combo step');
 assert.equal(attackValues.combo.COMBO_RESET_S, 1.8, 'authored combo reset window must be doubled to 1.8 seconds');
 assert(combo.includes('let COMBO_RESET_S = 1.8'), 'runtime fallback combo reset window must match the authored value');
-assert(combo.includes("['small', 'medium', 'large'][comboStep]"), 'combo impacts must map steps 1/2/3 to small/medium/large');
+assert(combo.includes('consumeHealthVulnerability: isFinisher'), 'combo finishers must explicitly consume Bruised/Corroded Health');
+assert(combo.includes("isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]"), 'combo finisher impacts should use huge only when vulnerability is available to consume');
+assert(quick.includes('consumeHealthVulnerability: conditionBonusUsed'), 'condition-qualified quick attacks must consume Bruised/Corroded Health');
 assert(quick.includes("conditionBonusUsed ? 'huge' : 'small'"), 'only bonus-qualified quick attacks should use huge');
+assert(corroded.includes('opts?.heavy || opts?.consumeHealthVulnerability'), 'health vulnerability wrapper must accept explicit power-hit qualification');
+assert(corroded.includes('condition-qualified quick attack, or combo finisher'), 'Bruised/Corroded descriptions must advertise all power-hit consumers');
+assert(progression.includes('const BLEED = 0.50, WOUND = 0.65, BRUISE = 0.75, WIND = 0.90, POISON = 0.42, INFECT = 0.60, SHATTER = 0.55, CONGEAL = 1.00;'), 'mastery affliction baselines must retain the power-weighted rebalance');
 assert(charged.includes("undefined, 'huge'"), 'charged heavy attacks should use huge');
 assert(counter.includes('playCounterShieldBlockSfx'), 'Counter Shield absorption should play its block cue');
 assert(flurry.includes("strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large'"), 'flurry impacts should grow without using huge');
-assert(bandit.includes("['small', 'medium', 'large'][comboStep]"), 'bandit combos need the same impact sequence');
+assert(bandit.includes("['small', 'medium', 'large'][comboStep]"), 'bandit combos need the same ordinary impact sequence');
 assert(game.includes('playCounterShieldBlockSfx(c.x, c.y, c.areaId)'), 'guarding bandits should emit the block cue at their position');
 
 class FakeAudio {

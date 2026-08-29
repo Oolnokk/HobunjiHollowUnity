@@ -61,9 +61,10 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
-  // heavy feeds the resource-afflictions system (docs/js/combat/resource-
-  // system.js) — each combo's 3rd/finisher step consumes the target's
-  // Bruised Health for bonus damage, same as the demo's Heavy Attack rule.
+  // heavy still marks the combo finisher for streak scaling and other heavy
+  // semantics; the final-step check in onTap explicitly marks it as a power
+  // hit too, so Bruised/Corroded consumption does not depend on that internal
+  // classification staying coupled forever.
   // dmgTag below is now UNUSED by onTap (kept only as reference data on
   // each step) — sharp/blunt used to be tagged per combo family (sweeping
   // Blunt, thrusting Sharp) regardless of the actual equipped weapon, which
@@ -113,6 +114,12 @@
 
   function now() { return performance.now() / 1000; }
 
+  function powerHitVulnerabilityTotal(entity) {
+    const rs = window.ResourceSystem; // Used to detect whether a finisher will actually consume Bruised/Corroded Health for its impact cue.
+    if (!rs?.getAffliction || !entity) return 0;
+    return (rs.getAffliction(entity, 'bruisedHealth') || 0) + (rs.getAffliction(entity, 'corrodedHealth') || 0);
+  }
+
   function registerCombo(id, label, steps) {
     let comboIndex = 0;
     let lastTapAt = -99;
@@ -133,6 +140,7 @@
       // rather than the next attack in the sequence.
       const comboStep = comboIndex % steps.length;
       const step = steps[comboStep];
+      const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
       const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
@@ -216,8 +224,15 @@
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: step.heavy, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
+            const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              tag: dmgType,
+              heavy: step.heavy,
+              consumeHealthVulnerability: isFinisher,
+              afflictionBonuses: effects.afflictions,
+            });
+            const impactSize = isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
             hits++;
             lastName = c.def.label;
           }
