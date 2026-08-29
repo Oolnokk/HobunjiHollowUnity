@@ -4344,6 +4344,12 @@
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        // Referenced by wildlife-territorial.js's own attackedDuringWarning
+        // check (an already-attacked creature escalates straight to
+        // fighting even from outside its proximity trigger) — that check
+        // has been silently dead since territorial.js shipped, since
+        // nothing was ever setting this field.
+        c.lastAttackReceivedAt = performance.now();
         // A passive creature (drenkirra, uumkaoii-wild, etc. — hostile:false,
         // so it never picks up player aggro at all, see updateHostiles'
         // aggro-pickup check) had no reaction to being attacked whatsoever
@@ -4353,9 +4359,13 @@
         // skirmishes already use (see wildlife-spawn.js's
         // applyWildlifeSkirmishDamage) — beelines home ignoring aggro/prey
         // detection, then starts a re-aggro cooldown once settled. Excludes
-        // companions so an incidental hit on a passive-type follower doesn't
-        // make it bolt from the player.
-        if (c.def?.hostile === false && !c.isCompanion) {
+        // companions (an incidental hit on a passive-type follower
+        // shouldn't make it bolt) and a creature wildlife-territorial.js
+        // already has actively defending its nest — attacking a territorial
+        // animal mid-fight should never make it flee instead; it's
+        // supposed to protect its home, not bail the moment it takes a hit.
+        const territorialPhase = c._territorialBehavior?.phase;
+        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
           // A drenkirra mid-forage or asleep is pinned to a branch —
           // clear that (see wildlife-cloud-forest-behavior.js's
           // interruptForFlee) before the state flip below, or the

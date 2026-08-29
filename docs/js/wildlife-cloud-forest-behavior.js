@@ -476,6 +476,15 @@
 
   function updateDrenkirraSchedule(creature, night, zoneId) {
     if (creature.isDenMother || !String(creature.creatureKey || '').startsWith('drenkirra')) return;
+    // wildlife-territorial.js owns this creature's state/movement entirely
+    // while it's actively warning or fighting off a threat — it runs
+    // before this module each tick (see combat-config-loader.js's module
+    // order), so without this check, a nighttime creature it just woke
+    // from sleep (mode reset to 'ground') would get sent straight back to
+    // sleep by the "if (night)" branch below on the very same tick,
+    // undoing the wake-up before it ever moved.
+    const territorialPhase = creature._territorialBehavior?.phase;
+    if (territorialPhase === 'warning' || territorialPhase === 'fight') return;
     const state = ensureDrenkirraState(creature);
 
     if (night) {
