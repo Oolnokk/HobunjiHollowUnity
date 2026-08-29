@@ -76,6 +76,8 @@
       const sideDeg = dirSign * SIDE_OFFSET_DEG;
       const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
       const strikeIndex = count + 1;
+      const dmgType = deps.currentWeaponDamageType(); // Keeps flurry afflictions and impact audio tied to the equipped weapon material.
+      const impactSize = strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large'; // Grows with the flurry without consuming the heavy-only huge tier.
 
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
@@ -102,7 +104,8 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
             hits++;
             lastName = c.def.label;
           }

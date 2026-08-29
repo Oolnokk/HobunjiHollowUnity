@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260826categories1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260828toolsfx3"></script>
+  <script src="config/scratchbones-config.js?v=20260829combatsfx1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260826compass1">
@@ -109,7 +109,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260825melee3"></script>
+  <script src="js/combat/combat-core.js?v=20260829combatsfx1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
        rig. Must load after that module (see the "Procedural leg/foot
@@ -121,13 +121,13 @@
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
-  <script src="js/combat/combat-combo.js?v=20260825melee1"></script>
+  <script src="js/combat/combat-combo.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-combo-streak.js?v=20260712d"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260825melee1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260712d"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260825melee1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260712d"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-flurry.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
@@ -142,7 +142,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260828necklook2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260829combatsfx1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -1936,7 +1936,7 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260828animalvoices2"></script>
+  <script src="js/audio-system.js?v=20260829combatsfx1"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20260828animalvoices3"></script>
@@ -1954,7 +1954,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260828animalvoices3"></script>
+  <script src="js/pixel-probe.js?v=20260829combatsfx1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2027,7 +2027,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260829merge1"></script>
+  <script src="game.js?v=20260829combatsfx1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -34,10 +34,10 @@ assert.match(ranged, /SphereGeometry/, 'projectile collision body must be a sphe
 assert.match(ranged, /visible:\s*false/, 'projectile collider must remain hidden');
 assert.match(ranged, /creatureSnapSwayTarget/, 'projectile PNG must reuse animal snap/deadzone rotation');
 assert.match(ranged, /root sphere's vx\/vy and trajectory angle are never changed/, 'visual deadzone must not steer the projectile');
-assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_loading_mechanism.m4a')), 'loading mechanism recording must be present');
-assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
-assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
-assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
+assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_loading_mechanism.m4a')), 'loading mechanism recording must be present');
+assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
+assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/combat\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
+assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/combat\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
 assert.match(scratchbonesConfig, /"rangedLoad":[^\n]*"volume":\s*0\.42/, 'loading mechanism cue must use the quieter mix');
 assert.match(scratchbonesConfig, /"rangedFire":[^\n]*"volume":\s*1\.0/, 'arrow cue must use full mobile-safe media-element volume');
 assert.doesNotMatch(scratchbonesConfig.match(/"rangedFire":[^\n]*/)?.[0] || '', /gainBoost/, 'delayed arrow playback must not depend on a suspendable AudioContext gain path');
@@ -57,8 +57,8 @@ assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S
 assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
 assert.match(index, /ranged-weapons\.js\?v=20260828falloff1/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
-assert.match(index, /scratchbones-config\.js\?v=20260821alchemy2/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
-assert.match(index, /game\.js\?v=20260821alchemy6/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
+assert.match(index, /scratchbones-config\.js\?v=20260829combatsfx1/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
+assert.match(index, /game\.js\?v=20260829combatsfx1/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 
 assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');
 assert.match(ranged, /SPECIAL_AMMO_LOOT_CHANCE\s*=\s*0\.72/, 'all enemy corpses must have a high special-ammo drop chance');

@@ -4248,6 +4248,7 @@
       const BANDIT_COUNTER_COOLDOWN_S = 0.6;
       function banditTryGuard(c, amount, targetPlayer) {
         if (!c.isBandit || !(c._banditGuardUntil > performance.now())) return amount;
+        window.AudioSystem?.playCounterShieldBlockSfx(c.x, c.y, c.areaId);
         const t = performance.now() / 1000;
         if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
           c._banditLastCounterAt = t;
@@ -4415,7 +4416,9 @@
         window.AudioSystem?.playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
-        const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
+        const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
+        const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -4426,6 +4429,7 @@
             pitch: currentPlayerMeleeAimPitch(),
           })) continue;
           damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
+          window.AudioSystem?.playWeaponHitSfx(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
           hits++;
           lastName = c.def.label;
         }
@@ -26251,6 +26255,7 @@
         playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
         playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
         playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
+        playCounterShieldBlockSfx: (...a) => window.AudioSystem?.playCounterShieldBlockSfx(...a),
         // Named animal attacks (e.g. Pounce) own the creature's position
         // directly for their leap instead of going through moveCreatureToward
         // — without this, that ground covered during the leap never ticked
