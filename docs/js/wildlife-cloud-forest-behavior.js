@@ -503,22 +503,48 @@
   // exact way: intercept the later global assignment once, patch its
   // narrow init/updateHostileSpawning boundary, then restore a normal
   // writable property.
+  // js/wildlife-territorial.js and js/wildlife-grehlr-foraging.js install
+  // this exact same kind of trap for the same reason. A naive `else`
+  // branch that unconditionally calls Object.defineProperty would
+  // silently clobber whichever of those traps got here first — only one
+  // property descriptor can occupy window.WildlifeSpawn at a time, so the
+  // earlier trap's setter would simply never fire, and that module's
+  // deps/init hook would stay uninitialized forever (this was a real,
+  // live bug: territorial and this module's deps never got set, so none
+  // of gar-wolf shift hunting or drenkirra foraging/sleeping ever ran —
+  // only whichever of the three modules happened to load last actually
+  // worked). Chain onto an existing trap's setter instead of replacing
+  // it, so every module patched this way still applies once the real
+  // assignment lands, regardless of load order.
   if (window.WildlifeSpawn) {
     patchWildlifeSpawn(window.WildlifeSpawn);
   } else {
-    Object.defineProperty(window, 'WildlifeSpawn', {
-      configurable: true,
-      get() { return undefined; },
-      set(value) {
-        const patched = patchWildlifeSpawn(value);
-        Object.defineProperty(window, 'WildlifeSpawn', {
-          configurable: true,
-          enumerable: true,
-          writable: true,
-          value: patched,
-        });
-      },
-    });
+    const existingTrap = Object.getOwnPropertyDescriptor(window, 'WildlifeSpawn');
+    if (existingTrap && typeof existingTrap.set === 'function') {
+      const chainedSet = existingTrap.set;
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get: existingTrap.get,
+        set(value) {
+          chainedSet.call(window, value);
+          patchWildlifeSpawn(window.WildlifeSpawn);
+        },
+      });
+    } else {
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get() { return undefined; },
+        set(value) {
+          const patched = patchWildlifeSpawn(value);
+          Object.defineProperty(window, 'WildlifeSpawn', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: patched,
+          });
+        },
+      });
+    }
   }
 
   window.HobunjiCloudForestWildlife = {

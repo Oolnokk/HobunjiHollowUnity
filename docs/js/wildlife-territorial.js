@@ -317,22 +317,46 @@
   // This module is loaded by combat-config-loader before wildlife-spawn.js's
   // normal script tag. Intercept that later global assignment once, patch its
   // narrow init/update boundary, then restore a normal writable property.
+  //
+  // Several other files (wildlife-cloud-forest-behavior.js,
+  // wildlife-grehlr-foraging.js) install this exact same kind of trap for
+  // the same reason. A naive `else` branch that unconditionally calls
+  // Object.defineProperty would silently clobber whichever of those
+  // traps got here first — only one property descriptor can occupy
+  // window.WildlifeSpawn at a time, so the earlier trap's setter would
+  // simply never fire, and that module's deps/init hook would stay
+  // uninitialized forever. Chain onto an existing trap's setter instead
+  // of replacing it, so every module patched this way still applies once
+  // the real assignment lands, regardless of load order.
   if (window.WildlifeSpawn) {
     patchWildlifeSpawn(window.WildlifeSpawn);
   } else {
-    Object.defineProperty(window, 'WildlifeSpawn', {
-      configurable: true,
-      get() { return undefined; },
-      set(value) {
-        const patched = patchWildlifeSpawn(value); // Used as the API stored after wildlife-spawn.js assigns its namespace.
-        Object.defineProperty(window, 'WildlifeSpawn', {
-          configurable: true,
-          enumerable: true,
-          writable: true,
-          value: patched,
-        });
-      },
-    });
+    const existingTrap = Object.getOwnPropertyDescriptor(window, 'WildlifeSpawn');
+    if (existingTrap && typeof existingTrap.set === 'function') {
+      const chainedSet = existingTrap.set;
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get: existingTrap.get,
+        set(value) {
+          chainedSet.call(window, value);
+          patchWildlifeSpawn(window.WildlifeSpawn);
+        },
+      });
+    } else {
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get() { return undefined; },
+        set(value) {
+          const patched = patchWildlifeSpawn(value); // Used as the API stored after wildlife-spawn.js assigns its namespace.
+          Object.defineProperty(window, 'WildlifeSpawn', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: patched,
+          });
+        },
+      });
+    }
   }
 
   window.HobunjiTerritorialWildlife = {
