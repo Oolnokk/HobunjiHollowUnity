@@ -17,6 +17,17 @@
   const MAX_RENDER_CACHE = 32;
   const ANIMAL_EXTRA_WET = 0.026;
   const UTTERANCE_BASE = 'assets/audio/sfx/utterances/';
+  // Widening earshot to jungle range (see animal-vocalizations.js's
+  // PROFILE_DEFAULTS) means far more creatures can qualify to bark at
+  // once, and each one that does pays for a real WebAudio graph (source +
+  // gain + panner + reverb send) here — cheap per call, but the count of
+  // simultaneously active calls now scales with a much bigger radius, not
+  // just nearby creature density. This caps concurrent renders so that
+  // scaling stays bounded instead of tracking earshot's radius squared.
+  // 'warning' calls (rare, gameplay-relevant) are exempt — only ambient
+  // chatter/growl piles get throttled.
+  const MAX_CONCURRENT_ANIMAL_VOICES = 6;
+  let activeVoiceCount = 0;
 
   // Preserve the old species defaults even though the same recordings now
   // live in the descriptive utterance library under content-based names.
@@ -516,6 +527,7 @@
       if (capture.silent) return false;
       if (!capture.accepted) return false;
       if (!capture.audio || !capture.selectedUrl) return originalRenderer(c, { ...opts, rate: 1, rateContour: undefined });
+      if (opts.meaning !== 'warning' && activeVoiceCount >= MAX_CONCURRENT_ANIMAL_VOICES) return false;
       // Use the explicit library URL carried out of capture. currentSrc can
       // still report the pre-swap legacy asset for a short browser task.
       const url = capture.selectedUrl;
@@ -535,6 +547,13 @@
       // patrolling) — pan and extra echo are both derived straight from
       // that, so the call always originates from the right direction.
       const spatial = audioSystem.creatureAudioSpatial?.(c) || { panX: 0, extraWetBoost: 0 };
+      activeVoiceCount++;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        activeVoiceCount = Math.max(0, activeVoiceCount - 1);
+      };
       play(url, {
         tempo,
         pitchSemitones,
@@ -543,7 +562,8 @@
         panX: spatial.panX,
         extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
-        onError: opts.onError,
+        onError: (error) => { release(); opts.onError?.(error); },
+        onFinished: release,
         fallbackAudio: capture.audio,
       });
       return true;
