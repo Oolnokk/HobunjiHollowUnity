@@ -5338,6 +5338,12 @@
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
+          // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
+          // parks a drenkirra on a branch to forage/sleep, outside the
+          // player-facing defend hop above — same "skip ordinary ground AI
+          // entirely this frame" escape hatch, gated on its own per-creature
+          // marker so it never touches the Nestmother's branch-defend flow.
+          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, dt)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
@@ -5585,10 +5591,14 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.denKey && window.Music?.isNightTime()) {
+          } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
             // Denned pack, off the clock — head back to the den and settle
             // there instead of continuing to wander (see spawnPackAtDen for
-            // homeX/homeY = the den's own anchor point).
+            // homeX/homeY = the den's own anchor point). isPackOffShift
+            // extends this beyond true night for cloud-forest gar-wolf packs,
+            // which only hunt during their two dawn/dusk shifts (see
+            // js/wildlife-cloud-forest-behavior.js) and rest the whole
+            // rest of the day, not just after dark.
             const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
             if (distFromDen > DEN_SETTLE_RADIUS_PX) {
               moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
@@ -13153,6 +13163,7 @@
               || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
         if (currentArea !== 'farm') return null;
@@ -14375,7 +14386,18 @@
       function isAnimalDenCollisionTile(col, row, area) {
         for (const den of (_zoneLayouts.get(area)?.dens || [])) {
           if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+          const w = den.w || 1, h = den.h || 1;
+          if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
+          // Doorway gap carved into the south wall, mirroring the mesh's own
+          // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
+          // zone-den-totem-features.js). Without this the footprint box was
+          // fully solid with no way through it at all — mouthAnchor alone
+          // never punched a hole here since it's defined as the tile just
+          // OUTSIDE the footprint, not a tile inside it.
+          const mouthColStart = den.x + Math.floor(w * 0.3);
+          const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
+          if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
+          return true;
         }
         return false;
       }
@@ -27341,6 +27363,12 @@
         DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
         makeDecorativeFurnitureMesh,
+        // Used by js/wildlife-cloud-forest-behavior.js for its gar-wolf
+        // shift/LOD player-distance checks and its game-hour-scheduled
+        // fruit respawn/eating timers — no other WildlifeSpawn consumer
+        // needs either today.
+        player,
+        calendar,
       });
 
       window.CavernGenerator?.init({

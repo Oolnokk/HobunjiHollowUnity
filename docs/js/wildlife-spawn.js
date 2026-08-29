@@ -282,9 +282,15 @@
     const count = DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
     const zoneData = deps.zoneLayouts.get(zoneId);
     let spawned = 0;
+    // Scatter radius must clear the footprint's own half-diagonal (den.x/y
+    // is the top-left tile, footprint is den.w x den.h) or a spawn angle
+    // pointed at a corner lands the creature inside the den's solid rock
+    // volume (see isAnimalDenCollisionTile) with every neighboring tile
+    // blocked too — stuck on the footprint with nowhere to step.
+    const footprintClearance = deps.TILE * Math.hypot((den.w || 1) * 0.5, (den.h || 1) * 0.5) + deps.TILE * 0.3;
     for (let i = 0; i < count; i++) {
       const angle = deps.rnd() * Math.PI * 2;
-      const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
+      const dist = footprintClearance + deps.rnd() * deps.TILE * 1.6;
       const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
       const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
       assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
@@ -490,7 +496,10 @@
       const angle = deps.rnd() * Math.PI * 2;
       const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
       const x = branch.baseX + Math.cos(angle) * dist, y = branch.baseY + Math.sin(angle) * dist;
-      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key };
+      // Same nestGenotype the Nestmother above got — guards should carry
+      // her colors/patterns, not spawn plain (makeCreatureEntity only
+      // recolors a creature when opts.genotype is present).
+      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key, genotype: nestGenotype };
       assignWildlifeStation(opts, zoneData, branch.baseX, branch.baseY, true);
       const creature = deps.makeCreatureEntity('drenkirra', x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
