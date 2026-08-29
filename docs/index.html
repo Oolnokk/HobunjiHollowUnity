@@ -238,4 +238,1832 @@
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
-       own 
+       own setup. -->
+  <script src="js/farm-crates.js?v=20260807a"></script>
+  <!-- Procedural tasks: bulletin board + trusted-NPC favors
+       (window.ProceduralTasks) — self-contained aside from deps injected
+       via init(), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.ProceduralTasks.init(...) during its own setup. -->
+  <script src="js/procedural-tasks.js?v=20260826compass1"></script>
+  <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.ReagentPlants.init(...) during
+       its own setup. -->
+  <script src="js/reagent-plants.js?v=20260811a"></script>
+  <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
+       — self-contained aside from deps injected via init(), and reads
+       window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.JubmirShop.init(...) during its own setup. -->
+  <script src="js/jubmir-shop.js?v=20260807a"></script>
+  <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
+       seasons) and the Calendar tab UI (window.CalendarSystem) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load before
+       game.js, which calls window.CalendarSystem.init(...) during its own
+       setup. -->
+  <script src="js/calendar-system.js?v=20260807a"></script>
+  <!-- Relationships menu tab render (window.RelationshipsPanel) —
+       self-contained aside from deps injected via init(), and reads
+       window.DialogueContent/window.ProceduralTasks at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.RelationshipsPanel.init(...) during its own setup. -->
+  <script src="js/relationships-panel.js?v=20260807a"></script>
+  <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
+       (window.DebugHitboxes) — self-contained aside from deps injected via
+       init(), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.DebugHitboxes.init(...) during its own setup. -->
+  <script src="js/debug-hitboxes.js?v=20260828lookray1"></script>
+  <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
+       Arena (window.BanditCombatLog) — reads window.BanditCombat/
+       window.BanditCamps/window.Combat at capture time (already global by
+       then), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.BanditCombatLog.init(...) during its own setup. -->
+  <script src="js/bandit-combat-log.js?v=20260807a"></script>
+  <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
+       aside from deps injected via init(), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.ClimbSystem.init(...) during its own setup. -->
+  <script src="js/climb-system.js?v=branchfalldefense2"></script>
+  <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
+       (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
+       at draw time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.WildernessMap.init(...) during its own setup. -->
+  <script src="js/wilderness-map.js?v=20260807a"></script>
+  <script src="js/navigation-compass.js?v=20260826compass1"></script>
+  <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
+       avatars (window.PerpRotation) — self-contained aside from deps
+       injected via init(), so load order relative to the other systems
+       above doesn't matter; must load before game.js, which calls
+       window.PerpRotation.init(...) during its own setup. -->
+  <script src="js/perp-rotation.js?v=20260809a"></script>
+  <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
+       aside from deps injected via init(), and reads window.DyeSystem/
+       window.ConditionRegistry at render time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.GeneralStore.init(...)
+       during its own setup. -->
+  <script src="js/general-store.js?v=20260807a"></script>
+  <!-- Carpenter's shop: barn plans + furniture blueprints
+       (window.CarpenterShop) — self-contained aside from deps injected via
+       init(), and reads window.ConditionRegistry at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.CarpenterShop.init(...) during its own setup. -->
+  <script src="js/carpenter-shop.js?v=20260807a"></script>
+  <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.MetalCraftShop.init(...) during
+       its own setup. -->
+  <script src="js/metal-craft-shop.js?v=20260807a"></script>
+  <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
+       wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
+       window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
+       at call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.WildlifeSpawn.init(...) during its own setup. -->
+  <script src="js/wildlife-spawn.js?v=branchfalldefense1"></script>
+  <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
+       (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
+       WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.TownZoneBuildings.init(...) during its own setup (and
+       reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
+       window.FarmBuildings' own init deps, at that same call-time point). -->
+  <script src="js/town-zone-buildings.js?v=20260809b"></script>
+  <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
+       panel (window.DevSpawner) — reads window.CreatureGenetics/
+       window.CreatureGeneticsRender/window.BanditCombat/
+       window.FoliageGenerator at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.DevSpawner.init(...) during
+       its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
+       .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
+       window.BanditCamps at that same call-time point. -->
+  <script src="js/dev-spawner.js?v=20260807a"></script>
+  <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
+       inventory-scoped alternative to scrolling the hotbar to a decor item:
+       picking a row here just calls selectItemForPlacement(itemKey), the
+       same "hold item, aim, interact" pipeline the action bar already
+       drives, so all placement validation/consumption logic lives in one
+       place. Must load before game.js, which calls
+       window.FurniturePlacer.init(...) during its own setup. -->
+  <script src="js/furniture-placer.js?v=20260809c"></script>
+  <!-- Player-craftable wilderness campfire (window.WildernessCampfire) —
+       only one at a time, cleared on any map change. Self-contained aside
+       from deps injected via init(); must load before game.js, which calls
+       window.WildernessCampfire.init(...) during its own setup. -->
+  <script src="js/wilderness-campfire.js?v=20260828a"></script>
+  <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
+       the merged dynamic-water mesh renderer (window.WaterSystem). Must
+       load before game.js — unusually early among these, in fact: game.js
+       calls window.WaterSystem.init(...) right before its very first
+       createInitialGrid() call (which itself calls recomputeWater()
+       synchronously to settle day-one water levels), well before most of
+       the other window.<Namespace>.init(...) calls below. -->
+  <script src="js/water-system.js?v=20260815a"></script>
+  <!-- Weather rolling, day/night + weather lighting overlay, and trench
+       water particle/paddy ripple FX (window.WeatherFX) — reads
+       window.CalendarSystem at call time (already global by then), so load
+       order relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.WeatherFX.init(...) during its
+       own setup. -->
+  <script src="js/weather-fx.js?v=20260809b"></script>
+  <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
+  <script src="js/rain-planes.js?v=20260809f"></script>
+  <!-- Player-centered white mist cylinders, shown only in the Southern
+       Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
+       fogDensity/vegCullRadiusTiles comments in game.js for why. -->
+  <script src="js/cloud-forest-fog.js?v=20260822a"></script>
+  <!-- Farm tab hub (header, grid glance, buildings list, processor status
+       tiles, livestock roster + breeding, farm<->stable transfers, storage,
+       farmhands) and the Stable tab (window.FarmPanel) — reads
+       window.FarmAnimals/window.CreatureGenetics/window.DewVats/
+       window.FarmBuildings/window.__hobunjiAddFarmhand/
+       window.__hobunjiRemoveFarmhand at call time (already global by then),
+       so load order relative to the other systems above doesn't matter;
+       must load before game.js, which calls window.FarmPanel.init(...)
+       during its own setup. -->
+  <script src="js/farm-panel.js?v=20260809c"></script>
+  <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
+       whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
+       debug panel (window.WildlifeDebugPanel) — all read
+       window.ProceduralTasks/window.BountyBoard/window.WildlifeSpawn/
+       window.CreatureGenetics at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls each module's init(...) during its
+       own setup. -->
+  <script src="js/tasks-panel.js?v=20260807a"></script>
+  <script src="js/supply-page.js?v=20260807a"></script>
+  <script src="js/whistle-equip.js?v=20260807a"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260807a"></script>
+  <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
+       ShippingPanel) — pure DOM/state, no other window.* system reads;
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.ShippingPanel.init(...)
+       during its own setup, and also wires boot-time shipping-tab button
+       listeners through window.ShippingPanel.* directly. -->
+  <script src="js/shipping-panel.js?v=20260807a"></script>
+  <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
+       DOM/state, no other window.* system reads; must load before game.js,
+       which calls window.InputSettingsPanel.init(...) and an immediate
+       render() during its own boot sequence (unlike its sibling panels,
+       this one renders once at boot rather than lazily on first tab
+       open). -->
+  <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
+       — pure DOM/state, no other window.* system reads; load order relative
+       to the other systems above doesn't matter; must load before game.js,
+       which calls window.CraftingPanel.init(...) during its own setup. -->
+  <script src="js/crafting-panel.js?v=20260807a"></script>
+  <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
+       equip/de-equip, redye panel — window.EquipmentPanel) — its
+       buildEquipmentSlots() calls window.WhistleEquip.build() at render
+       time (not load time), so load order relative to whistle-equip.js
+       doesn't matter; must load before game.js, which references
+       window.EquipmentPanel directly (including at top-level, in
+       window.__climbDebug) and calls window.EquipmentPanel.init(...)
+       during its own setup. -->
+  <script src="js/equipment-panel.js?v=20260807a"></script>
+  <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
+       scene-graph generation, no other window.* system reads; must load
+       before game.js, which calls window.BorderTerrain.init(...) and then
+       window.BorderTerrain.buildBorderTerrain() immediately afterward
+       during its own farm-setup sequence (well before the other
+       window.*?.init(...) calls near the bottom of game.js run), and later
+       calls window.BorderTerrain.buildTownBorderTerrain() when the town
+       scene is built. -->
+  <script src="js/border-terrain.js?v=20260807a"></script>
+  <!-- Procedural den-cavern floor generation (window.CavernGenerator) —
+       pure data generation, no scene-graph/window.* system reads at load
+       time (window.WildlifeSpawn/window.__farmLog are read lazily, at
+       call time); must load before game.js, which calls
+       window.CavernGenerator.init(...) alongside window.WildlifeSpawn's
+       own init call, and window.CavernGenerator.generateCavernFloor(...)
+       can otherwise be reached earlier still, from the fire-and-forget
+       Tothal Shift kicked off during world boot — that path never touches
+       deps, so it works regardless of init() timing. -->
+  <!-- Generic adaptive-octree SDF carve + dual-contour mesh engine (window.
+       CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
+       Framework-agnostic pure data/math — must load before cavern-generator.js,
+       whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
+  <script src="js/cavern-sculptor.js?v=20260815a"></script>
+  <script src="js/cavern-generator.js?v=20260815a"></script>
+  <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
+       (window.ZonePlateauMesa) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZonePlateauMesa.init(...) alongside its sibling systems and
+       window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
+       zone with tiered plateaus is first built or a plateau-top tile
+       changes at runtime — never synchronously during initial boot. -->
+  <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
+  <!-- One world-UV texture-backed mesh per water surface group. Dynamic
+       flood/trench meshes are rebuilt only when the water simulation ticks;
+       wilderness waterways use the same builder through ZoneTerrainFeatures. -->
+  <script src="js/merged-water-renderer.js?v=20260809d"></script>
+  <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
+       (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZoneTerrainFeatures.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene, never
+       synchronously during initial boot. -->
+  <script src="js/zone-terrain-features.js?v=20260825chunks1"></script>
+  <!-- Wilderness-zone animal-den rock mounds and root totem meshes
+       (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
+       other window.* system reads; must load before game.js, which calls
+       window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene, never
+       synchronously during initial boot. -->
+  <script src="js/zone-den-totem-features.js?v=20260807a"></script>
+  <!-- Wilderness-zone grass and rich-foliage-patch billboards
+       (window.ZoneGrassBillboards) — pure scene-graph generation, no
+       other window.* system reads; must load before game.js, which calls
+       window.ZoneGrassBillboards.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene and
+       refreshZoneGroundVisuals, never synchronously during initial boot. -->
+  <script src="js/zone-grass-billboards.js?v=20260825chunks1"></script>
+  <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
+       terrain/vegetation chunks while the Tothal generator remains owner of
+       each zone's deterministic complete tile blueprint. -->
+  <script src="js/wilderness-chunks.js?v=20260826audit1"></script>
+</head>
+<body>
+  <!-- Game world -->
+  <div id="gameShell">
+    <div id="canvasWrap">
+      <div id="threeContainer" style="position:absolute;inset:0;"></div>
+      <canvas id="overlayCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
+      <canvas id="lightingCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;"></canvas>
+      <div id="fpsCounter" aria-hidden="true" style="display:none;position:absolute;top:6px;left:6px;font:11px monospace;color:#9f9;background:rgba(0,0,0,.45);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:50">0 FPS</div>
+      <!-- Den-entry loading label — shown only while the SDF cavern carve
+           (a synchronous, blocking ~25-40s call — see loadBuildingScene's
+           'map_i_den_' branch) runs behind the scene-transition's black
+           fade, so the freeze doesn't read as a hang. The carve is one
+           unbroken call with no yield points, so the browser can't repaint
+           mid-generation no matter what — a moving percent isn't possible
+           without restructuring that pipeline, which wasn't worth the risk
+           to a freshly-stabilized generator. Static text only. -->
+      <div id="denLoadingLabel" aria-hidden="true" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;pointer-events:none;z-index:10;">
+        <span style="font-family:'KhymeryyanRomanLetters+Numbers','DM Mono',monospace;font-size:26px;letter-spacing:0.08em;color:#f3e6c8;text-shadow:0 2px 10px rgba(0,0,0,0.85);">Generating den&hellip;</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Persistent status pill (top-left) -->
+  <div id="statusBar">
+    <span class="sb-time" id="spTime">6:00 AM</span>
+    <div class="sb-div"></div>
+    <button class="sb-info sb-daybtn" id="spDay" type="button" title="Open calendar">Anan, 1/1, 3rd week of Stormtide</button>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spSeason">⛈️ Stormtide</span>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spWeather">🌧️ Rain</span>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spTool">🥄</span>
+    <div class="sb-div"></div>
+    <span class="sb-accent" id="spTile">—</span>
+    <div class="sb-div"></div>
+    <span class="sb-water" id="spWater">💧 0%</span>
+    <div class="sb-div"></div>
+    <span class="sb-gold" id="spGold">💰 0g</span>
+  </div>
+
+  <div id="navigationCompass" role="navigation" aria-label="Navigation compass">
+    <div id="navigationCompassLayer"></div>
+  </div>
+
+  <!-- Player vitals: health + stamina bars (top-left) -->
+  <div id="vitalsBar">
+    <div class="vb-row">
+      <span class="vb-icon">❤️</span>
+      <div class="vb-track"><div class="vb-fill vb-health" id="vbHealthFill"></div></div>
+    </div>
+    <div class="vb-row">
+      <span class="vb-icon">⚡</span>
+      <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
+    </div>
+    <div class="vb-row">
+      <span class="vb-icon">🦶</span>
+      <div class="vb-track"><div class="vb-fill vb-footing" id="vbFootingFill"></div></div>
+    </div>
+  </div>
+
+  <!-- Active alchemy buffs/debuffs (top-right-ish, below status bar) — see refreshBuffBar -->
+  <div id="buffBar" aria-label="Active potion effects"></div>
+
+  <!-- Wilderness minimap (top-right, below the buff bar) — only shown while
+       standing in one of the four wilderness zones. Press M for the full
+       map. See renderWildernessMinimap()/renderWildernessMapPanel() in game.js. -->
+  <div id="minimapWidget" aria-label="Wilderness minimap" title="Press M for the full map">
+    <canvas id="minimapCanvas" width="260" height="260"></canvas>
+  </div>
+
+  <!-- Farm editor toggle button (top-right, beside menu) — only shown on the
+       farm, for its owner; see _refreshEditorButtonVisibility -->
+  <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()" style="display:none;">✏️</button>
+
+  <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
+       farm editor pencil, shown only while standing in the Testing Arena -->
+  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window.DevSpawner?.toggle()" style="display:none;">🐾</button>
+
+  <!-- Furniture placer toggle button — a normal-player feature (no cheats,
+       no dev mode gate), shown on the farm/in the house interior whenever
+       you own at least one placeable decorative furniture item; see
+       js/furniture-placer.js -->
+  <button id="furniturePlacerBtn" aria-label="Toggle furniture placer" title="Place Furniture" onclick="window.FurniturePlacer?.toggle()" style="display:none;">🪑</button>
+
+  <!-- Furniture Placer Panel -->
+  <div id="furniturePlacerPanel" style="display:none;" aria-label="Furniture placer">
+    <div class="fed-header">
+      <span>🪑 Place Furniture</span>
+      <button class="fed-close" onclick="window.FurniturePlacer?.toggle()" title="Close">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
+      <div id="furniturePlacerList" class="farm-list" style="padding:0 10px 10px;"></div>
+    </div>
+  </div>
+
+  <!-- Farm Editor Panel -->
+  <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">
+    <div class="fed-header">
+      <span>✏️ Farm Editor</span>
+      <button class="fed-close" onclick="window._farmEditor?.toggle()" title="Close editor">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div class="fed-section">
+        <div class="fed-label">Terrain</div>
+        <div class="fed-grid">
+          <button class="fed-btn fed-active" data-btype="terrain" data-bval="grass"   onclick="window._farmEditor?.setBrush('terrain','grass')">🟩 Grass</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="weeds"   onclick="window._farmEditor?.setBrush('terrain','weeds')">🌿 Weeds</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="rock"    onclick="window._farmEditor?.setBrush('terrain','rock')">🪨 Rock</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="shrub"   onclick="window._farmEditor?.setBrush('terrain','shrub')">🌳 Shrub</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="tilled"  onclick="window._farmEditor?.setBrush('terrain','tilled')">🟫 Tilled</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="raised"  onclick="window._farmEditor?.setBrush('terrain','raised')">⬛ Raised</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="trench"  onclick="window._farmEditor?.setBrush('terrain','trench')">🔵 Trench</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Vegetation (auto-tills soil)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="crop" data-bval="needlegrain"  onclick="window._farmEditor?.setBrush('crop','needlegrain')">🌾 Needlegrain</button>
+          <button class="fed-btn" data-btype="crop" data-bval="heftroot"     onclick="window._farmEditor?.setBrush('crop','heftroot')">🟡 Heftroot</button>
+          <button class="fed-btn" data-btype="crop" data-bval="garlink"      onclick="window._farmEditor?.setBrush('crop','garlink')">🧄 Garlink</button>
+          <button class="fed-btn" data-btype="crop" data-bval="ongyums"      onclick="window._farmEditor?.setBrush('crop','ongyums')">🧅 Ongyums</button>
+          <button class="fed-btn" data-btype="crop" data-bval="redberries"   onclick="window._farmEditor?.setBrush('crop','redberries')">🍓 Redberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="blueberries"  onclick="window._farmEditor?.setBrush('crop','blueberries')">🫐 Blueberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="yellowberries"onclick="window._farmEditor?.setBrush('crop','yellowberries')">🟡 Yellowberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="blackMustard" onclick="window._farmEditor?.setBrush('crop','blackMustard')">⚫ Black Mustard</button>
+          <button class="fed-btn" data-btype="crop" data-bval="greenMustard" onclick="window._farmEditor?.setBrush('crop','greenMustard')">🥬 Green Mustard</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Objects (click to move)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="object" data-bval="sellCrate"  onclick="window._farmEditor?.setBrush('object','sellCrate')">📦 Sell Box</button>
+          <button class="fed-btn" data-btype="object" data-bval="supplyBox"  onclick="window._farmEditor?.setBrush('object','supplyBox')">🧺 Supply Box</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Processing Furniture (free in editor)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="furniture" data-bval="pestle"      onclick="window._farmEditor?.setBrush('furniture','pestle')">🥣 Pestle</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezing Vat</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="handMill"    onclick="window._farmEditor?.setBrush('furniture','handMill')">⚙️ Hand Mill</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="dryingRack"  onclick="window._farmEditor?.setBrush('furniture','dryingRack')">☀️ Drying Rack</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="smoker"      onclick="window._farmEditor?.setBrush('furniture','smoker')">💨 Smoker</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="agingBarrel" onclick="window._farmEditor?.setBrush('furniture','agingBarrel')">🛢️ Aging Barrel</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="agingVase"   onclick="window._farmEditor?.setBrush('furniture','agingVase')">🏺 Aging Vase</button>
+        </div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-btn fed-erase" data-btype="erase" data-bval="erase" onclick="window._farmEditor?.setBrush('erase','erase')">🗑️ Erase</button>
+        <button class="fed-action-btn" onclick="window._farmEditor?.save()">💾 Save</button>
+        <button class="fed-action-btn fed-danger" onclick="window._farmEditor?.clearLayout()">🗑 Clear Saved</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dev Testing Arena spawn menu -->
+  <div id="devSpawnPanel" style="display:none;" aria-label="Creature spawn menu">
+    <div class="fed-header">
+      <span>🐾 Creature Spawner</span>
+      <button class="fed-close" onclick="window.DevSpawner?.toggle()" title="Close spawn menu">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div class="fed-section">
+        <div class="fed-label">Species (rolls fresh cosmetic genes per spawn) — Bandit entries roll a fresh gang member (species/clothing/loadout) per spawn</div>
+        <div class="fed-grid" id="devSpawnSpeciesGrid"></div>
+      </div>
+      <div class="fed-section" id="devSpawnBanditTierSection">
+        <div class="fed-label">Bandit difficulty tier (distance-from-town stand-in, 0-3)</div>
+        <div class="fed-grid" id="devSpawnBanditTierGrid"></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devSpawnBtnAction">➕ Spawn Selected</button>
+        <button class="fed-action-btn fed-danger" id="devKillAllBtn">💀 Auto Kill All</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Foliage / objects — trees/stumps participate in the same view-corridor culling and camera-occlusion fade as a real wilderness zone's, for testing that behavior without leaving the arena</div>
+        <div class="fed-grid" id="devSpawnFoliageGrid"></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devSpawnFoliageBtnAction">🌲 Spawn Selected</button>
+        <button class="fed-action-btn fed-danger" id="devClearFoliageBtn">🗑️ Clear Objects</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Objects from this panel: <span id="devArenaFoliageCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Weather override — remains active in the arena and restores the real forecast when you leave</div>
+        <div class="fed-grid" id="devArenaWeatherGrid">
+          <button type="button" class="fed-btn" data-weather="clear">☀️ Clear</button>
+          <button type="button" class="fed-btn" data-weather="rain">🌧️ Rain</button>
+          <button type="button" class="fed-btn" data-weather="storm">⛈️ Storm</button>
+        </div>
+        <div class="fed-label" style="margin-top:8px">Rain plane placement</div>
+        <div class="fed-grid" id="devRainPlaneModeGrid">
+          <button type="button" class="fed-btn" data-rain-mode="camera">Camera Relative</button>
+          <button type="button" class="fed-btn" data-rain-mode="rows">Row Bands</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Position</div>
+        <div class="fed-grid" id="devRainPositionRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="followScreenX">X · Follow Screen</button>
+          <button type="button" class="fed-btn" data-rain-rule="followCameraY">Y · Follow Camera</button>
+          <button type="button" class="fed-btn" data-rain-rule="lockRowZ">Z · Lock to Rows</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Rotation</div>
+        <div class="fed-grid" id="devRainRotationRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationX">X · Camera Pitch</button>
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationY">Y · Camera Yaw</button>
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationZ">Z · Camera Roll</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Scale</div>
+        <div class="fed-grid" id="devRainScaleRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="scaleWithCameraDistance">Scale · Follow Camera Distance</button>
+        </div>
+        <label class="fed-label" style="margin-top:8px">Row distance (tiles)
+          <input type="number" id="devRainRowSpacing" min="0.5" max="24" step="0.5" value="3" style="width:72px">
+        </label>
+        <label class="fed-label">Visible toward camera
+          <input type="number" id="devRainFrontCount" min="0" max="12" step="1" value="3" style="width:72px">
+        </label>
+        <label class="fed-label">Visible behind player
+          <input type="number" id="devRainBehindCount" min="0" max="12" step="1" value="1" style="width:72px">
+        </label>
+        <label class="fed-label">Rain speed multiplier
+          <input type="number" id="devRainSpeedMultiplier" min="0.25" max="12" step="0.25" value="3" style="width:72px">
+        </label>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devCombatLogBtn">📋 Copy Combat Log (last 7s, for AI review)</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Base movement speed (player &amp; every creature/bandit) — <span id="devSpeedMulLabel">75%</span></div>
+        <input type="range" id="devSpeedMulSlider" min="25" max="300" step="5" value="75" style="width:100%">
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu button (top-right) -->
+  <button id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
+
+  <!-- Menu Backdrop -->
+  <div id="menuBackdrop"></div>
+
+  <!-- Menu Panel: grid x:3 y:2 w:27 h:14 (32×18)
+       Inventory sub-grid: 54 cols × 28 rows               -->
+  <div id="menuPanel" role="dialog" aria-label="Game menu">
+
+    <!-- Header: tab bar + control buttons -->
+    <div class="mp-header">
+      <div class="mp-tabs" role="tablist">
+        <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
+        <!-- Shipping and Supplies are meant to open as their own windows when
+             interacting with their associated objects in the world, not as
+             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
+             buildShippingTransferUI()/renderSupplyPage() are left intact
+             below for that future hookup. -->
+        <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
+        <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
+        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
+        <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
+        <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
+        <button class="mp-tab"        data-mpanel="debug"         role="tab">🐛 Debug</button>
+        <button class="mp-tab"        data-mpanel="wildlife"      role="tab">🧬 Wildlife</button>
+      </div>
+      <div class="mp-ctrls">
+        <button class="mp-ctrl-btn"        id="menuPauseBtn" title="Pause/Resume">⏸</button>
+        <button class="mp-ctrl-btn danger" id="menuResetBtn" title="Reset farm">↩</button>
+        <button class="mp-ctrl-btn"        id="mpClose"      title="Close menu">✕</button>
+      </div>
+    </div>
+
+    <!-- Panel body — one pane per tab -->
+    <div class="mp-body">
+
+      <!-- ── Inventory pane ─────────────────────────────────
+           All sub-elements positioned to sub-grid 54×28
+           Two sub-tabs: Gear (character-saved) and Pack (world-saved) -->
+      <div class="mp-pane active inv-mode-pack" id="mpInventory">
+
+        <!-- Wallet: x:1/54 y:1/28 w:13 h:2 -->
+        <div class="inv-wallet">💰 <span id="invWalletDisplay">0g</span></div>
+
+        <!-- Gear / Pack sub-tab toggle: x:15/54 y:1/28 w:20 h:2 -->
+        <div class="inv-sub-tabs">
+          <button class="inv-sub-tab active" id="invTabPack">🎒 Pack</button>
+          <button class="inv-sub-tab" id="invTabGear">⚙️ Gear</button>
+        </div>
+
+        <!-- Category tab bar (Pack only): x:1/54 y:3/28 w:35 h:3 -->
+        <div class="inv-cats">
+          <button class="inv-cat active" data-cat="all">All</button>
+          <button class="inv-cat" data-cat="seed">Seeds</button>
+          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="material">Materials</button>
+          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="processed">Processed</button>
+        </div>
+
+        <!-- Key Items (Pack only): x:1/54 y:6/28 w:35 h:7 -->
+        <div class="inv-key-section" id="invKeySection">
+          <div class="inv-key-header">🗝️ Key Items <span class="inv-key-badge">World unlocks</span></div>
+          <div class="inv-key-list" id="invKeyList">
+            <div class="inv-key-empty">No key items yet.</div>
+          </div>
+        </div>
+
+        <!-- Equipment slots (Gear only): x:1/54 y:6/28 w:35 h:7 -->
+        <div class="inv-equip-section" id="invEquipSection">
+          <!-- Populated by buildEquipmentSlots() -->
+        </div>
+
+        <!-- Item grid (Pack only): x:1/54 y:13/28 w:33 h:14 -->
+        <div class="inv-grid-area inv-grid-area--short">
+          <div class="inv-grid" id="invGrid"></div>
+        </div>
+
+        <!-- Pack Clothing (Pack only) -->
+        <div class="inv-pack-clothing" id="invPackClothing">
+          <div class="inv-pcloth-empty">No clothing in pack.</div>
+        </div>
+
+        <!-- Page scroller (Pack only): x:34/54 y:13/28 w:2 h:14 -->
+        <div class="inv-pgscroll inv-pgscroll--short" id="invPgScroll">
+          <button class="ips-btn" id="invPgUp">▲</button>
+          <div class="ips-fill"></div>
+          <button class="ips-btn" id="invPgDown">▼</button>
+        </div>
+
+        <!-- Charms + Whistles placeholders (Gear only): x:1/54 y:13/28 w:35 h:14 -->
+        <div class="inv-gear-extras" id="invGearExtras">
+          <div class="inv-gear-extra-section">
+            <div class="inv-gear-extra-label">✨ Charms</div>
+            <div class="inv-gear-extra-empty">No charms equipped. <span class="inv-gear-coming">Not yet implemented.</span></div>
+          </div>
+          <div class="inv-gear-extra-section">
+            <div class="inv-gear-extra-label">🎵 Whistles</div>
+            <div id="invWhistleSection"></div>
+          </div>
+          <div class="inv-gear-carry-note">Gear Inventory saves with your character and carries between worlds.</div>
+        </div>
+
+        <!-- Item info box: x:37/54 y:0 w:17 h:full -->
+        <div class="inv-info" id="invInfo">
+          <div class="ii-empty" id="iiEmpty">← Select an item</div>
+          <div class="ii-detail" id="iiDetail">
+            <div class="ii-icon-wrap"><span class="ii-icon" id="iiIcon"></span></div>
+            <div class="ii-name"    id="iiName"></div>
+            <div class="ii-price"   id="iiPrice"></div>
+            <div class="ii-tags"    id="iiTags"></div>
+            <div class="ii-desc"    id="iiDesc"></div>
+            <div class="ii-actions" id="iiActions"></div>
+          </div>
+        </div>
+
+      </div><!-- /mpInventory -->
+
+      <!-- ── Crafting pane ─────────────────────────────────────
+           Turn an owned furniture blueprint (bought from the carpenter's
+           shop — see FURNITURE_BLUEPRINT_CATALOG/renderCarpenterShopPage)
+           into the finished furniture piece using wood + stone gathered
+           with the axe and pick. See renderCraftingPanel() in game.js. -->
+      <div class="mp-pane" id="mpCrafting">
+        <div class="supply-top-row">
+          <div class="supply-tabs" role="tablist" aria-label="Crafting category filters">
+            <button class="supply-tab crafting-cat-tab active" data-crafting-cat="all" type="button">All</button>
+            <button class="supply-tab crafting-cat-tab" data-crafting-cat="processing" type="button">Processing Stations</button>
+            <button class="supply-tab crafting-cat-tab" data-crafting-cat="decorative" type="button">Decorative</button>
+          </div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Craft Furniture from Blueprints</div>
+          <div id="craftingList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpCrafting -->
+
+      <!-- ── Calendar pane ─────────────────────────────────── -->
+      <div class="mp-pane" id="mpCalendar">
+        <div class="cal-month-header">
+          <button class="mp-ctrl-btn" id="calPrevMonth" title="Previous month">‹</button>
+          <div class="cal-month-title" id="calMonthTitle">Waxingheat — Year 1</div>
+          <button class="mp-ctrl-btn" id="calNextMonth" title="Next month">›</button>
+        </div>
+        <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 3rd week of Stormtide</div>
+        <div class="cal-weeks" id="calWeeks"></div>
+      </div><!-- /mpCalendar -->
+
+      <!-- ── Map pane: fog-revealed wilderness + discovered locales. See
+           renderWildernessMapPanel() in game.js. ────────────────────────── -->
+      <div class="mp-pane" id="mpMap">
+        <div class="wmap-zone-tabs" id="wmapZoneTabs"></div>
+        <div class="wmap-canvas-wrap"><canvas id="wildernessMapCanvas" width="560" height="560"></canvas></div>
+        <div class="wmap-legend">
+          <span><i style="background:#f9e28a"></i> You</span>
+          <span><i style="background:#7fe89a"></i> Dwelling</span>
+          <span><i style="background:#c084fc"></i> Great Fey shrine</span>
+          <span><i style="background:#6ec6f0"></i> Story location</span>
+        </div>
+        <!-- Nearby NPCs — walk-to navigation targets, not teleports; only
+             NPCs currently near the player show up here. See
+             nearbyNpcGatheringPoints/startWalkToNpc in game.js. -->
+        <div class="wmap-gathering" id="wmapGatheringPoints">
+          <h3 class="wmap-gathering-title">Nearby</h3>
+          <div class="wmap-gathering-list" id="wmapGatheringList"></div>
+        </div>
+      </div><!-- /mpMap -->
+
+      <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
+           a read-only layout glance, livestock roster + breeding, shared
+           storage, and (owner-only) farmhand management. See renderFarmPanel()
+           in game.js. ──────────────────────────────────────────────────── -->
+      <div class="mp-pane" id="mpFarm">
+        <div class="farm-pane">
+          <div class="farm-header">
+            <div class="farm-name-row">
+              <input id="farmNameInput" class="farm-name-input" type="text" maxlength="40" disabled aria-label="Farm name">
+              <button id="farmNameSaveBtn" class="settings-small-btn" hidden>Save</button>
+            </div>
+            <div class="farm-owner-row">Owned by <span id="farmOwnerName">—</span></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Layout</div>
+            <div class="farm-grid-wrap"><canvas id="farmGlanceCanvas" width="480" height="480"></canvas></div>
+            <div class="farm-grid-legend" id="farmGridLegend"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Buildings</div>
+            <div id="farmBuildingsNote" class="farm-note"></div>
+            <div id="farmBuildingsList" class="farm-list"></div>
+            <div class="farm-toolbar">
+              <button id="farmCancelPlacementBtn" class="settings-small-btn" hidden>Cancel</button>
+            </div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Food Processing</div>
+            <div id="farmProcessorsNote" class="farm-note"></div>
+            <div id="farmProcessorsSummary" class="farm-note"></div>
+            <div id="farmProcessorsGrid" class="farm-processor-grid"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Dew</div>
+            <div id="farmDewNote" class="farm-note"></div>
+            <div id="farmDewList" class="farm-list"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Furniture</div>
+            <div id="farmFurnitureNote" class="farm-note"></div>
+            <div id="farmFurnitureList" class="farm-list"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Livestock</div>
+            <div class="farm-toolbar">
+              <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock ▾</button>
+              <button id="farmPairBtn" class="settings-small-btn" disabled>Set Breeding Pair (select 2)</button>
+            </div>
+            <div id="farmAddLivestockPicker" class="farm-list" hidden></div>
+            <div id="farmBreedingPairsNote" class="farm-note"></div>
+            <div id="farmBreedingPairsList" class="farm-list"></div>
+            <div id="farmLivestockList" class="farm-list"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Storage</div>
+            <div id="farmStorageLocked" class="farm-note" hidden>🔒 Storage access hasn't been granted to you on this farm.</div>
+            <div id="farmStorageBody" class="farm-storage">
+              <div class="farm-storage-col">
+                <div class="farm-storage-col-title">🎒 Bag</div>
+                <div id="farmStorageBagList" class="farm-list"></div>
+              </div>
+              <div class="farm-storage-col">
+                <div class="farm-storage-col-title">🏚 Farm Storage</div>
+                <div id="farmStorageBoxList" class="farm-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="farm-section" id="farmhandsSection" hidden>
+            <div class="settings-section-title">Farmhands</div>
+            <div id="farmhandsList" class="farm-list"></div>
+            <div class="farm-toolbar">
+              <select id="farmAddFarmhandSelect" class="settings-select"></select>
+              <button id="farmAddFarmhandBtn" class="settings-small-btn">Add Farmhand</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /mpFarm -->
+
+      <!-- ── Stable pane: the character's personal, untradeable companion
+           collection — separate from any farm's livestock. See
+           renderStablePanel() in game.js. ──────────────────────────────── -->
+      <div class="mp-pane" id="mpStable">
+        <div class="farm-pane">
+          <div class="farm-header">
+            <div class="settings-section-title">🐾 Your Stable</div>
+            <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
+          </div>
+          <div id="stableList" class="farm-list"></div>
+        </div>
+      </div><!-- /mpStable -->
+
+      <!-- ── Shipping box transfer pane ───────────────────────
+           Adapted from HHItemTransferLayoutV1: left player bag,
+           middle transfer controls, right shipping box.          -->
+      <div class="mp-pane" id="mpShipping">
+        <div class="ship-pane ship-left">
+          <div class="ship-title-row"><div class="ship-title">🎒 Pack</div><div class="ship-capacity" id="shipLeftCap">0 stacks</div></div>
+          <div class="ship-cats">
+            <button class="ship-cat active" data-side="left" data-cat="all">All</button>
+            <button class="ship-cat" data-side="left" data-cat="seed">Seeds</button>
+            <button class="ship-cat" data-side="left" data-cat="crop">Crops</button>
+            <button class="ship-cat" data-side="left" data-cat="material">Materials</button>
+            <button class="ship-cat" data-side="left" data-cat="processed">Processed</button>
+          </div>
+          <div class="ship-search-strip">Sellable stacks transfer into the shipping box.</div>
+          <div class="ship-grid-wrap"><div class="ship-grid" id="shipLeftGrid"></div></div>
+          <div class="ship-footer" id="shipLeftFooter">Select a player item.</div>
+        </div>
+
+        <div class="ship-pane ship-mid">
+          <div class="ship-transfer-title">Transfer</div>
+          <div class="ship-preview"><div class="ship-preview-icon" id="shipPreviewIcon">📦</div><div class="ship-preview-name" id="shipPreviewName">Select item</div></div>
+          <div class="ship-direction" id="shipDirection">↔</div>
+          <div class="ship-stepper">
+            <button id="shipAmtMinus" aria-label="Decrease shipping transfer amount">−</button>
+            <div class="ship-amount" id="shipAmount">1</div>
+            <button id="shipAmtPlus" aria-label="Increase shipping transfer amount">+</button>
+          </div>
+          <button class="ship-transfer-btn" id="shipTransferOne">Move 1</button>
+          <button class="ship-transfer-btn" id="shipTransferHalf">Move Half</button>
+          <button class="ship-transfer-btn" id="shipTransferStack">Move Stack</button>
+          <button class="ship-close-btn" id="shipCloseBtn">Close</button>
+        </div>
+
+        <div class="ship-pane ship-right">
+          <div class="ship-title-row"><div class="ship-title">🟧 Shipping Box</div><div class="ship-capacity" id="shipRightCap">Empty</div></div>
+          <div class="ship-cats">
+            <button class="ship-cat active" data-side="right" data-cat="all">All</button>
+            <button class="ship-cat" data-side="right" data-cat="crop">Crops</button>
+            <button class="ship-cat" data-side="right" data-cat="material">Materials</button>
+            <button class="ship-cat" data-side="right" data-cat="processed">Processed</button>
+          </div>
+          <div class="ship-search-strip">Box contents sell automatically on the shipping timer.</div>
+          <div class="ship-grid-wrap"><div class="ship-grid" id="shipRightGrid"></div></div>
+          <div class="ship-footer" id="shipRightFooter">Select a boxed item to take it back before sale.</div>
+        </div>
+
+        <div class="ship-pane ship-detail">
+          <div class="ship-detail-icon" id="shipDetailIcon">📦</div>
+          <div class="ship-detail-copy">
+            <div class="ship-detail-top"><div class="ship-detail-name" id="shipDetailName">Shipping Box Transfer</div><div class="ship-detail-value" id="shipDetailValue">—</div></div>
+            <div class="ship-detail-desc" id="shipDetailDesc">Move sellable crops and materials from the player bag into the shipping box. Select items already in the box to pull them back out before the timed sale.</div>
+            <div class="ship-detail-tags" id="shipDetailTags"><span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Instant transfer</span></div>
+          </div>
+        </div>
+      </div><!-- /mpShipping -->
+
+
+
+      <!-- ── Supply shop pane ──────────────────────────────── -->
+      <div class="mp-pane" id="mpSupplies">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="supplyGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="supply-tabs" role="tablist" aria-label="Supply shop category filters">
+            <button class="supply-tab active" data-supply-cat="seeds" type="button">Seeds</button>
+            <button class="supply-tab" data-supply-cat="furniture" type="button">Furniture</button>
+            <button class="supply-tab" data-supply-cat="livestock" type="button">Livestock</button>
+            <button class="supply-tab" data-supply-cat="all" type="button">All</button>
+          </div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title" id="supplySectionTitle">Supply Shop — Seeds</div>
+          <div id="supplyShopList" class="supply-list"></div>
+        </div>
+        <div class="menu-section supply-delivery-section">
+          <div class="menu-section-title">Pending Deliveries / Recent Sales</div>
+          <div id="supplyDeliveryList" class="supply-delivery-list"></div>
+        </div>
+      </div><!-- /mpSupplies -->
+
+      <!-- ── General Store pane ─────────────────────────────── -->
+      <div class="mp-pane" id="mpGeneralStore">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gsGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="supply-tabs" role="tablist" aria-label="General store category filters">
+            <button class="supply-tab general-store-tab active" data-general-store-cat="goods" type="button">Goods</button>
+            <button class="supply-tab general-store-tab" data-general-store-cat="clothing" type="button">Clothing</button>
+            <button class="supply-tab general-store-tab" data-general-store-cat="all" type="button">All</button>
+          </div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title" id="generalStoreSectionTitle">Funji &amp; Son's General Store — Goods</div>
+          <div id="generalStoreList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpGeneralStore -->
+
+      <!-- ── Carpenter's Shop pane (no tab button — opened only via Dzibim
+           Khibu's carpenter counter, same pattern as the General Store
+           above). Sells barn plans and furniture blueprints; see
+           renderCarpenterShopPage() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpCarpenterShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="cpGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Dzibim Khibu's Carpentry — Plans &amp; Blueprints</div>
+          <div id="carpenterShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpCarpenterShop -->
+
+      <!-- ── Jubmir's Wares pane (no tab button — opened via the "See Wares"
+           choice when talking to Jubmir, same pattern as the General Store/
+           Carpenter panes above). One dabinggi-hound egg per day; see
+           renderJubmirShopPage() in game.js. ───────────────────────────── -->
+      <div class="mp-pane" id="mpJubmirShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="jmGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Jubmir's Wares</div>
+          <div id="jubmirShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpJubmirShop -->
+
+      <!-- ── Smithing counter pane (no tab button — opened via Sloomi's or
+           Kzubug's "openCraftMenu" dialogue choice, same pattern as the
+           General Store/Carpenter/Jubmir panes above). Craft verdigris tools
+           from dug-up metal bars, then plate/clear/reinforce them; see
+           renderMetalCraftShopPage() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpMetalCraftShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="mcGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Sloomi &amp; Kzubug's Smithing Counter</div>
+          <div id="metalCraftShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpMetalCraftShop -->
+
+      <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
+           interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
+      <div class="mp-pane" id="mpAlchemy">
+        <div class="menu-section alchemy-reagents-section">
+          <div class="menu-section-title">Reagents — choose 2–3 to test for a reaction</div>
+          <div id="alchemyReagentList" class="supply-list"></div>
+        </div>
+        <div class="menu-section alchemy-cauldron-section">
+          <div class="menu-section-title">Cauldron</div>
+          <div id="alchemySelectedStrip" class="alch-selected-strip"></div>
+          <div id="alchemyEffectPreview" class="alch-effect-preview"></div>
+          <button id="alchemyBrewBtn" class="shop-buy-btn alch-brew-btn" onclick="window._doBrewPotion?.()" disabled>⚗️ Brew Potion</button>
+          <details class="alchemy-diagnostics"><summary>Alchemy diagnostics</summary><pre id="alchemyDiagnostics"></pre></details>
+        </div>
+      </div><!-- /mpAlchemy -->
+
+      <!-- ── Progress pane ──────────────────────────────── -->
+      <div class="mp-pane" id="mpProgress">
+        <div class="progress-pane">
+          <div class="progress-section-header">
+            <span class="progress-section-title">Skills</span>
+            <span class="progress-save-badge">Character-saved</span>
+          </div>
+          <div class="progress-skills">
+            <div class="skill-row"><span class="skill-icon">🌿</span><div class="skill-name">Foraging</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">⛏️</span><div class="skill-name">Mining</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🌾</span><div class="skill-name">Farming</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🎣</span><div class="skill-name">Fishing</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">⚔️</span><div class="skill-name">Combat</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🍲</span><div class="skill-name">Cooking</div><div class="skill-level">Lv 0</div></div>
+          </div>
+          <div class="progress-section-header perk-section-header">
+            <span class="progress-section-title">Perks</span>
+            <span class="progress-save-badge">Character-saved</span>
+          </div>
+          <div class="perk-trees" id="perkTrees"></div>
+        </div>
+      </div><!-- /mpProgress -->
+
+      <!-- ── Tasks pane: today's board notice (take it here) + the quest
+           log of everything accepted — turn-in itself always happens by
+           talking to the quest giver. See renderTasksPanel()/
+           takeBoardTask()/turnInTask() in game.js. ──────────────────────── -->
+      <div class="mp-pane" id="mpTasks">
+        <div class="menu-section">
+          <div class="menu-section-title">Bulletin Board</div>
+          <div id="tasksBoardPosting" class="supply-list"></div>
+        </div>
+        <!-- Wanted poster for a bandit captain -- separate slot from the
+             board notice above, own refresh rule (maybeRefreshBountyPosting
+             in game.js): stays up until claimed, not replaced daily. -->
+        <div class="menu-section">
+          <div class="menu-section-title">Wanted</div>
+          <div id="tasksBountyPosting" class="supply-list"></div>
+        </div>
+        <div class="menu-section">
+          <div class="menu-section-title">Quest Log</div>
+          <div id="tasksList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpTasks -->
+
+      <!-- ── Relationships pane: friendship tier per NPC talked to — see
+           renderRelationshipsPanel() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpRelationships">
+        <div class="menu-section">
+          <div class="menu-section-title">Friendship</div>
+          <div id="relationshipsList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpRelationships -->
+
+      <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
+      <div class="mp-pane" id="mpLoadout">
+        <div class="settings-pane" id="combatLoadoutPane"></div>
+      </div>
+
+      <!-- ── Settings pane ──────────────────────────────── -->
+      <div class="mp-pane" id="mpSettings">
+        <div class="settings-pane">
+          <div class="settings-section-title">Visual Effects</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shell Outlines</div>
+              <div class="settings-desc">Dark border on rocks, crops and terrain steps</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingOutlines" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Depth Outlines</div>
+              <div class="settings-desc">Extra outline pass along depth seams between objects (heavier on performance)</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDepthOutlines"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Depth Outline Sensitivity</div>
+              <div class="settings-desc">How small a depth gap is needed to draw a seam</div>
+            </div>
+            <input type="range" id="settingDepthOutlineSensitivity" min="0" max="1" step="0.05" value="0.5" style="align-self:center">
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Billboard Sprites</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Grass Billboards</div>
+              <div class="settings-desc">PNG blade sprites on grass tiles</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingGrass" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Billboard Wind</div>
+              <div class="settings-desc">Grass and weed sprites sway in wind</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingBillWind" checked><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Weeds</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Weed: 3D Foliage</div>
+              <div class="settings-desc">Off: oversized grass billboards. On: procedural 3D plants with outlines</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingWeed3D"><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span>Cloud Forest (perf testing)</span>
+            <button id="settingCloudForestResetDefaults" type="button" style="font-size:11px;padding:3px 9px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#9bc2ff;cursor:pointer;white-space:nowrap">Set to Defaults</button>
+          </div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Mist</div>
+              <div class="settings-desc">Player-centered fog cylinders shown only in the Southern Cloud Forest</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestFog" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Wide Vegetation Cull</div>
+              <div class="settings-desc">Off: falls back to the normal camera-forward cull box every other zone uses. On: a circle around the player, sized by the radius slider below</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestWideCull" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Cull Radius</div>
+              <div class="settings-desc">How far (in tiles) around the player vegetation stays loaded while Wide Vegetation Cull is on</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestCullRadius" min="5" max="40" step="1" value="30" style="align-self:center">
+              <span id="settingCloudForestCullRadiusValue" class="settings-slider-value">30</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Fade-In Start</div>
+              <div class="settings-desc">Percent of Tree Cull Radius where a tree reaches full opacity — beyond that (out to the radius) it fades toward transparent instead of popping in solid</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFadeStart" min="0" max="100" step="1" value="70" style="align-self:center">
+              <span id="settingCloudForestFadeStartValue" class="settings-slider-value">70%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Tree Outline Radius</div>
+              <div class="settings-desc">Percent of Tree Cull Radius within which a tree's dark shell outline is drawn — farther out than this the outline is skipped even though the tree itself is visible (the outline pass is the more expensive of the two)</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestOutlineRadius" min="0" max="100" step="1" value="40" style="align-self:center">
+              <span id="settingCloudForestOutlineRadiusValue" class="settings-slider-value">40%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Inner Layer Radius</div>
+              <div class="settings-desc">Closest, densest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogInnerRadius" min="0.5" max="15" step="0.1" value="2.2" style="align-self:center">
+              <span id="settingCloudForestFogInnerRadiusValue" class="settings-slider-value">2.2</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Inner Layer Opacity</div>
+              <div class="settings-desc">Closest, densest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogInnerOpacity" min="0" max="1" step="0.01" value="0.14" style="align-self:center">
+              <span id="settingCloudForestFogInnerOpacityValue" class="settings-slider-value">0.14</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Middle Layer Radius</div>
+              <div class="settings-desc">Middle mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogMiddleRadius" min="0.5" max="20" step="0.1" value="3.7" style="align-self:center">
+              <span id="settingCloudForestFogMiddleRadiusValue" class="settings-slider-value">3.7</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Middle Layer Opacity</div>
+              <div class="settings-desc">Middle mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogMiddleOpacity" min="0" max="1" step="0.01" value="0.26" style="align-self:center">
+              <span id="settingCloudForestFogMiddleOpacityValue" class="settings-slider-value">0.26</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Outer Layer Radius</div>
+              <div class="settings-desc">Farthest, faintest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogOuterRadius" min="1" max="40" step="0.5" value="15" style="align-self:center">
+              <span id="settingCloudForestFogOuterRadiusValue" class="settings-slider-value">15</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Fog Outer Layer Opacity</div>
+              <div class="settings-desc">Farthest, faintest mist ring</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingCloudForestFogOuterOpacity" min="0" max="1" step="0.01" value="0.46" style="align-self:center">
+              <span id="settingCloudForestFogOuterOpacityValue" class="settings-slider-value">0.46</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cloud Forest Background Forest</div>
+              <div class="settings-desc">Dense instanced tree wall along the north town-entrance edge</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestBgForest" checked><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Nearby Projectile Cover (perf testing)</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Precise Projectile Cover</div>
+              <div class="settings-desc">Master switch for combat-only rendered-geometry cover</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionMaster" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Projectile Cover</div>
+              <div class="settings-desc">Nearby visible 3D geometry absorbs player and enemy projectiles during combat</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionProjectiles" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Transparent-Pixel Precision</div>
+              <div class="settings-desc">Sample PNG alpha so invisible texture gaps do not block shots</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionAlpha" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Bandit Camps</div>
+              <div class="settings-desc">Spawn bandit camps (tents, campfires, gangs) in wilderness zones — applies to zones you haven't entered yet, not camps already standing</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingBanditCamps" checked><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Camera</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Zoom</div>
+              <div class="settings-desc">Camera distance from the player — higher is more zoomed in</div>
+            </div>
+            <select id="settingZoom" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
+              <option value="0.75">75%</option>
+              <option value="1">100%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5" selected>150%</option>
+              <option value="1.75">175%</option>
+              <option value="2">200%</option>
+            </select>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam</div>
+              <div class="settings-desc">Close, over-the-shoulder camera — mouse looks around, WASD moves relative to where you're looking</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShoulderSurf" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam Offset — Horizontal</div>
+              <div class="settings-desc">Shifts the shoulder cam's framing left/right relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingShoulderSurfOffsetH" min="-1" max="1" step="0.05" value="0.35" style="align-self:center">
+              <span id="settingShoulderSurfOffsetHValue" class="settings-slider-value">0.35</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder Cam Offset — Vertical</div>
+              <div class="settings-desc">Raises/lowers the shoulder cam's framing relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="-0.05" style="align-self:center">
+              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">-0.05</span>
+            </div>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Input</div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Desktop Bindings</div>
+              <div class="settings-desc">Click a binding, then press a key. Duplicate buttons are blocked unless they are inside a held mode shift.</div>
+            </div>
+            <div class="input-bindings-grid" id="desktopInputBindings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Controller Bindings</div>
+              <div class="settings-desc">Gamepads activate while this window is focused and stop driving input when focus is lost.</div>
+            </div>
+            <div class="input-bindings-grid" id="controllerInputBindings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Held Mode Shifts</div>
+              <div class="settings-desc">Create held layers such as “hold LB, press A”. The shifted input cannot be the held mode-shift button itself.</div>
+            </div>
+            <div class="mode-shift-list" id="modeShiftList"></div>
+            <button type="button" class="settings-small-btn" id="addModeShiftBtn">Add Mode Shift</button>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Note Keys</div>
+              <div class="settings-desc">Which key plays each of the Lyre minigame's four melody notes. Click a binding, then press a key.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyreNoteKeyBindings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Pattern Loadout</div>
+              <div class="settings-desc">Which automatic picking/strumming pattern each Auto Pick direction plays while you hold a melody note.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyrePatternLoadoutSettings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Freeplay Key</div>
+              <div class="settings-desc">The root note and scale free play starts in. Changes take effect next time you start playing.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyreFreeplayKeySettings"></div>
+          </div>
+          <div class="settings-section-title" style="margin-top:10px">Performance</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">FPS Counter</div>
+              <div class="settings-desc">Show a live frames-per-second readout</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingFpsCounter"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Resolution</div>
+              <div class="settings-desc">Lower render resolution to improve performance</div>
+            </div>
+            <select id="settingResolution" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
+              <option value="1">100%</option>
+              <option value="0.75">75%</option>
+              <option value="0.5">50%</option>
+            </select>
+          </label>
+          <div class="settings-section-title" style="margin-top:10px">Local Save Folder</div>
+          <div class="settings-row settings-row--stacked" id="localSaveFolderRow">
+            <div class="settings-label">
+              <div class="settings-name">Local Save Folder</div>
+              <div class="settings-desc">Mirrors your save to a real folder on disk as a backup, alongside browser storage. Only which folder you picked is remembered — not the save data itself.</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+              <span id="localSaveFolderStatus" style="font-size:12px; color:var(--text-dim,#99a)"></span>
+              <button type="button" id="localSaveFolderChooseBtn" class="settings-small-btn">Choose Folder</button>
+              <button type="button" id="localSaveFolderChangeBtn" class="settings-small-btn" style="display:none">Change Folder</button>
+              <button type="button" id="localSaveFolderReconnectBtn" class="settings-small-btn" style="display:none">Reconnect</button>
+              <button type="button" id="localSaveFolderSaveNowBtn" class="settings-small-btn" style="display:none">Save Now</button>
+              <button type="button" id="localSaveFolderLoadBtn" class="settings-small-btn" style="display:none">Load From Folder</button>
+            </div>
+          </div>
+          <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Editor Hub</div>
+              <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
+            </div>
+            <a href="tools/index.html" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+          </div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Show Hitboxes</div>
+              <div class="settings-desc">Show elevated portrait hitboxes and active 3D melee pie-prism colliders</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShowHitboxes"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Show Interaction Raycast</div>
+              <div class="settings-desc">Show the centered camera ray, its selected target, and the player-to-hit guide</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShowInteractionRaycast"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Dev Mode</div>
+              <div class="settings-desc">Adds a +1 Mastery button to each tool's item-info panel, for testing</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Disable Shoulder-Pet Hat X-Ray</div>
+              <div class="settings-desc">Debug toggle for the translucent-shoulder-pet investigation — forces the hat plane to occlude normally instead of letting a shoulder pet peek through it, in case that mechanism is contributing to the issue</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDisableHatXray"><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Teleport to Den</div>
+              <div class="settings-desc">Warp to a random animal den on the current map (also works from inside a den's cavern — warps back out to a den on that den's own map)</div>
+            </div>
+            <button type="button" id="devTeleportDenBtn" class="settings-small-btn">Teleport</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Teleport to Test Arena</div>
+              <div class="settings-desc">Warp to an empty sandbox area with a creature-spawning menu (replaces the farm editor pencil while you're there). Press again to warp back to where you were.</div>
+            </div>
+            <button type="button" id="devTeleportArenaBtn" class="settings-small-btn">Teleport</button>
+          </div>
+        </div>
+      </div><!-- /mpSettings -->
+
+      <!-- ── Debug log pane ────────────────────────────────── -->
+      <div class="mp-pane" id="mpDebug">
+        <div style="display:flex;flex-direction:column;position:absolute;inset:0">
+          <!-- padding-right reserves the same corner #menuBtn floats in (it's
+               position:fixed, z-index:60, above this panel's own z-index:56,
+               so it stays clickable to close the menu) — without it, this
+               row's right-hand button group (Probe a pixel/Copy/Clear) sits
+               directly underneath menuBtn and is physically unclickable. -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px;padding-right:calc(4 * var(--col) + 16px)">
+            <div style="display:flex;gap:6px">
+              <button id="debugViewLogBtn"   class="debug-view-tab active" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:6px;color:#6aa7ff;cursor:pointer">Log</button>
+              <button id="debugViewProbeBtn" class="debug-view-tab"        style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">🎯 Pixel Probe</button>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button id="debugProbeArmBtn" style="font-size:11px;padding:3px 10px;background:rgba(163,230,53,.15);border:1px solid rgba(163,230,53,.4);border-radius:6px;color:#a3e635;cursor:pointer">🎯 Probe a pixel</button>
+              <button id="debugRigTransformDumpBtn" style="font-size:11px;padding:3px 10px;background:rgba(69,214,160,.15);border:1px solid rgba(69,214,160,.4);border-radius:6px;color:#45d6a0;cursor:pointer">Dump rig transforms</button>
+              <button id="debugCopyBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy</button>
+              <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
+            </div>
+          </div>
+          <div id="debugFilterTabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 6px;flex-shrink:0">
+            <!-- data-filter values are handled by _renderDebugPanel() in debug.js:
+                 'all' = no filtering; 'audio' = lvl in {audio,bgm,cue,bgs}; 'schedule'
+                 = msg starts with '[schedule]' (its own tab since NPC schedule
+                 fallback/no-rule-matched spam otherwise drowns everything else);
+                 'warn'/'error'/'info' = that lvl, minus anything already claimed by
+                 the schedule tab; 'other' = whatever's left (fish/promise/wildlife/…). -->
+            <button class="debug-filter-tab active" data-filter="all"      style="font-size:10px;padding:2px 8px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:10px;color:#6aa7ff;cursor:pointer">All</button>
+            <button class="debug-filter-tab"        data-filter="audio"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Audio</button>
+            <button class="debug-filter-tab"        data-filter="schedule" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Schedule</button>
+            <button class="debug-filter-tab"        data-filter="cat:combat" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Combat</button>
+            <button class="debug-filter-tab"        data-filter="cat:interaction" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Interactions</button>
+            <button class="debug-filter-tab"        data-filter="cat:wildlife" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Wildlife</button>
+            <button class="debug-filter-tab"        data-filter="cat:chunks" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Chunks</button>
+            <button class="debug-filter-tab"        data-filter="cat:render" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Rendering</button>
+            <button class="debug-filter-tab"        data-filter="cat:assets" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Assets</button>
+            <button class="debug-filter-tab"        data-filter="cat:items" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Items</button>
+            <button class="debug-filter-tab"        data-filter="cat:ui" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">UI</button>
+            <button class="debug-filter-tab"        data-filter="cat:world" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">World</button>
+            <button class="debug-filter-tab"        data-filter="warn"    style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Warn</button>
+            <button class="debug-filter-tab"        data-filter="error"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Error</button>
+            <button class="debug-filter-tab"        data-filter="info"    style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Info</button>
+            <button class="debug-filter-tab"        data-filter="other"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Other</button>
+          </div>
+          <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
+          <div id="debugProbeView" style="display:none;flex:1;overflow-y:auto;padding:8px 12px 12px">
+            <img id="debugProbeScreenshot" style="display:none;max-width:100%;border-radius:6px;border:1px solid rgba(255,255,255,.15);margin-bottom:8px" alt="Screenshot taken at the moment of the probe click/tap">
+            <pre id="debugProbeResult" style="margin:0;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent">No probe yet — press "🎯 Probe a pixel", then click/tap anywhere on the game world.</pre>
+          </div>
+        </div>
+      </div><!-- /mpDebug -->
+
+      <!-- ── Pixel-probe armed hint (shown over the world while waiting for the next click/tap) ── -->
+      <div id="pixelProbeHint" style="display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;background:rgba(10,14,10,.92);border:1px solid rgba(163,230,53,.5);border-radius:10px;padding:8px 14px;font-size:12px;color:#a3e635;align-items:center;gap:10px;pointer-events:none">
+        <span>🎯 Probe armed — click/tap anywhere on the game world</span>
+        <button id="pixelProbeCancelBtn" style="pointer-events:auto;font-size:11px;padding:2px 8px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);border-radius:6px;color:#f87171;cursor:pointer">Cancel</button>
+      </div>
+
+      <!-- ── Wildlife/genotype debug pane ──────────────────────── -->
+      <div class="mp-pane" id="mpWildlife">
+        <div style="display:flex;flex-direction:column;position:absolute;inset:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
+            <span style="font-size:12px;color:#9ca3af">Wild pack genotypes — every den seen this session</span>
+            <div style="display:flex;gap:6px">
+              <button id="wildernessChunkDebugBtn" style="font-size:11px;padding:3px 10px;background:rgba(70,229,139,.14);border:1px solid rgba(70,229,139,.4);border-radius:6px;color:#8df2b5;cursor:pointer">Show Chunk Grid</button>
+              <button id="wildernessChunkAuditBtn" style="font-size:11px;padding:3px 10px;background:rgba(249,226,138,.14);border:1px solid rgba(249,226,138,.4);border-radius:6px;color:#f9e28a;cursor:pointer">Audit Loaded Chunks</button>
+              <button id="wildlifeShiftBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Force Tothal Shift</button>
+              <button id="wildlifeRefreshBtn" style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">Refresh</button>
+            </div>
+          </div>
+          <pre id="wildernessChunkStatus" style="margin:4px 12px;padding:6px 8px;max-height:84px;overflow:auto;background:rgba(0,0,0,.28);border:1px solid rgba(70,229,139,.2);border-radius:5px;color:#b8f5cf;font:10px/1.35 ui-monospace,monospace;white-space:pre-wrap">Wilderness chunks have not initialized yet.</pre>
+          <div id="wildlifeDenList" style="flex:1;overflow-y:auto;padding:6px 12px 12px;font-size:12px;color:#d1d5db"></div>
+        </div>
+      </div><!-- /mpWildlife -->
+
+    </div><!-- /mp-body -->
+  </div><!-- /menuPanel -->
+
+  <!-- Toast -->
+  <div id="toast" role="status" aria-live="polite"></div>
+  <!-- Location title card -- fades in near the top of the screen when
+       entering a named area's radius (e.g. a bandit camp), same genre
+       convention as an "Entering X" banner. Separate from #toast (a small
+       corner pill meant for quick status pings), since this needs to read
+       as a deliberate, cinematic reveal. -->
+  <div id="zoneBanner" role="status" aria-live="polite"></div>
+
+  <!-- Contextual action prompt (bottom-center) — device-aware "press X to
+       do Y" prompt shared across the game; see showActionPrompt/
+       hideActionPrompt in game.js. Empty until populated. -->
+  <div id="actionPrompt" aria-hidden="true"></div>
+
+  <!-- Den-Mother nest hold-to-take progress bar -->
+  <div id="nestTakeHud" aria-hidden="true">
+    <div class="nest-take-label" id="nestTakeLabel"></div>
+    <div class="nest-take-track"><div class="nest-take-fill" id="nestTakeFill"></div></div>
+  </div>
+
+  <!-- Bandit tent hold-to-loot/burn progress bar — same markup and CSS rules
+       as #nestTakeHud above (see updateBanditTentInteraction in game.js). -->
+  <div id="tentActionHud" aria-hidden="true">
+    <div class="nest-take-label" id="tentActionLabel"></div>
+    <div class="nest-take-track"><div class="nest-take-fill" id="tentActionFill"></div></div>
+  </div>
+
+  <!-- Combo streak readout (see js/combat/combat-combo-streak.js) -->
+  <div id="comboStreakHud" aria-hidden="true"></div>
+
+
+
+  <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
+  <div id="gameTextBox" role="status" aria-live="polite"></div>
+
+  <!-- NPC Dialogue Window: grid x:0 y:10 w:32 h:8 (32×18) -->
+  <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true">
+    <!-- Portrait: peeks above dialogue panel from bottom-left -->
+    <div id="npcPortraitWrap">
+      <canvas id="npcPortraitCanvas" width="256" height="256"></canvas>
+    </div>
+    <!-- Inner panel: left content (name+text) | right response panel -->
+    <div id="npcDialogueInner">
+      <!-- Left: header row (name + hearts) + dialogue text -->
+      <div id="npcDialogueLeft">
+        <div id="npcDialogueHeader">
+          <div id="npcDialogueName"></div>
+          <div id="npcDialogueHearts" aria-label="Relationship"></div>
+        </div>
+        <div id="npcDialogueText"></div>
+      </div>
+      <!-- Response panel: inner-grid x:25 y:0 w:7 h:6; sub-grid 8×16 -->
+      <div id="npcResponsePanel">
+        <!-- Options 6–1 stacked; each collapses when unused -->
+        <div id="npcDialogueOptions">
+          <button class="dlg-opt" id="dlgOpt6" data-opt="6"><span class="dlg-opt-label"></span></button>
+          <button class="dlg-opt" id="dlgOpt5" data-opt="5"><span class="dlg-opt-label"></span></button>
+          <button class="dlg-opt" id="dlgOpt4" data-opt="4"><span class="dlg-opt-label"></span></button>
+          <button class="dlg-opt" id="dlgOpt3" data-opt="3"><span class="dlg-opt-label"></span></button>
+          <button class="dlg-opt" id="dlgOpt2" data-opt="2"><span class="dlg-opt-label"></span></button>
+          <button class="dlg-opt" id="dlgOpt1" data-opt="1"><span class="dlg-opt-label"></span></button>
+        </div>
+        <!-- Action row: Leave (x:0 w:3) | Continue (x:3 w:5) -->
+        <div id="npcDialogueActions">
+          <button id="npcDialogueLeave">Leave</button>
+          <button id="npcDialogueContinue">&#x25BC; <kbd>E</kbd></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Redye panel: opened from a clothing item's info panel (see selectGearClothing / openRedyePanel in game.js) -->
+  <div id="dyePanel" class="dye-panel" role="dialog" aria-modal="true" aria-label="Redye Clothing" aria-hidden="true">
+    <div class="dye-panel-inner">
+      <div class="dye-panel-header">
+        <div class="dye-panel-title" id="dyePanelTitle">Redye</div>
+        <button class="dye-panel-close" id="dyePanelClose" aria-label="Close">✕</button>
+      </div>
+      <div class="dye-panel-subslots" id="dyePanelSubslots"></div>
+      <div class="dye-panel-preview" id="dyePanelPreview"></div>
+      <div class="dye-panel-groups" id="dyePanelGroups"></div>
+      <div class="dye-panel-actions">
+        <button class="ii-btn" id="dyePanelCancel">Cancel</button>
+        <button class="ii-btn equip" id="dyePanelApply">Apply Dye</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- House layout editor: a full-screen "hidden tab" opened from the Farm
+       tab's consolidated "House" row (see openHouseLayoutModal in
+       js/farm-panel.js) — not a small popup. A locked top-down 3D viewport
+       (mirrors the reference modular-farmhouse demo's own Exterior 3D view)
+       you drag pieces around in directly, plus a side panel for the
+       controls that don't have a natural drag gesture: select/build/
+       demolish/rotate a piece, or place a new owned house deed. -->
+  <div id="houseLayoutModal" class="house-layout-modal" role="dialog" aria-modal="true" aria-label="House Layout" aria-hidden="true">
+    <div class="house-layout-header">
+      <div class="house-layout-title">House Layout</div>
+      <button class="house-layout-close" id="houseLayoutClose" aria-label="Close">✕</button>
+    </div>
+    <div class="house-layout-body">
+      <div class="house-layout-viewport">
+        <canvas id="houseLayout3dCanvas"></canvas>
+        <div id="houseLayoutHint" class="house-layout-hint"></div>
+      </div>
+      <div class="house-layout-side">
+        <div class="house-layout-section-title">Rooms</div>
+        <div id="houseLayoutPieceList" class="farm-list"></div>
+        <div id="houseLayoutSelectedActions" class="house-layout-actions"></div>
+        <div id="houseLayoutArchitecture"></div>
+        <div id="houseLayoutDeeds"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Joystick -->
+  <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
+    <div id="joystickBase"></div>
+    <div id="joystickKnob">🕹️</div>
+  </div>
+
+  <!-- Floating camera-look joystick: hidden until a touch starts on the
+       right half of the game view (see cameraDragRequested in game.js),
+       then JS positions it under that touch point and shows it. -->
+  <div id="cameraJoystickZone" class="control-zone" aria-hidden="true">
+    <div id="cameraJoystickBase"></div>
+    <div id="cameraJoystickKnob">👁️</div>
+  </div>
+
+  <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
+       Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
+  <div id="arcContainer">
+    <!-- Innermost arch: dodge only, sitting on the NW cardinal (135°) —
+         one clear input, closest ring to the corner. Tap dodges in
+         current facing direction; when a climb target is ahead, it
+         starts climbing instead. Always visible on touch (hidden only during
+         fishing, along with the other arc controls). Desktop: X key, no button. -->
+    <div id="dodgeArch">
+      <button id="dodgeBtn" class="abt" aria-label="Forward dodge or climb">
+        <span class="abt-icon">💨</span>
+        <span class="abt-label">Dodge</span>
+      </button>
+    </div>
+    <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
+    <div id="toolSelect">
+      <!-- Combat quick-switch: enters melee from a normal tool, then swaps
+           directly between the dedicated melee and ranged slots. First
+           (leftmost) outer-arch control — the dedicated put-away button
+           that used to sit here is gone; dequip is now a tap on toolBtn/
+           itemBtn while a tool/item is already held (see their pointerup
+           handlers), and Z still mirrors it on keyboard. -->
+      <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
+        <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
+      </button>
+      <button class="ts-btn" id="toolBtn" aria-label="Select tool, or dequip if a tool is already out" aria-expanded="false">
+        <span class="ts-icon" id="toolBtnIcon">⛏️</span>
+        <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
+      </button>
+      <button id="itemBtn" aria-label="Select item, or dequip if an item is already out">🌾</button>
+      <!-- Call/dismiss mount. Mirrors the V key / D-pad down 'toggleMount'
+           action; .active reflects mountRideState !== 'none' (see
+           updateMountRide). -->
+      <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
+        <span class="abt-icon">🐴</span>
+      </button>
+      <!-- Utility menu: final SAFE control on the outer ring, taking the
+           12:00 slot Call Mount used to occupy (see the #btnUtilityMenu CSS
+           comment for why it isn't past 12:00 the way melee auto-target
+           below is — an always-visible button out there would go off-screen).
+           Hold to open the utilities wheel (Return to Camp, quick-select a
+           Campfire Kit, Return to Farm — see game.js's _openUtilitiesArc)
+           and drag to pick, release to commit; a plain tap does nothing,
+           same as the desktop 'c' key it mirrors. -->
+      <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
+        <span class="abt-icon">🧭</span>
+      </button>
+      <!-- Melee auto-target toggle: sits one step past 12:00, its own
+           original position unrelated to the ring shift above (see the CSS
+           comment). Melee-only and hidden until a melee weapon is out (see
+           updateMovement's weaponEngaged/activeTool checks); grayed out
+           with no targetable hostile nearby, lights up white the instant
+           one is (see .abt-target-ready), and turns solid red once
+           actually engaged (see .active, matching the other outer-ring
+           toggles' convention). Tap targets the closest hostile and turns
+           the toggle on; the hidden camera joystick's left/right then swaps
+           targets instead of rotating the camera while it's on. -->
+      <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <circle cx="12" cy="12" r="0.6" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </span>
+        <span class="abt-label">Auto-Target</span>
+      </button>
+    </div>
+    <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
+    <div id="actionStack">
+      <button class="abt" id="btnAction1" aria-label="Primary action"></button>
+      <button class="abt" id="btnAction2" aria-label="Action 2"></button>
+      <button class="abt" id="btnAction3" aria-label="Action 3"></button>
+      <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
+      <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+      <!-- Swap Target: weapon-only. Acts as its own mini-stick — push it toward
+           a hostile to lock auto-targeting onto it. Icon is the universal
+           4-arrow "move/translate" cross used in art-program gizmos. -->
+      <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Swap target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="5 9 2 12 5 15"></polyline>
+            <polyline points="9 5 12 2 15 5"></polyline>
+            <polyline points="15 19 12 22 9 19"></polyline>
+            <polyline points="19 9 22 12 19 15"></polyline>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <line x1="12" y1="2" x2="12" y2="22"></line>
+          </svg>
+        </span>
+        <span class="abt-label">Swap Target</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Item Select: grid x:20 y:14 w:5 h:3 · sub-grid 14×6 -->
+  <div id="itemSelect" aria-label="Inventory item select">
+    <button class="is-arr" id="itemPrev" aria-label="Previous item">‹</button>
+    <div class="is-body">
+      <div class="is-track">
+        <div class="is-peek" id="isPrevIcon">🌶️</div>
+        <div class="is-curr">
+          <span class="is-icon" id="itemIcon">🌾</span>
+          <span class="is-count" id="itemCount">×6</span>
+        </div>
+        <div class="is-peek" id="isNextIcon">🍠</div>
+      </div>
+      <div class="is-name-row" id="itemName">RICE SEEDS</div>
+    </div>
+    <button class="is-arr" id="itemNext" aria-label="Next item">›</button>
+  </div>
+
+  <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
+  <div id="fishingOverlay"></div>
+
+  <!-- Music (Lyre) minigame overlay — a self-contained app loaded into an
+       iframe rather than built inline like the fishing ring (see
+       js/music-minigame.js): it's a large pre-built instrument/rhythm
+       system with its own CSS namespace, so an iframe avoids ID/style
+       collisions with the rest of the page. The iframe itself renders
+       transparent with its own native controls hidden (its "hosted-
+       minigame" body class) so the real 3D scene — the player, and
+       whichever NPC they may be playing alongside — stays fully visible
+       underneath; js/music-minigame.js's buildEdgeControls() populates
+       leftMusicControls/rightMusicControls with the actual touch/mouse
+       controls, driving the iframe's engine directly through its exposed
+       HobunjiMusicControlBridge. -->
+  <div id="musicMinigameOverlay">
+    <!-- Three independently-docked pieces, matching how the reference
+         mockup (docs/references/(HA)MusicMinigameV2.html, rendered and
+         measured headlessly rather than guessed from a screenshot) actually
+         composes its own hosted embedding: a tall, narrow note-lane strip
+         (not a modest centered box) with the left-hand bank/pattern panel
+         immediately beside it, and the right-hand note/scale/strum panel
+         anchored separately at the far right edge of the screen — not
+         bundled into one dock. That leaves the whole center-right of the
+         screen clear for the "music" camera framing (player + whichever
+         NPC they're playing with) rather than the frame or its controls
+         sitting on top of it. See style.css for the actual positioning. -->
+    <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
+    <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
+    <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
+  </div>
+
+  <!-- Fish-catch victory view: camera zooms on the player, who holds the
+       caught fish and faces the camera, while this shows the star rating
+       and a Continue button — see beginFishCatchView/continueFromFishCatch. -->
+  <div id="fishCatchView" aria-hidden="true">
+    <div class="fcv-stars" id="fcvStars"></div>
+    <div class="fcv-text" id="fcvText"></div>
+    <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
+  </div>
+
+  <script src="js/tool-icon-render.js?v=20260712d"></script>
+  <script src="js/sprite-recolor.js?v=20260815a"></script>
+  <script src="js/tool-metal-recolor.js?v=20260719a"></script>
+  <!-- Mount ride system (window.Mounts) — must load before game.js, which
+       calls window.Mounts.init(...) during its own setup. -->
+  <script src="js/mount-system.js?v=20260816b"></script>
+  <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
+       which calls window.AudioSystem.init(...) during its own setup. -->
+  <script src="js/audio-system.js?v=20260829combatsfx2"></script>
+  <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
+       AudioSystem above remains the replaceable low-level renderer. -->
+  <script src="js/animal-vocalizations.js?v=20260828animalvoices3"></script>
+  <!-- Background music/ambient cues/bgs/furniture-proximity SFX
+       (window.Music) — wires its own DOM audio-unlock listeners at load
+       time, and must load before game.js, which calls
+       window.Music.init(...) during its own setup. Depends on
+       window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
+  <script src="js/music-system.js?v=20260814a"></script>
+  <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
+       also loaded by the Attack Animation Editor, so a probed character's
+       node-by-node local transforms use the exact same code/format as the
+       editor's own preview dump. Must load before pixel-probe.js below. -->
+  <script src="js/transform-dump-utils.js?v=20260821a"></script>
+  <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
+       buttons at load time, and must load before game.js, which calls
+       window.PixelProbe.init(...) during its own setup. -->
+  <script src="js/pixel-probe.js?v=20260829combatsfx1"></script>
+  <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
+       resolution, tree/pool selection, typewriter, portrait rendering,
+       choice buttons. Must load before game.js, which calls
+       window.DialogueContent.init(...) during its own setup.
+       openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
+       game.js and call into this module. -->
+  <script src="js/dialogue-content.js?v=20260828expr1"></script>
+  <!-- World-space Float+ combat text and centered five-row reward lists. -->
+  <script src="js/world-popup-text.js?v=20260825worldprompt2"></script>
+  <!-- Secondary proximity dialogue: NPC chathead greetings, companion
+       onomatopoeia, and reusable crowd cheer/jeer hooks. -->
+  <script src="js/ambient-dialogue.js?v=20260826treasure2"></script>
+  <script src="js/player-social-poses.js?v=20260810a"></script>
+  <script src="js/player-chat.js?v=20260810a"></script>
+  <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
+       load before game.js, which calls window.Fishing.init(...) during its
+       own setup. game.js's own tool-swing code reads window.Fishing.state/
+       .readyPose directly. -->
+  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
+  <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
+       — must load before game.js, which calls window.KurrayaInstrument.init(...)
+       during its own setup, mirroring window.Fishing above. -->
+  <script src="js/kurraya-instrument.js?v=20260813a"></script>
+  <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
+       load before game.js, which calls window.MusicMinigame.init(...)
+       during its own setup, mirroring window.Fishing above. -->
+  <script src="js/music-minigame.js?v=20260815b"></script>
+  <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
+       checks — window.NpcScheduling) — must load before game.js, which
+       calls window.NpcScheduling.init(...) during its own setup. -->
+  <script src="js/npc-scheduling.js?v=20260815a"></script>
+  <!-- NPC walkability/beeline checks + area-graph pathfinding
+       (window.NpcPathfinding) — must load before game.js, which calls
+       window.NpcPathfinding.init(...) during its own setup. -->
+  <script src="js/npc-pathfinding.js?v=20260816a"></script>
+  <!-- Cutscene Director "Preview in game" one-shot handoff — must run
+       BEFORE game.js so window.__hobunjiPlayerProfile is already set when
+       game.js's own synchronous boot check reads it. Consumed once (the
+       localStorage key is cleared immediately) and never written to the
+       real hobunjiPlayerProfile/hobunjiSaveMeta keys, so it never touches
+       the real save; see docs/game.js's "Cutscene Preview Mode" section
+       and docs/tools/cutscene-director/index.html's "Preview in game"
+       button for the rest of this feature. -->
+  <script>
+    (function () {
+      var raw = localStorage.getItem('hobunji_cutscene_preview_v1');
+      if (!raw) return;
+      localStorage.removeItem('hobunji_cutscene_preview_v1');
+      try {
+        window.__hobunjiCutscenePreview = JSON.parse(raw);
+        var base = (window.HobunjiOnboarding && window.HobunjiOnboarding.loadProfile()) || {};
+        var previewId = 'preview_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        window.__hobunjiPlayerProfile = Object.assign({}, base, {
+          playerId: previewId, characterId: previewId, worldId: previewId,
+          worldLabel: 'Cutscene Preview', worldOwnerCharacterId: previewId, isWorldOwner: true,
+          farmhandPermissions: {}, nonGearInventory: base.nonGearInventory || {},
+          packClothing: base.packClothing || [], npcRelationships: base.npcRelationships || {},
+          questProgress: base.questProgress || {}, isNewWorld: true,
+          // Without a real local save, base has no appearance at all —
+          // buildProfileFromNpcExport (npc-avatar-preview-utils.js) bails
+          // out on a missing appearance and the player falls back to the
+          // plain placeholder pawn, unlike NPCs (which always carry a full
+          // appearance from the NPC database). A plain default identity
+          // gets the player the same real PNG-plane avatar NPCs get; a real
+          // save's own appearance is still preferred when one exists.
+          appearance: base.appearance || { speciesId: 'mao-ao', gender: 'male', cosmetics: {} },
+          equippedCosmetics: base.equippedCosmetics || [],
+          appliedDyes: base.appliedDyes || {},
+        });
+      } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
+    })();
+  </script>
+  <script src="game.js?v=20260829combatsfx1"></script>
+  <script>
+    // Inventory Gear / Pack sub-tab toggle
+    (function () {
+      var packTab = document.getElementById('invTabPack');
+      var gearTab = document.getElementById('invTabGear');
+      var pane    = document.getElementById('mpInventory');
+      function setMode(mode) {
+        pane.classList.toggle('inv-mode-pack', mode === 'pack');
+        pane.classList.toggle('inv-mode-gear', mode === 'gear');
+        packTab.classList.toggle('active', mode === 'pack');
+        gearTab.classList.toggle('active', mode === 'gear');
+      }
+      packTab.addEventListener('click', function () { setMode('pack'); });
+      gearTab.addEventListener('click', function () { setMode('gear'); });
+    })();
+  </script>
+  <script>HobunjiOnboarding.init();</script>
+</body>
+</html>
