@@ -4356,6 +4356,14 @@
         // companions so an incidental hit on a passive-type follower doesn't
         // make it bolt from the player.
         if (c.def?.hostile === false && !c.isCompanion) {
+          // A drenkirra mid-forage or asleep is pinned to a branch —
+          // clear that (see wildlife-cloud-forest-behavior.js's
+          // interruptForFlee) before the state flip below, or the
+          // branch-pin's own per-frame early-continue in updateHostiles
+          // keeps re-snapping it right back to that spot forever, never
+          // actually reaching the movement this state is supposed to
+          // trigger. A no-op for anything not currently on a branch.
+          window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
           c.state = 'fleeing-low-health';
           c.targetCreature = null;
         }

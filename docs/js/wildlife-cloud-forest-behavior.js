@@ -440,6 +440,26 @@
     state.sleepBranch = null;
   }
 
+  // Attacking a drenkirra mid-forage or asleep needs to actually knock it
+  // off whatever branch it's currently pinned to before 'fleeing-low-
+  // health' can do anything at all — game.js's updateHostiles skips a
+  // branch-pinned creature's entire per-frame state machine every tick
+  // via its own "if (c.onBranch && updateBranchDweller(c, dt)) continue"
+  // early-out (updateBranchDweller re-pins creature.x/y to the branch's
+  // fixed t position and reports "handled" unconditionally whenever
+  // onBranch + _cfForage are both still set). A creature attacked while
+  // eating/sleeping had 'fleeing-low-health' set on it by damageCreature,
+  // but stayed onBranch — so it just sat there pinned in place forever,
+  // "trying" to flee but never actually reaching the movement branch that
+  // would do it. Called from game.js's damageCreature right before it
+  // sets that state; a no-op for a drenkirra that's already on the ground.
+  function interruptForFlee(creature) {
+    const state = creature._cfDrenkirra;
+    if (!state) return;
+    if (state.mode === 'eating' || state.mode === 'seekingFruit') finishEating(creature, state, false);
+    else if (state.mode === 'sleeping') endSleep(creature, state);
+  }
+
   function updateDrenkirraSchedule(creature, night, zoneId) {
     if (creature.isDenMother || !String(creature.creatureKey || '').startsWith('drenkirra')) return;
     const state = ensureDrenkirraState(creature);
@@ -551,6 +571,7 @@
     isPackOffShift,
     updateBranchDweller,
     fruitObjectAt,
+    interruptForFlee,
     // Read by js/wildlife-behavior-map.js's LOD near/far ring — exported
     // rather than duplicated so retuning this constant here keeps the
     // debug map honest about where the real boundary actually is.
