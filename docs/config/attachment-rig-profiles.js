@@ -18,11 +18,27 @@
   // Rakakoan gender keys are installed below as live aliases of their Kenkari
   // counterparts, so a later export can never accidentally fork their transforms.
   const characterRecords = [["tletingan::male",-17.000000000000004,0,[-0.1769199293575374,0.3839625600994886,0],[0.22770354382724423,0.42663710735156957,0],[-0.2448354156580218,0.4465232083661127,0],[59.09264957264957,108.5],0.85,0.645,0.85,0.9,1,6,false],["engh-sho::male",-52.49999999999999,0,[-0.2115295187159422,0.6813045758748404,0],[0.2721813782445264,0.6838406837818225,0],[-0.28930388062923146,0.7000103424366998,0],[53.60656565656566,128.5],0.95,1.005,0.95,1.15,1.275,0,false],["mao-ao::male",-47,0,[-0.2006533796199832,0.6234902368619534,0],[0.19067248465844266,0.6947557240731601,0],[-0.28087406205430004,0.6455541403639915,0],[62.551070840197696,125.5],null,0.95,1,1.1,1.05,0,false],["mao-ao::female",-44.50000000000001,0,[-0.14923510597360837,0.4721927183587378,0],[0.1771042396564939,0.6511546407522855,0],[-0.23898599170593354,0.646996571654354,0],[76.5545073375262,114.5],1,0.925,0.8,1,1.025,0,false],["kenkari::male",-5.500000000000004,0,[-0.18055321970300925,0.27150559815116515,0],[0.17819817802695415,0.27810760526210354,0],[-0.18055321970300925,0.37969897363327487,0],[79.65683229813665,77.5],0.75,0.51,0.75,1,1,0,false],["kenkari::female",-4.0000000000000036,0,[-0.12331214301269552,0.2212216457140902,0],[0.1629792650553279,0.29929878500014695,0],[-0.16564616738866406,0.25011972083640993,0],[87.90841750841751,82.5],0.75,0.51,0.75,0.925,1,0,false],["tletingan::female",-23.00000000000001,0,[-0.15767922666458786,0.36829341919016667,0],[0.19339659287777322,0.38426858848533485,0],[-0.19326419458235525,0.38220450093854685,0],[67.36241610738254,99.5],0.85,0.62,0.85,0.925,1.025,5,false],["mashtzarr::male",-27.499999999999993,0,[-0.3150161025604807,0.504441432761613,0],[0.2938287377558306,0.471474644548211,0],[-0.3481292844745114,0.5072329547240978,0],[63.960809102402024,87.5],1,0.755,1.18,0.925,1.175,0,false],["mashtzarr::female",-31.000000000000007,0,[-0.20671639379279255,0.5521654715130626,0],[0.30553153725919435,0.39823082948935073,0],[-0.2938000697183753,0.37168801102709437,0],[72.13592233009709,97.5],1,0.79,1.18,0.9,1.125,0,false],["engh-sho::female",-49.500000000000014,0,[-0.1857404318972175,0.5885050529830135,0],[0.20505349784094706,0.4967497459859368,0],[-0.24815066240089945,0.46042886220274515,0],[71.9398595258999,112.5],0.95,0.975,0.95,1.225,1.325,0,false]]; // Character transforms stay on the v9 baseline; shoulderPerch tuples are refreshed from the supplied 2026-08-28 export.
+  const characterPosteriorFloorPercents = Object.freeze({
+    'tletingan::male': 24.829594593937666,
+    'engh-sho::male': 40.46344209891254,
+    'mao-ao::male': 37.31351872723915,
+    'mao-ao::female': 40.198007305794635,
+    'kenkari::male': 13.133738099540614,
+    'kenkari::female': 18.49675435046502,
+    'tletingan::female': 21.62644067848934,
+    'mashtzarr::male': 28.18802021075617,
+    'mashtzarr::female': 29.459673223780613,
+    'engh-sho::female': 41.16182006615896,
+  }); // Restores the calibrated floor-relative posterior heights that the compact v9 export accidentally serialized as zero; used while constructing every character profile below.
   const creatureRecords = [["drenkirra",[0,0.09289353489875796,0.02],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],["grehlr",[0,0.12393333333333335,0],"highest-opaque-pixel-along-idle-sprite-midline",-5,[1499.5,843.5],0,[0.01,-0.3719770036140037,0],[[1,1],[0.5,0.5],[0.2,0.2]],2],["gar-wolf",[0,0.14184834174882754,0.2761841625577698],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],["dabinggi-hound",[0,0.12212625800404886,0.6091387381509006],"highest-opaque-pixel-along-idle-sprite-midline",-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],["uumkaoii",[0,0.26595632314682005,0.02],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null]]; // Creature transforms stay on the v9 baseline; shoulderGrip tuples are refreshed from the supplied 2026-08-28 export.
 
   const characters = {}; // Runtime character profile map keyed "<species>::<gender>".
-  for (const [key, heightPercentOffset, heightPercentFromFloor, perch, left, right, pixel, portraitModelHeight, placement, portraitScale, handScale, footScale, armLength, derivedHandDefault] of characterRecords) {
+  for (const [key, heightPercentOffset, exportedHeightPercentFromFloor, perch, left, right, pixel, portraitModelHeight, placement, portraitScale, handScale, footScale, armLength, derivedHandDefault] of characterRecords) {
     const [species, gender] = key.split('::');
+    const recoveredHeightPercentFromFloor = Number(characterPosteriorFloorPercents[key]); // Used here to replace the corrupted all-zero v9 field with its last known calibrated floor height.
+    const heightPercentFromFloor = Number.isFinite(recoveredHeightPercentFromFloor)
+      ? recoveredHeightPercentFromFloor
+      : exportedHeightPercentFromFloor;
     const legacyPosterior = heightPercentFromFloor == null;
     const posteriorRule = legacyPosterior
       ? { xMode: 'center', ySource: 'png-plane-avatar.handAttachY', offsetBasis: 'portraitModelHeight', heightPercentOffset, defaultRuleVersion: 3 }
@@ -191,6 +207,7 @@
     anchorPositionScale: 1,
     posteriorCoordinateSpace: 'floor-relative',
     posteriorPixelDependency: 'removed',
+    posteriorFloorValues: 'recovered-from-pre-v9-floor-calibration',
   }; // Mobile-readable import status so this source can be verified without DevTools.
 
   const applyAttachmentRigProfileCorrections = () => {

@@ -324,13 +324,13 @@ assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionScale, 1);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.posteriorCoordinateSpace, 'floor-relative');
 const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
-assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['mashtzarr::male'].anchors.shoulderPerch.position[axis]), [-0.3080816783597182, 0.6479187307531316, 0], 'v9 must use the exact main-branch Mashtzarr shoulder perch');
+assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['mashtzarr::male'].anchors.shoulderPerch.position[axis]), [-0.3150161025604807, 0.504441432761613, 0], 'v9 must use the exact main-branch Mashtzarr shoulder perch');
 assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['mashtzarr::male'].anchors.leftHandShoulder.position[axis]), [0.2938287377558306, 0.471474644548211, 0], 'v9 must use the exact main-branch left hand shoulder');
 assert.deepStrictEqual(Array.from(['x', 'y', 'z'], axis => authoredCharacterProfiles['engh-sho::female'].anchors.rightHandShoulder.position[axis]), [-0.24815066240089945, 0.46042886220274515, 0], 'v9 must retain gender-specific hand anchors');
-assert.strictEqual(authoredCharacterProfiles['mashtzarr::male'].posteriorRule.heightPercentFromFloor, 0, 'v9 posterior coordinates are floor-relative and preserve the supplied zero');
+assert.strictEqual(authoredCharacterProfiles['mashtzarr::male'].posteriorRule.heightPercentFromFloor, 28.18802021075617, 'v9 posterior coordinates recover the calibrated floor height instead of preserving the corrupted zero');
 assert.strictEqual(authoredCharacterProfiles['rakakoan::male'], authoredCharacterProfiles['kenkari::male'], 'Rakakoan male transforms must alias Kenkari male by object identity');
 assert.strictEqual(authoredCharacterProfiles['rakakoan::female'], authoredCharacterProfiles['kenkari::female'], 'Rakakoan female transforms must alias Kenkari female by object identity');
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.1636307385658067, 'v9 must include the exact main-branch Drenkirra shoulder grip');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'v9 must include the exact main-branch Drenkirra shoulder grip');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures['gar-wolf'].anchors.shoulderGrip.position.z, 0.07486897921502367, 'v9 must include the exact main-branch Gar-wolf shoulder grip');
 assert.strictEqual(
   attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(authoredCharacterProfiles['rakakoan::male'].posteriorRule, 0.675, 0.023625),
@@ -363,6 +363,7 @@ assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPl
 assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies['engh-sho'].male, 0.95, 'profile correction must apply exported gender-specific body scale');
 assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['engh-sho'].male, 1.275, 'profile correction must apply exported foot scale');
 assert.strictEqual(appliedHandScales['engh-sho'].male, 1.15, 'profile correction must apply exported hand scale after that runtime loads');
+assert.match(proceduralFeetSource, /!isGaiting && state\.wasGaiting[\s\S]*placeIdleTarget\('left'[\s\S]*placeIdleTarget\('right'/, 'stopping movement must immediately snap both procedural feet out of the last stride pose');
 
 const authorPreviewUrl = new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/example/docs/tools/animation-author/index.html'); // Mirrors the immutable per-commit test URL used for this author.
 const authorDocsBase = new URL('../../', authorPreviewUrl);
