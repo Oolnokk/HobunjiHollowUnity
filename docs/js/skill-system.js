@@ -17,9 +17,12 @@
     fish: 10, combatHit: 1, combatKill: 8, cook: 8,
     alchemyBrew: 8, alchemyDiscovery: 18, alchemyTarget: 5,
   }; // Used by game actions so balance remains centralized.
+  const XP_GAIN_MULTIPLIERS = {
+    combat: 0.25,
+  }; // Used by award() to slow event-dense skill lines independently without changing the shared level curve or existing character XP.
 
   let deps = null; // Used to access saving, random rolls, popups, and food stacks.
-  const experience = Object.fromEntries(Object.keys(SKILLS).map(key => [key, 0])); // Used as character-scoped cumulative skill XP.
+  const experience = Object.fromEntries(Object.keys(SKILLS).map(key => [key, 0])); // Used as character-scoped cumulative skill XP, including fractional XP created by skill-specific gain multipliers.
 
   function xpForLevel(level) {
     const safeLevel = Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(level) || 0))); // Used to keep thresholds inside the supported level range.
@@ -27,7 +30,7 @@
   }
 
   function levelFromXp(xp) {
-    const safeXp = Math.max(0, Math.floor(Number(xp) || 0)); // Used to reject malformed saved experience.
+    const safeXp = Math.max(0, Math.floor(Number(xp) || 0)); // Used to reject malformed saved experience while allowing fractional progress below the next whole-XP threshold.
     let result = 0; // Used to walk cumulative thresholds up to the cap.
     while (result < MAX_LEVEL && safeXp >= xpForLevel(result + 1)) result++;
     return result;
@@ -52,7 +55,7 @@
         const savedLevel = Math.max(Number(savedLevels[key]) || 0, ...legacyLevels, 0); // Used to preserve the highest compatible pre-system level.
         value = Math.max(Number(value) || 0, xpForLevel(savedLevel));
       }
-      experience[key] = Math.max(0, Math.floor(value));
+      experience[key] = Math.max(0, value); // Used to preserve fractional XP across saves so scaled Combat hit XP is never lost on reload.
     }
     persist(false);
     render();
@@ -81,10 +84,18 @@
     return snapshot;
   }
 
-  function award(skillKey, amount, reason = '') {
+  function xpGainMultiplier(skillKey) {
+    const configured = Number(XP_GAIN_MULTIPLIERS[skillKey] ?? 1); // Used to read a skill-specific pacing override while leaving unspecified skills at their original 1x rate.
+    return Number.isFinite(configured) ? Math.max(0, configured) : 1;
+  }
+
+  function award(skillKey, amount, reason = '', applyRateScale = true) {
     if (!SKILLS[skillKey]) return false;
-    const gain = Math.max(0, Math.floor(Number(amount) || 0)); // Used to reject fractional, negative, or invalid XP grants.
-    if (!gain) return false;
+    const rawGain = Math.max(0, Math.floor(Number(amount) || 0)); // Used as the original whole-XP event value before optional skill-specific pacing is applied.
+    if (!rawGain) return false;
+    const gainMultiplier = applyRateScale ? xpGainMultiplier(skillKey) : 1; // Used to let gameplay awards use pacing while explicit diagnostic grants remain exact.
+    const gain = rawGain * gainMultiplier; // Used as the actual persisted XP increment; fractional values carry across events and saves.
+    if (!(gain > 0)) return false;
     const beforeLevel = level(skillKey); // Used to detect level-ups before mutating XP.
     experience[skillKey] += gain;
     const afterLevel = level(skillKey); // Used for level-up messaging after the grant.
@@ -187,7 +198,7 @@
       </div>`;
     }).join('') + `<details class="skill-diagnostics"><summary>Skill diagnostics</summary><pre>${diagnosticsText()}</pre>${deps?.isDevMode?.() ? debugButtonsHtml() : ''}</details>`;
     if (deps?.isDevMode?.()) {
-      container.querySelectorAll('[data-skill-debug]').forEach(button => button.addEventListener('click', () => award(button.dataset.skillDebug, 10, 'debug button')));
+      container.querySelectorAll('[data-skill-debug]').forEach(button => button.addEventListener('click', () => award(button.dataset.skillDebug, 10, 'debug button', false)));
     }
   }
 
@@ -206,9 +217,11 @@
     MAX_LEVEL,
     SKILLS,
     XP_GAINS,
+    XP_GAIN_MULTIPLIERS,
     init,
     restore,
     award,
+    xpGainMultiplier,
     level,
     effectiveLevel,
     bonusYieldChance,
