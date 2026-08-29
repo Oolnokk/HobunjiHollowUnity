@@ -30,6 +30,19 @@ const test = context.NavigationCompass._test;
 assert.equal(test.markerSize(0), 25, 'nearest target should use maximum marker size');
 assert(test.markerSize(80) < test.markerSize(8), 'marker size must decrease with distance');
 assert(Math.abs(test.angleDiff(-Math.PI + 0.1, Math.PI - 0.1) - 0.2) < 1e-9, 'bearing delta should wrap across ±PI');
+assert.equal(test.headingFromDirection({ x: 1, z: 0 }), 0, 'camera facing east should center east');
+assert(Math.abs(test.headingFromDirection({ x: 0, z: 1 }) - Math.PI / 2) < 1e-9, 'camera facing south should center south');
+assert(Math.abs(test.headingFromDirection({ x: 0, z: -1 }) + Math.PI / 2) < 1e-9, 'camera facing north should center north');
+assert.equal(test.headingFromDirection({ x: 0, z: 0 }), null, 'vertical/degenerate camera direction should not produce a horizontal heading');
+
+const cameraHeading = test.currentHeading({
+  getPlayerAimRay: () => ({ direction: { x: 0, y: -0.4, z: 1 } }),
+}, { angle: -1.2 });
+assert.equal(cameraHeading.source, 'camera-ray', 'compass heading should prefer the gameplay camera ray over character rotation');
+assert(Math.abs(cameraHeading.heading - Math.PI / 2) < 1e-9, 'camera pitch should not affect the horizontal compass heading');
+const fallbackHeading = test.currentHeading({ getPlayerAimRay: () => null }, { angle: 0.75 });
+assert.equal(fallbackHeading.source, 'player-fallback', 'character rotation should be used only while the camera ray is unavailable');
+assert.equal(fallbackHeading.heading, 0.75, 'camera-ray fallback should preserve the prior stable heading behavior');
 
 const collected = test.collectTargets('zone');
 assert.equal(collected.offAreaQuestTargets, 1, 'off-area quests should be counted for diagnostics');
