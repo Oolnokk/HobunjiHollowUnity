@@ -8771,7 +8771,6 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
-        const includePathBricks = options.includePathBricks !== false; // Prevents a runtime grass-apron refresh from registering duplicate paved-path chunks.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -8812,7 +8811,7 @@
         // below): built once the shared recipe/GLB are ready, chunked and
         // culled by camera corridor rather than tied to this zone's own
         // scene-build timing.
-        if (includeGlobalPath && includePathBricks) {
+        if (includeGlobalPath) {
           ensurePathSurfaceReady().then(() => {
             const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
             const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
@@ -8872,7 +8871,7 @@
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
               tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid, { includeCutWalls: true });
             const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -9013,7 +9012,10 @@
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
           mesh.userData.wildernessChunkOwnsGeometry = true;
-          if (includeGlobalPath && !includeTiles) mesh.userData.wildernessGlobalPathGround = true;
+          if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
+            mesh.userData.wildernessGlobalPathGround = true;
+            pathNet.bindGlobalGroundMesh?.(mesh);
+          }
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -12478,31 +12480,13 @@
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
         if (zi.chunkController && window.WildernessChunks) {
-          // The route network owns one zone-wide grass apron outside the
-          // streamed chunk groups. Rebuilding only the edited chunk therefore
-          // cannot remove apron triangles over a newly dug trench. Replace that
-          // small global layer from the live grid first, and let subsequent
-          // chunk builds share its refreshed exclusion lookup. Paved brick
-          // chunks are unchanged: digging is disallowed on PATH itself, and
-          // includePathBricks:false avoids registering a duplicate set.
-          const floorRegistry = _zoneFloorMeshGroups.get(mapId) || []; // Holds global path ground plus all currently resident chunk floor objects.
-          for (let i = floorRegistry.length - 1; i >= 0; i--) {
-            const mesh = floorRegistry[i];
-            if (!mesh?.userData?.wildernessGlobalPathGround) continue;
-            mesh.parent?.remove(mesh);
-            mesh.geometry?.dispose?.();
-            floorRegistry.splice(i, 1);
-          }
-          zi.pathNet = buildPathNetworkGeo(zi.grid, zi.cols, zi.rows);
-          const refreshedPathGround = _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId, {
-            includeTiles: false,
-            includeGlobalPath: true,
-            includePathBricks: false,
-            resetState: false,
-            pathNet: zi.pathNet,
-          }); // Replaces only the zone-wide route grass/path ground meshes.
-          floorRegistry.push(...refreshedPathGround);
-          _zoneFloorMeshGroups.set(mapId, floorRegistry);
+          // The route network's grass apron is zone-wide, but its index ranges
+          // are recorded per tile when it is first built. Toggle only this
+          // edited tile's handful of triangles instead of regenerating the
+          // entire route heightfield (which previously froze large wilderness
+          // maps for several seconds). Filling/smoothing restores the original
+          // indices through the same path.
+          zi.pathNet?.refreshTile?.(col, row);
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
@@ -18872,6 +18856,13 @@
 
         const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
         const pathIdx = [], grassIdx = [];
+        const tileIndexRanges = new Map(); // Maps each covered world tile to its path/grass index spans for O(1)-sized runtime hole updates.
+        const recordTileRange = (c, r, kind, start) => {
+          const key = `${c},${r}`;
+          let ranges = tileIndexRanges.get(key);
+          if (!ranges) tileIndexRanges.set(key, ranges = { path: [], grass: [] });
+          ranges[kind].push(start);
+        };
         for (let cj = 0; cj < GH-1; cj++)
           for (let ci = 0; ci < GW-1; ci++) {
             const tci = Math.min(bw-1, Math.floor(ci / CELLS));
@@ -18879,7 +18870,9 @@
             if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
             const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
-            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+            const target = isPath ? pathIdx : grassIdx;
+            recordTileRange(minC + tci, minR + tcj, isPath ? 'path' : 'grass', target.length);
+            target.push(v00, v01, v11, v00, v11, v10);
           }
 
         const vertCount = GW * GH;
@@ -18897,12 +18890,41 @@
           return g;
         };
 
-        return {
+        const network = {
           pathGeo: makeGeo(pathIdx),
           grassGeo: makeGeo(grassIdx),
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
           isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+          globalGroundMesh: null,
+          originalGroundIndex: null,
+          indexBase: { path: 0, grass: pathIdx.length },
+          bindGlobalGroundMesh(mesh) {
+            this.globalGroundMesh = mesh;
+            this.originalGroundIndex = mesh?.geometry?.index?.array?.slice?.() || null;
+          },
+          refreshTile(c, r) {
+            const indexAttr = this.globalGroundMesh?.geometry?.index;
+            const original = this.originalGroundIndex;
+            const ranges = tileIndexRanges.get(`${c},${r}`);
+            if (!indexAttr || !original || !ranges) return false;
+            const excluded = EXCLUDED.has(srcGrid[r]?.[c]?.type);
+            for (const kind of ['path', 'grass']) {
+              const base = this.indexBase[kind];
+              for (const start of ranges[kind]) {
+                const offset = base + start;
+                if (excluded) {
+                  const collapsedVertex = original[offset];
+                  for (let i = 0; i < 6; i++) indexAttr.array[offset + i] = collapsedVertex;
+                } else {
+                  for (let i = 0; i < 6; i++) indexAttr.array[offset + i] = original[offset + i];
+                }
+              }
+            }
+            indexAttr.needsUpdate = true;
+            return true;
+          },
         };
+        return network;
       }
 
       // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
@@ -19293,7 +19315,7 @@
       //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
       //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
       //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
-      function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
+      function buildTerrainTileGeo(col, row, type, srcGrid = grid, options = {}) {
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
         // Trench is a dug pit meant to mirror the raised bed's wide flat top
@@ -19376,6 +19398,39 @@
             uvs.push(col + vi * STEP, row + vj * STEP);
           }
 
+        // Farm ground uses individual box slabs, whose exposed side faces
+        // naturally wall an adjacent trench. Wilderness route/mesa surfaces
+        // are top-only heightfields, so removing their grass quad would expose
+        // an empty vertical gap around the trench. Add segmented dirt cut walls
+        // to the trench geometry itself for that renderer. Ordered samples keep
+        // each quad front-facing toward the surrounding ground and share edge
+        // vertices so normals remain smooth along the wall.
+        const wallIdx = [];
+        if (type === TileType.TRENCH && options.includeCutWalls) {
+          const appendWall = (samples, horizontal) => {
+            const first = positions.length / 3;
+            for (let i = 0; i < samples.length; i++) {
+              const { vi, vj } = samples[i];
+              const x = vi * STEP - 0.5, z = vj * STEP - 0.5;
+              const worldX = col + vi * STEP, worldZ = row + vj * STEP;
+              const bottomY = Y[vj * VERTS + vi];
+              const topY = seamDisp(worldX, worldZ);
+              const along = horizontal ? worldX : worldZ;
+              positions.push(x, topY, z, x, bottomY, z);
+              uvs.push(along, topY, along, bottomY);
+            }
+            for (let i = 0; i < samples.length - 1; i++) {
+              const top0 = first + i * 2, bottom0 = top0 + 1;
+              const top1 = top0 + 2, bottom1 = top0 + 3;
+              wallIdx.push(top0, bottom0, bottom1, top0, bottom1, top1);
+            }
+          };
+          if (srcGrid[row - 1]?.[col]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
+          if (srcGrid[row + 1]?.[col]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
+          if (srcGrid[row]?.[col - 1]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
+          if (srcGrid[row]?.[col + 1]?.type !== TileType.TRENCH) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
+        }
+
         // Split cells: dirt where significantly depressed (trench) or elevated (raised);
         // grass on flat edge cells that blend back to ground level.
         const DIRT_THRESH = 0.05;
@@ -19393,6 +19448,7 @@
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
         const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+        dirtIdx.push(...wallIdx);
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();

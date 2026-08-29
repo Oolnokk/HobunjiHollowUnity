@@ -75,10 +75,16 @@ assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
-assert.match(gameSource, /wildernessGlobalPathGround[\s\S]{0,1300}zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
-  'runtime wilderness edits must remove and rebuild the zone-wide route grass apron');
-assert.match(gameSource, /includePathBricks: false/,
-  'runtime route-apron refresh must not duplicate the separately managed paved bricks');
+assert.match(gameSource, /tileIndexRanges[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
+  'the route grass apron must retain per-tile index ranges for surgical runtime hole updates');
+assert.match(gameSource, /zi\.pathNet\?\.refreshTile\?\.\(col, row\)/,
+  'runtime wilderness edits must toggle only the edited route-apron tile');
+assert.doesNotMatch(gameSource, /zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
+  'runtime edits must not regenerate the whole route heightfield');
+assert.match(gameSource, /buildTerrainTileGeo\(c, r, tile\.type, zGrid, \{ includeCutWalls: true \}\)/,
+  'wilderness trench meshes must request their own visible cut walls');
+assert.match(gameSource, /const wallIdx = \[\][\s\S]{0,4000}dirtIdx\.push\(\.\.\.wallIdx\)/,
+  'trench cut walls must be included in the dirt geometry');
 assert.match(grassSource, /\[deps\.TileType\.GRASS, deps\.TileType\.SHRUB, deps\.TileType\.WEEDS\]\.includes\(liveTile\.type\)/,
   'rich grass patches must reject trenches and other carved runtime tiles');
 
