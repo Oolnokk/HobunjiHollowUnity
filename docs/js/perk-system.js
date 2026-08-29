@@ -1,14 +1,20 @@
 (() => {
   'use strict';
 
-  // Perk trees for Combat, Alchemy, Foraging, and Fishing. The intended final
-  // progression is POINTS_PER_LEVEL perk points per skill level (40 points at
-  // level 20). Some trees are still much smaller than Combat, though, so the
-  // temporary half-tree budget below spreads roughly half of each current
-  // tree's rank capacity across its 20 levels. Once every tree has enough
-  // meaningful ranks that 40 points naturally buys about half of it, this
-  // temporary budget can be removed and pointsEarned() can return the normal
-  // level * POINTS_PER_LEVEL value for every skill.
+  // Perk trees for Combat, Alchemy, Foraging, and Fishing. Point entitlement
+  // is derived from the current tree itself rather than stored as a separate
+  // balance: at max skill level, a character can buy about half of that
+  // tree's total purchasable ranks. The entitlement is distributed across
+  // the skill's 20 levels, so adding/removing perk ranks automatically changes
+  // how many points that skill awards over its level curve. Because earned
+  // points are derived from current skill level, existing characters also
+  // receive any newly-earned points automatically when a tree grows — no save
+  // migration or one-time grant is required.
+  //
+  // This is intentionally a bridge while the smaller trees are built out.
+  // Combat currently has 80 purchasable ranks, so its 50% target is 40 points
+  // at level 20 — exactly 2 per level. The intended end state is for the other
+  // trees to grow to similar breadth, naturally converging on that same pacing.
   //
   // Points are spent only within that same skill's tree — a Fishing point can
   // only buy a Fishing perk, etc. Every perk's actual gameplay effect is read
@@ -25,8 +31,7 @@
   // see canAllocateTier()/tierLocked() and TIER_THRESHOLDS below. Once
   // unlocked a perk stays allocatable even if points are later refunded
   // out of an earlier tier.
-  const POINTS_PER_LEVEL = 2;
-  const TEMP_MAX_TREE_FRACTION = 0.5; // Temporary: used to keep max-level builds near 50% completion until the smaller trees are expanded to Combat-like depth.
+  const TEMP_TARGET_TREE_FRACTION = 0.5; // Used to derive current max-level perk entitlement from the total number of ranks that can actually be purchased.
 
   // Indexed by tier-2 (tier 1 is always unlocked, so it has no threshold):
   // tier 2 needs TIER_THRESHOLDS[skillKey][0] points already spent in the
@@ -109,20 +114,25 @@
     return (TREES[skillKey] || []).reduce((sum, perk) => sum + Math.max(0, Math.floor(Number(perk.maxRank) || 0)), 0);
   }
 
-  function temporaryMaxPoints(skillKey) {
-    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used to compare the temporary half-tree budget against the intended 2-points-per-level final budget.
-    const normalMax = maxLevel * POINTS_PER_LEVEL; // Used as the final-design max once this tree has enough meaningful ranks to support it.
-    const halfCurrentTree = Math.round(totalRankCapacity(skillKey) * TEMP_MAX_TREE_FRACTION); // Used only while this tree is undersized relative to the intended final breadth.
-    return Math.max(0, Math.min(normalMax, halfCurrentTree));
+  function maxPointsForSkill(skillKey) {
+    return Math.ceil(totalRankCapacity(skillKey) * TEMP_TARGET_TREE_FRACTION);
+  }
+
+  function pointEntitlementAtLevel(skillKey, level) {
+    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used to distribute this tree's current max-point entitlement across the full skill progression.
+    const safeLevel = Math.max(0, Math.min(maxLevel, Math.floor(Number(level) || 0))); // Used to keep entitlement queries inside the real skill-level range.
+    const maxPoints = maxPointsForSkill(skillKey); // Used so any tree-data change immediately alters both future and retroactive point entitlement.
+    return Math.min(maxPoints, Math.round((safeLevel / maxLevel) * maxPoints));
   }
 
   function pointsEarned(skillKey) {
-    const level = Math.max(0, Math.floor(Number(window.SkillSystem?.level?.(skillKey)) || 0)); // Used to spread the temporary budget across the full skill-level curve instead of exhausting it early.
-    if (!level) return 0;
-    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used so the temporary pacing follows the skill system if its level cap changes.
-    const cappedLevel = Math.min(maxLevel, level); // Used to keep food/effective-level effects from granting permanent perk points above the real skill cap.
-    const temporaryMax = temporaryMaxPoints(skillKey); // Used as the current specialization budget until this tree grows to the intended final size.
-    return Math.min(temporaryMax, Math.ceil((cappedLevel / maxLevel) * temporaryMax));
+    return pointEntitlementAtLevel(skillKey, window.SkillSystem?.level?.(skillKey) || 0);
+  }
+
+  function pointsGrantedAtLevel(skillKey, level) {
+    const safeLevel = Math.max(0, Math.floor(Number(level) || 0)); // Used to report the exact number of perk points a particular skill level contributes under the current tree shape.
+    if (!safeLevel) return 0;
+    return Math.max(0, pointEntitlementAtLevel(skillKey, safeLevel) - pointEntitlementAtLevel(skillKey, safeLevel - 1));
   }
 
   function pointsSpent(skillKey) { return Object.values(ranks[skillKey] || {}).reduce((sum, r) => sum + r, 0); }
@@ -166,7 +176,7 @@
   function combatDamageMultiplier(dmgOpts = {}) {
     let mul = 1 + rank('combat', 'empowerRawDamage') * 0.08;
     if (dmgOpts?.category === 'quickAttack') mul *= 1 + rank('combat', 'empowerQuickAttacks') * 0.08;
-    if (dmgOpts?.category === 'defensiveHold') mul *= 1 + rank('combat', 'empowerDefensiveAttacks') * 0.08;
+    if (dmgOpts?.defensiveHold) mul *= 1 + rank('combat', 'empowerDefensiveAttacks') * 0.08;
     if (dmgOpts?.heavy) mul *= 1 + rank('combat', 'empowerHeavyAttacks') * 0.08;
     return mul;
   }
@@ -247,7 +257,8 @@
   window.PerkSystem = {
     TREES,
     init, restore, serialize,
-    rank, pointsEarned, pointsSpent, pointsAvailable,
+    rank, totalRankCapacity, maxPointsForSkill, pointEntitlementAtLevel, pointsGrantedAtLevel,
+    pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
     render,
