@@ -93,7 +93,9 @@
   }
 
   function utterWarning(creature) {
-    window.AudioSystem?.playCreatureBark?.(creature);
+    if (!window.AnimalVocalizations?.warning?.(creature, 'territorial-boundary')) {
+      window.AudioSystem?.playCreatureBark?.(creature);
+    }
   }
 
   function beginWarning(creature, state, player) {

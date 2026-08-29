@@ -24,7 +24,17 @@
   const BANDIT_LOS_CACHE_MS = 80; // LOS only needs tactical responsiveness, not a full scene query every render frame for every loaded bandit.
   const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
+  const BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD = 1.7; // A shot only trips a solid ground tile while it's still near that tile's own surface — an upward shot toward a tree sails clean over low terrain it would otherwise be flattened against.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
+  // A shot doesn't just vanish once it passes a weapon's tuned rangeTiles —
+  // it keeps flying, shedding damage/knockback as it goes, until it
+  // actually runs out of momentum at rangeTiles * this multiplier. AI
+  // engagement range, the HUD "would hit" reticle, and bandit LOS all still
+  // key off the base rangeTiles (that's still "the range this weapon is
+  // built to fight at"); this only softens what happens to a shot that
+  // outran its intended reach instead of hard-despawning it.
+  const RANGE_FALLOFF_DISTANCE_MULTIPLIER = 1.6;
+  const RANGE_FALLOFF_MIN_FRACTION = 0.15; // Damage/knockback floor at the true despawn distance — never fully free damage, but a spent arrow still stings.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
@@ -408,6 +418,12 @@
 
     const visual = new THREE.Group();
     visual.name = 'projectilePngDeadzoneVisual';
+    // 'YXZ' composes yaw (rotation.y, the existing camera-relative perp
+    // facing) outermost and pitch (rotation.x, the shot's launch angle)
+    // innermost, so the sprite tips up/down along its own flight axis
+    // instead of tilting around the world's fixed X axis. See
+    // updateProjectileVisual, which drives both channels every frame.
+    visual.rotation.order = 'YXZ';
     const texture = new THREE.TextureLoader().load(def.projectileSprite);
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
@@ -518,7 +534,7 @@
     const mesh = createProjectileMesh(def, def.projectileRadiusPx);
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
-    const surfaceY = deps.worldSurfaceY(x, y);
+    const surfaceY = ownerElevationY(owner, x, y);
     const worldY = surfaceY + 0.55;
     mesh.position.set(x / deps.TILE, worldY, y / deps.TILE);
     scene.add(mesh);
@@ -528,7 +544,9 @@
       x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
-      angle, pitch, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
+      angle, pitch, distancePx: 0,
+      effectiveRangePx: def.rangeTiles * deps.TILE,
+      maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
       ammoId: ammoPayload?.ammoId || 'enemy',
@@ -539,6 +557,7 @@
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     p.visual.rotation.y = p.pngRot;
+    p.visual.rotation.x = p.pitch;
     projectiles.push(p);
     return p;
   }
@@ -672,10 +691,21 @@
     };
   }
 
+  // deps.worldSurfaceY(x, y) is pure terrain height at that column — correct
+  // on the ground, but blind to a shooter standing somewhere else entirely
+  // (a tree branch). deps.getActorWorldY reads the actor's live rendered
+  // mesh height instead (which already tracks onBranch/climbing elevation —
+  // see game.js's updatePlayerMesh), so a shooter up a tree fires from the
+  // branch, not from the ground far below it.
+  function ownerElevationY(owner, x, y) {
+    const rendered = owner ? Number(deps.getActorWorldY?.(owner)) : NaN;
+    return Number.isFinite(rendered) ? rendered : deps.worldSurfaceY(x, y);
+  }
+
   function playerProjectileOrigin() {
     return new THREE.Vector3(
       deps.player.x / deps.TILE,
-      deps.worldSurfaceY(deps.player.x, deps.player.y) + 0.55,
+      ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
       deps.player.y / deps.TILE,
     );
   }
@@ -855,17 +885,32 @@
     return nearest;
   }
 
+  // 1 out to effectiveRangePx (the weapon's tuned range), then a linear
+  // taper down to RANGE_FALLOFF_MIN_FRACTION at maxDistancePx (where the
+  // projectile actually despawns — see updateProjectiles). A shot that
+  // hits within its intended range always deals full damage; one that
+  // outran it lands weaker the further past that point it's traveled.
+  function projectileFalloffMultiplier(p) {
+    if (p.distancePx <= p.effectiveRangePx) return 1;
+    const tailPx = Math.max(1, p.maxDistancePx - p.effectiveRangePx);
+    const beyondPx = Math.min(tailPx, p.distancePx - p.effectiveRangePx);
+    return 1 - (beyondPx / tailPx) * (1 - RANGE_FALLOFF_MIN_FRACTION);
+  }
+
   function projectileHit(p) {
     const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
     const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const falloff = projectileFalloffMultiplier(p);
+    const damage = Math.max(1, p.def.damage * falloff);
+    const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) return true;
       if (!nearest) return false;
       const c = nearest.creature;
-      deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       deps.awardRangedMastery?.(p.itemKey);
       return true;
@@ -881,16 +926,21 @@
     if (!nearest) return false;
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
-      deps.damageCreature(nearest.actor, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return true;
     }
-    deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
     return true;
   }
 
+  // Only ever touches p.visual/p.pngRot for the readable camera-relative
+  // facing (plus the launch-pitch tilt added below) — purely cosmetic:
+  // the root sphere's vx/vy and trajectory angle are never changed here,
+  // so this deadzone sway/snap can't steer where the projectile actually
+  // flies or lands.
   function updateProjectileVisual(p, dt, sharedPerps = null) {
     const rawTargetRotY = -p.angle + Math.PI / 2;
     const perps = sharedPerps || deps.cameraRelativeCreaturePerps();
@@ -909,6 +959,12 @@
       else p.pngRot += deps.angleDiff(result.effectiveTarget, p.pngRot) * Math.min(1, dt * 10);
     }
     p.visual.rotation.y = p.pngRot;
+    // Tips the flat sprite up/down to match its launch pitch (there was no
+    // vertical aiming when this projectile visual was first built, so it
+    // only ever carried the horizontal snap/sway rotation above). Constant
+    // per shot — crossbow/scatterbow bolts fly a straight, gravity-free
+    // line, so pitch never changes over a projectile's flight.
+    p.visual.rotation.x = p.pitch;
   }
 
   function disposeProjectile(p) {
@@ -948,6 +1004,18 @@
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
   }
 
+  // Real vertical aim for a bandit's shot — targetPlayer.x/y (horizontal)
+  // alone can't tell a level shot from one that needs to climb toward a
+  // player up a tree. Mirrors playerAimSolution's own pitch derivation and
+  // reuses the same muzzle-height convention as spawnProjectile's origin.
+  function banditAimPitch(c, targetPlayer) {
+    const dx = targetPlayer.x - c.x, dy = targetPlayer.y - c.y;
+    const horizontalWorld = Math.hypot(dx, dy) / deps.TILE;
+    const shooterY = ownerElevationY(c, c.x, c.y) + 0.55;
+    const targetY = ownerElevationY(targetPlayer, targetPlayer.x, targetPlayer.y) + 0.55;
+    return Math.atan2(targetY - shooterY, Math.max(horizontalWorld, AIM_EPSILON));
+  }
+
   function beginBanditAction(c, kind, targetPlayer) {
     const itemKey = c.def.rangedWeaponKey;
     const def = defFor(itemKey);
@@ -955,6 +1023,7 @@
     c._rangedMode = true;
     c._rangedAction = { kind, t: 0, durationS: kind === 'fire' ? def.fireDurationS : def.reloadDurationS, fired: false };
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
     lastEvent = `${c.id}:${itemKey}:${kind}-start`;
   }
@@ -984,6 +1053,7 @@
 
     const dxPx = (segment.end.x - segment.start.x) * deps.TILE;
     const dyPx = (segment.end.z - segment.start.z) * deps.TILE;
+    const dWorldY = segment.end.y - segment.start.y;
     const distancePx = Math.hypot(dxPx, dyPx);
     const stepPx = deps.TILE * BANDIT_LOS_TERRAIN_STEP_TILES;
     if (distancePx > stepPx) {
@@ -991,7 +1061,15 @@
       for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
-        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx)) return { clear: false, kind: 'tile', id: 'solid-tile' };
+        if (deps.canOccupyAt(x, y, def.projectileRadiusPx)) continue;
+        // A blocked ground tile only stops the shot while the ray is still
+        // near that tile's own surface — an elevated shot climbing toward a
+        // tree sails clean over low terrain that would flatten a shot fired
+        // at ground level.
+        const rayWorldY = segment.start.y + dWorldY * (travel / distancePx);
+        if (rayWorldY <= deps.worldSurfaceY(x, y) + BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD) {
+          return { clear: false, kind: 'tile', id: 'solid-tile' };
+        }
       }
     }
     return { clear: true, kind: 'clear', id: null };
@@ -1022,6 +1100,7 @@
     const moving = deps.moveCreatureToward(c, targetX, targetY, c.def.chaseSpeed, dt);
     if (Math.hypot(c.x - beforeX, c.y - beforeY) < 0.01) c._rangedLosSide = -side;
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     c.facing = c._rangedAimAngle;
     c._rangedLosDebug = { ...(c._rangedLosDebug || los), repositioning: true, side: c._rangedLosSide, at: performance.now() };
     losRepositions++;
@@ -1037,11 +1116,12 @@
     if (action) {
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+      c._rangedAimPitch = banditAimPitch(c, targetPlayer);
       if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * def.fireAtFrac) {
         action.fired = true;
         setLoaded(itemKey, false, c);
         playRangedActionSfx(itemKey, 'fire', c);
-        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c);
+        spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0);
       }
       if (action.t >= action.durationS) {
         if (action.kind === 'load') setLoaded(itemKey, true, c);
@@ -1053,7 +1133,10 @@
 
     const minRange = deps.TILE * 2.25;
     const maxRange = deps.TILE * def.rangeTiles * 0.9;
-    if (distToPlayer < minRange) { c._rangedMode = false; return null; }
+    // distToPlayer is horizontal-only, so a target hiding straight overhead
+    // (up a tree) reads as "close" even though melee can't actually touch
+    // them — only drop to melee once melee could really land the hit.
+    if (distToPlayer < minRange && canMeleeReach(c, targetPlayer)) { c._rangedMode = false; return null; }
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
@@ -1205,7 +1288,7 @@
     get actorHitboxes() {
       return [
         actorDebugHitbox('player', deps?.player),
-        ...(deps?.hostileObjects || []).filter(c => c.health > 0 && c.areaId === deps.getCurrentArea()).map((c, index) => actorDebugHitbox(c.id || c.name || `hostile-${index}`, c)),
+        ...[...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.areaId === deps.getCurrentArea()).map((c, index) => actorDebugHitbox(c.id || c.name || `hostile-${index}`, c)),
         ...(deps?.npcWalkers || []).filter(npc => npc.area === deps.getCurrentArea()).map((npc, index) => actorDebugHitbox(npc.id || npc.name || `npc-${index}`, npc)),
       ].filter(Boolean);
     },

@@ -166,7 +166,19 @@
     window.HobunjiInventoryActionMetadataBridge?.refresh?.();
   }
   function captureItemDeps(deps) {
-    if (deps?.inventory) itemDeps = deps; // Used to retain the richest item-capable dependency bag seen during game initialization.
+    // Merged, not replaced: no single hooked system's init() deps bag
+    // actually carries everything heldScroll()/consumeScroll() need —
+    // CookingSystem's has ITEM_DEFS but not getActiveInventoryItem/
+    // getHeldMode, FarmCrates' has those but not ITEM_DEFS, and
+    // BountyBoard's (captured last, via patchBounties) has neither.
+    // Replacing itemDeps wholesale on each call left it pinned to
+    // whichever of those three happened to init last — usually
+    // BountyBoard's bare-bones bag — so heldScroll() could never resolve
+    // a real tier and the scroll was never recognized as held at all.
+    // Spreading only adds keys a given bag actually provides, so already-
+    // captured fields from an earlier call are never clobbered by a
+    // later, more limited one.
+    if (deps?.inventory) itemDeps = { ...itemDeps, ...deps };
     registerItems(deps);
   }
   function heldScroll() {

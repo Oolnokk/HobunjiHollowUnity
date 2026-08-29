@@ -9,8 +9,10 @@ const speciesSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'ut
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 
-assert.match(avatarSource, /function applyAnimalHeadRig\([\s\S]{0,1800}avatarRef\.updateHeadRotation =/,
+assert.match(avatarSource, /function applyAnimalHeadRig\([\s\S]{0,5000}avatarRef\.updateHeadRotation =/,
   'the painted-weight avatar runtime exposes a smoothed head-rotation API');
+assert.match(avatarSource, /avatarRef\.setHeadAdditiveRotation =/,
+  'the painted-weight avatar runtime exposes an additive neck-animation layer');
 const rigTableStart = speciesSource.indexOf('const ANIMAL_HEAD_RIGS =');
 const rigTable = speciesSource.slice(rigTableStart, rigTableStart + 120000);
 assert.ok(rigTableStart >= 0

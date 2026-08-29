@@ -35,6 +35,7 @@
         run2: 'assets/creaturesprites/gar-wolf_run2.png',
       },
       patterns: ['colorpoint', 'foxtail', 'mitts'],
+      eyes: { open: 'assets/creaturesprites/gar-wolf_eye.png', blink: 'assets/creaturesprites/gar-wolf_blink.png' },
     },
     'dabinggi-hound': {
       prefix: 'dh',
@@ -44,16 +45,19 @@
         run2: 'assets/creaturesprites/dabinggi-hound_run2.png',
       },
       patterns: ['mitts', 'spectacles', 'stripes'],
+      eyes: { open: 'assets/creaturesprites/dabinggi-hound_eye.png', blink: 'assets/creaturesprites/dabinggi-hound_blink.png' },
     },
     grehlr: {
       prefix: 'grehlr',
       base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
       patterns: ['mitts', 'spectacles'],
+      eyes: { open: 'assets/creaturesprites/grehlr_eye.png', blink: 'assets/creaturesprites/grehlr_blink.png' },
     },
     drenkirra: {
       prefix: 'drnk',
       base: { idle: 'assets/creaturesprites/drenkirra_idle.png', run1: 'assets/creaturesprites/drenkirra_run1.png', run2: 'assets/creaturesprites/drenkirra_run2.png' },
       patterns: ['bodystripes', 'spectacles'],
+      eyes: { open: 'assets/creaturesprites/drenkirra_eye.png', blink: 'assets/creaturesprites/drenkirra_blink.png' },
     },
     // Uumkao'ii has one static sprite (no run1/run2 art — see CREATURE_DB's
     // sprites.run reusing the idle frame), and its two regions are always
@@ -227,7 +231,15 @@
 
   // Draw order matches SPECIES[kind].patterns — the same fixed layer order
   // the HTML lab uses (each species' patterns object insertion order).
-  async function composeFrame(kind, frame, genotype) {
+  // blinkShut swaps in the species' eye-shut art for one frame's compose;
+  // it's drawn unconditionally AFTER every pattern layer (regardless of
+  // where in spec.patterns a given species happens to draw "spectacles" —
+  // dabinggi-hound's stripes layer draws after its own spectacles, for
+  // instance) so the eyes always render above any spectacles pattern,
+  // never the other way around. Untinted raw art, same convention as the
+  // NPC portrait pipeline's "untinted_regions" overlays — these are
+  // already fully painted eye sprites, not a recolor target.
+  async function composeFrame(kind, frame, genotype, blinkShut = false) {
     const t0 = performance.now();
     const spec = SPECIES[kind];
     if (!spec) {
@@ -274,6 +286,15 @@
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
       }
     }
+    if (spec.eyes) {
+      const eyeUrl = blinkShut ? spec.eyes.blink : spec.eyes.open;
+      try {
+        const eyeImg = await loadImage(eyeUrl);
+        ctx.drawImage(eyeImg, 0, 0, c.width, c.height);
+      } catch (e) {
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): eye overlay failed to load (${eyeUrl}) — skipped: ${e.message}`, 'warn');
+      }
+    }
     const tEnd = performance.now();
     // Broken down so a slow compose (the "ran around plain for ages" symptom)
     // shows WHERE the time went — masksMs covers the one-time mask JSON
@@ -305,6 +326,7 @@
       for (const patternId of spec.patterns) {
         urls.push(patternUrl(kind, patternId, 'idle'), patternUrl(kind, patternId, 'run1'), patternUrl(kind, patternId, 'run2'));
       }
+      if (spec.eyes) urls.push(spec.eyes.open, spec.eyes.blink);
     }
     await Promise.all(urls.filter(Boolean).map(u => loadImage(u).catch(() => null)));
     window.__farmLog?.(`[genotype-render] prewarm(${targets.join(',')}): masks + ${urls.length} sprite URLs cached in ${(performance.now() - t0).toFixed(0)}ms`, 'wildlife');

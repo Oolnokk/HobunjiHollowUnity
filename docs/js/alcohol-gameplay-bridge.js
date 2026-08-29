@@ -229,6 +229,14 @@
       return;
     }
 
+    // Chain onto any future-global setter another module already installed
+    // on this same property (e.g. technique-scrolls.js's own lazy item-deps
+    // hook on FarmCrates) instead of replacing it outright — a bare
+    // Object.defineProperty below would silently discard that earlier trap
+    // the moment the real object is assigned, so its own patch() would
+    // never fire and its captured deps would stay permanently incomplete.
+    if (chainFutureSetter(name, null, patch)) return;
+
     const desc = Object.getOwnPropertyDescriptor(window, name);
     if (desc && !desc.configurable) return;
     let value;

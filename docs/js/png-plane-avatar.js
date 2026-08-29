@@ -506,6 +506,74 @@
     };
   }
 
+  // Auto-neck variant of the painted Animal Head Rig's
+  // upgradeAnimalPlaneToWeightedSkin (see the extension IIFE below) for a
+  // rigid two-Mesh humanoid plane pair (e.g. a bandit's frontMesh/backMesh)
+  // that has no authored weight map — the head/body blend is instead a
+  // smoothstep falloff purely from the neck pivot Y, the same technique
+  // buildSkinnedPlaneGeometry above already uses for player/NPC walkers.
+  // Deliberately upgrades only the two Mesh objects passed in, leaving
+  // whatever Group parents them untouched, so a caller that wraps its own
+  // pivot Groups around these meshes (see combat-bandit.js's buildBanditAvatar,
+  // which needs its front/back "planes" to stay the exact rigid Group
+  // objects updateCreatureMesh/beginCreatureDeath/updateCorpses rotate)
+  // keeps that structure fully intact — only the mesh's own internal
+  // geometry/skeleton changes.
+  function buildAutoNeckWeightedGeometry(THREE, sourceGeometry, pivotLocalY, blendHeight) {
+    const geometry = sourceGeometry.clone();
+    const pos = geometry.getAttribute('position');
+    const count = pos.count;
+    const skinIndices = new Uint16Array(count * 4);
+    const skinWeights = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      const headWeight = smoothstep01((pos.getY(i) - (pivotLocalY - blendHeight * .55)) / blendHeight);
+      skinIndices[i * 4] = 0; skinIndices[i * 4 + 1] = 1;
+      skinWeights[i * 4] = 1 - headWeight; skinWeights[i * 4 + 1] = headWeight;
+    }
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+
+  function upgradePlaneToAutoNeckSkin(THREE, plane, pivotNormalized, mirrorX, fallbackDimensions = {}) {
+    if (!plane?.isMesh || !plane.geometry || !plane.material || !pivotNormalized) return null;
+    const params = plane.geometry.parameters || {};
+    const planeWidth = Number(params.width) || Number(fallbackDimensions.width) || 1;
+    const planeHeight = Number(params.height) || Number(fallbackDimensions.height) || 1;
+    const pivotU = mirrorX ? 1 - pivotNormalized.x : pivotNormalized.x;
+    const pivotLocalX = (pivotU - 0.5) * planeWidth;
+    const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
+    const blendHeight = Math.max(planeHeight * .02, planeHeight * .22);
+    const weightedGeometry = buildAutoNeckWeightedGeometry(THREE, plane.geometry, pivotLocalY, blendHeight);
+    const material = plane.material; // Reused so cosmetic/texture updates keep working unchanged.
+    material.skinning = true;
+    material.needsUpdate = true;
+
+    const torsoBone = new THREE.Bone();
+    torsoBone.name = `${plane.name}_torso_bone`;
+    const neckBone = new THREE.Bone();
+    neckBone.name = `${plane.name}_neck_bone`;
+    neckBone.position.set(pivotLocalX, pivotLocalY, 0);
+    torsoBone.add(neckBone);
+
+    const skinned = new THREE.SkinnedMesh(weightedGeometry, material);
+    skinned.name = plane.name;
+    skinned.position.copy(plane.position);
+    skinned.rotation.copy(plane.rotation);
+    skinned.scale.copy(plane.scale);
+    skinned.renderOrder = plane.renderOrder;
+    skinned.visible = plane.visible;
+    skinned.frustumCulled = false;
+    skinned.userData = { ...plane.userData };
+    skinned.onBeforeRender = plane.onBeforeRender;
+    skinned.add(torsoBone);
+    const skeleton = new THREE.Skeleton([torsoBone, neckBone]);
+    skinned.bind(skeleton);
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone };
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -811,6 +879,8 @@
     disposeAvatarModel,
     loadThreeModules,
     scanOpaqueVerticalBoundsOfImage,
+    detectNeckPivotPx,
+    upgradePlaneToAutoNeckSkin,
   };
 })();
 
@@ -1031,15 +1101,44 @@
     group.add(back.mesh);
 
     const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
-    const state = { rig, frontHeadBone: front.headBone, backHeadBone: back.headBone, currentDeg: rig.restDeg, targetDeg: rig.restDeg }; // Runtime rotation state shared by immediate/smoothed setters.
+    const state = {
+      rig, frontHeadBone: front.headBone, backHeadBone: back.headBone,
+      currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
+      currentYawDeg: 0, targetYawDeg: 0,
+    }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
     group.userData.hobunjiAnimalHeadRig = state;
     avatarRef.headRig = state;
 
     const applyDegrees = degrees => {
-      front.headBone.rotation.z = degrees * RAD;
-      back.headBone.rotation.z = -degrees * RAD;
+      const composedDeg = clamp(degrees + state.additiveDeg, rig.minDeg, rig.maxDeg); // Keeps additive nods inside the authored neck's safe range.
+      state.appliedDeg = composedDeg;
+      front.headBone.rotation.z = composedDeg * RAD;
+      back.headBone.rotation.z = -composedDeg * RAD;
+      return composedDeg;
     };
     applyDegrees(rig.restDeg);
+
+    // Yaw ("shaking its head" side-to-side) is a separate axis from the
+    // pitch/nod bone rotation.z above — the head bone's local Y, which
+    // (since the plane itself is already rotated ±90° about Y to face the
+    // camera) reads on-screen as a left/right turn rather than an up/down
+    // nod. NOT mirrored between front/back the way applyDegrees' pitch is:
+    // pitch is an in-plane roll (rotation about the card's own normal),
+    // which reverses handedness under the back card's horizontal UV flip
+    // (backTex.repeat.set(-1,1)), so mirroring the sign is what keeps a nod
+    // reading as the same real-world up/down direction from either card.
+    // Yaw has no such reversal — front and back share the same world-space
+    // vertical (Y) rotation axis regardless of which card is currently
+    // camera-facing — so driving both with the SAME sign is what keeps them
+    // turning in tandem instead of away from each other.
+    // No authored yawMinDeg/yawMaxDeg exists on the rig today, so this
+    // reuses the same authored minDeg/maxDeg magnitude (already tuned per
+    // species for a readable head motion) rather than inventing a second range.
+    const yawLimitDeg = Math.max(Math.abs(rig.minDeg), Math.abs(rig.maxDeg));
+    const applyYawDegrees = degrees => {
+      front.headBone.rotation.y = degrees * RAD;
+      back.headBone.rotation.y = degrees * RAD;
+    };
 
     avatarRef.setHeadRotation = degrees => {
       const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Immediate clamped head angle used by explicit animation/AI calls.
@@ -1058,6 +1157,22 @@
       state.targetDeg = target;
       applyDegrees(state.currentDeg);
       return state.currentDeg;
+    };
+
+    avatarRef.updateHeadYaw = (degrees, deltaSeconds) => {
+      const target = clamp(finite(degrees, 0), -yawLimitDeg, yawLimitDeg); // Smoothed yaw target, same turn-speed budget as the pitch axis.
+      const delta = Math.max(0, finite(deltaSeconds, 0));
+      const step = rig.turnSpeedDeg * delta;
+      const diff = target - state.currentYawDeg;
+      state.currentYawDeg += clamp(diff, -step, step);
+      state.targetYawDeg = target;
+      applyYawDegrees(state.currentYawDeg);
+      return state.currentYawDeg;
+    };
+
+    avatarRef.setHeadAdditiveRotation = degrees => {
+      state.additiveDeg = finite(degrees, 0); // Consumed by applyDegrees on top of whichever AI/attack/idle neck pose is current.
+      return applyDegrees(state.currentDeg);
     };
 
     avatarRef.dispose = () => {

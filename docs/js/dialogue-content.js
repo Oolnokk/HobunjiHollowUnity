@@ -663,6 +663,7 @@
     stopNpcDialogueTypewriter,
     hideChoiceButtons,
     dialogueSeatId,
+    npcRestingExpression: _npcRestingExpression,
     getNpcDlgState,
     resetDialogueState,
     beginSyntheticChoice,

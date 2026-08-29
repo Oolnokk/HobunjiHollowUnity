@@ -15,6 +15,7 @@
   const DEBUG_INTERACTION_RAY_COLOR = '#35ffdc';
   const DEBUG_INTERACTION_HIT_COLOR = '#fff566';
   const DEBUG_INTERACTION_HOSTILE_COLOR = '#ff5c5c';
+  const DEBUG_HEAD_LOOK_COLOR = '#c98bff';
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -202,6 +203,37 @@
     octx.restore();
   }
 
+  // Draws one head→target segment for any entity carrying a
+  // `_lookAtDebug` cache (see game.js's _setLookAtDebug/_aimNeckAtEyeContact
+  // and combat-bandit.js's _updateBanditLookAtTarget) — every head-look
+  // system records the exact world points it just aimed at there, rather
+  // than this drawer trying to reverse-engineer a direction out of a
+  // rotated (and, for animals, mirrored front/back) bone transform.
+  function _drawEntityLookAtDebug(entity) {
+    const look = entity?._lookAtDebug;
+    if (!look?.head || !look?.target) return;
+    _drawDebugSegment3D(look.head, look.target, DEBUG_HEAD_LOOK_COLOR, true, 1.5, 0.85);
+  }
+
+  function _drawHeadLookRaycasts() {
+    if (!deps.getShowInteractionRaycast?.()) return;
+    const area = deps.getCurrentArea();
+    _drawEntityLookAtDebug(deps.player);
+    for (const c of deps.hostileObjects) {
+      if (c.health > 0 && c.areaId === area) _drawEntityLookAtDebug(c);
+    }
+    for (const c of deps.companionObjects) {
+      if (c.health > 0 && c.areaId === area) _drawEntityLookAtDebug(c);
+    }
+    for (const w of deps.npcWalkers || []) {
+      if (w.area === area) _drawEntityLookAtDebug(w);
+    }
+    // Farm livestock -- no health/areaId fields (they simply don't exist in
+    // the world while unhoused/in stasis), so presence in the live Set is
+    // the only membership check needed.
+    for (const animal of deps.animalObjects || []) _drawEntityLookAtDebug(animal);
+  }
+
   function drawDebugOverlays() {
     if (deps.getShowHitboxes?.()) {
       const player = deps.player;
@@ -218,6 +250,7 @@
       _drawMeleeColliders();
     }
     _drawInteractionRaycast();
+    _drawHeadLookRaycasts();
   }
 
   function debugSnapshot() {

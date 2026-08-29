@@ -543,6 +543,7 @@
   const originalGetClimbTarget = system.getClimbTarget;
   const originalGetAimedNest = system.getAimedNest;
   const originalResolveKnockback = system.resolveBranchKnockback;
+  const originalRemoveBranchesInBounds = system.removeBranchesInBounds;
   const fallenNests = new Set();
   const branchList = area => system.debugBranchesFor?.(area) || [];
   const currentArea = () => deps?.getCurrentArea?.() || null;
@@ -555,12 +556,89 @@
     originalInit?.(injected);
   };
 
+  // Wilderness chunk streaming tears down and rebuilds a chunk's branches
+  // (removeBranchesInBounds -> registerBranch) any time its underlying grid
+  // tiles change nearby — most visibly, a bandit camp clearing/restoring the
+  // shrub tiles it sits on (see bandit-camps.js's _syncBanditFlora), which
+  // triggers a rebuild of every currently-loaded chunk, not just the camp's
+  // own. Regenerating the SAME tile is normally deterministic (same seed,
+  // same shape), but an entity mid-climb holds a direct reference to the
+  // OLD branch object, not a live lookup — if that reference ever does end
+  // up describing a different shape (or the old object simply never gets
+  // replaced because the tile no longer regrows a tree there at all), the
+  // entity is left standing on stale, invisible geometry that doesn't match
+  // whatever's actually rendered. pendingReattach bridges exactly that
+  // removal-then-rebuild window: seatBranchAt below re-anchors anyone
+  // riding a doomed branch onto its freshly rebuilt replacement (same
+  // col/row) the moment registerBranch supplies one, or gently drops them
+  // if the tile never regrows one at all.
+  const pendingReattach = new Map(); // mapId -> Map("col,row" -> [{ entity, t }])
+  function reattachKey(branch) { return branch.col + ',' + branch.row; }
+  function seatBranchAt(entity, branch, t) {
+    const clamped = clamp01(t);
+    entity.onBranch = branch;
+    entity.branchT = clamped;
+    entity.x = branch.baseX + (branch.tipX - branch.baseX) * clamped;
+    entity.y = branch.baseY + (branch.tipY - branch.baseY) * clamped;
+    entity.branchSurfaceY = branch.baseWorldY + (branch.tipWorldY - branch.baseWorldY) * clamped;
+  }
+
   system.registerBranch = (area, branch) => {
     if (branch) {
       branch.id = branch.id || String(area) + ':' + String(branch.col) + ',' + String(branch.row);
       branch.felled = !!branch.felled;
     }
     originalRegister?.(area, branch);
+    const areaMap = branch && pendingReattach.get(area);
+    const waiting = areaMap?.get(reattachKey(branch));
+    if (!waiting?.length) return;
+    for (const request of waiting) seatBranchAt(request.entity, branch, request.t);
+    areaMap.delete(reattachKey(branch));
+  };
+
+  system.removeBranchesInBounds = (area, bounds) => {
+    const tile = deps?.TILE || 1;
+    const doomed = bounds ? branchList(area).filter(branch => {
+      const col = Math.floor(branch.baseX / tile), row = Math.floor(branch.baseY / tile);
+      return col >= bounds.colStart && col < bounds.colEnd && row >= bounds.rowStart && row < bounds.rowEnd;
+    }) : [];
+    if (doomed.length) {
+      const entities = [deps?.player, ...(deps?.hostileObjects || []), ...(deps?.companionObjects || [])].filter(Boolean);
+      for (const branch of doomed) {
+        for (const entity of entities) {
+          if (entity.onBranch !== branch) continue;
+          if (!pendingReattach.has(area)) pendingReattach.set(area, new Map());
+          const key = reattachKey(branch);
+          const areaMap = pendingReattach.get(area);
+          const list = areaMap.get(key) || [];
+          list.push({ entity, t: entity.branchT, branch });
+          areaMap.set(key, list);
+        }
+      }
+      // The chunk rebuild that immediately follows this removal (unload
+      // then load, synchronously within the same call) resolves every
+      // request above via registerBranch. Anything still unresolved after
+      // that — the tile genuinely stopped growing a tree — falls back to
+      // the same graceful drop a felled tree already uses, rather than
+      // leaving the entity parked on a branch that no longer exists.
+      queueMicrotask(() => {
+        const areaMap = pendingReattach.get(area);
+        if (!areaMap?.size) return;
+        for (const [key, list] of [...areaMap]) {
+          for (const request of list) {
+            // Still riding the exact same (now-removed) branch object means
+            // registerBranch never supplied a replacement for this col/row —
+            // the tile genuinely stopped growing a tree. Any other value
+            // (a fresh branch, or null from an unrelated jump-down/knockback
+            // in the meantime) means this request already resolved.
+            if (request.entity.onBranch !== request.branch) continue;
+            releaseBranchEntity(request.entity, request.branch, 'branch no longer present after area rebuild');
+          }
+          areaMap.delete(key);
+        }
+      });
+    }
+    return originalRemoveBranchesInBounds?.(area, bounds);
   };
 
   system.getClimbTarget = () => {
