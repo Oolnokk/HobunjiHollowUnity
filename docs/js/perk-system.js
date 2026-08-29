@@ -1,11 +1,18 @@
 (() => {
   'use strict';
 
-  // Perk trees for Combat, Alchemy, Foraging, and Fishing. Each skill earns
-  // POINTS_PER_LEVEL perk points per level (see SkillSystem.level, MAX_LEVEL
-  // 20), spent on ranks within that same skill's own tree — a Fishing point
-  // can only buy a Fishing perk, etc. Every perk's actual gameplay effect is
-  // read directly by the system it affects (combat/resource-system.js,
+  // Perk trees for Combat, Alchemy, Foraging, and Fishing. The intended final
+  // progression is POINTS_PER_LEVEL perk points per skill level (40 points at
+  // level 20). Some trees are still much smaller than Combat, though, so the
+  // temporary half-tree budget below spreads roughly half of each current
+  // tree's rank capacity across its 20 levels. Once every tree has enough
+  // meaningful ranks that 40 points naturally buys about half of it, this
+  // temporary budget can be removed and pointsEarned() can return the normal
+  // level * POINTS_PER_LEVEL value for every skill.
+  //
+  // Points are spent only within that same skill's tree — a Fishing point can
+  // only buy a Fishing perk, etc. Every perk's actual gameplay effect is read
+  // directly by the system it affects (combat/resource-system.js,
   // combat-progression.js, alchemy-system.js, reagent-plants.js,
   // fishing-minigame.js, fishing-events.js, cooking-system.js/game.js's
   // campfire flow, skill-system.js) via rank(skillKey, perkId) — this module
@@ -19,6 +26,7 @@
   // unlocked a perk stays allocatable even if points are later refunded
   // out of an earlier tier.
   const POINTS_PER_LEVEL = 2;
+  const TEMP_MAX_TREE_FRACTION = 0.5; // Temporary: used to keep max-level builds near 50% completion until the smaller trees are expanded to Combat-like depth.
 
   // Indexed by tier-2 (tier 1 is always unlocked, so it has no threshold):
   // tier 2 needs TIER_THRESHOLDS[skillKey][0] points already spent in the
@@ -97,7 +105,25 @@
 
   function rank(skillKey, perkId) { return ranks[skillKey]?.[perkId] || 0; }
 
-  function pointsEarned(skillKey) { return (window.SkillSystem?.level?.(skillKey) || 0) * POINTS_PER_LEVEL; }
+  function totalRankCapacity(skillKey) {
+    return (TREES[skillKey] || []).reduce((sum, perk) => sum + Math.max(0, Math.floor(Number(perk.maxRank) || 0)), 0);
+  }
+
+  function temporaryMaxPoints(skillKey) {
+    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used to compare the temporary half-tree budget against the intended 2-points-per-level final budget.
+    const normalMax = maxLevel * POINTS_PER_LEVEL; // Used as the final-design max once this tree has enough meaningful ranks to support it.
+    const halfCurrentTree = Math.round(totalRankCapacity(skillKey) * TEMP_MAX_TREE_FRACTION); // Used only while this tree is undersized relative to the intended final breadth.
+    return Math.max(0, Math.min(normalMax, halfCurrentTree));
+  }
+
+  function pointsEarned(skillKey) {
+    const level = Math.max(0, Math.floor(Number(window.SkillSystem?.level?.(skillKey)) || 0)); // Used to spread the temporary budget across the full skill-level curve instead of exhausting it early.
+    if (!level) return 0;
+    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used so the temporary pacing follows the skill system if its level cap changes.
+    const cappedLevel = Math.min(maxLevel, level); // Used to keep food/effective-level effects from granting permanent perk points above the real skill cap.
+    const temporaryMax = temporaryMaxPoints(skillKey); // Used as the current specialization budget until this tree grows to the intended final size.
+    return Math.min(temporaryMax, Math.ceil((cappedLevel / maxLevel) * temporaryMax));
+  }
 
   function pointsSpent(skillKey) { return Object.values(ranks[skillKey] || {}).reduce((sum, r) => sum + r, 0); }
 
