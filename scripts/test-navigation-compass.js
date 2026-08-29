@@ -35,14 +35,33 @@ assert(Math.abs(test.headingFromDirection({ x: 0, z: 1 }) - Math.PI / 2) < 1e-9,
 assert(Math.abs(test.headingFromDirection({ x: 0, z: -1 }) + Math.PI / 2) < 1e-9, 'camera facing north should center north');
 assert.equal(test.headingFromDirection({ x: 0, z: 0 }), null, 'vertical/degenerate camera direction should not produce a horizontal heading');
 
+// activeCameraAzimuth is the target-to-camera THREE.js Y rotation used by
+// normal farm rendering. Verify its conversion into the opposite camera-look
+// bearing consumed by the compass.
+assert(Math.abs(test.headingFromCameraAzimuthDeg(0) + Math.PI / 2) < 1e-9, 'camera south of player should look north');
+assert(Math.abs(Math.abs(test.headingFromCameraAzimuthDeg(90)) - Math.PI) < 1e-9, 'camera east of player should look west');
+assert(Math.abs(test.headingFromCameraAzimuthDeg(-90)) < 1e-9, 'camera west of player should look east');
+assert(Math.abs(test.headingFromCameraAzimuthDeg(180) - Math.PI / 2) < 1e-9, 'camera north of player should look south');
+assert.equal(test.headingFromCameraAzimuthDeg(undefined), null, 'missing camera azimuth should fall through safely');
+
+// Reproduces the farm bug: the true camera orbit changes while the gameplay
+// aim ray and player.angle can still report the character's old facing.
+context.__hobunjiFurnitureDebug = { activeCameraAzimuthDeg: -90 };
+const farmCameraHeading = test.currentHeading({
+  getPlayerAimRay: () => ({ direction: { x: 0, y: -0.4, z: -1 } }),
+}, { angle: -Math.PI / 2 });
+assert.equal(farmCameraHeading.source, 'camera-azimuth', 'farm compass must prefer true camera orbit over character-relative aim state');
+assert(Math.abs(farmCameraHeading.heading) < 1e-9, 'orbiting the farm camera west of the player should make the compass look east even if character facing stays north');
+
+delete context.__hobunjiFurnitureDebug;
 const cameraHeading = test.currentHeading({
   getPlayerAimRay: () => ({ direction: { x: 0, y: -0.4, z: 1 } }),
 }, { angle: -1.2 });
-assert.equal(cameraHeading.source, 'camera-ray', 'compass heading should prefer the gameplay camera ray over character rotation');
+assert.equal(cameraHeading.source, 'camera-ray', 'compass heading should use the gameplay camera ray when direct camera azimuth is unavailable');
 assert(Math.abs(cameraHeading.heading - Math.PI / 2) < 1e-9, 'camera pitch should not affect the horizontal compass heading');
 const fallbackHeading = test.currentHeading({ getPlayerAimRay: () => null }, { angle: 0.75 });
-assert.equal(fallbackHeading.source, 'player-fallback', 'character rotation should be used only while the camera ray is unavailable');
-assert.equal(fallbackHeading.heading, 0.75, 'camera-ray fallback should preserve the prior stable heading behavior');
+assert.equal(fallbackHeading.source, 'player-fallback', 'character rotation should be used only while both camera sources are unavailable');
+assert.equal(fallbackHeading.heading, 0.75, 'camera fallback should preserve the prior stable heading behavior');
 
 const collected = test.collectTargets('zone');
 assert.equal(collected.offAreaQuestTargets, 1, 'off-area quests should be counted for diagnostics');
