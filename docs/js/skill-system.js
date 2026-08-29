@@ -24,9 +24,10 @@
   let deps = null; // Used to access saving, random rolls, popups, and food stacks.
   const experience = Object.fromEntries(Object.keys(SKILLS).map(key => [key, 0])); // Used as character-scoped cumulative skill XP, including fractional XP created by skill-specific gain multipliers.
   const combatTaggedTargets = new WeakSet(); // Used to remember which live enemy objects the player has personally tagged for eventual kill XP.
-  let pendingCombatTag = false; // Used to bridge game.js's landed-hit notification to ResourceSystem.applyDamage(), where the actual enemy object is available.
-  let combatDamageHookInstalled = false; // Used to prevent wrapping ResourceSystem.applyDamage() more than once.
-  let combatDeathHookInstalled = false; // Used to prevent wrapping CreatureDeath.begin() more than once.
+  let pendingLegacyCombatDamage = false; // Used to connect game.js's legacy landed-hit notification to the immediately following ResourceSystem damage call without awarding hit XP.
+  let combatDispatchHookInstalled = false; // Used to identify player-authored modular melee before damage/death resolves, while rejecting companion/animal attacks that share damageCreature().
+  let combatResourceHookInstalled = false; // Used to identify player ranged and legacy melee hits from their existing damage metadata.
+  let combatDeathHookInstalled = false; // Used to award once when a tagged enemy reaches the authoritative creature-death pipeline.
 
   function xpForLevel(level) {
     const safeLevel = Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(level) || 0))); // Used to keep thresholds inside the supported level range.
@@ -44,24 +45,45 @@
     return target?.def?.label || target?.name || target?.id || 'enemy'; // Used only by mobile-readable skill diagnostics for tag/death events.
   }
 
+  function tagCombatTarget(target, source = 'player hit') {
+    if (!target || typeof target !== 'object' || target.isCompanion) return false;
+    combatTaggedTargets.add(target);
+    deps?.debugLog?.(`[skills] Combat tagged ${combatTargetLabel(target)} (${source})`);
+    return true;
+  }
+
   function installCombatTagHooks() {
-    const resourceSystem = window.ResourceSystem; // Used to capture the exact enemy object immediately after game.js reports a landed player hit.
-    if (!combatDamageHookInstalled && resourceSystem?.applyDamage) {
-      const originalApplyDamage = resourceSystem.applyDamage; // Used by the wrapper below to preserve the shared resource/affliction damage implementation.
-      resourceSystem.applyDamage = function skillTaggedApplyDamage(target, ...args) {
-        if (pendingCombatTag) {
-          pendingCombatTag = false;
-          if (target && typeof target === 'object') {
-            combatTaggedTargets.add(target);
-            deps?.debugLog?.(`[skills] Combat tagged ${combatTargetLabel(target)} for kill XP`);
-          }
-        }
-        return originalApplyDamage.call(this, target, ...args);
+    const combatDeps = window.Combat?.deps; // Used to distinguish player modular melee from companion/animal attacks by the existing attack-source position.
+    if (!combatDispatchHookInstalled && combatDeps?.damageCreature) {
+      const originalDamageCreature = combatDeps.damageCreature; // Used by the wrapper below after player-source detection so combat behavior itself is unchanged.
+      combatDeps.damageCreature = function skillTaggedDamageCreature(target, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        const player = combatDeps.player; // Used to verify this shared damageCreature call originated at the player rather than at a companion/hostile creature.
+        const sourceIsPlayer = player && Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= 0.01;
+        if (sourceIsPlayer && !dmgOpts?.friendlyFire) tagCombatTarget(target, 'player melee');
+        return originalDamageCreature.call(this, target, amount, fromX, fromY, knockbackPxS, dmgOpts);
       };
-      combatDamageHookInstalled = true;
+      combatDispatchHookInstalled = true;
     }
 
-    const creatureDeath = window.CreatureDeath; // Used as the authoritative one-time death event so tagged credit is independent of which later source lands the killing blow.
+    const resourceSystem = window.ResourceSystem; // Used for player ranged shots and the old direct weapon fallback, which do not pass through Combat.deps.damageCreature.
+    if (!combatResourceHookInstalled && resourceSystem?.applyDamage) {
+      const originalApplyDamage = resourceSystem.applyDamage; // Used by the wrapper below after consuming the legacy landed-hit marker.
+      resourceSystem.applyDamage = function skillTaggedApplyDamage(target, amount, hitOptions, ...rest) {
+        if (pendingLegacyCombatDamage) {
+          pendingLegacyCombatDamage = false;
+          const options = hitOptions && typeof hitOptions === 'object' ? hitOptions : {}; // Used to distinguish player ranged/legacy attacks from non-player calls that share damageCreature().
+          const playerRanged = options.ranged === true && options.friendlyFire !== true; // Player projectiles omit friendlyFire; hostile ranged actor-on-actor impacts explicitly set it.
+          const legacyPlayerMelee = options.ranged !== true && !Object.prototype.hasOwnProperty.call(options, 'afflictionBonuses'); // The old direct cut/slash fallback carries only its damage tag/heavy flag; creature attacks always provide afflictionBonuses.
+          if (playerRanged) tagCombatTarget(target, 'player ranged');
+          else if (legacyPlayerMelee) tagCombatTarget(target, 'legacy player melee');
+        }
+        return originalApplyDamage.call(this, target, amount, hitOptions, ...rest);
+      };
+      combatResourceHookInstalled = true;
+    }
+
+    const creatureDeath = window.CreatureDeath; // Used as the authoritative one-time death event so tagged credit does not depend on who lands the final blow.
     if (!combatDeathHookInstalled && creatureDeath?.begin) {
       const originalDeathBegin = creatureDeath.begin; // Used by the wrapper below to preserve corpse/death handling after Combat XP resolves.
       creatureDeath.begin = function skillTaggedDeathBegin(target, ...args) {
@@ -74,12 +96,13 @@
       combatDeathHookInstalled = true;
     }
 
-    return combatDamageHookInstalled && combatDeathHookInstalled;
+    return combatDispatchHookInstalled && combatResourceHookInstalled && combatDeathHookInstalled;
   }
 
   function init(injectedDeps = {}) {
     deps = injectedDeps; // Used by every side-effecting operation after game boot.
     installCombatTagHooks();
+    queueMicrotask(installCombatTagHooks); // Used to catch Combat/Ranged/CreatureDeath initialization later in the same synchronous game boot if SkillSystem initializes first.
     render();
   }
 
@@ -135,7 +158,7 @@
     if (!SKILLS[skillKey]) return false;
     if (skillKey === 'combat' && reason === 'landed hit') {
       installCombatTagHooks();
-      pendingCombatTag = true;
+      pendingLegacyCombatDamage = true;
       return true;
     }
     if (skillKey === 'combat' && reason === 'defeated creature') return false; // Legacy game.js kill award is replaced by the tagged CreatureDeath hook above.
@@ -255,7 +278,7 @@
   }
 
   function diagnosticsText() {
-    const hookStatus = `Combat tags: damage hook ${combatDamageHookInstalled ? 'ready' : 'missing'}, death hook ${combatDeathHookInstalled ? 'ready' : 'missing'}`; // Used to verify tag+kill plumbing in-game without a desktop console.
+    const hookStatus = `Combat tags: dispatch ${combatDispatchHookInstalled ? 'ready' : 'missing'}, resource ${combatResourceHookInstalled ? 'ready' : 'missing'}, death ${combatDeathHookInstalled ? 'ready' : 'missing'}`; // Used to verify tag+kill plumbing in-game without a desktop console.
     return Object.entries(SKILLS).map(([key, definition]) => {
       const current = level(key); // Used to report base and effective values without desktop developer tools.
       return `${definition.label}: level ${current}, effective ${effectiveLevel(key)}, XP ${experience[key]}${current < MAX_LEVEL ? `/${xpForLevel(current + 1)}` : ' (max)'}`;
@@ -284,6 +307,7 @@
     render,
     snapshot: persist,
     diagnosticsText,
+    tagCombatTarget,
     installCombatTagHooks,
   };
 })();
