@@ -24263,8 +24263,17 @@
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
-        // Update activeAction even without DOM rebuild
-        const first = btns.find(b => b.allowed) || btns[0];
+        // Update activeAction even without DOM rebuild. Skips a
+        // style:'secondary' button (e.g. climb_branch, pushed first in
+        // computeActionButtons purely for discoverability — see its own
+        // comment: "Climbing is still triggered by a forward dodge... an
+        // attack/item press never grabs a nearby trunk by accident") so
+        // array order alone can't hand it the primary click/Action 1 slot
+        // over whatever the held tool's own action actually is — a facing
+        // climb target otherwise silently ate every tool-action click near
+        // a climbable tree, axes included. Only falls through to a
+        // secondary button when it's truly the only allowed action at all.
+        const first = btns.find(b => b.allowed && b.style !== 'secondary') || btns.find(b => b.allowed) || btns[0];
         if (first) activeAction = first.action;
 
         if (!needsRebuild) return;
