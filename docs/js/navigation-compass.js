@@ -10,7 +10,7 @@
     { id: 'north', label: 'N', angle: -Math.PI / 2 },
   ]);
   let lastUpdateAt = 0; // Used to throttle the module's lightweight requestAnimationFrame bridge.
-  let lastDebug = { visible: false, areaId: '', headingDeg: 0, markers: [], offAreaQuestTargets: 0 }; // Used by mobile Pixel Probe reports.
+  let lastDebug = { visible: false, areaId: '', headingDeg: 0, headingSource: 'none', markers: [], offAreaQuestTargets: 0 }; // Used by mobile Pixel Probe reports.
 
   function angleDiff(target, source) {
     let delta = target - source;
@@ -26,6 +26,25 @@
 
   function currentDeps() {
     return window.Combat?.deps || null;
+  }
+
+  function headingFromDirection(direction) {
+    const x = Number(direction?.x); // Used with z below to project a camera/aim ray onto the game's horizontal X/Z plane.
+    const z = Number(direction?.z); // Used with x above so pitch never changes the compass heading.
+    if (!Number.isFinite(x) || !Number.isFinite(z) || Math.hypot(x, z) < 1e-6) return null;
+    return Math.atan2(z, x);
+  }
+
+  function currentHeading(deps, player) {
+    try {
+      const ray = deps?.getPlayerAimRay?.(); // Existing gameplay camera ray; follows camera orbit even when Character View deliberately freezes player.angle.
+      const heading = headingFromDirection(ray?.direction);
+      if (heading != null) return { heading, source: 'camera-ray' };
+    } catch (_) {
+      // Camera-ray creation can be unavailable during scene transitions; the player fallback below keeps the HUD stable until the next frame.
+    }
+    const playerHeading = Number(player?.angle); // Defensive boot/transition fallback only; normal gameplay should resolve the camera ray above.
+    return { heading: Number.isFinite(playerHeading) ? playerHeading : 0, source: 'player-fallback' };
   }
 
   function questTargets() {
@@ -106,13 +125,13 @@
       lastDebug = { ...lastDebug, visible: false, areaId };
       return;
     }
-    const heading = Number(player.angle) || 0; // Used as the stable gameplay heading without hostile auto-target snapping.
+    const { heading, source: headingSource } = currentHeading(deps, player); // Camera-derived horizontal heading; independent from character/body rotation.
     const playerCol = player.x / deps.TILE;
     const playerRow = player.y / deps.TILE;
     const { targets, offAreaQuestTargets } = collectTargets(areaId);
     const entries = [...CARDINALS.map(cardinal => ({ ...cardinal, symbol: cardinal.label })), ...targets];
     const markers = renderIndicators(layer, entries, heading, playerCol, playerRow);
-    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), markers, offAreaQuestTargets };
+    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), headingSource, markers, offAreaQuestTargets };
   }
 
   function frame(now) {
@@ -124,6 +143,6 @@
   window.NavigationCompass = Object.freeze({
     update,
     getDebug: () => ({ ...lastDebug, markers: lastDebug.markers.map(marker => ({ ...marker })) }),
-    _test: Object.freeze({ angleDiff, markerSize, collectTargets }),
+    _test: Object.freeze({ angleDiff, markerSize, headingFromDirection, currentHeading, collectTargets }),
   });
 })();
