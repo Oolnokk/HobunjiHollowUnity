@@ -62,6 +62,83 @@
     }, { capture: true });
   }
 
+  function setProgressionResetStatus(message, isError = false) {
+    const status = document.getElementById('progressionResetStatus'); // Used to surface reset success/failure on mobile without requiring a developer console.
+    if (!status) return;
+    status.hidden = !message;
+    status.textContent = message || '';
+    status.style.color = isError ? '#ff9f9f' : '';
+  }
+
+  function resetSkillLevelsAndPerks() {
+    const skillSystem = window.SkillSystem; // Used to clear every persisted skill XP value through the existing character-save adapter.
+    const perkSystem = window.PerkSystem; // Used to refund/remove every purchased perk rank through the existing character-save adapter.
+    if (!skillSystem?.SKILLS || !skillSystem?.restore || !skillSystem?.snapshot || !perkSystem?.TREES || !perkSystem?.resetTree) {
+      setProgressionResetStatus('Skill/perk reset is unavailable because progression did not finish loading.', true);
+      return;
+    }
+    if (window.confirm && !window.confirm('Reset every skill to level 0 and remove all purchased perk ranks? This cannot be undone.')) return;
+
+    const zeroProgress = Object.fromEntries(Object.keys(skillSystem.SKILLS).map(skillKey => [skillKey, 0])); // Used as the complete zero-XP/zero-level snapshot for every current and future registered skill.
+    for (const skillKey of Object.keys(perkSystem.TREES)) perkSystem.resetTree(skillKey);
+    skillSystem.restore({ skillExperience: zeroProgress, skillLevels: zeroProgress });
+    skillSystem.snapshot();
+    perkSystem.render?.();
+    setProgressionResetStatus('Reset complete: all skill levels, skill XP, and purchased perk ranks are now 0.');
+  }
+
+  function resetMotesOfProwess() {
+    const combatDeps = window.Combat?.deps; // Used to reuse the same mote getter/spender and save path as ability progression.
+    if (!combatDeps?.getMotesOfProwess || !combatDeps?.spendMotesOfProwess) {
+      setProgressionResetStatus('Mote reset is unavailable because combat progression did not finish loading.', true);
+      return;
+    }
+    const currentMotes = Math.max(0, Number(combatDeps.getMotesOfProwess()) || 0); // Used to spend the exact current balance down to zero without minting or directly mutating save data.
+    if (currentMotes <= 0) {
+      setProgressionResetStatus('Motes of Prowess are already at 0.');
+      return;
+    }
+    if (window.confirm && !window.confirm(`Reset all ${currentMotes} Mote${currentMotes === 1 ? '' : 's'} of Prowess to 0? This cannot be undone.`)) return;
+    if (!combatDeps.spendMotesOfProwess(currentMotes)) {
+      setProgressionResetStatus('Mote reset failed; the saved balance changed before it could be cleared.', true);
+      return;
+    }
+    setProgressionResetStatus('Reset complete: Motes of Prowess are now 0.');
+  }
+
+  function installProgressionResetControls() {
+    if (document.getElementById('progressionResetSettingsTitle')) return;
+    const modeShiftList = document.getElementById('modeShiftList'); // Used to anchor the new progression section directly after the existing Input settings.
+    const anchorRow = modeShiftList?.closest('.settings-row'); // Used to preserve the Settings pane's current section/row layout without editing index.html.
+    if (!anchorRow) return;
+
+    const title = document.createElement('div'); // Used as the heading for destructive character-progression reset controls.
+    title.id = 'progressionResetSettingsTitle';
+    title.className = 'settings-section-title';
+    title.style.marginTop = '10px';
+    title.textContent = 'Progression';
+
+    const skillRow = document.createElement('div'); // Used to hold the all-skills/all-perks reset action and its explanation.
+    skillRow.className = 'settings-row';
+    skillRow.innerHTML = '<div class="settings-label"><div class="settings-name">Reset Skill Levels + Perk Points</div><div class="settings-desc">Sets every skill\'s XP/level to 0 and removes every purchased perk rank.</div></div><button type="button" class="settings-small-btn" id="resetSkillProgressBtn">Reset</button>';
+
+    const moteRow = document.createElement('div'); // Used to hold the Motes of Prowess reset action and its explanation.
+    moteRow.className = 'settings-row';
+    moteRow.innerHTML = '<div class="settings-label"><div class="settings-name">Reset Motes of Prowess</div><div class="settings-desc">Clears your current character\'s Motes of Prowess back to 0.</div></div><button type="button" class="settings-small-btn" id="resetMotesOfProwessBtn">Reset</button>';
+
+    const status = document.createElement('div'); // Used as an in-game debug/result readout so resets can be verified on mobile.
+    status.id = 'progressionResetStatus';
+    status.className = 'settings-desc';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.style.margin = '4px 0 8px';
+    status.hidden = true;
+
+    anchorRow.after(title, skillRow, moteRow, status);
+    document.getElementById('resetSkillProgressBtn')?.addEventListener('click', resetSkillLevelsAndPerks);
+    document.getElementById('resetMotesOfProwessBtn')?.addEventListener('click', resetMotesOfProwess);
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     // This init is called by game.js only after its core dependency/bootstrap
@@ -70,6 +147,7 @@
     // half-initialized game closures if an earlier boot dependency fails.
     installPixelProbeArmGuard();
     ensureRuntimeHelpers();
+    installProgressionResetControls();
   }
 
   function actionDisplayLabel(action) {
