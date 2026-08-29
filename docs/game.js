@@ -5963,13 +5963,25 @@
         };
       }
 
+      // TEMPORARY debug toggle — a reported up/down inversion in animal
+      // head pitch couldn't be confirmed by reading the math alone: the
+      // sprite-plane head "nod" is an in-plane roll (see
+      // png-plane-avatar.js's applyDegrees comment), not a real 3D tilt
+      // like the skeletal NPC dialogue/gaze pitch this file also computes,
+      // so there's no other in-repo convention to cross-check its sign
+      // against — it has to be seen rendered. Flip live from the console
+      // with `window.__hobunjiFlipAnimalPitch = true` (no reload needed)
+      // to check which orientation is actually correct, then remove this
+      // once confirmed and bake the answer into the formula directly.
+      function _animalPitchSign() { return window.__hobunjiFlipAnimalPitch ? -1 : 1; }
+
       function _updateCreatureLookAtFace(c, master, dt) {
         const target = _playerFaceTarget(master);
         const dx = target.x - c.x, dy = target.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const aimAngle = horizontalPx > 1 ? Math.atan2(dy, dx) : (c.facing || 0);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
-        const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        const pitchDeg = _animalPitchSign() * Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
@@ -6040,7 +6052,7 @@
         const dx = head.x - c.x, dy = head.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
-        const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        const pitchDeg = _animalPitchSign() * Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, head.x, head.y, head.worldY);
         if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
