@@ -35,6 +35,12 @@
   const PELLET_ORIGIN_HEIGHT_WORLD = 0.08; // Small torso-to-mouth lift in Three.js world units until a species mouth anchor is available.
   const PELLET_GROUND_CLEARANCE_WORLD = 0.08; // Lets a downward shot embed cleanly instead of skimming through terrain.
   const FALLBACK_COLOR = 0xb6d94c; // Used as a visible acidic placeholder when the not-yet-authored pellet PNG cannot load.
+  const PELLET_SFX = Object.freeze({
+    spit: { url: 'assets/audio/sfx/combat/sfx_spit.mp3', volume: 0.9 },
+    splat: { url: 'assets/audio/sfx/combat/sfx_splat_1.mp3', volume: 0.9 },
+    acidSizzle: { url: 'assets/audio/sfx/combat/sfx_acid_sizzle.mp3', volume: 0.9 },
+  }); // Used by projectile launch/contact events; source coordinates control the same distance falloff as other creature combat cues.
+  const pelletSfxPreloads = new Map(); // Keeps all three short attack cues decoded before the first Caustic Pellet is fired.
   let pelletTexture = null; // Reused by every pellet once the future PNG loads successfully.
   let pelletTextureRequested = false; // Prevents repeated 404 requests while the placeholder art is intentionally absent.
 
@@ -45,6 +51,46 @@
   function lerp(a, b, t) {
     return a + (b - a) * clamp01(t);
   }
+
+  function preloadPelletSfx() {
+    if (typeof Audio !== 'function') return;
+    for (const cfg of Object.values(PELLET_SFX)) {
+      if (pelletSfxPreloads.has(cfg.url)) continue;
+      const snd = new Audio();
+      snd.preload = 'auto';
+      snd.src = cfg.url;
+      pelletSfxPreloads.set(cfg.url, snd);
+    }
+  }
+
+  function playPelletSfxAt(key, x, y, areaId, deps, state) {
+    const cfg = PELLET_SFX[key];
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {};
+    if (!cfg || audioCfg.enabled === false || window.AudioSystem?.combatSfxConfig?.()?.enabled === false) return false;
+    const currentArea = deps.getCurrentArea?.();
+    if (areaId != null && currentArea != null && areaId !== currentArea) return false;
+    const px = Number(x), py = Number(y), playerX = Number(deps.player?.x), playerY = Number(deps.player?.y);
+    if (![px, py, playerX, playerY].every(Number.isFinite)) return false;
+    const earshot = Math.max(deps.TILE || 64, Number(window.AudioSystem?.FOOTSTEP_EARSHOT_PX) || (deps.TILE || 64) * 9);
+    const distance = Math.hypot(px - playerX, py - playerY);
+    if (distance > earshot) return false;
+    const falloff = Math.max(0, 1 - distance / earshot);
+    const volume = Math.max(0, Math.min(1, cfg.volume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
+    if (volume <= 0.002) return false;
+    const preload = pelletSfxPreloads.get(cfg.url); // Used so launch/impact playback clones a ready element instead of queuing a late first decode.
+    const snd = preload?.cloneNode?.(true) || new Audio(cfg.url);
+    snd.volume = volume;
+    snd.play().catch(() => {});
+    if (state) state.lastSfx = `${key}@${(px / (deps.TILE || 64)).toFixed(1)},${(py / (deps.TILE || 64)).toFixed(1)}`; // Mobile-readable source verification.
+    return true;
+  }
+
+  function playPelletImpactSfx(projectile, creature, deps, state, actorHit = false, impactX = projectile.x, impactY = projectile.y) {
+    playPelletSfxAt('splat', impactX, impactY, creature.areaId, deps, state);
+    if (actorHit) playPelletSfxAt('acidSizzle', impactX, impactY, creature.areaId, deps, state);
+  }
+
+  preloadPelletSfx();
 
   function isDrenkirra(creature) {
     const key = creature?.creatureKey; // Used to identify regular and Den-Mother Drenkirra without label-only matching.
@@ -298,7 +344,6 @@
     if (targetEntry.kind === 'player') deps.damagePlayer?.(damage, projectile.prevX, projectile.prevY, tuning.KNOCKBACK_PX_S, options);
     else deps.damageCreature?.(target, damage, projectile.prevX, projectile.prevY, tuning.KNOCKBACK_PX_S, options);
     state.lastResult = `HIT ${targetEntry.kind}`;
-    deps.playCreatureClawHit?.(creature);
   }
 
   function spawnProjectile(creature, state, deps) {
@@ -334,6 +379,7 @@
     state.projectiles.push(projectile);
     state.fired = true;
     state.lastResult = 'IN FLIGHT';
+    playPelletSfxAt('spit', creature.x, creature.y, creature.areaId, deps, state); // Launch audio originates at the firing Drenkirra, not the projectile's later contact point.
   }
 
   function updateProjectiles(creature, state, dt, deps) {
@@ -346,6 +392,7 @@
       const nextX = projectile.x + dx, nextY = projectile.y + dy;
       if (deps.canOccupyAt && !deps.canOccupyAt(nextX, nextY, tuning.PROJECTILE_RADIUS_PX)) {
         if (state.lastResult === 'IN FLIGHT') state.lastResult = 'BLOCKED';
+        playPelletImpactSfx(projectile, creature, deps, state, false, nextX, nextY); // Cover collision: wet splat only, from the obstruction point.
         disposeProjectile(projectile);
         continue;
       }
@@ -362,6 +409,7 @@
       const surfaceY = typeof deps.worldSurfaceY === 'function' ? Number(deps.worldSurfaceY(projectile.x, projectile.y)) : 0;
       if (projectile.worldY <= (Number.isFinite(surfaceY) ? surfaceY : 0) + PELLET_GROUND_CLEARANCE_WORLD) {
         if (state.lastResult === 'IN FLIGHT') state.lastResult = 'BLOCKED';
+        playPelletImpactSfx(projectile, creature, deps, state, false); // Terrain contact is also a physical stop, so it gets the same wet splat as cover.
         disposeProjectile(projectile);
         continue;
       }
@@ -377,7 +425,10 @@
         const rayWorldY = projectile.prevWorldY + (projectile.worldY - projectile.prevWorldY) * horizontalHit.t; // Used to reject an otherwise-horizontal overlap when the target is above/below the aimed shot.
         const targetWorldY = actorWorldY(target, deps);
         if (Math.abs(rayWorldY - targetWorldY) > hitRadius / deps.TILE) continue;
+        const impactX = projectile.prevX + (projectile.x - projectile.prevX) * horizontalHit.t; // Used as the audible contact position along the swept segment.
+        const impactY = projectile.prevY + (projectile.y - projectile.prevY) * horizontalHit.t; // Used as the audible contact position along the swept segment.
         applyProjectileHit(creature, state, projectile, targetEntry, deps);
+        playPelletImpactSfx(projectile, creature, deps, state, true, impactX, impactY); // Character/animal hit: splat and acid sizzle begin together at contact.
         disposeProjectile(projectile);
         hit = true;
         break;
@@ -385,7 +436,7 @@
       if (hit) continue;
       if (projectile.distancePx >= projectile.maxDistancePx) {
         if (state.lastResult === 'IN FLIGHT') state.lastResult = 'MISS';
-        disposeProjectile(projectile);
+        disposeProjectile(projectile); // Range expiry is not a contact, so it deliberately stays silent.
       }
     }
   }
@@ -414,7 +465,7 @@
     if (!element) return;
     const liveProjectiles = state.projectiles.filter(projectile => !projectile.dead).length; // Used as the mobile-visible active pellet count.
     const pitchLabel = Number.isFinite(state.aimPitchDeg) ? `${state.aimPitchDeg.toFixed(1)}°` : '?'; // Used to verify vertical aim and authored clamping from a phone without desktop devtools.
-    element.textContent = `Drenkirra Caustic Pellet\n${stage} ${(progress * 100).toFixed(0)}% | pellets ${liveProjectiles}\n${state.lastResult || 'CHARGING'} | target ${state.targetKind || '?'}\nhead pitch ${pitchLabel}\ncorroded x${tuning.CORRODED_HEALTH_MULTIPLIER.toFixed(2)}`;
+    element.textContent = `Drenkirra Caustic Pellet\n${stage} ${(progress * 100).toFixed(0)}% | pellets ${liveProjectiles}\n${state.lastResult || 'CHARGING'} | target ${state.targetKind || '?'}\nhead pitch ${pitchLabel}\nsfx ${state.lastSfx || 'none'}\ncorroded x${tuning.CORRODED_HEALTH_MULTIPLIER.toFixed(2)}`;
   }
 
   function start(creature, state, context, deps) {
@@ -425,6 +476,7 @@
     state.fired = false;
     state.projectiles = [];
     state.lastResult = 'CHARGING';
+    state.lastSfx = null;
     storeBasePose(creature, state);
     updateAim(creature, state, deps);
     applyHeadAim(creature, state, 0);
@@ -500,7 +552,7 @@
     return originalStart(creature, resolvedId, context);
   };
 
-  window.HobunjiDrenkirraPellet = { applyConfig, tuning, spritePath: PELLET_SPRITE, isDrenkirra }; // Used by debug/editor integrations, loader already-loaded checks, and the wildlife AI's ranged-vs-melee trigger range (see updateHostiles).
+  window.HobunjiDrenkirraPellet = { applyConfig, tuning, spritePath: PELLET_SPRITE, sfx: PELLET_SFX, isDrenkirra }; // Used by debug/editor integrations, loader already-loaded checks, and the wildlife AI's ranged-vs-melee trigger range (see updateHostiles).
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.causticPellet; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);
