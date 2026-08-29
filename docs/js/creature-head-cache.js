@@ -23,6 +23,24 @@
 (() => {
   'use strict';
 
+  // The rig renderer loads immediately before this module. Keep the latest
+  // painter-authored Grehlr pivot in the shared committed rig object before
+  // game.js/farm-animals build any animal avatars. Mutating the nested pivot
+  // in place preserves references while the outer ANIMAL_HEAD_RIGS map stays
+  // intentionally frozen by creature-genetics-render.js.
+  function _syncGrehlrHeadRigProfile() {
+    const rig = window.CreatureGeneticsRender?.ANIMAL_HEAD_RIGS?.grehlr; // Supplies the committed Grehlr rig corrected before avatar creation.
+    const pivot = rig?.pivot; // Mutated in-place below so all head-rig consumers see the authored pivot.
+    if (!pivot) {
+      window.__farmLog?.('[head-rig] Grehlr committed rig unavailable; authored pivot was not applied.', 'warn');
+      return;
+    }
+    pivot.x = 0.38116718312998343;
+    pivot.y = 0.49912795472126853;
+    window.__farmLog?.(`[head-rig] Grehlr authored pivot active x=${pivot.x.toFixed(6)} y=${pivot.y.toFixed(6)}`, 'wildlife');
+  }
+  _syncGrehlrHeadRigProfile();
+
   // Matches game.js's own PLAYER_FACE_HEIGHT_RATIO (0.76) — kept here too
   // since this module has no access to that closure-local constant, and a
   // player/companion-portrait head estimate needs the same ratio game.js's
