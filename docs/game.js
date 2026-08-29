@@ -181,7 +181,7 @@
         // The click that closed the menu is itself a user gesture, so
         // resume shoulder-surf's Pointer Lock immediately rather than
         // waiting for a separate click on the game world.
-        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -14505,6 +14505,11 @@
           characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
         }
         characterViewMode.enabled = nextEnabled;
+        if (nextEnabled) {
+          requestShoulderSurfPointerLock();
+        } else if (!cursorlessMouseAimRequested()) {
+          releaseShoulderSurfPointerLock();
+        }
         characterViewMode.lastChangeReason = reason;
         characterViewMode.changedAtMs = Date.now();
         publishCharacterViewStatus();
@@ -22600,11 +22605,16 @@
       // locking only stops the OS cursor from moving/being visible at all,
       // so those deltas keep coming no matter how far or how many times the
       // physical mouse moves in one direction.
+      function cursorlessMouseAimRequested() {
+        return characterViewMode.enabled
+          || (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE);
+      }
+      
       function shoulderSurfPointerLockActive() {
         return document.pointerLockElement === threeContainer;
       }
       function requestShoulderSurfPointerLock() {
-        if (!isDesktop || shoulderSurfPointerLockActive()) return;
+        if (!cursorlessMouseAimRequested() || !isDesktop || shoulderSurfPointerLockActive()) return;
         // Can reject (no transient user activation, or the browser's own
         // rate-limit on repeated requests) — that's fine, the click-to-relock
         // handler below gives the player another chance.
@@ -22635,7 +22645,7 @@
       // game world is the same click-to-resume-look convention most desktop
       // games with Pointer Lock use.
       threeContainer.addEventListener('click', () => {
-        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
       });
       // Both offset sliders read/write whichever stance preset is currently
       // active (see shoulderSurfCombatStanceActive()) rather than a single
@@ -22798,7 +22808,7 @@
         // outside shoulder-surf while its Pointer Lock is still held —
         // cheap enough (one property read) to just check every frame rather
         // than hunting down every such call site individually.
-        if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        if (!cursorlessMouseAimRequested()) releaseShoulderSurfPointerLock();
         // Same "don't hunt down every mode-switch call site" reasoning as
         // the Pointer Lock release above — held-item ground x-ray reads as
         // clarity from the normal top-down view but just looks wrong at
@@ -25212,7 +25222,7 @@
         state.held = true;
         if (state.arc === 'utilities') {
           // Same reasoning as CookingSystem's setInteractionBlocked above —
-          // no visible cursor to pick a wedge with under shoulder-surf's
+          // no visible cursor to pick a wedge with under cursor-less camera
           // Pointer Lock otherwise.
           releaseShoulderSurfPointerLock();
           window._desktopSelectionArc?.openUtilities();
@@ -25239,6 +25249,9 @@
           if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
           else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
           else window._desktopSelectionArc?.close();
+        }
+        if (wasHeld && state.arc === 'utilities' && cursorlessMouseAimRequested()) {
+          requestShoulderSurfPointerLock();
         }
         return wasHeld;
       }
