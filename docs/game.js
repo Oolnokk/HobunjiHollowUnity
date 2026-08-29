@@ -5337,6 +5337,17 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          // Tucked inside its den for the off-shift/overnight branch below
+          // (see the denKey settle branch) — frozen and invisible rather
+          // than idling in the open, so no AI/vocalization/stamina tick
+          // runs for it until its shift or the day resumes, at which point
+          // it steps back out from exactly the mouth tile it went in at.
+          if (c._denHidden) {
+            const stillOff = c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c));
+            if (stillOff) continue;
+            c._denHidden = false;
+            if (c.avatarRef?.group) c.avatarRef.group.visible = true;
+          }
           window.AnimalVocalizations?.tickCreature?.(c, dt);
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
@@ -5607,18 +5618,25 @@
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
           } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
-            // Denned pack, off the clock — head back to the den and settle
-            // there instead of continuing to wander (see spawnPackAtDen for
-            // homeX/homeY = the den's own anchor point). isPackOffShift
+            // Denned pack, off the clock — head for the den's own mouth
+            // tile (denEntranceX/Y, set at spawn from the den's
+            // mouthAnchor — see spawnPackAtDen) rather than just the
+            // footprint center (homeX/Y), and disappear once there instead
+            // of idling in the open, so it actually reads as "went inside"
+            // rather than "stopped walking near the den." isPackOffShift
             // extends this beyond true night for cloud-forest gar-wolf packs,
             // which only hunt during their two dawn/dusk shifts (see
             // js/wildlife-cloud-forest-behavior.js) and rest the whole
             // rest of the day, not just after dark.
-            const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-            if (distFromDen > DEN_SETTLE_RADIUS_PX) {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
-              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+            const denX = c.denEntranceX ?? c.homeX, denY = c.denEntranceY ?? c.homeY;
+            const distFromDenMouth = Math.hypot(c.x - denX, c.y - denY);
+            if (distFromDenMouth > DEN_SETTLE_RADIUS_PX) {
+              moving = travelCreatureToward(c, denX, denY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(denY - c.y, denX - c.x);
             } else {
+              c.x = denX; c.y = denY;
+              c._denHidden = true;
+              if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
           } else if (def.diet === 'herbivore') {

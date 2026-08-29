@@ -279,6 +279,14 @@
     // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
     // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
     const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
+    // Where an off-shift/overnight pack member actually walks to and
+    // disappears from (see game.js's updateHostiles denKey settle branch)
+    // — the den's own doorway tile, not its footprint center, so it reads
+    // as "went inside" instead of "stopped in the open near the den."
+    // Falls back to the footprint center for the rare den with no
+    // generated mouthAnchor, same fallback the dev teleport tools use.
+    const denEntranceX = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : homeX;
+    const denEntranceY = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : homeY;
     const count = DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
     const zoneData = deps.zoneLayouts.get(zoneId);
     let spawned = 0;
@@ -292,7 +300,7 @@
       const angle = deps.rnd() * Math.PI * 2;
       const dist = footprintClearance + deps.rnd() * deps.TILE * 1.6;
       const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-      const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
+      const opts = { homeX, homeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
       assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
