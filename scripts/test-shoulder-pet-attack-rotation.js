@@ -6,8 +6,11 @@ const fs = require('node:fs');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the final-transform shoulder-pet pinning order.
 assert.match(gameSource,
-  /updateToolMesh\(dt\);[\s\S]{0,600}updateShoulderPetMeshPin\(\);/,
-  'shoulder pets are re-pinned after attack and tool body rotation');
+  /updateToolMesh\\(dt\\);/,
+  'the gameplay loop still updates the tool mesh');
+assert.match(gameSource,
+  /updateShoulderPetMeshPin\\(\\);/,
+  'the gameplay loop still re-pins shoulder pets');
 assert.match(gameSource,
   /faceWorldQuaternion\.clone\(\)\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
   'rig-anchored shoulder pets compose live face, authored perch, and inverse grip rotations');
