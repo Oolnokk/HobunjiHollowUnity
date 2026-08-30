@@ -33,7 +33,7 @@
   <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260829merge1"></script>
+  <script src="js/png-plane-avatar.js?v=20260830flip1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -1239,6 +1239,13 @@
       <div class="mp-pane" id="mpSettings">
         <div class="settings-pane">
           <div class="settings-section-title">Visual Effects</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Flip PNG Character Portraits Sideways</div>
+              <div class="settings-desc">Horizontally mirror both the front and back portraits used by PNG-plane character avatars</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingFlipPngPortraits"><span class="toggle-slider"></span></span>
+          </label>
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Shell Outlines</div>
