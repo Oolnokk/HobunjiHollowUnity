@@ -469,7 +469,14 @@
   }
 
   function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
-    const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
+    const tierRankMultipliers = cfg?.statMultiplierByRankAndTier?.[rank];
+    // Tier-indexed rank curves keep low-star camps weak while preserving
+    // meaningful supporting ranks in higher-star camps.
+    const weaken = Number(
+      Array.isArray(tierRankMultipliers)
+        ? tierRankMultipliers[Math.min(Math.max(0, tier), tierRankMultipliers.length - 1)]
+        : (cfg?.statWeakenMultiplierByRank?.[rank] ?? 1),
+    );
     const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
     const statMul = weaken * tierMul;
     const weapon = banditWeaponFor(cfg, rank, tier);

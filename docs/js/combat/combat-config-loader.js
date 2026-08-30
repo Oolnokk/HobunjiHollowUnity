@@ -88,7 +88,7 @@
     ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
-    ['js/combat/technique-scrolls.js?v=20260827treecover1', () => !!window.TechniqueScrolls],
+    ['js/combat/technique-scrolls.js?v=20260830unlocksave3', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
