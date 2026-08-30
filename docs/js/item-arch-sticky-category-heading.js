@@ -135,6 +135,7 @@
     const textNode = document.createElementNS(svg.namespaceURI, 'text');
     textNode.setAttribute('class', 'quick-potion-curved-category');
     textNode.setAttribute('fill', lastSelected.color);
+    textNode.style.filter = `drop-shadow(0 0 5px ${lastSelected.color})`;
     const textPath = document.createElementNS(svg.namespaceURI, 'textPath');
     textPath.setAttribute('href', `#${pathId}`);
     textPath.setAttribute('startOffset', '50%');
@@ -181,10 +182,16 @@
     requestAnimationFrame(refresh);
   }
 
+  function mutationTouchesArc(mutation) {
+    const nodes = [...mutation.addedNodes, ...mutation.removedNodes]; // Used to ignore unrelated HUD/body changes while still following recycled item-wheel slots.
+    return nodes.some(node => node?.nodeType === 1
+      && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot')));
+  }
+
   function install() {
     if (observer || !document.body) return;
     observer = new MutationObserver(mutations => {
-      if (mutations.some(mutation => mutation.type === 'childList')) queueRefresh();
+      if (mutations.some(mutationTouchesArc)) queueRefresh();
     });
     observer.observe(document.body, { subtree: true, childList: true });
 
