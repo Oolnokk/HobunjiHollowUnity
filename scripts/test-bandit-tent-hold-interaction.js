@@ -12,7 +12,7 @@ assert(
   'tent holds require the selected tent interaction, like nest holds',
 );
 assert(
-  banditCamps.includes('&& deps.getActionHeldDown()'),
+  banditCamps.includes('&& actionHeldDown'),
   'tent holds require a continuously held input',
 );
 assert(
@@ -27,5 +27,21 @@ assert(
   game.includes('getActiveAction: () => activeAction'),
   'BanditCamps receives the selected action dependency',
 );
+assert(
+  banditCamps.includes("_tentActionHudEl ||= document.getElementById('tentActionHud')"),
+  'tent HUD nodes are resolved lazily after body markup exists',
+);
+assert(
+  banditCamps.includes('&& !_banditTentHoldInterrupted'),
+  'a damaging hit latches the hold off until release',
+);
+assert(
+  banditCamps.includes('if (!actionHeldDown) _banditTentHoldInterrupted = false;'),
+  'releasing the input rearms tent interaction after an interruption',
+);
+assert(
+  game.includes('window.BanditCamps?.interruptTentHold();'),
+  'player damage interrupts a tent hold',
+);
 
-console.log('bandit tent hold interaction contracts: 5 checks passed');
+console.log('bandit tent hold interaction contracts: 9 checks passed');
