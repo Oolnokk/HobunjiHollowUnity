@@ -1,4 +1,35 @@
 {
   "version": 1,
-  "elements": {}
+  "elements": {
+    "#statusBar": {
+      "left": "460px",
+      "top": "0px",
+      "width": "706px",
+      "height": "44px"
+    },
+    "#farmEditBtn": {
+      "left": "907px",
+      "top": "44px",
+      "width": "86px",
+      "height": "30px"
+    },
+    "#furniturePlacerBtn": {
+      "left": "993px",
+      "top": "44px",
+      "width": "86px",
+      "height": "30px"
+    },
+    "#menuBtn": {
+      "left": "1079px",
+      "top": "44px",
+      "width": "86px",
+      "height": "30px"
+    },
+    "#invGrid > button.inv-item-box:nth-of-type(6)": {
+      "opacity": "1"
+    },
+    "#invKeyList": {
+      "height": "0"
+    }
+  }
 }
