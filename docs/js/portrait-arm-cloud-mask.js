@@ -23,14 +23,23 @@
 
   function scaleMaskY(xform) {
     if (!xform || typeof xform !== 'object') return xform;
+    const ax = Number(xform.ax);
     const sy = Number(xform.sy);
-    return { ...xform, sy: (Number.isFinite(sy) ? sy : 1) * MASK_Y_SCALE_MULTIPLIER };
+    const resolvedAx = Number.isFinite(ax) ? ax : 0;
+    const resolvedSy = Number.isFinite(sy) ? sy : 1;
+    const bottomAnchorCompensation = resolvedSy * (1 - MASK_Y_SCALE_MULTIPLIER) / 2; // Counteracts center-based canvas scaling so the bottom edge stays fixed.
+    return {
+      ...xform,
+      ax: resolvedAx - bottomAnchorCompensation,
+      sy: resolvedSy * MASK_Y_SCALE_MULTIPLIER,
+    };
   }
 
   // portrait-utils.js owns the normal full-portrait mask. Its classic-script
   // function binding is writable through window, so wrapping it here keeps the
-  // authored per-species transform but halves only the cloud's vertical scale.
-  // The arm-only alpha-map path below uses the same multiplier explicitly.
+  // authored per-species transform but halves only the cloud's vertical scale,
+  // with scaleMaskY compensating position to preserve the authored bottom edge.
+  // The arm-only alpha-map path below uses the same transform explicitly.
   const originalApplyPortraitOpacityMask = global.applyPortraitOpacityMask;
   if (typeof originalApplyPortraitOpacityMask === 'function' && !originalApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled) {
     const scaledApplyPortraitOpacityMask = function portraitCloudMaskYScaled(ctx, image, xform) {
