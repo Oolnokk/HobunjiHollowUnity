@@ -186,6 +186,7 @@
       active = true;
       reassertBlockAt = -1;
       window.Combat.setPlayerDamageInterceptor(tryAbsorb);
+      window.__farmLog?.(`[counter-shield-vfx] raised active=true holder=${!!deps.toolHolder?.()} scene=${presentationSceneReady}`, 'combat');
       deps.showToast('Counter Shield raised: blocks and counters on contact.', true);
       raiseBlockPose(deps);
     }
