@@ -7,6 +7,7 @@
   // pitch map is added on top. There are no random pitch/tempo modulation curves.
   let deps = null;
   let authoredProfiles = {};
+  const resolvedProfileCache = new Map(); // Reuses authored species profiles across per-creature chatter checks and request playback.
   const states = new WeakMap();
   const tracked = new Set();
   const PRIORITY = Object.freeze({ chatter: 1, growl: 2, warning: 3 });
@@ -186,9 +187,12 @@
   }
 
   function profileFor(c) {
+    const profileKey = speciesProfileKey(c) || '__default__'; // Keys the reusable merged profile by the creature's authored species.
+    const cached = resolvedProfileCache.get(profileKey); // Serves repeat chatter and playback requests without rebuilding nested profile objects.
+    if (cached) return cached;
     const common = authoredProfiles.default || {};
-    const species = authoredProfiles[speciesProfileKey(c)] || {};
-    return {
+    const species = authoredProfiles[profileKey] || {};
+    const resolved = { // Retained until authored profile data is replaced through setAuthoredProfiles.
       chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
       warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
       growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
@@ -202,6 +206,8 @@
         ...(species.discoveryText || {}),
       },
     };
+    resolvedProfileCache.set(profileKey, resolved);
+    return resolved;
   }
 
   function sizePitchOffsetSemitones(c, profile) {
@@ -216,6 +222,7 @@
 
   function setAuthoredProfiles(profiles) {
     authoredProfiles = profiles && typeof profiles === 'object' && !Array.isArray(profiles) ? profiles : {};
+    resolvedProfileCache.clear();
     debug.profilesLoaded = true;
   }
 
@@ -361,7 +368,6 @@
         .includes(String(c.state || '').toLowerCase())
       || !!(c.target || c.combatTarget || c.attackTarget || c.aggroTarget || c.targetCreature)
     );
-    const chatter = profileFor(c).chatter;
     if (opts.allowPassive === false || threatened) {
       state.nextChatterS = Math.max(state.nextChatterS, 2.5);
       return;
@@ -369,6 +375,7 @@
     state.nextChatterS -= step;
     if (state.nextChatterS > 0 || state.active) return;
     request(c, 'chatter');
+    const chatter = profileFor(c).chatter;
     state.nextChatterS = randomRange(chatter.cooldownMinS, chatter.cooldownMaxS);
   }
 
