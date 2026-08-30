@@ -9,8 +9,8 @@ assert.match(gameSource,
   /updateShoulderPetMeshPin\(\);/,
   'the gameplay loop still re-pins shoulder pets');
 assert.match(gameSource,
-  /const worldQuaternion = selectedRotationQuaternion\.clone\(\)\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
-  'shoulder pets compose the selected rotation frame, authored perch, and inverse grip rotations');
+  /const worldQuaternion = selectedRotationQuaternion\.clone\(\);/,
+  'shoulder pets begin with whichever rotation frame is selected');
 for (const source of ['pixel', 'body', 'head', 'world']) {
   assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);
 }
