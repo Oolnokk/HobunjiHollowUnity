@@ -410,9 +410,15 @@
     for (const [key, info] of _perceivedThreats) {
       if (info.kind === 'camp') {
         const rec = (_banditCampInstances.get(info.zoneId) || []).find(r => r.instance.id === info.instanceId);
-        if (!rec || isBanditCampCleared(rec)) _perceivedThreats.delete(key);
+        if (!rec || isBanditCampCleared(rec)) {
+          _perceivedThreats.delete(key);
+          window.WildernessMap?.clearWaypointForThreat?.(key);
+        }
       } else if (info.kind === 'den') {
-        if (!deps.isDenPackAlive(info.denKey)) _perceivedThreats.delete(key);
+        if (!deps.isDenPackAlive(info.denKey)) {
+          _perceivedThreats.delete(key);
+          window.WildernessMap?.clearWaypointForThreat?.(key);
+        }
       }
     }
 
@@ -698,6 +704,12 @@
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);
     _banditZoneEntryPending.delete(zoneId);
+    for (const [key, info] of _perceivedThreats) {
+      if (info.zoneId !== zoneId) continue;
+      _perceivedThreats.delete(key);
+      window.WildernessMap?.clearWaypointForThreat?.(key);
+    }
+    window.WildernessMap?.clearTemporaryWaypointForZone?.(zoneId);
   }
 
   let campsEnabled = true;

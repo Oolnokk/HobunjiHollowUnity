@@ -19,7 +19,7 @@
   <script src="config/scratchbones-config.js?v=20260828impact1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
-  <link rel="stylesheet" href="style.css?v=20260826compass1">
+  <link rel="stylesheet" href="style.css?v=20260830mapwaypoint1">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
@@ -296,8 +296,8 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20260807a"></script>
-  <script src="js/navigation-compass.js?v=20260826compass1"></script>
+  <script src="js/wilderness-map.js?v=20260830mapwaypoint1"></script>
+  <script src="js/navigation-compass.js?v=20260830mapwaypoint1"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -560,13 +560,6 @@
 
   <!-- Active alchemy buffs/debuffs (top-right-ish, below status bar) — see refreshBuffBar -->
   <div id="buffBar" aria-label="Active potion effects"></div>
-
-  <!-- Wilderness minimap (top-right, below the buff bar) — only shown while
-       standing in one of the four wilderness zones. Press M for the full
-       map. See renderWildernessMinimap()/renderWildernessMapPanel() in game.js. -->
-  <div id="minimapWidget" aria-label="Wilderness minimap" title="Press M for the full map">
-    <canvas id="minimapCanvas" width="260" height="260"></canvas>
-  </div>
 
   <!-- Farm editor toggle button (top-right, beside menu) — only shown on the
        farm, for its owner; see _refreshEditorButtonVisibility -->
@@ -896,12 +889,22 @@
            renderWildernessMapPanel() in game.js. ────────────────────────── -->
       <div class="mp-pane" id="mpMap">
         <div class="wmap-zone-tabs" id="wmapZoneTabs"></div>
-        <div class="wmap-canvas-wrap"><canvas id="wildernessMapCanvas" width="560" height="560"></canvas></div>
+        <div class="wmap-canvas-wrap"><canvas id="wildernessMapCanvas" width="720" height="720" aria-label="Discovered wilderness map; tap a location marker to set a compass waypoint"></canvas></div>
         <div class="wmap-legend">
           <span><i style="background:#f9e28a"></i> You</span>
           <span><i style="background:#7fe89a"></i> Dwelling</span>
           <span><i style="background:#c084fc"></i> Great Fey shrine</span>
           <span><i style="background:#6ec6f0"></i> Story location</span>
+          <span><i style="background:#ef6657"></i> Camp</span>
+          <span><i style="background:#d7c59a"></i> Den</span>
+        </div>
+        <div class="wmap-landmarks" id="wmapLandmarks">
+          <h3 class="wmap-gathering-title">Discovered locations</h3>
+          <div class="wmap-waypoint-status" id="wmapWaypointStatus">
+            <span id="wmapWaypointStatusText">No compass waypoint selected.</span>
+            <button type="button" id="wmapWaypointClearBtn" class="wmap-waypoint-clear" hidden>Clear</button>
+          </div>
+          <div class="wmap-landmark-list" id="wmapLandmarkList"></div>
         </div>
         <!-- Nearby NPCs — walk-to navigation targets, not teleports; only
              NPCs currently near the player show up here. See

@@ -272,7 +272,7 @@
   // two bands rather than a general per-edge inset — that avoids a wide,
   // short top element (like the status bar) getting misread as needing its
   // whole column blocked all the way down the screen.
-  const UI_SAFE_SELECTORS = ['#statusBar', '#navigationCompass', '#buffBar', '#minimapWidget', '#menuBtn', '#farmEditBtn', '#devSpawnBtn', '#actionPrompt'];
+  const UI_SAFE_SELECTORS = ['#statusBar', '#navigationCompass', '#buffBar', '#menuBtn', '#farmEditBtn', '#devSpawnBtn', '#actionPrompt'];
   const UI_SAFE_REFRESH_MS = 400;
   let _uiSafeBox = null;
 

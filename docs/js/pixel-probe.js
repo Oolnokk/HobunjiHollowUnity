@@ -860,7 +860,13 @@
     const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
     if (compassDebug) {
       const markerText = compassDebug.markers.map(marker => `${marker.source}:${marker.label}@${marker.distanceTiles}t/${marker.sizePx}px/${marker.bearingDeg}°`).join(' ');
-      lines.push(`Compass: ${compassDebug.visible ? 'visible' : 'hidden'} heading=${compassDebug.headingDeg}° markers=${compassDebug.markers.length} offAreaQuests=${compassDebug.offAreaQuestTargets}${markerText ? ' ' + markerText : ''}`);
+      const offAreaWaypoint = compassDebug.offAreaWaypoint ? ` offAreaWaypoint=${compassDebug.offAreaWaypoint.label}@${compassDebug.offAreaWaypoint.zoneId}` : '';
+      lines.push(`Compass: ${compassDebug.visible ? 'visible' : 'hidden'} heading=${compassDebug.headingDeg}° markers=${compassDebug.markers.length} offAreaQuests=${compassDebug.offAreaQuestTargets}${offAreaWaypoint}${markerText ? ' ' + markerText : ''}`);
+    }
+    const wildernessMapDebug = window.WildernessMap?.getDebug?.(); // Exposes the saved waypoint and active Map-tab region without requiring desktop devtools.
+    if (wildernessMapDebug) {
+      const waypoint = wildernessMapDebug.waypoint;
+      lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
     }
     const chunkAudit = window.WildernessChunks?.snapshot?.()?.lastResidencyAudit; // Used to carry the latest button-driven chunk leak result into copied probe reports.
     if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);

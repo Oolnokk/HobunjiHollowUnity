@@ -15,7 +15,8 @@ const context = {
   window: null,
 };
 context.window = context;
-context.ProceduralTasks = { compassTargets: () => questTargets };
+context.ProceduralTasks = { allCompassTargets: () => ({ active: questTargets, pending: [] }) };
+context.WildernessMap = { getCompassWaypoint: () => ({ id: 'locale:house', label: 'Leaf & Pahu\'s House', zoneId: 'zone', col: 6, row: 5 }) };
 context.BountyBoard = { markers: new Map([['b1',{zoneId:'zone',col:10,row:5,label:'Captain'}]]) };
 context.BanditCamps = { perceivedThreats: new Map([
   ['camp:1',{kind:'camp',zoneId:'zone',col:10.2,row:5,label:'Bandit Camp'}],
@@ -65,9 +66,16 @@ assert.equal(fallbackHeading.heading, 0.75, 'camera fallback should preserve the
 
 const collected = test.collectTargets('zone');
 assert.equal(collected.offAreaQuestTargets, 1, 'off-area quests should be counted for diagnostics');
+assert.equal(collected.offAreaWaypoint, null, 'same-area waypoint should not be reported as off-area');
+assert(collected.targets.some(target => target.source === 'waypoint'), 'selected same-area map waypoint should be tracked');
 assert(collected.targets.some(target => target.source === 'quest'), 'same-area quest NPC should be tracked');
 assert(collected.targets.some(target => target.source === 'bounty'), 'located bounty should be tracked');
 assert(collected.targets.some(target => target.source === 'den'), 'companion-sensed den should be tracked');
 assert(!collected.targets.some(target => target.source === 'camp'), 'perceived camp duplicate should yield to nearby bounty marker');
+
+context.WildernessMap.getCompassWaypoint = () => ({ id: 'locale:away', label: 'Away', zoneId: 'other-zone', col: 2, row: 2 });
+const offAreaCollected = test.collectTargets('zone');
+assert.equal(offAreaCollected.offAreaWaypoint.zoneId, 'other-zone', 'off-area waypoint should remain saved but hidden until its region is entered');
+assert(!offAreaCollected.targets.some(target => target.source === 'waypoint'), 'off-area waypoint must not create a false local bearing');
 
 console.log('navigation-compass tests passed');

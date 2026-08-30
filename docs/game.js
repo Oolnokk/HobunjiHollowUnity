@@ -8214,8 +8214,8 @@
       }
       window.forceTothalShift = () => checkTothalShift(true);
 
-      // Wilderness fog-of-war, discovered-locale tracking, and map
-      // rendering (minimap widget + full-screen Map panel) now live in
+      // Wilderness fog-of-war, discovered-locale tracking, waypoints, and
+      // full-screen Map panel rendering now live in
       // js/wilderness-map.js (window.WildernessMap) — see its init(deps)
       // call below for the shared game.js state it's threaded. Kept here
       // (not moved into that module) since the Tasks panel and
@@ -22586,7 +22586,6 @@
       // contributing to the reported translucency.
       let s_disableHatXray = false;
 
-      let _minimapRedrawAccum = 0;
       let _pathBrickCullAccum = 0;
 
       buildTileMeshes();
@@ -23208,14 +23207,6 @@
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
-
-        // Minimap redraw is throttled — it's an O(zone tile count) canvas
-        // repaint, cheap but pointless to run every single frame.
-        _minimapRedrawAccum += dt;
-        if (_minimapRedrawAccum >= 0.3) {
-          _minimapRedrawAccum = 0;
-          window.WildernessMap.renderMinimap();
-        }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
         window.MusicMinigame?.tick(dt);

@@ -2,8 +2,8 @@
   'use strict';
 
   // Wilderness fog-of-war (per-zone, bit-packed, world+year scoped),
-  // discovered-locale tracking, and the map rendering shared by the minimap
-  // widget and the full-screen Map panel. Extracted out of game.js
+  // discovered-locale tracking, map waypoints, and the full Map panel.
+  // Extracted out of game.js
   // following the same window.<Namespace> + init(deps) pattern as its
   // sibling systems. _zoneLayouts/tothalWorldId/currentTothalYear stay
   // behind in game.js on purpose — all three are shared across many
@@ -183,8 +183,126 @@
     tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
   };
   const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
+  let _waypointCacheWorldId = null; // Used to avoid parsing the full save-meta JSON on every 30 Hz compass update.
+  let _waypointCache; // `undefined` means this world's waypoint has not been loaded yet; null means it has no waypoint.
+
+  function _worldSaveRecord() {
+    const worldId = deps.tothalWorldId();
+    if (!worldId) return null;
+    try {
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const world = (meta?.worlds || []).find(w => w.id === worldId);
+      return world ? { meta, world } : null;
+    } catch { return null; }
+  }
+
+  function _loadWaypoint() {
+    const worldId = deps.tothalWorldId() || null;
+    if (_waypointCacheWorldId !== worldId) {
+      _waypointCacheWorldId = worldId;
+      _waypointCache = undefined;
+    }
+    if (_waypointCache === undefined) _waypointCache = _worldSaveRecord()?.world?.mapWaypoint || null;
+    const saved = _waypointCache;
+    if (!saved) return null;
+    // Temporary camps and dens move when the Tothal Shift rebuilds the
+    // wilderness. Never point the compass at an obsolete previous-year tile.
+    if (saved.source === 'threat' && saved.year !== deps.currentTothalYear()) {
+      _saveWaypoint(null);
+      return null;
+    }
+    return saved;
+  }
+
+  function _saveWaypoint(waypoint) {
+    const record = _worldSaveRecord();
+    if (!record) return;
+    if (waypoint) record.world.mapWaypoint = waypoint;
+    else delete record.world.mapWaypoint;
+    try {
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(record.meta));
+      _waypointCacheWorldId = deps.tothalWorldId() || null;
+      _waypointCache = waypoint ? { ...waypoint } : null;
+    } catch {}
+  }
+
+  function _visibleLandmarks(zoneId) {
+    const discovered = _loadDiscoveredLocales();
+    const landmarks = [];
+    for (const inst of _allLocaleInstances()) {
+      if (inst.zoneId !== zoneId || (!inst.alwaysVisible && !discovered[inst.localeId])) continue;
+      landmarks.push({
+        id: `locale:${inst.localeId}`, source: 'locale', localeId: inst.localeId,
+        label: inst.name, category: inst.category || 'misc', zoneId,
+        col: inst.col + 0.5, row: inst.row + 0.5,
+      });
+    }
+    for (const [key, info] of window.BanditCamps?.perceivedThreats || []) {
+      if (info.zoneId !== zoneId) continue;
+      landmarks.push({
+        id: `threat:${key}`, source: 'threat', threatKey: key,
+        label: info.label || (info.kind === 'den' ? 'Animal Den' : 'Bandit Camp'),
+        category: info.kind === 'den' ? 'den' : 'camp', zoneId,
+        col: info.col, row: info.row, year: deps.currentTothalYear(),
+      });
+    }
+    return landmarks;
+  }
+
+  function _resolvedWaypoint() {
+    const saved = _loadWaypoint();
+    if (!saved) return null;
+    if (saved.source === 'locale') {
+      const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
+      return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
+    }
+    const liveThreat = window.BanditCamps?.perceivedThreats?.get?.(saved.threatKey);
+    return liveThreat ? { ...saved, zoneId: liveThreat.zoneId, col: liveThreat.col, row: liveThreat.row, label: liveThreat.label || saved.label } : saved;
+  }
+
+  function _sameWaypoint(a, b) { return !!a && !!b && a.id === b.id; }
+
+  function setWaypoint(landmark) {
+    if (!landmark || !Number.isFinite(landmark.col) || !Number.isFinite(landmark.row)) return;
+    const saved = {
+      id: landmark.id, source: landmark.source, label: landmark.label,
+      zoneId: landmark.zoneId, col: landmark.col, row: landmark.row,
+      category: landmark.category || 'misc',
+      ...(landmark.localeId ? { localeId: landmark.localeId } : {}),
+      ...(landmark.threatKey ? { threatKey: landmark.threatKey, year: deps.currentTothalYear() } : {}),
+    };
+    _saveWaypoint(saved);
+    deps.showToast(`Compass waypoint: ${saved.label}`, true);
+    renderWildernessMapPanel();
+  }
+
+  function clearWaypoint({ silent = false } = {}) {
+    const previous = _loadWaypoint();
+    if (!previous) return;
+    _saveWaypoint(null);
+    if (!silent) deps.showToast('Compass waypoint cleared.', false);
+    renderWildernessMapPanel();
+  }
+
+  function clearWaypointForThreat(threatKey) {
+    const waypoint = _loadWaypoint();
+    if (waypoint?.source === 'threat' && waypoint.threatKey === threatKey) clearWaypoint({ silent: true });
+  }
+
+  function clearTemporaryWaypointForZone(zoneId) {
+    const waypoint = _loadWaypoint();
+    if (waypoint?.source === 'threat' && waypoint.zoneId === zoneId) clearWaypoint({ silent: true });
+  }
+
+  function getCompassWaypoint() {
+    const waypoint = _resolvedWaypoint();
+    return waypoint ? { ...waypoint } : null;
+  }
+
+  let _mapMarkerHits = []; // Used by the map canvas click handler to select the landmark whose rendered marker was tapped.
 
   function _drawWildernessMapOnCanvas(canvas, zoneId, opts = {}) {
+    _mapMarkerHits = [];
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
@@ -201,14 +319,49 @@
     const cols = layout.cols, rows = layout.rows;
     const scaleX = w / cols, scaleY = h / rows;
     const entry = _loadZoneFog(zoneId);
-    const cw = Math.ceil(scaleX), ch = Math.ceil(scaleY);
+    const revealedTiles = new Map(); // Used for anti-aliased region boundaries after all terrain fills are painted.
     for (const tile of layout.tiles) {
       if (!_fogIsRevealed(entry, tile.c, tile.r)) continue;
       ctx.fillStyle = WMAP_TERRAIN_COLORS[tile.type] || WMAP_TERRAIN_COLORS.grass;
-      ctx.fillRect(Math.floor(tile.c * scaleX), Math.floor(tile.r * scaleY), cw, ch);
+      ctx.fillRect(tile.c * scaleX, tile.r * scaleY, scaleX + 0.35, scaleY + 0.35);
+      const elevation = Number(tile.elevTier ?? tile.elevation ?? 0) || 0;
+      if (elevation > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(0.18, elevation * 0.035)})`;
+        ctx.fillRect(tile.c * scaleX, tile.r * scaleY, scaleX + 0.35, scaleY + 0.35);
+      }
+      revealedTiles.set(`${tile.c},${tile.r}`, { ...tile, elevation });
     }
+
+    // Thin black seams separate adjacent terrain regions on the same
+    // elevation; heavier seams describe actual elevation changes. Painting
+    // vector paths over a high-resolution square canvas keeps both much less
+    // blocky than the former floor/ceil-per-tile renderer.
+    const sameElevationEdges = new Path2D();
+    const elevationEdges = new Path2D();
+    const addEdge = (path, x1, y1, x2, y2) => { path.moveTo(x1, y1); path.lineTo(x2, y2); };
+    for (const tile of revealedTiles.values()) {
+      const right = revealedTiles.get(`${tile.c + 1},${tile.r}`);
+      const down = revealedTiles.get(`${tile.c},${tile.r + 1}`);
+      if (right && (right.type !== tile.type || right.elevation !== tile.elevation)) {
+        addEdge(right.elevation === tile.elevation ? sameElevationEdges : elevationEdges,
+          (tile.c + 1) * scaleX, tile.r * scaleY, (tile.c + 1) * scaleX, (tile.r + 1) * scaleY);
+      }
+      if (down && (down.type !== tile.type || down.elevation !== tile.elevation)) {
+        addEdge(down.elevation === tile.elevation ? sameElevationEdges : elevationEdges,
+          tile.c * scaleX, (tile.r + 1) * scaleY, (tile.c + 1) * scaleX, (tile.r + 1) * scaleY);
+      }
+    }
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.78)'; ctx.lineWidth = Math.max(1.25, Math.min(scaleX, scaleY) * 0.2);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(sameElevationEdges);
+    ctx.strokeStyle = 'rgba(0,0,0,0.94)'; ctx.lineWidth = Math.max(2, Math.min(scaleX, scaleY) * 0.34);
+    ctx.stroke(elevationEdges);
+    ctx.restore();
+
     const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
     const discovered = _loadDiscoveredLocales();
+    const selectedWaypoint = _resolvedWaypoint();
+    const interactiveLandmarks = new Map(_visibleLandmarks(zoneId).map(landmark => [landmark.id, landmark]));
     for (const inst of _allLocaleInstances()) {
       if (inst.zoneId !== zoneId) continue;
       if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
@@ -218,6 +371,8 @@
       ctx.fillStyle = WMAP_LOCALE_COLORS[inst.category] || WMAP_LOCALE_COLORS.misc;
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+      const landmark = interactiveLandmarks.get(`locale:${inst.localeId}`);
+      if (landmark) _mapMarkerHits.push({ landmark, x: mx, y: my, radius: Math.max(12, markerR * 1.8) });
     }
     // Threats a companion's Perception has sensed nearby (see
     // updateCompanionPerception, game.js) — a distinct red danger marker
@@ -238,6 +393,10 @@
       ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('!', mx, my + 0.5);
+    }
+    for (const landmark of interactiveLandmarks.values()) {
+      if (landmark.source !== 'threat') continue;
+      _mapMarkerHits.push({ landmark, x: landmark.col * scaleX, y: landmark.row * scaleY, radius: Math.max(12, threatMarkerR * 1.8) });
     }
     // An accepted bounty's target camp, once its actual location is known
     // (see updateBountyTracking, game.js) -- a gold skull marker so it
@@ -290,16 +449,54 @@
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
     }
+    if (selectedWaypoint?.zoneId === zoneId) {
+      const mx = selectedWaypoint.col * scaleX, my = selectedWaypoint.row * scaleY;
+      ctx.beginPath();
+      ctx.arc(mx, my, Math.max(7, markerR * 1.9), 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(2, markerR * 0.45); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(mx, my, Math.max(9, markerR * 2.35), 0, Math.PI * 2);
+      ctx.strokeStyle = '#58d8ff'; ctx.lineWidth = Math.max(2, markerR * 0.35); ctx.stroke();
+    }
   }
 
-  function renderWildernessMinimap() {
-    const widget = document.getElementById('minimapWidget');
-    const canvas = document.getElementById('minimapCanvas');
-    if (!widget || !canvas) return;
-    const currentArea = deps.getCurrentArea();
-    if (!deps._isZoneArea(currentArea)) { widget.classList.remove('show'); return; }
-    widget.classList.add('show');
-    _drawWildernessMapOnCanvas(canvas, currentArea, { showPlayer: true });
+  function _renderLandmarkList(zoneId) {
+    const listEl = document.getElementById('wmapLandmarkList');
+    const statusTextEl = document.getElementById('wmapWaypointStatusText');
+    const clearButton = document.getElementById('wmapWaypointClearBtn');
+    if (!listEl || !statusTextEl || !clearButton) return;
+    const selected = _resolvedWaypoint();
+    statusTextEl.textContent = selected
+      ? `Compass waypoint: ${selected.label}${selected.zoneId !== zoneId ? ` (${deps.WMAP_ZONE_LABELS[selected.zoneId] || selected.zoneId})` : ''}`
+      : 'No compass waypoint selected.';
+    clearButton.hidden = !selected;
+    clearButton.onclick = selected ? () => clearWaypoint() : null;
+    const landmarks = _visibleLandmarks(zoneId);
+    listEl.replaceChildren();
+    if (!landmarks.length) {
+      listEl.innerHTML = '<div class="wmap-gathering-empty">No discovered locations in this region yet.</div>';
+      return;
+    }
+    for (const landmark of landmarks) {
+      const row = document.createElement('div');
+      row.className = 'wmap-landmark-row';
+      const label = document.createElement('div');
+      label.className = 'wmap-landmark-label';
+      const dot = document.createElement('i');
+      dot.style.background = landmark.category === 'den' ? '#d7c59a'
+        : landmark.category === 'camp' ? '#ef6657'
+        : (WMAP_LOCALE_COLORS[landmark.category] || WMAP_LOCALE_COLORS.misc);
+      label.append(dot, document.createTextNode(landmark.label));
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'wmap-waypoint-btn';
+      const active = _sameWaypoint(selected, landmark);
+      button.classList.toggle('active', active);
+      button.textContent = active ? 'Clear' : 'Set waypoint';
+      button.addEventListener('click', () => active ? clearWaypoint() : setWaypoint(landmark));
+      row.append(label, button);
+      listEl.appendChild(row);
+    }
   }
 
   let _wmapActiveZone = null;
@@ -323,12 +520,42 @@
       tabsEl.appendChild(btn);
     }
     _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
+    _renderLandmarkList(_wmapActiveZone);
   }
+
+  function _bindMapCanvas() {
+    const canvas = document.getElementById('wildernessMapCanvas');
+    if (!canvas || canvas.dataset.waypointBound === '1') return;
+    canvas.dataset.waypointBound = '1';
+    canvas.addEventListener('click', event => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * canvas.width / rect.width;
+      const y = (event.clientY - rect.top) * canvas.height / rect.height;
+      const hit = _mapMarkerHits
+        .map(candidate => ({ candidate, distance: Math.hypot(candidate.x - x, candidate.y - y) }))
+        .filter(entry => entry.distance <= entry.candidate.radius)
+        .sort((a, b) => a.distance - b.distance)[0]?.candidate;
+      if (!hit) return;
+      const selected = _resolvedWaypoint();
+      _sameWaypoint(selected, hit.landmark) ? clearWaypoint() : setWaypoint(hit.landmark);
+    });
+  }
+
+  const originalInit = init;
+  init = function initWithMapControls(injectedDeps) {
+    originalInit(injectedDeps);
+    _bindMapCanvas();
+  };
 
   window.WildernessMap = {
     init,
     updateFogAroundPlayer: updateZoneFogAroundPlayer,
-    renderMinimap: renderWildernessMinimap,
     renderMapPanel: renderWildernessMapPanel,
+    setWaypoint,
+    clearWaypoint,
+    clearWaypointForThreat,
+    clearTemporaryWaypointForZone,
+    getCompassWaypoint,
+    getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0 }),
   };
 })();
