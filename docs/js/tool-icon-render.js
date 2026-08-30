@@ -120,12 +120,11 @@
 // Mobile edge-scroll continuity is layered after the base item-category module:
 // while a scroll sentinel is active, keep the last real item's curved category
 // heading visible until the thumb reaches another real item slot. This adapter
-// also restores the earlier category-text treatment and takes icon/radius values
-// directly from the shared Potion Select presentation.
+// also keeps item/category geometry aligned with Potion Select.
 (() => {
   'use strict';
   if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
-  const src = 'js/item-arch-sticky-category-heading.js?v=20260830e'; // Used to cache-bust the mobile continuity + Potion Select parity adapter independently.
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830e'; // Used to cache-bust the mobile continuity + geometry adapter independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
     return;
@@ -135,5 +134,24 @@
   script.src = src;
   script.async = false;
   script.onerror = () => window.__farmLog?.('[item-arch-sticky-category-heading] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
+
+// Final item presentation reset: category grouping/rings remain, but icon
+// layout is returned to the pre-feature selector styles and the curved category
+// heading uses Potion Select's sharp gold/black text rather than category color.
+(() => {
+  'use strict';
+  if (window.ItemArchOriginalPresentation?.installed || document.querySelector('script[data-item-arch-original-presentation]')) return;
+  const src = 'js/item-arch-original-presentation.js?v=20260830a'; // Used to cache-bust only the final icon/text presentation reset.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-original-presentation="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load after every item-category presentation layer when parsing has completed.
+  script.dataset.itemArchOriginalPresentation = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-original-presentation] module failed to load', 'error');
   document.head.appendChild(script);
 })();
