@@ -23,6 +23,20 @@ const legacySandbox = { window: {}, localStorage: { getItem: () => '0', setItem(
 vm.runInNewContext(avatarSource, legacySandbox, { filename: 'png-plane-avatar.js' });
 assert.equal(legacySandbox.window.PNGPlaneAvatar.getPortraitsFlipped(), false,
   'the hidden developer comparison remains reversible and persistent');
+const nestedPortraitRoot = {
+  userData: {
+    neckRig: { available: true, skinnedPlane: { isSkinnedMesh: true, skeleton: { bones: [{}] } } },
+    sourceCanvas: { width: 256, height: 256 },
+    portraitModelWidth: 1,
+    portraitModelHeight: 1,
+  },
+}; // Minimal live PNG-avatar node shape required by the authored source-pixel resolver.
+const outerPlayerRoot = {
+  userData: {},
+  traverse(visitor) { visitor(this); visitor(nestedPortraitRoot); },
+}; // Mirrors game.js passing the outer player object rather than the nested PNG avatar node.
+assert.equal(legacySandbox.window.PNGPlaneAvatar.resolveSkinnedPortraitRoot(outerPlayerRoot), nestedPortraitRoot,
+  'shoulder-pet source-pixel placement resolves the live PNG avatar beneath the outer player root');
 const attachmentSandbox = { window: {} }; // Loads authored attachment data without game startup so runtime anchor shape can be verified directly.
 vm.runInNewContext(attachmentRigSource, attachmentSandbox, { filename: 'attachment-rig-profiles.js' });
 for (const profile of Object.values(attachmentSandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)) {
@@ -49,6 +63,8 @@ assert.match(avatarSource, /const renderedPixelX = portraitsFlipped \? pixelWidt
   'authored portrait landmarks mirror horizontally with the rendered portrait');
 assert.match(avatarSource, /-modelWidth \/ 2 \+ \(renderedPixelX \/ pixelWidth\) \* modelWidth/,
   'skinned source-pixel world placement uses the rendered portrait X coordinate');
+assert.match(avatarSource, /avatarRoot\?\.traverse\?\.\(candidate =>/,
+  'authored source-pixel placement searches below an outer player root for the live PNG portrait rig');
 assert.match(attachmentRigSource, /shoulderPerch: \{ \.\.\.identityAnchor\(perch\), sourcePixel: \{ \.\.\.shoulderPerchRule\.sourcePixel \} \}/,
   'the gameplay-facing shoulder-perch anchor carries the same authored pixel used by its rule');
 assert.match(avatarSource, /for \(const texture of trackedPortraitTextures\) applyPortraitTextureFlip\(texture\)/,
