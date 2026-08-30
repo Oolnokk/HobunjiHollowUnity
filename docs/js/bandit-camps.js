@@ -771,15 +771,55 @@
     return best;
   }
 
+  function banditTentInteractionBox(zoneId, obj) {
+    const mesh = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh;
+    if (mesh?.isObject3D) {
+      mesh.updateWorldMatrix?.(true, true);
+      const meshBox = new THREE.Box3().setFromObject(mesh);
+      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12);
+    }
+    const center = banditTentCenterPx(obj);
+    const tile = deps.TILE || 1;
+    const gridTile = deps.zoneScenes.get(zoneId)?.grid?.[obj.y]?.[obj.x];
+    const groundY = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
+    return new THREE.Box3(
+      new THREE.Vector3(center.x / tile - 0.9, groundY, center.y / tile - 0.9),
+      new THREE.Vector3(center.x / tile + 0.9, groundY + 1.45, center.y / tile + 0.9),
+    );
+  }
+
+  function aimedBanditTent(zoneId) {
+    // Candidate tents are limited to the existing interaction radius before
+    // the 3D focus pass, keeping ray arbitration cheap across large camps.
+    const nearby = _banditZoneTents(zoneId).filter(obj => {
+      if (obj.destroyed) return false;
+      const center = banditTentCenterPx(obj);
+      return Math.hypot(deps.player.x - center.x, deps.player.y - center.y) <= banditTentNearPx();
+    });
+    if (!nearby.length) return null;
+    const ray = deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.(); // Current centered world-interaction ray used to determine what the player is looking at.
+    if (!ray || !window.RangedWeapons?.focusCandidates) return null;
+    const candidates = nearby.map(obj => ({ // World-space tent boxes presented to the shared focus/hostile arbitration.
+      type: 'bandit-tent', id: obj.id, data: obj,
+      box: banditTentInteractionBox(zoneId, obj),
+    }));
+    const focus = window.RangedWeapons.focusCandidates(candidates, 24); // Closest visible candidate under the centered reticle.
+    if (!focus?.candidate?.data) return null;
+    const hostile = window.RangedWeapons.focusedHostile?.(24); // A nearer hostile keeps Action 1 reserved for combat.
+    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+    window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    return focus.candidate.data;
+  }
+
   function hasNearbyTent() {
     const zoneId = deps?.getCurrentArea?.();
-    return !!(zoneId && deps.isZoneArea(zoneId) && nearestBanditTent(zoneId));
+    return !!(zoneId && deps.isZoneArea(zoneId) && aimedBanditTent(zoneId));
   }
 
   function getNearbyTentAction() {
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
-    const tent = nearestBanditTent(zoneId);
+    const tent = aimedBanditTent(zoneId);
     if (!tent) return null;
     return {
       icon: tent.interactable?.lootable ? '🪙' : '🔥',
@@ -844,7 +884,7 @@
       }
     }
     const zoneId = deps.getCurrentArea();
-    const tent = deps.isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
+    const tent = deps.isZoneArea(zoneId) ? aimedBanditTent(zoneId) : null;
     // Match Drenkirra nest-taking: only the aimed context action may advance
     // the hold, and releasing or changing actions cancels its progress.
     const actionHeldDown = deps.getActionHeldDown();
