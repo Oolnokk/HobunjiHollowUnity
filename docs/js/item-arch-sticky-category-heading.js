@@ -68,7 +68,8 @@
       /* Keep the category treatment bold without changing Potion Select's
          authoritative icon dimensions. The earlier 1.72em disc enlarged the
          item glyph and made the wheel read as a different radius. */
-      .arc-slot[data-item-category] .arc-icon {
+      .arc-slot[data-item-category] .arc-icon,
+      .arc-slot[data-item-category].arc-active .arc-icon {
         min-width:0 !important;
         min-height:0 !important;
         width:auto !important;
