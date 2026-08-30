@@ -60,6 +60,40 @@
     };
   }
 
+  // combat-enemy-telegraph.js's presentation updater originally guarded on
+  // Array.isArray(deps.hostileObjects), but game.js supplies hostileObjects as
+  // a Set. Keep gameplay's Set untouched during all normal combat/input work;
+  // only give the cosmetic updater a temporary array view after that work has
+  // finished, then restore the Set synchronously. This revives the shared
+  // player + bandit heavy presentation without changing collection semantics
+  // for any gameplay system.
+  if (!window.Combat._heavyTelegraphIterableCompatInstalled) {
+    const previousCombatUpdate = window.Combat.update;
+    window.Combat.update = function heavyTelegraphIterableCompatUpdate(dt) {
+      const result = previousCombatUpdate(dt);
+      const deps = window.Combat.deps;
+      const visualApi = window.Combat.heavyTelegraphVisuals;
+      const hostiles = deps?.hostileObjects;
+      if (
+        visualApi?.update &&
+        deps?.player &&
+        hostiles &&
+        !Array.isArray(hostiles) &&
+        typeof hostiles[Symbol.iterator] === 'function'
+      ) {
+        deps.hostileObjects = Array.from(hostiles);
+        try {
+          visualApi.update(dt);
+        } finally {
+          deps.hostileObjects = hostiles;
+        }
+      }
+      return result;
+    };
+    window.Combat._heavyTelegraphIterableCompatInstalled = true;
+    window.__farmLog?.('[heavy-telegraph] iterable hostile collection compatibility tick installed.', 'info', 'combat');
+  }
+
   function register() {
     let active = false;
     let lastCounterAt = -99;
@@ -117,6 +151,7 @@
       const heavyEntries = window.Combat.heavyTelegraphVisuals?.snapshot?.() || []; // Reads the shared renderer's live player-side attachment/visibility state.
       const heavyRenderer = heavyEntries.find(entry => entry.actor === 'player') || null; // Narrows the shared renderer snapshot to Counter Shield's player entry.
       const holder = window.Combat.deps?.toolHolder?.() || null; // Resolves the exact same holder the heavy renderer will attach to this frame.
+      const hostileCollection = window.Combat.deps?.hostileObjects;
       return {
         active,
         sceneBridged: presentationSceneBridged,
@@ -125,6 +160,8 @@
         holderSource: window.Combat.deps?.toolHolderDebugSource || 'combat-init',
         holderName: holder?.name || null,
         holderChildren: holder?.children?.length ?? 0,
+        hostileCollectionType: hostileCollection?.constructor?.name || typeof hostileCollection,
+        rendererCompatInstalled: !!window.Combat._heavyTelegraphIterableCompatInstalled,
         heavyRenderer,
       };
     }
