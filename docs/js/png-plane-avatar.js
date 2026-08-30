@@ -673,6 +673,18 @@
       const owner = [...(window.Combat?.deps?.companionObjects || [])].find(companion =>
         companion?.avatarRef?.group === group && companion.stableRole === 'shoulderPet');
       if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
+      // updateShoulderPetMeshPin has already solved the root position and
+      // quaternion from the same authored grip/perch pair. Replacing the
+      // child plane's world matrix here would separate the visible grip pixel
+      // from that solved point, so authoritative attachments inherit normally.
+      if (group.userData?.hobunjiShoulderPetAttachment?.authoritativeRootTransform) {
+        if (!plane.matrixAutoUpdate) {
+          plane.matrixAutoUpdate = true;
+          plane.updateMatrix();
+          plane.matrixWorldNeedsUpdate = true;
+        }
+        return;
+      }
       const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
       const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
       const worldYaw = owner.pngRot + faceYaw;
