@@ -6112,7 +6112,7 @@
               + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
           return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
-        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg, sourcePixel: anchor.sourcePixel ? { ...anchor.sourcePixel } : null } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass = null) {
         const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotypeOrSizeClass); // Matches anchor coordinates to the visible size class.
@@ -6154,12 +6154,14 @@
         const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotation, now local to the live face.
         const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
         const worldQuaternion = faceWorldQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet root orientation: face × perch × inverse grip.
-        const perchWorldPosition = playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Keeps the perch point fixed to the body-local shoulder coordinate.
-        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Moves the pet origin so its rotated grip still lands exactly on the fixed perch point.
+        const skinnedPerchWorldPosition = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition?.(playerMesh, perch.sourcePixel); // Deforms the authored shoulder pixel through this avatar's live portrait skinning.
+        const perchWorldPosition = skinnedPerchWorldPosition || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Falls back to the authored body-local coordinate for rigid/legacy avatars.
+        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
         return {
           worldPosition: perchWorldPosition.sub(gripWorldOffset),
           worldQuaternion,
           faceWorldQuaternion,
+          perchPositionSource: skinnedPerchWorldPosition ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
           faceRotationSource: faceRotationSource === playerNeckJoint ? 'player-neck-bone' : 'player-body-fallback',
         };
       }
@@ -7237,6 +7239,7 @@
         group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final face-relative pin.
           recentChange: 'Authored shoulderPerch rotation is face-relative and follows the live face.',
           rotationSource: finalTransform.faceRotationSource,
+          positionSource: finalTransform.perchPositionSource,
           expectedWorldPosition: finalTransform.worldPosition.toArray(),
           faceWorldQuaternion: finalTransform.faceWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),

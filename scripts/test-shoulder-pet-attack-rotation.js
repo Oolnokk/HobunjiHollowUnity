@@ -15,8 +15,8 @@ assert.match(gameSource,
   /const faceRotationSource = playerNeckJoint\?\.isObject3D \? playerNeckJoint : playerMesh;/,
   'authored shoulder-pet rotation follows the live neck with a body fallback');
 assert.match(gameSource,
-  /const perchWorldPosition = playerMesh\.localToWorld[\s\S]{0,420}worldPosition: perchWorldPosition\.sub\(gripWorldOffset\)/,
-  'the body-local perch position stays fixed while the pet pivots around its aligned grip');
+  /resolveSkinnedPixelWorldPosition\?\.\(playerMesh, perch\.sourcePixel\)[\s\S]{0,520}worldPosition: perchWorldPosition\.sub\(gripWorldOffset\)/,
+  'the authored perch pixel follows the live player skin before grip alignment');
 assert.match(gameSource,
   /const fallbackWorldQuaternion = playerMesh\.getWorldQuaternion[\s\S]{0,360}faceRotationSource: 'player-body-fallback-no-authored-anchors'/,
   'no-anchor fallback shoulder pets continue to inherit the avatar body transform');

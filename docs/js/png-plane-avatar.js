@@ -728,6 +728,55 @@
     };
   }
 
+  // Resolves an authored source-pixel coordinate through the same live torso/head
+  // skinning used by the portrait SkinnedMesh. This remains avatar-instance
+  // data so species-level cached anchors cannot be reused for a different pose.
+  function resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel) {
+    const rig = avatarRoot?.userData?.neckRig;
+    const skinnedPlane = rig?.skinnedPlane;
+    const skeleton = skinnedPlane?.skeleton;
+    if (!rig?.available || !skinnedPlane?.isSkinnedMesh || !skeleton?.bones?.length) return null;
+    const sourceCanvas = avatarRoot.userData?.sourceCanvas;
+    const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
+    const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
+    const modelWidth = Number(avatarRoot.userData?.portraitModelWidth);
+    const modelHeight = Number(avatarRoot.userData?.portraitModelHeight);
+    const pixelX = Number(sourcePixel?.x);
+    const pixelY = Number(sourcePixel?.y);
+    if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
+      || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
+
+    const localPoint = new THREE.Vector3(
+      -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth,
+      modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
+      0,
+    );
+    const blendHeight = Math.max(
+      modelHeight * .012,
+      Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
+    );
+    const neckY = Number(rig.neckLocal?.y) || 0;
+    const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
+    const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
+
+    avatarRoot.updateWorldMatrix?.(true, false);
+    skinnedPlane.updateWorldMatrix?.(true, false);
+    const deformed = new THREE.Vector3();
+    const bonePoint = new THREE.Vector3();
+    const boneMatrix = new THREE.Matrix4();
+    const weights = [1 - headWeight, headWeight];
+    for (let i = 0; i < Math.min(2, skeleton.bones.length); i++) {
+      const bone = skeleton.bones[i];
+      const weight = weights[i] || 0;
+      if (!weight || !bone) continue;
+      bone.updateWorldMatrix?.(true, false);
+      boneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[i]);
+      bonePoint.copy(localPoint).applyMatrix4(boneMatrix);
+      deformed.addScaledVector(bonePoint, weight);
+    }
+    return skinnedPlane.localToWorld(deformed);
+  }
+
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
     if (!THREE) throw new Error('THREE is required to build an NPC plane avatar model.');
     if (!sourceCanvas) throw new Error('A source canvas or image is required to build an NPC plane avatar model.');
@@ -881,6 +930,7 @@
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
+    resolveSkinnedPixelWorldPosition,
   };
 })();
 
