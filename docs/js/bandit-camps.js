@@ -91,28 +91,130 @@
 
   // ── Tent props ────────────────────────────────────────────────────
 
-  function buildBanditTentMesh() {
+  let _banditCanvasTexture = null;
+    const _banditFireEffects = new Set();
+    const BANDIT_TENT_BURN_S = 8;
+  
+    function banditCanvasTexture() {
+      if (_banditCanvasTexture) return _banditCanvasTexture;
+      _banditCanvasTexture = new THREE.TextureLoader().load(
+        'assets/textures/canvas.png',
+        tex => {
+          tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.needsUpdate = true;
+        },
+        undefined,
+        () => deps?.debugLog?.('Bandits: canvas.png failed to load; tents are using the canvas-color fallback.', 'warn'),
+      );
+      _banditCanvasTexture.wrapS = _banditCanvasTexture.wrapT = THREE.ClampToEdgeWrapping;
+      if ('colorSpace' in _banditCanvasTexture && THREE.SRGBColorSpace) _banditCanvasTexture.colorSpace = THREE.SRGBColorSpace;
+      return _banditCanvasTexture;
+    }
+  
+    // Five separate triangles give every flat tent panel a full 0..1 UV
+    // island. ConeGeometry shares its UV strip around the circumference,
+    // which repeated/sliced canvas.png instead of stretching one copy cleanly
+    // across each panel.
+    function buildBanditTentCanvasGeometry() {
+      const sides = 5, radius = 0.9, height = 1.2;
+      const positions = [], uvs = [];
+      for (let i = 0; i < sides; i++) {
+        const a0 = -Math.PI / 2 + i * Math.PI * 2 / sides;
+        const a1 = -Math.PI / 2 + (i + 1) * Math.PI * 2 / sides;
+        positions.push(
+          Math.cos(a0) * radius, 0, Math.sin(a0) * radius,
+          Math.cos(a1) * radius, 0, Math.sin(a1) * radius,
+          0, height, 0,
+        );
+        uvs.push(0, 0, 1, 0, 0.5, 1);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.computeVertexNormals();
+      return geo;
+    }
+  
+    function buildBanditFireEffect(scale = 1) {
+      const group = new THREE.Group();
+      const flames = [];
+      const colors = [0xff5a16, 0xff9d20, 0xffdf66];
+      for (let i = 0; i < 7; i++) {
+        const height = 0.34 + (i % 3) * 0.12;
+        const material = new THREE.MeshBasicMaterial({
+          color: colors[i % colors.length],
+          transparent: true,
+          opacity: 0.72,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.11 + (i % 2) * 0.035, height, 5), material);
+        const angle = i * 2.399963229728653;
+        const radius = 0.05 + (i % 3) * 0.055;
+        flame.position.set(Math.cos(angle) * radius, height * 0.5, Math.sin(angle) * radius);
+        flame.userData.banditFlame = {
+          phase: i * 1.73,
+          baseY: flame.position.y,
+          baseScale: 0.82 + (i % 4) * 0.09,
+        };
+        flames.push(flame);
+        group.add(flame);
+      }
+      group.scale.setScalar(scale);
+      group.userData.banditFireEffect = { flames, elapsed: deps?.rnd?.() * 10 || 0 };
+      _banditFireEffects.add(group);
+      return group;
+    }
+  
+    function updateBanditFireEffects(dt) {
+      for (const effect of [..._banditFireEffects]) {
+        if (!effect.parent) { _banditFireEffects.delete(effect); continue; }
+        const state = effect.userData.banditFireEffect;
+        state.elapsed += dt;
+        for (const flame of state.flames) {
+          const f = flame.userData.banditFlame;
+          const wave = Math.sin(state.elapsed * 10.5 + f.phase);
+          flame.scale.set(
+            f.baseScale * (1 + wave * 0.18),
+            f.baseScale * (1 - wave * 0.12),
+            f.baseScale * (1 + wave * 0.10),
+          );
+          flame.position.y = f.baseY + Math.sin(state.elapsed * 7.2 + f.phase) * 0.035;
+          flame.rotation.y += dt * (1.5 + (f.phase % 1));
+          flame.material.opacity = 0.62 + Math.sin(state.elapsed * 13 + f.phase) * 0.13;
+        }
+      }
+    }
+  
+    
+  function buildBanditTentMesh(burning = false) {
     const group = new THREE.Group();
     const canvas = new THREE.Mesh(
-      new THREE.ConeGeometry(0.9, 1.2, 5),
-      new THREE.MeshLambertMaterial({ color: 0x8a7550 }));
-    canvas.position.y = 0.6;
+      buildBanditTentCanvasGeometry(),
+      new THREE.MeshLambertMaterial({ color: 0xc8b58b, map: banditCanvasTexture(), side: THREE.DoubleSide }),
+    );
     canvas.castShadow = true;
     const doorway = new THREE.Mesh(
       new THREE.PlaneGeometry(0.44, 0.6),
       new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }));
-    doorway.position.set(0, 0.3, 0.66);
+    doorway.position.set(0, 0.3, 0.905);
     const pole = new THREE.Mesh(
       new THREE.CylinderGeometry(0.035, 0.035, 1.45, 5),
       new THREE.MeshLambertMaterial({ color: 0x5a4326 }));
     pole.position.y = 0.72;
-    // The height-only projectile cover system reads these semantic values;
-    // the movement collision below uses the stamped tile footprint instead.
+    // Preserve main-branch projectile-cover metadata.
     group.userData.projectileCoverHeightTiles = 1.45;
     group.userData.projectileCoverRadiusTiles = 0.9;
     group.userData.projectileCoverKind = 'bandit-tent';
     group.userData.banditTent = true;
     group.add(canvas, doorway, pole);
+    if (burning) group.add(buildBanditFireEffect(3.4));
+    return group;
+  }
+
+  function buildBanditCampfireMesh() {
+    const group = window.ProceduralFurniture?.buildFurnitureGroup?.('campfire', 0x6b4a28) || new THREE.Group();
+    group.add(buildBanditFireEffect(1.15));
     return group;
   }
 
@@ -172,7 +274,7 @@
       zScene.remove(entry.mesh);
       if (entry.light) zScene.remove(entry.light);
     }
-    entry.mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
+    entry.mesh.traverse?.(o => { if (o.userData?.banditFireEffect) _banditFireEffects.delete(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose?.(); });
     if (entry.sfxSource) window.Music?.unregisterFurnitureSfxSource(entry.sfxSource);
     window.NearbyVolumeCollision?.invalidate?.();
   }
@@ -193,7 +295,7 @@
         const gridTile = zi.grid?.[obj.y]?.[obj.x];
         const y = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
         if (obj.type === 'tent') {
-          const mesh = buildBanditTentMesh();
+          const mesh = buildBanditTentMesh(!!obj.burning);
           const center = banditTentCenterPx(obj);
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
           deps.markOutline(mesh);
@@ -201,6 +303,19 @@
           const collisionTiles = _applyBanditTentGridCollision(zoneId, obj); // Stored on this prop entry so burn/re-roll restores the exact prior tile data.
           meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
           window.NearbyVolumeCollision?.invalidate?.();
+        } else if (obj.key === 'campfire' && window.ProceduralFurniture) {
+          const mesh = buildBanditCampfireMesh();
+          const center = banditTentCenterPx(obj);
+          mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
+          deps.markOutline(mesh);
+          zi.scene.add(mesh);
+          const light = new THREE.PointLight(0xff7722, 1.4, 7);
+          light.position.set(center.x / deps.TILE, y + 0.45, center.y / deps.TILE);
+          light.userData.furnitureLightMask = true;
+          zi.scene.add(light);
+          const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
+          const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
+          meshes.set(obj.id, { mesh, light, sfxSource, collisionTiles: [], propId: obj.id });
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
           if (!result) continue;
@@ -515,9 +630,9 @@
       : 'Nothing worth taking in the tent.', true);
   }
 
-  function burnBanditTent(zoneId, obj) {
+    function finishBurnBanditTent(zoneId, obj) {
+    obj.burning = false;
     obj.destroyed = true;
-    if (obj.interactable) { obj.interactable.lootable = false; obj.interactable.burnable = false; }
     const view = _banditZoneViews.get(zoneId);
     if (view) {
       const idx = view.objects.indexOf(obj);
@@ -529,10 +644,31 @@
       }
     }
     removeBanditCampProp(zoneId, obj.id);
-    deps.showToast('🔥 Burned the bandit tent down.', true);
+  }
+
+  function burnBanditTent(zoneId, obj) {
+    if (obj.burning || obj.destroyed) return;
+    obj.burning = true;
+    const rec = (_banditCampInstances.get(zoneId) || []).find(r => r.instance.id === obj.temporaryLocaleInstanceId);
+    const burnS = Math.max(0.1, Number(rec?.cfg?.campLifecycle?.tentBurnSeconds ?? BANDIT_TENT_BURN_S));
+    obj.burnEndsAt = performance.now() + burnS * 1000;
+    if (obj.interactable) { obj.interactable.lootable = false; obj.interactable.burnable = false; }
+    const entry = _banditCampMeshes.get(zoneId)?.get(obj.id);
+    if (entry?.mesh && !entry.mesh.children.some(child => child.userData?.banditFireEffect)) {
+      entry.mesh.add(buildBanditFireEffect(3.4));
+    }
+    deps.showToast('🔥 The bandit tent is ablaze.', true);
+    window.__farmLog?.('[bandits] tent ' + obj.id + ' ignited; it will burn down in ' + burnS + 's.', 'wildlife');
   }
 
   function updateBanditTentInteraction(dt) {
+    updateBanditFireEffects(dt);
+    const zoneIdForBurn = deps.getCurrentArea();
+    if (deps.isZoneArea(zoneIdForBurn)) {
+      for (const tent of _banditZoneTents(zoneIdForBurn)) {
+        if (tent.burning && performance.now() >= (tent.burnEndsAt || 0)) finishBurnBanditTent(zoneIdForBurn, tent);
+      }
+    }
     const zoneId = deps.getCurrentArea();
     const tent = deps.isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
     if (!tent || !deps.getActionHeldDown()) {

@@ -1,27 +1,61 @@
 {
   "schema": "hobunji_bandit_gang_config.v1",
   "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, and mastery/difficulty scaling are all data so gangs can be rebalanced without touching game.js. Corpse loot per rank now lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_lieutenant/bandit_captain), alongside every other drop table.",
-
   "speciesWeights": {
     "mao-ao": 40,
     "mashtzarr": 35,
     "engh-sho": 20,
     "tletingan": 5
   },
-
   "clothingPool": {
     "_comment": "Slots + item ids intersected against each rolled species' own docs/config/species/<id>.json allowedCosmetics/cosmeticWeights at generation time -- a species that doesn't whitelist an item here (e.g. mashtzarr and hats) just never rolls it, no per-species override needed here. Exception: banditExclusiveIds (see below) bypass that whitelist check entirely.",
-    "slots": ["torso", "overwear", "hat", "hood"],
+    "slots": [
+      "torso",
+      "overwear",
+      "hat",
+      "hood"
+    ],
     "itemsBySlot": {
-      "torso": ["bandolier1"],
-      "overwear": ["tankan_bodywrap"],
-      "hat": ["appearance::hat::basic_headband", "appearance::hat::leather_headband"],
-      "hood": ["fine_hood", "facewrap"]
+      "torso": [
+        "bandolier1"
+      ],
+      "overwear": [
+        "tankan_bodywrap"
+      ],
+      "hat": [
+        "appearance::hat::basic_headband",
+        "appearance::hat::leather_headband"
+      ],
+      "hood": [
+        "fine_hood",
+        "facewrap"
+      ]
     },
-    "banditExclusiveIds": ["facewrap"],
+    "banditExclusiveIds": [
+      "facewrap"
+    ],
     "_banditExclusiveComment": "facewrap is deliberately left out of every species' allowedCosmetics so ordinary NPCs/players never randomly roll it -- it's meant to be found exclusively on bandits (and thus lootable from their corpses). Listing it here lets bandit rolls use it anyway, bypassing the normal per-species whitelist intersection.",
-    "dyeVariantPool": ["muted", "dark_muted", "dusty", "smoky"],
-    "dyeHueFamilyPool": ["red", "red_orange", "orange", "yellow_orange", "yellow", "yellow_green", "green", "green_blue", "blue", "blue_indigo", "indigo", "indigo_violet", "violet"],
+    "dyeVariantPool": [
+      "muted",
+      "dark_muted",
+      "dusty",
+      "smoky"
+    ],
+    "dyeHueFamilyPool": [
+      "red",
+      "red_orange",
+      "orange",
+      "yellow_orange",
+      "yellow",
+      "yellow_green",
+      "green",
+      "green_blue",
+      "blue",
+      "blue_indigo",
+      "indigo",
+      "indigo_violet",
+      "violet"
+    ],
     "_dyeComment": "Dye ids are constructed as `dye:CLOTH:<variant>_<hueFamily>` (see docs/config/scratchbones-config.js's catalog builder ~line 864-890, and appliedDyes samples in docs/config/npcs/hobunji-starter-npc-database.json) -- restricting variant to the mid/low-saturation set (60%/30% sat, darker brightness) gives the worn, mismatched look without needing the full runtime dye catalog. Each filled slot rolls its OWN variant+hue independently -- slots are never color-matched to each other.",
     "fillProbabilityByRank": {
       "grunt": 0.5,
@@ -30,7 +64,6 @@
     },
     "_fillComment": "4 slots x 0.5 = 2 average filled slots for a grunt, per design. Each slot is rolled independently; if a roll comes up with zero slots filled, one random slot is force-filled so every bandit wears at least one clothing item. On top of that, hat and hood are independently guaranteed: every bandit ends up wearing a fine_hood, a facewrap, or a headband -- if that first pass leaves both empty, one is force-filled from whichever the bandit's species/gender allows."
   },
-
   "gangComposition": {
     "gruntsMin": 3,
     "gruntsMax": 6,
@@ -38,58 +71,90 @@
     "lieutenantsMax": 2,
     "captains": 1
   },
-
   "weaponMetalTierRangeByRank": {
     "_comment": "A bandit's actual held weapon: a random TOOL_SHAPE_DEFS shape (the same hatchet/fishing-mace/fishing-spear/pick-shovel improvised-weapon pool the player fights with -- this game has no dedicated 'sword' item) crafted from a random METAL_DEFS verdigris metal whose tier falls in this [min,max] range for the bandit's rank, bumped by +1 per difficulty tier (clamped to tier 7, tumbaga) -- 'their weapons have mastery ranks too, with randomly chosen upgrades, tied to their rank within the gang.' Drives both the rendered weapon prop and an attackDamage bump via game.js's own metalDmgMultiplier, and the weapon shape's own dmgType (sharp/blunt) replaces the flat hardcoded attackTag.",
-    "grunt": [1, 2],
-    "lieutenant": [2, 4],
-    "captain": [4, 7]
+    "grunt": [
+      1,
+      2
+    ],
+    "lieutenant": [
+      2,
+      4
+    ],
+    "captain": [
+      4,
+      7
+    ]
   },
-
   "rangedWeaponChanceByRank": {
     "_comment": "Bandits that pass this roll keep their normal melee weapon and also receive a ranged-slot weapon.",
     "grunt": 0.3,
     "lieutenant": 0.65,
-    "captain": 1.0
+    "captain": 1
   },
-
   "rangedWeaponWeightsByRank": {
-    "grunt": { "crossbow": 4, "scatterbow": 1 },
-    "lieutenant": { "crossbow": 2, "scatterbow": 2 },
-    "captain": { "crossbow": 1, "scatterbow": 3 }
+    "grunt": {
+      "crossbow": 4,
+      "scatterbow": 1
+    },
+    "lieutenant": {
+      "crossbow": 2,
+      "scatterbow": 2
+    },
+    "captain": {
+      "crossbow": 1,
+      "scatterbow": 3
+    }
   },
-
   "masteryBaseByRank": {
     "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
     "grunt": 0,
     "lieutenant": 1,
     "captain": 2
   },
-
   "heldAbilitiesByRank": {
     "_comment": "How many hold-family abilities (hold1/hold2 slots, see docs/js/combat/combat-loadout.js SLOT_CATEGORIES) this rank is given. Grunts get none (tap-only, weakest fighters); only the gang's lieutenants and captain fight with a held ability, and only the captain gets both slots filled.",
     "grunt": 0,
     "lieutenant": 1,
     "captain": 2
   },
-
   "statWeakenMultiplierByRank": {
     "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'. Grunts in particular should read as genuinely weak fodder next to a captain, not just a smaller version of the same fighter.",
     "grunt": 0.35,
     "lieutenant": 0.62,
-    "captain": 1.0
+    "captain": 1
   },
-
   "difficultyTiers": {
     "_comment": "tier = floor(distanceFromWildernessEntrance / tierDistanceTiles), clamped to maxTier. Added to masteryBaseByRank per rank, and multiplies statWeakenMultiplierByRank's result by (1 + tier*tierStatBonus) so camps farther from town hit harder in both mastery-driven ability access and raw stats.",
     "tierDistanceTiles": 14,
     "maxTier": 3,
     "tierStatBonusPerTier": 0.12
   },
-
   "campLifecycle": {
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
     "maxCampsPerZone": 2,
-    "tentsCountTowardClear": true
+    "tentsCountTowardClear": true,
+    "tentBurnSeconds": 8
+  },
+  "statMultiplierByRankAndTier": {
+    "_comment": "Rank multiplier for [1-star, 2-star, 3-star, 4-star] camps, applied before the ordinary per-tier bonus. The 1-star captain has about 4.5x a grunt's raw health/damage and 2.45x a lieutenant's, comparable to the effective boss-vs-fodder gap produced by Skyrim bandit chiefs' higher health, equipment and perks. The gap tapers at high stars so veteran lieutenants remain meaningful.",
+    "grunt": [
+      0.28,
+      0.33,
+      0.4,
+      0.48
+    ],
+    "lieutenant": [
+      0.52,
+      0.58,
+      0.66,
+      0.74
+    ],
+    "captain": [
+      1.28,
+      1.26,
+      1.23,
+      1.2
+    ]
   }
 }
