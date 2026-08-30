@@ -119,11 +119,13 @@
 
 // Mobile edge-scroll continuity is layered after the base item-category module:
 // while a scroll sentinel is active, keep the last real item's curved category
-// heading visible until the thumb reaches another real item slot.
+// heading visible until the thumb reaches another real item slot. This adapter
+// also restores the earlier category-text treatment and takes icon/radius values
+// directly from the shared Potion Select presentation.
 (() => {
   'use strict';
   if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
-  const src = 'js/item-arch-sticky-category-heading.js?v=20260830b'; // Used to cache-bust the mobile edge-sentinel heading adapter independently.
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830c'; // Used to cache-bust the mobile continuity + Potion Select parity adapter independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
     return;
