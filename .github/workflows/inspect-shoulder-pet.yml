@@ -13,8 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate shoulder pet code
+      - name: Print exact integration windows
         shell: bash
         run: |
           set -euo pipefail
-          grep -n -C 80 -E "shoulderPetFaceRelativeTransform|shoulderPerchRule|shoulderPetMeshPin|_shoulderPet" docs/game.js docs/js/* docs/config/* scripts/* | head -240 || true
+          echo '--- game.js 6134-6180 ---'
+          sed -n '6134,6180p' docs/game.js
+          echo '--- game.js 7245-7305 ---'
+          sed -n '7245,7305p' docs/game.js
+          echo '--- avatar skinning symbols ---'
+          grep -n -E "skin|bone|weights|updateHead|frontPlane|backPlane|sourcePixel|pixel" docs/js/png-plane-avatar.js | head -180 || true
+          echo '--- related test ---'
+          sed -n '1,260p' scripts/test-shoulder-pet-attack-rotation.js
