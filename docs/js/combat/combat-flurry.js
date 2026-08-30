@@ -36,6 +36,7 @@
     let active = false;
     let count = 0;
     let nextStrikeAt = -99;
+    let heavyTelegraphSerial = 0; // Keeps an older Flurry strike from hiding the shared fire after a newer strike has already begun.
 
     function speedMul() {
       return active ? Math.min(MOVE_SPEED_MUL_MAX, MOVE_SPEED_MUL_BASE + count * MOVE_SPEED_MUL_PER_STRIKE) : 1;
@@ -78,6 +79,11 @@
       const strikeIndex = count + 1;
       const dmgType = deps.currentWeaponDamageType(); // Keeps flurry afflictions and impact audio tied to the equipped weapon material.
       const impactSize = strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large'; // Grows with the flurry without consuming the heavy-only huge tier.
+      const thisHeavyTelegraph = ++heavyTelegraphSerial; // Identifies this exact windup+strike window against overlapping rapid Flurry stages.
+      window.Combat.playerHeavyTelegraph?.start?.(effects.afflictions);
+      const finishHeavyTelegraph = () => { // Stops the shared flame only if no newer Flurry strike has superseded this one.
+        if (thisHeavyTelegraph === heavyTelegraphSerial) window.Combat.playerHeavyTelegraph?.stop?.();
+      };
 
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
@@ -114,6 +120,8 @@
             deps.awardWeaponMasteryXp();
           }
         },
+        onComplete: finishHeavyTelegraph,
+        onCancel: finishHeavyTelegraph,
       });
 
       count += 1;
