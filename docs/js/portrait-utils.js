@@ -848,16 +848,23 @@ function _buildNeutralGrid(cols, rows) {
 function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
-  const layerX = cx - w / 2;
+  // See drawPortraitLayer's identical translate+scale flip: ctx.drawImage does
+  // not mirror on a negative destination width, so a negative sx (a behind-view
+  // layer pre-flipped in _cloneBehindLayer) needs an explicit transform here too.
+  // This path is the one hood/overwear/torso layers actually take (they're drawn
+  // via drawBreathingLayers, not drawEmoteLayers), so it needs the same fix.
+  const flip = sx < 0;
+  const layerX = flip ? -w / 2 : cx - w / 2;
   const layerY = cy - h / 2;
   const drawImg = _imageForTint(img, sourceKey, tint);
 
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
+  ctx.save();
+  if (flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); }
   if (!breathingPts && !staticDeform) {
-    ctx.save();
     ctx.filter = 'none';
     ctx.drawImage(drawImg, layerX, layerY, w, h);
     ctx.restore();
@@ -880,7 +887,6 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
     ]);
   }
 
-  ctx.save();
   ctx.filter = 'none';
   _drawPortraitLayerWarped(ctx, drawImg, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
   ctx.restore();
@@ -1458,14 +1464,18 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (emoteDeformedPts) {
       const { ax, ay, sx, sy } = xform;
       const h = PORTRAIT_L * sy;
-      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
+      // See drawPortraitLayer's identical translate+scale flip.
+      const flip = sx < 0;
+      const layerX = flip ? -w / 2 : cx - w / 2;
       ctx.save();
+      if (flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); }
       ctx.globalAlpha = opacity;
       const drawImg = _imageForTint(img, sourceKey, tint);
       ctx.filter = 'none';
-      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      _drawPortraitLayerWarped(ctx, drawImg, layerX, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
       ctx.restore();
     } else if (opacity < 1) {
       ctx.save();
