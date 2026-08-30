@@ -1154,28 +1154,34 @@ function _getBehindLayerUrl(layer, group, gender) {
   return layer.url;
 }
 
+// Every layer drawn into the behind canvas gets mirrored a second time when
+// the whole canvas is flipped afterwards (buildTextureSet's flipX in
+// png-plane-avatar.js) to build the back-facing plane texture. Left
+// uncompensated that flip mirrors each layer's own silhouette relative to how
+// it looks on the front -- an asymmetric hair tuft curls the wrong way, a
+// knot points the wrong way, a head's own asymmetric features face the wrong
+// way -- whether or not the layer got dedicated back-view art. Negating sx
+// pre-flips just the sprite content so the two flips cancel out and
+// front/back silhouettes match. This has to apply uniformly to every layer
+// drawn behind -- cosmetics AND the base head/arms/torso -- or the ones that
+// get it end up consistent with the front while the ones that don't (the
+// head, previously) stick out as the one thing still mirrored.
+// Cosmetic and body layers alike carry a fixed xformPreset:'B' (see
+// _extractLayersFromParts) that resolveXform reads *instead of* the layer's
+// own ax/ay/sx/sy whenever it's set, so the negated sx has to be baked into
+// explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
+function _behindFlippedLayer(layer) {
+  const preset = layer.xformPreset ? getPortraitXformPreset(layer.xformPreset) : {
+    ax: layer.ax ?? 0, ay: layer.ay ?? 0, sx: layer.sx ?? 1, sy: layer.sy ?? 1,
+  };
+  return { ...layer, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
+}
+
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
   const url = _getBehindLayerUrl(layer, group, gender);
   if (!url) return { ...layer, url };
-  // Every layer drawn into the behind canvas gets mirrored a second time when
-  // the whole canvas is flipped afterwards (buildTextureSet's flipX in
-  // png-plane-avatar.js) to build the back-facing plane texture. Left
-  // uncompensated that flip mirrors each cosmetic's own silhouette relative to
-  // how it looks on the front -- an asymmetric hair tuft curls the wrong way,
-  // a knot points the wrong way -- whether or not the layer got dedicated
-  // back-view art above. Negating sx here pre-flips just the sprite content so
-  // the two flips cancel out and front/back silhouettes match (this is what
-  // made the splayed-knot fix look right; the same compensation belongs on
-  // every layer, not just that one).
-  // Every cosmetic layer carries a fixed xformPreset:'B' (see
-  // _extractLayersFromParts) that resolveXform reads *instead of* the layer's
-  // own ax/ay/sx/sy whenever it's set, so the negated sx has to be baked into
-  // explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
-  const preset = layer.xformPreset ? getPortraitXformPreset(layer.xformPreset) : {
-    ax: layer.ax ?? 0, ay: layer.ay ?? 0, sx: layer.sx ?? 1, sy: layer.sy ?? 1,
-  };
-  return { ...layer, url, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
+  return _behindFlippedLayer({ ...layer, url });
 }
 
 // A layer's paletteColorKey normally selects a sub-slot of its OWN group's
@@ -1376,6 +1382,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
+    // The base body (arms/torso) needs the same pre-flip as every cosmetic
+    // above -- these aren't cosmetics so there's no dedicated back art to look
+    // up, just the orientation compensation via _behindFlippedLayer directly.
+    const flipBehindLayers = (layerList) => {
+      for (const entry of layerList) entry.layer = _behindFlippedLayer(entry.layer);
+    };
+    [baseLeftArmLayers, baseTorsoLayers, baseRightArmLayers].forEach(flipBehindLayers);
   }
   const isSnowgogglesLayer = ({ group }) => _textMatchesAny([group?.id, group?.originalId].filter(Boolean).join(' '), ['snowgoggles']);
   const behindSnowgogglesLayers = renderBehindView
@@ -1550,7 +1563,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       baseLeftArm:   () => drawBreathingLayers(baseLeftArmLayers),
       baseTorso:     () => drawBreathingLayers(baseTorsoLayers),
       baseRightArm:  () => drawBreathingLayers(baseRightArmLayers),
-      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); } },
+      // Same pre-flip as every other behind-view layer (see _behindFlippedLayer)
+      // -- otherwise the head is the one thing still mirrored relative to the
+      // front while hair/hood/cosmetics and the arms/torso are not.
+      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl); } },
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
