@@ -348,6 +348,7 @@
     const mats=Array.isArray(mesh.material)?mesh.material.slice():[mesh.material];
     for(let i=0;i<mats.length;i++)if(materialEligible(mats[i]))mats[i]=cloneJigsawMaterial(mats[i],!!wallByMaterial.get(i));
     const oldGeo=mesh.geometry;mesh.geometry=next;mesh.material=Array.isArray(mesh.material)?mats:mats[0];
+    mesh.userData.terrainGeometryRevision=(Number(mesh.userData.terrainGeometryRevision)||0)+1;
     if(options.disposeSource!==false){try{oldGeo.dispose?.();}catch(_){}}
     const stats={islands:analysis.components.length,triangles:analysis.triangles.filter(t=>t.component>=0).length,verticesBefore:analysis.position.count,verticesAfter:remap.size,edgePx,edgeWorldWidth};
     mesh.userData=Object.assign({},mesh.userData,{terrainJigsawBaked:true,terrainJigsawStats:stats});
@@ -406,7 +407,7 @@
   function boundsForBucket(b){const box=new THREE.Box3(new THREE.Vector3(b.minX,b.minY,b.minZ),new THREE.Vector3(b.maxX,b.maxY,b.maxZ)),center=box.getCenter(new THREE.Vector3()),dx=b.maxX-b.minX,dy=b.maxY-b.minY,dz=b.maxZ-b.minZ;return{box,sphere:new THREE.Sphere(center,.5*Math.sqrt(dx*dx+dy*dy+dz*dz))};}
   function wrapperGeometry(source,sharedIndex,bucket,reuse){const g=reuse?source:new THREE.BufferGeometry();if(!reuse){for(const[name,a]of Object.entries(source.attributes||{}))g.setAttribute(name,a);for(const[name,a]of Object.entries(source.morphAttributes||{}))g.morphAttributes[name]=a;g.morphTargetsRelative=!!source.morphTargetsRelative;}g.setIndex(sharedIndex);g.setDrawRange(bucket.start,bucket.count);const b=boundsForBucket(bucket);g.boundingBox=b.box;g.boundingSphere=b.sphere;return g;}
   function makeChunkMesh(source,g,b,index){const c=new THREE.Mesh(g,source.material);c.name=`${source.name||'zone_floor'}__spatial_chunk_${b.gx}_${b.gz}`;c.layers.mask=source.layers.mask;c.castShadow=source.castShadow;c.receiveShadow=source.receiveShadow;c.frustumCulled=true;c.renderOrder=source.renderOrder;c.visible=source.visible;c.onBeforeRender=source.onBeforeRender;c.onAfterRender=source.onAfterRender;c.customDepthMaterial=source.customDepthMaterial;c.customDistanceMaterial=source.customDistanceMaterial;c.userData=Object.assign({},source.userData,{terrainRenderChunk:true,terrainRenderChunkIndex:index,terrainRenderChunkCellX:b.gx,terrainRenderChunkCellZ:b.gz});return c;}
-  function chunkMesh(mesh){const source=mesh.geometry,total=triangleCount(source),plan=spatialPlan(source);if(!plan)return 0;let sharedIndex;if(plan.sourceIndex){plan.sourceIndex.array.set(plan.reordered);plan.sourceIndex.needsUpdate=true;sharedIndex=plan.sourceIndex;}else sharedIndex=new THREE.BufferAttribute(plan.reordered,1);const chunks=[];for(let i=0;i<plan.buckets.length;i++)chunks.push(makeChunkMesh(mesh,wrapperGeometry(source,sharedIndex,plan.buckets[i],i===0),plan.buckets[i],i));mesh.geometry=new THREE.BufferGeometry();mesh.userData=Object.assign({},mesh.userData,{terrainRenderChunkSource:true,terrainRenderChunkCount:chunks.length,terrainRenderChunkTriangles:total,terrainRenderChunkWorldSize:CHUNK_WORLD,terrainRenderChunkCoordinateUnits:'tiles'});for(const c of chunks)mesh.add(c);sourceMeshesChunked++;chunksCreated+=chunks.length;sourceTrianglesChunked+=total;return chunks.length;}
+  function chunkMesh(mesh){const source=mesh.geometry,total=triangleCount(source),plan=spatialPlan(source);if(!plan)return 0;let sharedIndex;if(plan.sourceIndex){plan.sourceIndex.array.set(plan.reordered);plan.sourceIndex.needsUpdate=true;sharedIndex=plan.sourceIndex;}else sharedIndex=new THREE.BufferAttribute(plan.reordered,1);const chunks=[];for(let i=0;i<plan.buckets.length;i++)chunks.push(makeChunkMesh(mesh,wrapperGeometry(source,sharedIndex,plan.buckets[i],i===0),plan.buckets[i],i));mesh.geometry=new THREE.BufferGeometry();mesh.userData=Object.assign({},mesh.userData,{terrainRenderChunkSource:true,terrainRenderChunkCount:chunks.length,terrainRenderChunkTriangles:total,terrainRenderChunkWorldSize:CHUNK_WORLD,terrainRenderChunkCoordinateUnits:'tiles',terrainGeometryRevision:(Number(mesh.userData.terrainGeometryRevision)||0)+1});for(const c of chunks)mesh.add(c);sourceMeshesChunked++;chunksCreated+=chunks.length;sourceTrianglesChunked+=total;return chunks.length;}
   function compactNumber(v){if(v>=1e6)return`${(v/1e6).toFixed(v>=1e7?0:1)}m`;if(v>=1e3)return`${(v/1e3).toFixed(v>=1e4?0:1)}k`;return String(Math.round(v));}
 
   function scanChunkScene(scene,now=performance.now()){
@@ -415,10 +416,28 @@
     if(made){const msg=`[terrain-perf] spatial split ${sources} whole-zone seam mesh(es), ${compactNumber(tris)} tri into ${made} real ${CHUNK_TILES}x${CHUNK_TILES}-tile cell(s) (tile-space)`;if(typeof window.__farmLog==='function')window.__farmLog(msg,'render');else console.debug(msg);}return made;
   }
 
+  function notifyTerrainGeometryReady(scene){
+    if(!scene?.isScene)return 0;
+    let notified=0;
+    for(const mesh of scene.children){
+      const callback=mesh?.userData?.onTerrainGeometryReady;
+      if(typeof callback!=='function')continue;
+      const revision=Number(mesh.userData.terrainGeometryRevision)||0; // Detects jigsaw replacement and spatial index reordering.
+      if(mesh.userData.terrainGeometryReadyRevision===revision)continue;
+      const renderedChunk=mesh.children?.find?.(child=>child.userData?.terrainRenderChunk); // Owns the shared GPU-facing index after spatial splitting.
+      const geometry=renderedChunk?.geometry || mesh.geometry; // Passed back to the terrain owner for runtime tile indexing.
+      if(!geometry?.index)continue;
+      callback(geometry);
+      mesh.userData.terrainGeometryReadyRevision=revision;
+      notified++;
+    }
+    return notified;
+  }
+
   const jigsawApi={installed:true,bakeMesh,scanScene:scanJigsawScene,defaults:{edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD},snapshot(){return{meshesBaked:jigsawMeshesBaked,islandsBaked:jigsawIslandsBaked,trianglesBaked:jigsawTrianglesBaked,edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD};}};
   const chunkApi={installed:true,scanScene:scanChunkScene,snapshot(){return{sourceMeshesChunked,chunksCreated,sourceTrianglesChunked,chunkTiles:CHUNK_TILES,chunkWorldSize:CHUNK_WORLD,chunkCoordinateUnits:'tiles',rejectedTooFewBuckets,rejectedTooManyBuckets};}};
 
-  function wrappedRender(scene,camera){const now=performance.now();scanJigsawScene(scene,now);scanChunkScene(scene,now);return originalRender.call(this,scene,camera);}
+  function wrappedRender(scene,camera){const now=performance.now();scanJigsawScene(scene,now);scanChunkScene(scene,now);notifyTerrainGeometryReady(scene);return originalRender.call(this,scene,camera);}
   wrappedRender.__hobunjiTerrainSurfaceWrapped=true;wrappedRender.__hobunjiTerrainSurfaceOriginal=originalRender;wrappedRender.__hobunjiTerrainChunkApi=chunkApi;wrappedRender.__hobunjiTerrainJigsawApi=jigsawApi;
   rendererProto.render=wrappedRender;window.TerrainRenderChunks=chunkApi;window.TerrainJigsawUV=jigsawApi;
 })();

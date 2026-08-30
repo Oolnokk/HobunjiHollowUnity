@@ -18856,13 +18856,6 @@
 
         const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
         const pathIdx = [], grassIdx = [];
-        const tileIndexRanges = new Map(); // Maps each covered world tile to its path/grass index spans for O(1)-sized runtime hole updates.
-        const recordTileRange = (c, r, kind, start) => {
-          const key = `${c},${r}`;
-          let ranges = tileIndexRanges.get(key);
-          if (!ranges) tileIndexRanges.set(key, ranges = { path: [], grass: [] });
-          ranges[kind].push(start);
-        };
         for (let cj = 0; cj < GH-1; cj++)
           for (let ci = 0; ci < GW-1; ci++) {
             const tci = Math.min(bw-1, Math.floor(ci / CELLS));
@@ -18870,7 +18863,6 @@
             const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
             const target = isPath ? pathIdx : grassIdx;
-            recordTileRange(minC + tci, minR + tcj, isPath ? 'path' : 'grass', target.length);
             target.push(v00, v01, v11, v00, v11, v10);
           }
 
@@ -18895,37 +18887,56 @@
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
           isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
           globalGroundMesh: null,
+          globalGroundGeometry: null,
           originalGroundIndex: null,
-          indexBase: { path: 0, grass: pathIdx.length },
+          renderedTileIndexRanges: new Map(),
           bindGlobalGroundMesh(mesh) {
             this.globalGroundMesh = mesh;
-            this.originalGroundIndex = mesh?.geometry?.index?.array?.slice?.() || null;
-            // Every bounding-box tile owns reserved route-apron triangles,
-            // including cells already carved when the zone loads. Collapse
-            // those now, before the first frame; keeping their originals lets
-            // a later fill restore them and a subsequent redig remove them
-            // again without rebuilding the zone-wide heightfield.
-            for (const key of tileIndexRanges.keys()) {
+            // TerrainRenderChunks replaces and spatially reorders large
+            // terrain index buffers immediately before their first render.
+            // Bind only after that handoff, so runtime digs edit the index
+            // buffer the GPU-facing child meshes actually share.
+            mesh.userData.onTerrainGeometryReady = geometry => this.bindRenderedGroundGeometry(geometry);
+            if (!window.TerrainRenderChunks?.installed) this.bindRenderedGroundGeometry(mesh.geometry);
+          },
+          bindRenderedGroundGeometry(geometry) {
+            const position = geometry?.getAttribute?.('position');
+            const indexAttr = geometry?.index;
+            if (!position || !indexAttr) return false;
+            const ranges = new Map(); // Maps a world tile to triangle starts in the final rendered index order.
+            for (let offset = 0; offset + 2 < indexAttr.count; offset += 3) {
+              const a = indexAttr.getX(offset), b = indexAttr.getX(offset + 1), c = indexAttr.getX(offset + 2);
+              const tileC = Math.floor((position.getX(a) + position.getX(b) + position.getX(c)) / 3);
+              const tileR = Math.floor((position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3);
+              if (tileC < minC || tileC > maxC || tileR < minR || tileR > maxR) continue;
+              const key = `${tileC},${tileR}`;
+              let starts = ranges.get(key);
+              if (!starts) ranges.set(key, starts = []);
+              starts.push(offset);
+            }
+            this.globalGroundGeometry = geometry;
+            this.originalGroundIndex = indexAttr.array.slice();
+            this.renderedTileIndexRanges = ranges;
+            // Collapse authored/generated basins before the first real draw.
+            // Their original triangles remain available for fill/redig.
+            for (const key of ranges.keys()) {
               const [c, r] = key.split(',').map(Number);
               if (EXCLUDED.has(srcGrid[r]?.[c]?.type)) this.refreshTile(c, r);
             }
+            return true;
           },
           refreshTile(c, r) {
-            const indexAttr = this.globalGroundMesh?.geometry?.index;
+            const indexAttr = this.globalGroundGeometry?.index;
             const original = this.originalGroundIndex;
-            const ranges = tileIndexRanges.get(`${c},${r}`);
-            if (!indexAttr || !original || !ranges) return false;
+            const starts = this.renderedTileIndexRanges.get(`${c},${r}`);
+            if (!indexAttr || !original || !starts) return false;
             const excluded = EXCLUDED.has(srcGrid[r]?.[c]?.type);
-            for (const kind of ['path', 'grass']) {
-              const base = this.indexBase[kind];
-              for (const start of ranges[kind]) {
-                const offset = base + start;
-                if (excluded) {
-                  const collapsedVertex = original[offset];
-                  for (let i = 0; i < 6; i++) indexAttr.array[offset + i] = collapsedVertex;
-                } else {
-                  for (let i = 0; i < 6; i++) indexAttr.array[offset + i] = original[offset + i];
-                }
+            for (const offset of starts) {
+              if (excluded) {
+                const collapsedVertex = original[offset];
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = collapsedVertex;
+              } else {
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = original[offset + i];
               }
             }
             indexAttr.needsUpdate = true;
