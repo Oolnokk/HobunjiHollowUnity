@@ -369,13 +369,17 @@
     debugSnapshot: () => {
       const slots = visibleItemSlots(); // Used to expose exact parity numbers on mobile without requiring devtools inspection.
       const geometry = potionGeometry();
+      const itemSelectionRadii = slots.map(slot => Number.parseFloat(slot.dataset.sharedSelectionRadius || '')).filter(Number.isFinite); // Used to compare the live item-wheel radius against Potion Select's live measured radius.
+      const labelRadius = Number.isFinite(geometry.radius) ? geometry.radius + geometry.labelOutsetPx : null; // Used to expose the exact category-name radius implied by Potion Select.
       return {
         itemArcOpen: itemArcIsOpen(),
         stickyVisible: Boolean(document.getElementById(STICKY_LABEL_ID)),
         lastSelected: lastSelected ? { ...lastSelected } : null,
         activeEdge: Boolean(document.querySelector('.arc-slot.arc-arrow.arc-active')),
         potionGeometry: geometry,
-        itemSelectionRadii: slots.map(slot => Number.parseFloat(slot.dataset.sharedSelectionRadius || '')).filter(Number.isFinite),
+        itemSelectionRadii,
+        itemCategoryLabelRadius: labelRadius,
+        potionCategoryLabelRadius: labelRadius,
         selectionRadiusMatchesPotion: selectionRadiusMatchesPotion(slots),
         potionIconCss: { fontSize: '.78em', mediaMaxPx: 18 },
         parityStyleInstalled,
