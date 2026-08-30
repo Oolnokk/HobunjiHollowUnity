@@ -237,12 +237,12 @@
     };
   }
 
-  function ensureZoneFruit(zoneId) {
+  function ensureZoneFruit(zoneId, branches) {
     const zi = deps.zoneScenes?.get(zoneId);
     if (!zi?.scene) return;
     let meshMap = _fruitMeshes.get(zoneId);
     if (!meshMap) { meshMap = new Map(); _fruitMeshes.set(zoneId, meshMap); }
-    for (const branch of eligibleFruitBranches(zoneId)) {
+    for (const branch of branches || eligibleFruitBranches(zoneId)) {
       const key = branchKey(branch);
       if (!branch.fruit) branch.fruit = { available: true, reserved: false, eatenAtHours: -Infinity };
       if (branch.fruit.available && !meshMap.has(key)) {
@@ -272,9 +272,9 @@
     }
   }
 
-  function updateFruitRespawns(zoneId) {
+  function updateFruitRespawns(zoneId, branches) {
     const now = nowHours();
-    for (const branch of eligibleFruitBranches(zoneId)) {
+    for (const branch of branches || eligibleFruitBranches(zoneId)) {
       if (branch.fruit && !branch.fruit.available && now - branch.fruit.eatenAtHours >= FRUIT_RESPAWN_HOURS) {
         branch.fruit.available = true;
       }
@@ -508,8 +508,12 @@
     const zoneId = deps.getCurrentArea();
     if (zoneId !== CLOUD_FOREST_ZONE_ID) return;
 
-    ensureZoneFruit(zoneId);
-    updateFruitRespawns(zoneId);
+    // Computed once and shared — both of these otherwise independently
+    // re-filter and re-copy every registered branch in the zone via
+    // eligibleFruitBranches/ClimbSystem.debugBranchesFor.
+    const fruitBranches = eligibleFruitBranches(zoneId);
+    ensureZoneFruit(zoneId, fruitBranches);
+    updateFruitRespawns(zoneId, fruitBranches);
     const hour = window.CalendarSystem?.getHour?.() ?? 12;
     const night = !!window.Music?.isNightTime?.();
     for (const c of deps.hostileObjects) {
