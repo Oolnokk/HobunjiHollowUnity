@@ -357,6 +357,11 @@
             deps.showToast('📋 Favor accepted — check it from the Tasks tab.', true);
           } else if (act.type === 'declineFavor') {
             deps.setQuestStatus(act.taskId, 'declined', {});
+          } else if (act.type === 'acceptRequest') {
+            const res = window.ProceduralTasks.acceptRequest(act.taskId);
+            if (!res.ok) deps.showToast(res.message, false);
+          } else if (act.type === 'declineRequest') {
+            window.ProceduralTasks.declineRequest(act.taskId);
           } else if (act.type === 'turnInTask') {
             const res = deps.turnInTask(act.taskId);
             if (!res.ok) deps.showToast(res.message, false);

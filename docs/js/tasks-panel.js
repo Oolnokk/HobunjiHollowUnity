@@ -244,33 +244,28 @@
   }
 
   async function renderTasksPanel() {
-    window.ProceduralTasks.maybeRefreshBoardTask();
+    window.ProceduralTasks.maybeRefreshRequestPostings();
     await window.BountyBoard.maybeRefreshPosting();
 
-    // Today's board notice — not yet in the player's log.
+    // Word around town — named quest-givers currently sitting on a request
+    // the player hasn't been asked about yet (or has been asked but hasn't
+    // answered). No "take" button here: discovery and accept/decline both
+    // happen by actually talking to them — this list is just a nudge for
+    // where to go. See ProceduralTasks.pendingRequestCompassTargets for the
+    // matching purple '!' compass marker.
     const postingEl = document.getElementById('tasksBoardPosting');
     if (postingEl) {
       postingEl.innerHTML = '';
-      const posting = window.ProceduralTasks.getCurrentBoardPosting();
-      if (posting) {
-        const def = deps.ITEM_DEFS[posting.itemKey];
-        const row = document.createElement('div');
-        row.className = 'shop-row';
-        row.innerHTML = `
-          <div class="sh-icon">📋</div>
-          <div class="sh-info">
-            <div class="sh-name">${deps.esc(posting.npcName)} wants ${deps.esc(def?.label || posting.itemKey)} ×${posting.qty}</div>
-            <div class="sh-desc">Reward: ${posting.rewardGold}g + ${posting.rewardFriendship} friendship with ${deps.esc(posting.npcName)} — turn in to them once you have it.</div>
-          </div>
-          <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
-        `;
-        row.querySelector('[data-take]')?.addEventListener('click', () => {
-          window.ProceduralTasks.takeBoardTask(posting.id);
-          renderTasksPanel();
+      const pending = window.ProceduralTasks.pendingRequestCompassTargets();
+      if (pending.length) {
+        pending.forEach(entry => {
+          const row = document.createElement('div');
+          row.className = 'delivery-row';
+          row.innerHTML = `<span class="dr-icon">❗</span><span class="dr-name">${deps.esc(entry.label)} — go say hello.</span><span class="dr-eta">—</span>`;
+          postingEl.appendChild(row);
         });
-        postingEl.appendChild(row);
       } else {
-        postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">Nothing posted right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
+        postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">No word of any requests right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
       }
     }
 
@@ -307,15 +302,16 @@
       }
     }
 
-    // The player's actual quest log — everything accepted, board,
-    // favor, or bounty, with no completion deadline.
+    // The player's actual quest log — everything accepted, request,
+    // favor, or bounty, with no completion deadline (a request's own
+    // bonus-pay deadline is called out separately below).
     const list = document.getElementById('tasksList');
     if (!list) return;
     list.innerHTML = '';
     const active = Object.entries(deps.getQuestProgress())
-      .filter(([, st]) => st.status === 'available' && ['board', 'favor', 'bounty'].includes(st.progress?.kind))
+      .filter(([, st]) => st.status === 'available' && ['request', 'favor', 'bounty'].includes(st.progress?.kind))
       .map(([id, st]) => ({ id, ...st.progress }))
-      .sort((a, b) => (a.kind === 'board' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'board' ? 0 : b.kind === 'favor' ? 1 : 2));
+      .sort((a, b) => (a.kind === 'request' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'request' ? 0 : b.kind === 'favor' ? 1 : 2));
     if (!active.length) {
       list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
       return;
@@ -336,14 +332,18 @@
           </div>
         `;
       } else {
-        const def = deps.ITEM_DEFS[task.itemKey];
-        const have = deps.inventory[task.itemKey] || 0;
-        const source = task.kind === 'board' ? `${deps.esc(task.npcName)}'s board request` : `${deps.esc(task.npcName)}'s favor`;
+        const itemList = task.items.map(it => `${deps.esc(deps.ITEM_DEFS[it.itemKey]?.label || it.itemKey)} ×${it.qty} (have ${deps.inventory[it.itemKey] || 0})`).join(', ');
+        const source = task.kind === 'request' ? `${deps.esc(task.npcName)}'s request` : `${deps.esc(task.npcName)}'s favor`;
+        const bonusNote = task.deadlineDay != null
+          ? (deps.calendar.day <= task.deadlineDay
+            ? ` Deliver by day ${task.deadlineDay} for ${task.rewardGold * (task.bonusMultiplier || 1)}g instead of ${task.rewardGold}g.`
+            : ' The bonus window has passed — still worth the base price.')
+          : '';
         row.innerHTML = `
-          <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
+          <div class="sh-icon">${task.kind === 'request' ? '❗' : '💌'}</div>
           <div class="sh-info">
-            <div class="sh-name">${source} — ${deps.esc(def?.label || task.itemKey)} ×${task.qty}</div>
-            <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(task.npcName)}.</div>
+            <div class="sh-name">${source} — ${itemList}</div>
+            <div class="sh-desc">Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(task.npcName)}.${bonusNote}</div>
           </div>
         `;
       }

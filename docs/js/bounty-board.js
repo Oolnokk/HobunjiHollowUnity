@@ -74,8 +74,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   'use strict';
 
   // Bounty board — hunt a named bandit captain, destroy their camp. A bounty
-  // rides the same questProgress/setQuestStatus scaffold as a board/favor
-  // task (kind: 'bounty' instead of 'board'/'favor'), so it needs no new
+  // rides the same questProgress/setQuestStatus scaffold as a request/favor
+  // task (kind: 'bounty' instead of 'request'/'favor'), so it needs no new
   // save container. The bounty progress record now also persists the captain's
   // preselected species/gender/name seed so a session-only camp rebuilt after
   // reload cannot silently create a different-looking person behind the same
@@ -296,7 +296,13 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   // preselects species + gender first and asks the forge for a FULL cultural
   // name (nickname-only chance forced to zero), then persists that appearance
   // so the future camp can create exactly the person named on the poster.
-  function generateBountyTask(cfg) {
+  // `tierBand` (optional array of allowed tier indices) narrows the pick to
+  // a difficulty range — used by reserveForRequest so Spearhead's "less/
+  // more dangerous gangs" framing actually matches the camp he sends the
+  // player to. Falls back to the unfiltered pool when nothing live matches
+  // the band, so a request is never blocked just because the only live
+  // camp of the right danger happens to already have a bounty on it.
+  function generateBountyTask(cfg, tierBand = null) {
     const liveCandidates = [];
     for (const [zoneId, recs] of window.BanditCamps.campInstances) {
       if (_zoneHasAnyBounty(zoneId)) continue;
@@ -313,10 +319,12 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
         }
       }
     }
+    const bandedCandidates = tierBand ? liveCandidates.filter(c => tierBand.includes(c.tier)) : liveCandidates;
+    const pool = bandedCandidates.length ? bandedCandidates : liveCandidates;
 
     let target;
-    if (liveCandidates.length) {
-      target = liveCandidates[Math.floor(Math.random() * liveCandidates.length)];
+    if (pool.length) {
+      target = pool[Math.floor(Math.random() * pool.length)];
     } else {
       const forge = window.BanditNameForge;
       if (!forge || !cfg) {
@@ -329,9 +337,10 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
       const seedRecord = forge.generateNicknameOnly(); // Supplies a fresh forge seed; its nickname output itself is intentionally discarded.
       const identity = forge.generateCaptainIdentity({ speciesId, seed: seedRecord.seed, nicknameOnlyChance: 0 }); // Chooses gender deterministically from the seed and always includes the full cultural name.
       const zoneId = zoneIds[Math.floor(Math.random() * zoneIds.length)];
+      const tierChoices = tierBand || [...BOUNTY_RANK_LABELS.keys()];
       target = {
         zoneId,
-        tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length),
+        tier: tierChoices[Math.floor(Math.random() * tierChoices.length)],
         captainName: identity.display,
         captainSpeciesId: identity.speciesId,
         captainGender: identity.gender,
@@ -353,6 +362,36 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     };
     deps.setQuestStatus(id, 'posted', task);
     return { id, ...task };
+  }
+
+  // Reserves a bounty target for Spearhead's proactive request (see
+  // ProceduralTasks.maybeProposeRequest) — posts it immediately (status
+  // 'posted') so the zone is genuinely claimed the moment its name is
+  // spoken aloud in dialogue, then hands back the bits that ask text needs.
+  // `experienced` biases toward the tougher tier band, matching his own
+  // "less/more dangerous gangs" line.
+  const EASY_BOUNTY_TIERS = Object.freeze([0, 1]);
+  const HARD_BOUNTY_TIERS = Object.freeze([2, 3]);
+  async function reserveForRequest(experienced) {
+    const cfg = await _loadBanditGangConfig();
+    const posting = generateBountyTask(cfg, experienced ? HARD_BOUNTY_TIERS : EASY_BOUNTY_TIERS);
+    if (!posting) return null;
+    return {
+      bountyTaskId: posting.id,
+      zoneId: posting.zoneId,
+      zoneLabel: deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId,
+      tier: posting.tier,
+      captainName: posting.captainName,
+      captainGender: posting.captainGender,
+    };
+  }
+
+  // Frees a reserved-but-declined bounty so its zone becomes available
+  // again to the next request or wanted-poster refresh.
+  function cancelPosting(taskId) {
+    const st = deps.getQuestProgress()[taskId];
+    if (!st || st.status !== 'posted' || st.progress?.kind !== 'bounty') return;
+    deps.setQuestStatus(taskId, 'declined', {});
   }
 
   function takeBountyTask(taskId) {
@@ -415,6 +454,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     getCurrentPosting: getCurrentBountyPosting,
     maybeRefreshPosting: maybeRefreshBountyPosting,
     take: takeBountyTask,
+    reserveForRequest,
+    cancelPosting,
     updateTracking: updateBountyTracking,
     activeBountyForZone: _activeBountyForZone,
     debugCaptainNames,
