@@ -229,6 +229,54 @@
     return String(authored || '').trim() || firstNameWord(target?.name);
   }
 
+  // Off-screen follow tuning for chatheads directed at the player: how far
+  // into the frustum a point must sit to count as "on camera" again, how
+  // close to the true edge the off-screen indicator is pinned, and how fast
+  // the displayed position eases toward wherever it currently belongs.
+  const EDGE_ON_SCREEN_MARGIN = 0.92;
+  const EDGE_PIN_MARGIN = 0.86;
+  const EDGE_LERP_SPEED = 7;
+  const EDGE_FALLBACK_DEPTH = 4;
+  const EDGE_MIN_DEPTH = 2;
+  const EDGE_MAX_DEPTH = 10;
+
+  // Reports whether `anchor` is inside the camera's frustum (with margin);
+  // when it isn't, also hands back the camera-relative vector to it so the
+  // caller can work out which screen edge is closest without projecting twice.
+  function cameraVisibility(anchor, camera) {
+    const THREE = state.deps.THREE;
+    const toAnchor = anchor.clone().sub(camera.position);
+    const forward = camera.getWorldDirection(new THREE.Vector3());
+    const viewZ = toAnchor.dot(forward);
+    if (viewZ > 0.1) {
+      const ndc = anchor.clone().project(camera);
+      if (Math.abs(ndc.x) <= EDGE_ON_SCREEN_MARGIN && Math.abs(ndc.y) <= EDGE_ON_SCREEN_MARGIN && ndc.z < 1) {
+        return { onScreen: true };
+      }
+    }
+    return { onScreen: false, toAnchor, viewZ };
+  }
+
+  // Finds the point on the near side of the frustum, at roughly the
+  // speaker's own depth, that sits on the screen edge closest to the
+  // direction the camera would need to turn to actually see them.
+  function screenEdgePoint(camera, toAnchor, viewZ) {
+    const THREE = state.deps.THREE;
+    const localDir = toAnchor.clone().normalize().applyQuaternion(camera.quaternion.clone().invert());
+    const yaw = Math.atan2(localDir.x, -localDir.z);
+    const pitch = Math.atan2(localDir.y, -localDir.z);
+    const halfVFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+    const halfHFov = Math.atan(Math.tan(halfVFov) * camera.aspect);
+    const sxRaw = yaw / halfHFov;
+    const syRaw = pitch / halfVFov;
+    const scale = EDGE_PIN_MARGIN / Math.max(Math.abs(sxRaw), Math.abs(syRaw), 1e-6);
+    const sx = sxRaw * scale;
+    const sy = syRaw * scale;
+    const depth = THREE.MathUtils.clamp(viewZ > 0.1 ? viewZ : EDGE_FALLBACK_DEPTH, EDGE_MIN_DEPTH, EDGE_MAX_DEPTH);
+    const local = new THREE.Vector3(sx * Math.tan(halfHFov) * depth, sy * Math.tan(halfVFov) * depth, -depth);
+    return local.applyMatrix4(camera.matrixWorld);
+  }
+
   function anchorFor(root) {
     const THREE = state.deps?.THREE;
     if (!THREE || !root) return null;
@@ -420,6 +468,8 @@
       faceTarget: options.faceTarget || null,
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
+      directedAtPlayer: options.directedAtPlayer === true,
+      displayPos: null,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -439,6 +489,8 @@
   function updateActive(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
+    const dt = state.lastActiveUpdateAt != null ? Math.min(0.1, Math.max(0, (now - state.lastActiveUpdateAt) / 1000)) : 0;
+    state.lastActiveUpdateAt = now;
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       const progress = (now - event.startedAt) / event.durationMs;
@@ -453,7 +505,19 @@
         ? event.revealAtMs.filter(revealAt => revealAt <= elapsedMs).length
         : event.textPart.text.length;
       if (visibleChars !== event.visibleChars) drawText(event, event.textPart.text.slice(0, visibleChars));
-      event.group.position.copy(anchor);
+      if (event.directedAtPlayer) {
+        // Ambient speech aimed at the player stays reachable even when the
+        // speaker is off-screen: it eases to whichever screen edge is
+        // closest to them, then eases back to its true position above their
+        // head the moment that position re-enters view.
+        const visibility = cameraVisibility(anchor, camera);
+        const targetPos = visibility.onScreen ? anchor : screenEdgePoint(camera, visibility.toAnchor, visibility.viewZ);
+        if (!event.displayPos) event.displayPos = targetPos.clone();
+        else event.displayPos.lerp(targetPos, dt > 0 ? 1 - Math.exp(-EDGE_LERP_SPEED * dt) : 1);
+        event.group.position.copy(event.displayPos);
+      } else {
+        event.group.position.copy(anchor);
+      }
       event.group.quaternion.copy(camera.quaternion);
       if (event.faceWalker && event.faceTarget) {
         const targetPosition = event.faceTarget.root?.position || event.faceTarget;
@@ -529,6 +593,7 @@
       profile: walker.profile,
       mode: 'chathead',
       greeting: true,
+      directedAtPlayer: targetId === 'player',
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
     });
@@ -622,6 +687,7 @@
       mode: 'chathead',
       durationMs: state.settings.durationMs,
       tone: response.accepted ? 'accept' : 'refuse',
+      directedAtPlayer: true,
       faceWalker: walker,
       faceTarget: player || null,
     });
