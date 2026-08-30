@@ -516,3 +516,12 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   idleStanceScript.defer = true;
   document.head.appendChild(idleStanceScript);
 }
+
+// The procedural animator's embedded data makes its HTML too large for safe
+// layout rewrites, so load its isolated Impact workspace adapter separately.
+if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
+  const impactTabsScript = document.createElement('script');
+  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20260828d';
+  impactTabsScript.defer = true;
+  document.head.appendChild(impactTabsScript);
+}
