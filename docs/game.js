@@ -509,8 +509,8 @@
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
           _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
-          _dialogueWalker.catchup = 3.5;
-          _dialogueWalker.catchupDur = 8;
+          // Resume at the normal schedule speed. Dialogue must not create a
+          // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
         }
         enterDefaultCameraMode();
