@@ -328,6 +328,7 @@ window.SCRATCHBONES_CONFIG = {
         "baseDurationSeconds": 0.1,
         "maxDurationSeconds": 1,
         "maxDurationAtFootingFraction": 0.01,
+        "visualMinDurationSeconds": 0.45,
         "footingLossPerDamage": 1.6,
         "damageTypeMultipliers": {
           "blunt": {

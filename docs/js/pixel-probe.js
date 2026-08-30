@@ -688,6 +688,7 @@
     const facingAtClick = _pixelProbeCurrentFacingDebug(); // Preserves the state of the visibly bad frame before probe re-renders run.
     const drunkAtClick = window.HobunjiDrunkWalk?.getDebug?.() || null; // Captures the gait contribution at the clicked frame.
     const composerAtClick = window.PlayerBodyTransformComposer?.getDebug?.() || null; // Captures the last normal render's temporary transform choice.
+    const impactAtClick = window.ImpactRagdollPlayback?.getDebug?.() || null; // Makes player/creature impact-bank activity copyable on mobile without console access.
 
     const canvas = renderer.domElement;
     const rect = canvas.getBoundingClientRect();
@@ -922,6 +923,9 @@
         drunk: drunkAtClick,
         composer: composerAtClick,
       }, 0));
+    }
+    if (impactAtClick) {
+      lines.push(`Impact playback: active=${!!impactAtClick.active} bank=${impactAtClick.bank || '-'} direction=${impactAtClick.direction || '-'} creatureReactions=${impactAtClick.activeCreatureReactions || 0} composerChannels=${(composerAtClick?.channels || []).map?.(entry => entry.name || entry)?.join?.(',') || '-'}`);
     }
     lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
     hits.slice(0, 25).forEach((hit, i) => {

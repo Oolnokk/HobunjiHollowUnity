@@ -813,6 +813,9 @@
       const PLAYER_KNOCKBACK_PX_S = 600;
       const COMPANION_BITE_KNOCKBACK_PX_S = 560;
       const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
+      const PRONE_THROW_DUR_S = 0.34; // Drives the footing-break displacement channel consumed by prone player/creature updates.
+      const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
+      const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
         if (target.onBranch) {
@@ -843,6 +846,31 @@
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
         if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+      }
+
+      function startProneThrow(entity, isPlayer, facingAngle, direction) {
+        let vx = Number(entity.knockbackVX) || 0;
+        let vy = Number(entity.knockbackVY) || 0;
+        const minSpeed = isPlayer ? PRONE_THROW_PLAYER_MIN_PX_S : PRONE_THROW_CREATURE_MIN_PX_S;
+        const existingSpeed = Math.hypot(vx, vy);
+        if (existingSpeed > 1e-6) {
+          const speed = Math.max(existingSpeed, minSpeed);
+          vx = vx / existingSpeed * speed;
+          vy = vy / existingSpeed * speed;
+        } else {
+          // Reconstruct the attack bearing from the classified hit pole when
+          // a damage source has no conventional knockback vector.
+          const attackerOffset = direction === 'right' ? Math.PI / 2
+            : direction === 'left' ? -Math.PI / 2
+            : direction === 'back' ? Math.PI
+            : 0;
+          const awayAngle = (Number(facingAngle) || 0) + attackerOffset + Math.PI;
+          vx = Math.cos(awayAngle) * minSpeed;
+          vy = Math.sin(awayAngle) * minSpeed;
+        }
+        entity.proneThrowT = PRONE_THROW_DUR_S;
+        entity.proneThrowVX = vx;
+        entity.proneThrowVY = vy;
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -908,18 +936,23 @@
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
-        if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
+        if (entity.footing <= 0) {
+          startProneThrow(entity, isPlayer, facingAngle, direction);
+          enterProneIfFootingDepleted(entity, isPlayer, direction);
+          return;
+        }
 
         const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
         const lossRange = 1 - maxDurationAtFootingFrac;
         const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
         const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
-        if (isPlayer) {
-          const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
-          const durationMultiplier = clip?.durationSeconds > 0 ? durationS / clip.durationSeconds : 1;
-          window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
-        }
+        const visualMinDurationS = Math.max(0, Number(staggerCfg.visualMinDurationSeconds) || 0);
+        const visualDurationS = Math.max(durationS, visualMinDurationS);
+        const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
+        const durationMultiplier = clip?.durationSeconds > 0 ? visualDurationS / clip.durationSeconds : 1;
+        if (isPlayer) window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
+        else window.ImpactRagdollPlayback?.triggerCreature(entity, 'impact', direction, { durationSeconds: visualDurationS });
         window.Combat?.beginStagger(entity, direction, durationS);
       }
 
@@ -960,19 +993,20 @@
       // does it automatically the instant its Footing reaches full — see
       // updateHostiles' own `if (c.prone)` branch, which calls
       // beginCreatureSomersaultRecovery below once c.footing >= c.maxFooting.
-      // No bespoke ragdoll-fall visual exists for arbitrary creature rigs the
-      // way ImpactRagdollPlayback provides for the player (billboard sprite +
-      // procedural legs only) — a prone creature just holds still (see that
-      // `if (c.prone)` branch pre-empting its whole AI dispatch) until it
-      // springs back up.
+      // Creature planes use the same authored clips through
+      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
+      // channels remain player-only. Both kinds use a dedicated prone-throw
+      // displacement so compatibility adapters can still clear stale ordinary
+      // knockback without erasing the intentional knockdown launch.
       function enterProneIfFootingDepleted(entity, isPlayer, direction) {
         if (entity.footing > 0 || entity.prone) return;
         entity.prone = true;
-        // Creatures/bandits need nothing further here — damageCreature
-        // already cancelled any in-progress bandit action before calling
-        // applyHitStagger, and updateHostiles' `if (c.prone)` branch takes
-        // over from here (see beginCreatureSomersaultRecovery above).
-        if (!isPlayer) return;
+        // damageCreature already cancelled any in-progress attack; the
+        // creature playback holds its final breakThrow frame until recovery.
+        if (!isPlayer) {
+          window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
+          return;
+        }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
@@ -992,6 +1026,19 @@
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
         c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+      }
+
+      function advanceCreatureProneThrow(c, dt) {
+        if (!(c.proneThrowT > 0)) return false;
+        c.proneThrowT = Math.max(0, c.proneThrowT - dt);
+        const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
+        const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
+        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+        c.x = swept.x; c.y = swept.y;
+        if (swept.blockedX) c.proneThrowVX = 0;
+        if (swept.blockedY) c.proneThrowVY = 0;
+        if (c.proneThrowT <= 0) { c.proneThrowVX = 0; c.proneThrowVY = 0; }
+        return true;
       }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
@@ -3919,7 +3966,7 @@
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
-        for (const child of avatarRef.group.children) {
+        for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child.material) continue;
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
@@ -5090,6 +5137,7 @@
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
+        window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -5428,17 +5476,12 @@
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.prone) {
-            // Zero-Footing knockdown (see enterProneIfFootingDepleted) — the
-            // same state the player goes into, just without a bespoke
-            // ragdoll-fall visual (no rig/blend data for arbitrary creature
-            // avatars — see that function's comment): holds completely still,
-            // immune to further Footing loss (resource-system.js's
-            // spendFooting), pre-empting every other branch below (attacks,
-            // telegraph, chase/return/patrol) until Footing regenerates back
-            // to full, at which point its own AI immediately springs it back
-            // up and away from whatever it was fighting — see
-            // beginCreatureSomersaultRecovery above.
-            if (c.footing >= c.maxFooting) beginCreatureSomersaultRecovery(c, targetPlayer);
+            // The dedicated throw channel survives the general prone-motion
+            // cleanup adapters and moves through the same swept terrain test
+            // as ordinary knockback. ImpactRagdollPlayback simultaneously
+            // drives the quarter-turned animal/bandit breakThrow pose.
+            advanceCreatureProneThrow(c, dt);
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -6748,8 +6791,19 @@
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
+            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
+
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
-          if (c.knockbackT > 0) {
+          if (c.prone) {
+            _clearCompanionTreasureCue(c, dt, 'prone');
+            _clearCompanionWatchIdle(c, 'prone');
+            advanceCreatureProneThrow(c, dt);
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) {
+              c.prone = false;
+              window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
+              c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+            }
+          } else if (c.knockbackT > 0) {
             _clearCompanionTreasureCue(c, dt, 'knockback');
             _clearCompanionWatchIdle(c, 'knockback');
             // Mirrors updateHostiles' knockback branch — per-axis canOccupyAt
@@ -8071,8 +8125,45 @@
       // directly from the separate per-frame leg-update site (guarded by its
       // own isActive() there), both during the settled hold and during the
       // recovery roll, so there's nothing else to drive here.
+      function advancePlayerKnockback(dt) {
+        player.knockbackT = Math.max(0, player.knockbackT - dt);
+        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
+        const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+        const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        player.x = kbSwept.x; player.y = kbSwept.y;
+        if (kbSwept.blockedX) player.knockbackVX = 0;
+        if (kbSwept.blockedY) player.knockbackVY = 0;
+        player.vx = player.knockbackVX;
+        player.vy = player.knockbackVY;
+        if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+      }
+
+      function advancePlayerProneThrow(dt) {
+        player.proneThrowT = Math.max(0, player.proneThrowT - dt);
+        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
+        const desiredY = clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
+        const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        player.x = swept.x; player.y = swept.y;
+        if (swept.blockedX) player.proneThrowVX = 0;
+        if (swept.blockedY) player.proneThrowVY = 0;
+        player.vx = Number(player.proneThrowVX) || 0;
+        player.vy = Number(player.proneThrowVY) || 0;
+        if (player.proneThrowT <= 0) {
+          player.proneThrowVX = 0; player.proneThrowVY = 0;
+          player.vx = 0; player.vy = 0;
+        }
+      }
+
       function updateProneState(dt) {
-        player.vx = 0; player.vy = 0;
+        // The dedicated throw channel is separate from ordinary knockback so
+        // prone-motion cleanup can erase stale impulses without cancelling
+        // the intentional footing-break launch. Input remains locked.
+        if (player.proneThrowT > 0) advancePlayerProneThrow(dt);
+        else { player.vx = 0; player.vy = 0; }
       }
 
       // Somersault recovery — the dodge input's meaning while prone (see
@@ -14768,18 +14859,7 @@
         }
 
         if (player.knockbackT > 0) {
-          player.knockbackT = Math.max(0, player.knockbackT - dt);
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
-          const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
-          const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
-          player.x = kbSwept.x; player.y = kbSwept.y;
-          if (kbSwept.blockedX) player.knockbackVX = 0;
-          if (kbSwept.blockedY) player.knockbackVY = 0;
-          player.vx = player.knockbackVX;
-          player.vy = player.knockbackVY;
-          if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+          advancePlayerKnockback(dt);
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
