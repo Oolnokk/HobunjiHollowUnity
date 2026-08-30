@@ -723,6 +723,18 @@
       const owner = [...(window.Combat?.deps?.companionObjects || [])].find(companion =>
         companion?.avatarRef?.group === group && companion.stableRole === 'shoulderPet');
       if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
+      // updateShoulderPetMeshPin has already solved the root position and
+      // quaternion from the same authored grip/perch pair. Replacing the
+      // child plane's world matrix here would separate the visible grip pixel
+      // from that solved point, so authoritative attachments inherit normally.
+      if (group.userData?.hobunjiShoulderPetAttachment?.authoritativeRootTransform) {
+        if (!plane.matrixAutoUpdate) {
+          plane.matrixAutoUpdate = true;
+          plane.updateMatrix();
+          plane.matrixWorldNeedsUpdate = true;
+        }
+        return;
+      }
       const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
       const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
       const worldYaw = owner.pngRot + faceYaw;
@@ -775,6 +787,90 @@
         frontTex.dispose();
         backTex.dispose();
       },
+    };
+  }
+
+  // Resolves an authored source-pixel coordinate through the same live torso/head
+  // skinning used by the portrait SkinnedMesh. This remains avatar-instance
+  // data so species-level cached anchors cannot be reused for a different pose.
+  function resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel) {
+    const rig = avatarRoot?.userData?.neckRig;
+    const skinnedPlane = rig?.skinnedPlane;
+    const skeleton = skinnedPlane?.skeleton;
+    if (!rig?.available || !skinnedPlane?.isSkinnedMesh || !skeleton?.bones?.length) return null;
+    const sourceCanvas = avatarRoot.userData?.sourceCanvas;
+    const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
+    const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
+    const modelWidth = Number(avatarRoot.userData?.portraitModelWidth);
+    const modelHeight = Number(avatarRoot.userData?.portraitModelHeight);
+    const pixelX = Number(sourcePixel?.x);
+    const pixelY = Number(sourcePixel?.y);
+    if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
+      || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
+
+    const localPoint = new THREE.Vector3(
+      -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth,
+      modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
+      0,
+    );
+    const blendHeight = Math.max(
+      modelHeight * .012,
+      Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
+    );
+    const neckY = Number(rig.neckLocal?.y) || 0;
+    const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
+    const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
+
+    avatarRoot.updateWorldMatrix?.(true, false);
+    skinnedPlane.updateWorldMatrix?.(true, false);
+    const deformed = new THREE.Vector3();
+    const bonePoint = new THREE.Vector3();
+    const boneMatrix = new THREE.Matrix4();
+    const weights = [1 - headWeight, headWeight];
+    for (let i = 0; i < Math.min(2, skeleton.bones.length); i++) {
+      const bone = skeleton.bones[i];
+      const weight = weights[i] || 0;
+      if (!weight || !bone) continue;
+      bone.updateWorldMatrix?.(true, false);
+      boneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[i]);
+      bonePoint.copy(localPoint).applyMatrix4(boneMatrix);
+      deformed.addScaledVector(bonePoint, weight);
+    }
+    return skinnedPlane.localToWorld(deformed);
+  }
+
+  // Builds the live local frame at an authored portrait pixel by sampling
+  // neighboring pixels through the exact same CPU skinning path. This keeps
+  // shoulder-pet orientation consistent with the deformed PNG surface rather
+  // than assuming the neck bone is the whole attachment frame.
+  function resolveSkinnedPixelWorldFrame(avatarRoot, sourcePixel) {
+    const center = resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel);
+    if (!center) return null;
+    const pixelX = Number(sourcePixel?.x);
+    const pixelY = Number(sourcePixel?.y);
+    if (![pixelX, pixelY].every(Number.isFinite)) return null;
+    const sample = (x, y) => resolveSkinnedPixelWorldPosition(avatarRoot, { x, y });
+    const left = sample(pixelX - 1, pixelY);
+    const right = sample(pixelX + 1, pixelY);
+    const down = sample(pixelX, pixelY + 1);
+    const up = sample(pixelX, pixelY - 1);
+    if (!left || !right || !down || !up) return null;
+
+    const tangent = right.clone().sub(left);
+    const vertical = up.clone().sub(down);
+    if (tangent.lengthSq() < 1e-10 || vertical.lengthSq() < 1e-10) return null;
+    tangent.normalize();
+    vertical.addScaledVector(tangent, -vertical.dot(tangent));
+    if (vertical.lengthSq() < 1e-10) return null;
+    vertical.normalize();
+    const normal = tangent.clone().cross(vertical).normalize();
+    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    return {
+      position: center,
+      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      tangent,
+      vertical,
+      normal,
     };
   }
 
@@ -932,6 +1028,8 @@
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
+    resolveSkinnedPixelWorldPosition,
+    resolveSkinnedPixelWorldFrame,
     trackPortraitTexture,
     getPortraitsFlipped: () => portraitsFlipped,
     setPortraitsFlipped,

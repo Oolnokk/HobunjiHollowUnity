@@ -1614,6 +1614,60 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDisableHatXray"><span class="toggle-slider"></span></span>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Shoulder-Pet Rotation Source</div>
+              <div class="settings-desc">Chooses which live frame controls shoulder-pet rotation. Position always follows the authored shoulder pixel.</div>
+            </div>
+            <select id="settingShoulderPetRotationSource" class="settings-select" style="align-self:center">
+              <option value="pixel" selected>Skinned Shoulder Pixel</option>
+              <option value="body">Player Body</option>
+              <option value="head">Head / Neck</option>
+              <option value="world">World-Aligned</option>
+            </select>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Invert Selected Shoulder Rotation</div>
+              <div class="settings-desc">Uses the inverse of the dropdown's rotation before applying the authored perch and pet-grip corrections.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingInvertShoulderPetRotationSource"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Cancel Shoulder-Pet Rotational Offset</div>
+              <div class="settings-desc">Uses only the selected pixel/body/head/world frame, omitting the authored perch and inverse-grip rotation corrections. The authored grip position still aligns to the perch.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingCancelShoulderPetRotationalOffset"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Front Sprite X-Ray Through Shoulder Pet</div>
+              <div class="settings-desc">Explicitly redraws only the player's front portrait face over an attached shoulder pet while preserving ordinary world occlusion.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingFrontSpriteXrayThroughShoulderPet"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Back Sprite X-Ray Through Shoulder Pet</div>
+              <div class="settings-desc">Explicitly redraws only the player's back portrait face over an attached shoulder pet while preserving ordinary world occlusion.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingBackSpriteXrayThroughShoulderPet"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Disable Shoulder X-Ray Through Front Plane</div>
+              <div class="settings-desc">Debug toggle: lets the player's front portrait plane write depth again, so an attached shoulder pet can be occluded by it.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDisableShoulderFrontXray"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Disable Shoulder X-Ray Through Back Plane</div>
+              <div class="settings-desc">Debug toggle: lets the player's back portrait plane write depth again, so an attached shoulder pet can be occluded by it.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDisableShoulderBackXray"><span class="toggle-slider"></span></span>
+          </label>
           <div class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Teleport to Den</div>
