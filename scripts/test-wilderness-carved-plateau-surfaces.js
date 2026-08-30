@@ -212,6 +212,22 @@ assert(wildernessBasin.index.count > townBasin.index.count,
 const wildernessPositions = wildernessBasin.getAttribute('position');
 const northwestBedY = wildernessPositions.array[1];
 assert(northwestBedY < -0.45, 'the wilderness water basin must remain full-depth at its outer corner');
+const wallIndexCount = 4 * 6 * 2 * 3; // Four banks, six segments per bank, two triangles per segment.
+const wallIndexStart = wildernessBasin.index.count - wallIndexCount;
+for (let offset = wallIndexStart; offset < wildernessBasin.index.count; offset += 3) {
+  const ia = wildernessBasin.index.array[offset] * 3;
+  const ib = wildernessBasin.index.array[offset + 1] * 3;
+  const ic = wildernessBasin.index.array[offset + 2] * 3;
+  const ax = wildernessPositions.array[ia], ay = wildernessPositions.array[ia + 1], az = wildernessPositions.array[ia + 2];
+  const abx = wildernessPositions.array[ib] - ax, aby = wildernessPositions.array[ib + 1] - ay, abz = wildernessPositions.array[ib + 2] - az;
+  const acx = wildernessPositions.array[ic] - ax, acy = wildernessPositions.array[ic + 1] - ay, acz = wildernessPositions.array[ic + 2] - az;
+  const normalX = aby * acz - abz * acy;
+  const normalZ = abx * acy - aby * acx;
+  const centerX = (ax + wildernessPositions.array[ib] + wildernessPositions.array[ic]) / 3;
+  const centerZ = (az + wildernessPositions.array[ib + 2] + wildernessPositions.array[ic + 2]) / 3;
+  assert(normalX * -centerX + normalZ * -centerZ > 0,
+    'every cut-wall triangle must face the basin interior so backface culling does not hide it');
+}
 delete global.window;
 
 console.log('wilderness carved plateau surface regression checks passed');

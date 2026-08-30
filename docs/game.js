@@ -19692,7 +19692,10 @@
             for (let i = 0; i < samples.length - 1; i++) {
               const top0 = first + i * 2, bottom0 = top0 + 1;
               const top1 = top0 + 2, bottom1 = top0 + 3;
-              wallIdx.push(top0, bottom0, bottom1, top0, bottom1, top1);
+              // Faces point into the basin, where the camera sees them from
+              // above. The opposite winding points out into the surrounding
+              // solid ground and gets removed by normal backface culling.
+              wallIdx.push(top0, bottom1, bottom0, top0, top1, bottom1);
             }
           };
           if (!sharesBasin(srcGrid[row - 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
