@@ -866,7 +866,7 @@
     const wildernessMapDebug = window.WildernessMap?.getDebug?.(); // Exposes the saved waypoint and active Map-tab region without requiring desktop devtools.
     if (wildernessMapDebug) {
       const waypoint = wildernessMapDebug.waypoint;
-      lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
+      lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} rememberedThreats=${wildernessMapDebug.rememberedThreats || 0} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
     }
     const chunkAudit = window.WildernessChunks?.snapshot?.()?.lastResidencyAudit; // Used to carry the latest button-driven chunk leak result into copied probe reports.
     if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);

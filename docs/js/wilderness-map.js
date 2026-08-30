@@ -185,6 +185,9 @@
   const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
   let _waypointCacheWorldId = null; // Used to avoid parsing the full save-meta JSON on every 30 Hz compass update.
   let _waypointCache; // `undefined` means this world's waypoint has not been loaded yet; null means it has no waypoint.
+  let _threatDiscoveryCacheWorldId = null; // Used with the year below so den/camp discoveries survive reloads without leaking across worlds or Shifts.
+  let _threatDiscoveryCacheYear = null;
+  let _threatDiscoveryCache;
 
   function _worldSaveRecord() {
     const worldId = deps.tothalWorldId();
@@ -226,6 +229,84 @@
     } catch {}
   }
 
+  function _loadDiscoveredThreats() {
+    const worldId = deps.tothalWorldId() || null;
+    const year = deps.currentTothalYear();
+    if (_threatDiscoveryCacheWorldId === worldId && _threatDiscoveryCacheYear === year && _threatDiscoveryCache) return _threatDiscoveryCache;
+    const record = _worldSaveRecord();
+    const saved = record?.world?.discoveredThreats;
+    _threatDiscoveryCacheWorldId = worldId;
+    _threatDiscoveryCacheYear = year;
+    _threatDiscoveryCache = saved?.year === year && saved.markers && typeof saved.markers === 'object'
+      ? { ...saved.markers }
+      : {};
+    if (record && saved && saved.year !== year) {
+      record.world.discoveredThreats = { year, markers: {} };
+      try { localStorage.setItem('hobunjiSaveMeta', JSON.stringify(record.meta)); } catch {}
+    }
+    return _threatDiscoveryCache;
+  }
+
+  function _saveDiscoveredThreats(markers) {
+    const record = _worldSaveRecord();
+    if (!record) return;
+    const year = deps.currentTothalYear();
+    const clean = { ...markers };
+    record.world.discoveredThreats = { year, markers: clean };
+    try {
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(record.meta));
+      _threatDiscoveryCacheWorldId = deps.tothalWorldId() || null;
+      _threatDiscoveryCacheYear = year;
+      _threatDiscoveryCache = clean;
+    } catch {}
+  }
+
+  function rememberDiscoveredThreat(threatKey, info) {
+    if (!threatKey || !info || !Number.isFinite(info.col) || !Number.isFinite(info.row)) return;
+    const markers = _loadDiscoveredThreats();
+    markers[threatKey] = {
+      kind: info.kind === 'den' ? 'den' : 'camp',
+      zoneId: info.zoneId, col: info.col, row: info.row,
+      label: info.label || (info.kind === 'den' ? 'Animal Den' : 'Bandit Camp'),
+    };
+    _saveDiscoveredThreats(markers);
+  }
+
+  function forgetDiscoveredThreat(threatKey) {
+    if (!threatKey) return;
+    const markers = _loadDiscoveredThreats();
+    if (markers[threatKey]) {
+      delete markers[threatKey];
+      _saveDiscoveredThreats(markers);
+    }
+    clearWaypointForThreat(threatKey);
+  }
+
+  function _reconcileDiscoveredThreatKind(zoneId, kind, activeThreats) {
+    const markers = _loadDiscoveredThreats();
+    const activeByKey = new Map((activeThreats || []).map(threat => [threat.discoveryKey, threat]));
+    let changed = false;
+    for (const [key, marker] of Object.entries(markers)) {
+      if (marker.kind !== kind || marker.zoneId !== zoneId) continue;
+      const active = activeByKey.get(key);
+      if (!active) {
+        delete markers[key];
+        clearWaypointForThreat(key);
+        changed = true;
+        continue;
+      }
+      if (marker.col !== active.col || marker.row !== active.row) {
+        markers[key] = { ...marker, col: active.col, row: active.row, label: active.label || marker.label };
+        changed = true;
+      }
+    }
+    if (changed) _saveDiscoveredThreats(markers);
+  }
+
+  function reconcileDiscoveredCamps(zoneId, activeCamps) {
+    _reconcileDiscoveredThreatKind(zoneId, 'camp', activeCamps);
+  }
+
   function _visibleLandmarks(zoneId) {
     const discovered = _loadDiscoveredLocales();
     const landmarks = [];
@@ -237,7 +318,11 @@
         col: inst.col + 0.5, row: inst.row + 0.5,
       });
     }
-    for (const [key, info] of window.BanditCamps?.perceivedThreats || []) {
+    const threats = new Map(Object.entries(_loadDiscoveredThreats()));
+    for (const [runtimeKey, info] of window.BanditCamps?.perceivedThreats || []) {
+      threats.set(info.discoveryKey || runtimeKey, info);
+    }
+    for (const [key, info] of threats) {
       if (info.zoneId !== zoneId) continue;
       landmarks.push({
         id: `threat:${key}`, source: 'threat', threatKey: key,
@@ -256,8 +341,11 @@
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
-    const liveThreat = window.BanditCamps?.perceivedThreats?.get?.(saved.threatKey);
-    return liveThreat ? { ...saved, zoneId: liveThreat.zoneId, col: liveThreat.col, row: liveThreat.row, label: liveThreat.label || saved.label } : saved;
+    const liveThreat = [...(window.BanditCamps?.perceivedThreats || [])]
+      .find(([runtimeKey, info]) => (info.discoveryKey || runtimeKey) === saved.threatKey)?.[1];
+    const rememberedThreat = _loadDiscoveredThreats()[saved.threatKey];
+    const resolvedThreat = liveThreat || rememberedThreat;
+    return resolvedThreat ? { ...saved, zoneId: resolvedThreat.zoneId, col: resolvedThreat.col, row: resolvedThreat.row, label: resolvedThreat.label || saved.label } : saved;
   }
 
   function _sameWaypoint(a, b) { return !!a && !!b && a.id === b.id; }
@@ -287,11 +375,6 @@
   function clearWaypointForThreat(threatKey) {
     const waypoint = _loadWaypoint();
     if (waypoint?.source === 'threat' && waypoint.threatKey === threatKey) clearWaypoint({ silent: true });
-  }
-
-  function clearTemporaryWaypointForZone(zoneId) {
-    const waypoint = _loadWaypoint();
-    if (waypoint?.source === 'threat' && waypoint.zoneId === zoneId) clearWaypoint({ silent: true });
   }
 
   function getCompassWaypoint() {
@@ -374,28 +457,23 @@
       const landmark = interactiveLandmarks.get(`locale:${inst.localeId}`);
       if (landmark) _mapMarkerHits.push({ landmark, x: mx, y: my, radius: Math.max(12, markerR * 1.8) });
     }
-    // Threats a companion's Perception has sensed nearby (see
-    // updateCompanionPerception, game.js) — a distinct red danger marker
-    // rather than a WMAP_LOCALE_COLORS dot, since this is a temporary alert
-    // tied to an active, uncleared threat, not a permanently-remembered
-    // point of interest. Disappears the moment the threat is actually
-    // cleared, at which point it's pruned from _perceivedThreats itself.
+    // Dens/camps sensed by a companion are remembered for this world and
+    // Tothal year, so their danger markers survive a page reload. Destroyed
+    // camps are removed; dens remain geographic discoveries until the next
+    // Shift even while their current pack is dead.
     const threatMarkerR = Math.max(4, markerR * 1.2);
-    for (const info of window.BanditCamps.perceivedThreats.values()) {
-      if (info.zoneId !== zoneId) continue;
-      const mx = info.col * scaleX, my = info.row * scaleY;
+    for (const landmark of interactiveLandmarks.values()) {
+      if (landmark.source !== 'threat') continue;
+      const mx = landmark.col * scaleX, my = landmark.row * scaleY;
       ctx.beginPath();
       ctx.arc(mx, my, threatMarkerR, 0, Math.PI * 2);
-      ctx.fillStyle = '#c0392b';
+      ctx.fillStyle = landmark.category === 'den' ? '#8f805b' : '#c0392b';
       ctx.fill();
       ctx.strokeStyle = '#2a0d0a'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = '#fff2d0';
       ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('!', mx, my + 0.5);
-    }
-    for (const landmark of interactiveLandmarks.values()) {
-      if (landmark.source !== 'threat') continue;
+      ctx.fillText(landmark.category === 'den' ? '▲' : '!', mx, my + 0.5);
       _mapMarkerHits.push({ landmark, x: landmark.col * scaleX, y: landmark.row * scaleY, radius: Math.max(12, threatMarkerR * 1.8) });
     }
     // An accepted bounty's target camp, once its actual location is known
@@ -554,8 +632,11 @@
     setWaypoint,
     clearWaypoint,
     clearWaypointForThreat,
-    clearTemporaryWaypointForZone,
+    rememberDiscoveredThreat,
+    forgetDiscoveredThreat,
+    reconcileDiscoveredCamps,
+    getDiscoveredThreats: () => ({ ..._loadDiscoveredThreats() }),
     getCompassWaypoint,
-    getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0 }),
+    getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0, rememberedThreats: Object.keys(_loadDiscoveredThreats()).length }),
   };
 })();
