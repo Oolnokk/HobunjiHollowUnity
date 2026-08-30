@@ -9,9 +9,10 @@
 //   camera/head yaw: hard handoff at exactly 90 degrees (no orbit fade/pop)
 //   attack/body pitch+roll: hard safety cutoff at 35 degrees from upright
 // The rear portrait/material remains responsible for whatever should be visible
-// from behind. Hats authored with a real `pos: "back"` layer keep that rear art;
-// front-only hats (e.g. the basic/leather headbands) are omitted from the rear
-// portrait so their front sprite is never mirrored onto the back of the skull.
+// from behind. Hats authored with a real `pos: "back"` layer use that rear art;
+// front-only hats (e.g. the basic/leather headbands) fall back to their front
+// sprite there too, mirrored by the rear canvas's whole-image flip like any
+// other cosmetic with no dedicated back art.
 (function (global) {
   'use strict';
 
@@ -26,7 +27,6 @@
   let pairedRenders = 0;
   let correctedBuilds = 0;
   let correctedMeshes = 0;
-  let rearFrontOnlyHatsHidden = 0;
   let lastFacingDot = null;
   let lastYawDot = null;
   let lastUprightDot = null;
@@ -278,19 +278,10 @@
 
     clearCanvasState(canvas);
 
-    // A hat with no authored back layer has no legitimate rear-view sprite.
-    // Do not let renderPortraitProfile fall back to drawing its front layer on
-    // the back of the head (the exact bug exposed by the headbands).
-    let effectiveProfile = profile;
-    if (renderBehind && equippedHat && !hatHasRearLayer(profile)) {
-      effectiveProfile = { ...profile, hat: NONE_HAT };
-      rearFrontOnlyHatsHidden += 1;
-    }
-
     const nowMs = Date.now();
     const composer = frozenBreathingComposer(renderOptions, nowMs);
     const pairedOptions = composer ? { ...renderOptions, breathingComposer: composer } : renderOptions;
-    const result = await previousRenderProfileToCanvas.call(this, canvas, effectiveProfile, pairedOptions);
+    const result = await previousRenderProfileToCanvas.call(this, canvas, profile, pairedOptions);
 
     if (!renderFrontComposite || !equippedHat || typeof global.renderPortraitProfile !== 'function') return result;
 
@@ -317,7 +308,7 @@
       tiltCutoffDegrees: TILT_CUTOFF_DEG,
       transition: 'hard-step',
       facingSource: 'neck-bone',
-      rearMode: hatHasRearLayer(profile) ? 'authored-back-layer' : 'front-only-hidden-behind',
+      rearMode: hatHasRearLayer(profile) ? 'authored-back-layer' : 'front-sprite-mirrored-behind',
     };
     pairedRenders += 1;
     installBuildHook();
@@ -330,7 +321,6 @@
         pairedRenders,
         correctedBuilds,
         correctedMeshes,
-        rearFrontOnlyHatsHidden,
         lastFacingDot,
         lastYawDot,
         lastUprightDot,

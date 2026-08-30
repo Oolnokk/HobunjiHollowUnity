@@ -749,13 +749,24 @@ window.getBodyTintedCanvas = getBodyTintedCanvas;
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
   const drawImg = _imageForTint(img, sourceKey, tint);
   ctx.filter = 'none';
-  ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
+  if (sx < 0) {
+    // ctx.drawImage does not mirror on a negative destination width -- unlike
+    // the intentional whole-canvas flip elsewhere (png-plane-avatar.js's
+    // drawVariantCanvas), which uses this same translate+scale technique --
+    // so a negative sx (a behind-view layer pre-flipped to cancel that later
+    // canvas-wide mirror; see _cloneBehindLayer) needs an explicit transform.
+    ctx.translate(cx, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(drawImg, -w / 2, cy - h / 2, w, h);
+  } else {
+    ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
+  }
   ctx.restore();
 }
 
@@ -1091,9 +1102,9 @@ function _textMatchesAny(text, needles) {
   return (needles || []).some(needle => value.includes(String(needle || '').toLowerCase().replace(/_/g, '-')));
 }
 
-function _getBehindLayerUrl(layer, group, gender) {
+function _getBehindLayerReplacement(layer, group, gender) {
   const rules = _pngPlaneBehindViewConfig().layerReplacements || [];
-  if (!layer || !Array.isArray(rules)) return layer?.url || null;
+  if (!layer || !Array.isArray(rules)) return { url: layer?.url || null, dedicated: false };
   const idText = [group?.id, group?.originalId].filter(Boolean).join(' ');
   for (const rule of rules) {
     if (rule.hairSlot && group?.hairSlot !== rule.hairSlot) continue;
@@ -1103,19 +1114,41 @@ function _getBehindLayerUrl(layer, group, gender) {
     // no behind-view equivalent at all (e.g. a hood's face-opening trim, or a
     // facial-feature overlay that isn't visible from the back of the head) and
     // should simply not be drawn, rather than falling back to its front-view art.
-    if (rule.hide) return null;
+    if (rule.hide) return { url: null, dedicated: false };
     if (rule.genderUrls) {
       const genderKey = _portraitGenderKey(gender);
-      return rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
+      const url = rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
+      return { url, dedicated: url !== layer.url };
     }
-    return rule.url || layer.url;
+    const url = rule.url || layer.url;
+    return { url, dedicated: url !== layer.url };
   }
-  return layer.url;
+  return { url: layer.url, dedicated: false };
+}
+
+function _getBehindLayerUrl(layer, group, gender) {
+  return _getBehindLayerReplacement(layer, group, gender).url;
 }
 
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
-  return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
+  const { url, dedicated } = _getBehindLayerReplacement(layer, group, gender);
+  if (!dedicated) return { ...layer, url };
+  // A dedicated behind-view asset (from layerReplacements, e.g. splayedknot-behind.png)
+  // is authored to already look correct as the final rear-view image. But every
+  // behind canvas is mirrored as a whole afterwards (buildTextureSet's flipX in
+  // png-plane-avatar.js) to turn plain front art into a plausible rear silhouette
+  // for layers with no dedicated back art. Without compensation that later mirror
+  // would flip a dedicated asset a second time, undoing its authored orientation
+  // (the splayed-knot "flipped the wrong way" bug). Negating sx pre-flips just this
+  // layer so the two flips cancel out -- but every cosmetic layer carries a fixed
+  // xformPreset:'B' (see _extractLayersFromParts) that resolveXform reads *instead
+  // of* the layer's own ax/ay/sx/sy whenever it's set, so the negated sx has to be
+  // baked into explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
+  const preset = layer.xformPreset ? getPortraitXformPreset(layer.xformPreset) : {
+    ax: layer.ax ?? 0, ay: layer.ay ?? 0, sx: layer.sx ?? 1, sy: layer.sy ?? 1,
+  };
+  return { ...layer, url, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
 }
 
 // A layer's paletteColorKey normally selects a sub-slot of its OWN group's
@@ -1497,6 +1530,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
       hairBack:      () => drawEmoteLayers(preBackLayers),
+      // Front-fringe hairstyles with no authored `pos:'back'` layer (e.g. Long
+      // Tufted Hair) have no dedicated back art, so — same fallback as any other
+      // undecorated layer — draw the front sprite here and let the behind
+      // canvas's whole-image mirror (buildTextureSet's flipX) turn it into a
+      // plausible rear silhouette instead of leaving the back of the head bald.
+      frontHair:     () => drawEmoteLayers(frontHairLayers),
     };
     for (const key of (renderOptions?.behindLayerOrder || renderProfile.defaultBehindLayerOrder)) {
       _behindDraw[key]?.();
@@ -2765,7 +2804,7 @@ window.getPortraitXformPreset = getPortraitXformPreset;
 renderProfile.defaultBehindLayerOrder = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
-  'head',
+  'head', 'frontHair',
   'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
   'snowgoggles',
   'hairBack',
