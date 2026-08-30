@@ -821,13 +821,18 @@
     }
     const zoneId = deps.getCurrentArea();
     const tent = deps.isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
-    if (!tent || !deps.getActionHeldDown()) {
+    // Match Drenkirra nest-taking: only the aimed context action may advance
+    // the hold, and releasing or changing actions cancels its progress.
+    const looting = !!tent?.interactable?.lootable;
+    const interacting = !!tent
+      && deps.getActiveAction() === 'bandit_tent_interact'
+      && deps.getActionHeldDown();
+    if (!interacting) {
       if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
       if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
       return;
     }
     if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
-    const looting = !!tent.interactable?.lootable;
     const holdS = Number(tent.interactable?.holdSeconds) > 0
       ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
     _banditTentHoldT += dt;
@@ -938,7 +943,11 @@
     getNearbyTentAction,
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
     markZoneEntered: (zoneId) => _banditZoneEntryPending.add(zoneId),
-    interruptTentHold: () => { _banditTentHoldT = 0; },
+    interruptTentHold: () => {
+      _banditTentHoldT = 0;
+      _banditTentHoldId = null;
+      _tentActionHudEl?.classList.remove('visible');
+    },
     get campInstances() { return _banditCampInstances; },
     get perceivedThreats() { return _perceivedThreats; },
     get campsEnabled() { return campsEnabled; },
