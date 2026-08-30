@@ -12,7 +12,7 @@
 
   const previewApi = global.NpcAvatarPreview;
   const avatarApi = global.PNGPlaneAvatar;
-  const MASK_Y_SCALE_MULTIPLIER = 0.5; // Applied to both the canonical portrait cloud mask and the arm-only copy below.
+  const MASK_Y_SCALE_MULTIPLIER = 0.55; // Applied to both the canonical portrait cloud mask and the arm-only copy below.
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
