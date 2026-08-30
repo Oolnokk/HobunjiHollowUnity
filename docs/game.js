@@ -6176,7 +6176,15 @@
         if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
           const rawBearing = Math.atan2(dy, dx);
           const residualRad = angleDiff(rawBearing, c.facing || 0);
-          const yawDeg = Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
+          // Negated — the head bone's local yaw is composed underneath the
+          // group's own rotation.y, which is itself -aimAngle (see
+          // rawTargetRotY above updateCreatureMesh's plane rotation). A
+          // residual computed in this function's plain world-angle
+          // convention (atan2(dy,dx), same as c.facing/aimAngle) turns the
+          // WRONG way once applied as-is to that already-negated local
+          // frame — reported in real gameplay as a gar-wolf's head visibly
+          // turning away from the player instead of toward it.
+          const yawDeg = -Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
           c.avatarRef.updateHeadYaw(yawDeg, dt);
         }
       }
