@@ -236,13 +236,9 @@
   }
 
   function hideCounterShieldFields(scene) {
-    let hidden = 0;
     scene?.traverse?.(obj => {
-      if (obj?.name !== 'counter-shield-field') return;
-      if (obj.visible !== false) hidden++;
-      obj.visible = false;
+      if (obj?.name === 'counter-shield-field') obj.visible = false;
     });
-    return hidden;
   }
 
   function syncAuthoredCounterShieldVisuals() {
