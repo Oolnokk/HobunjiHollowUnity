@@ -1609,6 +1609,25 @@
           </label>
           <label class="settings-row">
             <div class="settings-label">
+              <div class="settings-name">Shoulder-Pet Rotation Source</div>
+              <div class="settings-desc">Chooses which live frame controls shoulder-pet rotation. Position always follows the authored shoulder pixel.</div>
+            </div>
+            <select id="settingShoulderPetRotationSource" class="settings-select" style="align-self:center">
+              <option value="pixel" selected>Skinned Shoulder Pixel</option>
+              <option value="body">Player Body</option>
+              <option value="head">Head / Neck</option>
+              <option value="world">World-Aligned</option>
+            </select>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Invert Selected Shoulder Rotation</div>
+              <div class="settings-desc">Uses the inverse of the dropdown's rotation before applying the authored perch and pet-grip corrections.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingInvertShoulderPetRotationSource"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
               <div class="settings-name">Disable Shoulder X-Ray Through Front Plane</div>
               <div class="settings-desc">Debug toggle: lets the player's front portrait plane write depth again, so an attached shoulder pet can be occluded by it.</div>
             </div>
