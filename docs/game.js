@@ -13136,6 +13136,9 @@
           const merged = _mergeTileGeos(entries);
           const mesh = new THREE.Mesh(merged, resolveTileMat('map_hobunji_town', matKey));
           mesh.receiveShadow = true;
+          if (matKey === TileType.GRASS && pathNet) {
+            pathNet.bindGlobalGroundMesh?.(mesh);
+          }
           townScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
