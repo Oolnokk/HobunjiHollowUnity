@@ -67,5 +67,10 @@ const game = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf
 assert(!index.includes('minimapWidget'), 'minimap DOM should be removed');
 assert(!game.includes('renderMinimap'), 'minimap redraw loop should be removed');
 assert(index.includes('wmapLandmarkList'), 'Map tab should expose the discovered-location waypoint list');
+assert.match(index, /wmap-map-column[\s\S]+wildernessMapCanvas[\s\S]+wmap-info-column[\s\S]+wmapLandmarkList/, 'Map tab should keep the canvas left of all supporting information');
+
+const style = fs.readFileSync(path.join(__dirname, '..', 'docs', 'style.css'), 'utf8');
+assert.match(style, /\.wmap-layout\s*\{[\s\S]*?grid-template-columns:/, 'Map tab should use two explicit side-by-side columns');
+assert.match(style, /#wildernessMapCanvas\s*\{[\s\S]*?width:\s*min\(100%, 410px\)/, 'map width must shrink within its own column instead of overlapping the information column');
 
 console.log('wilderness map waypoint tests passed');
