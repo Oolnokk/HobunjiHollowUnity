@@ -20,7 +20,6 @@
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
-      const btnUnequipHeld = document.getElementById('btnUnequipHeld');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
@@ -182,7 +181,7 @@
         // The click that closed the menu is itself a user gesture, so
         // resume shoulder-surf's Pointer Lock immediately rather than
         // waiting for a separate click on the game world.
-        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -482,8 +481,10 @@
         npcDialogueStaging = null;
         window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+        player._lookAtDebug = null;
         if (_dialogueWalker) {
-          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
+          _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -1494,6 +1495,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
+        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
         gold: 40,
       };
 
@@ -2037,6 +2039,21 @@
         } catch {}
       }
 
+      // Perk ranks are character-scoped, same as skill levels/XP above — a
+      // Combat/Alchemy/Foraging/Fishing perk build follows the character
+      // across worlds rather than staying behind with one farm.
+      function savePerkProgress(snapshot) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId);
+          if (!character) return;
+          character.perkRanks = snapshot;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          Object.assign(window.__hobunjiPlayerProfile, { perkRanks: character.perkRanks });
+        } catch {}
+      }
+
       // Persists the personal stable (companions) — mirrors saveGearInventory()'s
       // pattern exactly, since both are character-scoped and touch hobunjiSaveMeta
       // directly rather than round-tripping through onboarding.js.
@@ -2171,6 +2188,13 @@
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
+        // A portable camp, not ordinary decor — customPlace opts it out of
+        // the generic tile-grid "Place" button/canPlaceDecorativeFurnitureAt
+        // path (computeActionButtons/firePendingAction give it its own
+        // "Set Up Campfire" button and window.WildernessCampfire.placeFromKit
+        // instead), since only one can ever be placed and it's aimed
+        // anywhere in the wild rather than snapped to farm/interior tiles.
+        campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2228,7 +2252,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough',
+        'feedGrinder', 'trough', 'campfire',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -2267,7 +2291,11 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
-        price: Math.max(5, Math.round(item.price * 0.5)),
+        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
+        // building from a blueprint only ever spends Wood/Stone, never the
+        // blueprint itself), so it's priced above the finished piece's own
+        // price rather than a fraction of it.
+        price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item.price),
         category,
       }));
@@ -3737,6 +3765,16 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         if (!playerNeckJoint || cutscenePreviewActive) return;
+        // During dialogue, faceNpcDialogueParticipants owns the player's
+        // neck bone exclusively (a continuous eye-contact aim at the NPC —
+        // see its own comment) — step aside entirely rather than fighting
+        // it with a second, different rotation write on the same bone.
+        if (dialogueOpen) return;
+        if (characterViewMode.enabled) {
+          playerNeckJoint.rotation.x = characterViewMode.lockedNeckX;
+          playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
+          return;
+        }
         // Shoulder-surf: the head locks onto the shared aim point
         // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
         // raycast) rather than the camera's own raw azimuth. Those two agree
@@ -3857,7 +3895,7 @@
       // forever, one full composeFrame call at a time, competing with every
       // other creature's real compose work for the same main thread).
       const _genotypeUnsupportedKinds = new Set();
-      function _getGenotypeTextures(kind, frame, genotype) {
+      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
           window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
@@ -3871,7 +3909,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}`;
+        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
         if (_genotypeTexCache.front.has(key)) {
           return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
         }
@@ -3887,9 +3925,9 @@
           _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
-            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" — kicking off composeFrame`, 'wildlife');
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          renderer.composeFrame(kind, frame, genotype).then(canvas => {
+          renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
@@ -3924,8 +3962,8 @@
       // frame/genotype completed, permanently stranding it on the plain
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
-      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
@@ -4288,6 +4326,7 @@
       const BANDIT_COUNTER_COOLDOWN_S = 0.6;
       function banditTryGuard(c, amount, targetPlayer) {
         if (!c.isBandit || !(c._banditGuardUntil > performance.now())) return amount;
+        window.AudioSystem?.playCounterShieldBlockSfx(c.x, c.y, c.areaId);
         const t = performance.now() / 1000;
         if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
           c._banditLastCounterAt = t;
@@ -4324,10 +4363,11 @@
         // captain's riposte target without needing a passed-in attacker.
         amount *= window.SkillSystem?.attackMultiplier?.() || 1;
         amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
         amount = banditTryGuard(c, amount, player);
         window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = window.AlchemySystem?.getFootingDamageMultiplier?.() || 1; // Potion of Impact's shared outgoing stagger hook.
+        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
         resourceDamage.footing *= impactMultiplier;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
@@ -4455,7 +4495,9 @@
         window.AudioSystem?.playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
-        const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
+        const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
+        const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -4466,6 +4508,7 @@
             pitch: currentPlayerMeleeAimPitch(),
           })) continue;
           damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
+          window.AudioSystem?.playWeaponHitSfx(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
           hits++;
           lastName = c.def.label;
         }
@@ -4959,6 +5002,38 @@
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
 
+      // A ground companion settled near the player (see the "settle" branch
+      // of updateCompanions below) used to pick its idle wander points from
+      // a plain disk centered on the player — including points arbitrarily
+      // close to (or right on top of) them. This keeps that same wander
+      // rhythm but samples from a donut instead: its hole is the player's
+      // own "personal space" (1.5x the player's actual rendered portrait
+      // width, so it scales with whatever avatar is currently equipped),
+      // and its outer edge sits one more portrait-width further out, giving
+      // the ring some visible thickness rather than pinning to one exact
+      // distance.
+      function _companionPersonalSpacePx() {
+        return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
+      }
+      function _companionFollowWanderTick(c, dt, master) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          // Kept safely inside FOLLOW_FAR_PX (the "gone too far, catch up"
+          // trigger below) so a freshly-picked wander target never sits
+          // just past it and immediately yanks the companion back into
+          // chase — and the inner/outer clamps guarantee a real ring even
+          // for a hypothetical unusually wide portrait.
+          const maxOuterPx = FOLLOW_FAR_PX * 0.9;
+          const innerPx = Math.min(_companionPersonalSpacePx(), maxOuterPx * 0.8);
+          const outerPx = Math.max(innerPx + TILE * 0.2, Math.min(innerPx + (playerAvatarModelWidth || 0.9) * TILE, maxOuterPx));
+          const ang = rnd() * Math.PI * 2;
+          const r = innerPx + rnd() * (outerPx - innerPx);
+          c.wanderTarget = { x: master.x + Math.cos(ang) * r, y: master.y + Math.sin(ang) * r };
+          c.wanderT = 1.5 + rnd() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
@@ -4973,6 +5048,8 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
+        const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
+        c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
@@ -4993,7 +5070,8 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY); // Preserves both authored size axes through attack squash.
+        const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now());
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -5113,6 +5191,15 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        // Item 3: eyes-open/eyes-shut blinking, layered into the same
+        // genotype composite pass above the eyes' own layer (see
+        // composeFrame's blinkShut param) — only meaningful for
+        // genotype-bearing creatures, since a plain (no-genotype) creature
+        // never goes through composeFrame at all. blinkFrameKey folds the
+        // blink state into the readiness/retry bookkeeping below so a
+        // blink toggle forces a re-apply even though the underlying
+        // idle/run frame key hasn't changed.
+        const blinkShut = genotypeKind ? (window.CreatureBlink?.isShut(c, performance.now()) || false) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -5121,17 +5208,19 @@
         if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
-          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-          if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+          if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
           }
-          if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
-            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
+          if (c.currentFrameUrl !== c.def.sprites.idle || c._blinkAppliedShut !== blinkShut || needsRetry) {
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut);
             c.currentFrameUrl = c.def.sprites.idle;
+            c._blinkAppliedShut = blinkShut;
             if (genotypeKind && applied) {
-              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
             }
           }
           // Not tracking ground covered while idle, so resuming movement
@@ -5157,17 +5246,19 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-        if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+        if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
         }
-        if (c.currentFrameUrl !== url || needsRetry) {
-          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
+        if (c.currentFrameUrl !== url || c._blinkAppliedShut !== blinkShut || needsRetry) {
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut);
           c.currentFrameUrl = url;
+          c._blinkAppliedShut = blinkShut;
           if (genotypeKind && applied) {
-            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
           }
         }
       }
@@ -5288,6 +5379,7 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          window.AnimalVocalizations?.tickCreature?.(c, dt);
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
@@ -5376,7 +5468,10 @@
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
-            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+            if (c.isBandit) {
+              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              window.BanditCombat?.restNeckLook?.(c, dt);
+            }
           }
 
           let moving = false, aimAngle = c.facing || 0;
@@ -5645,6 +5740,20 @@
             } else {
               _restoreCompanionHead(c, dt);
             }
+          } else if (!c.isBandit) {
+            // A genuinely hostile animal creature: nod its head (the
+            // authored rig's Z/pitch "nod" axis, see
+            // _updateCreatureHeadLookAtCombatTarget) toward whatever it's
+            // currently engaged with — the player during a chase, or the
+            // grazing prey it's stalking during patrol-chase. Bandits are
+            // excluded here; their own head-look (a neck yaw, not this
+            // pitch rig) is driven separately by
+            // combat-bandit.js's _updateBanditLookAtTarget.
+            const combatTarget = c.state === 'patrol-chase' ? c.targetCreature
+              : c.state === 'chase' ? c.targetPlayer
+              : null;
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt);
+            else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
@@ -5761,24 +5870,37 @@
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName, genotypeOrSizeClass = null) { return creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass)?.y ?? null; }
-      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
-      // shared by updateCompanions' shoulderPet branch (which also needs
-      // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
-      // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
-      // RENDERED position after updatePlayerMesh — see that function's own
-      // comment for why it exists). A pure function of the player's current
-      // rig anchor + facing, not of playerMesh.position itself, so it's
-      // cheap (rig anchors are cached — see playerAttachmentAnchor/
-      // creatureAttachmentAnchor) and safe to call twice a frame rather than
-      // needing dx/dz stashed as extra state on the creature.
-      function _shoulderPetOffsetXZ(perch, grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = playerMesh.rotation.y;
-        return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
+      // Resolves the authored shoulder attachment as a real transform instead
+      // of the old yaw-only shortcut. The perch POSITION remains in the
+      // player's body-local frame (it is a shoulder coordinate), while its
+      // authored ROTATION is interpreted relative to the live face/neck bone.
+      // This lets a perched animal turn and nod with the face without making
+      // the shoulder coordinate itself orbit around the neck pivot.
+      function _shoulderPetFaceRelativeTransform(perch, grip) {
+        const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
+          const degrees = rotationDeg || {};
+          return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            THREE.MathUtils.degToRad(Number(degrees.x) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.y) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.z) || 0),
+            'YXZ',
+          ));
+        };
+        const faceRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Supplies the live face frame, with a body-frame fallback for rigs that have no neck bone.
+        playerMesh.updateWorldMatrix?.(true, false);
+        faceRotationSource.updateWorldMatrix?.(true, false);
+        const faceWorldQuaternion = faceRotationSource.getWorldQuaternion(new THREE.Quaternion()); // Carries the current face yaw/pitch into the authored perch rotation.
+        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotation, now local to the live face.
+        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
+        const worldQuaternion = faceWorldQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet root orientation: face × perch × inverse grip.
+        const perchWorldPosition = playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Keeps the perch point fixed to the body-local shoulder coordinate.
+        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Moves the pet origin so its rotated grip still lands exactly on the fixed perch point.
+        return {
+          worldPosition: perchWorldPosition.sub(gripWorldOffset),
+          worldQuaternion,
+          faceWorldQuaternion,
+          faceRotationSource: faceRotationSource === playerNeckJoint ? 'player-neck-bone' : 'player-body-fallback',
+        };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
@@ -5843,6 +5965,7 @@
 
       function _restoreCompanionHead(c, dt) {
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        if (c) c._lookAtDebug = null;
       }
 
       // Look targets use the character's face, not the feet/body center. The
@@ -5851,29 +5974,27 @@
       // authored animal head bone so a nearby animal actually lifts its gaze.
       function _playerFaceTarget(master = player) {
         const isPlayer = master === player;
-        const modelHeight = isPlayer
-          ? (Number(playerAvatarModelHeight) || 0.9)
-          : (Number(master?.avatarRef?.group?.userData?.portraitModelHeight) || Number(master?.halfHeight || 0.45) * 2);
-        const floorY = isPlayer
-          ? (Number(playerMesh?.position?.y) || 0)
-          : ((Number(master?.avatarRef?.group?.position?.y) || 0) - (Number(master?.halfHeight) || modelHeight / 2));
-        return {
-          x: Number(master?.x) || 0,
-          y: Number(master?.y) || 0,
-          worldY: floorY + modelHeight * PLAYER_FACE_HEIGHT_RATIO,
-        };
+        const pos = isPlayer
+          ? window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight })
+          : window.CreatureHeadCache.getHeadWorld(master, 'companion-portrait');
+        return { x: pos.x, y: pos.z, worldY: pos.worldY };
       }
 
       function _creatureHeadWorldY(c) {
-        const group = c.avatarRef?.group;
-        if (!group) return 0;
-        const rig = c.avatarRef?.headRig?.rig;
-        const modelHeight = Number(c.def?.modelWidth) * Number(c.def?.spriteAspect || (600 / 1375)) || Number(c.halfHeight || 0.45) * 2;
-        const scaleY = Number(group.scale?.y) || 1;
-        const pivotY = Number(rig?.pivot?.y);
-        const pivotOffset = Number.isFinite(pivotY) ? (0.5 - pivotY) * modelHeight : modelHeight * 0.08;
-        const planeOffset = Number(c.avatarRef?.frontPlane?.position?.y) || 0;
-        return (Number(group.position?.y) || 0) + (planeOffset + pivotOffset) * scaleY;
+        return window.CreatureHeadCache.getHeadWorld(c, 'animal')?.worldY || 0;
+      }
+
+      // Feeds docs/js/debug-hitboxes.js's "Show Interaction Raycast" debug
+      // toggle — every head-look system below records the exact head/target
+      // world points it just aimed at here, in Three.js world (tile) units,
+      // rather than the debug drawer trying to reverse-engineer a direction
+      // out of a rotated (and, for animals, mirrored front/back) bone
+      // transform. Cleared wherever the corresponding look resets to rest.
+      function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        looker._lookAtDebug = {
+          head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
+          target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
+        };
       }
 
       function _updateCreatureLookAtFace(c, master, dt) {
@@ -5884,7 +6005,84 @@
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
         const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
+      }
+
+      // Where a living thing's "head" is, in the raw-px + worldY convention
+      // _updateCreatureHeadLookAtCombatTarget/companion horizon-scan both
+      // use (see below). The player has a real authored face height
+      // (_playerFaceTarget); an NPC walker has the same eye-position math
+      // dialogue's eye contact uses (_dialogueEyeWorldPosition), just
+      // converted out of its native tile-scale units into this function's
+      // raw-px convention; any other creature (patrol-chase predator/prey,
+      // a horizon-scan lock) doesn't carry anything that precise, so its
+      // head is approximated as its own head-rig pivot's height, nudged 5%
+      // of its own sprite width toward its face/snout (the authored sprites
+      // all face the same "front" edge of their own local frame) rather
+      // than sitting dead-center on the pivot.
+      const COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC = 0.05;
+      function _combatTargetHeadWorld(target) {
+        if (target === player) {
+          const t = _playerFaceTarget(target);
+          return { x: t.x, y: t.y, worldY: t.worldY };
+        }
+        if (target?.root?.position && Number.isFinite(Number(target?.avatarHeight))) {
+          const eye = _dialogueEyeWorldPosition(target.root.position, target.avatarHeight);
+          return { x: eye.x * TILE, y: eye.z * TILE, worldY: eye.y };
+        }
+        const modelWidth = Number(target?.def?.modelWidth) || Number(target?.visualModelWidth) || Number(target?.modelHeight) || 1.5;
+        return {
+          x: (Number(target?.x) || 0) - COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC * modelWidth * TILE,
+          y: Number(target?.y) || 0,
+          worldY: _creatureHeadWorldY(target),
+        };
+      }
+
+      // Head-nod (Z/pitch axis on the authored animal head rig) toward
+      // whichever target this creature is currently engaged with in combat
+      // — see updateHostiles' hostile branch below. Mirrors
+      // _updateCreatureLookAtFace's math exactly, just generalized to any
+      // combat target (player or another creature) via
+      // _combatTargetHeadWorld instead of always assuming the player.
+      function _updateCreatureHeadLookAtCombatTarget(c, target, dt) {
+        if (!target) {
+          _restoreCompanionHead(c, dt);
+          if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+          return;
+        }
+        // Yaw here corrects for the gap between the target's exact bearing
+        // and wherever this creature's body is currently facing (c.facing,
+        // one frame stale here — same convention/timing bandit's own
+        // _updateBanditLookAtTarget already relies on) -- the body's own
+        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
+        // ever snaps to a handful of discrete facings, so without this the
+        // head can visibly undershoot exactly where the target's face is
+        // even once the body looks "close enough," reading as not locked
+        // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt);
+      }
+
+      // The shared "aim my head at this exact world point" core both
+      // _updateCreatureHeadLookAtWorldPoint's callers rely on: an actual
+      // living combat target (via _combatTargetHeadWorld) or, for the
+      // horizon-scan idle fixation below, a plain fixed {x,y,worldY} point
+      // with no entity behind it at all. Pulled out of
+      // _updateCreatureHeadLookAtCombatTarget so both share the exact same
+      // pitch+yaw+debug-ray math instead of a hand copy.
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt) {
+        const dx = head.x - c.x, dy = head.y - c.y;
+        const horizontalPx = Math.hypot(dx, dy);
+        const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
+        const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, head.x, head.y, head.worldY);
+        if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
+          const rawBearing = Math.atan2(dy, dx);
+          const residualRad = angleDiff(rawBearing, c.facing || 0);
+          const yawDeg = Math.max(-30, Math.min(30, residualRad * 180 / Math.PI));
+          c.avatarRef.updateHeadYaw(yawDeg, dt);
+        }
       }
 
       function _tickShoulderPetCuriosity(c, dt) {
@@ -5895,6 +6093,8 @@
           targetLeanDeg: 0,
           currentPitchDeg: 0,
           targetPitchDeg: 0,
+          currentYawDeg: 0,
+          targetYawDeg: 0,
           baseFrontRoll: null,
           baseBackRoll: null,
         });
@@ -5907,14 +6107,21 @@
               + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
             state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
               + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
-            state.targetPitchDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
-              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG))
-              + (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
+            // The actual "turns its head to look" motion is yaw (the same
+            // axis a real head-shake/head-turn rotates on), driven through
+            // the authored head rig's Y-axis bone (see
+            // png-plane-avatar.js's updateHeadYaw) — kept separate from the
+            // small up/down pitch jitter below, which stays on the rig's
+            // existing Z/nod axis.
+            state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG));
+            state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           } else if (state.phase === 'look') {
             state.phase = 'settle';
             state.timer = 0.55;
             state.targetLeanDeg = 0;
             state.targetPitchDeg = 0;
+            state.targetYawDeg = 0;
           } else {
             state.phase = 'wait';
             state.timer = SHOULDER_PET_CURIOUS_WAIT_MIN_S
@@ -5924,6 +6131,7 @@
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
         state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
         state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -5933,14 +6141,16 @@
         if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
         if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
         // updateCreatureMesh owns the attachment root and will be followed by
-        // updateShoulderPetMeshPin. A local Y turn foreshortens these flat
-        // side-view planes and used to look exactly like the small pet was
-        // randomly becoming medium-sized. Roll the mirrored planes within
-        // their own image instead; the authored head bone supplies the real
-        // independent curious turn without disturbing genotype scale.
+        // updateShoulderPetMeshPin. A local Y turn on the whole plane
+        // foreshortens these flat side-view planes and used to look exactly
+        // like the small pet was randomly becoming medium-sized. Roll the
+        // mirrored planes within their own image instead; the authored head
+        // rig's own Y-axis bone (below) supplies the real independent
+        // curious head-turn without disturbing genotype scale or plane width.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
+        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -5983,6 +6193,179 @@
         return { aimAngle: _updateCreatureLookAtFace(c, master, dt) };
       }
 
+      // ── Companion horizon scan ────────────────────────────────────────
+      // A ground companion (not a shoulder pet — those keep their own
+      // curiosity system, see _tickShoulderPetCuriosity) spends its idle
+      // head time alternating between a slow "scanning" sweep and briefly
+      // locking eyes on a nearby living thing (a wild creature, bandit, or
+      // friendly NPC) that's actually approaching the player, rather than
+      // sitting dead-still whenever it isn't in combat.
+      const COMPANION_SCAN_RANGE_PX = TILE * 7;
+      const COMPANION_SCAN_CHECK_MIN_S = 1.6; // How long a "nothing found" scan waits before checking again.
+      const COMPANION_SCAN_CHECK_MAX_S = 3.2;
+      const COMPANION_SCAN_LOCK_MIN_S = 1.2; // How long a found lock holds before releasing back to scanning.
+      const COMPANION_SCAN_LOCK_MAX_S = 2.4;
+      // Idle "nothing locked" fixation: rather than a metronomic sweep, the
+      // companion picks a random point out in the world, holds its gaze
+      // fixed there (tracking it as its own body moves) for a random few
+      // seconds, then either picks a new point or relaxes back to rest —
+      // reads as noticing things rather than scanning on a fixed cycle.
+      const COMPANION_SCAN_FOCUS_MIN_S = 1.4;
+      const COMPANION_SCAN_FOCUS_MAX_S = 4.5;
+      const COMPANION_SCAN_FOCUS_REST_CHANCE = 0.3; // Some fixations are just relaxing to a forward rest pose, so the idle scan doesn't read as perpetually alert.
+      const COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG = 100; // How far off its own body-forward a scan point can land — never straight behind.
+      const COMPANION_SCAN_FOCUS_MIN_DIST_PX = TILE * 2.5;
+      const COMPANION_SCAN_FOCUS_MAX_DIST_PX = TILE * 6;
+      const COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE = 0.35; // Incidental up/down variety (world-scene units) so the gaze doesn't sit dead-level every time.
+      const COMPANION_SCAN_APPROACH_DROP_PX = TILE * 0.12; // Minimum distance-to-player closed per check interval to count as "coming towards."
+      const COMPANION_SCAN_APPROACH_CHECK_MS = 400;
+
+      // Shared (not per-companion) so every companion checking the same
+      // candidate reuses one tracked distance history instead of each
+      // maintaining its own — "is this thing approaching the player" is a
+      // property of the candidate, not of whichever companion is looking.
+      const _companionScanApproachCache = new WeakMap(); // candidate -> { lastDist, lastCheckedAt, approaching }
+      function _isApproachingPlayer(candidate, master, cx, cy) {
+        const now = performance.now();
+        const dist = Math.hypot(master.x - cx, master.y - cy);
+        const cached = _companionScanApproachCache.get(candidate);
+        if (!cached || now - cached.lastCheckedAt >= COMPANION_SCAN_APPROACH_CHECK_MS) {
+          const approaching = cached ? (cached.lastDist - dist) > COMPANION_SCAN_APPROACH_DROP_PX : false;
+          _companionScanApproachCache.set(candidate, { lastDist: dist, lastCheckedAt: now, approaching });
+          return approaching;
+        }
+        return cached.approaching;
+      }
+
+      // Nearest living thing within range that's actually closing distance
+      // on the player right now — wild/hostile creatures and friendly NPCs
+      // alike (not other companions/shoulder pets; staring at each other
+      // isn't the point of this).
+      function _findApproachingLivingThing(master) {
+        let best = null, bestDist = COMPANION_SCAN_RANGE_PX;
+        for (const h of hostileObjects) {
+          if (h.health <= 0 || h.areaId !== currentArea) continue;
+          const dist = Math.hypot(h.x - master.x, h.y - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(h, master, h.x, h.y)) continue;
+          best = h; bestDist = dist;
+        }
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea || !w.root) continue;
+          const wx = w.root.position.x * TILE, wz = w.root.position.z * TILE; // walker positions are tile-scale; match hostileObjects' raw-px convention.
+          const dist = Math.hypot(wx - master.x, wz - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(w, master, wx, wz)) continue;
+          best = w; bestDist = dist;
+        }
+        return best;
+      }
+
+      // A fresh idle fixation point/duration: usually a random point out in
+      // the world (picked relative to the companion's own position and
+      // facing at the moment of picking, then held fixed in world space —
+      // see _tickCompanionHorizonScan, which re-aims at this same {x,y,worldY}
+      // every frame as the companion walks), occasionally just "relax to
+      // rest" so the idle scan doesn't read as perpetually alert.
+      function _pickCompanionScanFocus(c) {
+        if (rnd() < COMPANION_SCAN_FOCUS_REST_CHANCE) return null;
+        const spreadRad = COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG * Math.PI / 180;
+        const angle = (c.facing || 0) + (rnd() * 2 - 1) * spreadRad;
+        const dist = COMPANION_SCAN_FOCUS_MIN_DIST_PX + rnd() * (COMPANION_SCAN_FOCUS_MAX_DIST_PX - COMPANION_SCAN_FOCUS_MIN_DIST_PX);
+        return {
+          x: c.x + Math.cos(angle) * dist,
+          y: c.y + Math.sin(angle) * dist,
+          worldY: _creatureHeadWorldY(c) + (rnd() * 2 - 1) * COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE,
+        };
+      }
+
+      function _applyCompanionScanFixation(c, state, dt) {
+        state.focusTimer -= dt;
+        if (state.focusTimer <= 0) {
+          state.focusPoint = _pickCompanionScanFocus(c);
+          state.focusTimer = COMPANION_SCAN_FOCUS_MIN_S + rnd() * (COMPANION_SCAN_FOCUS_MAX_S - COMPANION_SCAN_FOCUS_MIN_S);
+        }
+        if (state.focusPoint) _updateCreatureHeadLookAtWorldPoint(c, state.focusPoint, dt);
+        else _restoreCompanionHead(c, dt);
+      }
+
+      // "Stare back if you focus on their head" — is the player's own
+      // camera/cursor aim ray (the same ray the "Show Interaction Raycast"
+      // debug toggle already visualizes) currently passing close to this
+      // creature's actual head point? Reused by both ground companions
+      // (below) and farm livestock (see farm-animals.js's
+      // deps.isPlayerFocusedOnHead, backed by this same math).
+      const PLAYER_HEAD_FOCUS_RADIUS_WORLD = 0.7; // Generous on purpose — this is "is the player roughly looking this creature's way," not a pixel-precise headshot hitbox.
+      // Frame-cached (keyed off lastTime, set once per gameLoop tick) since
+      // this is now asked for by every ground companion (twice a frame —
+      // once for the horizon-scan lock, once for the movement freeze below)
+      // and every farm animal (once each, every frame, regardless of
+      // whether anything is actually in range) — without this, a farm with
+      // a couple dozen animals redid this same raycaster setFromCamera call
+      // that many times a frame for an identical answer.
+      let _cachedPlayerLookRay = null;
+      let _cachedPlayerLookRayAt = -1;
+      function _currentPlayerLookRay() {
+        if (_cachedPlayerLookRayAt === lastTime) return _cachedPlayerLookRay;
+        _cachedPlayerLookRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        _cachedPlayerLookRayAt = lastTime;
+        return _cachedPlayerLookRay;
+      }
+      function _isPlayerFocusedOnHead(c) {
+        const head = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+        if (!head) return false;
+        const ray = _currentPlayerLookRay();
+        if (!ray) return false;
+        return window.CreatureHeadCache.isRayNearPoint(ray, { x: head.x / TILE, y: head.worldY, z: head.z / TILE }, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+      }
+
+      function _tickCompanionHorizonScan(c, master, dt) {
+        // Eye contact on demand takes priority over ambient scanning/
+        // locking — a companion that's deliberately being looked at should
+        // always look back immediately, not wait for its own scan timer.
+        if (_isPlayerFocusedOnHead(c)) {
+          _updateCreatureHeadLookAtCombatTarget(c, player, dt);
+          return;
+        }
+        const state = c.horizonScan || (c.horizonScan = {
+          phase: 'scan',
+          timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
+          lockedTarget: null,
+          focusPoint: null,
+          focusTimer: 0, // Expired immediately, so the first fixation point is picked on the very first idle tick rather than waiting out a full cycle.
+        });
+        state.timer -= dt;
+        if (state.phase === 'scan' && state.timer <= 0) {
+          const found = _findApproachingLivingThing(master);
+          if (found) {
+            state.phase = 'lock';
+            state.lockedTarget = found;
+            state.timer = COMPANION_SCAN_LOCK_MIN_S + rnd() * (COMPANION_SCAN_LOCK_MAX_S - COMPANION_SCAN_LOCK_MIN_S);
+          } else {
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        } else if (state.phase === 'lock') {
+          const target = state.lockedTarget;
+          const targetAlive = target && (target.health === undefined || target.health > 0);
+          const targetArea = target?.areaId || target?.area;
+          if (!targetAlive || targetArea !== currentArea || state.timer <= 0) {
+            state.phase = 'scan';
+            state.lockedTarget = null;
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        }
+        if (state.phase === 'lock' && state.lockedTarget) {
+          // Reuses the exact pitch+yaw+debug-ray logic combat head-lock
+          // already uses (see updateHostiles) — a horizon-scan lock is the
+          // same "aim my head at this living thing's head" behavior, just
+          // triggered by ambient noticing instead of being someone's
+          // combat target.
+          _updateCreatureHeadLookAtCombatTarget(c, state.lockedTarget, dt);
+        } else {
+          _applyCompanionScanFixation(c, state, dt);
+        }
+      }
+
       function _clearCompanionTreasureCue(c, dt, reason) {
         if (!c.treasureCue) return;
         window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): ${c.treasureCue.phase} -> cleared (${reason})`, 'wildlife');
@@ -6012,7 +6395,9 @@
         c._travelPathTarget = null;
         window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): detected buried treasure; announce -> lead -> mark`, 'wildlife');
         window.AmbientDialogue?.companionTreasure(c);
-        window.AudioSystem?.playCreatureTreasureAlert?.(c);
+        if (!window.AnimalVocalizations?.companionDiscovery?.(c, 'treasure')) {
+          window.AudioSystem?.playCreatureTreasureAlert?.(c); // Legacy species without a recorded voice pool.
+        }
         // Keep the cue readable even when audio is muted/blocked or the
         // companion's species bark is unfamiliar. This toast is deliberately
         // emitted alongside (rather than instead of) the existing utterance.
@@ -6227,6 +6612,9 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          window.AnimalVocalizations?.tickCreature?.(c, dt, {
+            allowPassive: c.stableRole !== 'mount',
+          });
 
           // The entity this companion follows/defends — the real player for
           // an ordinary whistle-summoned companion, but not necessarily: see
@@ -6401,7 +6789,8 @@
           }
           if (!c.treasureCue
             && !window.Combat?.animalAttacks?.isBusy(c)
-            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
+            && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
+
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.prone) {
@@ -6484,15 +6873,23 @@
           } else if (distToMaster > FOLLOW_FAR_PX) {
             moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
+          } else if (_isPlayerFocusedOnHead(c)) {
+            // The player is staring right at its head — hold position and
+            // let them approach instead of drifting back out to the donut
+            // ring or dropping into a separate watch-idle animation.
+            // _tickCompanionHorizonScan (called above, same trigger) already
+            // has the head staring back; this just keeps the body from
+            // fighting that by wandering away mid-approach.
+            c.vx = 0; c.vy = 0;
           } else if (c.watchPlayerIdle) {
             const watchMotion = _tickCompanionWatchIdle(c, master, dt);
             if (watchMotion) aimAngle = watchMotion.aimAngle;
             else {
-              moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+              moving = _companionFollowWanderTick(c, dt, master);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             }
           } else {
-            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+            moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -6528,19 +6925,37 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
-      function _applyShoulderPetFinalRotation(c, finalGroupRotY) {
+      function _applyShoulderPetFinalTransform(c, finalTransform) {
         const group = c.avatarRef?.group;
-        if (!group) return;
-        group.rotation.y = finalGroupRotY;
+        if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
+        const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
+        parent?.updateWorldMatrix?.(true, false);
+        const parentWorldQuaternion = parent?.getWorldQuaternion
+          ? parent.getWorldQuaternion(new THREE.Quaternion())
+          : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
+        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the requested face-relative world rotation.
+        const localPosition = parent?.worldToLocal
+          ? parent.worldToLocal(finalTransform.worldPosition.clone())
+          : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
+        group.position.copy(localPosition);
+        group.quaternion.copy(localQuaternion);
         // updateCreatureMesh authored the inner planes against c.groupRot,
-        // but an attack/tool pose can replace the attachment group's yaw in
-        // this later pass. Recompute the local counter-rotation so that
-        // moving the shoulder anchor with bodyYaw does not also rotate the
-        // flat animal card face-on/edge-on and change its projected width.
-        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Used here to preserve the camera-relative plane yaw chosen by updateCreatureMesh.
-        const planeDelta = billboardWorldYaw - finalGroupRotY; // Used below to cancel only the final attachment-group yaw override.
+        // but the face-relative attachment can now replace the root's full
+        // pitch/yaw/roll in this later pass. The onBeforeRender compensation
+        // in png-plane-avatar.js owns the exact world-facing plane matrix;
+        // this Euler write remains the first-frame/legacy fallback.
+        const finalGroupRotY = new THREE.Euler().setFromQuaternion(localQuaternion, 'YXZ').y; // Supplies the legacy plane fallback with the new attachment root's local yaw.
+        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Preserves the camera-relative plane yaw chosen by updateCreatureMesh.
+        const planeDelta = billboardWorldYaw - finalGroupRotY; // Cancels the final attachment-group yaw in the legacy plane fallback.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final face-relative pin.
+          recentChange: 'Authored shoulderPerch rotation is face-relative and follows the live face.',
+          rotationSource: finalTransform.faceRotationSource,
+          expectedWorldPosition: finalTransform.worldPosition.toArray(),
+          faceWorldQuaternion: finalTransform.faceWorldQuaternion?.toArray?.() || null,
+          finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
+        };
       }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
@@ -6549,19 +6964,23 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
-            c.avatarRef.group.position.x = playerMesh.position.x + dx;
-            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-            c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            const finalGroupRotY = playerMesh.rotation.y - gripYawRad; // Final bodyYaw-aware attachment rotation consumed by the billboard counter-rotation helper.
-            _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            const finalTransform = _shoulderPetFaceRelativeTransform(perch, grip); // Composes live face × authored perch × inverse authored grip.
+            _applyShoulderPetFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
-            c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
-            const finalGroupRotY = playerMesh.rotation.y; // Final fallback attachment rotation consumed by the same billboard counter-rotation helper.
-            _applyShoulderPetFinalRotation(c, finalGroupRotY);
+            const fallbackWorldPosition = new THREE.Vector3( // Supplies the no-authored-anchor path to the shared full-transform helper.
+              playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3,
+              c.avatarRef.group.position.y,
+              playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3,
+            );
+            const fallbackWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Keeps legacy pets body-relative when either authored anchor is absent.
+            _applyShoulderPetFinalTransform(c, {
+              worldPosition: fallbackWorldPosition,
+              worldQuaternion: fallbackWorldQuaternion,
+              faceWorldQuaternion: fallbackWorldQuaternion,
+              faceRotationSource: 'player-body-fallback-no-authored-anchors',
+            });
           }
         }
       }
@@ -7043,8 +7462,15 @@
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.wildernessChunkState = serializeWildernessChunkState();
+          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          // Only ever consumed on the next boot if it lands in a wilderness
+          // zone with a still-active campfire there (see spawnPlayerAvatar) —
+          // saved unconditionally anyway since it's cheap and harmless
+          // otherwise; farm/town/interior/building sessions keep spawning at
+          // the farm's usual default exactly as before.
+          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -7446,6 +7872,12 @@
             // ensureZoneDenPacks/spawnPackAtDen).
             window.WildlifeSpawn.forgetZoneDenState(zoneId);
             window.BanditCamps.forgetZoneState(zoneId);
+            // A campfire the player left standing in this zone (it now
+            // persists indefinitely across leaving — see wilderness-
+            // campfire.js's own header comment) is pinned to terrain that
+            // no longer exists the instant this zone reshapes, whether or
+            // not the player happens to be standing in it right now.
+            window.WildernessCampfire?.clearIfZone(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -7947,6 +8379,14 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
+      // of a dialogue portrait's canvas/profile, kept around so
+      // _tickPlayerPortraitLife can cheaply re-render just the front texture
+      // (blink/breathing) every so often without repeating the full gear/
+      // cosmetic rebuild refreshPlayerAvatar() itself does.
+      let playerAvatarGroup = null;
+      let playerAvatarFrontCanvas = null;
+      let playerAvatarProfile = null;
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
       // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
       // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
@@ -7959,6 +8399,12 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // The player's own rendered bust-portrait model WIDTH (avatarWidth in
+      // refreshPlayerAvatar) — same idea as playerAvatarModelHeight above.
+      // Used to size a ground companion's "personal space" donut (see
+      // _companionPersonalSpacePx) so its settle-wander radius scales with
+      // how wide the player's own avatar actually renders.
+      let playerAvatarModelWidth = 0.9;
       // Procedural leg/foot animation handle for the player's own avatar —
       // rebuilt in refreshPlayerAvatar (species/gender can change there),
       // driven each frame from updatePlayerMesh. See
@@ -9452,6 +9898,39 @@
         player.vy = 0;
       }
 
+      // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
+      // Author's actor gaze system (aimActorNeckAtTarget/actorEyeWorldPosition
+      // in docs/tools/animation-author/index.html — used there for e.g. the
+      // dance preset, where two actors of different heights still need to
+      // convincingly meet each other's eyes): computes yaw AND pitch together
+      // from the real 3D direction between two eye-height world points, then
+      // transforms that direction into the neck bone's own parent space, so
+      // the result is automatically correct regardless of how the body is
+      // currently rotated — unlike aiming at the residual gap against the
+      // body's own (slower) facing lerp, this doesn't decay back toward zero
+      // once the body catches up. Called every frame, it holds a steady
+      // "looking at you" pose for as long as it keeps being called, which is
+      // what a conversation needs (the gaze should persist for the whole
+      // exchange, not just the moment right after it opens).
+      function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
+        return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        if (!neckJoint?.parent) return false;
+        neckJoint.parent.updateMatrixWorld(true);
+        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const horizontal = Math.hypot(direction.x, direction.z);
+        if (direction.lengthSq() < 1e-8) return false;
+        const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        return true;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -9467,15 +9946,20 @@
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
-        // Head rotation: the body above only catches up to npcTargetRot
-        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
-        // neck bone at however much of that gap remains right now (clamped to
-        // a natural-looking max) — the NPC glances at the player immediately
-        // and the head straightens on its own as the body finishes turning.
+        // Eye contact: aims BOTH the NPC's and the player's own neck bone
+        // straight at the other's eyes, held for the whole conversation (see
+        // _aimNeckAtEyeContact above) — this owns the player's neck bone
+        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
+        // for exactly this reason, see its own dialogueOpen guard).
+        walker.root.updateMatrixWorld(true);
+        playerMesh.updateMatrixWorld(true);
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
-          const residual = angleDiff(npcTargetRot, walker.rot);
-          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+        }
+        if (playerNeckJoint) {
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
         }
       }
 
@@ -10501,9 +10985,81 @@
         window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
       }
 
+      // ── World-space blink/breathing/default-expression (item 3) ─────────
+      // The dialogue/cutscene portrait canvas already re-renders periodically
+      // with the breathing composer (see runAnimation's own breathTimer just
+      // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
+      // blinks/breathes and shows each NPC's own authored restingExpression
+      // — the WORLD-space walking avatar never did, since makeNpcWalker/
+      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
+      // at spawn/gear-change and never touch it again. This applies that
+      // same periodic-recompose idea (the identical cheap
+      // refreshSinglePlaneAvatarModel texture-only path runAnimation already
+      // uses, not a full geometry rebuild) to both NPC walkers and the
+      // player, at a coarser interval than dialogue's 120ms since many NPCs
+      // can be on screen at once — and only the player's current area's
+      // walkers pay this cost at all (see the area guard below).
+      function _worldPortraitLifeConfig() {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
+        return {
+          enabled: cfg.enabled !== false,
+          intervalS: Number.isFinite(Number(cfg.intervalS)) ? Number(cfg.intervalS) : 0.16,
+        };
+      }
+
+      function _tickNpcPortraitLife(walker, dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || walker.area !== currentArea) return; // Only the player's current scene pays this cost.
+        if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
+        walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
+        if (walker._portraitLifeT < cfg.intervalS) return;
+        walker._portraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
+        if (!walker._portraitLifeExpressionSet) {
+          // The NPC's own authored default expression (rec.restingExpression
+          // — see dialogue-content.js's _npcRestingExpression, now shared via
+          // window.DialogueContent.npcRestingExpression) applies here too, so
+          // a walking NPC shows the same resting face dialogue already gives
+          // them, not a generic neutral one. Set once per walker (this seatId
+          // is stable for its whole lifetime) rather than every tick.
+          composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
+          walker._portraitLifeExpressionSet = true;
+        }
+        if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
+        walker._portraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+        }).then(() => {
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+        }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
+      }
+
+      let _playerPortraitLifeT = 0;
+      let _playerPortraitLifePending = false;
+      function _tickPlayerPortraitLife(dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || _playerPortraitLifePending) return;
+        if (!playerAvatarGroup?.userData?.frontTexture || !playerAvatarFrontCanvas || !playerAvatarProfile) return;
+        _playerPortraitLifeT += dt;
+        if (_playerPortraitLifeT < cfg.intervalS) return;
+        _playerPortraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
+        _playerPortraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
+          breathingComposer: composer, seatId: 'player',
+        }).then(() => {
+          if (generation !== playerAvatarRefreshGeneration) return;
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
+        }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) w.update(dt);
+        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -11636,6 +12192,7 @@
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
+        window.WildernessCampfire?.onZoneEntered(mapId);
       }
 
       // Town/zone building mesh spawning (detectTownBuildings/
@@ -13035,7 +13592,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
           };
         }
       });
@@ -13558,6 +14115,27 @@
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
       }
 
+      function freezePlayerAvatarPortraitComposer(nowMs) {
+        const source = window.portraitBreathingComposer;
+        if (!source) return null;
+        return {
+          getExpression(seatId) {
+            return typeof source.getExpression === 'function' ? source.getExpression(seatId, nowMs) : 'neutral';
+          },
+          getOverlayOnlyPoints(_ignoredNowMs, seatId) {
+            return typeof source.getOverlayOnlyPoints === 'function' ? source.getOverlayOnlyPoints(nowMs, seatId) : null;
+          },
+          getInterpolatedPoints(speciesId, gender, _ignoredNowMs, phaseOffsetMs, seatId) {
+            return typeof source.getInterpolatedPoints === 'function'
+              ? source.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId)
+              : null;
+          },
+          getAnimData(speciesId, gender) {
+            return typeof source.getAnimData === 'function' ? source.getAnimData(speciesId, gender) : null;
+          },
+        };
+      } // Freezes every full/hatless canvas in one avatar rebuild to the same deformation sample so the xray pixel diff contains only hat pixels.
+
       // Ported from the animation-author tool's shoulder-pet hat-xray feature
       // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
       // docs/tools/animation-author/index.html): a shoulder pet perched near
@@ -13570,7 +14148,7 @@
       // specifically, without touching how the hat occludes anything else,
       // and without ever affecting the body layer's own normal occlusion (so
       // this never makes the player see-through, only the hat).
-      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration, staticRenderOptions) {
         try {
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
@@ -13578,11 +14156,11 @@
           const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, staticRenderOptions);
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
           const hatlessBackCanvas = document.createElement('canvas');
           hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { ...staticRenderOptions, portraitView: 'behind' });
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
 
           // Diff through the SAME per-face variant transform (front: as-is;
@@ -13706,20 +14284,24 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        const staticRenderOptions = {
+          forceEyesOpen: true,
+          breathingComposer: freezePlayerAvatarPortraitComposer(Date.now()),
+        }; // Shared by the full and hatless renders below so cold-cache load time cannot leak hood/poncho deformation into the hat-only overlay.
         // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
         // this bakes one static texture and never re-renders it, so an
         // unlucky blink-timing roll here would leave the player's own world
         // model stuck with its eyes shut until the next gear/cosmetic change
         // happens to trigger a fresh bake.
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { ...staticRenderOptions, onlyHeadSprite: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { ...staticRenderOptions, portraitView: 'behind' });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
@@ -13743,6 +14325,7 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
+        playerAvatarModelWidth = avatarWidth;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
         // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
         // and bottom-edge pixel row (see handAttachX/handAttachY in
@@ -13775,7 +14358,10 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
-        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        playerAvatarGroup = avatarGroup;
+        playerAvatarFrontCanvas = frontCanvas;
+        playerAvatarProfile = profile;
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration, staticRenderOptions);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
         // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
@@ -13978,6 +14564,48 @@
       // facingAngle is what the reticle and sprite actually use.
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
       let facingAngle = -Math.PI / 2;   // starts facing north
+      const characterViewMode = {
+        enabled: false,
+        lockedFacingAngle: facingAngle,
+        lockedPlayerAngle: facingAngle,
+        lockedPlayerFacing: 0,
+        lockedNeckX: 0,
+        lockedNeckY: 0,
+        lastChangeReason: 'boot',
+        changedAtMs: 0,
+      }; // Used by the utility-wheel viewer to pin logical facing, rendered body yaw, and neck aim while the camera orbits independently.
+      function publishCharacterViewStatus() {
+        window.HOBUNJI_CHARACTER_VIEW_STATUS = {
+          enabled: characterViewMode.enabled,
+          lastChangeReason: characterViewMode.lastChangeReason,
+          changedAtMs: characterViewMode.changedAtMs,
+          facingAngleDeg: characterViewMode.lockedFacingAngle * 180 / Math.PI,
+          bodyYawDeg: characterViewMode.lockedPlayerFacing * 180 / Math.PI,
+          neckYawDeg: characterViewMode.lockedNeckY * 180 / Math.PI,
+        }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
+      }
+      function setCharacterViewMode(enabled, reason = 'utility-wheel') {
+        const nextEnabled = Boolean(enabled);
+        if (nextEnabled === characterViewMode.enabled) return;
+        if (nextEnabled) {
+          characterViewMode.lockedFacingAngle = facingAngle;
+          characterViewMode.lockedPlayerAngle = player.angle;
+          characterViewMode.lockedPlayerFacing = playerFacing;
+          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
+          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
+        }
+        characterViewMode.enabled = nextEnabled;
+        if (nextEnabled) {
+          requestShoulderSurfPointerLock();
+        } else if (!cursorlessMouseAimRequested()) {
+          releaseShoulderSurfPointerLock();
+        }
+        characterViewMode.lastChangeReason = reason;
+        characterViewMode.changedAtMs = Date.now();
+        publishCharacterViewStatus();
+        showToast(nextEnabled ? 'Character View: On' : (reason === 'movement' ? 'Character View: Off — movement' : 'Character View: Off'), true, false);
+      }
+      publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
       // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
@@ -14136,6 +14764,14 @@
       }
 
       function updateMovement(dt) {
+        const viewModeKeyboard = getKeyboardVector();
+        const viewModeMoveMagnitude = viewModeKeyboard.active
+          ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
+          : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
+        const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || Math.hypot(player.vx, player.vy) > 1;
+        if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
+          setCharacterViewMode(false, 'movement');
+        }
         // Every mode below that takes over movement/input outright (dialogue,
         // fishing, the music minigame, sitting, mounted, prone...) should
         // drop a walk-to-NPC in progress rather than silently resuming it
@@ -14451,7 +15087,6 @@
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnUnequipHeld?.classList.toggle('active', heldMode === 'none');
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee auto-target's sixth arch button: hidden entirely unless
         // melee is actually out; otherwise grayed out (base style) until a
@@ -14475,7 +15110,10 @@
         // flows through the exact same catch-up branches below/above rather
         // than a separate override. Ranged weapons are unaffected — see
         // getPlayerAimAngle/currentPlayerAimAngle for their own aim.
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
+        if (characterViewMode.enabled) {
+          facingAngle = characterViewMode.lockedFacingAngle;
+          player.angle = characterViewMode.lockedPlayerAngle;
+        } else if (activeCameraMode === SHOULDER_SURF_MODE) {
           // The body doesn't chase raw movement DIRECTION here (that's what
           // every other mode does below) — moving camera-relative already
           // means walking backward/strafing shouldn't spin the character to
@@ -15705,6 +16343,29 @@
           window.MusicMinigame?.beginPlayerSession();
           return;
         }
+        // Fires immediately, like the item actions above — the generic
+        // pendingAction/firePendingAction path below only ever gets consumed
+        // by updateToolMesh's tool-swing progress tracker, which explicitly
+        // skips its own body while heldMode === 'item' (it hands off to
+        // updateHeldItemHolder instead), so anything routed through that
+        // path while holding an item — including every other place_*/
+        // plant_* action — never actually fires. Immediate dispatch here
+        // sidesteps that entirely.
+        if (activeAction === 'place_campfire_kit') {
+          const reticle = getReticleTile();
+          const result = window.WildernessCampfire?.placeFromKit(reticle.col, reticle.row) || { ok: false, message: 'Campfires are unavailable right now.' };
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
+          return;
+        }
+        // Same immediate-dispatch reasoning as place_campfire_kit above —
+        // each of these fires straight from its own action-bar slot near a
+        // placed campfire (see getNearbyActions in wilderness-campfire.js)
+        // instead of opening a shared panel first.
+        if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
+        if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
+        if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
@@ -15898,6 +16559,10 @@
 
         const tile = getActiveGrid()[row][col];
         let result;
+        // place_campfire_kit is NOT handled here — it fires immediately from
+        // useActiveAction() instead (see its own comment there): this
+        // pendingAction path only ever gets consumed while heldMode ===
+        // 'tool', so an item-mode action routed through it would never fire.
         if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
@@ -18911,6 +19576,7 @@
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
+      let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
       // True while the primary action input (key/click/button) is physically held
       // down. Drives the multi-stage dig/fill charge below — releasing it, or
@@ -18926,14 +19592,14 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Digging up a dew pile — same held input and same two-animation
       // (thrust/toss) shape as digging a brand-new trench, just at half the
       // base duration per rep.
       const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
@@ -18942,8 +19608,8 @@
       // quick stance reset. Repeats 3x like the old plain fill swings did.
       const REFILL_TURN_ANGLE = Math.PI / 4;
       const REFILL_FLOURISH_REP = [
-        { anim: 'refillTurnOut',    dur: 1.0  },
-        { anim: 'refillStrikeBack', dur: 0.5  },
+        { anim: 'refillTurnOut',    dur: 1.0,  sfxKey: 'dig' },
+        { anim: 'refillStrikeBack', dur: 0.5,  sfxKey: 'dig' },
         { anim: 'refillTwistOut',   dur: 0.25 },
         { anim: 'refillTwistBack',  dur: 0.25 },
         { anim: 'refillReset',      dur: 0.15 },
@@ -18956,7 +19622,13 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
+        pose: true,
+        dirSign,
+        dur: 0.55,
+        sfxKey: 'chop',
+        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
+      }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
@@ -18964,7 +19636,12 @@
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
       // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55 }));
+      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
+        anim: 'thrust',
+        dur: 0.55,
+        sfxKey: 'pick',
+        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
+      }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -19082,7 +19759,16 @@
         // currently closer to, so the turn-out reads as a natural pivot.
         const turnDelta = angleDiff(0, playerFacing);
         const refillTurnSign = turnDelta === 0 ? 1 : Math.sign(turnDelta);
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages, refillTurnSign };
+        chargeAction = {
+          col: reticle.col,
+          row: reticle.row,
+          action: activeAction,
+          tool: activeTool,
+          stage: 0,
+          stages,
+          refillTurnSign,
+          finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
+        };
         beginChargeStage();
       }
 
@@ -19095,6 +19781,7 @@
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
+        chargeStageSfxFired = false;
         pendingAction = null;
         if (stageDef.pose) {
           // Reuses the melee combo's own authored sweep pose (see
@@ -19279,9 +19966,11 @@
       // or cancels it the moment the button is released or the target changes.
       function updateChargeAction() {
         if (!chargeAction) return;
-        if (!actionHeldDown) { cancelChargeAction(); return; }
-        const reticle = getReticleTile();
-        if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        if (!chargeAction.finalStrikeCommitted) {
+          if (!actionHeldDown) { cancelChargeAction(); return; }
+          const reticle = getReticleTile();
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
         if (chargeAction.stage >= chargeAction.stages.length) {
@@ -20295,8 +20984,22 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
+        const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
+        const chargeSfxProgress = activeChargeStage?.sfxAt ?? SF; // Hole-dig thrusts sound at contact start; pick/chop and terminal breaks retain their proven strike endpoint.
+        if (chargeAction && !chargeStageSfxFired && progress >= chargeSfxProgress) {
+          chargeStageSfxFired = true;
+          const stageDef = activeChargeStage; // Used to resolve impact and final-break cues from the same contact frame.
+          const chargeSfxKey = stageDef?.sfxKey;
+          if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
+          if (stageDef?.terminalSfxKey) {
+            chargeAction.finalStrikeCommitted = true;
+            window.AudioSystem?.playObjectSfxKey?.(stageDef.terminalSfxKey);
+          }
+        }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
+          const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
+          if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
@@ -21109,6 +21812,10 @@
         // the camera, and this recompute runs every frame regardless of fishing state, so
         // without the guard it fought that and spun the character back around immediately.
         if (window.Fishing?.state?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (characterViewMode.enabled) {
+          playerFacing = characterViewMode.lockedPlayerFacing;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
@@ -21977,11 +22684,16 @@
       // locking only stops the OS cursor from moving/being visible at all,
       // so those deltas keep coming no matter how far or how many times the
       // physical mouse moves in one direction.
+      function cursorlessMouseAimRequested() {
+        return characterViewMode.enabled
+          || (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE);
+      }
+      
       function shoulderSurfPointerLockActive() {
         return document.pointerLockElement === threeContainer;
       }
       function requestShoulderSurfPointerLock() {
-        if (!isDesktop || shoulderSurfPointerLockActive()) return;
+        if (!cursorlessMouseAimRequested() || !isDesktop || shoulderSurfPointerLockActive()) return;
         // Can reject (no transient user activation, or the browser's own
         // rate-limit on repeated requests) — that's fine, the click-to-relock
         // handler below gives the player another chance.
@@ -22012,7 +22724,7 @@
       // game world is the same click-to-resume-look convention most desktop
       // games with Pointer Lock use.
       threeContainer.addEventListener('click', () => {
-        if (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE) requestShoulderSurfPointerLock();
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
       });
       // Both offset sliders read/write whichever stance preset is currently
       // active (see shoulderSurfCombatStanceActive()) rather than a single
@@ -22077,6 +22789,7 @@
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           window.WildernessChunks?.update(dt);
+          window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -22174,7 +22887,7 @@
         // outside shoulder-surf while its Pointer Lock is still held —
         // cheap enough (one property read) to just check every frame rather
         // than hunting down every such call site individually.
-        if (activeCameraMode !== SHOULDER_SURF_MODE) releaseShoulderSurfPointerLock();
+        if (!cursorlessMouseAimRequested()) releaseShoulderSurfPointerLock();
         // Same "don't hunt down every mode-switch call site" reasoning as
         // the Pointer Lock release above — held-item ground x-ray reads as
         // clarity from the normal top-down view but just looks wrong at
@@ -22306,6 +23019,7 @@
         }
         window.RangedWeapons?.update(dt);
         updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        _tickPlayerPortraitLife(dt);
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
@@ -22857,6 +23571,59 @@
           }))); // Special ammo uses the same ordinary-radius arch primitive.
         }
 
+        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
+        // openDesktopHoldArc below), for quick actions that don't belong on
+        // the per-tile action bar: warping back to a placed wilderness
+        // campfire or the farm, quick-selecting a Campfire Kit without
+        // scrolling the item wheel, or orbiting around the stationary player.
+        function _openUtilitiesArc() {
+          // A placed campfire now persists indefinitely, including outside
+          // its own zone (see wilderness-campfire.js's header comment) —
+          // serialize() is the "does one exist, and where" query for that;
+          // isHere() only ever answers "is it in the CURRENT zone", which
+          // used to be the same question back when leaving destroyed it.
+          const campfire = window.WildernessCampfire?.serialize?.();
+          const kitCount = inventory.campfireKitFurniture || 0;
+          _openEntries('utilities', [
+            {
+              id: 'character-view', icon: '👁️', label: characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
+              active: characterViewMode.enabled,
+              onSelect: () => setCharacterViewMode(!characterViewMode.enabled),
+            },
+            {
+              id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
+              disabled: !campfire,
+              onSelect: () => {
+                if (!campfire) return;
+                if (campfire.mapId === currentArea) {
+                  // Already in the right zone — just reposition onto the tile.
+                  const result = window.WildernessCampfire.returnToCampfire();
+                  showToast(result.message, result.ok);
+                  refreshActionBar();
+                } else {
+                  // A different zone (or the farm/town/a building) — travel
+                  // there first, landing exactly on the campfire's own tile
+                  // since its saved x/z are passed straight through as the
+                  // entry col/row (same fire-and-forget async-inside-
+                  // startSceneTransition pattern performTravel's own 'zone'
+                  // case uses for an ordinary authored zone transition).
+                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                }
+              },
+            },
+            {
+              id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
+              disabled: kitCount <= 0,
+              onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
+            },
+            {
+              id: 'return-farm', icon: '🏡', label: currentArea === 'farm' ? 'Already on Farm' : 'Return to Farm',
+              disabled: currentArea === 'farm',
+              onSelect: () => startSceneTransition(() => performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+            },
+          ]);
+        }
+
         function _openEntries(mode, entries, radius = _outerR()) {
           const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
           _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
@@ -23079,6 +23846,7 @@
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
           openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
           openPotions() { _openPotionRoot(); },
+          openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
           openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
           recallLastTool() {
             const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
@@ -23189,8 +23957,12 @@
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
           else if (!_tHeld && !_tMoved) {
-            // A Tool Select tap always recalls the last valid held tool.
-            window._desktopSelectionArc.recallLastTool();
+            // A Tool Select tap recalls the last valid held tool — unless a
+            // tool is already out, in which case the same tap now dequips
+            // instead (replacing the removed dedicated put-away button; see
+            // its matching case in itemBtn's own pointerup below).
+            if (heldMode === 'tool') putAwayHeldEquipment();
+            else window._desktopSelectionArc.recallLastTool();
           }
           _tHeld = false; _tMoved = false;
         });
@@ -23222,11 +23994,18 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved && heldMode !== 'item') {
-              // Tap while holding a tool or hands-free → switch to item mode.
-              if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
-              heldMode = 'item';
-              refreshItemScroll(); refreshActionBar();
+            else if (!_iHeld && !_iMoved) {
+              if (heldMode === 'item') {
+                // An item is already selected — the same tap now dequips
+                // instead (replacing the removed dedicated put-away button;
+                // see its matching case in toolBtn's own pointerup above).
+                putAwayHeldEquipment();
+              } else {
+                // Tap while holding a tool or hands-free → switch to item mode.
+                if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
+                heldMode = 'item';
+                refreshItemScroll(); refreshActionBar();
+              }
             }
             _iHeld = false; _iMoved = false;
           });
@@ -23236,6 +24015,42 @@
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
             _clearArc(); _iHeld = false; _iMoved = false;
+          });
+        }
+
+        // Utility menu button: sixth/new outer-ring control, replacing the
+        // removed put-away button's old slot (see the CSS angle comment on
+        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
+        // above — it only ever does anything while held, exactly like the
+        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // mirrors their hold-then-drag-to-select pattern but skips their
+        // "what does a plain tap do" branch entirely.
+        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
+        if (btnUtilityMenu) {
+          let _uPtId = null, _uHeld = false, _uTimer = null;
+          btnUtilityMenu.addEventListener('pointerdown', ev => {
+            if (_uPtId !== null) return;
+            _uPtId = ev.pointerId; _uHeld = false;
+            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
+            ev.preventDefault();
+          });
+          btnUtilityMenu.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
+          });
+          btnUtilityMenu.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            if (_arcOpen === 'entries:utilities') _arcUp();
+            _uHeld = false;
+          });
+          btnUtilityMenu.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            _clearArc(); _uHeld = false;
           });
         }
       }
@@ -23404,6 +24219,15 @@
           : null;
         if (banditTentAction) return [banditTentAction];
 
+        // A placed wilderness campfire, same runtime-prop pattern as bandit
+        // tents above — walking up to it puts Save/Cook/Brew each on their
+        // own action-bar slot (Return to Camp lives on the utilities wheel
+        // instead — see the 'c' hold-key handling further down).
+        const campfireActions = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyActions?.()
+          : null;
+        if (campfireActions?.length) return campfireActions;
+
         // Climbing is still triggered by a forward dodge (see
         // performContextAction) so an attack/item press never grabs a
         // nearby trunk by accident — but a facing climb target also gets a
@@ -23485,6 +24309,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -23512,7 +24337,7 @@
             });
           }
           const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
-          if (decorKey) {
+          if (decorKey && !DECORATIVE_FURNITURE_DEFS[decorKey]?.customPlace) {
             const def = DECORATIVE_FURNITURE_DEFS[decorKey];
             const count = inventory[item.key] || 0;
             const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
@@ -23668,7 +24493,17 @@
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
-              if (isNavAction || toolSwingT <= 0) useActiveAction();
+              // Same reasoning again for every item-mode action (place_campfire_kit,
+              // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
+              // tool swings either, so a leftover toolSwingT from whatever tool was
+              // out before switching to item mode — which updateToolMesh never
+              // decays while heldMode === 'item' (it early-returns before reaching
+              // that logic) — would otherwise silently eat every item-mode tap on
+              // mobile until the player switched back to a tool and let the stale
+              // timer run out. Desktop's direct pointerdown→useActiveAction() click
+              // path never had this gate at all, which is why this only ever
+              // surfaced as "the button doesn't work" on touch.
+              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
             }
 
             // Weapon tool-action buttons (cut/slash) route taps through the
@@ -24371,12 +25206,6 @@
         toggleQuickWeaponSwitch();
       });
 
-      // First outer-arch button, mirrored by the desktop Z shortcut.
-      btnUnequipHeld?.addEventListener('pointerdown', ev => {
-        ev.preventDefault();
-        putAwayHeldEquipment();
-      });
-
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
@@ -24459,13 +25288,25 @@
       let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
-        e: { down: false, held: false, timer: null, arc: 'tool' }
+        e: { down: false, held: false, timer: null, arc: 'tool' },
+        // Utilities wheel — an entries arc like potion/ammo select, not a
+        // tool/item wheel, so it commits via releaseSelection() below
+        // (whichever entry mouse-drag/scroll last highlighted) instead of
+        // close()'s "already applied live, just dismiss" behavior.
+        c: { down: false, held: false, timer: null, arc: 'utilities' },
       };
       function openDesktopHoldArc(key) {
         const state = desktopHoldKeys[key];
         if (!state || !state.down) return;
         state.held = true;
-        if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        if (state.arc === 'utilities') {
+          // Same reasoning as CookingSystem's setInteractionBlocked above —
+          // no visible cursor to pick a wedge with under cursor-less camera
+          // Pointer Lock otherwise.
+          releaseShoulderSurfPointerLock();
+          window._desktopSelectionArc?.openUtilities();
+        }
+        else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
         else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
         else window._desktopSelectionArc?.openTool();
       }
@@ -24484,8 +25325,12 @@
         const wasHeld = state.held;
         state.held = false;
         if (wasHeld) {
-          if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
+          if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
+          else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
           else window._desktopSelectionArc?.close();
+        }
+        if (wasHeld && state.arc === 'utilities' && cursorlessMouseAimRequested()) {
+          requestShoulderSurfPointerLock();
         }
         return wasHeld;
       }
@@ -25028,7 +25873,7 @@
           return;
         }
         const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
           return;
@@ -25061,6 +25906,14 @@
           activeAction = actions[(idx + 1) % actions.length];
           refreshActionBar();
           return;
+        }
+        // C: hold to open the utilities wheel (Character View, Return to Camp,
+        // quick-select a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
+        // nothing pattern as E/Q above, but there's no separate tap
+        // behavior to fall back to on release (see the keyup handler).
+        if (key === 'c') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('c', event); return; }
         }
 
         // Legacy unbound primary keys. Configured action bindings return above;
@@ -25137,7 +25990,7 @@
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
         }
         if (key === 'shift') {
@@ -25168,6 +26021,14 @@
             const second = btns.find((b, i) => i > 0 && b.allowed);
             if (second) { activeAction = second.action; useActiveAction(); }
           }
+          return;
+        }
+        if (key === 'c' && isDesktop) {
+          event.preventDefault();
+          // No tap fallback — the utilities wheel only ever does anything
+          // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
+          // branch commits whatever entry was highlighted via releaseSelection()).
+          finishDesktopHoldKey('c');
           return;
         }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
@@ -25216,6 +26077,12 @@
           e.preventDefault();
           openDesktopHoldArc('e');
           window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.c.down) {
+          e.preventDefault();
+          openDesktopHoldArc('c');
+          window._desktopSelectionArc?.scrollEntries(-dir);
           return true;
         }
         if (heldOnly) return false;
@@ -25289,10 +26156,10 @@
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
       // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players get genuine 360° horizontal orbit instead — see the 'seated'
-      // camera mode's freeRotate flag in scratchbones-config.js.
+      // players and the utility-wheel Character View get genuine 360°
+      // horizontal orbit instead.
       function freeRotateCameraActive() {
-        return cameraModeConfig(activeCameraMode).freeRotate === true;
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -25414,6 +26281,20 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A floating menu (the pause/inventory menu incl. its Alchemy tab,
+          // the cooking hearth/campfire modal via setInteractionBlocked, or
+          // the utilities wheel/an entries arc like potion/ammo select) owns
+          // the cursor while open — without this, mouse movement kept
+          // driving facing/camera rotation underneath it via this same
+          // handler (Shift-drag and shoulder-surf's Pointer Lock read
+          // movementX/Y regardless of what's visually on top), so the
+          // camera spun out from under a menu the player was trying to
+          // click into. entryMenuOpen() covers arcs opened by mouse-button
+          // drag (which the arc's own full-screen backdrop already isolates
+          // from this handler) as well as ones opened by a held key like
+          // 'c' below (which doesn't drag a mouse button, so nothing else
+          // stops this handler from firing while it's up).
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
@@ -25628,6 +26509,8 @@
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
+        setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),
         get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
         get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
         get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
@@ -25758,6 +26641,12 @@
         audioUrlFailed: (...a) => window.Music?.audioUrlFailed(...a),
       });
 
+      window.AnimalVocalizations?.init({
+        random: rnd,
+        hasVoice: (c) => window.AudioSystem?.hasAnimalVoice?.(c),
+        renderUtterance: (c, opts) => window.AudioSystem?.playAnimalVoiceUtterance?.(c, opts),
+      });
+
       window.Combat?.init({
         player,
         players,
@@ -25804,9 +26693,12 @@
         setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
+        requestThreatGrowl: (c, reason) => window.AnimalVocalizations?.threatGrowl?.(c, reason)
+          || window.AudioSystem?.playCreatureBark?.(c),
         playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
         playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
         playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
+        playCounterShieldBlockSfx: (...a) => window.AudioSystem?.playCounterShieldBlockSfx(...a),
         // Named animal attacks (e.g. Pounce) own the creature's position
         // directly for their leap instead of going through moveCreatureToward
         // — without this, that ground covered during the leap never ticked
@@ -26010,6 +26902,7 @@
         rollItemStars,
         starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
         awardToolUseMasteryXp,
@@ -26102,6 +26995,13 @@
         clamp,
         debugLog,
         TILE,
+        // Used only for the "Show Interaction Raycast" debug overlay's
+        // head-to-target line — a bandit's own combat AI aims at real
+        // hitbox geometry (meleeAimSolution), not this.
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x, y: pos.z, worldY: pos.worldY };
+        },
         PLAYER_RADIUS,
         JUMP_BACK_DUR_S,
         JUMP_BACK_SPEED,
@@ -26159,7 +27059,15 @@
         random: rnd,
         setInteractionBlocked(blocked) {
           menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
-          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            // Same reasoning as openMenu's own call: without this, a player
+            // in shoulder-surf mode gets no visible cursor at all inside
+            // this modal (Pointer Lock hides the OS cursor and keeps
+            // streaming raw movementX/Y to threeContainer no matter what's
+            // drawn on top of it — see the mousemove guard above).
+            releaseShoulderSurfPointerLock();
+          }
         },
       });
 
@@ -26171,6 +27079,8 @@
         debugLog,
         isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
       });
+
+      window.PerkSystem?.init({ savePerkProgress });
 
       window.AlchemySystem?.init({
         ITEM_DEFS,
@@ -26568,6 +27478,25 @@
         isDevMode: () => s_devMode,
       });
 
+      window.WildernessCampfire?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getActiveScene,
+        getPlayer: () => player,
+        getFacingAngle: () => facingAngle,
+        surfaceYAt: activeSurfaceYAtWorld,
+        TILE,
+        AuthoredFurniture: window.AuthoredFurniture,
+        persist: saveMemberWorldData,
+        showToast,
+        openMenu,
+        isPaused: () => paused,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+      });
+
       window.TownZoneBuildings?.init({
         getTownZone: () => _townZone,
         debugLog,
@@ -26778,6 +27707,8 @@
         player,
         hostileObjects,
         companionObjects,
+        npcWalkers,
+        animalObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
@@ -26958,11 +27889,20 @@
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual
         // smoothed portrait face height, never the feet/body center.
-        getPlayerFaceTarget: () => ({
-          x: player.x / TILE,
-          z: player.y / TILE,
-          worldY: playerMesh.position.y + (Number(playerAvatarModelHeight) || 0.9) * PLAYER_FACE_HEIGHT_RATIO,
-        }),
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x / TILE, z: pos.z / TILE, worldY: pos.worldY };
+        },
+        // "Stare back if you focus on their head" for livestock, backed by
+        // the exact same aim-ray math ground companions use (game.js's
+        // _isPlayerFocusedOnHead). headWorldTileScale is
+        // {x, y, z} in farm tiles (x/z) + real scene worldY (y) — the same
+        // shape _farmAnimalFaceLook already builds for its debug ray.
+        isPlayerFocusedOnHead: (headWorldTileScale) => {
+          const ray = _currentPlayerLookRay();
+          if (!ray || !headWorldTileScale) return false;
+          return window.CreatureHeadCache.isRayNearPoint(ray, headWorldTileScale, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+        },
         scene,
         worldObjects,
         angleDiff,
@@ -27177,6 +28117,8 @@
         player,
         showZoneBanner,
         showToast,
+        requestCompanionDiscovery: (c, reason) => window.AnimalVocalizations?.companionDiscovery?.(c, reason)
+          || window.AudioSystem?.playCreatureTreasureAlert?.(c),
         rollLootPool,
         inventory,
         clampInventoryStack,
@@ -27316,11 +28258,17 @@
         Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
           ? { ...playerData.nonGearInventory }
           : { ...STARTING_INVENTORY });
+        // Worlds saved before the Campfire Kit blueprint joined
+        // STARTING_INVENTORY never picked it up — backfill it for free,
+        // once, same as existing characters getting the crossbow/scatterbow
+        // slots below, so it's available without a carpenter trip either way.
+        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);
+        window.PerkSystem?.restore(playerData);
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
@@ -27337,6 +28285,7 @@
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreWildernessChunkState(playerData.wildernessChunkState);
+        window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
@@ -27455,6 +28404,32 @@
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {
           console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        // Resume out in the wilderness, exactly where last session left off,
+        // if that's genuinely where the player was: a wilderness zone that
+        // still has this character's own campfire established in it (see
+        // saveMemberWorldData's lastPosition and WildernessCampfire.restore
+        // just above). Nothing else here ever moves the player away from
+        // the farm's fixed boot position, so without this a wilderness trip
+        // always reset to the farm on reload — the same reason a campfire
+        // used to be destroyed just for leaving its own map. Deliberately
+        // narrower than "resume anywhere": farm/town/interior/building all
+        // keep spawning at the usual farm default, since only the
+        // wilderness-with-an-active-camp case is actually being asked for
+        // here, and re-entering a building/cavern/NPC schedule context from
+        // a cold boot has its own preconditions this isn't set up to satisfy.
+        const _lastPos = playerData.lastPosition;
+        const _resumeCampfire = window.WildernessCampfire?.serialize?.();
+        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+            && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
+          await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
+          // enterZone already placed the player at the tile center of the
+          // col/row above — refine to the exact saved sub-tile position/
+          // facing now that the zone (and its campfire, via enterZone's own
+          // onZoneEntered call) has actually finished building.
+          player.x = _lastPos.x; player.y = _lastPos.y;
+          if (Number.isFinite(_lastPos.angle)) { player.angle = _lastPos.angle; facingAngle = _lastPos.angle; }
+          _snapCameraTarget();
         }
         gameStarted = true;
         window.__hobunjiGameStarted = true;

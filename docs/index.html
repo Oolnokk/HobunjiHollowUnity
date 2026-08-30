@@ -32,7 +32,7 @@
   <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260826headrig2"></script>
+  <script src="js/png-plane-avatar.js?v=20260829merge1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -62,9 +62,16 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260821c"></script>
+  <script src="js/creature-genetics.js?v=20260828breath1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260826headrig2"></script>
+  <script src="js/creature-genetics-render.js?v=20260828eyes1"></script>
+  <!-- Shared per-frame "where is this creature/character's head" cache — see
+       its own file header for why. No dependencies of its own; must load
+       before anything that calls window.CreatureHeadCache. -->
+  <script src="js/creature-head-cache.js?v=20260828head2"></script>
+  <!-- Per-instance eye-blink timer shared by wild/hostile creatures
+       (game.js) and farm livestock (farm-animals.js). -->
+  <script src="js/creature-blink.js?v=20260828blink1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
@@ -114,18 +121,18 @@
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
-  <script src="js/combat/combat-combo.js?v=20260825melee1"></script>
+  <script src="js/combat/combat-combo.js?v=20260829combatsfx3"></script>
   <script src="js/combat/combat-combo-streak.js?v=20260712d"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260825melee1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260712d"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260825melee1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260712d"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-flurry.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260828falloff1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260829combatsfx2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -135,13 +142,13 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260825hitbox2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260829combatsfx1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260825desktop4"></script>
+  <script src="js/bandit-camps.js?v=20260828animalvoices1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -149,12 +156,13 @@
   <script src="js/bounty-board.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260826death1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260828animalvoices1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260821alchemy1"></script>
+  <script src="js/perk-system.js?v=20260828a"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -196,7 +204,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260826rigv9xray"></script>
+  <script src="js/farm-animals.js?v=20260828breath3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -270,7 +278,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260825hitbox3"></script>
+  <script src="js/debug-hitboxes.js?v=20260828lookray1"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -350,6 +358,11 @@
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
   <script src="js/furniture-placer.js?v=20260809c"></script>
+  <!-- Player-craftable wilderness campfire (window.WildernessCampfire) —
+       only one at a time, cleared on any map change. Self-contained aside
+       from deps injected via init(); must load before game.js, which calls
+       window.WildernessCampfire.init(...) during its own setup. -->
+  <script src="js/wilderness-campfire.js?v=20260828a"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -1164,8 +1177,13 @@
             <div class="skill-row"><span class="skill-icon">🌾</span><div class="skill-name">Farming</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">🎣</span><div class="skill-name">Fishing</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">⚔️</span><div class="skill-name">Combat</div><div class="skill-level">Lv 0</div></div>
-            <div class="skill-row"><span class="skill-icon">🛠️</span><div class="skill-name">Crafting</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🍲</span><div class="skill-name">Cooking</div><div class="skill-level">Lv 0</div></div>
           </div>
+          <div class="progress-section-header perk-section-header">
+            <span class="progress-section-title">Perks</span>
+            <span class="progress-save-badge">Character-saved</span>
+          </div>
+          <div class="perk-trees" id="perkTrees"></div>
         </div>
       </div><!-- /mpProgress -->
 
@@ -1793,38 +1811,48 @@
     </div>
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
-      <!-- Put away whichever tool, item, or weapon is currently visible while
-           keeping its gear assignment/selection intact. Z mirrors this on
-           keyboard. This is the first (leftmost) outer-arch control. -->
-      <button id="btnUnequipHeld" class="abt" aria-label="Put away held tool, item, or weapon">
-        <span class="abt-icon">✋</span>
-      </button>
       <!-- Combat quick-switch: enters melee from a normal tool, then swaps
-           directly between the dedicated melee and ranged slots. -->
+           directly between the dedicated melee and ranged slots. First
+           (leftmost) outer-arch control — the dedicated put-away button
+           that used to sit here is gone; dequip is now a tap on toolBtn/
+           itemBtn while a tool/item is already held (see their pointerup
+           handlers), and Z still mirrors it on keyboard. -->
       <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
       </button>
-      <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
+      <button class="ts-btn" id="toolBtn" aria-label="Select tool, or dequip if a tool is already out" aria-expanded="false">
         <span class="ts-icon" id="toolBtnIcon">⛏️</span>
         <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
       </button>
-      <button id="itemBtn" aria-label="Select item">🌾</button>
-      <!-- Call/dismiss mount: final control on the outer ring after item
-           select. Mirrors the V key / D-pad down 'toggleMount' action;
-           .active reflects mountRideState !== 'none' (see updateMountRide). -->
+      <button id="itemBtn" aria-label="Select item, or dequip if an item is already out">🌾</button>
+      <!-- Call/dismiss mount. Mirrors the V key / D-pad down 'toggleMount'
+           action; .active reflects mountRideState !== 'none' (see
+           updateMountRide). -->
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
-      <!-- Melee auto-target toggle: sixth outer-ring control, continuing
-           the same clockwise sweep one more step past Call Mount. Melee-
-           only and hidden until a melee weapon is out (see
+      <!-- Utility menu: final SAFE control on the outer ring, taking the
+           12:00 slot Call Mount used to occupy (see the #btnUtilityMenu CSS
+           comment for why it isn't past 12:00 the way melee auto-target
+           below is — an always-visible button out there would go off-screen).
+           Hold to open the utilities wheel (Character View, Return to Camp,
+           quick-select a Campfire Kit, Return to Farm — see game.js's
+           _openUtilitiesArc)
+           and drag to pick, release to commit; a plain tap does nothing,
+           same as the desktop 'c' key it mirrors. -->
+      <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
+        <span class="abt-icon">🧭</span>
+      </button>
+      <!-- Melee auto-target toggle: sits one step past 12:00, its own
+           original position unrelated to the ring shift above (see the CSS
+           comment). Melee-only and hidden until a melee weapon is out (see
            updateMovement's weaponEngaged/activeTool checks); grayed out
            with no targetable hostile nearby, lights up white the instant
            one is (see .abt-target-ready), and turns solid red once
            actually engaged (see .active, matching the other outer-ring
            toggles' convention). Tap targets the closest hostile and turns
-           the toggle on; the hidden camera joystick's left/right then
-           swaps targets instead of rotating the camera while it's on. -->
+           the toggle on; the hidden camera joystick's left/right then swaps
+           targets instead of rotating the camera while it's on. -->
       <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
         <span class="abt-icon">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -1929,7 +1957,10 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260826treasure2"></script>
+  <script src="js/audio-system.js?v=20260829combatsfx2"></script>
+  <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
+       AudioSystem above remains the replaceable low-level renderer. -->
+  <script src="js/animal-vocalizations.js?v=20260828animalvoices3"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -1951,7 +1982,7 @@
        window.DialogueContent.init(...) during its own setup.
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
-  <script src="js/dialogue-content.js?v=20260821alchemy1"></script>
+  <script src="js/dialogue-content.js?v=20260828expr1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260825worldprompt2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
@@ -2017,7 +2048,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260828impactthrow1"></script>
+  <script src="game.js?v=20260829charviewcursor1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
