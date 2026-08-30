@@ -777,6 +777,41 @@
     return skinnedPlane.localToWorld(deformed);
   }
 
+  // Builds the live local frame at an authored portrait pixel by sampling
+  // neighboring pixels through the exact same CPU skinning path. This keeps
+  // shoulder-pet orientation consistent with the deformed PNG surface rather
+  // than assuming the neck bone is the whole attachment frame.
+  function resolveSkinnedPixelWorldFrame(avatarRoot, sourcePixel) {
+    const center = resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel);
+    if (!center) return null;
+    const pixelX = Number(sourcePixel?.x);
+    const pixelY = Number(sourcePixel?.y);
+    if (![pixelX, pixelY].every(Number.isFinite)) return null;
+    const sample = (x, y) => resolveSkinnedPixelWorldPosition(avatarRoot, { x, y });
+    const left = sample(pixelX - 1, pixelY);
+    const right = sample(pixelX + 1, pixelY);
+    const down = sample(pixelX, pixelY + 1);
+    const up = sample(pixelX, pixelY - 1);
+    if (!left || !right || !down || !up) return null;
+
+    const tangent = right.clone().sub(left);
+    const vertical = up.clone().sub(down);
+    if (tangent.lengthSq() < 1e-10 || vertical.lengthSq() < 1e-10) return null;
+    tangent.normalize();
+    vertical.addScaledVector(tangent, -vertical.dot(tangent));
+    if (vertical.lengthSq() < 1e-10) return null;
+    vertical.normalize();
+    const normal = tangent.clone().cross(vertical).normalize();
+    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    return {
+      position: center,
+      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      tangent,
+      vertical,
+      normal,
+    };
+  }
+
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
     if (!THREE) throw new Error('THREE is required to build an NPC plane avatar model.');
     if (!sourceCanvas) throw new Error('A source canvas or image is required to build an NPC plane avatar model.');
@@ -931,6 +966,7 @@
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
     resolveSkinnedPixelWorldPosition,
+    resolveSkinnedPixelWorldFrame,
   };
 })();
 
