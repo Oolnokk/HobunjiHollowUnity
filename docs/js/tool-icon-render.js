@@ -123,7 +123,7 @@
 (() => {
   'use strict';
   if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
-  const src = 'js/item-arch-sticky-category-heading.js?v=20260830a'; // Used to cache-bust the mobile edge-sentinel heading adapter independently.
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830b'; // Used to cache-bust the mobile edge-sentinel heading adapter independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
     return;
