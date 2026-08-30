@@ -9,8 +9,17 @@ assert.match(gameSource,
   /updateShoulderPetMeshPin\(\);/,
   'the gameplay loop still re-pins shoulder pets');
 assert.match(gameSource,
-  /const worldQuaternion = surfaceWorldQuaternion\.clone\(\)\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
-  'rig-anchored shoulder pets compose the live skinned surface, authored perch, and inverse grip rotations');
+  /const worldQuaternion = selectedRotationQuaternion\.clone\(\)\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
+  'shoulder pets compose the selected rotation frame, authored perch, and inverse grip rotations');
+for (const source of ['pixel', 'body', 'head', 'world']) {
+  assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);
+}
+assert.match(gameSource,
+  /if \(s_invertShoulderPetRotationSource\) selectedRotationQuaternion\.invert\(\);/,
+  'the inversion toggle inverses whichever rotation frame is selected');
+assert.match(gameSource,
+  /settingDisableShoulderFrontXray[\s\S]{0,900}settingDisableShoulderBackXray/,
+  'front and back shoulder x-ray controls remain independently wired');
 assert.match(gameSource,
   /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
   'the authored perch position is aligned to the pet grip after surface resolution');
