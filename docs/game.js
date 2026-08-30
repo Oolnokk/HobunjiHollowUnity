@@ -5289,6 +5289,31 @@
       const STAGE_BACKUP_S = 2;
       const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
       const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
+      // Default head-yaw turn budget for a creature with no custom-authored
+      // head rig (see png-plane-avatar.js's DEFAULT_LIMITS, which caps an
+      // unauthored rig's own minDeg/maxDeg — and therefore updateHeadYaw's
+      // internal clamp — at exactly this same ±30°). Used both as
+      // _updateCreatureHeadLookAtWorldPoint's ordinary chase-correction
+      // budget (a deliberately modest nudge, not an anatomy claim) and as
+      // creatureHeadYawLimitDeg's fallback before an avatar's real rig has
+      // mounted yet.
+      const CREATURE_HEAD_YAW_LIMIT_DEG = 30;
+
+      // The actual "how far can this specific creature turn its head off
+      // its own body" figure, straight from its authored head rig (the
+      // Animal Head Rig Author tool's minDeg/maxDeg — reused as the yaw
+      // range too, see png-plane-avatar.js's own yawLimitDeg) — falling
+      // back to the same default any unauthored rig uses. This is the real
+      // per-species anatomical budget evasiveOrbit checks against to decide
+      // whether a sidestep can plausibly keep eye contact on the target, as
+      // opposed to CREATURE_HEAD_YAW_LIMIT_DEG's own deliberately tighter
+      // ordinary-chase tuning value above.
+      function creatureHeadYawLimitDeg(c) {
+        const rig = c.avatarRef?.headRig?.rig;
+        if (!rig) return CREATURE_HEAD_YAW_LIMIT_DEG;
+        const limit = Math.max(Math.abs(Number(rig.minDeg) || 0), Math.abs(Number(rig.maxDeg) || 0));
+        return limit > 0 ? limit : CREATURE_HEAD_YAW_LIMIT_DEG;
+      }
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
@@ -5353,7 +5378,19 @@
           const moveX = c.x + Math.cos(blendAngle) * TILE, moveY = c.y + Math.sin(blendAngle) * TILE;
           const moving = moveCreatureToward(c, moveX, moveY, def.chaseSpeed * 0.85, dt);
           if (st.t >= STAGE_MAX_DURATION_S.evasiveOrbit) beginCreatureBackup(st);
-          return { aimAngle: towardAngle, moving };
+          // Body normally turns to face the direction it's actually
+          // sidestepping in, same as any other moving creature — the head
+          // (see _updateCreatureHeadLookAtCombatTarget, which reads c.facing
+          // as its baseline) independently tracks the target on top of that
+          // within its own yaw budget. Movement itself (moveX/moveY above)
+          // never changes; only which way is a real neck twist away from
+          // the target decides whether the body ALSO gets to face that way.
+          // When it isn't, keep the body (and so the head, trivially) facing
+          // the target instead — reads as backpedaling/strafing backward
+          // rather than a body no head could actually keep up with.
+          const yawNeededDeg = Math.abs(angleDiff(towardAngle, blendAngle)) * 180 / Math.PI;
+          const bodyAngle = yawNeededDeg <= creatureHeadYawLimitDeg(c) ? blendAngle : towardAngle;
+          return { aimAngle: bodyAngle, moving };
         }
 
         return { aimAngle: towardAngle, moving: false };
@@ -5769,7 +5806,14 @@
             const combatTarget = c.state === 'patrol-chase' ? c.targetCreature
               : c.state === 'chase' ? c.targetPlayer
               : null;
-            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt);
+            // evasiveOrbit's own body-facing decision (see
+            // updateCreatureBehaviorStage) already checked whether this
+            // creature's real per-species head range reaches the target
+            // from wherever its body ends up — reuse that same wider
+            // budget here so the visual head yaw isn't separately capped
+            // back down to the tighter ordinary-chase default underneath it.
+            const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? creatureHeadYawLimitDeg(c) : undefined);
             else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
@@ -6059,7 +6103,7 @@
       // _updateCreatureLookAtFace's math exactly, just generalized to any
       // combat target (player or another creature) via
       // _combatTargetHeadWorld instead of always assuming the player.
-      function _updateCreatureHeadLookAtCombatTarget(c, target, dt) {
+      function _updateCreatureHeadLookAtCombatTarget(c, target, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
         if (!target) {
           _restoreCompanionHead(c, dt);
           if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
@@ -6074,7 +6118,12 @@
         // head can visibly undershoot exactly where the target's face is
         // even once the body looks "close enough," reading as not locked
         // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
-        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt);
+        // yawLimitDeg defaults to the ordinary-chase budget — evasiveOrbit's
+        // caller below passes the creature's real creatureHeadYawLimitDeg
+        // instead, since a sidestep only ever gets a body facing its
+        // movement direction (rather than the target) when that wider,
+        // per-species-authored turn is enough to still reach the target.
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt, yawLimitDeg);
       }
 
       // The shared "aim my head at this exact world point" core both
@@ -6084,7 +6133,7 @@
       // with no entity behind it at all. Pulled out of
       // _updateCreatureHeadLookAtCombatTarget so both share the exact same
       // pitch+yaw+debug-ray math instead of a hand copy.
-      function _updateCreatureHeadLookAtWorldPoint(c, head, dt) {
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
         const dx = head.x - c.x, dy = head.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
@@ -6095,7 +6144,7 @@
         if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
           const rawBearing = Math.atan2(dy, dx);
           const residualRad = angleDiff(rawBearing, c.facing || 0);
-          const yawDeg = Math.max(-30, Math.min(30, residualRad * 180 / Math.PI));
+          const yawDeg = Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
           c.avatarRef.updateHeadYaw(yawDeg, dt);
         }
       }
