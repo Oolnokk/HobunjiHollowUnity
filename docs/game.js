@@ -6150,19 +6150,45 @@
         playerMesh.updateWorldMatrix?.(true, false);
         const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
         const perchWorldPosition = perchFrame?.position
-          || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Rigid/legacy avatars retain the authored body-local fallback.
-        const surfaceWorldQuaternion = perchFrame?.quaternion
-          || playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Only the fallback uses the body frame; skinned avatars use the sampled live surface frame.
-        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Preserves the authored shoulderPerch rotation inside the live surface frame.
+          || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
+        let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
+        let resolvedRotationSource = s_shoulderPetRotationSource;
+        switch (s_shoulderPetRotationSource) {
+          case 'body':
+            selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
+            resolvedRotationSource = 'player-body';
+            break;
+          case 'head': {
+            const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
+            headRotationSource.updateWorldMatrix?.(true, false);
+            selectedRotationQuaternion = headRotationSource.getWorldQuaternion(new THREE.Quaternion());
+            resolvedRotationSource = headRotationSource === playerNeckJoint ? 'player-head-neck' : 'player-body-fallback-no-neck';
+            break;
+          }
+          case 'world':
+            selectedRotationQuaternion = new THREE.Quaternion();
+            resolvedRotationSource = 'world-aligned';
+            break;
+          case 'pixel':
+          default:
+            selectedRotationQuaternion = perchFrame?.quaternion?.clone()
+              || playerMesh.getWorldQuaternion(new THREE.Quaternion());
+            resolvedRotationSource = perchFrame ? 'player-authored-skinned-surface' : 'player-body-fallback-no-skinned-frame';
+            break;
+        }
+        if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
+        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Preserves the authored shoulderPerch rotation inside the selected frame.
         const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
-        const worldQuaternion = surfaceWorldQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet root orientation: live surface × perch × inverse grip.
+        const worldQuaternion = selectedRotationQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet orientation: optionally-inverted selected frame × perch × inverse grip.
         const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
-          surfaceWorldQuaternion,
+          rotationFrameWorldQuaternion: selectedRotationQuaternion,
           perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
-          rotationSource: perchFrame ? 'player-authored-skinned-surface' : 'player-body-fallback',
+          rotationSource: resolvedRotationSource,
+          requestedRotationSource: s_shoulderPetRotationSource,
+          rotationSourceInverted: s_invertShoulderPetRotationSource,
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -7219,14 +7245,14 @@
         const parentWorldQuaternion = parent?.getWorldQuaternion
           ? parent.getWorldQuaternion(new THREE.Quaternion())
           : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
-        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the requested face-relative world rotation.
+        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
         const localPosition = parent?.worldToLocal
           ? parent.worldToLocal(finalTransform.worldPosition.clone())
           : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
         group.position.copy(localPosition);
         group.quaternion.copy(localQuaternion);
         // updateCreatureMesh authored the inner planes against c.groupRot,
-        // but the face-relative attachment can now replace the root's full
+        // but the selected attachment frame can now replace the root's full
         // pitch/yaw/roll in this later pass. The onBeforeRender compensation
         // in png-plane-avatar.js owns the exact world-facing plane matrix;
         // this Euler write remains the first-frame/legacy fallback.
@@ -7240,7 +7266,9 @@
           rotationSource: finalTransform.rotationSource,
           positionSource: finalTransform.perchPositionSource,
           expectedWorldPosition: finalTransform.worldPosition.toArray(),
-          surfaceWorldQuaternion: finalTransform.surfaceWorldQuaternion?.toArray?.() || null,
+          requestedRotationSource: finalTransform.requestedRotationSource,
+          rotationSourceInverted: finalTransform.rotationSourceInverted,
+          rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
         };
       }
@@ -7251,7 +7279,7 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const finalTransform = _shoulderPetSurfaceTransform(perch, grip); // Composes live face × authored perch × inverse authored grip.
+            const finalTransform = _shoulderPetSurfaceTransform(perch, grip); // Composes the selected live frame × authored perch × inverse authored grip.
             _applyShoulderPetFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
@@ -22590,6 +22618,8 @@
       let s_disableHatXray = false;
       let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
+      let s_shoulderPetRotationSource = 'pixel'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
+      let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
 
       let _pathBrickCullAccum = 0;
 
@@ -22641,6 +22671,13 @@
       document.getElementById('settingDisableShoulderBackXray')?.addEventListener('change', e => {
         s_disableShoulderBackXray = e.target.checked;
         updatePetLayering(_petLayeringActive, _petLayeringPet);
+      });
+      document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
+        const requestedSource = String(e.target.value || 'pixel'); // Used here to reject stale or manually-edited DOM values.
+        s_shoulderPetRotationSource = ['pixel', 'body', 'head', 'world'].includes(requestedSource) ? requestedSource : 'pixel';
+      });
+      document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
+        s_invertShoulderPetRotationSource = e.target.checked;
       });
       document.getElementById('settingDepthOutlines').addEventListener('change', e => {
         s_depthOutlines = e.target.checked;
