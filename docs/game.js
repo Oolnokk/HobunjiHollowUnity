@@ -37,6 +37,7 @@
       const spTile    = document.getElementById('spTile');
       const spWater   = document.getElementById('spWater');
       const spGold    = document.getElementById('spGold');
+      const spGoldAmount = document.getElementById('spGoldAmount');
 
       // Menu
       const menuBtn        = document.getElementById('menuBtn');
@@ -11609,8 +11610,8 @@
         }
 
         // Refresh wallet
-        const wd = document.getElementById('invWalletDisplay');
-        if (wd) wd.textContent = (inventory.gold || 0) + 'g';
+        const wd = document.getElementById('invWalletAmount');
+        if (wd) wd.textContent = (inventory.gold || 0);
 
         if (invSelectedKey && keys.includes(invSelectedKey)) selectInventoryItem(invSelectedKey, true);
         else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
@@ -11684,7 +11685,7 @@
               inventory.gold = (inventory.gold || 0) + earned;
               delete inventory[key];
               showToast(`Sold all ${def.label} for ${earned}g`, true);
-              if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+              if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
@@ -11693,7 +11694,7 @@
               inventory[key]--; inventory.gold = (inventory.gold || 0) + def.sellPrice;
               clampInventoryStack(key);
               showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
-              if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+              if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
@@ -21169,7 +21170,7 @@
         spWater.style.color  = waterPct > 80 ? '#4488ff'
                              : waterPct > 40 ? '#6ec6f0'
                              : waterPct > 10 ? '#aaddee' : '#888';
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+        if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
 
         // Desktop: show active item in status pill (item scroll is hidden)
         if (isDesktop) {
@@ -21189,8 +21190,8 @@
         refreshActionBar();
         if (menuOpen) {
           // Keep wallet display live while menu is open
-          const wd = document.getElementById('invWalletDisplay');
-          if (wd) wd.textContent = (inventory.gold || 0) + 'g';
+          const wd = document.getElementById('invWalletAmount');
+          if (wd) wd.textContent = (inventory.gold || 0);
         }
       }
 

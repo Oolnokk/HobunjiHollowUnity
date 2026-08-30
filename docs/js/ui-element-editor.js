@@ -27,6 +27,8 @@
     { key: 'fontWeight',     label: 'Font Weight',      type: 'select', options: ['', '300', '400', '500', '600', '700', '800', '900'] },
     { key: 'fontFamily',     label: 'Font Family',      type: 'text',   cssProp: 'fontFamily' },
     { key: 'color',          label: 'Text Color',       type: 'color',  cssProp: 'color' },
+    { key: 'textStrokeWidth',label: 'Outline Width',    type: 'number', unit: 'px', min: 0, max: 20, step: 0.5, cssProp: 'webkitTextStrokeWidth' },
+    { key: 'textStrokeColor',label: 'Outline Color',    type: 'color',  cssProp: 'webkitTextStrokeColor' },
     { key: 'backgroundColor',label: 'Background Color', type: 'color',  cssProp: 'backgroundColor' },
     { key: 'borderColor',    label: 'Border Color',     type: 'color',  cssProp: 'borderColor' },
     { key: 'borderWidth',    label: 'Border Width',     type: 'number', unit: 'px', min: 0,    max: 60,  step: 1,    cssProp: 'borderWidth' },
@@ -49,6 +51,7 @@
     borderWidth: 'border-width', borderRadius: 'border-radius', opacity: 'opacity',
     padding: 'padding', width: 'width', height: 'height', left: 'left', top: 'top',
     letterSpacing: 'letter-spacing', lineHeight: 'line-height', textAlign: 'text-align',
+    textStrokeWidth: '-webkit-text-stroke-width', textStrokeColor: '-webkit-text-stroke-color',
   };
 
   // Elements taken out of document flow ("floating") can be dragged and
@@ -65,6 +68,7 @@
   let shown = false;
   let mode = 'collapsed'; // 'collapsed' | 'picking' | 'expanded'
   let selectedEl = null, selectedSelector = null;
+  let instanceSelector = null, classSelector = null, targetMode = 'instance';
   let rafHandle = null, saveTimer = null, mutationScheduled = false;
   let observer = null;
   let listenersOn = false;
@@ -105,7 +109,14 @@
   }
 
   // ── selector generation ─────────────────────────────────────────────
-  function getStableSelector(el) {
+  // classWide=false (default) pins to this exact element via :nth-of-type
+  // at every ambiguous level — good for one-off/instance edits (nudging a
+  // specific item icon). classWide=true drops those qualifiers so the
+  // selector matches every sibling with the same tag+class shape instead
+  // — good for template-wide edits (every inventory slot, the currency
+  // readout regardless of which number is showing), still scoped under
+  // the nearest id-rooted ancestor so it doesn't leak elsewhere in the page.
+  function getStableSelector(el, classWide) {
     if (el === document.body) return 'body';
     if (el.id) return '#' + CSS.escape(el.id);
     const parts = [];
@@ -115,10 +126,12 @@
       let part = node.tagName.toLowerCase();
       const cls = Array.from(node.classList || []).filter(c => c && !c.startsWith('ui-editor'));
       if (cls.length) part += '.' + cls.map(c => CSS.escape(c)).join('.');
-      const parent = node.parentElement;
-      if (parent) {
-        const sameTag = Array.from(parent.children).filter(c => c.tagName === node.tagName);
-        if (sameTag.length > 1) part += `:nth-of-type(${sameTag.indexOf(node) + 1})`;
+      if (!classWide) {
+        const parent = node.parentElement;
+        if (parent) {
+          const sameTag = Array.from(parent.children).filter(c => c.tagName === node.tagName);
+          if (sameTag.length > 1) part += `:nth-of-type(${sameTag.indexOf(node) + 1})`;
+        }
       }
       parts.unshift(part);
       node = node.parentElement;
@@ -334,11 +347,35 @@
     selectElement(selectedEl.parentElement);
   }
 
-  function selectElement(el) {
-    selectedEl = el;
-    selectedSelector = getStableSelector(el);
+  function updateSelectedPathDisplay() {
     const pathEl = document.getElementById('uiEditorSelectedPath');
     if (pathEl) pathEl.textContent = selectedSelector;
+  }
+
+  function updateTargetRow() {
+    const row = document.getElementById('uiEditorTargetRow');
+    const select = document.getElementById('uiEditorTargetMode');
+    if (!row || !select) return;
+    row.hidden = classSelector === instanceSelector;
+    select.value = targetMode;
+  }
+
+  function onTargetModeChange(value) {
+    if (!selectedEl) return;
+    targetMode = value === 'class' ? 'class' : 'instance';
+    selectedSelector = targetMode === 'class' ? classSelector : instanceSelector;
+    updateSelectedPathDisplay();
+    renderFields(selectedEl, selectedSelector);
+  }
+
+  function selectElement(el) {
+    selectedEl = el;
+    instanceSelector = getStableSelector(el, false);
+    classSelector = getStableSelector(el, true);
+    targetMode = 'instance';
+    selectedSelector = instanceSelector;
+    updateSelectedPathDisplay();
+    updateTargetRow();
     renderFields(el, selectedSelector);
     setMode('expanded');
   }
@@ -604,6 +641,13 @@
         </div>
         <div class="ui-editor-tab-body" id="uiEditorTabBody" hidden>
           <div class="ui-editor-selected-path" id="uiEditorSelectedPath">No element selected</div>
+          <div class="ui-editor-field-row" id="uiEditorTargetRow" hidden title="This element repeats (siblings share its shape) — choose whether edits apply to just this one or to every element like it, e.g. one inventory item icon vs. every item slot, or this instance of the gold count vs. however the currency text always looks">
+            <label class="ui-editor-field-label">Apply to</label>
+            <select id="uiEditorTargetMode">
+              <option value="instance">This one only</option>
+              <option value="class">All like this</option>
+            </select>
+          </div>
           <div class="ui-editor-toolbar">
             <button type="button" id="uiEditorPickAgainBtn" class="settings-small-btn">Pick New</button>
             <button type="button" id="uiEditorParentBtn" class="settings-small-btn" title="Select this element's parent — useful for containers with no exposed area of their own, like a panel whose header/content fill it edge to edge">Parent ↑</button>
@@ -623,6 +667,7 @@
     selectBox.addEventListener('pointerdown', onSelectBoxPointerDown);
 
     root.querySelector('#uiEditorTabHead').addEventListener('click', onTabHeadClick);
+    root.querySelector('#uiEditorTargetMode').addEventListener('change', (e) => onTargetModeChange(e.target.value));
     root.querySelector('#uiEditorPickAgainBtn').addEventListener('click', (e) => { e.stopPropagation(); setMode('picking'); });
     root.querySelector('#uiEditorParentBtn').addEventListener('click', (e) => { e.stopPropagation(); selectParent(); });
     root.querySelector('#uiEditorResetElBtn').addEventListener('click', (e) => {
