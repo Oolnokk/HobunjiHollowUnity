@@ -454,7 +454,15 @@
   const SIMPLE_HYDRA_DELAY_S = 5;
   const SIMPLE_HYDRA_DEFAULT_BURN_S = 8;
 
-  function simpleHydraPoint(rec) {
+  function simpleHydraPoint(rec, exterior = false) {
+    if (exterior) {
+      const angle = deps.rnd() * Math.PI * 2;
+      const distance = deps.TILE * (1.0 + deps.rnd() * 2.6);
+      return {
+        x: rec.homeX + Math.cos(angle) * distance,
+        y: rec.homeY + Math.sin(angle) * distance,
+      };
+    }
     const tents = rec.props.filter(o => o.type === 'tent' && !o.destroyed);
     const tent = tents.length ? tents[Math.floor(deps.rnd() * tents.length)] : null;
     if (!tent) return { x: rec.homeX, y: rec.homeY };
@@ -473,9 +481,9 @@
     return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
   }
 
-  async function spawnSimpleHydraBandit(rec, rank, nameOverride) {
+  async function spawnSimpleHydraBandit(rec, rank, nameOverride, exterior = false) {
     if (rec.zoneId !== deps.getCurrentArea()) return null;
-    const point = simpleHydraPoint(rec);
+    const point = simpleHydraPoint(rec, exterior);
     const c = await window.BanditCombat.makeEntity(rec.cfg, rank, rec.tier, point.x, point.y, {
       zoneId: rec.zoneId,
       extra: {
@@ -632,21 +640,23 @@
     rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
       || window.BanditCombat.randomName?.('captain')
       || 'Bandit Captain';
-    const first = await spawnSimpleHydraBandit(
-      rec,
-      'grunt',
-    );
-    if (!first) {
-      window.__farmLog?.('[bandits] simple hydra: initial guard could not spawn.', 'warn');
+    const initialGuardCount = Math.min(2, rec.reserveByRank.grunt);
+    let initialGuards = 0;
+    for (let i = 0; i < initialGuardCount; i++) {
+      const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true);
+      if (guard) initialGuards++;
+    }
+    if (!initialGuards) {
+      window.__farmLog?.('[bandits] simple hydra: initial guards could not spawn.', 'warn');
     }
     const total = grunts + lieutenants + rec.reserveByRank.captain;
     window.__farmLog?.(
       '[bandits] zone "' + zoneId + '": camp ' + instance.id
-        + ' staged with one exterior guard; ' + Math.max(0, total - 1)
+        + ' staged with ' + initialGuards + ' exterior guard(s); ' + Math.max(0, total - initialGuards)
         + ' supporting bandit(s) remain in the simple tent sequence.',
       'wildlife',
     );
-    if (first && zoneId === deps.getCurrentArea()) {
+    if (initialGuards && zoneId === deps.getCurrentArea()) {
       deps.showToast('Smoke on the wind — a bandit camp is nearby.', false);
     }
     return instance;
