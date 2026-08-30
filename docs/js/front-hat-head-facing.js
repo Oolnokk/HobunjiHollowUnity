@@ -52,7 +52,7 @@
 
   function hasHat(profile) {
     const hat = profile?.hat;
-    return !!(hat && hat.id && hat.id !== 'none' && resolvedLayers(hat, profile).length);
+    return !!(hat && hat.specialHeadwearRules !== false && hat.id && hat.id !== 'none' && resolvedLayers(hat, profile).length);
   }
 
   function hatHasRearLayer(profile) {
@@ -121,6 +121,7 @@
       const hatlessTexture = new THREE.CanvasTexture(hatlessCanvas);
       if ('colorSpace' in hatlessTexture && THREE.SRGBColorSpace) hatlessTexture.colorSpace = THREE.SRGBColorSpace;
       hatlessTexture.needsUpdate = true;
+      avatarApi.trackPortraitTexture?.(THREE, hatlessTexture, 'front');
       const facingUniform = { value: 1 };
       const previousOnBeforeCompile = material.onBeforeCompile;
       const previousProgramKey = typeof material.customProgramCacheKey === 'function'
