@@ -110,6 +110,12 @@
       if (player) targets.push({ kind: 'player', ref: player });
     }
     for (const companion of deps.companionObjects || []) {
+      // A shoulder pet rides on the player's own body, not a separate
+      // ground position — it's never a legitimate independent target for
+      // a shot aimed at the player, so exclude it here the same way the
+      // rest of the game treats it as part of the player's silhouette
+      // (see game.js's updatePetLayering/_avatarDepthParticipants).
+      if (companion.stableRole === 'shoulderPet') continue;
       if (companion.health > 0 && companion.areaId === creature.areaId) targets.push({ kind: 'creature', ref: companion });
     }
     return targets;
