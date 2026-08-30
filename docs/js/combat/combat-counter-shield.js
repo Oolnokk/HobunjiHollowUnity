@@ -24,6 +24,10 @@
   let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
   let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
 
+  // Counter Shield is intentionally weapon-only: four additive alpha-shaped
+  // layers sit behind the real weapon PNG. The legacy field/icon objects are
+  // left owned by the shared renderer for state compatibility, but forced
+  // invisible every frame so no bubble/emblem leaks into gameplay.
   const FIELD_COLOR = 0x75d9ff;
   const GLOW_LAYERS = [
     { scale: 1.025, opacity: 0.72, pulse: 0.05 },
@@ -245,9 +249,6 @@
     const scene = window.Combat.deps?.getActiveScene?.();
     if (!scene?.isScene) return;
 
-    // Counter Shield is intentionally weapon-only now. The shared renderer may
-    // still own a field object for compatibility with enemy/player state, but
-    // that object and every old icon/projection child remain fully hidden.
     hideCounterShieldFields(scene);
 
     const visibleGlowGroups = collectNamedVisible(scene, 'counter-shield-weapon-glow');
