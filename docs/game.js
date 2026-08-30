@@ -6177,9 +6177,10 @@
             break;
         }
         if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
-        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Preserves the authored shoulderPerch rotation inside the selected frame.
-        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
-        const worldQuaternion = selectedRotationQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet orientation: optionally-inverted selected frame × perch × inverse grip.
+        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
+        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
+        const worldQuaternion = selectedRotationQuaternion.clone();
+        if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(perchQuaternion).multiply(inverseGripQuaternion); // Optional offset cancellation keeps only the selected frame while placement still aligns the authored grip position.
         const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
@@ -6191,6 +6192,7 @@
           rotationSource: resolvedRotationSource,
           requestedRotationSource: s_shoulderPetRotationSource,
           rotationSourceInverted: s_invertShoulderPetRotationSource,
+          rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -6808,7 +6810,7 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray') || child.name.includes('shoulder_pet_xray')) return;
           // A neck-rigged portrait is one SkinnedMesh with separate front/back
           // materials in an array; rigid fallback portraits still expose one
           // material per mesh. Flatten both shapes for the depth arbiter.
@@ -6898,6 +6900,8 @@
         _petLayeringPet = active ? pet : null;
         _setLayerDepthWrite(_playerAvatarFrontMaterial, !active || s_disableShoulderFrontXray);
         _setLayerDepthWrite(_playerAvatarBackMaterial, !active || s_disableShoulderBackXray);
+        if (_playerShoulderXrayFrontMesh) _playerShoulderXrayFrontMesh.visible = !!active && s_frontSpriteXrayThroughShoulderPet;
+        if (_playerShoulderXrayBackMesh) _playerShoulderXrayBackMesh.visible = !!active && s_backSpriteXrayThroughShoulderPet;
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
         for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
@@ -7281,6 +7285,7 @@
           authoritativeRootTransform: true,
           requestedRotationSource: finalTransform.requestedRotationSource,
           rotationSourceInverted: finalTransform.rotationSourceInverted,
+          rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
         };
@@ -8755,6 +8760,8 @@
       // attached pet's depth pass without affecting ordinary world occlusion.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
+      let _playerShoulderXrayFrontMesh = null; // Face-only overlay shown after the pet when front-sprite X-ray is enabled.
+      let _playerShoulderXrayBackMesh = null; // Face-only overlay shown after the pet when back-sprite X-ray is enabled.
       // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
       // cleared in refreshPlayerAvatar (the only place the avatar's mesh
       // hierarchy is rebuilt), so a stable hierarchy isn't re-traversed
@@ -14620,6 +14627,8 @@
         _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
+        _playerShoulderXrayFrontMesh = null;
+        _playerShoulderXrayBackMesh = null;
         // The old front/back materials this pointed at are about to be
         // disposed by removePlayerAvatarChildren below, and a brand new
         // pair (default depthWrite:true) is coming — force updatePetLayering
@@ -14676,6 +14685,52 @@
         _playerAvatarBackMaterial = _skinnedBodyMaterials?.[1] || _bodyAssembly?.children?.[1]?.material || null;
         if (_skinnedBodyPlane) _skinnedBodyPlane.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
         else if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        const buildShoulderPetBodyXrayOverlay = facingBack => {
+          const materialIndex = facingBack ? 1 : 0; // Selects the requested face from the shared skinned body or rigid fallback pair.
+          const sourceMesh = _skinnedBodyPlane || _bodyAssembly?.children?.[materialIndex];
+          const sourceMaterial = facingBack ? _playerAvatarBackMaterial : _playerAvatarFrontMaterial;
+          if (!sourceMesh?.geometry || !sourceMaterial) return null;
+          const overlayMaterial = sourceMaterial.clone(); // Independent depth/render state for this face-only shoulder-pet overlay.
+          if (sourceMaterial.map) {
+            overlayMaterial.map = sourceMaterial.map.clone(); // Avoids shared-texture disposal when the avatar is rebuilt.
+            overlayMaterial.map.needsUpdate = true;
+          }
+          overlayMaterial.depthWrite = false;
+          overlayMaterial.depthTest = true; // World geometry still occludes the explicit X-ray overlay.
+          overlayMaterial.name = `player_avatar_${facingBack ? 'back' : 'front'}_shoulder_pet_xray_material`;
+          const overlayGeometry = sourceMesh.geometry.clone(); // Face-only geometry owned by this overlay.
+          let overlayMesh;
+          if (_skinnedBodyPlane) {
+            const sourceGroup = sourceMesh.geometry.groups[materialIndex];
+            if (!sourceGroup) {
+              overlayGeometry.dispose();
+              overlayMaterial.map?.dispose();
+              overlayMaterial.dispose();
+              return null;
+            }
+            overlayGeometry.clearGroups();
+            overlayGeometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
+            overlayMaterial.skinning = true;
+            overlayMesh = new THREE.SkinnedMesh(overlayGeometry, overlayMaterial);
+            overlayMesh.position.copy(sourceMesh.position);
+            overlayMesh.quaternion.copy(sourceMesh.quaternion);
+            overlayMesh.scale.copy(sourceMesh.scale);
+            overlayMesh.bind(sourceMesh.skeleton, sourceMesh.bindMatrix);
+          } else {
+            overlayMesh = new THREE.Mesh(overlayGeometry, overlayMaterial);
+            overlayMesh.position.copy(sourceMesh.position);
+            overlayMesh.quaternion.copy(sourceMesh.quaternion);
+            overlayMesh.scale.copy(sourceMesh.scale);
+          }
+          overlayMesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_shoulder_pet_xray_plane`;
+          overlayMesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER + 1;
+          overlayMesh.frustumCulled = false;
+          overlayMesh.visible = false;
+          _bodyAssembly.add(overlayMesh);
+          return overlayMesh;
+        };
+        _playerShoulderXrayFrontMesh = buildShoulderPetBodyXrayOverlay(false);
+        _playerShoulderXrayBackMesh = buildShoulderPetBodyXrayOverlay(true);
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
@@ -22633,6 +22688,9 @@
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
       let s_shoulderPetRotationSource = 'pixel'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
       let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
+      let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
+      let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
+      let s_backSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a back-face-only player overlay after the pet.
 
       let _pathBrickCullAccum = 0;
 
@@ -22691,6 +22749,17 @@
       });
       document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
         s_invertShoulderPetRotationSource = e.target.checked;
+      });
+      document.getElementById('settingCancelShoulderPetRotationalOffset')?.addEventListener('change', e => {
+        s_cancelShoulderPetRotationalOffset = e.target.checked;
+      });
+      document.getElementById('settingFrontSpriteXrayThroughShoulderPet')?.addEventListener('change', e => {
+        s_frontSpriteXrayThroughShoulderPet = e.target.checked;
+        updatePetLayering(_petLayeringActive, _petLayeringPet);
+      });
+      document.getElementById('settingBackSpriteXrayThroughShoulderPet')?.addEventListener('change', e => {
+        s_backSpriteXrayThroughShoulderPet = e.target.checked;
+        updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       document.getElementById('settingDepthOutlines').addEventListener('change', e => {
         s_depthOutlines = e.target.checked;
