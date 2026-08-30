@@ -23,6 +23,49 @@
   const avatarApi = global.PNGPlaneAvatar;
   if (!THREE || !avatarApi?.buildSinglePlaneAvatarModel || avatarApi.buildSinglePlaneAvatarModel.__hobunjiPortraitOutlineParityWrapped) return;
 
+  const SHOULDER_PERCH_MIRROR_STORAGE_KEY = 'hobunjiMirrorShoulderPerchWithPortrait'; // Persists whether authored shoulder pixels follow the presentation-only horizontal portrait flip.
+  let mirrorShoulderPerchWithPortrait = true; // Current behavior stays the default; disabling restores the pre-fix unmirrored authored pixel X.
+  try {
+    const saved = global.localStorage?.getItem?.(SHOULDER_PERCH_MIRROR_STORAGE_KEY);
+    if (saved !== null && saved !== undefined) mirrorShoulderPerchWithPortrait = saved !== '0';
+  } catch (_) {}
+
+  function setMirrorShoulderPerchWithPortrait(enabled, options = {}) {
+    mirrorShoulderPerchWithPortrait = !!enabled;
+    if (options.persist !== false) {
+      try { global.localStorage?.setItem?.(SHOULDER_PERCH_MIRROR_STORAGE_KEY, mirrorShoulderPerchWithPortrait ? '1' : '0'); } catch (_) {}
+    }
+    const checkbox = global.document?.getElementById?.('settingMirrorShoulderPerchWithPortrait');
+    if (checkbox && checkbox.checked !== mirrorShoulderPerchWithPortrait) checkbox.checked = mirrorShoulderPerchWithPortrait;
+    return mirrorShoulderPerchWithPortrait;
+  }
+
+  function installShoulderPerchMirrorSetting() {
+    const doc = global.document;
+    if (!doc || doc.getElementById('settingMirrorShoulderPerchWithPortrait')) return;
+    const rotationSelect = doc.getElementById('settingShoulderPetRotationSource');
+    const rotationRow = rotationSelect?.closest?.('.settings-row');
+    if (!rotationRow?.parentNode) return;
+
+    const row = doc.createElement('label');
+    row.className = 'settings-row';
+    row.innerHTML = `
+      <div class="settings-label">
+        <div class="settings-name">Mirror Shoulder-Pet Perch with Portrait</div>
+        <div class="settings-desc">When PNG portraits are horizontally flipped, mirror the authored shoulder-perch pixel to the matching visible shoulder. Turn this off to keep the original authored pixel X.</div>
+      </div>
+      <span class="settings-toggle"><input type="checkbox" id="settingMirrorShoulderPerchWithPortrait"><span class="toggle-slider"></span></span>`;
+    rotationRow.parentNode.insertBefore(row, rotationRow);
+    const checkbox = row.querySelector('#settingMirrorShoulderPerchWithPortrait');
+    checkbox.checked = mirrorShoulderPerchWithPortrait;
+    checkbox.addEventListener('change', event => setMirrorShoulderPerchWithPortrait(event.target.checked));
+  }
+
+  if (global.document) {
+    if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', installShoulderPerchMirrorSetting, { once: true });
+    else installShoulderPerchMirrorSetting();
+  }
+
   // The shared source-pixel resolver in png-plane-avatar.js is also a render-parity
   // path: it must reproduce the SkinnedMesh shader's deformation on the CPU before
   // converting the result to world space. The old implementation multiplied a
@@ -52,7 +95,9 @@
       if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
         || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
 
-      const renderedPixelX = avatarApi.getPortraitsFlipped?.() ? pixelWidth - pixelX : pixelX;
+      const renderedPixelX = mirrorShoulderPerchWithPortrait && avatarApi.getPortraitsFlipped?.()
+        ? pixelWidth - pixelX
+        : pixelX; // Toggle off preserves the authored source X exactly as it behaved before portrait-aware perch mirroring.
       const localPoint = new THREE.Vector3(
         -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
         modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
@@ -246,6 +291,9 @@
   }
 
   global.HobunjiPortraitOutlineParity = Object.freeze({
+    SHOULDER_PERCH_MIRROR_STORAGE_KEY,
+    getMirrorShoulderPerchWithPortrait: () => mirrorShoulderPerchWithPortrait,
+    setMirrorShoulderPerchWithPortrait,
     getDebug() {
       return {
         activeRoots: activeRoots.size,
@@ -254,6 +302,7 @@
         missedDepthSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         skinnedPixelCpuParity: !!avatarApi.__hobunjiSkinnedPixelCpuParityInstalled,
+        mirrorShoulderPerchWithPortrait,
       };
     },
   });
