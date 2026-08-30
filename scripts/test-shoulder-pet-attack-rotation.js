@@ -20,21 +20,19 @@ assert.match(gameSource,
 assert.match(gameSource,
   /if \(!s_cancelShoulderPetRotationalOffset\) worldQuaternion\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
   'the rotational-offset checkbox can omit only the authored perch and inverse-grip corrections');
+assert.doesNotMatch(gameSource,
+  /buildShoulderPetBodyXrayOverlay|shoulderPetXrayLocalNormalZ|SHOULDER_PET_STENCIL_BIT/,
+  'shoulder layering no longer creates duplicate face overlays or stencil intersections');
 assert.match(gameSource,
-  /buildShoulderPetBodyXrayOverlay[\s\S]{0,4200}SHOULDER_PET_PLANE_RENDER_ORDER \+ 1/,
-  'face-only player overlays can explicitly render after the shoulder pet while retaining world depth');
+  /function _cameraSeesPlayerFrontFace\(\)[\s\S]{0,450}_shoulderPetLayerCameraLocal\.z >= 0/,
+  'the whole-sprite arbiter selects settings from the camera-visible character face');
 assert.match(gameSource,
-  /const oppositeBodyStencilBit = facingBack \? PLAYER_FRONT_STENCIL_BIT : PLAYER_BACK_STENCIL_BIT;[\s\S]{0,700}stencilFuncMask = SHOULDER_PET_STENCIL_BIT \| oppositeBodyStencilBit/,
-  'each explicit face overlay is limited to pet pixels not occupied by the opposite character face');
+  /const playerDrawsOnTop = frontVisible[\s\S]{0,500}PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
+  'the visible character and shoulder pet resolve to one clean whole-sprite draw order');
 assert.match(gameSource,
-  /_setShoulderPetStencilWriter\(_playerAvatarFrontMaterial, active, PLAYER_FRONT_STENCIL_BIT\)[\s\S]{0,1100}_setShoulderPetStencilWriter\(m, active, SHOULDER_PET_STENCIL_BIT\)/,
-  'the player faces and attached pet populate independent stencil bits while shoulder layering is active');
-assert.match(gameSource,
-  /function _shoulderPetXrayFaceIsVisible\(mesh\)[\s\S]{0,500}_shoulderPetXrayCameraLocal\.z \* localNormalZ > 0\.0001/,
-  'explicit face overlays are disabled from edge-on and reverse camera views');
-assert.match(gameSource,
-  /overlayMaterial\.side = THREE\.FrontSide[\s\S]{0,2400}shoulderPetXrayLocalNormalZ = _skinnedBodyPlane && facingBack \? -1 : 1/,
-  'overlay culling and local face-normal metadata cover both skinned and rigid portrait paths');
+  /_setLayerDepthWrite\(_playerAvatarFrontMaterial, !active\)[\s\S]{0,900}_setLayerDepthWrite\(m, false\)/,
+  'attached character and pet cutouts stop depth-writing against each other while retaining depth tests');
+
 assert.match(gameSource,
   /settingDisableShoulderFrontXray[\s\S]{0,900}settingDisableShoulderBackXray/,
   'front and back shoulder x-ray controls remain independently wired');
