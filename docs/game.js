@@ -374,19 +374,42 @@
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
         // Task turn-in — checked before everything else (including a fresh
-        // favor ask): if this NPC posted/asked a quest that's now sitting
-        // ready in the player's log, offer to hand it over right here rather
-        // than piling a new favor ask on top of an already-completed one.
+        // request/favor ask): if this NPC posted/asked a quest that's now
+        // sitting ready in the player's log, offer to hand it over right
+        // here rather than piling a new ask on top of an already-completed
+        // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
-          const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
+          const _turnInLabel = _turnInTask.items.map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', ');
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: `Ah — did you bring what I asked for?`,
             choices: [
-              { label: `Here's your ${_turnInDef?.label || _turnInTask.itemKey} ×${_turnInTask.qty}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: `Here's your ${_turnInLabel}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
               { label: 'Not yet.', actions: [] },
+            ],
+          });
+          return;
+        }
+
+        // Named quest-givers — replaces the old bulletin board. Once a
+        // request has been announced (see ProceduralTasks.
+        // maybeRefreshRequestPostings, and the purple ambient greeting/
+        // compass '!' that flags it before this point), the first
+        // conversation after that proposes the job in the NPC's own voice.
+        // Checked ahead of the generic favor ask below since a named
+        // quest-giver's own request always takes priority over a random
+        // favor roll.
+        const _requestOffer = rec?.id ? await window.ProceduralTasks.maybeProposeRequest(rec) : null;
+        if (_requestOffer) {
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
+            type: 'choice',
+            text: _requestOffer.askText,
+            choices: [
+              { label: "I'll help.", actions: [{ type: 'acceptRequest', taskId: _requestOffer.task.id }] },
+              { label: 'Not right now.', actions: [{ type: 'declineRequest', taskId: _requestOffer.task.id }] },
             ],
           });
           return;
@@ -8810,7 +8833,7 @@
           },
           onAction(action) {
             if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
-            window.ProceduralTasks.maybeRefreshBoardTask();
+            window.ProceduralTasks.maybeRefreshRequestPostings();
             openMenu('tasks');
             return { ok: true, message: 'Read the notice board.' };
           },
@@ -19672,6 +19695,17 @@
       // ambientDialogueRuntime owns only lightweight proximity checks and
       // its temporary world-space speech planes. Game state, NPC routing,
       // and creature treasure movement remain authoritative here in game.js.
+      // Shared by AmbientDialogue's {dayPart} greeting substitutions and
+      // ProceduralTasks' named quest-giver lines (e.g. Eldress Teacup's
+      // "Good {dayPart}, ...").
+      function dayPartNow() {
+        const hour = window.CalendarSystem.getHour();
+        if (hour < 8) return 'dawn';
+        if (hour < 12) return 'morning';
+        if (hour < 17) return 'afternoon';
+        if (hour < 20) return 'evening';
+        return 'night';
+      }
       const ambientDialogueRuntime = window.AmbientDialogue?.init({
         THREE,
         camera,
@@ -19680,23 +19714,18 @@
         getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
         getSeason: () => window.CalendarSystem.currentSeason?.().name || null,
         getWeather: () => calendar.isRaining ? ((calendar.rainStrength || 0) >= 3 ? 'storm' : 'rain') : 'clear',
-        getDayPart: () => {
-          const hour = window.CalendarSystem.getHour(); // Used by ambient greeting {dayPart} substitutions.
-          if (hour < 8) return 'dawn';
-          if (hour < 12) return 'morning';
-          if (hour < 17) return 'afternoon';
-          if (hour < 20) return 'evening';
-          return 'night';
-        },
+        getDayPart: dayPartNow,
         getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
         getCurrentArea: () => currentArea,
         getNpcWalkers: () => npcWalkers,
         getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
-        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname
+          || (_playerData || window.__hobunjiPlayerProfile)?.name
           || (_playerData || window.__hobunjiPlayerProfile)?.displayName
           || 'neighbor',
         getPlayerSpecies: () => (_playerData || window.__hobunjiPlayerProfile)?.appearance?.speciesId || null,
         getNpcRelationship: npcId => window.DialogueContent?.npcRelationshipsSnapshot?.()?.[npcId]?.favor ?? 0,
+        getPendingRequestGreeting: npcId => window.ProceduralTasks?.pendingRequestGreetingLine?.(npcId) || null,
         isDialogueOpen: () => dialogueOpen,
         isPaused: () => paused,
         debugLog,
@@ -19704,7 +19733,8 @@
       const playerSocialPoseRuntime = window.PlayerSocialPoses?.init({ player, playerMesh });
       const playerChatRuntime = window.PlayerChat?.init({
         getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
-        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname
+          || (_playerData || window.__hobunjiPlayerProfile)?.name
           || (_playerData || window.__hobunjiPlayerProfile)?.displayName
           || 'Player',
         clearMovementInput: () => {
@@ -23445,7 +23475,7 @@
         // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
         window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshBoardTask();
+        window.ProceduralTasks.maybeRefreshRequestPostings();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -23480,7 +23510,7 @@
         window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
         window.FarmAnimals.tickResources();
         window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshBoardTask();
+        window.ProceduralTasks.maybeRefreshRequestPostings();
         checkTothalShift();
         window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
@@ -28296,6 +28326,8 @@
         inventory,
         clampInventoryStack,
         showToast,
+        getDayPart: dayPartNow,
+        getPlayerNickname: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname || 'friend',
       });
 
       window.BountyBoard?.init({
@@ -28489,7 +28521,7 @@
         // per character.
         window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
-        window.ProceduralTasks.maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
+        window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all

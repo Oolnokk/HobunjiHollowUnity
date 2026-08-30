@@ -74,6 +74,14 @@
       if (target.areaId !== areaId) { offAreaQuestTargets++; continue; }
       targets.push({ ...target, source: 'quest', symbol: '◆', color: '#f9e28a', priority: 0 });
     }
+    // A quest-giver who hasn't been asked yet (or is mid-ask) gets a purple
+    // '!' instead of the gold diamond — same visual language an Elder
+    // Scrolls-style compass uses to flag "this person wants to talk to you"
+    // before you've ever opened their dialogue.
+    for (const target of window.ProceduralTasks?.pendingRequestCompassTargets?.() || []) {
+      if (target.areaId !== areaId) { offAreaQuestTargets++; continue; }
+      targets.push({ ...target, source: 'pending-request', symbol: '!', color: '#c9a0ff', priority: 0 });
+    }
     for (const [id, marker] of window.BountyBoard?.markers || []) {
       if (marker.zoneId !== areaId) continue;
       targets.push({ id: `bounty:${id}`, source: 'bounty', label: `Bounty: ${marker.label}`, col: marker.col, row: marker.row, symbol: '☠', color: '#f3c64f', priority: 1 });

@@ -1188,13 +1188,14 @@
         </div>
       </div><!-- /mpProgress -->
 
-      <!-- ── Tasks pane: today's board notice (take it here) + the quest
-           log of everything accepted — turn-in itself always happens by
-           talking to the quest giver. See renderTasksPanel()/
-           takeBoardTask()/turnInTask() in game.js. ──────────────────────── -->
+      <!-- ── Tasks pane: word of any named quest-giver's pending request
+           (go talk to them — accept/decline happens in dialogue) + the
+           quest log of everything accepted — turn-in itself always
+           happens by talking to the quest giver. See renderTasksPanel()/
+           ProceduralTasks.acceptRequest()/turnInTask() in game.js. ─────── -->
       <div class="mp-pane" id="mpTasks">
         <div class="menu-section">
-          <div class="menu-section-title">Bulletin Board</div>
+          <div class="menu-section-title">Word Around Town</div>
           <div id="tasksBoardPosting" class="supply-list"></div>
         </div>
         <!-- Wanted poster for a bandit captain -- separate slot from the

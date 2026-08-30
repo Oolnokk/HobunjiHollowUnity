@@ -391,7 +391,7 @@
     context.lineWidth = 8;
     context.strokeStyle = '#000';
     context.strokeText(visibleText, 15, canvas.height / 2);
-    context.fillStyle = event.tone === 'jeer' ? '#ffb4a8' : event.tone === 'cheer' ? '#ffe68b' : '#fff6be';
+    context.fillStyle = event.tone === 'jeer' ? '#ffb4a8' : event.tone === 'cheer' ? '#ffe68b' : event.tone === 'quest' ? '#c9a0ff' : '#fff6be';
     context.fillText(visibleText, 15, canvas.height / 2);
     event.textPart.texture.needsUpdate = true;
     event.visibleChars = visibleText.length;
@@ -643,7 +643,7 @@
     } catch (_) {}
   }
 
-  function tryGreeting(walker, target, now, day) {
+  function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
@@ -667,12 +667,18 @@
     state.lastGreetingAt = now;
     const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
     walker.applyFacingDeadzone?.(angle, 0.34);
+    // A pending-request override (see getPendingRequestGreeting) replaces the
+    // ordinary nickname-templated line with the quest-giver's own purple
+    // call-over line, so it can't be mistaken for a random ambient greeting.
     const targetName = resolveTargetName(walker, target); // Used so {targetName} follows main-dialogue player nicknames or directional NPC family nicknames.
-    show(walker.root, templateLine(targetName, speakerId, targetId, day), {
+    const line = override?.text || templateLine(targetName, speakerId, targetId, day);
+    show(walker.root, line, {
       speakerId,
       profile: walker.profile,
       mode: 'chathead',
       greeting: true,
+      tone: override ? 'quest' : undefined,
+      durationMs: override ? Math.max(state.settings.durationMs, 5600) : undefined,
       directedAtPlayer: targetId === 'player',
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
@@ -689,7 +695,9 @@
     const player = state.deps.getPlayerPosition?.();
     if (player) {
       for (const walker of walkers) {
-        if (tryGreeting(walker, { id: 'player', name: state.deps.getPlayerName?.() || 'neighbor', ...player }, now, day)) return;
+        const questLine = state.deps.getPendingRequestGreeting?.(walker.rec?.id);
+        const override = questLine ? { text: questLine } : null;
+        if (tryGreeting(walker, { id: 'player', name: state.deps.getPlayerName?.() || 'neighbor', ...player }, now, day, override)) return;
       }
     }
     for (const walker of walkers) {
