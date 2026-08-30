@@ -9,19 +9,26 @@
 // range) while the actual strike still hits every creature in the swing's
 // cone, matching combat-combo.js's hit-resolution precedent.
 //
-// "enemyStriking" (Opportunist Jab's bonus) needs a per-creature windup/
-// strike telegraph flag that doesn't exist yet — hostile attacks currently
-// land instantly (see game.js's updateHostiles). It's checked here against
-// c.telegraphState === 'strike' so it starts working for free once that
-// flag is introduced without any rework to this file.
+// "enemyStriking" (Opportunist Jab's bonus) recognizes both the generic
+// enemy telegraph's strike stage and named modular animal attacks that expose
+// a committed strike window through Combat.animalAttacks.isStriking(). That
+// keeps Pounce's leap and future named attacks on the same condition path.
 (() => {
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-quickattacks.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   function now() { return performance.now() / 1000; }
 
+  function enemyIsStriking(target) {
+    if (!target) return false;
+    if (target.telegraphState === 'strike') return true;
+    return !!window.Combat.animalAttacks?.isStriking?.(target);
+  }
+
   // Mirrors the sandbox's getQuickConditions(), evaluated against the
-  // player's current auto-target rather than a fixed dummy.
+  // player's current auto-target rather than a fixed dummy. This is exported
+  // below so attack execution and every readiness cue use exactly one source
+  // of truth instead of duplicating state thresholds in UI code.
   function getConditions(deps, target) {
     if (!target) return { enemyStriking: false, exhausted: false, behind: false, lowHealth: false };
     const toPlayerX = deps.player.x - target.x;
@@ -31,7 +38,7 @@
     const forwardY = Math.sin(target.facing || 0);
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
     return {
-      enemyStriking: target.telegraphState === 'strike',
+      enemyStriking: enemyIsStriking(target),
       // True Exhausted (see resource-system.js's spendStamina) always
       // counts, even if a Winded-Stamina-reduced effective max makes the
       // plain 20%-of-max fallback threshold look full.
@@ -40,6 +47,7 @@
       lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
     };
   }
+  window.Combat.getQuickAttackConditions = getConditions;
 
   // Each technique's numbers live in TECHNIQUES as plain data (base values,
   // a single condition key it swaps to `bonus` values under, and its own
@@ -105,7 +113,8 @@
       const target = deps.findAutoTarget();
       const cond = getConditions(deps, target);
       const tech = buildTechnique(def, cond);
-      const cost = tech.sourceText === 'no condition bonus' ? COST_BASE : COST_BONUS;
+      const conditionBonusUsed = tech.sourceText !== 'no condition bonus'; // Selects the higher stamina cost, huge impact cue, and power-hit vulnerability consumption.
+      const cost = conditionBonusUsed ? COST_BONUS : COST_BASE;
 
       // Every affliction this jab can inflict, and every stat bonus on top
       // of the base numbers below, comes from the player's own chosen
@@ -153,9 +162,18 @@
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
+            if (!window.Combat.meleeHit(deps.player, c, {
+              rangePx, halfConeRad,
+              yaw: deps.player.angle,
+              pitch: deps.getPlayerMeleeAimPitch?.() || 0,
+            })) continue;
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              tag: deps.currentWeaponDamageType(),
+              category: 'quickAttack',
+              consumeHealthVulnerability: conditionBonusUsed,
+              afflictionBonuses: effects.afflictions,
+            });
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
             lastName = c.def.label;
           }
@@ -165,7 +183,7 @@
               ? `${tech.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
-          // has its own weaponSlash/creatureClawHit sfx.
+          // has its own weapon swing/impact sfx.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },
@@ -186,8 +204,8 @@
   // check (player exhausted/behind/low-health from the bandit's point of
   // view) and get the exact same damage/range/knockback numbers a player
   // jab would. opportunistJab is excluded from the bandit pool — its bonus
-  // depends on telegraphState, which only creatures have, not the player.
-  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S };
+  // depends on enemy strike-state data, which only creatures expose today.
+  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions };
 
   // Applies docs/config/combat/attack-values.json's `quickAttacks` section —
   // see combat-combo.js's applyComboConfig for the general pattern. TECHNIQUES
@@ -213,6 +231,6 @@
     if (cfg.HOLD_S != null) HOLD_S = cfg.HOLD_S;
     if (cfg.RANGE_SCALE != null) RANGE_SCALE = cfg.RANGE_SCALE;
     if (cfg.LUNGE_TILE_MUL != null) LUNGE_TILE_MUL = cfg.LUNGE_TILE_MUL;
-    Object.assign(window.Combat.quickAttackData, { WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S });
+    Object.assign(window.Combat.quickAttackData, { WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions });
   };
 })();

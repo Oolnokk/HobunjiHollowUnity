@@ -1,0 +1,2162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<title>Low-Poly Tunnel Sculptor V7</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --panel: rgba(15,18,22,.92);
+    --panel2: rgba(25,29,35,.94);
+    --line: rgba(255,255,255,.12);
+    --text: #eef1f4;
+    --muted: #9ea7b1;
+    --accent: #d6b77a;
+    --danger: #d98787;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0a0c0f;color:var(--text);font:13px/1.3 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #app{position:fixed;inset:0}
+  #viewport{position:absolute;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  #ui{
+    position:absolute;left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));
+    width:min(342px,calc(100vw - 16px));max-height:calc(100vh - 16px);
+    overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);backdrop-filter:blur(10px);z-index:5;
+  }
+  #ui.collapsed .body{display:none}
+  .titlebar{display:flex;align-items:center;gap:8px;padding:10px 10px 9px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel2);z-index:2}
+  .titlebar strong{font-size:14px;flex:1}
+  .titlebar button{width:auto;padding:6px 9px}
+  .body{padding:10px}
+  fieldset{border:1px solid var(--line);border-radius:9px;padding:8px;margin:0 0 9px}
+  legend{padding:0 6px;color:#dfe4ea;font-weight:700}
+  label{display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;margin:6px 0}
+  label span{color:#dfe4ea}
+  input[type="range"]{width:100%}
+  input[type="number"],select{
+    width:100%;min-width:0;background:#11151a;border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:6px;
+  }
+  input[type="checkbox"]{transform:scale(1.15)}
+  .check{grid-template-columns:1fr auto}
+  .buttons{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}
+  button{
+    appearance:none;border:1px solid var(--line);border-radius:8px;background:#20262d;color:var(--text);
+    padding:8px 9px;font-weight:650;cursor:pointer;touch-action:manipulation;
+  }
+  button:hover{background:#29313a}
+  button.primary{background:#55472e;border-color:#8a744a}
+  button.danger{background:#4a2b2b;border-color:#754242}
+  button.active{outline:2px solid #e7ca8c;background:#4a402d}
+  .readout{
+    white-space:pre-wrap;background:#0d1014;border:1px solid var(--line);border-radius:8px;
+    padding:8px;color:#c9d1da;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
+  .hint{color:var(--muted);font-size:11px;margin-top:5px}
+  .sectionTitle{font-weight:700;margin:8px 0 4px}
+  #toast{
+    position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:rgba(10,12,15,.9);border:1px solid var(--line);border-radius:9px;padding:8px 12px;
+    opacity:0;pointer-events:none;transition:opacity .18s;z-index:7;max-width:min(90vw,620px);text-align:center
+  }
+  #toast.show{opacity:1}
+  #crosshair{
+    position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;pointer-events:none;display:none;z-index:3
+  }
+  #crosshair:before,#crosshair:after{content:"";position:absolute;background:#fff;opacity:.8}
+  #crosshair:before{left:8px;top:0;width:2px;height:18px}
+  #crosshair:after{left:0;top:8px;width:18px;height:2px}
+  #mini{
+    position:absolute;right:max(8px,env(safe-area-inset-right));top:max(8px,env(safe-area-inset-top));
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;z-index:4;
+    font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;pointer-events:none;
+  }
+  @media (max-width:700px){
+    #ui{width:min(320px,calc(100vw - 16px))}
+    .body{padding:8px}
+    fieldset{padding:7px}
+    label{grid-template-columns:1fr 82px}
+    button{padding:9px 7px}
+    #mini{top:auto;bottom:max(8px,env(safe-area-inset-bottom));max-width:45vw}
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="viewport"></div>
+  <div id="crosshair"></div>
+
+  <aside id="ui">
+    <div class="titlebar">
+      <strong>Low-Poly Tunnel Sculptor</strong>
+      <button id="collapseBtn" title="Collapse panel">−</button>
+    </div>
+    <div class="body">
+      <fieldset>
+        <legend>Generator Mode</legend>
+        <label><span>Mode</span>
+          <select id="generatorMode">
+            <option value="topdown">Top-Down Spline Tunnel</option>
+            <option value="maze" selected>Branching Maze Splines</option>
+            <option value="antfarm">3D Ant Farm</option>
+          </select>
+        </label>
+        <div class="buttons"><button id="modeDefaultsBtn">Apply Mode Defaults</button><button id="frameViewBtn">Frame View</button></div>
+        <div class="hint">Top-down modes treat Y as up and carve through a thin slab. Single Spline follows one XZ route; Branching Maze automatically grows a connected spline network and excavates every branch with the same clearance detector.</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Rock Block</legend>
+        <label><span>Width</span><input id="sizeX" type="number" min="4" max="40" step=".5" value="18"></label>
+        <label><span>Height</span><input id="sizeY" type="number" min=".5" max="30" step=".25" value="1.5"></label>
+        <label><span>Depth</span><input id="sizeZ" type="number" min="4" max="40" step=".5" value="12"></label>
+        <label><span>Max grid</span>
+          <select id="gridN">
+            <option value="32">32³ fast</option>
+            <option value="64" selected>64³ normal</option>
+          </select>
+        </label>
+        <label><span>Base cell size</span>
+          <select id="baseCell">
+            <option value="8">8 coarse</option>
+            <option value="4" selected>4 low-poly</option>
+            <option value="2">2 denser</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pick / Snakehook</legend>
+        <label><span>Brush radius</span><input id="brushRadius" type="number" min=".12" max="3" step=".05" value=".34"></label>
+        <label><span>Radius chaos</span><input id="radiusChaos" type="range" min="0" max="1" step=".01" value=".38"></label>
+        <label><span>Direction chaos</span><input id="dirChaos" type="range" min="0" max="1.6" step=".01" value=".58"></label>
+        <label><span>Pick jitter</span><input id="pickJitter" type="range" min="0" max="1.5" step=".01" value=".48"></label>
+        <label><span>Hook length</span><input id="hookLength" type="number" min=".05" max="2" step=".05" value=".24"></label>
+        <label><span>Hits / step</span><input id="hitsPerStep" type="number" min="1" max="10" step="1" value="3"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Adaptive Low-Poly</legend>
+        <label><span>Target faces minimum</span><input id="faceThreshold" type="number" min="0" max="80" step="1" value="10"></label>
+        <label><span>Finest local cell</span>
+          <select id="minCell">
+            <option value="2">2</option>
+            <option value="1" selected>1 finest</option>
+          </select>
+        </label>
+        <label><span>Refine radius ×</span><input id="refineRadius" type="range" min="1" max="4" step=".1" value="2.1"></label>
+        <div class="hint">When a pick lands where too few surface cells exist, nearby octree leaves split one level and the dig continues.</div>
+      </fieldset>
+
+      <fieldset class="topdown-only">
+        <legend>Top-Down Spline Tunnel</legend>
+        <label><span>Detection radius</span><input id="probeRadius" type="number" min=".25" max="4" step=".05" value=".5"></label>
+        <label><span>Path Y offset</span><input id="pathYOffset" type="number" min="-6" max="6" step=".05" value=".55"></label>
+        <label class="check"><span>Level/protect tunnel floor</span><input id="levelFloor" type="checkbox" checked></label>
+        <label><span>Floor offset from probe bottom</span><input id="floorOffset" type="number" min="-.75" max=".75" step=".01" value="0"></label>
+        <label><span>Floor Y variation span</span><input id="floorVariation" type="number" min="0" max=".75" step=".01" value=".08"></label>
+        <label><span>Path step</span><input id="pathStep" type="number" min=".08" max="1.5" step=".05" value=".3"></label>
+        <label><span>Control points</span><input id="pathPointCount" type="number" min="4" max="16" step="1" value="7"></label>
+        <label><span>Path wiggle</span><input id="pathWiggle" type="range" min="0" max="1" step=".01" value=".62"></label>
+        <label><span>Path seed</span><input id="pathSeed" type="number" min="0" max="9999999" step="1" value="1346"></label>
+        <label><span>Dig bursts / stop</span><input id="probeDigBursts" type="number" min="1" max="12" step="1" value="4"></label>
+        <label><span>Max clear passes</span><input id="probeMaxPasses" type="number" min="8" max="300" step="1" value="120"></label>
+        <label class="check"><span>Show spline + probe</span><input id="showPath" type="checkbox" checked></label>
+        <div class="buttons"><button id="newPathBtn">Regenerate Path</button><button id="topViewBtn">Top View</button></div>
+        <div class="hint">The sphere advances only while its sampled wall volume is clear. With floor protection enabled, the detector is allowed to touch the floor and every chaotic pick hit is clipped at a gently varying floor band. This evens the floor without smoothing the walls. Floor baseline = Path Y Offset − Detection Radius + Floor Offset.</div>
+      </fieldset>
+
+      <fieldset class="maze-only">
+        <legend>Branching Maze Splines</legend>
+        <label><span>Automatic branches</span><input id="mazeBranchCount" type="number" min="2" max="60" step="1" value="16"></label>
+        <label><span>Branch length</span><input id="mazeBranchLength" type="number" min="1" max="12" step=".25" value="3.75"></label>
+        <label><span>Branch turn chaos</span><input id="mazeTurnChaos" type="range" min="0" max="1" step=".01" value=".42"></label>
+        <label><span>Loop connection chance</span><input id="mazeLoopChance" type="range" min="0" max=".8" step=".01" value=".18"></label>
+        <div class="hint">The maze begins with one through-route. Each additional branch attaches to an existing spline, bends through XZ, and can reconnect to another route to form loops. The same wall-detection sphere excavates every branch.</div>
+      </fieldset>
+
+      <fieldset class="topdown-only">
+        <legend>Floor Grid Wall Snap</legend>
+        <label><span>Tile size</span><input id="wallGridTileSize" type="number" min=".25" max="6" step=".05" value="1"></label>
+        <label><span>Grid X offset</span><input id="wallGridOffsetX" type="number" min="-6" max="6" step=".05" value="0"></label>
+        <label><span>Grid Z offset</span><input id="wallGridOffsetZ" type="number" min="-6" max="6" step=".05" value="0"></label>
+        <label><span>Wall beyond tile edge</span><input id="wallGridMargin" type="number" min="0" max=".5" step=".01" value=".05"></label>
+        <label><span>Open coverage to claim tile</span><input id="wallGridClaim" type="range" min=".1" max=".9" step=".05" value=".35"></label>
+        <label class="check"><span>Show floor tile grid</span><input id="showWallGrid" type="checkbox" checked></label>
+        <label class="check"><span>Auto-cull untouched tiles after snap</span><input id="autoCullUntouched" type="checkbox" checked></label>
+        <label class="check"><span>Stitch culled edges</span><input id="stitchCullEdges" type="checkbox" checked></label>
+        <label><span>Untouched tolerance</span><input id="cullTouchTolerance" type="number" min="0" max=".2" step=".002" value=".01"></label>
+        <label><span>Keep solid padding tiles</span><input id="cullPaddingTiles" type="number" min="0" max="4" step="1" value="0"></label>
+        <div class="buttons"><button id="snapWallsGridBtn" class="primary">Snap Walls to Grid</button><button id="refreshWallGridBtn">Refresh Grid</button></div>
+        <div class="buttons"><button id="cullUntouchedBtn">Cull Untouched Tiles</button><button id="clearCullBtn">Restore Culled Mesh</button></div>
+        <div class="hint">Wall snap claims the playable floor tiles first. The cull pass removes untouched slab tiles to black void. With Stitch culled edges enabled, triangles are clipped exactly at the cull boundary instead of being removed by centroid, then the exposed cut is sealed with new faces that connect the surviving edge from tip to tip. Restore Culled Mesh remains reversible.</div>
+      </fieldset>
+
+      <fieldset class="antfarm-only">
+        <legend>3D Ant Farm Generator</legend>
+        <label><span>Main tunnels</span><input id="tunnelCount" type="number" min="1" max="20" step="1" value="5"></label>
+        <label><span>Steps / tunnel</span><input id="stepsPerTunnel" type="number" min="8" max="300" step="1" value="72"></label>
+        <label><span>Step length</span><input id="stepLength" type="number" min=".08" max="2" step=".05" value=".42"></label>
+        <label><span>Branch chance</span><input id="branchChance" type="range" min="0" max=".18" step=".002" value=".036"></label>
+        <label><span>Chamber chance</span><input id="chamberChance" type="range" min="0" max=".25" step=".005" value=".045"></label>
+        <label><span>Wall breakthrough</span><input id="exitChance" type="range" min="0" max="1" step=".01" value=".16"></label>
+        <label class="check"><span>Prefer horizontal tunneling</span><input id="horizontalBias" type="checkbox" checked></label>
+      </fieldset>
+
+      <div class="buttons">
+        <button id="generateBtn" class="primary">Carve Spline Tunnel</button>
+        <button id="continueBtn">Run Path Again</button>
+        <button id="manualBtn">Manual Carve</button>
+        <button id="clearBtn" class="danger">Reset Block</button>
+      </div>
+
+      <fieldset>
+        <legend>View</legend>
+        <label class="check"><span>Wireframe overlay</span><input id="wireframe" type="checkbox"></label>
+        <label class="check"><span>Transparent rock</span><input id="transparent" type="checkbox"></label>
+        <label class="check"><span>Flat shading</span><input id="flatShading" type="checkbox" checked></label>
+        <label class="check"><span>Show bounding box</span><input id="showBounds" type="checkbox" checked></label>
+      </fieldset>
+
+      <div class="buttons">
+        <button id="exportOBJ">Export OBJ</button>
+        <button id="exportGLB">Export GLB</button>
+        <button id="saveJSON">Save Sculpt JSON</button>
+        <button id="loadJSON">Load Sculpt JSON</button>
+      </div>
+      <input id="jsonInput" type="file" accept=".json,application/json" hidden>
+
+      <div class="sectionTitle">Debug / mobile status</div>
+      <div id="debug" class="readout">Initializing…</div>
+      <div class="hint">Orbit: drag. Zoom: wheel/pinch. Manual Carve: tap/drag directly on rock. Hold Shift while carving for a larger chambering hit.</div>
+      <div class="hint">Latest change: cull boundaries now clip triangles exactly at tile edges and stitch the exposed cut with filled faces, eliminating the jagged sawtooth wedges left by centroid-only triangle culling.</div>
+    </div>
+  </aside>
+
+  <div id="mini"></div>
+  <div id="toast"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const $ = id => document.getElementById(id);
+const viewport = $('viewport');
+const debugEl = $('debug');
+const miniEl = $('mini');
+const toastEl = $('toast');
+
+let scene, camera, renderer, controls;
+let rockMesh = null, wireMesh = null, boundsHelper = null, groundGrid = null, wallGridHelper = null;
+let pathGroup = null, pathLine = null, probeMesh = null; // Used to preview the top-down spline and clearance probe.
+let topDownCurve = null;
+let topDownControlPoints = [];
+let mazeCurves = [];              // Used by Branching Maze mode to excavate every generated spline branch.
+let mazeControlPaths = [];        // Used to save, reload, and preview the maze branch control points.
+let floorProtectionActive = false; // Used while top-down carving/replay is running so pick hits cannot gouge below the floor band.
+let lastMazeBranches = 0;         // Used by the mobile debug readout to report the generated maze size.
+let gridCarves = [];              // Used to persist subtractive tile-column wall pushes in sculpt JSON.
+let lastGridTiles = 0;            // Used by the mobile debug readout to report the most recent wall-grid snap.
+let culledTileKeys = new Set();   // Used by rebuildMesh/export to omit untouched slab tiles without altering the sculpt field.
+let lastCulledTiles = 0;          // Used by the mobile debug readout to report the active outside-area cull mask.
+let cullMaskGrid = null;          // Used to keep the cull mask aligned to the tile size/offset it was generated from.
+let lastCullCapFaces = 0;         // Used by debug to report new faces sealing clean cull boundaries.
+let lastProbeStops = 0;
+let lastProbeFailures = 0;
+let lastPathSamples = 0;
+let raycaster = new THREE.Raycaster();
+let pointer = new THREE.Vector2();
+let manualCarve = false;
+let pointerDown = false;
+let shiftDown = false;
+let lastManualHit = 0;
+let rebuildTimer = 0;
+let lastBuildMs = 0;
+
+let N = 64;
+let pointN = 65;
+let dims = new THREE.Vector3(18,1.5,12);
+let domainHalf = new THREE.Vector3();
+let field = null;
+let root = null;
+let leaves = [];
+let leafIdMap = null;          // Used by adaptive dual-contour face stitching.
+let leafVertexIndex = new Map();
+let stamps = [];
+let totalHits = 0;
+let refinedSplits = 0;
+let lastFaces = 0;
+let lastVerts = 0;
+
+const params = {};
+
+function readParams(){
+  params.mode = $('generatorMode').value;
+  params.sizeX = clampNum($('sizeX').value,4,40,16);
+  params.sizeY = clampNum($('sizeY').value,.5,30,1.5);
+  params.sizeZ = clampNum($('sizeZ').value,4,40,12);
+  params.gridN = +$('gridN').value;
+  params.baseCell = +$('baseCell').value;
+
+  params.brushRadius = clampNum($('brushRadius').value,.12,3,.34);
+  params.radiusChaos = +$('radiusChaos').value;
+  params.dirChaos = +$('dirChaos').value;
+  params.pickJitter = +$('pickJitter').value;
+  params.hookLength = clampNum($('hookLength').value,.05,2,.24);
+  params.hitsPerStep = Math.round(clampNum($('hitsPerStep').value,1,10,3));
+
+  params.faceThreshold = Math.round(clampNum($('faceThreshold').value,0,80,10));
+  params.minCell = +$('minCell').value;
+  params.refineRadius = +$('refineRadius').value;
+
+  params.probeRadius = clampNum($('probeRadius').value,.25,4,.5);
+  params.pathYOffset = clampNum($('pathYOffset').value,-6,6,.55);
+  params.levelFloor = $('levelFloor').checked;
+  params.floorOffset = clampNum($('floorOffset').value,-.75,.75,0);
+  params.floorVariation = clampNum($('floorVariation').value,0,.75,.08);
+  params.pathStep = clampNum($('pathStep').value,.08,1.5,.3);
+  params.pathPointCount = Math.round(clampNum($('pathPointCount').value,4,16,7));
+  params.pathWiggle = +$('pathWiggle').value;
+  params.pathSeed = Math.round(clampNum($('pathSeed').value,0,9999999,1346));
+  params.probeDigBursts = Math.round(clampNum($('probeDigBursts').value,1,12,4));
+  params.probeMaxPasses = Math.round(clampNum($('probeMaxPasses').value,8,300,120));
+  params.showPath = $('showPath').checked;
+
+  params.mazeBranchCount = Math.round(clampNum($('mazeBranchCount').value,2,60,16));
+  params.mazeBranchLength = clampNum($('mazeBranchLength').value,1,12,3.75);
+  params.mazeTurnChaos = +$('mazeTurnChaos').value;
+  params.mazeLoopChance = +$('mazeLoopChance').value;
+
+  params.wallGridTileSize = clampNum($('wallGridTileSize').value,.25,6,1);
+  params.wallGridOffsetX = clampNum($('wallGridOffsetX').value,-6,6,0);
+  params.wallGridOffsetZ = clampNum($('wallGridOffsetZ').value,-6,6,0);
+  params.wallGridMargin = clampNum($('wallGridMargin').value,0,.5,.05);
+  params.wallGridClaim = clampNum($('wallGridClaim').value,.1,.9,.35);
+  params.showWallGrid = $('showWallGrid').checked;
+  params.autoCullUntouched = $('autoCullUntouched').checked;
+  params.stitchCullEdges = $('stitchCullEdges').checked;
+  params.cullTouchTolerance = clampNum($('cullTouchTolerance').value,0,.2,.01);
+  params.cullPaddingTiles = Math.round(clampNum($('cullPaddingTiles').value,0,4,0));
+
+  params.tunnelCount = Math.round(clampNum($('tunnelCount').value,1,20,5));
+  params.stepsPerTunnel = Math.round(clampNum($('stepsPerTunnel').value,8,300,72));
+  params.stepLength = clampNum($('stepLength').value,.08,2,.42);
+  params.branchChance = +$('branchChance').value;
+  params.chamberChance = +$('chamberChance').value;
+  params.exitChance = +$('exitChance').value;
+  params.horizontalBias = $('horizontalBias').checked;
+}
+function clampNum(v,a,b,fallback){ v=Number(v); return Number.isFinite(v)?Math.max(a,Math.min(b,v)):fallback; }
+function isTopDownMode(mode=params.mode||$('generatorMode').value){ return mode==='topdown' || mode==='maze'; }
+
+function floorHeightAt(x,z){
+  // floorBase is the detector's lowest Y plus an optional artistic trim; it anchors the protected walkable floor.
+  const floorBase=params.pathYOffset-params.probeRadius+params.floorOffset;
+  if(!params.levelFloor || params.floorVariation<=0) return floorBase;
+  // phase keeps the subtle floor undulation deterministic for a given path seed instead of changing on every pick hit.
+  const phase=(params.pathSeed||1)*0.017453292519943295;
+  const noise=(
+    Math.sin(x*.73 + phase*.61) * .46 +
+    Math.sin(z*.91 - phase*.37) * .34 +
+    Math.sin((x+z)*.41 + phase*.19) * .20
+  );
+  return floorBase + noise*(params.floorVariation*.5);
+}
+
+function originalBlockFieldAt(x,y,z){
+  // originalBlockFieldAt is used by untouched-tile detection to tell real sculpting from the starting rectangular slab.
+  return Math.min(dims.x*.5-Math.abs(x), dims.y*.5-Math.abs(y), dims.z*.5-Math.abs(z));
+}
+
+function idxP(i,j,k){ return i + pointN*(j + pointN*k); }
+function idxC(i,j,k){ return i + N*(j + N*k); }
+
+class OctNode{
+  constructor(x,y,z,size,depth=0){
+    this.x=x; this.y=y; this.z=z; this.size=size; this.depth=depth;
+    this.children=null;
+    this.id=-1;
+  }
+  get leaf(){ return !this.children; }
+}
+
+function initThree(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0e12);
+
+  camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .05, 500);
+  camera.position.set(18,12,19);
+
+  renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:false});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  viewport.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = .08;
+  controls.target.set(0,0,0);
+
+  scene.add(new THREE.HemisphereLight(0xd9e6ff,0x2b2118,1.4));
+  const key = new THREE.DirectionalLight(0xffffff,2.2);
+  key.position.set(7,12,9);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x9fbfff,1.1);
+  rim.position.set(-9,3,-8);
+  scene.add(rim);
+
+  groundGrid = new THREE.GridHelper(50,50,0x3f4650,0x22272e);
+  groundGrid.position.y = -1.7;
+  scene.add(groundGrid);
+
+  addEvents();
+  updateModeUI();
+  resetBlock(true);
+  if($('generatorMode').value==='maze') buildMazePaths(false); else if($('generatorMode').value==='topdown') buildTopDownPath(false);
+  rebuildWallGridHelper();
+  frameCameraForMode(true);
+  animate();
+}
+
+function updateDomain(){
+  readParams();
+  N = params.gridN;
+  pointN = N+1;
+  dims.set(params.sizeX, params.sizeY, params.sizeZ);
+  // Small air margin guarantees the six outer rock surfaces are meshed.
+  domainHalf.copy(dims).multiplyScalar(.5).multiplyScalar(1.12);
+}
+
+function gridToWorld(i,j,k){
+  return new THREE.Vector3(
+    THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N),
+    THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N),
+    THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N)
+  );
+}
+function worldToGrid(v){
+  return new THREE.Vector3(
+    (v.x/domainHalf.x*.5+.5)*N,
+    (v.y/domainHalf.y*.5+.5)*N,
+    (v.z/domainHalf.z*.5+.5)*N
+  );
+}
+function cellWorldBounds(node){
+  const min = gridToWorld(node.x,node.y,node.z);
+  const max = gridToWorld(node.x+node.size,node.y+node.size,node.z+node.size);
+  return {min,max};
+}
+
+function resetBlock(first=false){
+  updateDomain();
+  field = new Float32Array(pointN*pointN*pointN);
+  stamps = [];
+  gridCarves = [];
+  lastGridTiles = 0;
+  culledTileKeys.clear();
+  lastCulledTiles = 0;
+  cullMaskGrid = null;
+  lastCullCapFaces = 0;
+  totalHits = 0;
+  refinedSplits = 0;
+
+  const hx=dims.x*.5, hy=dims.y*.5, hz=dims.z*.5;
+  for(let k=0;k<=N;k++){
+    const z=THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N);
+    for(let j=0;j<=N;j++){
+      const y=THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N);
+      for(let i=0;i<=N;i++){
+        const x=THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N);
+        const inside = Math.min(hx-Math.abs(x), hy-Math.abs(y), hz-Math.abs(z));
+        field[idxP(i,j,k)] = inside;
+      }
+    }
+  }
+
+  root = new OctNode(0,0,0,N,0);
+  uniformRefine(root, normalizeBaseCell(params.baseCell));
+  rebuildLeafData();
+  rebuildMesh();
+  if(groundGrid) groundGrid.position.y = -dims.y*.5 - .45;
+  if(params.mode==='topdown') buildTopDownPath(false); else if(params.mode==='maze') buildMazePaths(false);
+  rebuildWallGridHelper();
+
+  controls.target.set(0,0,0);
+  if(first) frameCameraForMode(true);
+  controls.update();
+  toast(isTopDownMode(params.mode)?'Thin top-down rock slab reset.':'Solid 3D rock block reset.');
+}
+
+function normalizeBaseCell(v){
+  let s = Math.max(1,Math.min(N,v|0));
+  while(N%s!==0 && s>1) s >>= 1;
+  return s;
+}
+
+function splitNode(node){
+  if(node.size<=1 || node.children) return false;
+  const h=node.size/2;
+  node.children=[];
+  for(let dz=0;dz<2;dz++) for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++){
+    node.children.push(new OctNode(node.x+dx*h,node.y+dy*h,node.z+dz*h,h,node.depth+1));
+  }
+  refinedSplits++;
+  return true;
+}
+
+function uniformRefine(node,targetSize){
+  if(node.size<=targetSize) return;
+  splitNode(node);
+  for(const c of node.children) uniformRefine(c,targetSize);
+}
+
+function sphereIntersectsNode(center,r,node){
+  const {min,max}=cellWorldBounds(node);
+  let d2=0;
+  for(const axis of ['x','y','z']){
+    const q=center[axis];
+    if(q<min[axis]) d2+=(min[axis]-q)**2;
+    else if(q>max[axis]) d2+=(q-max[axis])**2;
+  }
+  return d2<=r*r;
+}
+
+function refineNear(center,r,targetSize,oneLevelOnly=false){
+  const stack=[root];
+  let changed=false;
+  while(stack.length){
+    const n=stack.pop();
+    if(!sphereIntersectsNode(center,r,n)) continue;
+    if(n.children){
+      for(const c of n.children) stack.push(c);
+      continue;
+    }
+    if(n.size>targetSize){
+      const did=splitNode(n);
+      changed ||= did;
+      if(did && !oneLevelOnly){
+        for(const c of n.children) stack.push(c);
+      }
+    }
+  }
+  if(changed) rebuildLeafData();
+  return changed;
+}
+
+function collectLeaves(node,out){
+  if(node.children){ for(const c of node.children) collectLeaves(c,out); }
+  else out.push(node);
+}
+
+function rebuildLeafData(){
+  leaves=[];
+  collectLeaves(root,leaves);
+  leafIdMap = new Int32Array(N*N*N);
+  leafIdMap.fill(-1);
+  leaves.forEach((leaf,id)=>{
+    leaf.id=id;
+    for(let k=leaf.z;k<leaf.z+leaf.size;k++)
+      for(let j=leaf.y;j<leaf.y+leaf.size;j++)
+        for(let i=leaf.x;i<leaf.x+leaf.size;i++)
+          leafIdMap[idxC(i,j,k)] = id;
+  });
+}
+
+function nodeCornerSamples(node){
+  const x=node.x,y=node.y,z=node.z,s=node.size;
+  return [
+    [x,y,z],[x+s,y,z],[x+s,y+s,z],[x,y+s,z],
+    [x,y,z+s],[x+s,y,z+s],[x+s,y+s,z+s],[x,y+s,z+s]
+  ];
+}
+const cubeEdges = [
+  [0,1],[1,2],[2,3],[3,0],
+  [4,5],[5,6],[6,7],[7,4],
+  [0,4],[1,5],[2,6],[3,7]
+];
+
+function leafSurfaceVertex(node){
+  const cs=nodeCornerSamples(node);
+  const vals=cs.map(c=>field[idxP(c[0],c[1],c[2])]);
+  let pos=0,neg=0;
+  for(const v of vals){ if(v>=0) pos++; else neg++; }
+  if(pos===0 || neg===0) return null;
+
+  const pts=[];
+  for(const [a,b] of cubeEdges){
+    const va=vals[a], vb=vals[b];
+    if((va>=0)===(vb>=0)) continue;
+    const t = va/(va-vb);
+    const A=gridToWorld(...cs[a]), B=gridToWorld(...cs[b]);
+    pts.push(A.lerp(B,t));
+  }
+  if(!pts.length) return null;
+  const avg=new THREE.Vector3();
+  for(const p of pts) avg.add(p);
+  return avg.multiplyScalar(1/pts.length);
+}
+
+function countSurfaceLeavesNear(center,r){
+  let count=0;
+  for(const leaf of leaves){
+    if(!sphereIntersectsNode(center,r,leaf)) continue;
+    if(leafSurfaceVertex(leaf)) count++;
+  }
+  return count;
+}
+
+function ensureLocalResolution(center,r){
+  const threshold=params.faceThreshold;
+  if(threshold<=0) return;
+
+  let guard=0;
+  while(guard++<5){
+    const count=countSurfaceLeavesNear(center,r*params.refineRadius);
+    if(count>=threshold) break;
+
+    // Split only one local level at a time, then re-evaluate face support.
+    const changed=refineNear(center,r*params.refineRadius,params.minCell,true);
+    if(!changed) break;
+  }
+}
+
+function carveSphere(center,r,record=true,adaptive=true){
+  if(adaptive) ensureLocalResolution(center,r);
+
+  const g=worldToGrid(center);
+  const sx=2*domainHalf.x/N, sy=2*domainHalf.y/N, sz=2*domainHalf.z/N;
+  const ir=Math.ceil(r/sx)+2, jr=Math.ceil(r/sy)+2, kr=Math.ceil(r/sz)+2;
+  const i0=Math.max(0,Math.floor(g.x)-ir), i1=Math.min(N,Math.ceil(g.x)+ir);
+  const j0=Math.max(0,Math.floor(g.y)-jr), j1=Math.min(N,Math.ceil(g.y)+jr);
+  const k0=Math.max(0,Math.floor(g.z)-kr), k1=Math.min(N,Math.ceil(g.z)+kr);
+
+  for(let k=k0;k<=k1;k++){
+    const z=THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N);
+    for(let j=j0;j<=j1;j++){
+      const y=THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N);
+      for(let i=i0;i<=i1;i++){
+        const x=THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N);
+        // floorLimit is used only during top-down excavation; walls remain fully chaotic above this Y boundary.
+        const floorLimit=floorProtectionActive && params.levelFloor ? floorHeightAt(x,z) : -Infinity;
+        if(y<floorLimit) continue;
+        const d=Math.hypot(x-center.x,y-center.y,z-center.z)-r;
+        const id=idxP(i,j,k);
+        if(d<field[id]) field[id]=d;
+      }
+    }
+  }
+  if(record) stamps.push({x:center.x,y:center.y,z:center.z,r});
+  totalHits++;
+}
+
+function carveHook(center,dir,baseRadius,chamberScale=1){
+  const hits=params.hitsPerStep;
+  const sideA=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
+  if(sideA.lengthSq()<1e-5) sideA.set(1,0,0);
+  sideA.normalize();
+  const sideB=new THREE.Vector3().crossVectors(dir,sideA).normalize();
+
+  for(let h=0;h<hits;h++){
+    const t=(h/(Math.max(1,hits-1)))-.5;
+    const jitterScale=params.pickJitter*baseRadius;
+    const c=center.clone()
+      .addScaledVector(dir,t*params.hookLength)
+      .addScaledVector(sideA,(Math.random()*2-1)*jitterScale)
+      .addScaledVector(sideB,(Math.random()*2-1)*jitterScale);
+
+    const rr=baseRadius*(1+(Math.random()*2-1)*params.radiusChaos*.55)*chamberScale;
+    carveSphere(c,Math.max(.07,rr),true,true);
+  }
+}
+
+function randomUnit(){
+  const v=new THREE.Vector3(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1);
+  return v.lengthSq()<1e-6?new THREE.Vector3(1,0,0):v.normalize();
+}
+
+
+function seededRandom(seed){
+  let a=(seed|0) || 1;
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function rotateXZ(v,angle){
+  // c/s rotate maze branch directions in the XZ plane while preserving Y-up behavior.
+  const c=Math.cos(angle), s=Math.sin(angle);
+  return new THREE.Vector3(v.x*c-v.z*s,0,v.x*s+v.z*c).normalize();
+}
+
+function getPathBundles(){
+  // bundles gives preview/carving code one common representation for a single spline or a maze network.
+  if(($('generatorMode').value==='maze') && mazeCurves.length){
+    return mazeCurves.map((curve,i)=>({curve,points:mazeControlPaths[i]||[]}));
+  }
+  return topDownCurve ? [{curve:topDownCurve,points:topDownControlPoints}] : [];
+}
+
+function buildMazePaths(incrementSeed=false, explicitPaths=null){
+  readParams();
+  if(incrementSeed){
+    params.pathSeed=(params.pathSeed+1)%10000000;
+    $('pathSeed').value=params.pathSeed;
+  }
+
+  const y=params.pathYOffset; // Used as the common vertical centerline for every XZ maze branch.
+  mazeControlPaths=[];
+  mazeCurves=[];
+
+  if(Array.isArray(explicitPaths) && explicitPaths.length){
+    mazeControlPaths=explicitPaths
+      .filter(path=>Array.isArray(path) && path.length>=2)
+      .map(path=>path.map(p=>new THREE.Vector3(+p[0],y,+p[2])));
+  }else{
+    const rand=seededRandom(params.pathSeed); // Used for deterministic maze topology and branch turns.
+    const hx=dims.x*.5, hz=dims.z*.5;
+    const margin=Math.max(params.probeRadius*1.35,.35); // Keeps ordinary branch endpoints inside the slab walls.
+    const rootCount=Math.max(4,params.pathPointCount);
+    const root=[]; // Root is the guaranteed through-route that all later maze branches ultimately connect to.
+    for(let i=0;i<rootCount;i++){
+      const t=i/(rootCount-1);
+      const x=THREE.MathUtils.lerp(-hx-margin,hx+margin,t);
+      const envelope=Math.sin(Math.PI*t);
+      const z=(i===0||i===rootCount-1)?0:(rand()*2-1)*hz*.34*params.pathWiggle*envelope;
+      root.push(new THREE.Vector3(x,y,z));
+    }
+    mazeControlPaths.push(root);
+
+    for(let b=0;b<params.mazeBranchCount;b++){
+      const existingCurves=mazeControlPaths.map(path=>new THREE.CatmullRomCurve3(path,false,'centripetal',.5));
+      const parentIndex=Math.floor(rand()*existingCurves.length);
+      const parent=existingCurves[parentIndex];
+      const parentT=.12+rand()*.76;
+      const start=parent.getPointAt(parentT); // Start attaches the new branch directly to an already connected route.
+      let tangent=parent.getTangentAt(parentT); tangent.y=0;
+      if(tangent.lengthSq()<1e-6) tangent.set(1,0,0); else tangent.normalize();
+
+      const side=rand()<.5?-1:1;
+      const branchAngle=side*(Math.PI*(.28+rand()*.30));
+      let dir=rotateXZ(tangent,branchAngle); // dir is advanced and perturbed for each branch control segment.
+      const pointCount=3+Math.floor(rand()*3);
+      const totalLength=params.mazeBranchLength*(.68+rand()*.72);
+      const segLength=totalLength/(pointCount-1);
+      const path=[start.clone()];
+
+      for(let n=1;n<pointCount;n++){
+        const turn=(rand()*2-1)*params.mazeTurnChaos*.72;
+        dir=rotateXZ(dir,turn);
+        let next=path[path.length-1].clone().addScaledVector(dir,segLength*(.78+rand()*.42));
+
+        const minX=-hx+margin, maxX=hx-margin, minZ=-hz+margin, maxZ=hz-margin;
+        if(next.x<minX || next.x>maxX){ dir.x*=-1; next.x=THREE.MathUtils.clamp(next.x,minX,maxX); }
+        if(next.z<minZ || next.z>maxZ){ dir.z*=-1; next.z=THREE.MathUtils.clamp(next.z,minZ,maxZ); }
+        next.y=y;
+        path.push(next);
+      }
+
+      if(rand()<params.mazeLoopChance && mazeControlPaths.length>1){
+        let nearest=null; // nearest is used to reconnect this branch endpoint into another route and create a loop.
+        let nearestD=Infinity;
+        for(let pi=0;pi<existingCurves.length;pi++){
+          if(pi===parentIndex) continue;
+          for(let q=1;q<10;q++){
+            const candidate=existingCurves[pi].getPointAt(q/10);
+            const d=candidate.distanceTo(path[path.length-1]);
+            if(d<nearestD){ nearestD=d; nearest=candidate; }
+          }
+        }
+        if(nearest && nearestD<params.mazeBranchLength*1.65 && nearestD>params.probeRadius*.8){
+          path.push(nearest.clone());
+        }
+      }
+      mazeControlPaths.push(path);
+    }
+  }
+
+  mazeCurves=mazeControlPaths.map(path=>new THREE.CatmullRomCurve3(path,false,'centripetal',.5));
+  lastMazeBranches=Math.max(0,mazeCurves.length-1);
+  topDownCurve=null;
+  topDownControlPoints=[];
+  rebuildPathHelpers();
+  updateDebug();
+}
+
+function buildTopDownPath(incrementSeed=false, explicitPoints=null){
+  readParams();
+  mazeCurves=[];
+  mazeControlPaths=[];
+  lastMazeBranches=0;
+  if(incrementSeed){
+    params.pathSeed = (params.pathSeed + 1) % 10000000;
+    $('pathSeed').value = params.pathSeed;
+  }
+
+  const y=params.pathYOffset;
+  if(explicitPoints?.length>=4){
+    // Path Y Offset owns vertical placement; loaded/generated control points retain only their XZ route.
+    topDownControlPoints = explicitPoints.map(p=>new THREE.Vector3(+p[0],y,+p[2]));
+  }else{
+    const rand=seededRandom(params.pathSeed);
+    const count=params.pathPointCount;
+    const hx=dims.x*.5, hz=dims.z*.5;
+    const margin=params.probeRadius*1.35;
+    topDownControlPoints=[];
+    for(let i=0;i<count;i++){
+      const t=i/(count-1);
+      const x=THREE.MathUtils.lerp(-hx-margin,hx+margin,t);
+      let z=0;
+      if(i!==0 && i!==count-1){
+        const envelope=Math.sin(Math.PI*t);
+        z=(rand()*2-1)*hz*.78*params.pathWiggle*envelope;
+        z += Math.sin(t*Math.PI*2.3 + rand()*2)*hz*.12*params.pathWiggle;
+      }
+      topDownControlPoints.push(new THREE.Vector3(x,y,z));
+    }
+  }
+
+  topDownCurve = new THREE.CatmullRomCurve3(topDownControlPoints,false,'centripetal',.5);
+  rebuildPathHelpers();
+  updateDebug();
+}
+
+function rebuildPathHelpers(){
+  if(pathGroup){
+    scene.remove(pathGroup);
+    pathGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
+  }
+  pathGroup=new THREE.Group();
+  pathGroup.name='TopDownSplineHelpers';
+  scene.add(pathGroup);
+  pathLine=null;
+  probeMesh=null;
+
+  const bundles=getPathBundles(); // Used to draw either the single path or every path in a maze with the same helper logic.
+  if(!bundles.length || !params.showPath){ pathGroup.visible=false; return; }
+  pathGroup.visible=true;
+
+  const helperLift=Math.max(params.pathYOffset,dims.y*.5)+.06; // Keeps guide lines visible from the top camera regardless of actual probe Y.
+  const pointGeo=new THREE.SphereGeometry(Math.max(.035,params.probeRadius*.07),8,6);
+  bundles.forEach((bundle,bi)=>{
+    const linePts=bundle.curve.getSpacedPoints(Math.max(12,Math.ceil(bundle.curve.getLength()/.15)));
+    const lineGeo=new THREE.BufferGeometry().setFromPoints(linePts.map(p=>new THREE.Vector3(p.x,helperLift,p.z)));
+    const lineMat=new THREE.LineBasicMaterial({color:bi===0?0x6fd5ff:0x88baff,transparent:true,opacity:bi===0?.92:.72,depthTest:false});
+    const line=new THREE.Line(lineGeo,lineMat); // line previews each independent spline while carving still uses its true Y position.
+    line.renderOrder=20;
+    pathGroup.add(line);
+    if(bi===0) pathLine=line;
+
+    bundle.points.forEach((p,i)=>{
+      const m=new THREE.Mesh(pointGeo,new THREE.MeshBasicMaterial({
+        color:(i===0?0x6cff84:i===bundle.points.length-1?0xff9d66:0x82b8ff),
+        depthTest:false
+      }));
+      m.position.set(p.x,helperLift+.02,p.z);
+      m.renderOrder=21;
+      pathGroup.add(m);
+    });
+  });
+
+  probeMesh=new THREE.Mesh(
+    new THREE.SphereGeometry(params.probeRadius,16,10),
+    new THREE.MeshBasicMaterial({color:0xffd66f,wireframe:true,transparent:true,opacity:.8,depthTest:false})
+  );
+  probeMesh.position.copy(bundles[0].points[0]||new THREE.Vector3());
+  probeMesh.renderOrder=22;
+  pathGroup.add(probeMesh);
+}
+
+function moveProbeHelper(center,colliding=false){
+  if(!probeMesh) return;
+  probeMesh.position.copy(center);
+  probeMesh.material.color.setHex(colliding?0xff6f6f:0xffd66f);
+}
+
+function findProbeIntrusions(center,radius,limit=160){
+  const g=worldToGrid(center);
+  const sx=2*domainHalf.x/N, sy=2*domainHalf.y/N, sz=2*domainHalf.z/N;
+  const cellPad=Math.hypot(sx,sy,sz)*.52;
+  const scanR=radius+cellPad;
+  const ir=Math.ceil(scanR/sx)+1, jr=Math.ceil(scanR/sy)+1, kr=Math.ceil(scanR/sz)+1;
+  const i0=Math.max(0,Math.floor(g.x)-ir), i1=Math.min(N,Math.ceil(g.x)+ir);
+  const j0=Math.max(0,Math.floor(g.y)-jr), j1=Math.min(N,Math.ceil(g.y)+jr);
+  const k0=Math.max(0,Math.floor(g.z)-kr), k1=Math.min(N,Math.ceil(g.z)+kr);
+  const hits=[];
+
+  for(let k=k0;k<=k1;k++){
+    const z=THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N);
+    for(let j=j0;j<=j1;j++){
+      const y=THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N);
+      for(let i=i0;i<=i1;i++){
+        const v=field[idxP(i,j,k)];
+        if(v<=0) continue;
+        const x=THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N);
+        // floorContactAllowance prevents the wall detector from treating its intended floor contact as a wall collision.
+        const floorContactAllowance=sy*.65;
+        if(isTopDownMode() && params.levelFloor && y<=floorHeightAt(x,z)+floorContactAllowance) continue;
+        const d=Math.hypot(x-center.x,y-center.y,z-center.z);
+        if(d>scanR) continue;
+        hits.push({p:new THREE.Vector3(x,y,z),d,solid:v});
+      }
+    }
+  }
+  hits.sort((a,b)=>a.d-b.d || b.solid-a.solid);
+  if(hits.length>limit) hits.length=limit;
+  return hits;
+}
+
+function clearProbeAt(center,tangent){
+  let passes=0;
+  let intrusions=findProbeIntrusions(center,params.probeRadius);
+  while(intrusions.length && passes<params.probeMaxPasses){
+    passes++;
+    moveProbeHelper(center,true);
+    const burstCount=Math.min(params.probeDigBursts,intrusions.length);
+    for(let b=0;b<burstCount;b++){
+      const pick=intrusions[Math.min(intrusions.length-1,Math.floor((b/burstCount)*intrusions.length))];
+      const target=pick.p.clone().lerp(center,.12);
+      const jitter=params.pickJitter*params.brushRadius*.35;
+      target.x+=(Math.random()*2-1)*jitter;
+      target.z+=(Math.random()*2-1)*jitter;
+
+      const digDir=tangent.clone();
+      digDir.y=0;
+      if(digDir.lengthSq()<1e-6) digDir.set(1,0,0);
+      digDir.add(new THREE.Vector3((Math.random()*2-1)*params.dirChaos*.2,0,(Math.random()*2-1)*params.dirChaos*.2)).normalize();
+      const radius=params.brushRadius*(.78+Math.random()*.42);
+      carveHook(target,digDir,radius,1);
+    }
+    intrusions=findProbeIntrusions(center,params.probeRadius);
+  }
+  const clear=intrusions.length===0;
+  moveProbeHelper(center,!clear);
+  return {clear,passes,remaining:intrusions.length};
+}
+
+function carveProbeCurve(curve){
+  const length=Math.max(.001,curve.getLength()); // length determines how densely the detector samples this spline.
+  const steps=Math.max(2,Math.ceil(length/params.pathStep));
+  const samples=curve.getSpacedPoints(steps); // samples are the detector's discrete stop/check positions along the spline.
+  lastPathSamples+=samples.length;
+
+  for(let i=0;i<samples.length;i++){
+    const p=samples[i].clone();
+    p.y=params.pathYOffset;
+    const t=i/Math.max(1,samples.length-1);
+    const tangent=curve.getTangentAt(t).normalize();
+    const intrusions=findProbeIntrusions(p,params.probeRadius,1);
+    moveProbeHelper(p,intrusions.length>0);
+    if(!intrusions.length) continue;
+
+    lastProbeStops++;
+    const result=clearProbeAt(p,tangent); // result controls whether this branch may advance beyond the current detector collision.
+    if(!result.clear){
+      lastProbeFailures++;
+      return {clear:false,last:p};
+    }
+  }
+  return {clear:true,last:samples[samples.length-1]||new THREE.Vector3()};
+}
+
+function generateTopDownTunnel(append=false){
+  readParams();
+  if(!append){
+    resetBlock();
+    buildTopDownPath(false);
+  }else if(!topDownCurve){
+    buildTopDownPath(false);
+  }
+
+  lastProbeStops=0;
+  lastProbeFailures=0;
+  lastPathSamples=0;
+  floorProtectionActive=!!params.levelFloor;
+  const result=carveProbeCurve(topDownCurve); // result supplies the final probe position for the visual helper.
+  floorProtectionActive=false;
+
+  rebuildMesh();
+  moveProbeHelper(result.last,false);
+  toast(lastProbeFailures
+    ? `Stopped: ${lastProbeFailures} probe position could not be fully cleared.`
+    : `Spline complete: ${lastProbeStops} wall stops, ${totalHits.toLocaleString()} pick hits.`);
+}
+
+function generateMazeTunnel(append=false){
+  readParams();
+  if(!append){
+    resetBlock();
+    buildMazePaths(false);
+  }else if(!mazeCurves.length){
+    buildMazePaths(false);
+  }
+
+  lastProbeStops=0;
+  lastProbeFailures=0;
+  lastPathSamples=0;
+  floorProtectionActive=!!params.levelFloor;
+  let last=new THREE.Vector3(); // last tracks the most recent detector position for the helper after all branch carving finishes.
+  for(const curve of mazeCurves){
+    const result=carveProbeCurve(curve);
+    last=result.last;
+    if(!result.clear) break;
+  }
+  floorProtectionActive=false;
+
+  rebuildMesh();
+  moveProbeHelper(last,false);
+  toast(lastProbeFailures
+    ? `Maze stopped on an uncleared detector collision after ${lastMazeBranches} branches.`
+    : `Maze complete: ${lastMazeBranches} branches, ${lastProbeStops} wall stops, ${totalHits.toLocaleString()} pick hits.`);
+}
+
+function frameCameraForMode(forceTop=false){
+  readParams();
+  controls.target.set(0,0,0);
+  const span=Math.max(dims.x,dims.z);
+  if(forceTop || isTopDownMode(params.mode)){
+    camera.position.set(0,span*1.28,.001);
+    camera.up.set(0,0,-1);
+  }else{
+    const dist=Math.max(dims.x,dims.y,dims.z)*1.5;
+    camera.position.set(dist*.85,dist*.55,dist*.9);
+    camera.up.set(0,1,0);
+  }
+  camera.lookAt(0,0,0);
+  controls.update();
+}
+
+function applyModeDefaults(){
+  const mode=$('generatorMode').value; // mode selects the thin-slab defaults versus the original volumetric ant-farm defaults.
+
+  // These are the user-approved V5 baseline settings. Keep them together so Apply Mode Defaults restores the exact tuned sculpt behavior.
+  $('sizeX').value=18; $('sizeY').value=1.5; $('sizeZ').value=12;
+  $('gridN').value=64; $('baseCell').value=4;
+  $('brushRadius').value=.34; $('radiusChaos').value=.38; $('dirChaos').value=.58; $('pickJitter').value=.48; $('hookLength').value=.24; $('hitsPerStep').value=3;
+  $('faceThreshold').value=10; $('minCell').value=1; $('refineRadius').value=2.1;
+  $('probeRadius').value=.5; $('pathYOffset').value=.55; $('levelFloor').checked=true; $('floorOffset').value=0; $('floorVariation').value=.08;
+  $('pathStep').value=.3; $('pathPointCount').value=7; $('pathWiggle').value=.62; $('pathSeed').value=1346; $('probeDigBursts').value=4; $('probeMaxPasses').value=120; $('showPath').checked=true;
+  $('mazeBranchCount').value=16; $('mazeBranchLength').value=3.75; $('mazeTurnChaos').value=.42; $('mazeLoopChance').value=.18;
+  $('tunnelCount').value=5; $('stepsPerTunnel').value=72; $('stepLength').value=.42; $('branchChance').value=.036; $('chamberChance').value=.045; $('exitChance').value=.16; $('horizontalBias').checked=true;
+  $('wallGridTileSize').value=1; $('wallGridOffsetX').value=0; $('wallGridOffsetZ').value=0; $('wallGridMargin').value=.05; $('wallGridClaim').value=.35; $('showWallGrid').checked=true;
+  $('autoCullUntouched').checked=true; $('stitchCullEdges').checked=true; $('cullTouchTolerance').value=.01; $('cullPaddingTiles').value=0;
+
+  if(mode==='antfarm'){
+    // Preserve the useful volumetric proportions when explicitly switching to the legacy 3D mode.
+    $('sizeX').value=16; $('sizeY').value=10; $('sizeZ').value=12;
+    $('brushRadius').value=.62; $('hookLength').value=.38;
+  }
+  resetBlock();
+  if(mode==='topdown') buildTopDownPath(false);
+  else if(mode==='maze') buildMazePaths(false);
+  rebuildWallGridHelper();
+  frameCameraForMode();
+}
+
+function updateModeUI(){
+  const mode=$('generatorMode').value; // mode drives which specialized control groups and generator labels are visible.
+  const top=isTopDownMode(mode);
+  document.querySelectorAll('.topdown-only').forEach(el=>el.style.display=top?'':'none');
+  document.querySelectorAll('.maze-only').forEach(el=>el.style.display=mode==='maze'?'':'none');
+  document.querySelectorAll('.antfarm-only').forEach(el=>el.style.display=mode==='antfarm'?'':'none');
+  $('generateBtn').textContent=mode==='topdown'?'Carve Spline Tunnel':mode==='maze'?'Carve Branching Maze':'Generate Ant Farm';
+  $('continueBtn').textContent=mode==='topdown'?'Run Path Again':mode==='maze'?'Run Maze Again':'Dig More';
+  $('newPathBtn').textContent=mode==='maze'?'Regenerate Maze':'Regenerate Path';
+  if(pathGroup) pathGroup.visible=top && $('showPath').checked;
+  if(mode==='antfarm') lastMazeBranches=0;
+  rebuildWallGridHelper();
+  updateDebug();
+}
+
+function generateCurrentMode(append=false){
+  readParams();
+  if(params.mode==='topdown') generateTopDownTunnel(append);
+  else if(params.mode==='maze') generateMazeTunnel(append);
+  else generateAntFarm(append);
+}
+
+function chooseEntry(){
+  const hx=dims.x*.5,hy=dims.y*.5,hz=dims.z*.5;
+  const face=Math.floor(Math.random()*4); // side walls produce the clearest ant-farm entrances.
+  let p=new THREE.Vector3(), dir=new THREE.Vector3();
+  if(face===0){ p.set(-hx-.03,(Math.random()-.5)*hy*1.5,(Math.random()-.5)*hz*1.6); dir.set(1,0,0); }
+  if(face===1){ p.set( hx+.03,(Math.random()-.5)*hy*1.5,(Math.random()-.5)*hz*1.6); dir.set(-1,0,0); }
+  if(face===2){ p.set((Math.random()-.5)*hx*1.6,(Math.random()-.5)*hy*1.5,-hz-.03); dir.set(0,0,1); }
+  if(face===3){ p.set((Math.random()-.5)*hx*1.6,(Math.random()-.5)*hy*1.5, hz+.03); dir.set(0,0,-1); }
+  return {p,dir};
+}
+
+function steerWalker(w){
+  const noise=randomUnit().multiplyScalar(params.dirChaos);
+  if(params.horizontalBias) noise.y*=.35;
+  w.dir.add(noise.multiplyScalar(.24)).normalize();
+
+  const hx=dims.x*.5,hy=dims.y*.5,hz=dims.z*.5;
+  const safe=params.brushRadius*1.8;
+  const force=new THREE.Vector3();
+
+  // Usually bounce away from the exterior so most branches remain buried.
+  if(Math.abs(w.p.x)>hx-safe) force.x += -Math.sign(w.p.x)*.75;
+  if(Math.abs(w.p.y)>hy-safe) force.y += -Math.sign(w.p.y)*.75;
+  if(Math.abs(w.p.z)>hz-safe) force.z += -Math.sign(w.p.z)*.75;
+
+  // Sometimes deliberately break through and create another opening.
+  if(force.lengthSq()>0 && Math.random()<params.exitChance*.07){
+    force.multiplyScalar(-1.5);
+  }
+  w.dir.add(force).normalize();
+}
+
+function digWalker(w,steps,branchQueue){
+  for(let s=0;s<steps;s++){
+    steerWalker(w);
+
+    const radius=params.brushRadius*(.75+Math.random()*.5);
+    const chamber=Math.random()<params.chamberChance ? 1.65+Math.random()*.85 : 1;
+    carveHook(w.p,w.dir,radius,chamber);
+
+    if(Math.random()<params.branchChance && branchQueue.length<28){
+      const childDir=w.dir.clone().add(randomUnit().multiplyScalar(.9)).normalize();
+      if(params.horizontalBias) childDir.y*=.55;
+      childDir.normalize();
+      branchQueue.push({
+        p:w.p.clone(),
+        dir:childDir,
+        steps:Math.max(8,Math.floor((steps-s)*(.28+Math.random()*.42)))
+      });
+    }
+
+    w.p.addScaledVector(w.dir,params.stepLength*(.65+Math.random()*.7));
+
+    // Stop after traveling clearly outside the stone.
+    if(Math.abs(w.p.x)>dims.x*.62 || Math.abs(w.p.y)>dims.y*.62 || Math.abs(w.p.z)>dims.z*.62) break;
+  }
+}
+
+function generateAntFarm(append=false){
+  readParams();
+  if(!append) resetBlock();
+
+  const queue=[];
+  for(let t=0;t<params.tunnelCount;t++){
+    const e=chooseEntry();
+    queue.push({p:e.p,dir:e.dir,steps:params.stepsPerTunnel});
+  }
+
+  let processed=0;
+  while(queue.length && processed<40){
+    const w=queue.shift();
+    digWalker(w,w.steps,queue);
+    processed++;
+  }
+
+  rebuildMesh();
+  toast(`Ant farm carved: ${totalHits.toLocaleString()} pick hits.`);
+}
+
+function leafForCell(i,j,k){
+  if(i<0||j<0||k<0||i>=N||j>=N||k>=N) return -1;
+  return leafIdMap[idxC(i,j,k)];
+}
+
+function sampleFieldNearestWorld(x,y,z){
+  // g maps world coordinates to the scalar lattice; nearest sampling is sufficient for tile ownership classification.
+  const g=worldToGrid(new THREE.Vector3(x,y,z));
+  const i=Math.max(0,Math.min(N,Math.round(g.x)));
+  const j=Math.max(0,Math.min(N,Math.round(g.y)));
+  const k=Math.max(0,Math.min(N,Math.round(g.z)));
+  return field[idxP(i,j,k)];
+}
+
+function rebuildWallGridHelper(){
+  if(wallGridHelper){
+    scene.remove(wallGridHelper);
+    wallGridHelper.geometry.dispose();
+    wallGridHelper.material.dispose();
+    wallGridHelper=null;
+  }
+  readParams();
+  if(!isTopDownMode() || !params.showWallGrid || !field) return;
+
+  const tile=params.wallGridTileSize;
+  const hx=dims.x*.5, hz=dims.z*.5;
+  const ox=params.wallGridOffsetX, oz=params.wallGridOffsetZ;
+  const positions=[];
+  const segmentsPerLine=32; // segmentsPerLine lets the grid drape over the small deterministic floor Y variation.
+
+  const pushSegment=(a,b)=>{
+    positions.push(a.x,a.y,a.z,b.x,b.y,b.z);
+  };
+
+  const minIX=Math.floor((-hx-ox)/tile)-1;
+  const maxIX=Math.ceil((hx-ox)/tile)+1;
+  for(let ix=minIX;ix<=maxIX;ix++){
+    const x=ox+ix*tile;
+    if(x < -hx-1e-6 || x > hx+1e-6) continue;
+    let prev=null;
+    for(let q=0;q<=segmentsPerLine;q++){
+      const z=THREE.MathUtils.lerp(-hz,hz,q/segmentsPerLine);
+      const p=new THREE.Vector3(x,floorHeightAt(x,z)+.025,z);
+      if(prev) pushSegment(prev,p);
+      prev=p;
+    }
+  }
+
+  const minIZ=Math.floor((-hz-oz)/tile)-1;
+  const maxIZ=Math.ceil((hz-oz)/tile)+1;
+  for(let iz=minIZ;iz<=maxIZ;iz++){
+    const z=oz+iz*tile;
+    if(z < -hz-1e-6 || z > hz+1e-6) continue;
+    let prev=null;
+    for(let q=0;q<=segmentsPerLine;q++){
+      const x=THREE.MathUtils.lerp(-hx,hx,q/segmentsPerLine);
+      const p=new THREE.Vector3(x,floorHeightAt(x,z)+.025,z);
+      if(prev) pushSegment(prev,p);
+      prev=p;
+    }
+  }
+
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  const mat=new THREE.LineBasicMaterial({color:0x69c6d6,transparent:true,opacity:.72,depthTest:false});
+  wallGridHelper=new THREE.LineSegments(geo,mat);
+  wallGridHelper.name='FloorTileGrid';
+  wallGridHelper.renderOrder=8;
+  scene.add(wallGridHelper);
+}
+
+function carveGridRect(rect,record=true){
+  // rect is an XZ tile column. It subtracts only above the protected floor, so grid snapping cannot create pits.
+  const {x0,x1,z0,z1}=rect;
+  const minX=Math.min(x0,x1), maxX=Math.max(x0,x1), minZ=Math.min(z0,z1), maxZ=Math.max(z0,z1);
+  const cx=(minX+maxX)*.5, cz=(minZ+maxZ)*.5;
+  const hx=(maxX-minX)*.5, hz=(maxZ-minZ)*.5;
+  const g0=worldToGrid(new THREE.Vector3(minX,-domainHalf.y,minZ));
+  const g1=worldToGrid(new THREE.Vector3(maxX, domainHalf.y,maxZ));
+  const i0=Math.max(0,Math.floor(Math.min(g0.x,g1.x))-2), i1=Math.min(N,Math.ceil(Math.max(g0.x,g1.x))+2);
+  const k0=Math.max(0,Math.floor(Math.min(g0.z,g1.z))-2), k1=Math.min(N,Math.ceil(Math.max(g0.z,g1.z))+2);
+
+  for(let k=k0;k<=k1;k++){
+    const z=THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N);
+    for(let j=0;j<=N;j++){
+      const y=THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N);
+      for(let i=i0;i<=i1;i++){
+        const x=THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N);
+        const floorLimit=params.levelFloor ? floorHeightAt(x,z) : -dims.y*.5;
+        if(y<floorLimit) continue;
+        const dXZ=Math.max(Math.abs(x-cx)-hx,Math.abs(z-cz)-hz);
+        const id=idxP(i,j,k);
+        if(dXZ<field[id]) field[id]=dXZ;
+      }
+    }
+  }
+  if(record) gridCarves.push({x0:minX,x1:maxX,z0:minZ,z1:maxZ});
+}
+
+function clearCullMask(rebuild=true,notify=true){
+  // clearCullMask restores omitted mesh instantly because culling never mutates the scalar sculpt field.
+  const had=culledTileKeys.size>0;
+  culledTileKeys.clear();
+  lastCulledTiles=0;
+  cullMaskGrid=null;
+  lastCullCapFaces=0;
+  if(rebuild && had) rebuildMesh();
+  if(notify) toast(had?'Culled outside mesh restored.':'No cull mask is active.');
+}
+
+function cullMaskMatchesCurrentGrid(){
+  if(!cullMaskGrid) return false;
+  return Math.abs(cullMaskGrid.tile-params.wallGridTileSize)<1e-9 &&
+         Math.abs(cullMaskGrid.ox-params.wallGridOffsetX)<1e-9 &&
+         Math.abs(cullMaskGrid.oz-params.wallGridOffsetZ)<1e-9;
+}
+
+function isPointInCulledTile(x,z){
+  if(!culledTileKeys.size || !cullMaskGrid) return false;
+  const ix=Math.floor((x-cullMaskGrid.ox)/cullMaskGrid.tile);
+  const iz=Math.floor((z-cullMaskGrid.oz)/cullMaskGrid.tile);
+  return culledTileKeys.has(`${ix},${iz}`);
+}
+
+function buildUntouchedCullMask({rebuild=true,notify=true}={}){
+  readParams();
+  if(!isTopDownMode()){
+    if(notify) toast('Outside-area culling is available in the top-down modes.');
+    return 0;
+  }
+  if(!field){
+    if(notify) toast('Generate or reset the rock first.');
+    return 0;
+  }
+
+  const tile=params.wallGridTileSize;
+  const ox=params.wallGridOffsetX, oz=params.wallGridOffsetZ;
+  const hx=dims.x*.5, hz=dims.z*.5;
+  const minIX=Math.floor((-hx-ox)/tile);
+  const maxIX=Math.ceil((hx-ox)/tile)-1;
+  const minIZ=Math.floor((-hz-oz)/tile);
+  const maxIZ=Math.ceil((hz-oz)/tile)-1;
+  const touched=new Set();
+  const tolerance=params.cullTouchTolerance;
+
+  // A changed scalar sample can influence the zero surface for roughly one lattice spacing around it.
+  // Expand ownership by that footprint so a ragged wall never gets hidden merely because its controlling sample sits over a tile line.
+  const dx=(domainHalf.x*2)/N, dz=(domainHalf.z*2)/N;
+  const influenceX=dx*.8, influenceZ=dz*.8;
+
+  for(let k=0;k<=N;k++){
+    const z=THREE.MathUtils.lerp(-domainHalf.z,domainHalf.z,k/N);
+    if(z < -hz-influenceZ || z > hz+influenceZ) continue;
+    for(let i=0;i<=N;i++){
+      const x=THREE.MathUtils.lerp(-domainHalf.x,domainHalf.x,i/N);
+      if(x < -hx-influenceX || x > hx+influenceX) continue;
+
+      let columnTouched=false;
+      for(let j=0;j<=N;j++){
+        const y=THREE.MathUtils.lerp(-domainHalf.y,domainHalf.y,j/N);
+        const original=originalBlockFieldAt(x,y,z);
+        if(field[idxP(i,j,k)] < original-tolerance){
+          columnTouched=true;
+          break;
+        }
+      }
+      if(!columnTouched) continue;
+
+      const ix0=Math.floor((x-influenceX-ox)/tile);
+      const ix1=Math.floor((x+influenceX-ox)/tile);
+      const iz0=Math.floor((z-influenceZ-oz)/tile);
+      const iz1=Math.floor((z+influenceZ-oz)/tile);
+      for(let iz=iz0;iz<=iz1;iz++) for(let ix=ix0;ix<=ix1;ix++){
+        if(ix>=minIX && ix<=maxIX && iz>=minIZ && iz<=maxIZ) touched.add(`${ix},${iz}`);
+      }
+    }
+  }
+
+  // Optional untouched padding dilates the preserved region rather than the culled region.
+  let keep=touched;
+  const padding=params.cullPaddingTiles;
+  if(padding>0){
+    keep=new Set(touched);
+    for(const key of touched){
+      const [ix,iz]=key.split(',').map(Number);
+      for(let dzp=-padding;dzp<=padding;dzp++) for(let dxp=-padding;dxp<=padding;dxp++){
+        const nx=ix+dxp,nz=iz+dzp;
+        if(nx>=minIX && nx<=maxIX && nz>=minIZ && nz<=maxIZ) keep.add(`${nx},${nz}`);
+      }
+    }
+  }
+
+  const nextCull=new Set();
+  for(let iz=minIZ;iz<=maxIZ;iz++) for(let ix=minIX;ix<=maxIX;ix++){
+    if(!keep.has(`${ix},${iz}`)) nextCull.add(`${ix},${iz}`);
+  }
+
+  culledTileKeys=nextCull;
+  lastCulledTiles=nextCull.size;
+  cullMaskGrid={tile,ox,oz};
+
+  if(rebuild) rebuildMesh();
+  if(notify){
+    toast(nextCull.size
+      ? `Culled ${nextCull.size.toLocaleString()} untouched floor-grid tiles to black void.`
+      : 'No untouched floor-grid tiles were found to cull.');
+  }
+  return nextCull.size;
+}
+
+function snapWallsToFloorGrid(){
+  readParams();
+  // A previous cull mask describes the pre-snap mesh, so discard it before changing wall ownership.
+  clearCullMask(false,false);
+  if(!isTopDownMode()){
+    toast('Floor-grid wall snap is available in the top-down modes.');
+    return;
+  }
+  if(!field){ toast('Generate or reset the rock first.'); return; }
+
+  const tile=params.wallGridTileSize;
+  const hx=dims.x*.5, hz=dims.z*.5;
+  const ox=params.wallGridOffsetX, oz=params.wallGridOffsetZ;
+  const margin=params.wallGridMargin;
+  const minIX=Math.floor((-hx-ox)/tile);
+  const maxIX=Math.ceil((hx-ox)/tile)-1;
+  const minIZ=Math.floor((-hz-oz)/tile);
+  const maxIZ=Math.ceil((hz-oz)/tile)-1;
+  const selected=[];
+  const selectedKeys=new Set();
+  const fractions=[.2,.5,.8]; // fractions are nine floor samples used to decide whether an irregular opening owns a tile.
+  const required=Math.max(1,Math.ceil(9*params.wallGridClaim));
+  const sampleLift=Math.max(.06,Math.min(.16,params.probeRadius*.28));
+
+  for(let iz=minIZ;iz<=maxIZ;iz++){
+    const rawZ0=oz+iz*tile, rawZ1=rawZ0+tile;
+    const z0=Math.max(-hz,rawZ0), z1=Math.min(hz,rawZ1);
+    if(z1-z0<tile*.15) continue;
+    for(let ix=minIX;ix<=maxIX;ix++){
+      const rawX0=ox+ix*tile, rawX1=rawX0+tile;
+      const x0=Math.max(-hx,rawX0), x1=Math.min(hx,rawX1);
+      if(x1-x0<tile*.15) continue;
+      let open=0;
+      for(const fz of fractions){
+        const z=THREE.MathUtils.lerp(z0,z1,fz);
+        for(const fx of fractions){
+          const x=THREE.MathUtils.lerp(x0,x1,fx);
+          const y=floorHeightAt(x,z)+sampleLift;
+          if(sampleFieldNearestWorld(x,y,z)<=0) open++;
+        }
+      }
+      if(open>=required){
+        const rec={ix,iz,x0:Math.max(-hx,x0-margin),x1:Math.min(hx,x1+margin),z0:Math.max(-hz,z0-margin),z1:Math.min(hz,z1+margin)};
+        selected.push(rec);
+        selectedKeys.add(`${ix},${iz}`);
+      }
+    }
+  }
+
+  if(!selected.length){
+    lastGridTiles=0;
+    updateDebug();
+    toast('No walkable floor tiles met the current coverage threshold.');
+    return;
+  }
+
+  // Boundary tiles get local refinement so snapped wall edges remain accurate without densifying the whole slab.
+  for(const rec of selected){
+    const boundary=!selectedKeys.has(`${rec.ix-1},${rec.iz}`) || !selectedKeys.has(`${rec.ix+1},${rec.iz}`) ||
+                   !selectedKeys.has(`${rec.ix},${rec.iz-1}`) || !selectedKeys.has(`${rec.ix},${rec.iz+1}`);
+    if(!boundary) continue;
+    const c=new THREE.Vector3((rec.x0+rec.x1)*.5,params.pathYOffset,(rec.z0+rec.z1)*.5);
+    refineNear(c,Math.max(tile*.82,params.probeRadius*1.25),params.minCell,false);
+  }
+
+  for(const rec of selected) carveGridRect(rec,true);
+  lastGridTiles=selected.length;
+  if(params.autoCullUntouched){
+    const culled=buildUntouchedCullMask({rebuild:true,notify:false});
+    rebuildWallGridHelper();
+    toast(`Grid-snapped ${selected.length} walkable tiles, then culled ${culled.toLocaleString()} untouched tiles to black void.`);
+  }else{
+    rebuildMesh();
+    rebuildWallGridHelper();
+    toast(`Grid-snapped ${selected.length} walkable tiles; walls pushed ${margin.toFixed(2)} beyond tile edges.`);
+  }
+}
+
+
+function sampleFieldTrilinearWorld(x,y,z){
+  // Used by the stitched cull boundary to place its upper edge on the actual sculpted rock surface.
+  const g=worldToGrid(new THREE.Vector3(x,y,z));
+  const gx=Math.max(0,Math.min(N,g.x)), gy=Math.max(0,Math.min(N,g.y)), gz=Math.max(0,Math.min(N,g.z));
+  const i0=Math.min(N-1,Math.floor(gx)), j0=Math.min(N-1,Math.floor(gy)), k0=Math.min(N-1,Math.floor(gz));
+  const i1=i0+1,j1=j0+1,k1=k0+1;
+  const tx=gx-i0,ty=gy-j0,tz=gz-k0;
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const c000=field[idxP(i0,j0,k0)], c100=field[idxP(i1,j0,k0)];
+  const c010=field[idxP(i0,j1,k0)], c110=field[idxP(i1,j1,k0)];
+  const c001=field[idxP(i0,j0,k1)], c101=field[idxP(i1,j0,k1)];
+  const c011=field[idxP(i0,j1,k1)], c111=field[idxP(i1,j1,k1)];
+  const c00=lerp(c000,c100,tx),c10=lerp(c010,c110,tx),c01=lerp(c001,c101,tx),c11=lerp(c011,c111,tx);
+  return lerp(lerp(c00,c10,ty),lerp(c01,c11,ty),tz);
+}
+
+function solidTopAtXZ(x,z){
+  // Top-down carving preserves a contiguous rock floor from the slab bottom upward.
+  // Find its highest zero crossing so a stitched side face ends exactly on the surviving tooth-tip contour.
+  const hy=dims.y*.5;
+  const eps=Math.max(.001,(domainHalf.y*2/N)*.03);
+  const topY=hy-eps;
+  let prevY=topY;
+  let prevF=sampleFieldTrilinearWorld(x,prevY,z);
+  if(prevF>=0) return hy;
+
+  const samples=Math.max(12,Math.ceil(dims.y/((domainHalf.y*2)/N))*2);
+  for(let s=1;s<=samples;s++){
+    const y=THREE.MathUtils.lerp(topY,-hy+eps,s/samples);
+    const f=sampleFieldTrilinearWorld(x,y,z);
+    if(f>=0){
+      const denom=prevF-f;
+      const t=Math.abs(denom)>1e-9 ? prevF/denom : .5;
+      return THREE.MathUtils.lerp(prevY,y,Math.max(0,Math.min(1,t)));
+    }
+    prevY=y;
+    prevF=f;
+  }
+  return null;
+}
+
+function clipPolyAxis(poly,axis,bound,keepGreater){
+  if(!poly.length) return poly;
+  const out=[];
+  const eps=1e-8;
+  const inside=v=>keepGreater ? v[axis]>=bound-eps : v[axis]<=bound+eps;
+  const intersect=(a,b)=>{
+    const av=a[axis],bv=b[axis];
+    const denom=bv-av;
+    const t=Math.abs(denom)>1e-12 ? (bound-av)/denom : 0;
+    return {
+      x:a.x+(b.x-a.x)*t,
+      y:a.y+(b.y-a.y)*t,
+      z:a.z+(b.z-a.z)*t
+    };
+  };
+  let prev=poly[poly.length-1], prevIn=inside(prev);
+  for(const cur of poly){
+    const curIn=inside(cur);
+    if(curIn!==prevIn) out.push(intersect(prev,cur));
+    if(curIn) out.push(cur);
+    prev=cur; prevIn=curIn;
+  }
+  return out;
+}
+
+function clipPolyToXZRect(poly,x0,x1,z0,z1){
+  let p=clipPolyAxis(poly,'x',x0,true);
+  p=clipPolyAxis(p,'x',x1,false);
+  p=clipPolyAxis(p,'z',z0,true);
+  p=clipPolyAxis(p,'z',z1,false);
+  return p;
+}
+
+function createCullGeometryBuilder(){
+  const outPositions=[];
+  const outIndices=[];
+  const vertexMap=new Map();
+
+  const addVertex=v=>{
+    // Quantization shares clipped/stitch vertices along the exact same tile edge and prevents microscopic cracks.
+    const key=`${Math.round(v.x*1e6)},${Math.round(v.y*1e6)},${Math.round(v.z*1e6)}`;
+    let id=vertexMap.get(key);
+    if(id===undefined){
+      id=outPositions.length/3;
+      outPositions.push(v.x,v.y,v.z);
+      vertexMap.set(key,id);
+    }
+    return id;
+  };
+
+  const addTri=(a,b,c)=>{
+    const ia=addVertex(a),ib=addVertex(b),ic=addVertex(c);
+    if(ia===ib||ib===ic||ic===ia) return false;
+    outIndices.push(ia,ib,ic);
+    return true;
+  };
+
+  const addQuad=(a,b,c,d,flip=false)=>{
+    if(flip){
+      addTri(a,c,b);
+      addTri(a,d,c);
+    }else{
+      addTri(a,b,c);
+      addTri(a,c,d);
+    }
+  };
+
+  return {outPositions,outIndices,addVertex,addTri,addQuad};
+}
+
+function clipMeshExactlyToCullGrid(srcPositions,srcIndices,builder){
+  // Unlike V6's centroid test, this cuts every crossing triangle exactly on the XZ tile boundary.
+  const tile=cullMaskGrid.tile,ox=cullMaskGrid.ox,oz=cullMaskGrid.oz;
+  const eps=1e-7;
+
+  for(let q=0;q<srcIndices.length;q+=3){
+    const ia=srcIndices[q]*3,ib=srcIndices[q+1]*3,ic=srcIndices[q+2]*3;
+    const tri=[
+      {x:srcPositions[ia],y:srcPositions[ia+1],z:srcPositions[ia+2]},
+      {x:srcPositions[ib],y:srcPositions[ib+1],z:srcPositions[ib+2]},
+      {x:srcPositions[ic],y:srcPositions[ic+1],z:srcPositions[ic+2]}
+    ];
+
+    const areaXZ=Math.abs(
+      (tri[1].x-tri[0].x)*(tri[2].z-tri[0].z)-
+      (tri[2].x-tri[0].x)*(tri[1].z-tri[0].z)
+    );
+
+    // Vertical/edge-on triangles have no useful XZ area to tile-clip.
+    // Their centroid ownership is stable and they will be replaced by a stitched cap where needed.
+    if(areaXZ<1e-10){
+      const cx=(tri[0].x+tri[1].x+tri[2].x)/3;
+      const cz=(tri[0].z+tri[1].z+tri[2].z)/3;
+      if(!isPointInCulledTile(cx,cz)) builder.addTri(tri[0],tri[1],tri[2]);
+      continue;
+    }
+
+    const minX=Math.min(tri[0].x,tri[1].x,tri[2].x);
+    const maxX=Math.max(tri[0].x,tri[1].x,tri[2].x);
+    const minZ=Math.min(tri[0].z,tri[1].z,tri[2].z);
+    const maxZ=Math.max(tri[0].z,tri[1].z,tri[2].z);
+    const ix0=Math.floor((minX-ox)/tile);
+    const ix1=Math.floor((maxX-ox-eps)/tile);
+    const iz0=Math.floor((minZ-oz)/tile);
+    const iz1=Math.floor((maxZ-oz-eps)/tile);
+
+    for(let iz=iz0;iz<=iz1;iz++) for(let ix=ix0;ix<=ix1;ix++){
+      if(culledTileKeys.has(`${ix},${iz}`)) continue;
+      const x0=ox+ix*tile,x1=x0+tile,z0=oz+iz*tile,z1=z0+tile;
+      const poly=clipPolyToXZRect(tri,x0,x1,z0,z1);
+      if(poly.length<3) continue;
+      for(let p=1;p<poly.length-1;p++) builder.addTri(poly[0],poly[p],poly[p+1]);
+    }
+  }
+}
+
+function stitchCullBoundaryCaps(builder){
+  if(!params.stitchCullEdges || !culledTileKeys.size || !cullMaskGrid) return 0;
+
+  const tile=cullMaskGrid.tile,ox=cullMaskGrid.ox,oz=cullMaskGrid.oz;
+  const hx=dims.x*.5,hz=dims.z*.5,hy=dims.y*.5;
+  const minIX=Math.floor((-hx-ox)/tile),maxIX=Math.ceil((hx-ox)/tile)-1;
+  const minIZ=Math.floor((-hz-oz)/tile),maxIZ=Math.ceil((hz-oz)/tile)-1;
+  const worldCellX=(domainHalf.x*2)/N,worldCellZ=(domainHalf.z*2)/N;
+  let faces=0;
+
+  const inRange=(ix,iz)=>ix>=minIX&&ix<=maxIX&&iz>=minIZ&&iz<=maxIZ;
+  const isCulled=(ix,iz)=>culledTileKeys.has(`${ix},${iz}`);
+
+  const addEdge=(x0,z0,x1,z1,flip)=>{
+    const len=Math.hypot(x1-x0,z1-z0);
+    const stepTarget=Math.max(.04,Math.min(worldCellX,worldCellZ)*.65);
+    const steps=Math.max(1,Math.ceil(len/stepTarget));
+    let prev=null;
+
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      const x=THREE.MathUtils.lerp(x0,x1,t);
+      const z=THREE.MathUtils.lerp(z0,z1,t);
+      const top=solidTopAtXZ(x,z);
+      const cur=top===null?null:{
+        bottom:{x,y:-hy,z},
+        top:{x,y:Math.max(-hy,Math.min(hy,top)),z}
+      };
+
+      if(prev&&cur){
+        const before=builder.outIndices.length;
+        builder.addQuad(prev.bottom,cur.bottom,cur.top,prev.top,flip);
+        faces+=(builder.outIndices.length-before)/3;
+      }
+      prev=cur;
+    }
+  };
+
+  for(const key of culledTileKeys){
+    const [ix,iz]=key.split(',').map(Number);
+    const rawX0=ox+ix*tile,rawX1=rawX0+tile,rawZ0=oz+iz*tile,rawZ1=rawZ0+tile;
+    const x0=Math.max(-hx,rawX0),x1=Math.min(hx,rawX1),z0=Math.max(-hz,rawZ0),z1=Math.min(hz,rawZ1);
+    if(x1<=x0||z1<=z0) continue;
+
+    // Each cap is created only from the culled tile toward a neighboring kept tile,
+    // so every interface is emitted exactly once.
+    if(inRange(ix-1,iz)&&!isCulled(ix-1,iz)) addEdge(x0,z0,x0,z1,false);
+    if(inRange(ix+1,iz)&&!isCulled(ix+1,iz)) addEdge(x1,z0,x1,z1,true);
+    if(inRange(ix,iz-1)&&!isCulled(ix,iz-1)) addEdge(x0,z0,x1,z0,true);
+    if(inRange(ix,iz+1)&&!isCulled(ix,iz+1)) addEdge(x0,z1,x1,z1,false);
+  }
+
+  return faces;
+}
+
+function rebuildMesh(){
+  const t0=performance.now();
+  leafVertexIndex.clear();
+
+  const positions=[];
+  for(const leaf of leaves){
+    const v=leafSurfaceVertex(leaf);
+    if(v){
+      const vi=positions.length/3;
+      leafVertexIndex.set(leaf.id,vi);
+      positions.push(v.x,v.y,v.z);
+    }
+  }
+
+  const indices=[];
+  const faceKeys=new Set();
+
+  function addFace(ids,flip){
+    const unique=[];
+    for(const id of ids){
+      if(id<0) continue;
+      const vi=leafVertexIndex.get(id);
+      if(vi===undefined) continue;
+      if(!unique.includes(vi)) unique.push(vi);
+    }
+    if(unique.length<3) return;
+
+    const key=[...unique].sort((a,b)=>a-b).join(',');
+    if(faceKeys.has(key)) return;
+    faceKeys.add(key);
+
+    if(flip) unique.reverse();
+    for(let q=1;q<unique.length-1;q++){
+      indices.push(unique[0],unique[q],unique[q+1]);
+    }
+  }
+
+  // X-oriented fine-grid edges.
+  for(let k=1;k<N;k++) for(let j=1;j<N;j++) for(let i=0;i<N;i++){
+    const a=field[idxP(i,j,k)], b=field[idxP(i+1,j,k)];
+    if((a>=0)===(b>=0)) continue;
+    addFace([
+      leafForCell(i,j-1,k-1),
+      leafForCell(i,j,k-1),
+      leafForCell(i,j,k),
+      leafForCell(i,j-1,k)
+    ], a<0);
+  }
+  // Y-oriented fine-grid edges.
+  for(let k=1;k<N;k++) for(let j=0;j<N;j++) for(let i=1;i<N;i++){
+    const a=field[idxP(i,j,k)], b=field[idxP(i,j+1,k)];
+    if((a>=0)===(b>=0)) continue;
+    addFace([
+      leafForCell(i-1,j,k-1),
+      leafForCell(i,j,k-1),
+      leafForCell(i,j,k),
+      leafForCell(i-1,j,k)
+    ], a>=0);
+  }
+  // Z-oriented fine-grid edges.
+  for(let k=0;k<N;k++) for(let j=1;j<N;j++) for(let i=1;i<N;i++){
+    const a=field[idxP(i,j,k)], b=field[idxP(i,j,k+1)];
+    if((a>=0)===(b>=0)) continue;
+    addFace([
+      leafForCell(i-1,j-1,k),
+      leafForCell(i,j-1,k),
+      leafForCell(i,j,k),
+      leafForCell(i-1,j,k)
+    ], a<0);
+  }
+
+  let finalPositions=positions;
+  let finalIndices=indices;
+  lastCullCapFaces=0;
+
+  if(culledTileKeys.size){
+    if(!cullMaskMatchesCurrentGrid()){
+      // Tile size/offset changed after the mask was generated; never apply stale coordinates to a new grid.
+      culledTileKeys.clear();
+      lastCulledTiles=0;
+      cullMaskGrid=null;
+    }else if(params.stitchCullEdges){
+      const builder=createCullGeometryBuilder();
+      clipMeshExactlyToCullGrid(positions,indices,builder);
+      lastCullCapFaces=stitchCullBoundaryCaps(builder);
+      finalPositions=builder.outPositions;
+      finalIndices=builder.outIndices;
+    }else{
+      // Optional legacy preview: whole-triangle culling. It is intentionally rough and can leave teeth.
+      const filtered=[];
+      for(let q=0;q<indices.length;q+=3){
+        const ia=indices[q]*3, ib=indices[q+1]*3, ic=indices[q+2]*3;
+        const cx=(positions[ia]+positions[ib]+positions[ic])/3;
+        const cz=(positions[ia+2]+positions[ib+2]+positions[ic+2])/3;
+        if(!isPointInCulledTile(cx,cz)) filtered.push(indices[q],indices[q+1],indices[q+2]);
+      }
+      finalIndices=filtered;
+    }
+  }
+
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(finalPositions,3));
+  geo.setIndex(finalIndices);
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+
+  if(rockMesh){
+    scene.remove(rockMesh);
+    rockMesh.geometry.dispose();
+    rockMesh.material.dispose();
+  }
+  if(wireMesh){
+    scene.remove(wireMesh);
+    wireMesh.geometry.dispose();
+    wireMesh.material.dispose();
+    wireMesh=null;
+  }
+
+  const transparent=$('transparent').checked;
+  const flat=$('flatShading').checked;
+  rockMesh=new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({
+      color:0x77736b,
+      roughness:.92,
+      metalness:0,
+      flatShading:flat,
+      transparent,
+      opacity:transparent?.36:1,
+      side:THREE.DoubleSide,
+      depthWrite:!transparent
+    })
+  );
+  rockMesh.name=params.mode==='topdown'?'TopDownTunnelRock':'AntFarmRock';
+  scene.add(rockMesh);
+
+  if($('wireframe').checked){
+    wireMesh=new THREE.Mesh(
+      geo.clone(),
+      new THREE.MeshBasicMaterial({color:0x17191c,wireframe:true,transparent:true,opacity:.52,depthTest:true})
+    );
+    wireMesh.scale.setScalar(1.0005);
+    scene.add(wireMesh);
+  }
+
+  rebuildBounds();
+
+  lastBuildMs=performance.now()-t0;
+  lastFaces=finalIndices.length/3;
+  lastVerts=finalPositions.length/3;
+  updateDebug();
+}
+
+function rebuildBounds(){
+  if(boundsHelper){ scene.remove(boundsHelper); boundsHelper.geometry.dispose(); boundsHelper.material.dispose(); boundsHelper=null; }
+  if(!$('showBounds').checked) return;
+  const box=new THREE.Box3(
+    new THREE.Vector3(-dims.x/2,-dims.y/2,-dims.z/2),
+    new THREE.Vector3( dims.x/2, dims.y/2, dims.z/2)
+  );
+  boundsHelper=new THREE.Box3Helper(box,0xb99458);
+  scene.add(boundsHelper);
+}
+
+function scheduleRebuild(delay=60){
+  clearTimeout(rebuildTimer);
+  rebuildTimer=setTimeout(rebuildMesh,delay);
+}
+
+function manualHitFromEvent(ev){
+  if(!manualCarve || !rockMesh) return;
+  const now=performance.now();
+  if(now-lastManualHit<55) return;
+  lastManualHit=now;
+
+  const rect=renderer.domElement.getBoundingClientRect();
+  pointer.x=((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y=-((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+
+  const hits=raycaster.intersectObject(rockMesh,false);
+  if(!hits.length) return;
+  const hit=hits[0];
+
+  readParams();
+  if(culledTileKeys.size) clearCullMask(true,false);
+  const normal=hit.face?.normal?.clone().transformDirection(rockMesh.matrixWorld) ?? new THREE.Vector3();
+  const inward=normal.multiplyScalar(-1);
+  const center=hit.point.clone().addScaledVector(inward,params.brushRadius*.25);
+  const r=params.brushRadius*(shiftDown?2.1:1);
+  const dir=inward.lengthSq()?inward.normalize():camera.getWorldDirection(new THREE.Vector3());
+  floorProtectionActive=isTopDownMode() && !!params.levelFloor;
+  carveHook(center,dir,r,shiftDown?1.15:1);
+  floorProtectionActive=false;
+  scheduleRebuild();
+}
+
+function setManual(on){
+  manualCarve=on;
+  $('manualBtn').classList.toggle('active',on);
+  $('crosshair').style.display=on?'block':'none';
+  controls.enabled=!on;
+  renderer.domElement.style.cursor=on?'crosshair':'grab';
+  toast(on?'Manual carve enabled. Drag on rock to dig.':'Manual carve disabled.');
+}
+
+function addEvents(){
+  addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
+
+  $('collapseBtn').addEventListener('click',()=>{
+    $('ui').classList.toggle('collapsed');
+    $('collapseBtn').textContent=$('ui').classList.contains('collapsed')?'+':'−';
+  });
+
+  $('generateBtn').addEventListener('click',()=>generateCurrentMode(false));
+  $('continueBtn').addEventListener('click',()=>generateCurrentMode(true));
+  $('clearBtn').addEventListener('click',()=>resetBlock());
+  $('manualBtn').addEventListener('click',()=>setManual(!manualCarve));
+  $('generatorMode').addEventListener('change',()=>{ updateModeUI(); if($('generatorMode').value==='topdown') buildTopDownPath(false); else if($('generatorMode').value==='maze') buildMazePaths(false); });
+  $('modeDefaultsBtn').addEventListener('click',applyModeDefaults);
+  $('frameViewBtn').addEventListener('click',()=>frameCameraForMode());
+  $('newPathBtn').addEventListener('click',()=>{ if($('generatorMode').value==='maze') buildMazePaths(true); else buildTopDownPath(true); });
+  $('topViewBtn').addEventListener('click',()=>frameCameraForMode(true));
+  $('showPath').addEventListener('change',()=>{ readParams(); rebuildPathHelpers(); });
+  $('pathYOffset').addEventListener('input',()=>{
+    // Rebuilds deterministic XZ spline data at the new Y so preview, floor baseline, and detector stay synchronized.
+    if($('generatorMode').value==='maze') buildMazePaths(false);
+    else if($('generatorMode').value==='topdown') buildTopDownPath(false);
+  });
+  for(const id of ['probeRadius','floorOffset','floorVariation','levelFloor']){
+    $(id).addEventListener('input',()=>{ readParams(); rebuildPathHelpers(); updateDebug(); });
+  }
+  for(const id of ['mazeBranchCount','mazeBranchLength','mazeTurnChaos','mazeLoopChance']){
+    $(id).addEventListener('input',()=>{ if($('generatorMode').value==='maze') buildMazePaths(false); });
+  }
+  $('snapWallsGridBtn').addEventListener('click',snapWallsToFloorGrid);
+  $('refreshWallGridBtn').addEventListener('click',rebuildWallGridHelper);
+  $('cullUntouchedBtn').addEventListener('click',()=>buildUntouchedCullMask());
+  $('clearCullBtn').addEventListener('click',()=>clearCullMask(true,true));
+  for(const id of ['wallGridTileSize','wallGridOffsetX','wallGridOffsetZ']){
+    $(id).addEventListener('input',()=>{
+      if(culledTileKeys.size) clearCullMask(true,false);
+      readParams(); rebuildWallGridHelper(); updateDebug();
+    });
+  }
+  for(const id of ['showWallGrid','floorVariation','floorOffset','cullTouchTolerance','cullPaddingTiles','autoCullUntouched']){
+    $(id).addEventListener('input',()=>{ readParams(); rebuildWallGridHelper(); updateDebug(); });
+  }
+  $('stitchCullEdges').addEventListener('change',()=>{ readParams(); rebuildMesh(); });
+
+  for(const id of ['wireframe','transparent','flatShading','showBounds']){
+    $(id).addEventListener('change',()=>rebuildMesh());
+  }
+
+  renderer.domElement.addEventListener('pointerdown',ev=>{
+    pointerDown=true;
+    if(manualCarve){
+      renderer.domElement.setPointerCapture?.(ev.pointerId);
+      manualHitFromEvent(ev);
+      ev.preventDefault();
+    }
+  });
+  renderer.domElement.addEventListener('pointermove',ev=>{
+    if(pointerDown && manualCarve){
+      manualHitFromEvent(ev);
+      ev.preventDefault();
+    }
+  });
+  renderer.domElement.addEventListener('pointerup',ev=>{
+    pointerDown=false;
+    try{ renderer.domElement.releasePointerCapture?.(ev.pointerId); }catch{}
+  });
+  renderer.domElement.addEventListener('pointercancel',()=>pointerDown=false);
+
+  addEventListener('keydown',ev=>{ if(ev.key==='Shift') shiftDown=true; });
+  addEventListener('keyup',ev=>{ if(ev.key==='Shift') shiftDown=false; });
+
+  $('exportOBJ').addEventListener('click',exportOBJ);
+  $('exportGLB').addEventListener('click',exportGLB);
+  $('saveJSON').addEventListener('click',saveJSON);
+  $('loadJSON').addEventListener('click',()=>$('jsonInput').click());
+  $('jsonInput').addEventListener('change',loadJSONFile);
+}
+
+function exportOBJ(){
+  if(!rockMesh) return;
+  const p=rockMesh.geometry.getAttribute('position');
+  const n=rockMesh.geometry.getAttribute('normal');
+  const idx=rockMesh.geometry.index;
+  let out='# Low-Poly Tunnel Sculptor OBJ\n';
+  for(let i=0;i<p.count;i++) out+=`v ${p.getX(i)} ${p.getY(i)} ${p.getZ(i)}\n`;
+  if(n) for(let i=0;i<n.count;i++) out+=`vn ${n.getX(i)} ${n.getY(i)} ${n.getZ(i)}\n`;
+  for(let i=0;i<idx.count;i+=3){
+    const a=idx.getX(i)+1,b=idx.getX(i+1)+1,c=idx.getX(i+2)+1;
+    out+=`f ${a}//${a} ${b}//${b} ${c}//${c}\n`;
+  }
+  downloadBlob(new Blob([out],{type:'text/plain'}),'tunnel_sculpt.obj');
+  toast('OBJ exported.');
+}
+
+function exportGLB(){
+  if(!rockMesh) return;
+  const exporter=new GLTFExporter();
+  const clone=rockMesh.clone();
+  clone.geometry=rockMesh.geometry.clone();
+  clone.material=rockMesh.material.clone();
+  clone.material.transparent=false;
+  clone.material.opacity=1;
+  exporter.parse(clone,result=>{
+    if(result instanceof ArrayBuffer){
+      downloadBlob(new Blob([result],{type:'model/gltf-binary'}),'tunnel_sculpt.glb');
+      toast('GLB exported.');
+    }else{
+      downloadBlob(new Blob([JSON.stringify(result)],{type:'application/json'}),'tunnel_sculpt.gltf');
+      toast('glTF exported.');
+    }
+  },err=>{
+    console.error(err);
+    toast('GLB export failed; see debug console if available.');
+  },{binary:true,onlyVisible:true});
+}
+
+function saveJSON(){
+  readParams();
+  const data={
+    version:7,
+    generator:'Low-Poly Tunnel Sculptor',
+    params:{...params},
+    dims:dims.toArray(),
+    gridN:N,
+    pathControlPoints:topDownControlPoints.map(p=>p.toArray()),
+    mazeControlPaths:mazeControlPaths.map(path=>path.map(p=>p.toArray())),
+    gridCarves:gridCarves.map(r=>({...r})),
+    culledTiles:[...culledTileKeys].map(key=>key.split(',').map(Number)),
+    cullMaskGrid:cullMaskGrid?{...cullMaskGrid}:null,
+    stamps
+  };
+  downloadBlob(new Blob([JSON.stringify(data)],{type:'application/json'}),'tunnel_sculpt.json');
+  toast('Sculpt JSON saved.');
+}
+
+async function loadJSONFile(ev){
+  const file=ev.target.files?.[0];
+  if(!file) return;
+  try{
+    const data=JSON.parse(await file.text());
+    if(!Array.isArray(data.stamps)) throw new Error('Missing stamps array');
+
+    const p=data.params||{};
+    const setters={
+      mode:'generatorMode',sizeX:'sizeX',sizeY:'sizeY',sizeZ:'sizeZ',gridN:'gridN',baseCell:'baseCell',
+      brushRadius:'brushRadius',radiusChaos:'radiusChaos',dirChaos:'dirChaos',pickJitter:'pickJitter',
+      hookLength:'hookLength',hitsPerStep:'hitsPerStep',faceThreshold:'faceThreshold',minCell:'minCell',
+      refineRadius:'refineRadius',probeRadius:'probeRadius',pathYOffset:'pathYOffset',floorOffset:'floorOffset',floorVariation:'floorVariation',pathStep:'pathStep',pathPointCount:'pathPointCount',pathWiggle:'pathWiggle',pathSeed:'pathSeed',probeDigBursts:'probeDigBursts',probeMaxPasses:'probeMaxPasses',mazeBranchCount:'mazeBranchCount',mazeBranchLength:'mazeBranchLength',mazeTurnChaos:'mazeTurnChaos',mazeLoopChance:'mazeLoopChance',wallGridTileSize:'wallGridTileSize',wallGridOffsetX:'wallGridOffsetX',wallGridOffsetZ:'wallGridOffsetZ',wallGridMargin:'wallGridMargin',wallGridClaim:'wallGridClaim',cullTouchTolerance:'cullTouchTolerance',cullPaddingTiles:'cullPaddingTiles',tunnelCount:'tunnelCount',stepsPerTunnel:'stepsPerTunnel',
+      stepLength:'stepLength',branchChance:'branchChance',chamberChance:'chamberChance',exitChance:'exitChance'
+    };
+    for(const [key,id] of Object.entries(setters)) if(p[key]!==undefined) $(id).value=p[key];
+    if(p.horizontalBias!==undefined) $('horizontalBias').checked=!!p.horizontalBias;
+    if(p.showPath!==undefined) $('showPath').checked=!!p.showPath;
+    if(p.levelFloor!==undefined) $('levelFloor').checked=!!p.levelFloor;
+    if(p.showWallGrid!==undefined) $('showWallGrid').checked=!!p.showWallGrid;
+    if(p.autoCullUntouched!==undefined) $('autoCullUntouched').checked=!!p.autoCullUntouched;
+    if(p.stitchCullEdges!==undefined) $('stitchCullEdges').checked=!!p.stitchCullEdges;
+    else $('stitchCullEdges').checked=true;
+    // Backward compatibility: V2 paths stored their vertical position only in the control points.
+    if(p.pathYOffset===undefined && Array.isArray(data.pathControlPoints) && data.pathControlPoints.length){
+      $('pathYOffset').value = Number(data.pathControlPoints[0]?.[1]) || 0;
+    }
+    updateModeUI();
+
+    resetBlock();
+    if($('generatorMode').value==='maze' && Array.isArray(data.mazeControlPaths) && data.mazeControlPaths.length) buildMazePaths(false,data.mazeControlPaths);
+    else if(Array.isArray(data.pathControlPoints) && data.pathControlPoints.length>=4) buildTopDownPath(false,data.pathControlPoints);
+    else if($('generatorMode').value==='maze') buildMazePaths(false);
+    else if($('generatorMode').value==='topdown') buildTopDownPath(false);
+    readParams();
+    floorProtectionActive=isTopDownMode() && !!params.levelFloor;
+    const loaded=data.stamps.slice(0,25000);
+    for(const s of loaded){
+      const c=new THREE.Vector3(+s.x,+s.y,+s.z);
+      const r=Math.max(.02,+s.r||params.brushRadius);
+      // Recreate local refinement directly around every saved pick.
+      refineNear(c,r*params.refineRadius,params.minCell,false);
+      carveSphere(c,r,true,false);
+    }
+    floorProtectionActive=false;
+    const loadedGridCarves=Array.isArray(data.gridCarves)?data.gridCarves.slice(0,5000):[];
+    for(const rect of loadedGridCarves){
+      const clean={x0:+rect.x0,x1:+rect.x1,z0:+rect.z0,z1:+rect.z1};
+      if(Object.values(clean).every(Number.isFinite)){
+        carveGridRect(clean,false);
+        gridCarves.push(clean);
+      }
+    }
+    lastGridTiles=loadedGridCarves.length;
+
+    culledTileKeys.clear();
+    const loadedCull=Array.isArray(data.culledTiles)?data.culledTiles.slice(0,10000):[];
+    for(const pair of loadedCull){
+      if(Array.isArray(pair) && Number.isFinite(+pair[0]) && Number.isFinite(+pair[1])){
+        culledTileKeys.add(`${Math.trunc(+pair[0])},${Math.trunc(+pair[1])}`);
+      }
+    }
+    cullMaskGrid=data.cullMaskGrid && Number.isFinite(+data.cullMaskGrid.tile)
+      ? {tile:+data.cullMaskGrid.tile,ox:+data.cullMaskGrid.ox||0,oz:+data.cullMaskGrid.oz||0}
+      : (culledTileKeys.size ? {tile:params.wallGridTileSize,ox:params.wallGridOffsetX,oz:params.wallGridOffsetZ} : null);
+    lastCulledTiles=culledTileKeys.size;
+
+    rebuildMesh();
+    rebuildWallGridHelper();
+    toast(`Loaded ${loaded.length.toLocaleString()} pick hits + ${loadedGridCarves.length.toLocaleString()} grid wall pushes + ${lastCulledTiles.toLocaleString()} culled tiles.`);
+  }catch(err){
+    floorProtectionActive=false;
+    console.error(err);
+    toast('Could not load that sculpt JSON.');
+  }finally{
+    ev.target.value='';
+  }
+}
+
+function downloadBlob(blob,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+}
+
+let toastTimer;
+function toast(msg){
+  toastEl.textContent=msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1800);
+}
+
+function updateDebug(){
+  readParams();
+  const refined=leaves.filter(l=>l.size<params.baseCell).length;
+  const minSize=leaves.reduce((m,l)=>Math.min(m,l.size),Infinity);
+  debugEl.textContent =
+`mode: ${params.mode||$('generatorMode').value}
+grid: ${N}³ scalar cells
+rock: ${dims.x.toFixed(1)} × ${dims.y.toFixed(1)} × ${dims.z.toFixed(1)}
+octree leaves: ${leaves.length.toLocaleString()}
+locally refined leaves: ${refined.toLocaleString()}
+finest active cell: ${minSize}
+vertices: ${lastVerts.toLocaleString()}
+triangles: ${lastFaces.toLocaleString()}
+pick hits: ${totalHits.toLocaleString()}
+stored carve stamps: ${stamps.length.toLocaleString()}
+probe stops: ${lastProbeStops.toLocaleString()}
+probe failures: ${lastProbeFailures}
+path samples: ${lastPathSamples.toLocaleString()}
+path Y offset: ${params.pathYOffset.toFixed(2)}
+floor leveling: ${params.levelFloor?'ON':'off'}
+floor base Y: ${(params.pathYOffset-params.probeRadius+params.floorOffset).toFixed(2)}
+floor variation span: ${params.floorVariation.toFixed(2)}
+maze branches: ${lastMazeBranches.toLocaleString()}
+wall grid tile: ${params.wallGridTileSize.toFixed(2)}
+wall margin: ${params.wallGridMargin.toFixed(2)}
+last snapped tiles: ${lastGridTiles.toLocaleString()}
+outside cull: ${culledTileKeys.size?'ON':'off'}
+culled untouched tiles: ${lastCulledTiles.toLocaleString()}
+stitched cull edges: ${params.stitchCullEdges?'ON':'off'}
+cull cap faces: ${lastCullCapFaces.toLocaleString()}
+cull tolerance: ${params.cullTouchTolerance.toFixed(3)}
+cull padding tiles: ${params.cullPaddingTiles}
+rebuild: ${lastBuildMs.toFixed(1)} ms
+manual carve: ${manualCarve?'ON':'off'}`;
+  miniEl.textContent=`${params.mode==='maze'?'MAZE':params.mode==='topdown'?'TOP-DOWN':'3D ANT FARM'}\n${lastFaces.toLocaleString()} tris\n${totalHits.toLocaleString()} hits\n${lastBuildMs.toFixed(0)} ms rebuild`;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+
+initThree();
+</script>
+</body>
+</html>

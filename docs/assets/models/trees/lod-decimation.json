@@ -1,0 +1,55 @@
+{
+  "requestedReductionPercent": 90,
+  "leafCardsPreservedAtFullDetail": true,
+  "generatedAt": "2026-08-24T14:38:45.900Z",
+  "files": [
+    {
+      "species": "crowned_pine",
+      "variant": 1,
+      "filename": "crowned_pine_01_lod-decimate-90.glb",
+      "sourceTriangles": 4290,
+      "outputTriangles": 460,
+      "leafCardsPreserved": 25
+    },
+    {
+      "species": "crowned_pine",
+      "variant": 2,
+      "filename": "crowned_pine_02_lod-decimate-90.glb",
+      "sourceTriangles": 4290,
+      "outputTriangles": 460,
+      "leafCardsPreserved": 25
+    },
+    {
+      "species": "crowned_pine",
+      "variant": 3,
+      "filename": "crowned_pine_03_lod-decimate-90.glb",
+      "sourceTriangles": 4290,
+      "outputTriangles": 460,
+      "leafCardsPreserved": 25
+    },
+    {
+      "species": "shadewood",
+      "variant": 1,
+      "filename": "shadewood_01_lod-decimate-90.glb",
+      "sourceTriangles": 6082,
+      "outputTriangles": 661,
+      "leafCardsPreserved": 35
+    },
+    {
+      "species": "shadewood",
+      "variant": 2,
+      "filename": "shadewood_02_lod-decimate-90.glb",
+      "sourceTriangles": 6082,
+      "outputTriangles": 661,
+      "leafCardsPreserved": 35
+    },
+    {
+      "species": "shadewood",
+      "variant": 3,
+      "filename": "shadewood_03_lod-decimate-90.glb",
+      "sourceTriangles": 6082,
+      "outputTriangles": 653,
+      "leafCardsPreserved": 35
+    }
+  ]
+}

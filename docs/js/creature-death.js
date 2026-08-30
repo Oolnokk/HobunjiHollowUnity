@@ -23,6 +23,7 @@
   // DEATH_HOP_HEIGHT_PX depends on deps.TILE, so it's computed once in
   // init() below rather than at module-load time.
   let deps = null, deathHopHeightPx;
+  const deathDebug = { lastBegin: null, lastRecovery: null }; // Used by mobile diagnostics to expose interrupted lethal transitions without a console.
   function init(injectedDeps) {
     deps = injectedDeps;
     deathHopHeightPx = deps.TILE * 1.1 / 3;
@@ -51,7 +52,7 @@
     return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
   }
 
-  function begin(c, fromX, fromY) {
+  function beginInternal(c, fromX, fromY) {
     // A corpse doesn't get further updateCreatureMesh() calls to keep
     // its resource ring synced/rebuilt, so drop it now rather than
     // leaving a stale 0-health ring hovering over the corpse forever.
@@ -61,6 +62,7 @@
     // below animates -- hide it now rather than leaving it floating in
     // place, disconnected from the corpse, once the fall starts.
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
     const rest = _findRestTile(c, awayAngle);
@@ -116,6 +118,59 @@
     // baked mesh orientation.
     if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
     deps.corpseObjects.add(c);
+  }
+
+  // A lethal hit must never strand an entity after game.js removes it from
+  // hostileObjects. If a secondary visual/path calculation throws during
+  // beginInternal(), settle it on its current tile as a lootable corpse and
+  // record the original error for the in-game diagnostics.
+  function recover(c, fromX, fromY, error) {
+    if (!c || !deps) return false;
+    const TILE = deps.TILE;
+    const col = deps.clamp(Math.floor((Number(c.x) || 0) / TILE), 0, (c.areaCols || deps.COLS) - 1); // Used as the guaranteed fallback corpse column.
+    const row = deps.clamp(Math.floor((Number(c.y) || 0) / TILE), 0, (c.areaRows || deps.ROWS) - 1); // Used as the guaranteed fallback corpse row.
+    try { window.ResourceRings?.disposeRingHud(c); } catch (_) {}
+    if (c._banditToolHolder) c._banditToolHolder.visible = false;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
+    c.health = 0;
+    c.state = 'corpse';
+    c.corpseCol = col; c.corpseRow = row;
+    c.x = (col + 0.5) * TILE; c.y = (row + 0.5) * TILE;
+    c.vx = 0; c.vy = 0;
+    c.knockbackT = 0;
+    c.hitFlashT = 0;
+    c.telegraphState = null;
+    deps.corpseObjects.add(c);
+    const grp = c.avatarRef?.group; // Used to force the fallback corpse into a visible lying pose.
+    let visualError = null; // Used to retain a secondary fallback-pose failure without preventing corpse registration.
+    try {
+      if (grp) {
+        const g = c.areaGrid || deps.getGrid();
+        const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+        const restHeight = (Number(c.halfHeight) || 0) * 0.12;
+        grp.position.set(c.x / TILE, surfY + restHeight, c.y / TILE);
+        grp.rotation.set(0, Number(c.groupRot) || 0, Math.PI / 2);
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
+        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
+        if (c.avatarRef.legs) c.avatarRef.legs.update(0, 0, true);
+      }
+    } catch (caught) { visualError = caught; }
+    const reason = [error, visualError].filter(Boolean).map(value => value?.stack || value?.message || String(value)).join(' | ') || 'unknown death-transition interruption'; // Used in the copyable mobile debug record.
+    deathDebug.lastRecovery = { at: Date.now(), creature: c.id || c.def?.label || 'creature', areaId: c.areaId || '', col, row, reason };
+    window.__farmLog?.(`[creature-death] recovered ${deathDebug.lastRecovery.creature} as a corpse after: ${reason}`, 'combat');
+    return true;
+  }
+
+  function begin(c, fromX, fromY) {
+    deathDebug.lastBegin = { at: Date.now(), creature: c?.id || c?.def?.label || 'creature', areaId: c?.areaId || '' };
+    try {
+      beginInternal(c, fromX, fromY);
+      return true;
+    } catch (error) {
+      return recover(c, fromX, fromY, error);
+    }
   }
 
   // Turns accumulated for one axis by time-progress t: whole turns from
@@ -192,6 +247,11 @@
   window.CreatureDeath = {
     init,
     begin,
+    recover,
     updateCorpses,
+    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery } }),
+    formatDebug: () => deathDebug.lastRecovery
+      ? `Creature death recovery: ${deathDebug.lastRecovery.creature} at ${deathDebug.lastRecovery.areaId}:${deathDebug.lastRecovery.col},${deathDebug.lastRecovery.row} | ${deathDebug.lastRecovery.reason}`
+      : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'}; no recovery needed`,
   };
 })();

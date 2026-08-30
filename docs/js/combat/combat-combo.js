@@ -13,9 +13,9 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-combo.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  // Mirrors the sandbox's 0.92s window: tap again within this long and the
+  // A deliberately forgiving 1.8s window: tap again within this long and the
   // combo advances to its next step; wait longer and it resets to step 1.
-  let COMBO_RESET_S = 0.9;
+  let COMBO_RESET_S = 1.8;
 
   // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) read as oversized in practice; shrink it here
@@ -61,9 +61,10 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
-  // heavy feeds the resource-afflictions system (docs/js/combat/resource-
-  // system.js) — each combo's 3rd/finisher step consumes the target's
-  // Bruised Health for bonus damage, same as the demo's Heavy Attack rule.
+  // heavy still marks the combo finisher for streak scaling and other heavy
+  // semantics; the final-step check in onTap explicitly marks it as a power
+  // hit too, so Bruised/Corroded consumption does not depend on that internal
+  // classification staying coupled forever.
   // dmgTag below is now UNUSED by onTap (kept only as reference data on
   // each step) — sharp/blunt used to be tagged per combo family (sweeping
   // Blunt, thrusting Sharp) regardless of the actual equipped weapon, which
@@ -113,6 +114,12 @@
 
   function now() { return performance.now() / 1000; }
 
+  function powerHitVulnerabilityTotal(entity) {
+    const rs = window.ResourceSystem; // Used to detect whether a finisher will actually consume Bruised/Corroded Health for its impact cue.
+    if (!rs?.getAffliction || !entity) return 0;
+    return (rs.getAffliction(entity, 'bruisedHealth') || 0) + (rs.getAffliction(entity, 'corrodedHealth') || 0);
+  }
+
   function registerCombo(id, label, steps) {
     let comboIndex = 0;
     let lastTapAt = -99;
@@ -133,6 +140,7 @@
       // rather than the next attack in the sequence.
       const comboStep = comboIndex % steps.length;
       const step = steps[comboStep];
+      const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
       const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
@@ -211,9 +219,20 @@
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: step.heavy, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch);
+            if (!window.Combat.meleeHit(deps.player, c, {
+              rangePx, halfConeRad,
+              yaw: deps.player.angle,
+              pitch: deps.getPlayerMeleeAimPitch?.() || 0,
+            })) continue;
+            const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              tag: dmgType,
+              heavy: step.heavy,
+              consumeHealthVulnerability: isFinisher,
+              afflictionBonuses: effects.afflictions,
+            });
+            const impactSize = isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
             hits++;
             lastName = c.def.label;
           }
@@ -222,7 +241,7 @@
             : vegetationCleared > 0
               ? `${step.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `${step.name} connects with nothing.`;
-          // silent: every swing already has its own weaponSlash/creatureClawHit
+          // silent: every swing already has its own weapon swing/impact
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);

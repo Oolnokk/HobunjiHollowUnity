@@ -595,6 +595,155 @@ function _imageForTint(img, sourceKey, tint) {
   return img;
 }
 
+// Canonical body-sprite tint path. renderProfile, procedural hands, rocks, and
+// cliffs all call this same helper so species tint-mode selection and per-pixel
+// recoloring cannot diverge between 2D character art and 3D surface textures.
+function bodySpriteTintForColor(color, speciesId, slot = 'A') {
+  const referenceHex = _dyeReferenceHexForSlot(slot, speciesId);
+  return bodyTintModeForSpecies(speciesId) === 'shadeFill'
+    ? shadeFillTintForBodyColor(color, referenceHex)
+    : tintForBodyColor(color, referenceHex);
+}
+
+function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {
+  return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));
+}
+
+// Same-style texture PNGs (wavy_surface/carved_smooth) are authored as complete
+// opaque swatches rather than cutout body sprites. Their luminance histogram is
+// much narrower: wavy_surface is roughly 0.55..0.73, while a real body sprite
+// reaches from black outlines through ~0.71 highlights. Feeding the swatches
+// directly into shadeFill therefore makes the texture almost flat, and makes
+// carved_smooth much darker than its requested target color. Normalize only
+// these surface PNGs into the body's tonal envelope BEFORE the exact same body
+// tint stage. The body sprites themselves are untouched.
+const _AUTHORED_SURFACE_TONE_CACHE = new Map();
+function _surfaceToneConfig() {
+  const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+  return {
+    sourceLowPercentile: Number.isFinite(Number(cfg.surfaceSourceLowPercentile)) ? Number(cfg.surfaceSourceLowPercentile) : 0.10,
+    sourceHighPercentile: Number.isFinite(Number(cfg.surfaceSourceHighPercentile)) ? Number(cfg.surfaceSourceHighPercentile) : 0.90,
+    targetLow: Number.isFinite(Number(cfg.surfaceToneLow)) ? Number(cfg.surfaceToneLow) : 0.22,
+    targetHigh: Number.isFinite(Number(cfg.surfaceToneHigh)) ? Number(cfg.surfaceToneHigh) : 0.88,
+  };
+}
+
+function normalizeAuthoredSurfacePngTone(img, sourceKey) {
+  if (!img) return img;
+  const tintOptions = getPortraitTintingConfig();
+  const tone = _surfaceToneConfig();
+  const cacheKey = [
+    sourceKey || img.currentSrc || img.src || 'inline-surface',
+    tone.sourceLowPercentile, tone.sourceHighPercentile,
+    tone.targetLow, tone.targetHigh,
+    tintOptions.outlineThreshold,
+  ].join('|');
+  if (_AUTHORED_SURFACE_TONE_CACHE.has(cacheKey)) return _AUTHORED_SURFACE_TONE_CACHE.get(cacheKey);
+
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  if (!width || !height) return img;
+  const canvas = Object.assign(document.createElement('canvas'), { width, height });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const luminances = [];
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] <= 8) continue;
+    const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
+    if (lum > tintOptions.outlineThreshold) luminances.push(lum);
+  }
+  if (luminances.length < 8) return img;
+  luminances.sort((a, b) => a - b);
+  const percentile = q => luminances[Math.max(0, Math.min(luminances.length - 1, Math.round((luminances.length - 1) * q)))];
+  const sourceLow = percentile(Math.max(0, Math.min(1, tone.sourceLowPercentile)));
+  const sourceHigh = percentile(Math.max(0, Math.min(1, tone.sourceHighPercentile)));
+  const sourceSpan = sourceHigh - sourceLow;
+  if (!(sourceSpan > 0.015)) return img;
+
+  const targetLow = Math.max(tintOptions.outlineThreshold + 0.01, Math.min(0.95, tone.targetLow));
+  const targetHigh = Math.max(targetLow + 0.02, Math.min(1, tone.targetHigh));
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const lum = relativeLuminance(r, g, b);
+    // Preserve authored near-black outlines exactly, matching the body tint
+    // pipeline's own outline-preservation rule.
+    if (tintOptions.preserveNearBlackOutlines && lum <= tintOptions.outlineThreshold) continue;
+    const t = Math.max(0, Math.min(1, (lum - sourceLow) / sourceSpan));
+    const targetLum = targetLow + (targetHigh - targetLow) * t;
+    const scale = targetLum / Math.max(0.0001, lum);
+    data[i] = clampByte(r * scale);
+    data[i + 1] = clampByte(g * scale);
+    data[i + 2] = clampByte(b * scale);
+  }
+  ctx.putImageData(imageData, 0, 0);
+  _AUTHORED_SURFACE_TONE_CACHE.set(cacheKey, canvas);
+  return canvas;
+}
+
+function getSurfaceTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {
+  // Use the authored PNG's own luminance directly, exactly like ordinary body
+  // sprite art. The previous 0.22->0.88 surface remap was a workaround for a
+  // problem that turned out to be the CORS-tainted flat fallback instead.
+  return _imageForTint(img, sourceKey, bodySpriteTintForColor(color, speciesId, slot));
+}
+
+// Canonical authored-PNG appearance path. Character body sprites, the final
+// avatar plane, and same-style 3D surface PNGs all go through this one API:
+// source PNG -> body-style recolor canvas -> CanvasTexture -> MeshBasicMaterial.
+function configureSpritePngTexture(THREE, texture, debugName) {
+  if (!texture) return texture;
+  if (debugName) texture.name = debugName;
+  // Keep the exact color-management behavior used by the assembled character
+  // sprite texture. Do not give same-style surface PNGs a separate encoding path.
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function makeSpritePngCanvasTexture(THREE, imageOrCanvas, debugName) {
+  return configureSpritePngTexture(THREE, new THREE.CanvasTexture(imageOrCanvas), debugName);
+}
+
+function spritePngAlphaTest() {
+  return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.alphaTest ?? 0.001;
+}
+
+function spritePngMaterialOptions(THREE, texture, debugName, overrides = {}) {
+  return Object.assign({
+    name: debugName,
+    map: texture || null,
+    transparent: true,
+    alphaTest: spritePngAlphaTest(),
+    side: THREE.FrontSide,
+    depthTest: true,
+    depthWrite: true,
+    opacity: 1,
+  }, overrides);
+}
+
+function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
+  return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
+}
+
+window.HobunjiSpritePngSurface = {
+  tintForBodyColor: bodySpriteTintForColor,
+  tintBodyCanvas: getBodyTintedCanvas,
+  normalizeSurfaceTone: normalizeAuthoredSurfacePngTone,
+  tintSurfaceCanvas: getSurfaceTintedCanvas,
+  configureTexture: configureSpritePngTexture,
+  makeCanvasTexture: makeSpritePngCanvasTexture,
+  materialOptions: spritePngMaterialOptions,
+  makeMaterial: makeSpritePngUnlitMaterial,
+  alphaTest: spritePngAlphaTest,
+};
+
+// Legacy direct exports remain for editors and older consumers.
+window.bodySpriteTintForColor = bodySpriteTintForColor;
+window.getBodyTintedCanvas = getBodyTintedCanvas;
+
 // ── Canvas helpers ─────────────────────────────────────────
 
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
@@ -994,6 +1143,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
+  const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
@@ -1026,14 +1176,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
-  const _bodyTintMode = bodyTintModeForSpecies(_tintSpeciesId);
   const _clothingTintMode = clothingTintMode();
   const tintFor = (slot) => {
     if (!slot) return { mode: 'none' };
-    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
     const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
-    const mode = isBodySlot ? _bodyTintMode : _clothingTintMode;
-    return mode === 'shadeFill'
+    if (isBodySlot) return bodySpriteTintForColor(bodyColors[slot], _tintSpeciesId, slot);
+    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
+    return _clothingTintMode === 'shadeFill'
       ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
       : tintForBodyColor(bodyColors[slot], referenceHex);
   };
@@ -1318,6 +1467,19 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
   };
+
+  // Neck-rig construction needs the base head's real opaque-pixel centroid,
+  // uncontaminated by torso, hair, hats, or other cosmetics. Keep this inside
+  // the canonical renderer so it uses the exact same tint and portrait preset
+  // as the composite world-avatar canvas.
+  if (onlyHeadSprite) {
+    if (headUrl) {
+      const image = imgMap.get(headUrl);
+      if (image) drawLayerWithEmote(image, getPortraitXformPreset('B'), tintA, 1, headUrl);
+    }
+    if (_needsScale) ctx.restore();
+    return;
+  }
 
   if (renderBehindView) {
     const _behindDraw = {

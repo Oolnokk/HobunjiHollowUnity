@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <base href="../../">
+  <title>Hobunji Hollow — Tree Asset Exporter</title>
+  <link rel="stylesheet" href="tools/tree-asset-exporter/exporter.css?v=20260824-lod-perch">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/foliage-generator.js?v=20260824-climb-branch"></script>
+  <script src="js/tree-asset-library.js?v=20260824-branched-lod-runtime"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🌲 Wilderness Tree Asset Exporter</h1>
+      <p>Build the six base wilderness tree variants plus three dedicated perch-bearing shadewoods, bake full-detail GLBs or decimated LOD copies, and package them at their exact runtime paths.</p>
+    </div>
+    <button id="export-all" class="primary">Export all 9 as ZIP</button>
+  </header>
+
+  <main>
+    <section class="panel asset-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Expected assets</h2>
+          <p class="muted">Runtime folder: <code>docs/assets/models/trees/</code></p>
+        </div>
+        <span id="ready-pill" class="pill">Preparing…</span>
+      </div>
+      <div id="asset-list" class="asset-list"></div>
+      <div class="lod-control">
+        <div class="lod-control-head">
+          <div>
+            <strong>LOD decimation</strong>
+            <p class="muted">Triangle reduction applied to exported GLBs. Solid tree geometry is simplified; textured leaf cards and climbable perch branches always remain intact.</p>
+          </div>
+          <output id="decimate-value" for="decimate-percent">0%</output>
+        </div>
+        <input id="decimate-percent" type="range" min="0" max="95" step="5" value="0" aria-label="LOD decimation percentage">
+        <div class="lod-scale">
+          <span>Full detail</span>
+          <span id="decimate-stats">Original geometry</span>
+          <span>95% reduction</span>
+        </div>
+      </div>
+      <div class="help">
+        <strong>Upload workflow</strong>
+        <p>At 0%, the ZIP mirrors <code>docs/assets/models/trees/</code> with all nine full-detail GLBs plus <code>index.json</code>. At nonzero decimation, filenames gain an <code>_lod-decimate-N</code> suffix and the ZIP includes <code>lod-decimation.json</code> instead, so an LOD batch cannot overwrite the full-detail assets. Regular shadewoods never contain the perch; <code>shadewood-branched</code> exports always do.</p>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="panel-head">
+        <div>
+          <h2 id="preview-title">Preview</h2>
+          <p id="preview-meta" class="muted">Select a variant.</p>
+        </div>
+        <button id="export-one">Export selected GLB</button>
+      </div>
+      <div id="viewport"></div>
+      <div id="status" role="status">Initializing procedural tree builders…</div>
+    </section>
+  </main>
+
+  <script src="tools/tree-asset-exporter/exporter.js?v=20260824-branched-lod"></script>
+</body>
+</html>

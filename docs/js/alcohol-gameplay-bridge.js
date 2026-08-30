@@ -229,6 +229,14 @@
       return;
     }
 
+    // Chain onto any future-global setter another module already installed
+    // on this same property (e.g. technique-scrolls.js's own lazy item-deps
+    // hook on FarmCrates) instead of replacing it outright — a bare
+    // Object.defineProperty below would silently discard that earlier trap
+    // the moment the real object is assigned, so its own patch() would
+    // never fire and its captured deps would stay permanently incomplete.
+    if (chainFutureSetter(name, null, patch)) return;
+
     const desc = Object.getOwnPropertyDescriptor(window, name);
     if (desc && !desc.configurable) return;
     let value;
@@ -350,12 +358,38 @@
   }
 
   function movementInput() {
-    if (!mountDeps) return { active: false, x: 0, y: 0, strength: 0, keyboard: false };
+    if (!mountDeps) return { active: false, x: 0, y: 0, strength: 0, keyboard: false, rawX: 0, rawY: 0, cameraRelative: false, cameraFacingRad: null };
     const keyboard = mountDeps.getKeyboardVector?.() || { active: false, x: 0, y: 0 };
-    const x = Number(keyboard.active ? keyboard.x : mountDeps.input?.x) || 0;
-    const y = Number(keyboard.active ? keyboard.y : mountDeps.input?.y) || 0;
-    const strength = Math.min(1, Math.hypot(x, y));
-    return { active: strength > 0.001, x, y, strength, keyboard: !!keyboard.active };
+    const rawX = Number(keyboard.active ? keyboard.x : mountDeps.input?.x) || 0; // Kept for debug so raw input can be compared with the resolved world vector.
+    const rawY = Number(keyboard.active ? keyboard.y : mountDeps.input?.y) || 0; // Kept for debug so raw input can be compared with the resolved world vector.
+    let x = rawX; // Resolved below into the same world-space direction used by ordinary movement.
+    let y = rawY; // Resolved below into the same world-space direction used by ordinary movement.
+    const strength = Math.min(1, Math.hypot(rawX, rawY));
+    let cameraRelative = false; // Exposed in getDebug() to verify Shoulder Cam used the camera basis.
+    let cameraFacingRad = null; // Exposed in getDebug() alongside the resolved movement vector.
+    if (strength > 0.001 && mountDeps.isShoulderSurfMode?.()) {
+      const aim = Number(mountDeps.cameraFacingAngleRad?.()); // Same camera-facing basis used by on-foot and mounted movement.
+      if (Number.isFinite(aim)) {
+        const s = Math.sin(aim), c = Math.cos(aim); // Used by the shared Shoulder Cam input rotation formula.
+        const resolvedX = -x * s - y * c; // Camera-relative input converted to the game's world X axis.
+        const resolvedY = x * c - y * s; // Camera-relative input converted to the game's world Y axis.
+        x = resolvedX;
+        y = resolvedY;
+        cameraRelative = true;
+        cameraFacingRad = aim;
+      }
+    }
+    return {
+      active: strength > 0.001,
+      x,
+      y,
+      strength,
+      keyboard: !!keyboard.active,
+      rawX,
+      rawY,
+      cameraRelative,
+      cameraFacingRad,
+    };
   }
 
   function terrainSpeedMul(player) {
@@ -449,8 +483,10 @@
 
   function isPotionOrDrink(key, def) {
     if (!key || !def) return false;
-    if (window.AlchemySystem?.POTION_ITEMS?.[key]
-      || window.AlchemySystem?.getPotionEffectsFromKey?.(key)) return true;
+    const alchemyPayload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.getPotionEffectsFromKey?.(key); // Used to respect explicit alchemy use modes.
+    const alchemyRecipe = alchemyPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[alchemyPayload.recipeId]; // Central recipe definition.
+    if (alchemyRecipe) return alchemyRecipe.useMode === 'drink';
+    if (alchemyPayload?.legacyEffects) return true;
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirit|potion|drink|tea|juice|milk)\b/
       .test(`${def.label || ''} ${tags.join(' ')}`.toLowerCase());
@@ -481,6 +517,8 @@
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
     if (def.isCookedFood) return null; // CookingSystem owns generated meals and their stacked effects.
+    if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, def, inventory, kind: 'rawReagent' };
+    if (def.alchemyRecipeScrollId) return { key, def, inventory, kind: 'recipe' };
     if (isPotionOrDrink(key, def)) return { key, def, inventory, kind: 'drink' };
     if (isFood(def)) return { key, def, inventory, kind: 'food' };
     return null;
@@ -500,7 +538,7 @@
       : null;
     return {
       icon: held.def.icon || (held.kind === 'drink' ? '🥤' : '🍽️'),
-      label: `${held.kind === 'drink' ? 'Drink' : 'Eat'} ${held.def.label || held.key}`,
+      label: `${held.kind === 'drink' ? 'Drink' : held.kind === 'recipe' ? 'Read' : 'Eat'} ${held.def.label || held.key}`,
       action: 'consume_held_item',
       style: 'primary',
       allowed: true,
@@ -567,21 +605,37 @@
     const { key, def, inventory } = held;
 
     if (held.kind === 'drink') {
-      const result = window.AlchemySystem?.drinkPotion?.(key);
-      if (!result) return false;
-      itemDeps.showToast?.(result.message, result.ok !== false);
-      if (result.ok !== false) {
-        // Used to retain the just-consumed bottle and lock repeat consumption
-        // until its authored raise/drink/return animation has completed.
-        const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key)) || 0;
+      let result = null; // Filled exactly once at the authored drink strike.
+      const applyDrink = () => {
+        if (result) return result;
+        result = window.AlchemySystem?.drinkPotion?.(key);
+        if (!result) return null;
+        itemDeps.showToast?.(result.message, result.ok !== false);
         itemDeps.refreshItemScroll?.();
         itemDeps.buildInventoryGrid?.();
         itemDeps.refreshActionBar?.();
         itemDeps.saveMemberWorldData?.();
-        consumeLockUntil = performance.now() + Math.max(180, animationMs);
-      } else {
-        consumeLockUntil = performance.now() + 180;
-      }
+        return result;
+      };
+      const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key, applyDrink)) || 0; // Existing liquor animation path.
+      if (!(animationMs > 0)) applyDrink();
+      consumeLockUntil = performance.now() + Math.max(180, animationMs);
+      return true;
+    }
+
+    if (held.kind === 'rawReagent') {
+      const result = window.AlchemySystem?.consumeRawReagent?.(key);
+      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
+      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+      consumeLockUntil = performance.now() + 180;
+      return true;
+    }
+
+    if (held.kind === 'recipe') {
+      const result = window.AlchemySystem?.readRecipeItem?.(key);
+      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
+      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+      consumeLockUntil = performance.now() + 180;
       return true;
     }
 
@@ -673,6 +727,7 @@
         desiredFootingSpeedMul: muls.desired,
         inertiaVX,
         inertiaVY,
+        movementInput: movementInput(),
         blackoutSettling: blackoutSettling(),
         blackoutTravelHoldUntil: Number(window.__hobunjiBlackoutTravelHoldUntil) || 0,
         hasDevDeps: !!devDeps,

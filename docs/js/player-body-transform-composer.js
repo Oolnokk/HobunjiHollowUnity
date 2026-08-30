@@ -20,11 +20,15 @@
 
   const channels = new Map();
   const externalRootProviders = new Map();
+  const PLAYER_HEAD_MAX_YAW_DEG = 65; // Shared body-relative neck limit used by ordinary aim, animation-composed body yaw, and seated camera look.
+  const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
   let playerMesh = null;
   let playerLegRoot = null;
   let playerPosteriorY = 0;
+  let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
+  let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -89,6 +93,52 @@
       cursor = cursor.parent;
     }
     return false;
+  }
+
+  function wrapSignedAngle(angle) {
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  }
+
+  function currentPlayerNeckJoint() {
+    if (playerNeckJointCache?.isBone && isDescendantOf(playerNeckJointCache, playerMesh)) return playerNeckJointCache;
+    playerNeckJointCache = null;
+    playerMesh?.traverse?.(object => {
+      if (playerNeckJointCache) return;
+      const rig = object?.userData?.neckRig; // Used here to find the current rebuilt player portrait without depending on generated bone names.
+      if (rig?.available && rig.neckJoint?.isBone) playerNeckJointCache = rig.neckJoint;
+    });
+    return playerNeckJointCache;
+  }
+
+  // game.js authors the player's local neck yaw before render, already
+  // subtracting PlayerBodyTransformComposer's pending body-yaw channels. That
+  // makes this renderer boundary the one place where the REAL body-relative
+  // result can be physically limited after ordinary aiming, combat/idle body
+  // animation, and seated free-look have all contributed.
+  //
+  // Seated free-look is special: game.js's raw yaw points the head TOWARD the
+  // camera because the camera sits at activeCameraAzimuthRad(). Once that
+  // direction is outside the neck range, adding PI reverses it to the
+  // direction the camera itself is FACING. The same ±65° hard limit is then
+  // applied to that fallback as well, so neither branch can overtwist.
+  function applyPlayerNeckYawLimit(renderDebug) {
+    const neckJoint = currentPlayerNeckJoint();
+    if (!neckJoint) return;
+    const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
+    const sitState = window.__hobunjiFurnitureDebug?.sitInteraction; // Used only to distinguish the seated camera-look fallback from normal aim clamping.
+    const seated = sitState?.phase === 'active';
+    const outsideLookRange = seated && Math.abs(rawYaw) > PLAYER_HEAD_MAX_YAW_RAD; // Used below to switch from looking at the camera to following its facing direction.
+    const requestedYaw = outsideLookRange ? wrapSignedAngle(rawYaw + Math.PI) : rawYaw; // Seated out-of-range target is the camera-facing direction, not the camera position.
+    const renderedYaw = THREE.MathUtils.clamp(requestedYaw, -PLAYER_HEAD_MAX_YAW_RAD, PLAYER_HEAD_MAX_YAW_RAD); // Final physical limit shared by every head-turn source.
+    neckJoint.rotation.y = renderedYaw;
+    renderDebug.neckYaw = {
+      rawDeg: THREE.MathUtils.radToDeg(rawYaw),
+      requestedDeg: THREE.MathUtils.radToDeg(requestedYaw),
+      renderedDeg: THREE.MathUtils.radToDeg(renderedYaw),
+      maxDeg: PLAYER_HEAD_MAX_YAW_DEG,
+      seated,
+      usedCameraFacingFallback: outsideLookRange,
+    };
   }
 
   // Diagnostics only. Runtime composition deliberately does not depend on
@@ -167,7 +217,6 @@
     const rotation = new THREE.Quaternion();
     const translation = new THREE.Vector3();
     const applied = [];
-    let preserveFacingSide = false; // Used by render() to keep additive tilt from swapping portrait sides.
 
     for (const [name, channel] of ordered) {
       const q = channelQuaternion(channel);
@@ -180,64 +229,9 @@
         if (channel.translationMode === 'override') translation.copy(next);
         else translation.add(next);
       }
-      if (channel.preserveFacingSide === true) preserveFacingSide = true;
       applied.push(name);
     }
-    return { rotation, translation, applied, preserveFacingSide };
-  }
-
-  // The neck-rigged player portrait stores its front and mirrored rear artwork
-  // as two material groups on one SkinnedMesh. Ordinarily GPU face culling picks
-  // the correct group from the game's resolved yaw. An additive pitch/roll can
-  // move a nearly edge-on portrait across that culling boundary after facing has
-  // already resolved, making the X-flipped rear portrait flash as a false 180°
-  // turn. Capture the pre-delta side, render only it as double-sided during the
-  // temporary body tilt, then restore both materials immediately after render.
-  function preserveSkinnedPortraitFacingSide(root, camera, undo) {
-    const selections = []; // Returned to the render diagnostic after every matching portrait is locked.
-    if (!root?.isObject3D || !camera?.isObject3D) return selections;
-    root.updateWorldMatrix?.(true, true);
-    camera.updateWorldMatrix?.(true, false);
-    const cameraWorldPosition = camera.getWorldPosition(new THREE.Vector3()); // Used for the pre-delta view vector.
-
-    root.traverse?.(object => {
-      const materials = Array.isArray(object?.material) ? object.material : null; // Material groups inspected for a front/rear pair.
-      if (!object?.isSkinnedMesh || !materials?.length) return;
-      const frontMaterial = materials.find(material => /front_material$/i.test(String(material?.name || ''))); // Pre-tilt front portrait material.
-      const backMaterial = materials.find(material => /back_material$/i.test(String(material?.name || ''))); // Pre-tilt mirrored rear portrait material.
-      if (!frontMaterial || !backMaterial) return;
-
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld); // Converts the plane's local front normal into base world space.
-      const frontNormal = new THREE.Vector3(0, 0, 1).applyMatrix3(normalMatrix).normalize(); // Compared with the camera before composer tilt.
-      const quaternionFrontNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(object)).normalize(); // Scale-free facing basis used to expose mirror disagreement.
-      const objectWorldPosition = object.getWorldPosition(new THREE.Vector3()); // Origin for the camera-facing direction below.
-      const viewDirection = cameraWorldPosition.clone().sub(objectWorldPosition).normalize(); // Selects the portrait side chosen by ordinary yaw.
-      const facingDot = frontNormal.dot(viewDirection); // Reported to show proximity to the GPU side boundary.
-      const quaternionFacingDot = quaternionFrontNormal.dot(viewDirection); // Compared with facingDot to identify a scale-reflected basis.
-      const showFront = facingDot >= 0;
-      const oldFrontVisible = frontMaterial.visible;
-      const oldBackVisible = backMaterial.visible;
-      const selectedMaterial = showFront ? frontMaterial : backMaterial; // Kept renderable even if additive tilt crosses the culling plane.
-      const oldSelectedSide = selectedMaterial.side;
-
-      frontMaterial.visible = showFront;
-      backMaterial.visible = !showFront;
-      selectedMaterial.side = THREE.DoubleSide;
-      selections.push({
-        mesh: object.name || object.type,
-        side: showFront ? 'front' : 'back',
-        facingDot,
-        quaternionFacingDot,
-        worldMatrixDeterminant: object.matrixWorld.determinant(),
-        basisDisagrees: (facingDot >= 0) !== (quaternionFacingDot >= 0),
-      });
-      undo.push(() => {
-        frontMaterial.visible = oldFrontVisible;
-        backMaterial.visible = oldBackVisible;
-        selectedMaterial.side = oldSelectedSide;
-      });
-    });
-    return selections;
+    return { rotation, translation, applied };
   }
 
   function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo) {
@@ -245,7 +239,7 @@
     root.updateWorldMatrix?.(true, false);
 
     const oldPosition = root.position.clone();
-    const oldRotation = root.rotation.clone(); // Restored after render so Three cannot rewrite a >90° yaw into equivalent 180° X/Z Euler angles.
+    const oldRotation = root.rotation.clone(); // Restored after render so Three cannot rewrite a >90° yaw into equivalent 180-degree X/Z Euler angles.
     const worldPosition = root.getWorldPosition(new THREE.Vector3());
     const worldQuaternion = hierarchyWorldQuaternion(root);
 
@@ -278,7 +272,6 @@
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
       order: contribution.order || 'YXZ',
-      preserveFacingSide: contribution.preserveFacingSide === true,
       rotation: contribution.rotation ? { ...contribution.rotation } : undefined,
       quaternion: contribution.quaternion?.isQuaternion ? contribution.quaternion.clone() : undefined,
       translation: contribution.translation ? { ...contribution.translation } : contribution.position ? { ...contribution.position } : undefined,
@@ -305,6 +298,7 @@
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
     playerPosteriorY = finite(handle?.standingPosteriorY);
+    playerNeckJointCache = null;
   }
 
   function unregisterPlayerRig(parent, handle) {
@@ -313,6 +307,7 @@
     playerMesh = null;
     playerLegRoot = null;
     playerPosteriorY = 0;
+    playerNeckJointCache = null;
     clearAllChannels();
   }
 
@@ -342,15 +337,16 @@
         sequence: ++renderSequence,
         timestampMs: performance.now(),
         appliedOrder: [],
-        preserveFacingSideRequested: false,
-        portraitSelections: [],
+        portraitFaceCulling: 'material-frontside',
+        forcedPortraitDoubleSide: false,
         baseWorldEulerDeg: null,
         composedWorldEulerDeg: null,
+        neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
+        applyPlayerNeckYawLimit(renderDebug);
         const delta = resolveDelta();
         renderDebug.appliedOrder = delta.applied.slice();
-        renderDebug.preserveFacingSideRequested = delta.preserveFacingSide;
         const rotationMagnitude = Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z);
         const translationMagnitude = delta.translation.lengthSq();
         if (rotationMagnitude > 1e-8 || translationMagnitude > 1e-12) {
@@ -358,6 +354,9 @@
           // ordinary movement bob by this point. Convert the local composer
           // delta into world space from that FINAL base transform, pivot around
           // the standing posterior/hip point, render, then restore immediately.
+          // Portrait material sides are deliberately untouched here: the
+          // transformed geometry and its existing THREE.FrontSide materials
+          // remain the authority on whether front or rear artwork is visible.
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
@@ -366,7 +365,6 @@
             .multiply(baseWorldQuaternion.clone().invert());
           const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
-          if (delta.preserveFacingSide) renderDebug.portraitSelections = preserveSkinnedPortraitFacingSide(playerMesh, camera, undo);
           for (const root of currentOwnedRoots()) {
             applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo);
           }
@@ -376,12 +374,63 @@
 
       lastRenderDebug = renderDebug;
 
-      try { return originalRender.call(this, scene, camera); }
+      try {
+        const result = originalRender.call(this, scene, camera);
+        // Fires after the real render (so anything that re-syncs itself off
+        // playerMesh/toolHolder inside that render, e.g. the procedural hand
+        // sockets' onBeforeRender sentinel, has already used THIS frame's
+        // composed transform) but before the delta below is undone — the one
+        // point where playerMesh, toolHolder, and the hand sockets are all
+        // simultaneously in the exact state actually shown on screen.
+        if (pendingCapture) {
+          const callback = pendingCapture;
+          pendingCapture = null;
+          try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
+        }
+        return result;
+      }
       finally {
         for (let i = undo.length - 1; i >= 0; i--) undo[i]();
       }
     };
+    // held-object-render-order.js's internal depth-replay passes need the
+    // TRUE, undecorated render() — no visual-delta wrapper applied — and
+    // find it by walking a chain of __hobunji*Original markers left by each
+    // wrapper (see its unwrapRendererRender). Without this marker on this
+    // wrap specifically, that unwrap stopped one link too early and those
+    // replay passes still ran this wrap's full apply-delta/render/undo cycle
+    // (with scene.autoUpdate forced false around them, so the freshly-applied
+    // delta never propagated into matrixWorld for that one call) instead of
+    // the plain pass-through the depth-replay design intends.
+    proto.render.__hobunjiPlayerBodyComposerOriginal = originalRender;
     proto.__playerBodyTransformComposerRenderHook = true;
+  }
+
+  // One-shot: fires `callback` synchronously mid-render on the next real
+  // frame, at the single point where every composer-owned root (playerMesh,
+  // toolHolder, shoulder-pet roots, ...) reflects its true as-rendered
+  // transform rather than the resting state a caller would see between
+  // frames. Intended for diagnostics (e.g. a transform dump) that need a
+  // self-consistent snapshot instead of comparing some objects mid-tilt
+  // against others already restored. Returns false if a capture is already
+  // pending (last-writer-wins would silently drop the earlier caller).
+  function captureNextRenderTransforms(callback) {
+    if (typeof callback !== 'function' || pendingCapture) return false;
+    pendingCapture = callback;
+    return true;
+  }
+
+  // The extra yaw (radians) the active channels will add to playerMesh at the
+  // next render, without waiting for one. Channels like weapon-idle-stance-
+  // body-yaw only ever reach playerMesh through this composer's render-time
+  // world delta (see the module comment above) — anything that needs to
+  // reason about the body's yaw ahead of render (e.g. game.js's
+  // updatePlayerHeadAim, which counter-rotates the neck so the head keeps
+  // its own world yaw locked to the aim direction) must add this in, or it
+  // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
+  // and the head renders off-target by whatever yaw a channel contributes.
+  function resolvedYawDeltaRad() {
+    return new THREE.Euler().setFromQuaternion(resolveDelta().rotation, 'YXZ').y;
   }
 
   window.PlayerBodyTransformComposer = {
@@ -389,18 +438,25 @@
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
+    captureNextRenderTransforms,
+    resolvedYawDeltaRad,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
     getDebug() {
       const delta = resolveDelta();
+      const neckJoint = currentPlayerNeckJoint(); // Used below so the mobile/debug report can show the currently clamped local neck yaw without console access.
       return {
         playerAttached: !!playerMesh,
         posteriorY: playerPosteriorY,
+        headMaxYawDeg: PLAYER_HEAD_MAX_YAW_DEG,
+        currentNeckYawDeg: neckJoint ? THREE.MathUtils.radToDeg(neckJoint.rotation.y) : null,
         renderRoot: playerMesh?.name || playerMesh?.type || null,
         avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
         externalProviders: Array.from(externalRootProviders.keys()),
+        portraitFaceCulling: 'material-frontside',
+        forcedPortraitDoubleSide: false,
         channels: Array.from(channels.entries()).map(([name, channel]) => ({
           name,
           priority: channel.priority,
@@ -408,15 +464,14 @@
           enabled: channel.enabled !== false,
           rotation: channel.rotation || null,
           translation: channel.translation || null,
-          preserveFacingSide: channel.preserveFacingSide === true,
         })),
         appliedOrder: delta.applied,
         lastRender: lastRenderDebug ? {
           ...lastRenderDebug,
           appliedOrder: lastRenderDebug.appliedOrder.slice(),
-          portraitSelections: lastRenderDebug.portraitSelections.map(selection => ({ ...selection })),
           baseWorldEulerDeg: lastRenderDebug.baseWorldEulerDeg ? { ...lastRenderDebug.baseWorldEulerDeg } : null,
           composedWorldEulerDeg: lastRenderDebug.composedWorldEulerDeg ? { ...lastRenderDebug.composedWorldEulerDeg } : null,
+          neckYaw: lastRenderDebug.neckYaw ? { ...lastRenderDebug.neckYaw } : null,
         } : null,
       };
     },

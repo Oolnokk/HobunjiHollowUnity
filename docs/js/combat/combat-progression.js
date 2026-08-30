@@ -40,11 +40,12 @@
   function aff(id, mul, label, desc) { return { label, desc, afflictions: { [id]: mul } }; }
   function stat(key, val, label, desc) { return { label, desc, stat: { [key]: val } }; }
 
-  // Per-hit affliction multipliers, same order of magnitude as the flat
-  // tag-based rates this replaced (resource-system.js's old sharpBleedMul
-  // 0.35 / bluntBruiseMul 0.55 / etc.) so a fully-leveled ability feels
-  // about as strong as the old always-on system did, but only once earned.
-  const BLEED = 0.35, WOUND = 0.42, BRUISE = 0.5, WIND = 0.4, POISON = 0.28, INFECT = 0.38, SHATTER = 0.32, CONGEAL = 0.36;
+  // Per-hit affliction multipliers are power-weighted instead of nearly flat:
+  // persistent/guaranteed Health damage gets the smallest buildup, while
+  // temporary or setup-dependent resource suppression gets substantially
+  // more. These are intentionally large enough that one mastery pick is
+  // visible in combat; later specialized picks still stack from this base.
+  const BLEED = 0.50, WOUND = 0.65, BRUISE = 0.75, WIND = 0.90, POISON = 0.42, INFECT = 0.60, SHATTER = 0.55, CONGEAL = 1.00;
 
   // Generic blunt (bludgeoning) tree: bruise/wind flavor early, branching
   // into the heavier stamina-debt afflictions and a couple of plain stat
@@ -304,6 +305,11 @@
         }
       }
     }
+    // Increase AoE / Increase Lunge Distance perks apply here so every
+    // ability (which already reads stats.rangeMul/lungeMul off this same
+    // returned object) picks them up uniformly.
+    stats.rangeMul = (stats.rangeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1;
+    stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
     return { afflictions, stats };
   }
 

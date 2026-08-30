@@ -32,23 +32,27 @@
     return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
   }
 
-  function _buildBerryBushMesh(berryKey) {
+  // A real 3D leafy bush (window.FoliageGenerator's TREE_PRESETS.bush —
+  // the same model wilderness-generator 'bush' scatter objects use, see
+  // game.js's SHRUB-tile rendering) with small berry-colored spheres
+  // scattered through the canopy, instead of the old flat billboard
+  // cross. Seeded off (col,row) like every other FoliageGenerator call,
+  // so a given tile's bush shape is stable; berry placement itself is
+  // just decorative scatter and doesn't need to be.
+  function _buildBerryBushMesh(berryKey, col, row) {
     const color = deps.BERRY_COLORS[berryKey];
-    if (color == null) return null;
-    const mat = deps.getReagentPlantMaterial(color); // shared shader/cache — see game.js's getReagentPlantMaterial
-    if (!mat) return null;
-    const group = new THREE.Group();
-    // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
-    // fuller/rounder than a single reagent plant at a glance.
-    const sizeMul = 2.0;
-    const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
-    for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
-      const blade = new THREE.Mesh(deps._grassBladeGeo, mat);
-      blade.rotation.y = rot;
-      blade.scale.set(w, h, 1);
-      group.add(blade);
+    if (color == null || !window.FoliageGenerator) return null;
+    const group = window.FoliageGenerator.buildWildernessBushMesh(col, row);
+    const berryGeo = new THREE.SphereGeometry(0.035, 6, 5);
+    const berryMat = new THREE.MeshLambertMaterial({ color });
+    const berryCount = 6 + Math.floor(Math.random() * 5); // 6-10
+    for (let i = 0; i < berryCount; i++) {
+      const berry = new THREE.Mesh(berryGeo, berryMat);
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 0.14 + Math.random() * 0.16;
+      berry.position.set(Math.cos(angle) * radius, 0.28 + Math.random() * 0.22, Math.sin(angle) * radius);
+      group.add(berry);
     }
-    group.userData.isBillboard = true;
     group.userData.berryKey = berryKey;
     return group;
   }
@@ -63,7 +67,9 @@
     if (!pool.length) return [];
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return [];
-    const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
+    // Roughly doubled density (was /70, capped 4-24) — berries were meant
+    // to read as a common wild forageable, not a rare find.
+    const targetCount = Math.max(8, Math.min(40, Math.round((zi.cols * zi.rows) / 35)));
     const rng = deps._mbRng(deps._seedFromString(mapId + ':berries:' + deps.calendar.day));
     const reagentPlacements = deps._zoneReagentPersist.get(mapId)?.placements || [];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
@@ -105,6 +111,52 @@
     };
   }
 
+  // Wildlife-forage read/consume pair, used by js/wildlife-grehlr-foraging.js
+  // so a grehlr can eat a wild berry bush the same way a player picks one —
+  // reuses the exact same live object/mesh/persisted-placement bookkeeping
+  // _makeBerryBushObject's own onAction already maintains, just without the
+  // player-facing inventory grant/toast/harvest sfx that reusing onAction
+  // directly would incorrectly trigger for a wild animal eating it itself.
+  // col/row are tile-index units (this file's own convention throughout),
+  // not TILE-scaled world pixels — callers convert their own creature
+  // position first. `.reserved` isn't set by this module; a forage caller
+  // is expected to flag/clear it directly on the returned object so two
+  // animals don't both walk toward the same bush.
+  function nearestAvailableBerry(mapId, col, row) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    if (!objs?.size) return null;
+    let best = null, bestD = Infinity;
+    for (const obj of objs.values()) {
+      if (obj.reserved) continue;
+      const d = Math.hypot(obj.col - col, obj.row - row);
+      if (d < bestD) { bestD = d; best = obj; }
+    }
+    return best;
+  }
+  // Read-only listing for the Wildlife tab's behavior map (see
+  // js/wildlife-behavior-map.js) — every currently live berry bush's
+  // position/kind/reserved state, without exposing the live objects
+  // themselves (a caller mutating one of those would affect real
+  // gameplay bookkeeping; this returns plain copies).
+  function listBerries(mapId) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    if (!objs?.size) return [];
+    return [...objs.values()].map(obj => ({ col: obj.col, row: obj.row, berryKey: obj.berryKey, reserved: !!obj.reserved }));
+  }
+
+  function removeBerryBush(mapId, col, row) {
+    const objs = deps._zoneBerryObjects.get(mapId);
+    const obj = objs?.get(col + ',' + row);
+    if (!obj) return false;
+    deps._zoneScenes.get(mapId)?.scene.remove(obj.mesh);
+    objs.delete(col + ',' + row);
+    const groups = deps._zoneBerryMeshGroups.get(mapId);
+    if (groups) { const i = groups.indexOf(obj.mesh); if (i >= 0) groups.splice(i, 1); }
+    const persisted = deps._zoneBerryPersist.get(mapId);
+    if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+    return true;
+  }
+
   function _clearZoneBerryMeshes(mapId) {
     const scene = deps._zoneScenes.get(mapId)?.scene;
     const groups = deps._zoneBerryMeshGroups.get(mapId);
@@ -132,7 +184,7 @@
     const groups = [];
     const objMap = new Map();
     for (const { col, row, key } of persisted.placements) {
-      const mesh = _buildBerryBushMesh(key);
+      const mesh = _buildBerryBushMesh(key, col, row);
       if (!mesh) continue;
       const tile = zi.grid[row]?.[col];
       mesh.position.set(col + 0.5, tile ? deps.tileSurfaceYInArea(tile, mapId) : deps.NORMAL_TOP, row + 0.5);
@@ -173,5 +225,8 @@
     respawnAll,
     serializeState,
     restoreState,
+    nearestAvailableBerry,
+    removeBerryBush,
+    listBerries,
   };
 })();

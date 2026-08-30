@@ -17,6 +17,7 @@
   const SOURCE_MODE_KEY = 'hobunji_db_source_mode_v1'; // 'repo' | 'local'
   const OVERRIDE_KEY_PREFIX = 'hobunji_local_db_override_v1_';
   const NPC_SCHEDULE_OVERRIDES_PATH = 'config/npcs/schedule-overrides.json'; // Runtime-authored schedule corrections kept out of game.js and the giant NPC database.
+  const NPC_PLAYER_NICKNAME_OVERRIDES_PATH = 'config/npcs/player-nickname-overrides.json'; // Small reviewed copy fixes for generated-feeling player-address entries.
   const NPC_SCHEDULE_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to expand presence-dependent schedule choices deterministically at load time.
 
   // The set of repo-tracked JSON databases this system knows how to
@@ -344,6 +345,26 @@
     return merged;
   }
 
+  // Keeps subjective dialogue copy cleanup out of the giant generated NPC
+  // database while preserving the original phrase-pool ids, conditions, and
+  // heard-entry tracking. Only explicitly-listed entry ids are changed.
+  function applyNpcPlayerNicknameOverrides(npcDatabase, nicknameOverrides) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const replacements = nicknameOverrides?.replacements; // Used as the reviewed entry-id -> replacement-text map.
+    if (!replacements || typeof replacements !== 'object') return npcDatabase;
+    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Used so local editor/source data is never mutated in place.
+    for (const npc of merged.npcs) {
+      for (const pool of npc?.phrasePools || []) {
+        for (const entry of pool?.entries || []) {
+          if (!entry?.id || !Object.prototype.hasOwnProperty.call(replacements, entry.id)) continue;
+          const replacement = replacements[entry.id]; // Used to reject malformed non-string override values without damaging authored dialogue.
+          if (typeof replacement === 'string' && replacement.trim()) entry.text = replacement;
+        }
+      }
+    }
+    return merged;
+  }
+
   // What game.js/combat-config-loader.js actually call at boot in place of a
   // bare fetch(repoPath): local override wins only when the player has opted
   // into 'local' source mode AND actually saved one for this id; otherwise
@@ -353,13 +374,20 @@
   async function loadDatabase(id) {
     const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
     if (id !== 'npcDatabase') return data;
-    let composed = data; // Used to carry independent schedule and shop composition forward even if either optional source fails.
+    let composed = data; // Used to carry independent schedule, nickname, and shop composition forward even if any optional source fails.
     try {
       const resp = await fetch(NPC_SCHEDULE_OVERRIDES_PATH); // Used to load small repo-authored schedule corrections independently of local database selection.
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       composed = applyNpcScheduleOverrides(composed, await resp.json());
     } catch (error) {
       console.warn('[LocalDBOverrides] Could not compose NPC schedule overrides:', error);
+    }
+    try {
+      const resp = await fetch(NPC_PLAYER_NICKNAME_OVERRIDES_PATH); // Used to apply reviewed dialogue-copy fixes without rewriting the giant NPC database.
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      composed = applyNpcPlayerNicknameOverrides(composed, await resp.json());
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose NPC player nickname overrides:', error);
     }
     try {
       const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
@@ -377,5 +405,6 @@
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
     applyNpcScheduleOverrides,
+    applyNpcPlayerNicknameOverrides,
   };
 })();

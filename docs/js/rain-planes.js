@@ -311,3 +311,49 @@
 
   window.RainPlanes = { init, update, setSettings, getSettings, getDebugState };
 })();
+
+// sky-dome.js must wrap CalendarSystem/WeatherFX/RainPlanes before game.js initializes them.
+// rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
+// synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
+if (!window.HobunjiSkyDome) {
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20260823a"></scr' + 'ipt>');
+  else {
+    const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
+    skyScript.src = 'js/sky-dome.js?v=20260823a';
+    skyScript.async = false;
+    document.head.appendChild(skyScript);
+  }
+}
+
+// Three.js renders transparent objects after opaque world geometry. The sky's transparent
+// cloud/celestial layers therefore need depth testing even though they never write depth;
+// otherwise they would paint over buildings. This guard also keeps the skydome exterior-only.
+if (window.HobunjiSkyDome && window.RainPlanes) {
+  let skyDeps = null; // Captured from RainPlanes.init; used to locate the same active scene and outdoor-area state as the rain/skydome runtime.
+  let guardedSkyRoot = null; // Remembers the current area scene's skydome root so material traversal only happens on scene changes.
+  const priorRainInit = window.RainPlanes.init;
+  const priorRainUpdate = window.RainPlanes.update;
+  window.RainPlanes.init = function (injectedDeps) {
+    skyDeps = injectedDeps;
+    return priorRainInit.call(this, injectedDeps);
+  };
+  window.RainPlanes.update = function (dt) {
+    const result = priorRainUpdate.call(this, dt);
+    const scene = skyDeps?.getActiveScene?.();
+    const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome') || null;
+    if (skyRoot) {
+      skyRoot.visible = skyDeps.isOutdoorArea?.() !== false;
+      if (skyRoot !== guardedSkyRoot) {
+        guardedSkyRoot = skyRoot;
+        skyRoot.traverse(node => {
+          if (node.material?.transparent) {
+            node.material.depthTest = true;
+            node.material.depthWrite = false;
+            node.material.needsUpdate = true;
+          }
+        });
+      }
+    }
+    return result;
+  };
+}

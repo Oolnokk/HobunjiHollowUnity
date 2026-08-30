@@ -10,7 +10,8 @@
         "businessMaps": ["map_i_general_store"]
       },
       "goods": [
-        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} }
+        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} },
+        { "key": "kurraya",      "icon": "🎵", "name": "Kurraya",        "desc": "A simple lyre. Foroji's own is never far from his hands. Play it solo, or fall in behind whoever's already playing nearby.", "price": 500, "gives": { "kurraya": 1 }, "conditions": {} }
       ],
       "clothingRotation": {
         "slots": 4,

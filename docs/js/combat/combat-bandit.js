@@ -282,12 +282,36 @@
     backMesh.rotation.y = 0;
     frontMesh.position.z = 0;
     backMesh.position.z = 0;
+
+    // Gives this bandit a genuine neck-turn bone (see item 6: enemies
+    // glancing at their combat target) without touching the rigid
+    // frontPivot/backPivot Group structure the comment above explains --
+    // only frontMesh/backMesh themselves become SkinnedMesh, mirroring
+    // exactly how applyAnimalHeadRig upgrades an animal's front/backPlane
+    // in place. No authored weight map exists for bandit portraits, so
+    // this uses the auto-detected/auto-blended neck rig
+    // buildSkinnedSinglePlaneAssembly already relies on for player/NPC
+    // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
+    // requiring one to be painted per species/gender.
+    const neckPivotPx = window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    const neckPivotNormalized = neckPivotPx
+      ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
+      : null;
+    const frontNeckSkin = neckPivotNormalized
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W })
+      : null;
+    const backNeckSkin = neckPivotNormalized
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W })
+      : null;
+    const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
+    const renderedBackMesh = backNeckSkin?.mesh || backMesh;
+
     const group = new THREE.Group();
     group.name = 'bandit_avatar_group';
     const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
     const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
-    frontPivot.add(frontMesh);
-    backPivot.add(backMesh);
+    frontPivot.add(renderedFrontMesh);
+    backPivot.add(renderedBackMesh);
     // Keeps the portrait's own species/gender grounding offset (the
     // assembly's y position inside the model root) now that the meshes no
     // longer sit under it.
@@ -304,6 +328,13 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+    // Preserve the portrait box recipe on the converted animal-style root:
+    // authored width/height plus vertical placement, with runtime world scale
+    // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
+    group.userData.portraitModelWidth = modelWidth;
+    group.userData.portraitModelHeight = modelHeight;
+    group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
+    group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     const legsPivot = new THREE.Group();
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
@@ -324,6 +355,11 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       modelWidth, modelHeight,
+      // Neck-turn bones for the combat head-look system (see
+      // combat-bandit.js's _updateBanditLookAtTarget) -- null when no
+      // readable neck pivot could be detected (e.g. a fully transparent
+      // portrait canvas), in which case that system just no-ops.
+      neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
       // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -332,7 +368,14 @@
       // -width/2,height/2 fallback.
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
-      dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+      dispose() {
+        legs?.dispose();
+        frontNeckSkin?.weightedGeometry?.dispose();
+        backNeckSkin?.weightedGeometry?.dispose();
+        frontNeckSkin?.skeleton?.dispose?.();
+        backNeckSkin?.skeleton?.dispose?.();
+        window.PNGPlaneAvatar.disposeAvatarModel?.(group);
+      },
     };
   }
 
@@ -400,6 +443,12 @@
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
   }
 
+  function banditRangedWeaponFor(cfg, rank) {
+    const chance = Number(cfg?.rangedWeaponChanceByRank?.[rank] ?? 0);
+    if (deps.rnd() >= chance) return null;
+    return _banditWeightedPick(cfg?.rangedWeaponWeightsByRank?.[rank]) || 'crossbow';
+  }
+
   // A bandit's real ability loadout -- tap1 (Combo) and tap2 (Quick
   // Attack) are available to every rank (matching the player's own
   // always-on tap slots), while hold1/hold2 are gated by
@@ -420,10 +469,18 @@
   }
 
   function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
-    const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
+    const tierRankMultipliers = cfg?.statMultiplierByRankAndTier?.[rank];
+    // Tier-indexed rank curves keep low-star camps weak while preserving
+    // meaningful supporting ranks in higher-star camps.
+    const weaken = Number(
+      Array.isArray(tierRankMultipliers)
+        ? tierRankMultipliers[Math.min(Math.max(0, tier), tierRankMultipliers.length - 1)]
+        : (cfg?.statWeakenMultiplierByRank?.[rank] ?? 1),
+    );
     const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
     const statMul = weaken * tierMul;
     const weapon = banditWeaponFor(cfg, rank, tier);
+    const rangedWeaponKey = banditRangedWeaponFor(cfg, rank);
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
     return {
@@ -440,6 +497,7 @@
       attackCooldownS: rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      rangedWeaponKey,
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
@@ -554,6 +612,7 @@
   function finishBanditAction(c) {
     c._banditAction = null;
     c.telegraphState = null;
+    if (!c._banditLunging) c._banditLungeHopCurrent = 0;
     // Quick Attack and Charged Breaker both hardcode their OWN anim/
     // pose regardless of the equipped weapon ('thrust'/null and
     // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
@@ -586,7 +645,10 @@
   // deps.tickCreatureFootsteps are already entity-generic -- called exactly
   // the way pounceUpdate already calls them.
   function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
-    if (durationS <= 0 || distancePx <= 0 || c._banditLunging) return;
+    if (durationS <= 0 || c._banditLunging) return;
+    const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, c._banditAimPitch || 0, 0, c.def?.lungeHeightUnits ?? 1)
+      || { distancePx, hopUnits: 0, pitch: c._banditAimPitch || 0 }; // Used to turn high enemy aim into a shorter leap.
+    distancePx = lungeProfile.distancePx;
     // Cap the travel distance so an already-close bandit can't lunge
     // straight past a stationary target -- distancePx above is a FIXED
     // per-ability budget (e.g. Step Thrust's full tile*lungeMul) applied
@@ -603,7 +665,7 @@
       const currentDist = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
       const haltDist = hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN;
       distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
-      if (distancePx <= 0) return;
+      if (distancePx <= 0 && lungeProfile.hopUnits <= 0.01) return;
     }
     c._banditLunging = true;
     c._banditLungeT = durationS;
@@ -613,6 +675,9 @@
     c._banditLungeDirX = Math.cos(c.facing || 0);
     c._banditLungeDirY = Math.sin(c.facing || 0);
     c._banditLungeDistancePx = distancePx;
+    c._banditLungeHopUnits = lungeProfile.hopUnits;
+    c._banditLungeHopCurrent = 0;
+    c._banditLungeAimPitch = lungeProfile.pitch;
     c._banditLungeHitTest = hitTest;
   }
 
@@ -633,7 +698,12 @@
   const BANDIT_LUNGE_HALT_MARGIN = 0.68;
   function isPlayerInBanditLungeCone(c, hitTest, targetPlayer) {
     if (!hitTest || targetPlayer.health <= 0) return false;
-    return deps.inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN, hitTest.halfConeRad);
+    return window.Combat?.meleeHit?.(c, targetPlayer, {
+      rangePx: hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN,
+      halfConeRad: hitTest.halfConeRad,
+      yaw: c.facing,
+      pitch: c._banditLungeAimPitch || c._banditAimPitch || 0,
+    }) || false;
   }
 
   // Re-aim rate (rad/sec) for the lunge homing below -- same value and
@@ -646,8 +716,12 @@
   function updateBanditLunge(c, dt, targetPlayer) {
     if (!c._banditLunging) return false;
     if (isPlayerInBanditLungeCone(c, c._banditLungeHitTest, targetPlayer)) {
-      c._banditLunging = false;
-      return true;
+      // Stop horizontal travel but finish the leap arc so the enemy body
+      // stays at the aimed elevation through the staged strike.
+      c._banditLungeHitTest = null;
+      c._banditLungeStartX = c.x;
+      c._banditLungeStartY = c.y;
+      c._banditLungeDistancePx = 0;
     }
     // Re-aims c.facing toward the target's CURRENT position every
     // frame, capped at BANDIT_LUNGE_HOMING_RATE -- mirrors the player's
@@ -667,7 +741,11 @@
     // actually ends up aiming.
     if (targetPlayer.health > 0) {
       const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-      c.facing += deps.angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+      const homingT = Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+      c.facing += deps.angleDiff(desiredFacing, c.facing) * homingT;
+      const aimed = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing, c._banditLungeAimPitch || 0);
+      if (aimed) c._banditLungeAimPitch += (aimed.pitch - (c._banditLungeAimPitch || 0)) * homingT;
+      c._banditAimPitch = c._banditLungeAimPitch;
       c._banditLungeDirX = Math.cos(c.facing);
       c._banditLungeDirY = Math.sin(c.facing);
     }
@@ -676,6 +754,7 @@
     const eased = 1 - Math.pow(1 - t, 3);
     const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
     const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
+    c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
     c.x = swept.x; c.y = swept.y;
@@ -689,7 +768,7 @@
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
     deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
     deps.tickCreatureFootsteps?.(c, stepPx);
-    if (c._banditLungeT <= 0) c._banditLunging = false;
+    if (c._banditLungeT <= 0) { c._banditLunging = false; c._banditLungeHopCurrent = 0; }
     return true;
   }
 
@@ -721,7 +800,8 @@
     const halfConeRad = step.halfConeDeg * Math.PI / 180;
     const knockbackPxS = base.knockbackPxS * step.knockbackMul;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-    c.facing = aimAngle; // lunge direction locks off c.facing -- must be fresh, not last frame's
+    c.facing = aimAngle;
+    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail. // lunge direction locks off c.facing -- must be fresh, not last frame's
     c.telegraphState = 'windup';
     c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
@@ -749,7 +829,7 @@
         // c.facing, not the fire-time aimAngle local -- see
         // updateBanditLunge's homing comment.
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-        if (deps.inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           comboStepHit = true;
           c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
           // def.attackTag (the bandit's actual rolled weapon material,
@@ -759,7 +839,7 @@
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
       onComplete: () => {
@@ -796,6 +876,7 @@
     const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
+    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
     c.telegraphState = 'windup';
     c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
@@ -813,10 +894,10 @@
         // both the affliction and the impact sound -- see
         // combat-quickattacks.js's onTap, which no longer hardcodes
         // 'sharp' regardless of the equipped weapon either.
-        if (deps.inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, tech.sourceText === 'no condition bonus' ? 'small' : 'huge');
         }
       },
       onComplete: () => {
@@ -841,6 +922,7 @@
     const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
+    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
     c.telegraphState = 'windup';
     // Charged Breaker always plays the sweep pose regardless of the
     // equipped weapon's own style (see combat-charged-breaker.js).
@@ -867,10 +949,10 @@
         // def.attackTag (bandit's real weapon material) drives both the
         // affliction and the impact sound -- see combat-charged-
         // breaker.js's matching fix (no longer hardcodes 'blunt').
-        if (deps.inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'huge');
         }
       },
       onComplete: () => {
@@ -905,6 +987,7 @@
     const halfConeRad = cs.COUNTER_HALF_CONE_DEG * Math.PI / 180;
     const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const aimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by the counter's 3D cone and ribbon.
     // Deliberately doesn't touch c._banditAction (a captain can be
     // mid-combo when guarded damage triggers this) or c._banditSwing* --
     // the riposte's own 0.2s swing is brief enough that skipping its
@@ -918,10 +1001,10 @@
         // affliction and the impact sound -- matches
         // combat-counter-shield.js's own riposte fix (no longer
         // hardcodes 'sharp' regardless of weapon).
-        spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
-        if (deps.inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+        spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle, aimPitch);
+        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: aimAngle, pitch: aimPitch })) {
           deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
     });
@@ -1211,9 +1294,73 @@
 
   // Called from updateHostiles' chase-state branch in place of the
   // plain bite-telegraph/behaviorStage machinery for any c.isBandit.
+  // Neck-turn "look at target" glance for a bandit's own portrait plane
+  // (see buildBanditAvatar's neckJoint) — mirrors the dialogue system's
+  // faceNpcDialogueParticipants (game.js), which drives an NPC walker's
+  // neckJoint by the residual angle still remaining between its coarse,
+  // deadzone-clamped body facing and the true target angle. A bandit's
+  // visible plane facing goes through that exact same deadzone (see
+  // updateCreatureMesh's CREATURE_PLANE_ROT_MODE snap/sway/halt), so
+  // without a head glance it only ever visibly faces one of a handful of
+  // camera-relative directions -- the neck bone fills in the rest,
+  // reading as "eyes on you" even mid-windup/retreat when c.facing itself
+  // is pointed somewhere else for gameplay reasons.
+  const BANDIT_NECK_LOOK_MAX_YAW_DEG = 30;
+  const BANDIT_NECK_LOOK_TURN_SPEED_DEG = 260;
+  const BANDIT_NECK_LOOK_RAD = Math.PI / 180;
+
+  function _updateBanditNeckYaw(c, targetDeg, dt) {
+    const neck = c.avatarRef?.neckJoint;
+    if (!neck?.front || !neck?.back) return;
+    const state = c._banditNeckYaw || (c._banditNeckYaw = { currentDeg: 0 });
+    const clampedTarget = Math.max(-BANDIT_NECK_LOOK_MAX_YAW_DEG, Math.min(BANDIT_NECK_LOOK_MAX_YAW_DEG, Number(targetDeg) || 0));
+    const step = BANDIT_NECK_LOOK_TURN_SPEED_DEG * Math.max(0, Number(dt) || 0);
+    const diff = clampedTarget - state.currentDeg;
+    state.currentDeg += Math.max(-step, Math.min(step, diff));
+    // Front and back share the same sign here, not mirrored -- unlike an
+    // in-plane roll (which reverses handedness under the back card's own
+    // ±90°-opposite baseline rotation), a yaw around the shared world-
+    // vertical axis reads the same real-world direction on both cards
+    // regardless of that baseline difference, so mirroring the sign here
+    // would turn the two cards away from each other instead of in tandem.
+    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
+    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
+  }
+
+  // Eases the neck glance back to center — called from game.js's hostile
+  // loop whenever this bandit isn't actively chasing (updateCombatAI, and
+  // therefore _updateBanditLookAtTarget, only ever runs during 'chase').
+  function restNeckLook(c, dt) {
+    _updateBanditNeckYaw(c, 0, dt);
+    c._lookAtDebug = null;
+  }
+
+  function _updateBanditLookAtTarget(c, dt, targetPlayer) {
+    if (!targetPlayer || targetPlayer.health <= 0) { restNeckLook(c, dt); return; }
+    const rawAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const residualRad = deps.angleDiff(rawAngle, c.facing || 0); // How far the target sits from wherever this bandit's body/plane is currently facing.
+    _updateBanditNeckYaw(c, residualRad * 180 / Math.PI, dt);
+    // Feeds the "Show Interaction Raycast" debug overlay (see
+    // debug-hitboxes.js) — approximates this bandit's own head height off
+    // its shared window.CreatureHeadCache entry (built for animal-shaped
+    // avatarRefs, but its fallbacks degrade gracefully for a bandit's own
+    // portrait-plane avatarRef too).
+    const selfHead = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+    const targetHead = deps.getPlayerFaceTarget?.();
+    if (selfHead && targetHead) {
+      c._lookAtDebug = {
+        head: { x: c.x / deps.TILE, y: selfHead.worldY, z: c.y / deps.TILE },
+        target: { x: targetHead.x / deps.TILE, y: targetHead.worldY, z: targetHead.y / deps.TILE },
+      };
+    }
+  }
+
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     const def = c.def, loadout = def.banditAbilityLoadout;
+    _updateBanditLookAtTarget(c, dt, targetPlayer);
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
+    if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
     // Unconditional now (was only called from the engaged branch below,
@@ -1247,7 +1394,10 @@
       // range" in a combat log.
       if (targetPlayer.health > 0) {
         const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        c.facing += deps.angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+        const homingT = Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+        c.facing += deps.angleDiff(desiredFacing, c.facing) * homingT;
+        const aimed = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing, c._banditAimPitch || 0);
+        if (aimed) c._banditAimPitch += (aimed.pitch - (c._banditAimPitch || 0)) * homingT;
       }
       return { aimAngle: c.facing, moving: false };
     }
@@ -1472,30 +1622,22 @@
   // updateCombatConeTrail's own sweep starts -- WF, not fire-time) so
   // the arc appears exactly when the hit actually lands, not during the
   // windup telegraph.
-  function spawnBanditTrailArc(c, rangePx, halfConeRad, angle) {
-    const mesh = c._banditTrailMesh || (c._banditTrailMesh = makeBanditTrailMesh());
-    if (mesh.parent !== c.scene) c.scene.add(mesh);
-    mesh.material.color.setHex(BANDIT_TRAIL_COLOR_BY_TAG[c.def.attackTag] || 0xffffff);
-    const rangeTiles = rangePx / deps.TILE;
-    const baseX = c.x / deps.TILE, baseZ = c.y / deps.TILE;
-    const y = (c._banditToolHolder?.position.y ?? c.avatarRef.group.position.y) + 0.05;
-    const posAttr = mesh.geometry.attributes.position;
-    for (let s = 0; s <= BANDIT_TRAIL_SAMPLES; s++) {
-      const u = s / BANDIT_TRAIL_SAMPLES;
-      const a = angle - halfConeRad + (2 * halfConeRad) * u;
-      const cosA = Math.cos(a), sinA = Math.sin(a);
-      const taper = Math.sin(u * Math.PI);
-      const half = BANDIT_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
-      const arch = BANDIT_TRAIL_ARCH_UNITS * taper;
-      const innerR = rangeTiles - half, outerR = rangeTiles + half;
-      const vi = s * 2;
-      posAttr.setXYZ(vi, baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
-      posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
-    }
-    posAttr.needsUpdate = true;
-    mesh.material.opacity = 0.85;
-    mesh.visible = true;
-    c._banditTrailAge = 0;
+  function spawnBanditTrailArc(c, rangePx, halfConeRad, angle, pitch = null) {
+    const attackTag = c.def.attackTag || 'sharp'; // Used to keep enemy ribbon color aligned with its weapon damage type.
+    const color = BANDIT_TRAIL_COLOR_BY_TAG[attackTag] || 0xffffff;
+    window.Combat?.spawnMeleeTrail?.({
+      actor: c,
+      scene: c.scene,
+      yaw: angle,
+      pitch: pitch ?? c._banditAimPitch ?? 0,
+      rangePx,
+      halfConeRad,
+      halfThickness: BANDIT_TRAIL_HALF_THICKNESS_TILES,
+      archUnits: BANDIT_TRAIL_ARCH_UNITS,
+      color,
+      holdS: BANDIT_TRAIL_HOLD_S,
+      fadeS: BANDIT_TRAIL_FADE_S,
+    });
   }
 
   // The real cone trail (updateCombatConeTrail) stays at FULL opacity for
@@ -1523,6 +1665,13 @@
   function updateBanditToolMesh(c) {
     const holder = c._banditToolHolder;
     if (!holder) return;
+    if (c._rangedMode) {
+      holder.visible = false;
+      window.RangedWeapons?.updateBanditVisual?.(c);
+      return;
+    }
+    holder.visible = true;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     const action = c._banditAction;
     if (!action) {
       if (performance.now() < (c._banditToolSettleUntil || 0)) {
@@ -1745,6 +1894,8 @@
     targetScene.add(avatarRef.group);
     const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
+    const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
+    if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
     const shadowRadii = deps.creatureGroundShadowRadii(def);
@@ -1773,6 +1924,8 @@
       isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
       banditWeaponMeshAttached: !!banditToolHolder,
       _banditToolHolder: banditToolHolder,
+      _banditRangedToolHolder: banditRangedToolHolder,
+      _rangedLoaded: true, _rangedMode: false, _rangedAction: null, _rangedCooldownT: 0,
       // Idle/approach rest pose matches the weapon's own natural swing
       // style (see banditNaturalSwing) until an ability fire overwrites
       // these with its own (see fireBanditComboStep/fireBanditQuickAttack
@@ -1796,6 +1949,7 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }
 
@@ -1825,6 +1979,7 @@
     // when no live camp exists yet to adopt a captain's real identity from.
     randomName: _banditName,
     updateCombatAI: updateBanditCombatAI,
+    restNeckLook,
     updateToolMesh: updateBanditToolMesh,
     updateTrailArc: updateBanditTrailArc,
     fireCounterRiposte: fireBanditCounterRiposte,

@@ -42,7 +42,15 @@
     return drawVariantCanvas(document.createElement('canvas'), image, options);
   }
 
+  // The plane is only a carrier for the authored character PNG composite.
+  // The actual source of truth lives with the sprite PNG/tint pipeline in
+  // portrait-utils.js so same-style PNGs used on 3D surfaces share it too.
+  const spritePngSurface = window.HobunjiSpritePngSurface;
+
   function makeTextureFromCanvas(THREE, canvasEl, debugName) {
+    if (spritePngSurface?.makeCanvasTexture) {
+      return spritePngSurface.makeCanvasTexture(THREE, canvasEl, debugName);
+    }
     const texture = new THREE.CanvasTexture(canvasEl);
     texture.name = debugName;
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -51,21 +59,19 @@
   }
 
   function makeSpriteMaterial(THREE, texture, debugName) {
+    if (spritePngSurface?.makeMaterial) {
+      return spritePngSurface.makeMaterial(THREE, texture, debugName);
+    }
     return new THREE.MeshBasicMaterial({
-      name: debugName,
-      map: texture,
-      transparent: true,
-      alphaTest: cfg().alphaTest ?? 0.001,
-      side: THREE.FrontSide,
-      // alphaTest already discards fully-transparent texels, so the opaque
-      // sprite silhouette can safely write depth — without this, the depth
-      // buffer behind the sprite still holds whatever was rendered before it
-      // (e.g. a building wall), so later passes that re-test depth (like the
-      // shell outline pass) draw straight through the sprite as if it weren't
-      // there.
-      depthWrite: true,
+      name: debugName, map: texture, transparent: true,
+      alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide,
+      depthTest: true, depthWrite: true, opacity: 1,
     });
   }
+
+  // Compatibility alias for older callers; this is now literally the sprite
+  // PNG surface API rather than an independently maintained plane-only copy.
+  window.HobunjiPngPlaneUnlit = spritePngSurface || window.HobunjiPngPlaneUnlit;
 
   function buildTextureSet(THREE, image, backImage) {
     const rearSource = backImage || image;
@@ -134,12 +140,15 @@
   }
 
   function avatarScaleMultiplierFor(options = {}) {
-    const { species } = avatarSpeciesAndGender(options);
+    const { species, gender } = avatarSpeciesAndGender(options);
     const scaleBySpecies = cfg().portraitScaleBySpecies || {};
     let scale = 1;
     for (const speciesKey of placementSpeciesChain(species)) {
       if (Object.prototype.hasOwnProperty.call(scaleBySpecies, speciesKey)) {
-        const speciesScale = Number(scaleBySpecies[speciesKey]);
+        const configuredScale = scaleBySpecies[speciesKey]; // Supports legacy species numbers and new species/gender profile maps.
+        const speciesScale = Number(configuredScale && typeof configuredScale === 'object'
+          ? configuredScale[gender] ?? configuredScale.default
+          : configuredScale);
         if (Number.isFinite(speciesScale) && speciesScale > 0) {
           scale = speciesScale;
           break;
@@ -231,6 +240,50 @@
     return scanOpaqueVerticalBounds(makeVariantCanvas(image), alphaThreshold);
   }
 
+  // Reads a canvas into an alpha mask with full bounds and centroid data.
+  // This is used only to locate portrait landmarks such as the neck pivot.
+  // Skin geometry deliberately ignores opacity and always covers the complete
+  // rectangular PNG plane, so detached cosmetics and transparent gaps remain
+  // part of the same continuously weighted surface.
+  function scanOpaquePixelMask(canvas, alphaThreshold, additionalCanvas) {
+    const width = canvas?.width, height = canvas?.height;
+    if (!canvas || !width || !height) return null;
+    const threshold = alphaThreshold ?? 12;
+    let data;
+    try {
+      data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+      if (additionalCanvas?.getContext && additionalCanvas.width === width && additionalCanvas.height === height) {
+        const additionalData = additionalCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+        const unionData = new Uint8ClampedArray(data); // Used below so rear-only opaque pixels survive front-mask cell culling.
+        for (let offset = 3; offset < unionData.length; offset += 4) unionData[offset] = Math.max(unionData[offset], additionalData[offset]);
+        data = unionData;
+      }
+    }
+    catch (error) { return null; }
+    const rowCounts = new Uint32Array(height);
+    let top = height, bottom = -1, left = width, right = -1;
+    let weightedX = 0, weightedY = 0, totalAlpha = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha <= threshold) continue;
+        rowCounts[y]++;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+        weightedX += x * alpha;
+        weightedY += y * alpha;
+        totalAlpha += alpha;
+      }
+    }
+    if (bottom < 0 || totalAlpha <= 0) return null;
+    return {
+      width, height, data, rowCounts, top, bottom, left, right, alphaThreshold: threshold,
+      centroidPx: { x: weightedX / totalAlpha, y: weightedY / totalAlpha },
+    };
+  }
+
   // Finds the neck pivot pixel for a head-turn bone: the horizontal centroid
   // (alpha-weighted, so a slightly off-center head silhouette still gets an
   // accurate hinge point) of the lowest coherent run of opaque pixels — i.e.
@@ -289,77 +342,99 @@
     return { x: totalWeight ? weightedX / totalWeight : w / 2, y: neckY + .5 };
   }
 
+  // The optional head-only canvas is rendered from the fighter's base head
+  // sprite. Its alpha centroid locates the actual visible head rather than
+  // guessing from the full square portrait canvas; its coherent bottom edge
+  // remains the physically useful rotation hinge at the neck.
+  function detectHeadRigPixels(headCanvas, avatarCanvas, alphaThreshold) {
+    const headMask = scanOpaquePixelMask(headCanvas, alphaThreshold);
+    if (!headMask) {
+      const fallbackPivot = detectNeckPivotPx(avatarCanvas, alphaThreshold);
+      return fallbackPivot ? { pivotPx: fallbackPivot, centroidPx: { ...fallbackPivot }, boundsPx: null, method: 'full-avatar-fallback' } : null;
+    }
+    const minimumRowPixels = Math.max(2, Math.round(headMask.width * .012));
+    let coherentBottom = headMask.bottom;
+    while (coherentBottom > headMask.top && headMask.rowCounts[coherentBottom] < minimumRowPixels) coherentBottom--;
+    return {
+      pivotPx: { x: headMask.centroidPx.x, y: coherentBottom + .5 },
+      centroidPx: { ...headMask.centroidPx },
+      boundsPx: { top: headMask.top, bottom: coherentBottom, left: headMask.left, right: headMask.right },
+      method: 'head-sprite-alpha-centroid',
+    };
+  }
+
   function smoothstep01(value) {
     const t = Math.max(0, Math.min(1, Number(value) || 0));
     return t * t * (3 - 2 * t);
   }
 
-  // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
-  // two rigid Mesh objects, with per-vertex skin weights blended (via a
-  // smoothstep band, no visible hinge) between a root bone and a neck bone
-  // seated at `neckLocal`. Ported from docs/tools/animation-author/index.html's
-  // buildTwoSidedSkinnedPlaneGeometry — same geometry/weighting approach, so a
-  // rig built here plays back neckRotationDeg keyframes authored by that tool.
+  // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
+  // Every grid vertex receives root/head weights regardless of the texel alpha
+  // beneath it. Cosmetics, separated silhouettes, and transparent space are
+  // therefore deformed by one coherent rig instead of becoming disconnected
+  // alpha-shaped islands.
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
-    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .065);
-    const source = new THREE.PlaneGeometry(modelWidth, modelHeight, segmentsX, segmentsY).toNonIndexed();
-    const sourcePosition = source.getAttribute('position');
-    const sourceUv = source.getAttribute('uv');
-    const verticesPerFace = sourcePosition.count;
-    const totalVertices = verticesPerFace * 2;
-    const positions = new Float32Array(totalVertices * 3);
-    const normals = new Float32Array(totalVertices * 3);
-    const uvs = new Float32Array(totalVertices * 2);
-    const skinIndices = new Uint16Array(totalVertices * 4);
-    const skinWeights = new Float32Array(totalVertices * 4);
-    let cursor = 0;
+    // A broad 30%-of-height falloff suits the painted cutout style better
+    // than a narrow neck hinge: shoulders and upper torso share a diminishing
+    // amount of head rotation instead of stopping abruptly at one rigid seam.
+    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
+    const pixelWidth = Math.max(1, Number(options.pixelWidth) || 1); // Used below to map the overall PNG plane into model/UV space.
+    const pixelHeight = Math.max(1, Number(options.pixelHeight) || 1); // Used below to map the overall PNG plane into model/UV space.
+    const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
-    const appendVertex = (sourceIndex, normalZ) => {
-      const x = sourcePosition.getX(sourceIndex);
-      const y = sourcePosition.getY(sourceIndex);
-      const z = sourcePosition.getZ(sourceIndex);
-      positions[cursor * 3] = x;
-      positions[cursor * 3 + 1] = y;
-      positions[cursor * 3 + 2] = z;
-      normals[cursor * 3] = 0;
-      normals[cursor * 3 + 1] = 0;
-      normals[cursor * 3 + 2] = normalZ;
-      uvs[cursor * 2] = sourceUv.getX(sourceIndex);
-      uvs[cursor * 2 + 1] = sourceUv.getY(sourceIndex);
+    const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
+    const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
+    const appendVertex = (pixelX, pixelY, normalZ) => {
+      const x = toModelX(pixelX);
+      const y = toModelY(pixelY);
+      positions.push(x, y, 0);
+      normals.push(0, 0, normalZ);
+      uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
       const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      skinIndices[cursor * 4] = 0;
-      skinIndices[cursor * 4 + 1] = 1;
-      skinWeights[cursor * 4] = 1 - headWeight;
-      skinWeights[cursor * 4 + 1] = headWeight;
-      cursor++;
+      skinIndices.push(0, 1, 0, 0);
+      skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
 
-    for (let index = 0; index < verticesPerFace; index += 3) {
-      appendVertex(index, 1);
-      appendVertex(index + 1, 1);
-      appendVertex(index + 2, 1);
+    const appendCell = ({ column, row }, normalZ) => {
+      const x0 = column / segmentsX * pixelWidth;
+      const x1 = (column + 1) / segmentsX * pixelWidth;
+      const y0 = row / segmentsY * pixelHeight;
+      const y1 = (row + 1) / segmentsY * pixelHeight;
+      const front = [[x0, y1], [x1, y1], [x0, y0], [x1, y1], [x1, y0], [x0, y0]];
+      const vertices = normalZ > 0 ? front : [...front].reverse();
+      for (const [pixelX, pixelY] of vertices) appendVertex(pixelX, pixelY, normalZ);
+    };
+    for (let row = 0; row < segmentsY; row++) {
+      for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, 1);
     }
-    const frontVertexCount = cursor;
-    for (let index = 0; index < verticesPerFace; index += 3) {
-      appendVertex(index + 2, -1);
-      appendVertex(index + 1, -1);
-      appendVertex(index, -1);
+    const frontVertexCount = positions.length / 3;
+    for (let row = 0; row < segmentsY; row++) {
+      for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, -1);
+    }
+
+    if (!frontVertexCount) {
+      return null;
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.name = 'npc_avatar_skinned_plane_geometry';
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.addGroup(0, frontVertexCount, 0);
-    geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
+    geometry.addGroup(frontVertexCount, frontVertexCount, 1);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    source.dispose();
+    geometry.userData = {
+      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
+      coverageMode: 'full-png-plane',
+      planeBoundsPx: { left: 0, right: pixelWidth, top: 0, bottom: pixelHeight },
+      planeCellCount: segmentsX * segmentsY,
+    };
     return geometry;
   }
 
@@ -370,18 +445,39 @@
   // could be detected (e.g. an unreadable/tainted canvas) — callers should
   // fall back to the plain rigid assembly in that case.
   function buildSkinnedSinglePlaneAssembly(THREE, config) {
-    const pivotPx = detectNeckPivotPx(config.sourceCanvas, config.alphaThreshold);
-    if (!pivotPx) return null;
-    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY } = config;
+    const detectedHead = detectHeadRigPixels(config.headCanvas, config.sourceCanvas, config.alphaThreshold);
+    if (!detectedHead) return null;
+    const { pivotPx, centroidPx: headCentroidPx } = detectedHead;
+    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures } = config;
     const pxW = config.sourceCanvas.width, pxH = config.sourceCanvas.height;
+    // Keep the pivot in the skinned plane's own coordinates, matching the
+    // working Multi-Avatar Animation Author rig. The assembly group applies
+    // assemblyY later to both mesh and bone; subtracting it here a second
+    // time pushed high-placement species' neck bones deep into their torsos.
     const neckLocal = {
       x: -modelWidth / 2 + (pivotPx.x / pxW) * modelWidth,
-      y: (modelHeight / 2 - (pivotPx.y / pxH) * modelHeight) - assemblyY,
+      y: modelHeight / 2 - (pivotPx.y / pxH) * modelHeight,
       z: 0,
     };
-    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal);
+    const headCentroidLocal = {
+      x: -modelWidth / 2 + (headCentroidPx.x / pxW) * modelWidth,
+      y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
+      z: 0,
+    };
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, {
+      pixelWidth: pxW,
+      pixelHeight: pxH,
+    });
+    if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
+    // The game and Attack Animation Editor still use Three.js r128, where
+    // SkinnedMesh alone does not enable USE_SKINNING in the material shader.
+    // The CPU probe path always applies bones, which is why its dots moved
+    // while the portrait stayed rigid. r165 infers this from isSkinnedMesh;
+    // retaining the explicit flag is harmless there and keeps both paths live.
+    frontMaterial.skinning = true;
+    backMaterial.skinning = true;
 
     const torsoBone = new THREE.Bone();
     torsoBone.name = `${config.name}_torso_bone`;
@@ -402,7 +498,80 @@
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
-    return { group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx };
+    return {
+      group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
+      headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
+      detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
+      planeBoundsPx: geometry.userData.planeBoundsPx,
+    };
+  }
+
+  // Auto-neck variant of the painted Animal Head Rig's
+  // upgradeAnimalPlaneToWeightedSkin (see the extension IIFE below) for a
+  // rigid two-Mesh humanoid plane pair (e.g. a bandit's frontMesh/backMesh)
+  // that has no authored weight map — the head/body blend is instead a
+  // smoothstep falloff purely from the neck pivot Y, the same technique
+  // buildSkinnedPlaneGeometry above already uses for player/NPC walkers.
+  // Deliberately upgrades only the two Mesh objects passed in, leaving
+  // whatever Group parents them untouched, so a caller that wraps its own
+  // pivot Groups around these meshes (see combat-bandit.js's buildBanditAvatar,
+  // which needs its front/back "planes" to stay the exact rigid Group
+  // objects updateCreatureMesh/beginCreatureDeath/updateCorpses rotate)
+  // keeps that structure fully intact — only the mesh's own internal
+  // geometry/skeleton changes.
+  function buildAutoNeckWeightedGeometry(THREE, sourceGeometry, pivotLocalY, blendHeight) {
+    const geometry = sourceGeometry.clone();
+    const pos = geometry.getAttribute('position');
+    const count = pos.count;
+    const skinIndices = new Uint16Array(count * 4);
+    const skinWeights = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      const headWeight = smoothstep01((pos.getY(i) - (pivotLocalY - blendHeight * .55)) / blendHeight);
+      skinIndices[i * 4] = 0; skinIndices[i * 4 + 1] = 1;
+      skinWeights[i * 4] = 1 - headWeight; skinWeights[i * 4 + 1] = headWeight;
+    }
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+
+  function upgradePlaneToAutoNeckSkin(THREE, plane, pivotNormalized, mirrorX, fallbackDimensions = {}) {
+    if (!plane?.isMesh || !plane.geometry || !plane.material || !pivotNormalized) return null;
+    const params = plane.geometry.parameters || {};
+    const planeWidth = Number(params.width) || Number(fallbackDimensions.width) || 1;
+    const planeHeight = Number(params.height) || Number(fallbackDimensions.height) || 1;
+    const pivotU = mirrorX ? 1 - pivotNormalized.x : pivotNormalized.x;
+    const pivotLocalX = (pivotU - 0.5) * planeWidth;
+    const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
+    const blendHeight = Math.max(planeHeight * .02, planeHeight * .22);
+    const weightedGeometry = buildAutoNeckWeightedGeometry(THREE, plane.geometry, pivotLocalY, blendHeight);
+    const material = plane.material; // Reused so cosmetic/texture updates keep working unchanged.
+    material.skinning = true;
+    material.needsUpdate = true;
+
+    const torsoBone = new THREE.Bone();
+    torsoBone.name = `${plane.name}_torso_bone`;
+    const neckBone = new THREE.Bone();
+    neckBone.name = `${plane.name}_neck_bone`;
+    neckBone.position.set(pivotLocalX, pivotLocalY, 0);
+    torsoBone.add(neckBone);
+
+    const skinned = new THREE.SkinnedMesh(weightedGeometry, material);
+    skinned.name = plane.name;
+    skinned.position.copy(plane.position);
+    skinned.rotation.copy(plane.rotation);
+    skinned.scale.copy(plane.scale);
+    skinned.renderOrder = plane.renderOrder;
+    skinned.visible = plane.visible;
+    skinned.frustumCulled = false;
+    skinned.userData = { ...plane.userData };
+    skinned.onBeforeRender = plane.onBeforeRender;
+    skinned.add(torsoBone);
+    const skeleton = new THREE.Skeleton([torsoBone, neckBone]);
+    skinned.bind(skeleton);
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -458,11 +627,20 @@
     const backGeo  = frontGeo.clone();
 
     const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+    // The cards face opposite directions but occupy the same geometric plane.
+    // Give them a microscopic separation along the shared plane normal so
+    // depth testing cannot alternate between the two materials as the camera
+    // or parent yaw changes. This is intentionally far below one world pixel.
+    const faceSeparation = Number.isFinite(Number(options.faceSeparation))
+      ? Math.max(0, Number(options.faceSeparation))
+      : 0.0008; // Used below as a stable anti-z-fighting offset in group-local X.
+    frontMesh.position.x = faceSeparation;
     frontMesh.rotation.y = Math.PI / 2;
     frontMesh.renderOrder = 2;
     frontMesh.name = (options.name || 'animal') + '_front_plane';
 
     const backMesh = new THREE.Mesh(backGeo, backMat);
+    backMesh.position.x = -faceSeparation;
     backMesh.rotation.y = -Math.PI / 2;
     backMesh.renderOrder = 2;
     backMesh.name = (options.name || 'animal') + '_back_plane';
@@ -472,8 +650,73 @@
     group.add(frontMesh);
     group.add(backMesh);
 
+    // Both rendered faces share one canonical local scale. Genotype size,
+    // attack squash, and shoulder attachment transforms belong on the shared
+    // group; leaving a face with an independent scale makes the pet visibly
+    // change size when the camera reveals the opposite card.
+    const planeScale = Object.freeze({ x: 1, y: 1, z: 1 }); // Authored local face scale used by both mirrored planes.
+    const syncMirroredPlaneScale = () => {
+      frontMesh.scale.set(planeScale.x, planeScale.y, planeScale.z);
+      backMesh.scale.set(planeScale.x, planeScale.y, planeScale.z);
+      return planeScale;
+    };
+    syncMirroredPlaneScale();
+
+    // Shoulder-pet planes must use the already-computed camera-relative
+    // deadzone yaw in world space. Applying only local Y rotation lets the
+    // player/body attachment hierarchy leak its yaw into the cards and make
+    // them appear to change width as the camera catches the opposite face.
+    frontMesh.userData.hobunjiPlaneFace = 'front'; // Identifies the source-facing card after head-rig replacement.
+    backMesh.userData.hobunjiPlaneFace = 'back'; // Identifies the reverse-facing card after head-rig replacement.
+    const applyShoulderPetWorldYaw = function () {
+      const plane = this;
+      const owner = [...(window.Combat?.deps?.companionObjects || [])].find(companion =>
+        companion?.avatarRef?.group === group && companion.stableRole === 'shoulderPet');
+      if (!owner || !Number.isFinite(owner.pngRot) || !plane.parent?.getWorldQuaternion) return;
+      const parentWorld = plane.parent.getWorldQuaternion(new THREE.Quaternion()); // World rotation inherited by this plane's parent.
+      const faceYaw = plane.userData.hobunjiPlaneFace === 'front' ? Math.PI / 2 : -Math.PI / 2;
+      const worldYaw = owner.pngRot + faceYaw;
+      // Build the desired world orientation from explicit orthogonal axes:
+      // local Y is always world-up, so crossing ±180° can never select an
+      // equivalent quaternion with a 180° roll/upside-down presentation.
+      const worldX = new THREE.Vector3(Math.cos(worldYaw), 0, -Math.sin(worldYaw));
+      const worldY = new THREE.Vector3(0, 1, 0);
+      const worldZ = new THREE.Vector3(Math.sin(worldYaw), 0, Math.cos(worldYaw));
+      const desiredWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(worldX, worldY, worldZ));
+      const localWorldCompensated = parentWorld.invert().multiply(desiredWorld);
+      // The main creature loop still assigns plane.rotation.y for ordinary
+      // animals. For shoulder pets, that Euler write is the wrong control
+      // surface: with an attached/animated parent it can be interpreted as
+      // roll when the deadzone changes during movement. Own the local matrix
+      // instead, while retaining the group's position and scale.
+      plane.matrixAutoUpdate = false;
+      plane.matrix.compose(plane.position, localWorldCompensated, plane.scale);
+      plane.matrixWorldNeedsUpdate = true;
+      // onBeforeRender runs after the normal scene traversal has already
+      // updated matrixWorld. Rebuild both matrices now so movement cannot
+      // render one frame of the previous parent/plane orientation.
+      plane.updateMatrixWorld(true);
+      const worldElements = plane.matrixWorld.elements;
+      plane.userData.hobunjiShoulderPetRenderDebug = {
+        time: performance.now(),
+        pngRot: owner.pngRot,
+        parentWorldQuaternion: [parentWorld.x, parentWorld.y, parentWorld.z, parentWorld.w],
+        desiredWorldQuaternion: [desiredWorld.x, desiredWorld.y, desiredWorld.z, desiredWorld.w],
+        localQuaternion: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],
+        worldQuaternion: [plane.getWorldQuaternion(new THREE.Quaternion()).x, plane.getWorldQuaternion(new THREE.Quaternion()).y, plane.getWorldQuaternion(new THREE.Quaternion()).z, plane.getWorldQuaternion(new THREE.Quaternion()).w],
+        worldUp: [worldElements[4], worldElements[5], worldElements[6]],
+        worldNormal: [worldElements[8], worldElements[9], worldElements[10]],
+      };
+    };
+    frontMesh.onBeforeRender = applyShoulderPetWorldYaw;
+    backMesh.onBeforeRender = applyShoulderPetWorldYaw;
+
     return {
       group,
+      frontPlane: frontMesh,
+      backPlane: backMesh,
+      planeScale,
+      syncMirroredPlaneScale,
       dispose() {
         frontGeo.dispose();
         backGeo.dispose();
@@ -520,7 +763,8 @@
     const skinnedRig = options.neckRig === true
       ? buildSkinnedSinglePlaneAssembly(THREE, {
           planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY,
-          sourceCanvas, alphaThreshold: options.neckAlphaThreshold,
+          sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
+          headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           name: `${root.name}_skinned_plane_assembly`,
         })
       : null;
@@ -533,7 +777,14 @@
     });
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
-      ? { available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal, pivotPx: skinnedRig.pivotPx }
+      ? {
+          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone,
+          skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
+          pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
+          headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,
+          detectionMethod: skinnedRig.detectionMethod, coverageMode: skinnedRig.coverageMode,
+          planeBoundsPx: skinnedRig.planeBoundsPx,
+        }
       : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
     root.userData.portraitScaleMultiplier = scaleMultiplier;
@@ -628,5 +879,343 @@
     disposeAvatarModel,
     loadThreeModules,
     scanOpaqueVerticalBoundsOfImage,
+    detectNeckPivotPx,
+    upgradePlaneToAutoNeckSkin,
   };
+})();
+
+// Optional painted-weight head rig for side-view animal planes.
+// Unrigged creatures keep the exact legacy two-plane path above.
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'hobunji_animal_head_rigs_v1'; // Shared with the Animal Head Rig Author for same-origin previews.
+  const DEFAULT_LIMITS = Object.freeze({ minDeg: -30, maxDeg: 30, restDeg: 0, turnSpeedDeg: 120, meshResolution: 48 }); // Used when authored rig motion/detail values are omitted.
+  const RAD = Math.PI / 180; // Converts authored degrees to Three.js radians.
+  const UNSET_WEIGHT = 256; // Editor-only sentinel; runtime treats unpainted cells as full body influence (head weight 0).
+  let cachedStorageRaw = null; // Avoids reparsing identical localStorage data for every creature spawn.
+  let cachedStorageRigs = {}; // Parsed creature-id -> headRig map matching cachedStorageRaw.
+
+  function finite(value, fallback) {
+    const parsed = Number(value); // Rejects NaN/infinite values from hand-edited JSON.
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value)); // Shared bound helper for coordinates, weights, and angles.
+  }
+
+  function decodeWeightMap(raw) {
+    if (!raw || !Number.isFinite(Number(raw.width)) || !Number.isFinite(Number(raw.height))) return null;
+    const width = Math.max(1, Math.round(Number(raw.width))); // Painted influence-grid width used by bilinear sampling.
+    const height = Math.max(1, Math.round(Number(raw.height))); // Painted influence-grid height used by bilinear sampling.
+    const total = width * height;
+    const values = new Uint16Array(total); // 0..255 = head weight, 256 = author-unset/body fallback.
+    values.fill(UNSET_WEIGHT);
+    if (raw.encoding === 'rle-u9' && Array.isArray(raw.data)) {
+      let cursor = 0;
+      for (let i = 0; i + 1 < raw.data.length && cursor < total; i += 2) {
+        const run = Math.max(0, Math.round(finite(raw.data[i], 0))); // Number of cells in this run.
+        const value = clamp(Math.round(finite(raw.data[i + 1], UNSET_WEIGHT)), 0, UNSET_WEIGHT); // Stored cell head weight or unset sentinel.
+        const end = Math.min(total, cursor + run);
+        values.fill(value, cursor, end);
+        cursor = end;
+      }
+    } else if (Array.isArray(raw.data)) {
+      for (let i = 0; i < total && i < raw.data.length; i++) values[i] = clamp(Math.round(finite(raw.data[i], UNSET_WEIGHT)), 0, UNSET_WEIGHT);
+    } else {
+      return null;
+    }
+    return { width, height, values };
+  }
+
+  function normalizeAnimalHeadRig(raw) {
+    if (!raw || raw.enabled === false || !raw.pivot) return null;
+    const minRaw = finite(raw.minDeg, DEFAULT_LIMITS.minDeg); // Authored lower angle before sorting.
+    const maxRaw = finite(raw.maxDeg, DEFAULT_LIMITS.maxDeg); // Authored upper angle before sorting.
+    const minDeg = Math.min(minRaw, maxRaw); // Runtime-safe lower angle.
+    const maxDeg = Math.max(minRaw, maxRaw); // Runtime-safe upper angle.
+    const weightMap = decodeWeightMap(raw.weightMap); // Preferred painted deformation map.
+    const legacyRegion = raw.region && finite(raw.region.width, 0) > 0 && finite(raw.region.height, 0) > 0
+      ? {
+          x: clamp(finite(raw.region.x, 0), 0, 1),
+          y: clamp(finite(raw.region.y, 0), 0, 1),
+          width: clamp(finite(raw.region.width, 0), 0, 1),
+          height: clamp(finite(raw.region.height, 0), 0, 1),
+        }
+      : null; // Old square rigs remain previewable until re-authored as painted weights.
+    if (!weightMap && !legacyRegion) return null;
+    return {
+      enabled: true,
+      coordinateSpace: 'sprite-normalized-top-left',
+      pivot: {
+        x: clamp(finite(raw.pivot.x, 0.5), 0, 1),
+        y: clamp(finite(raw.pivot.y, 0.5), 0, 1),
+      },
+      weightMap,
+      legacyRegion,
+      minDeg,
+      maxDeg,
+      restDeg: clamp(finite(raw.restDeg, DEFAULT_LIMITS.restDeg), minDeg, maxDeg),
+      turnSpeedDeg: Math.max(0, finite(raw.turnSpeedDeg, DEFAULT_LIMITS.turnSpeedDeg)),
+      meshResolution: clamp(Math.round(finite(raw.meshResolution, DEFAULT_LIMITS.meshResolution)), 12, 72),
+    };
+  }
+
+  function readSavedAnimalHeadRigs() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || ''; // Serialized browser-local preview rig map.
+      if (raw === cachedStorageRaw) return cachedStorageRigs;
+      const parsed = raw ? JSON.parse(raw) : {}; // Parsed creature-id -> rig lookup.
+      cachedStorageRaw = raw;
+      cachedStorageRigs = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      return cachedStorageRigs;
+    } catch (_) {
+      cachedStorageRaw = null;
+      cachedStorageRigs = {};
+      return cachedStorageRigs;
+    }
+  }
+
+  function animalIdFromOptions(options) {
+    const explicit = String(options?.creatureId || options?.animalId || '').trim(); // Preferred stable id supplied by future callers.
+    if (explicit) return explicit;
+    const name = String(options?.name || '').trim(); // Current game names animal groups `${creatureKey}_${uniqueId}`.
+    return name ? name.split('_')[0] : '';
+  }
+
+  function resolveAnimalHeadRig(options) {
+    const direct = options?.headRig || options?.animal?.headRig; // Direct caller rig takes highest precedence.
+    if (direct) return normalizeAnimalHeadRig(direct);
+    const animalId = animalIdFromOptions(options); // Stable key for configured/browser preview rigs.
+    if (!animalId) return null;
+    const configured = window.SCRATCHBONES_CONFIG?.game?.animalHeadRigs?.[animalId]; // Optional source-controlled rig map.
+    if (configured) return normalizeAnimalHeadRig(configured);
+    return normalizeAnimalHeadRig(readSavedAnimalHeadRigs()[animalId]);
+  }
+
+  function sampleWeight(rig, u, topV) {
+    if (rig.weightMap) {
+      const map = rig.weightMap; // Painted grid sampled bilinearly so a modest author grid still bends smoothly.
+      const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
+      const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
+      const x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1);
+      const tx = fx - x0, ty = fy - y0;
+      const at = (x, y) => {
+        const value = map.values[y * map.width + x];
+        return (value === UNSET_WEIGHT ? 0 : value) / 255;
+      };
+      const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+      const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+      return clamp(a * (1 - ty) + b * ty, 0, 1);
+    }
+    const r = rig.legacyRegion; // Binary compatibility with the superseded square-selection rig format.
+    if (!r) return 0;
+    return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
+  }
+
+  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}) {
+    const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
+    const width = finite(params.width, finite(fallbackDimensions.width, 1));
+    const height = finite(params.height, finite(fallbackDimensions.height, 1));
+    const mapAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height) : width / Math.max(0.0001, height);
+    const maxSeg = rig.meshResolution; // Authored/runtime mesh detail cap used for the painted deformation surface.
+    const segmentsX = mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect));
+    const segmentsY = mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg;
+    const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Dense enough for painted blend gradients without per-pixel geometry.
+    const uv = geometry.getAttribute('uv');
+    const skinIndices = new Uint16Array(uv.count * 4); // Root/head bone indices for every plane vertex.
+    const skinWeights = new Float32Array(uv.count * 4); // Complementary body/head weights sampled from the paint map.
+    for (let i = 0; i < uv.count; i++) {
+      const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples the horizontally mirrored authored map.
+      const sourceTopV = 1 - uv.getY(i); // Author coordinates start at sprite top-left; Three UVs start bottom-left.
+      const headWeight = sampleWeight(rig, sourceU, sourceTopV);
+      const offset = i * 4;
+      skinIndices[offset] = 0;
+      skinIndices[offset + 1] = 1;
+      skinWeights[offset] = 1 - headWeight;
+      skinWeights[offset + 1] = headWeight;
+    }
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
+    return geometry;
+  }
+
+  function upgradeAnimalPlaneToWeightedSkin(THREE, plane, rig, mirrorX, fallbackDimensions = {}) {
+    if (!plane?.isMesh || !plane.geometry || !plane.material) return null;
+    const weightedGeometry = buildAnimalWeightedGeometry(THREE, plane.geometry, rig, mirrorX, fallbackDimensions); // Replacement geometry carrying painted body/head weights.
+    const material = plane.material; // Reuse the exact legacy material so animation/genotype map swaps and tint updates keep working unchanged.
+    material.skinning = true;
+    material.needsUpdate = true;
+
+    const torsoBone = new THREE.Bone(); // Root/body bone stays at the plane origin.
+    torsoBone.name = `${plane.name}_body_bone`;
+    const headBone = new THREE.Bone(); // Head bone pivots painted head influence around the authored neck point.
+    headBone.name = `${plane.name}_head_bone`;
+    const pivotU = mirrorX ? 1 - rig.pivot.x : rig.pivot.x;
+    const params = plane.geometry.parameters || {};
+    const planeWidth = finite(params.width, finite(fallbackDimensions.width, 1)); // Keeps the mirrored head pivot in the same model dimensions when cloned geometry lacks parameters.
+    const planeHeight = finite(params.height, finite(fallbackDimensions.height, 1)); // Matches the front card's authored height on the reverse card.
+    headBone.position.set((pivotU - 0.5) * planeWidth, (0.5 - rig.pivot.y) * planeHeight, 0);
+    torsoBone.add(headBone);
+
+    const skinned = new THREE.SkinnedMesh(weightedGeometry, material); // Drop-in replacement: SkinnedMesh still satisfies Mesh checks used elsewhere.
+    skinned.name = plane.name;
+    skinned.position.copy(plane.position);
+    skinned.rotation.copy(plane.rotation);
+    skinned.scale.copy(plane.scale);
+    skinned.renderOrder = plane.renderOrder;
+    skinned.visible = plane.visible;
+    skinned.frustumCulled = false; // Head rotation can move weighted vertices beyond the bind-pose plane bounds.
+    skinned.userData = { ...plane.userData, hobunjiAnimalHeadRig: true };
+    skinned.onBeforeRender = plane.onBeforeRender; // Preserve parent-independent shoulder-pet yaw on the rigged replacement mesh.
+    skinned.add(torsoBone);
+    const skeleton = new THREE.Skeleton([torsoBone, headBone]);
+    skinned.bind(skeleton);
+    return { mesh: skinned, weightedGeometry, skeleton, headBone };
+  }
+
+  function applyAnimalHeadRig(THREE, avatarRef, rig) {
+    const group = avatarRef?.group; // Legacy return object exposes front/back animal planes here.
+    if (!group || group.userData?.hobunjiAnimalHeadRig) return avatarRef;
+    const frontPlane = group.children?.[0];
+    const backPlane = group.children?.[1];
+    if (!frontPlane || !backPlane) return avatarRef;
+
+    const sourceParams = frontPlane.geometry?.parameters || backPlane.geometry?.parameters || {};
+    const canonicalDimensions = {
+      width: finite(sourceParams.width, 1),
+      height: finite(sourceParams.height, 1),
+    }; // One explicit dimension source prevents a cloned reverse card from falling back to PlaneGeometry's 1×1 default.
+    const front = upgradeAnimalPlaneToWeightedSkin(THREE, frontPlane, rig, false, canonicalDimensions); // Source-facing painted skin.
+    const back = upgradeAnimalPlaneToWeightedSkin(THREE, backPlane, rig, true, canonicalDimensions); // Mirrored reverse-facing painted skin.
+    if (!front || !back) return avatarRef;
+
+    group.remove(frontPlane);
+    group.remove(backPlane);
+    group.add(front.mesh);
+    group.add(back.mesh);
+
+    const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
+    const state = {
+      rig, frontHeadBone: front.headBone, backHeadBone: back.headBone,
+      currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
+      currentYawDeg: 0, targetYawDeg: 0,
+    }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
+    group.userData.hobunjiAnimalHeadRig = state;
+    avatarRef.headRig = state;
+
+    const applyDegrees = degrees => {
+      const composedDeg = clamp(degrees + state.additiveDeg, rig.minDeg, rig.maxDeg); // Keeps additive nods inside the authored neck's safe range.
+      state.appliedDeg = composedDeg;
+      // This rig's own actual convention (confirmed via the vocalization
+      // head-nod, animal-vocalizations.js's VOCAL_NOD_UP_DEG = -10 through
+      // an always-non-negative envelope, i.e. always a negative
+      // additiveDeg, and it visibly nods UP) is negative degrees = up,
+      // positive = down. The look-at-player pitch callers in game.js and
+      // grehlr's own authored eating/fishing pitch constants were written
+      // assuming the opposite, so they render backwards — fixed at each of
+      // those call sites instead of here, since flipping the sign in this
+      // shared function would also flip the nod, which is correct as-is.
+      front.headBone.rotation.z = composedDeg * RAD;
+      back.headBone.rotation.z = -composedDeg * RAD;
+      return composedDeg;
+    };
+    applyDegrees(rig.restDeg);
+
+    // Yaw ("shaking its head" side-to-side) is a separate axis from the
+    // pitch/nod bone rotation.z above — the head bone's local Y, which
+    // (since the plane itself is already rotated ±90° about Y to face the
+    // camera) reads on-screen as a left/right turn rather than an up/down
+    // nod. NOT mirrored between front/back the way applyDegrees' pitch is:
+    // pitch is an in-plane roll (rotation about the card's own normal),
+    // which reverses handedness under the back card's horizontal UV flip
+    // (backTex.repeat.set(-1,1)), so mirroring the sign is what keeps a nod
+    // reading as the same real-world up/down direction from either card.
+    // Yaw has no such reversal — front and back share the same world-space
+    // vertical (Y) rotation axis regardless of which card is currently
+    // camera-facing — so driving both with the SAME sign is what keeps them
+    // turning in tandem instead of away from each other.
+    // No authored yawMinDeg/yawMaxDeg exists on the rig today, so this
+    // reuses the same authored minDeg/maxDeg magnitude (already tuned per
+    // species for a readable head motion) rather than inventing a second range.
+    const yawLimitDeg = Math.max(Math.abs(rig.minDeg), Math.abs(rig.maxDeg));
+    const applyYawDegrees = degrees => {
+      front.headBone.rotation.y = degrees * RAD;
+      back.headBone.rotation.y = degrees * RAD;
+    };
+
+    avatarRef.setHeadRotation = degrees => {
+      const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Immediate clamped head angle used by explicit animation/AI calls.
+      state.currentDeg = target;
+      state.targetDeg = target;
+      applyDegrees(target);
+      return target;
+    };
+
+    avatarRef.updateHeadRotation = (degrees, deltaSeconds) => {
+      const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Smoothed target used by normal creature behavior.
+      const delta = Math.max(0, finite(deltaSeconds, 0));
+      const step = rig.turnSpeedDeg * delta; // Maximum authored turn distance this frame.
+      const diff = target - state.currentDeg;
+      state.currentDeg += clamp(diff, -step, step);
+      state.targetDeg = target;
+      applyDegrees(state.currentDeg);
+      return state.currentDeg;
+    };
+
+    avatarRef.updateHeadYaw = (degrees, deltaSeconds) => {
+      const target = clamp(finite(degrees, 0), -yawLimitDeg, yawLimitDeg); // Smoothed yaw target, same turn-speed budget as the pitch axis.
+      const delta = Math.max(0, finite(deltaSeconds, 0));
+      const step = rig.turnSpeedDeg * delta;
+      const diff = target - state.currentYawDeg;
+      state.currentYawDeg += clamp(diff, -step, step);
+      state.targetYawDeg = target;
+      applyYawDegrees(state.currentYawDeg);
+      return state.currentYawDeg;
+    };
+
+    avatarRef.setHeadAdditiveRotation = degrees => {
+      state.additiveDeg = finite(degrees, 0); // Consumed by applyDegrees on top of whichever AI/attack/idle neck pose is current.
+      return applyDegrees(state.currentDeg);
+    };
+
+    avatarRef.dispose = () => {
+      front.weightedGeometry.dispose();
+      back.weightedGeometry.dispose();
+      front.skeleton.dispose?.();
+      back.skeleton.dispose?.();
+      if (legacyDispose) legacyDispose();
+    };
+    return avatarRef;
+  }
+
+  function installAnimalHeadRigRuntime() {
+    const api = window.PNGPlaneAvatar; // Base renderer defined immediately above this extension.
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalHeadRigInstalled) return false;
+    const originalBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Old two-plane builder remains the source of textures/materials/orientation.
+    api.buildAnimalPlaneAvatarModel = function patchedAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
+      const avatarRef = originalBuild(THREE, spriteUrl, options);
+      const rig = resolveAnimalHeadRig(options);
+      return rig ? applyAnimalHeadRig(THREE, avatarRef, rig) : avatarRef;
+    };
+    api.__animalHeadRigInstalled = true;
+    return true;
+  }
+
+  window.AnimalHeadRigRuntime = {
+    STORAGE_KEY,
+    UNSET_WEIGHT,
+    normalizeRig: normalizeAnimalHeadRig,
+    readSavedRigs: readSavedAnimalHeadRigs,
+    resolveRig: resolveAnimalHeadRig,
+    applyRigToAvatar: applyAnimalHeadRig,
+    install: installAnimalHeadRigRuntime,
+  };
+
+  installAnimalHeadRigRuntime();
 })();

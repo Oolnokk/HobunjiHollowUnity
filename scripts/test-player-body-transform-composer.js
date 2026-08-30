@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const read = path => fs.readFileSync(path, 'utf8');
 const loader = read('docs/js/combat/combat-config-loader.js');
 const composer = read('docs/js/player-body-transform-composer.js');
+const avatarPreview = read('docs/js/npc-avatar-preview-utils.js');
 const attachments = read('docs/js/player-body-attachment-bridge.js');
 const impact = read('docs/js/combat/impact-ragdoll-playback.js');
 const drunk = read('docs/js/drunk-locomotion.js');
@@ -45,16 +46,29 @@ assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix s
 assert.ok(composer.includes('const oldRotation = root.rotation.clone()'), 'render restoration preserves the authored Euler representation');
 assert.ok(composer.includes('root.rotation.copy(oldRotation)'), 'temporary composition cannot leave equivalent 180-degree X/Z Euler values behind');
 assert.doesNotMatch(composer, /root\.quaternion\.copy\(oldQuaternion\)/, 'render restoration cannot rewrite the next frame\'s yaw basis through quaternion decomposition');
-assert.ok(composer.includes('preserveSkinnedPortraitFacingSide'), 'composer can preserve the pre-delta front/back portrait choice');
-assert.ok(composer.includes('selectedMaterial.side = THREE.DoubleSide'), 'selected portrait remains renderable through additive tilt');
-assert.ok(composer.includes('frontMaterial.visible = showFront'), 'mirrored rear portrait cannot render over the selected front side');
+assert.doesNotMatch(composer, /preserveSkinnedPortraitFacingSide|preserveFacingSide|THREE\.DoubleSide/, 'composer never overrides normal portrait face culling');
+assert.ok(composer.includes("portraitFaceCulling: 'material-frontside'"), 'composer diagnostics state that material backface culling remains authoritative');
+assert.ok(composer.includes('forcedPortraitDoubleSide: false'), 'composer diagnostics expose that it never forces two-sided portrait rendering');
 assert.ok(composer.includes('lastRenderDebug'), 'composer preserves temporary render state for post-render diagnostics');
-assert.ok(composer.includes('portraitSelections'), 'composer diagnostics expose the selected portrait side and boundary dot');
-assert.ok(composer.includes('quaternionFacingDot'), 'composer diagnostics compare matrix and scale-free quaternion facing bases');
-assert.ok(composer.includes('worldMatrixDeterminant'), 'composer diagnostics expose mirrored world matrices');
-assert.ok(composer.includes('basisDisagrees'), 'composer diagnostics identify reflected-basis side disagreement directly');
 assert.ok(composer.includes('baseWorldEulerDeg'), 'composer diagnostics expose the pre-delta quaternion-only orientation');
 assert.ok(composer.includes('composedWorldEulerDeg'), 'composer diagnostics expose orientation while the channel delta is applied');
+
+// Fine Hood trim is flattened into the front portrait canvas, so ordinary
+// material backface culling cannot hide it at oblique-but-still-front-facing
+// attack angles. Render one matched trimless portrait and blend to it using
+// the live plane-to-camera facing dot product instead of punching alpha holes.
+assert.ok(avatarPreview.includes('renderFineHoodHeadOnPair'), 'Fine Hood gets a matched trimless portrait render');
+assert.ok(avatarPreview.includes('variantLayers: null'), 'trimless render uses the resolved species-specific hood layer list');
+assert.ok(avatarPreview.includes('fineHoodTrimHeadOnThresholds'), 'Fine Hood head-on cone has explicit thresholds');
+assert.ok(avatarPreview.includes('frozenBreathingComposer'), 'paired portraits freeze breathing and expressions to the same instant');
+assert.ok(avatarPreview.includes('hobunjiFineHoodTrimlessMap'), 'front material receives the trimless portrait texture');
+assert.ok(avatarPreview.includes("new THREE.Vector3(0, 0, 1)"), 'head-on gating starts from the portrait plane front normal');
+assert.ok(avatarPreview.includes('transformDirection(this.matrixWorld)'), 'head-on gating follows the live transformed portrait orientation');
+assert.ok(avatarPreview.includes('worldFront.dot(toCamera)'), 'head-on gating compares the portrait normal with the camera direction');
+assert.ok(avatarPreview.includes('smoothstep('), 'trim visibility fades through the configured head-on cone');
+assert.ok(avatarPreview.includes('diffuseColor = mix(hobunjiFineHoodTrimlessDiffuse, diffuseColor'), 'off-axis pixels reveal the trimless portrait rather than transparency');
+assert.ok(avatarPreview.includes('/front_material$/i'), 'trim shader attaches only to front portrait materials');
+assert.doesNotMatch(avatarPreview, /gl_FrontFacing|THREE\.DoubleSide/, 'Fine Hood gating does not fall back to backface-only or two-sided rendering hacks');
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');
@@ -67,7 +81,7 @@ assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*rotation/, 'impact never write
 assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*position/, 'impact never writes playerMesh position');
 
 assert.ok(drunk.includes("BODY_CHANNEL = 'drunk'"), 'drunk gait publishes a drunk body channel');
-assert.ok(drunk.includes("DRUNK_FOOTING_ID = 'drunkenFooting'"), 'drunk gait keys off the alcohol affliction, not generic Footing loss');
+assert.ok(drunk.includes('const footing = Math.max(0, Number(player.footing) || 0);'), 'drunk gait derives sway from current Footing loss');
 assert.ok(drunk.includes('removeTrackedFootTwist'), 'drunk gait removes its previous foot delta before the base solver runs');
 assert.ok(drunk.includes('applyTrackedFootTwist'), 'drunk gait composes one tracked foot delta onto the resolved base pose');
 assert.ok(drunk.includes('FOOT_TWIST_LIMIT'), 'drunk foot twist has a hard shortest-arc bound below 180 degrees');
@@ -76,7 +90,7 @@ assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet do not cache and r
 assert.doesNotMatch(drunk, /yaw:\s*state\.yaw/, 'drunk body channel never competes with the player facing yaw');
 assert.doesNotMatch(drunk, /DRUNK_MAX_YAW_DEG|yawTarget/, 'drunk gait does not synthesize a second whole-body yaw target');
 assert.ok(drunk.includes('bodyYawOwnedByFacing: true'), 'debug output exposes that facing exclusively owns body yaw');
-assert.ok(drunk.includes('preserveFacingSide: true'), 'drunk tilt preserves the front/back side selected by ordinary facing');
+assert.doesNotMatch(drunk, /preserveFacingSide/, 'drunk tilt does not request a culling override');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');

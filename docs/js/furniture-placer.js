@@ -25,7 +25,7 @@
     const area = deps.getCurrentArea();
     if (area !== 'farm' && area !== 'interior') return [];
     const decorative = Object.values(deps.getDecorativeFurnitureDefs())
-      .filter(def => !def.fixture)
+      .filter(def => !def.fixture && !def.customPlace)
       .filter(def => def.area === 'any' || def.area === area)
       .filter(def => (deps.inventory[def.itemKey] || 0) > 0);
     // Processing stations use the outdoor farm grid and world-object map;

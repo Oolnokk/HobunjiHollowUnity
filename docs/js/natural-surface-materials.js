@@ -8,10 +8,10 @@
   const DEFAULTS = {
     texture: 'assets/textures/carved_smooth.png',
     surfaces: {
-      trunks: { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      vines:  { enabled: true, tint: 'source', mapping: 'cylindrical-stretch' },
-      rocks:  { enabled: true, tint: '#5f5a56', mapping: 'planar-stretch' },
-      cliffs: { enabled: true, tint: '#6a6460', mapping: 'world-stretch' },
+      trunks: { enabled: true, texture: 'assets/textures/wavy_surface.png', tint: 'source', tintTreatment: 'body-sprite-tint', mapping: 'cylindrical-stretch' },
+      vines:  { enabled: true, texture: 'assets/textures/carved_smooth.png', tint: 'source', tintTreatment: 'body-sprite-tint', mapping: 'cylindrical-stretch' },
+      rocks:  { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'planar-stretch' },
+      cliffs: { enabled: true, tint: '#808080', tintTreatment: 'body-sprite-tint', mapping: 'world-stretch' },
     },
   };
 
@@ -57,6 +57,126 @@
     return tex;
   }
 
+  function isHexTint(hex) {
+    return /^#?[0-9a-f]{6}$/i.test(String(hex || '').trim());
+  }
+
+  function flatTintCanvas(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 4;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = isHexTint(hex) ? hex : '#808080';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function localNaturalPatternTintCanvas(img, targetHex) {
+    try {
+      const raw = String(targetHex || '#808080').replace(/^#/, '');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return img;
+      const tr = parseInt(raw.slice(0, 2), 16), tg = parseInt(raw.slice(2, 4), 16), tb = parseInt(raw.slice(4, 6), 16);
+      const width = img.naturalWidth || img.width, height = img.naturalHeight || img.height;
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height), data = imageData.data;
+      const lum = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const values = [];
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 8) { const l = lum(data[i], data[i + 1], data[i + 2]); if (l > 0.08) values.push(l); }
+      if (values.length < 8) return img;
+      values.sort((a, b) => a - b);
+      const at = q => values[Math.max(0, Math.min(values.length - 1, Math.round((values.length - 1) * q)))];
+      const low = at(0.10), high = at(0.90), span = high - low;
+      if (!(span > 0.015)) return img;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const l = lum(data[i], data[i + 1], data[i + 2]);
+        if (l <= 0.08) continue;
+        const shade = Math.max(0.72, Math.min(1.18, l / 0.55));
+        data[i] = Math.max(0, Math.min(255, Math.round(tr * shade)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(tg * shade)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(tb * shade)));
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    } catch (error) {
+      console.warn('[natural-surface] local patterned tint fallback failed; using authored PNG unchanged:', error);
+      return img;
+    }
+  }
+
+  function shouldUseBodySpriteTint(surfaceCfg, tint) {
+    return surfaceCfg?.tintTreatment === 'body-sprite-tint' && isHexTint(tint);
+  }
+
+  function loadBodySpriteTintTexture(path, tint, wrapMode = 'clamp') {
+    const cacheKey = `${path}|${wrapMode}|body-sprite-tint|${String(tint).toLowerCase()}`;
+    let tex = textureCache.get(cacheKey);
+    if (tex) return tex;
+
+    // Start at the requested medium gray instead of white while carved_smooth
+    // loads. The decoded PNG later replaces this with the exact portrait body
+    // recolor canvas, using {hex:tint} as the body-color descriptor.
+    const textureName = `natural_${String(tint).toLowerCase()}_${wrapMode}`;
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    tex = spritePngSurface?.configureTexture
+      ? spritePngSurface.configureTexture(THREE, new THREE.CanvasTexture(flatTintCanvas(tint)), textureName)
+      : new THREE.CanvasTexture(flatTintCanvas(tint));
+    if (!spritePngSurface?.configureTexture) {
+      tex.name = textureName;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+    }
+    const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    tex.wrapS = wrapping;
+    tex.wrapT = wrapping;
+    tex.userData = Object.assign({}, tex.userData, {
+      naturalSurfaceBodySpriteTint: true,
+      naturalSurfaceBodySpriteTintTarget: String(tint).toLowerCase(),
+      hobunjiAuthoredSurfacePath: path,
+      hobunjiAuthoredSurfaceState: 'flat-loading',
+      hobunjiAuthoredSurfaceImageSize: 'none',
+      hobunjiAuthoredSurfaceError: null,
+    });
+    textureCache.set(cacheKey, tex);
+
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      let canvas = null;
+      let state = 'authored-png-raw-fallback';
+      let surfaceError = null;
+      const spritePng = window.HobunjiSpritePngSurface;
+      const tintSurfaceCanvas = spritePng?.tintSurfaceCanvas || spritePng?.tintBodyCanvas || window.getBodyTintedCanvas;
+      if (typeof tintSurfaceCanvas === 'function') {
+        try {
+          canvas = tintSurfaceCanvas(image, cacheKey, { hex: tint }, '', 'A') || null;
+          if (canvas) state = 'authored-png-tinted';
+        } catch (error) { surfaceError = error; }
+      }
+      if (!canvas) {
+        canvas = localNaturalPatternTintCanvas(image, tint);
+        state = canvas === image ? 'authored-png-raw-fallback' : 'authored-png-local-tint';
+      }
+      tex.image = canvas;
+      tex.userData = Object.assign({}, tex.userData, {
+        hobunjiAuthoredSurfaceState: state,
+        hobunjiAuthoredSurfaceImageSize: `${image.naturalWidth || image.width}x${image.naturalHeight || image.height}`,
+        hobunjiAuthoredSurfaceError: surfaceError ? String(surfaceError?.message || surfaceError) : null,
+      });
+      tex.needsUpdate = true;
+    };
+    image.onerror = (error) => {
+      tex.userData = Object.assign({}, tex.userData, {
+        hobunjiAuthoredSurfaceState: 'flat-load-failure',
+        hobunjiAuthoredSurfaceError: String(error?.message || 'image load failed'),
+      });
+      console.warn('[natural-surface] failed to load body-tinted surface texture', path);
+    };
+    image.src = path;
+    return tex;
+  }
+
   function sourceTint(material) {
     if (material?.color?.isColor) return `#${material.color.getHexString()}`;
     return '#ffffff';
@@ -66,6 +186,35 @@
     const tint = surfaceCfg.tint;
     if (!tint || tint === 'source') return sourceTint(sourceMaterial);
     return tint;
+  }
+
+  let _spritePngParityTemplate = null;
+  function applySpritePngRenderParity(material, spritePngSurface) {
+    if (!material) return material;
+    // Natural surfaces and character sprites intentionally differ in geometry-
+    // specific state (opaque vs alpha-cutout queue, occasional source-side
+    // culling/polygon offset), but NOT in their light/color model. Derive these
+    // flags from a real material produced by the canonical character PNG
+    // factory instead of hardcoding Three.js defaults, so future changes to the
+    // sprite path automatically carry over here too.
+    if (!_spritePngParityTemplate && spritePngSurface?.makeMaterial) {
+      _spritePngParityTemplate = spritePngSurface.makeMaterial(THREE, null, '__natural_surface_sprite_parity_template');
+    }
+    const template = _spritePngParityTemplate;
+    if (template) {
+      for (const key of ['lights', 'fog', 'toneMapped', 'dithering', 'premultipliedAlpha']) {
+        if (key in template && key in material) material[key] = template[key];
+      }
+    } else {
+      // Fallback path is still the same unlit material class as the character
+      // plane's own fallback; never fall back to Lambert/Phong/PBR lighting.
+      if ('lights' in material) material.lights = false;
+    }
+    material.userData = Object.assign({}, material.userData, {
+      naturalSurfaceSpritePngParity: true,
+      naturalSurfaceLightModel: 'character-png-unlit',
+    });
+    return material;
   }
 
   function basicMaterial(surface, sourceMaterial, texture, tint) {
@@ -85,9 +234,12 @@
     let mat = materialCache.get(key);
     if (mat) return mat;
 
-    mat = new THREE.MeshBasicMaterial({
-      map: texture || null,
+    const overrides = {
       color: new THREE.Color(tint),
+      // Geometry-specific state stays inherited so cliffs/rocks do not move
+      // into the transparent render queue or cull faces differently just to
+      // imitate a 2D sprite. Everything that controls the authored-PNG unlit
+      // appearance is provided by the same sprite surface builder as body art.
       side: sourceMaterial?.side ?? THREE.FrontSide,
       transparent: !!sourceMaterial?.transparent,
       opacity: sourceMaterial?.opacity ?? 1,
@@ -97,9 +249,14 @@
       polygonOffset: !!sourceMaterial?.polygonOffset,
       polygonOffsetFactor: sourceMaterial?.polygonOffsetFactor || 0,
       polygonOffsetUnits: sourceMaterial?.polygonOffsetUnits || 0,
-    });
+    };
+    const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+    mat = spritePngSurface?.makeMaterial
+      ? spritePngSurface.makeMaterial(THREE, texture || null, `natural_${surface}_${tint}`, overrides)
+      : new THREE.MeshBasicMaterial({ map: texture || null, ...overrides });
+    applySpritePngRenderParity(mat, spritePngSurface);
     mat.name = `natural_${surface}_${tint}`;
-    mat.userData = Object.assign({}, sourceMaterial?.userData, {
+    mat.userData = Object.assign({}, sourceMaterial?.userData, mat.userData, {
       naturalSurface: surface,
       naturalSurfaceUnlit: true,
     });
@@ -206,8 +363,12 @@
     return true;
   }
 
-  function textureForSurface(surface, wrapMode = 'clamp') {
-    return loadBaseTexture(texturePath(cfgFor(surface)), wrapMode);
+  function textureForSurface(surface, wrapMode = 'clamp', resolvedTint = null) {
+    const surfaceCfg = cfgFor(surface);
+    const tint = resolvedTint || surfaceCfg.tint;
+    return shouldUseBodySpriteTint(surfaceCfg, tint)
+      ? loadBodySpriteTintTexture(texturePath(surfaceCfg), tint, wrapMode)
+      : loadBaseTexture(texturePath(surfaceCfg), wrapMode);
   }
 
   function noteApplied(surface) {
@@ -228,9 +389,10 @@
     const mapping = mappingOverride || surfaceCfg.mapping;
 
     prepareUv(mesh.geometry, mapping);
-    const tex = textureForSurface(surface);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
-    mesh.material = basicMaterial(surface, sourceMaterial, tex, tint);
+    const bakeTint = shouldUseBodySpriteTint(surfaceCfg, tint); // The PNG is recolored by the exact body-sprite canvas path, so the Three material stays white.
+    const tex = textureForSurface(surface, 'clamp', tint);
+    mesh.material = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurface: surface });
     noteApplied(surface);
     return mesh;
@@ -245,22 +407,21 @@
 
     // A multi-material plateau shares ONE uv attribute between its grass top
     // and stone cliff group. Normalizing that geometry for the cliff slot
-    // would also remap the grass material. Preserve the authored world UVs
-    // here and reuse the source texture when it already exists; otherwise use
-    // one shared repeating fallback texture. Single-material cliff meshes still
-    // use assignWorldStretchUv() through naturalizeMesh(), where changing the
-    // sole UV channel is safe.
+    // would also remap the grass material, so preserve the authored world UVs.
+    // The MATERIAL map is still forced to this surface's configured texture;
+    // otherwise an old source map can silently bypass carved_smooth.png.
+    const tint = resolveTint(surfaceCfg, sourceMaterial);
+    const bakeTint = shouldUseBodySpriteTint(surfaceCfg, tint); // Same body-sprite tint canvas as character art; material white avoids a second multiplier.
     let tex;
     if (mapping === 'world-stretch') {
-      tex = sourceMaterial.map || textureForSurface(surface, 'repeat');
+      tex = textureForSurface(surface, 'repeat', tint);
     } else {
       prepareUv(mesh.geometry, mapping);
-      tex = textureForSurface(surface);
+      tex = textureForSurface(surface, 'clamp', tint);
     }
 
-    const tint = resolveTint(surfaceCfg, sourceMaterial);
     const materials = mesh.material.slice();
-    materials[slot] = basicMaterial(surface, sourceMaterial, tex, tint);
+    materials[slot] = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.material = materials;
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurfaceCliffSlot: slot });
     noteApplied(surface);
@@ -287,6 +448,7 @@
       buildJungleTreeMesh: true,
       buildCrownedPineMesh: false,
       buildShadewoodMesh: false,
+      buildShrubMesh: false,
       buildWildernessBushMesh: false,
       buildStumpMesh: false,
     };
@@ -351,6 +513,7 @@
     const cliffCfg = cfgFor('cliffs');
     const basename = texturePath(cliffCfg).split('/').pop();
     const tintHex = String(cliffCfg.tint || '').replace('#', '').toLowerCase();
+    const knownCliffTints = new Set([tintHex, '5f5a56', '6a6460', '808080']); // Lets legacy border-cliff materials be upgraded even when they do not already carry carved_smooth.png.
     for (const mesh of newlyAddedMeshes(scene, beforeCount)) {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (let i = 0; i < mats.length; i++) {
@@ -360,7 +523,7 @@
           || mat?.map?.source?.data?.src
           || '';
         const colorHex = mat?.color?.isColor ? mat.color.getHexString().toLowerCase() : '';
-        if (!String(src).includes(basename) && (!tintHex || colorHex !== tintHex)) continue;
+        if (!String(src).includes(basename) && !knownCliffTints.has(colorHex)) continue;
         if (Array.isArray(mesh.material)) naturalizeMaterialSlot(mesh, i, 'cliffs');
         else naturalizeMesh(mesh, 'cliffs', 'world-stretch');
       }

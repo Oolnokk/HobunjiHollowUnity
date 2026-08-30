@@ -14,11 +14,6 @@
 (() => {
   "use strict";
 
-  // The exact two placeholder-green tones authored into jar_liquid.png,
-  // bottle_potion.png, and bottle_wine.png's liquid-fill region (verified
-  // against the actual PNG pixel data: (158,215,117)=#9ED775 highlight,
-  // (105,143,78)=#698F4E shadow). Both have an HSV hue near 95 degrees;
-  // hue-only matching deliberately includes the darkest shaded greens.
   const DEFAULT_KEY_A = [0x9E, 0xD7, 0x75];
   const DEFAULT_KEY_B = [0x69, 0x8F, 0x4E];
   const KEY_HUE_TOLERANCE = 35;
@@ -66,8 +61,6 @@
     return Math.min(difference, 360 - difference);
   }
 
-  // Keep these defaults in lockstep with CreatureGeneticsRender's animal
-  // shade-fill so both systems respond to the same portrait tinting config.
   function shadeFillConfig() {
     const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
     return {
@@ -97,8 +90,6 @@
       return;
     }
 
-    // Direct whole-sprite fills continue to share the animal recolorer. The
-    // local fallback keeps standalone tools independent of its load order.
     if (window.CreatureGeneticsRender?.recolorPixels) {
       window.CreatureGeneticsRender.recolorPixels(data, [tr, tg, tb], null);
       return;
@@ -120,53 +111,64 @@
     }
   }
 
-  const _imgCache = new Map();   // spritePath -> HTMLImageElement (loaded)
-  const _canvasCache = new Map(); // "spritePath|mode|hex" -> canvas
+  const _imgCache = new Map();
+  const _canvasCache = new Map();
 
   function loadImage(spritePath) {
     let img = _imgCache.get(spritePath);
     if (img) return img.__loadPromise || Promise.resolve(img);
     img = new Image();
-    const p = new Promise((resolve, reject) => {
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Failed to load recolorable sprite ' + spritePath));
-    });
-    // Matches the animal-color image loader: CDN redirects can otherwise
-    // display normally but taint the canvas when getImageData reads it.
-    img.crossOrigin = 'anonymous';
-    img.__loadPromise = p;
-    img.src = spritePath;
-    _imgCache.set(spritePath, img);
+    const p=new Promise((resolve,reject)=>{ img.onload=()=>resolve(img); img.onerror=()=>reject(new Error('Failed to load recolorable sprite '+spritePath)); });
+    img.crossOrigin='anonymous';
+    img.__loadPromise=p;
+    img.src=spritePath;
+    _imgCache.set(spritePath,img);
     return p;
   }
 
-  // Returns a Promise<HTMLCanvasElement> for the recolored sprite, cached by
-  // (spritePath, mode, targetHex) so repeated calls (e.g. every uumkao'ii
-  // rendering the same dew color, or the same jar item appearing in several
-  // inventory slots) reuse one canvas instead of re-decoding/re-walking pixels.
-  // opts: { keyHue, hueTolerance, keyColors: [[r,g,b]] } — keyed mode only.
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
-    const cacheKey = 'hue-key-value-v2|' + spritePath + '|' + mode + '|' + targetHex;
-    const cached = _canvasCache.get(cacheKey);
-    if (cached) return Promise.resolve(cached);
-    return loadImage(spritePath).then(img => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      recolorImageData(imageData.data, targetHex, mode, opts);
-      ctx.putImageData(imageData, 0, 0);
-      window.__farmLog?.(`[sprite-recolor] ${mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'} ${spritePath} -> #${targetHex.toString(16).padStart(6, '0')}`, 'items');
-      _canvasCache.set(cacheKey, canvas);
-      return canvas;
+    if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
+    const cacheKey='hue-key-value-v2|'+spritePath+'|'+mode+'|'+targetHex;
+    const cached=_canvasCache.get(cacheKey);
+    if(cached)return Promise.resolve(cached);
+    return loadImage(spritePath).then(img=>{
+      const canvas=document.createElement('canvas'); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
+      const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0);
+      const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+      recolorImageData(imageData.data,targetHex,mode,opts); ctx.putImageData(imageData,0,0);
+      window.__farmLog?.(`[sprite-recolor] ${mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'} ${spritePath} -> #${targetHex.toString(16).padStart(6,'0')}`,'items');
+      _canvasCache.set(cacheKey,canvas); return canvas;
     });
   }
 
-  window.SpriteRecolor = {
-    getRecoloredCanvas,
-    recolorImageData, relativeLuminance, shadeFillConfig,
-    DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_HUE_TOLERANCE,
-  };
+  function parserOrderedScript(filename,datasetKey,version,alreadyLoaded){
+    if(typeof document==='undefined'||alreadyLoaded?.()||document.querySelector(`script[data-${datasetKey}]`))return;
+    const ownSrc=document.currentScript?.src;
+    const src=ownSrc?new URL(`${filename}?v=${version}`,ownSrc).href:`js/${filename}?v=${version}`;
+    if(document.readyState==='loading'){document.write(`<script src="${src}" data-${datasetKey}="true"></script>`);return;}
+    const script=document.createElement('script'); script.src=src;
+    script.dataset[datasetKey.replace(/-([a-z])/g,(_,ch)=>ch.toUpperCase())]='true';
+    script.onerror=()=>console.warn(`[sprite-recolor] failed to load ${filename}`);
+    document.head.appendChild(script);
+  }
+
+  function loadFishCatalogForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('fish-catalog.js','fish-catalog','20260826amphib1',()=>!!window.FishCatalog);
+  }
+  function loadFishingEventsForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('fishing-events.js','fishing-events','20260826gullet2');
+  }
+  function loadAmphibiousFishingForGame(){
+    if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
+    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20260826a',()=>!!window.AmphibiousFishing);
+    parserOrderedScript('amphibious-fish-corpse-cleanup.js','amphibious-corpse-cleanup','20260826a');
+    parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
+  }
+
+  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,KEY_HUE_TOLERANCE};
+  loadFishCatalogForGame();
+  loadFishingEventsForGame();
+  loadAmphibiousFishingForGame();
 })();

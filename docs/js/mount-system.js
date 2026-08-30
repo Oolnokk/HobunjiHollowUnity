@@ -29,6 +29,7 @@
   let mountRushOutAngle = 0;
   let mountRushOutT = 0;
   let mountRushInT = 0;
+  const mountRenderSync = { active: false, beforeXzDriftTiles: 0, afterXzDriftTiles: 0, verticalCorrectionTiles: 0 }; // Used by Pixel Probe to expose rider/carrier render drift on mobile.
 
   // A rush-in/out transition well beyond the camera's visible range, so
   // "calling" a mount reads as it charging in from off-screen rather than
@@ -58,6 +59,11 @@
   }
 
   function beginSummonMount() {
+    if (deps.player.climbing) {
+      deps.showToast('Finish climbing before calling your mount.', false);
+      window.__farmLog?.('[mount] summon blocked during cliff climb', 'wildlife');
+      return;
+    }
     if (!mountAllowedInArea(deps.getCurrentArea())) {
       deps.showToast('Mounts cannot be called indoors.', false);
       return;
@@ -216,6 +222,30 @@
     }
   }
 
+  // Steady mounted movement gives the mount ownership of the rendered world
+  // transform. Both entities still keep their existing logical coordinates,
+  // but the rider must use the carrier's FINAL smoothed mesh position instead
+  // of independently lerping toward the same target and arriving sooner.
+  // Mount-up/down keep their authored transitions because this only pins the
+  // settled 'mounted' state.
+  function pinMountedRiderMesh(riderMesh, seatLift = 0) {
+    const m = mountRideEntity; // Carrier whose already-smoothed render transform becomes authoritative for the seated rider.
+    const carrierPosition = m?.avatarRef?.group?.position; // Final mount mesh position written by updateMountRide earlier this frame.
+    if (mountRideState !== 'mounted' || !carrierPosition || !riderMesh?.position) {
+      mountRenderSync.active = false;
+      return false;
+    }
+
+    const riderSeatOffsetY = (Number(seatLift) || 0) - (Number(m.halfHeight) || 0); // Converts the existing floor-relative seat lift into a carrier-center-relative offset.
+    const targetY = carrierPosition.y + riderSeatOffsetY; // Keeps the posterior/saddle alignment attached to the mount's rendered vertical lerp too.
+    mountRenderSync.active = true;
+    mountRenderSync.beforeXzDriftTiles = Math.hypot(riderMesh.position.x - carrierPosition.x, riderMesh.position.z - carrierPosition.z);
+    mountRenderSync.verticalCorrectionTiles = targetY - riderMesh.position.y;
+    riderMesh.position.set(carrierPosition.x, targetY, carrierPosition.z);
+    mountRenderSync.afterXzDriftTiles = Math.hypot(riderMesh.position.x - carrierPosition.x, riderMesh.position.z - carrierPosition.z);
+    return true;
+  }
+
   // A map transition (farm↔town↔wilderness zone↔den cavern) moves the
   // player instantly via a bunch of separate game.js call sites that only
   // ever touch player.x/y/currentArea and the player's OWN scene graph
@@ -285,6 +315,18 @@
       inputStrength = usingKeyboard ? 1 : deps.clamp(inputLen, 0, 1);
       ix /= inputLen; iy /= inputLen;
     }
+    // Same camera-relative rotation game.js's on-foot updateMovement applies
+    // to its own ix/iy in Shoulder Cam — otherwise mounted WASD stayed on
+    // world-fixed axes (pre-dating Shoulder Cam becoming the default) while
+    // on-foot movement went camera-relative, a jarring inconsistency the
+    // instant you mount up or dismount.
+    if (deps.isShoulderSurfMode() && (ix !== 0 || iy !== 0)) {
+      const aim = deps.cameraFacingAngleRad();
+      const s = Math.sin(aim), c = Math.cos(aim);
+      const rIx = -ix * s - iy * c;
+      const rIy =  ix * c - iy * s;
+      ix = rIx; iy = rIy;
+    }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
     const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul();
@@ -343,7 +385,9 @@
     toggleMount,
     updateMountRide,
     updateMountedMovement,
+    pinMountedRiderMesh,
     get rideState() { return mountRideState; },
     get rideEntity() { return mountRideEntity; },
+    get renderSync() { return { ...mountRenderSync }; },
   };
 })();

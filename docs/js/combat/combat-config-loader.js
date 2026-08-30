@@ -15,6 +15,7 @@
     window.Combat?.applyFlurryConfig?.(config.flurry);
     window.Combat?.applyCounterShieldConfig?.(config.counterShield);
     window.Combat?.animalAttacks?.applyConfig?.(config.creatureAttacks);
+    window.RangedWeapons?.applyConfig?.(config.rangedWeapons);
     window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: config }));
     return config;
   }).catch(() => null);
@@ -76,12 +77,34 @@
   const modules = [
     ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
+    ['js/fine-hood-trim-head-facing.js?v=20260824b', () => !!window.HobunjiFineHoodTrimHeadFacing],
+    ['js/front-hat-head-facing.js?v=20260824b', () => !!window.HobunjiFrontHatHeadFacing],
+    ['js/hat-xray-head-facing.js?v=20260824a', () => !!window.HobunjiHatXrayHeadFacing],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
-    ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
+    ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
+    ['js/crop-billboard-presentation.js?v=20260814a', () => !!window.HobunjiCropBillboardPresentation],
+    ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
+    ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
+    ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
+    ['js/combat/technique-scrolls.js?v=20260830unlocksave3', () => !!window.TechniqueScrolls],
+    ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
+    ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
+    ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
+    ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
+    ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
+    ['js/combat/combat-drenkirra-pellet.js?v=20260827treecover1', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
+    ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
+    ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
+    ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
+    ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
   ];
 
   function loadModule(src, alreadyLoaded) {

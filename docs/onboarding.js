@@ -1176,10 +1176,12 @@
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
       combatLoadout:     { ...(char.combatLoadout  || {}) },
       abilityProgression: { ...(char.abilityProgression || {}) },
+      combatTechniqueUnlocks: [...(char.combatTechniqueUnlocks || [])],
       equipmentSlots:    { ...(char.equipmentSlots || {}) },
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       skillExperience:   { ...(char.skillExperience || {}) },
+      perkRanks:         { ...(char.perkRanks || {}) },
       stats:             { ...char.stats },
       // Character-scoped personal livestock collection (companions) — travels
       // with the character between worlds, unlike farm livestock which
@@ -1203,9 +1205,22 @@
       alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
       npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
+      alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       cookingState:      { ...(memberState.cookingState || {}) },
+      // These were being saved by game.js's saveMemberWorldData() but never
+      // actually read back out here — every one of them silently reset on
+      // a real browser close+reopen (a fresh page load re-runs this whole
+      // flow from saved meta) despite surviving fine within one continuous
+      // session, since nothing here re-derives them from anywhere else.
+      wildBerryState:    { ...(memberState.wildBerryState || {}) },
+      zoneTreasureState: { ...(memberState.zoneTreasureState || {}) },
+      wildernessChunkState: { ...(memberState.wildernessChunkState || {}) },
+      felledTreeState:   { ...(memberState.felledTreeState || {}) },
+      minedRockState:    { ...(memberState.minedRockState || {}) },
+      wildernessCampfireState: memberState.wildernessCampfireState || null,
+      lastPosition:      memberState.lastPosition || null,
       isNewWorld,
     };
     saveProfile(playerData);
@@ -1513,6 +1528,8 @@
         })(),
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
+        combatTechniqueUnlocks: [],
+        perkRanks:        {},
         stats:            makeDefaultStats(),
         stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
         activeCompanionId: null,
@@ -1534,6 +1551,7 @@
       playerData.isWorldOwner   = true;
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
+      playerData.combatTechniqueUnlocks = [...(newChar.combatTechniqueUnlocks || [])];
       playerData.skillLevels    = newChar.skillLevels;
       playerData.skillExperience = newChar.skillExperience;
       playerData.stats          = newChar.stats;
@@ -1548,9 +1566,21 @@
       playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
       playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
+      playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.cookingState = { ...(memberState.cookingState || {}) };
+      // Same fields as the returning-player branch above, for consistency —
+      // memberState here is always freshly empty (a brand-new world/member),
+      // so these are no-ops today, but keep the two branches' playerData
+      // shape identical rather than leaving these undefined on this path.
+      playerData.wildBerryState = { ...(memberState.wildBerryState || {}) };
+      playerData.zoneTreasureState = { ...(memberState.zoneTreasureState || {}) };
+      playerData.wildernessChunkState = { ...(memberState.wildernessChunkState || {}) };
+      playerData.felledTreeState = { ...(memberState.felledTreeState || {}) };
+      playerData.minedRockState = { ...(memberState.minedRockState || {}) };
+      playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
+      playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;
     }
 
@@ -1593,6 +1623,7 @@
       if (c.activeCompanionId === undefined) c.activeCompanionId = null;
       if (c.activeMountId === undefined) c.activeMountId = null;
       if (c.activeShoulderPetId === undefined) c.activeShoulderPetId = null;
+      if (!Array.isArray(c.combatTechniqueUnlocks)) c.combatTechniqueUnlocks = [];
       delete c.npcFavor; // moved to world.members[charId].npcRelationships
     });
     (meta.worlds || []).forEach(w => {
@@ -1675,6 +1706,7 @@
           gearInventory:    makeDefaultGear(),
           skillLevels:      makeDefaultSkills(),
           skillExperience:  {},
+          combatTechniqueUnlocks: Array.isArray(saved.combatTechniqueUnlocks) ? [...saved.combatTechniqueUnlocks] : [],
           stats:            makeDefaultStats(),
           createdAt:        Date.now(),
           lastPlayed:       Date.now(),

@@ -23,6 +23,29 @@
     return performance.now() / 1000;
   }
 
+  // Read-only state bridge for HUD presentation. Gameplay still owns every
+  // transition below; callers cannot mutate the internal slot objects.
+  function getState(slotIndex) {
+    const s = slots[slotIndex];
+    if (!s) return null;
+    return {
+      slotIndex,
+      down: s.down,
+      holding: s.holding,
+      downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
+      holdThresholdS: HOLD_THRESHOLD_S,
+    };
+  }
+
+  // Announces only real state-machine transitions so the arch coin-flip can
+  // happen on the same frame the input becomes a hold on every device.
+  function emitState(slotIndex, reason) {
+    const detail = getState(slotIndex);
+    if (!detail) return;
+    detail.reason = reason;
+    window.dispatchEvent(new CustomEvent('hobunji-combat-input-state', { detail }));
+  }
+
   // Legacy fallback for tap slots only: fires the weapon tool's existing
   // cut/slash swing exactly as it behaved before any loadout ability claimed
   // that slot. There's no equivalent legacy behavior for hold slots, since
@@ -99,6 +122,7 @@
     s.down = true;
     s.downAt = now();
     s.holding = false;
+    emitState(slotIndex, 'press-start');
   }
 
   // Call on pointerup/touch-end for the given slot.
@@ -112,6 +136,7 @@
     }
     s.down = false;
     s.holding = false;
+    emitState(slotIndex, 'press-end');
   }
 
   // Resets a slot's press state without firing a tap or hold-end — for
@@ -122,6 +147,7 @@
     if (!s) return;
     s.down = false;
     s.holding = false;
+    emitState(slotIndex, 'press-cancel');
   }
 
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
@@ -132,6 +158,7 @@
       if (!s.holding) {
         if (now() - s.downAt >= HOLD_THRESHOLD_S) {
           s.holding = true;
+          emitState(slotIndex, 'hold-threshold');
           startHold(slotIndex);
         }
       } else {
@@ -141,10 +168,12 @@
   }
 
   window.Combat.input = {
+    HOLD_THRESHOLD_S,
     pressStart,
     pressEnd,
     cancelPress,
     fireTap,
+    getState,
     update,
   };
 

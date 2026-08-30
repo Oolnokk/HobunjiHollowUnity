@@ -61,37 +61,48 @@
   const AFFLICTIONS = {
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true,
+      family: "damage", tags: ["physical", "breath"],
       desc: "Spent afflicted Stamina deals itself as Health damage."
     },
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
+      family: "damage", tags: ["physical", "blood"],
       desc: "Ticks as Health loss during combat; while quiet/rested, the same tick heals instead."
     },
     congealedHealth: {
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
+      family: "damage", tags: ["physical", "blood"],
       desc: "Temporarily lowers effective Health max, then recovers its own points every tick."
     },
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true,
+      family: "damage", tags: ["toxin", "infection"],
       desc: "Spent like Wounded Stamina. Can cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
       name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
+      family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
     },
     bruisedHealth: {
       name: "Bruised Health", resource: "health", extend: "currentBack", priority: 60, recovers: true,
+      family: "offensiveDebuff", tags: ["physical"],
       desc: "A subsequent received heavy attack deals bonus damage up to the attack's normal damage, then consumes it."
     },
     shatteredStamina: {
       name: "Shattered Stamina", resource: "stamina", extend: "zero", priority: 62, recovers: true,
+      family: "damage", tags: ["physical"],
       desc: "Spent afflicted Stamina applies Bleeding Health instead of direct Health damage."
     },
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
+      family: "damage", tags: ["toxin"],
       desc: "Ticks as Health damage over time; does not recover on its own."
     }
   };
+  const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
+    .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
+    .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
 
   // Baseline afflictions a creature's plain attackTag applies (see game.js's
   // CREATURE_DB attackTag field — gar-wolves 'sharp', dabinggi-hounds
@@ -173,6 +184,9 @@
 
   function addAffliction(entity, id, amount) {
     if (!(amount > 0)) return 0;
+    const family = AFFLICTIONS[id]?.family; // Used to apply Thickblood once at the central buildup path.
+    const player = window.Combat?.deps?.player; // Used to restrict the player's active potion modifier to the player.
+    if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
     return round1(getAffliction(entity, id) - before);
@@ -185,10 +199,50 @@
     return round1(before - getAffliction(entity, id));
   }
 
+  function afflictionHasTag(id, tag) {
+    return !!tag && (AFFLICTIONS[id]?.tags || []).includes(tag);
+  }
+
+  function afflictionIdsByFamily(family) {
+    return Object.keys(AFFLICTIONS).filter(id => AFFLICTIONS[id].family === family);
+  }
+
+  function afflictionIdsByTag(tag) {
+    return Object.keys(AFFLICTIONS).filter(id => afflictionHasTag(id, tag));
+  }
+
+  function afflictionTotal(entity, ids) {
+    return round1((ids || []).reduce((sum, id) => sum + getAffliction(entity, id), 0));
+  }
+
+  function removeAfflictions(entity, ids, amount) {
+    let remaining = Math.max(0, Number(amount) || 0); // Used to cap the total cleanse across the queried group.
+    let removed = 0; // Used as the caller-visible total removed.
+    const ordered = [...new Set(ids || [])].filter(id => AFFLICTIONS[id]).sort((a, b) => (AFFLICTIONS[b].priority || 0) - (AFFLICTIONS[a].priority || 0)); // Used to cleanse the most urgent buildup first.
+    for (const id of ordered) {
+      if (!(remaining > 0)) break;
+      const delta = (window.ResourceSystem?.removeAffliction || removeAffliction)(entity, id, remaining); // Honors later alcohol/resource wrappers too.
+      remaining -= delta;
+      removed += delta;
+    }
+    (window.ResourceSystem?.enforceCaps || enforceCaps)(entity);
+    return round1(removed);
+  }
+
+  const afflictionTotalByFamily = (entity, family) => afflictionTotal(entity, afflictionIdsByFamily(family));
+  const afflictionTotalByTag = (entity, tag) => afflictionTotal(entity, afflictionIdsByTag(tag));
+  const removeAfflictionsByFamily = (entity, family, amount) => removeAfflictions(entity, afflictionIdsByFamily(family), amount);
+  const removeAfflictionsByTag = (entity, tag, amount) => removeAfflictions(entity, afflictionIdsByTag(tag), amount);
+
   function getEffectiveMax(entity, key) {
-    if (key === "stamina") return clamp((entity.maxStamina || 0) - getAffliction(entity, "windedStamina"), 0, entity.maxStamina || 0);
-    if (key === "health") return clamp((entity.maxHealth || 0) - getAffliction(entity, "congealedHealth"), 0, entity.maxHealth || 0);
-    if (key === "footing") return entity.maxFooting || 0;
+    const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
+    const isPlayer = entity === player;
+    const staminaMul = isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1; // Used by Endurance / Increase Stamina.
+    const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
+    const footingMul = isPlayer ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
+    if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
+    if (key === "health") return clamp((entity.maxHealth || 0) * healthMul - getAffliction(entity, "congealedHealth"), 0, (entity.maxHealth || 0) * healthMul);
+    if (key === "footing") return (entity.maxFooting || 0) * footingMul;
     return 0;
   }
 
@@ -212,10 +266,11 @@
   const EXHAUSTION_SPEED_FLOOR = 0.2;
 
   function getExhaustionSpeed(entity) {
-    if (!entity.exhaustion.active) return 1;
+    const alchemySpeed = entity === window.Combat?.deps?.player ? window.AlchemySystem?.getAttackSpeedMultiplier?.() || 1 : 1; // Central Quickness/Frenzy timing hook.
+    if (!entity.exhaustion.active) return alchemySpeed;
     const black = clamp(entity.exhaustion.blackStamina, 0, 100);
-    if (black >= 100) return 1;
-    return clamp(black / 100, EXHAUSTION_SPEED_FLOOR, 1);
+    if (black >= 100) return alchemySpeed;
+    return clamp(black / 100, EXHAUSTION_SPEED_FLOOR, 1) * alchemySpeed;
   }
 
   // A tiny overspend (e.g. just barely tipping over your last sliver of
@@ -250,6 +305,10 @@
   // Exhausted, entity.stamina reads 0, so those checks keep working.
   function spendStamina(entity, amount, reason = "action") {
     entity.lastAttackAttemptAt = nowMs();
+    if (entity === window.Combat?.deps?.player) {
+      amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
+      amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
+    }
     if (!(amount > 0)) return { spent: 0, excess: 0 };
 
     if (entity.exhaustion.active) {
@@ -280,6 +339,7 @@
   function spendFooting(entity, amount, reason = "hit") {
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
+    if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
     const before = entity.footing;
     entity.footing = round1(clamp(before - amount, 0, getEffectiveMax(entity, "footing")));
     return round1(before - entity.footing);
@@ -341,8 +401,12 @@
     const lost = round1(before - entity.health);
 
     if (opts.afflictionBonuses) {
+      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (AFFLICTIONS[id] && mul > 0) addAffliction(entity, id, finalDamage * mul);
+        if (!AFFLICTIONS[id] || !(mul > 0)) continue;
+        const perkId = FAMILY_PERK[AFFLICTIONS[id].family];
+        const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
+        addAffliction(entity, id, finalDamage * mul * familyMul);
       }
     }
 
@@ -372,8 +436,9 @@
     const cfg = resourceSystemConfig();
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
-    const staminaRate = opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec;
-    const healthRate = opts.healthRegenPerSec ?? cfg.healthRegenPerSec;
+    const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
+    const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
 
     if (entity.exhaustion.active) {
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * mul * dt, 0, 100));
@@ -430,11 +495,7 @@
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
     const amount = cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt;
-    for (const [id, def] of Object.entries(AFFLICTIONS)) {
-      if (!def.recovers) continue;
-      if (id === "bleedingHealth" || id === "poisonedHealth" || id === "congealedHealth") continue;
-      if (getAffliction(entity, id) > 0) removeAffliction(entity, id, amount);
-    }
+    for (const id of RECOVERING_AFFLICTIONS) if (getAffliction(entity, id) > 0) removeAffliction(entity, id, amount);
   }
 
   function maybeTriggerPuke(entity, dt, cfg) {
@@ -487,6 +548,13 @@
     getAffliction,
     addAffliction,
     removeAffliction,
+    afflictionHasTag,
+    afflictionIdsByFamily,
+    afflictionIdsByTag,
+    afflictionTotalByFamily,
+    afflictionTotalByTag,
+    removeAfflictionsByFamily,
+    removeAfflictionsByTag,
     getEffectiveMax,
     getExhaustionSpeed,
     spendStamina,

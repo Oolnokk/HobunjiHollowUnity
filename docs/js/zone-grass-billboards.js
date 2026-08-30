@@ -3,9 +3,9 @@
 
   // Grass billboard tufts for a wilderness zone (mirrors the farm/town
   // grass billboard builders, sized to each zone's own grid) and rich
-  // foliage patches' own tightly-packed, tall billboard clusters (always
-  // visible regardless of the Settings > Grass toggle, since they're meant
-  // to read as a landmark rather than decorative ground cover). Extracted
+  // foliage patches' own tightly-packed, tall billboard clusters. Both obey
+  // the Settings > Grass toggle so it is a truthful visual/performance switch.
+  // Extracted
   // out of game.js following the same window.<Namespace> + init(deps)
   // pattern as its sibling systems, alongside js/zone-plateau-mesa.js,
   // js/zone-terrain-features.js, and js/zone-den-totem-features.js.
@@ -24,6 +24,15 @@
   const GRASS_INSTANCE_CAPACITY_PER_TILE = 28;
   const RICH_BLADES_PER_TILE = 24;
   const BILLBOARD_VERTICAL_PAD = 1.5;
+
+  function normalizedBounds(zcols, zrows, bounds) {
+    return {
+      colStart: Math.max(0, Math.floor(bounds?.colStart ?? 0)),
+      rowStart: Math.max(0, Math.floor(bounds?.rowStart ?? 0)),
+      colEnd: Math.min(zcols, Math.ceil(bounds?.colEnd ?? zcols)),
+      rowEnd: Math.min(zrows, Math.ceil(bounds?.rowEnd ?? zrows)),
+    };
+  }
 
   function chunkBoundsGeometry(minCol, minRow, maxCol, maxRow, minBaseY, maxBaseY) {
     const geo = deps.grassBladeGeo.clone();
@@ -71,7 +80,19 @@
     mesh.visible = true;
     mesh.userData.isBillboard = true;
     mesh.userData.isWildernessGrassChunk = true;
+    mesh.userData.wildernessChunkOwnsGeometry = true;
     mesh.userData.skipOcclusionFade = true;
+    // Used by game.js's zone culler to reject entire grass chunks before draw submission.
+    const bounds = geo.boundingBox;
+    mesh.userData.cullSphere = {
+      x: geo.boundingSphere.center.x,
+      z: geo.boundingSphere.center.z,
+      radius: geo.boundingSphere.radius,
+      xzRadius: Math.hypot(
+        (bounds.max.x - bounds.min.x) * 0.5,
+        (bounds.max.z - bounds.min.z) * 0.5
+      ),
+    };
     const dummy = new THREE.Object3D();
     let idx = 0;
     for (const tile of tiles) idx = fillTile(mesh, dummy, idx, tile);
@@ -80,13 +101,14 @@
     return mesh;
   }
 
-  function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0) {
+  function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0, bounds = null) {
     const grassBillboardMat = deps.getGrassBillboardMat();
     if (!grassBillboardMat) return null;
 
+    const range = normalizedBounds(zcols, zrows, bounds);
     const tiles = [];
-    for (let row = 0; row < zrows; row++) {
-      for (let col = 0; col < zcols; col++) {
+    for (let row = range.rowStart; row < range.rowEnd; row++) {
+      for (let col = range.colStart; col < range.colEnd; col++) {
         const tile = zGrid[row]?.[col];
         if (tile?.type !== deps.TileType.GRASS) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
@@ -104,6 +126,7 @@
     group.visible = deps.getGrassEnabled();
     group.userData.isBillboard = true;
     group.userData.isWildernessGrassChunkGroup = true;
+    group.userData.wildernessChunkBounds = range;
     let instances = 0;
     const buckets = chunkTileBuckets(tiles);
     for (const bucketTiles of buckets.values()) {
@@ -128,10 +151,9 @@
   // the dense copse clusters the wildlife schedule AI's herbivores graze
   // in and predators patrol near) get their own tightly-packed, tall
   // billboard cluster instead of blending into the zone's ordinary grass
-  // tufts — always visible regardless of the Settings > Grass toggle
-  // (s_grass, see buildZoneGrassBillboards/settingGrass's handler,
-  // neither of which this mesh is wired to), since it's meant to read as
-  // a landmark, not decorative ground cover. Reuses the same blade
+  // tufts. It remains visually distinct as a landmark, but obeys the same
+  // Settings > Grass toggle so disabling grass removes every grass draw.
+  // Reuses the same blade
   // geometry/shader as ordinary grass — the visual distinction is
   // entirely density (more blades, tighter spread) and height (roughly
   // 2x), not a texture/color swap.
@@ -159,16 +181,22 @@
     return idx;
   }
 
-  function buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
+  function buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0, bounds = null) {
     const grassBillboardMat = deps.getGrassBillboardMat();
     if (!grassBillboardMat) return null;
     const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
     if (!richPatches.length) return null;
 
+    const zrows = zGrid?.length || 0;
+    const zcols = zGrid?.[0]?.length || 0;
+    const range = normalizedBounds(zcols, zrows, bounds);
     const tiles = [];
     for (const patch of richPatches) {
       for (const t of patch.tiles) {
-        const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * deps.PLATEAU_UNIT;
+        if (t.x < range.colStart || t.x >= range.colEnd || t.y < range.rowStart || t.y >= range.rowEnd) continue;
+        const liveTile = zGrid?.[t.y]?.[t.x]; // Used to suppress stale rich-patch grass after runtime terrain edits.
+        if (!liveTile || ![deps.TileType.GRASS, deps.TileType.SHRUB, deps.TileType.WEEDS].includes(liveTile.type)) continue;
+        const tierY = (liveTile.elevTier || 0) * deps.PLATEAU_UNIT;
         tiles.push({
           col: t.x,
           row: t.y,
@@ -180,8 +208,9 @@
     if (!tiles.length) return null;
 
     const group = new THREE.Group();
-    group.visible = true;
+    group.visible = deps.getGrassEnabled();
     group.userData.isRichFoliageBillboard = true;
+    group.userData.wildernessChunkBounds = range;
     let instances = 0;
     const buckets = chunkTileBuckets(tiles);
     for (const bucketTiles of buckets.values()) {

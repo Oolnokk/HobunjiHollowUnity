@@ -16,11 +16,14 @@
       const debugLog = window.__farmLog || ((m) => console.log(m));
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
+      const cameraJoystickZone = document.getElementById('cameraJoystickZone');
+      const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
+      const btnMeleeAutoTarget = document.getElementById('btnMeleeAutoTarget');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -38,6 +41,8 @@
       const spWater   = document.getElementById('spWater');
       const spGold    = document.getElementById('spGold');
       const spGoldAmount = document.getElementById('spGoldAmount');
+      const spItem    = document.getElementById('spItem');
+      const spItemDiv = document.getElementById('spItemDiv');
 
       // Menu
       const menuBtn        = document.getElementById('menuBtn');
@@ -62,8 +67,6 @@
       const toolBtn        = document.getElementById('toolBtn');
       const toolBtnIcon    = document.getElementById('toolBtnIcon');
       const toolBtnLabel   = document.getElementById('toolBtnLabel');
-      const toolPicker     = document.getElementById('toolPicker');
-      const toolPickBtns   = [...document.querySelectorAll('.tool-pick-btn')];
       // actionRows removed — refreshActionBar now targets fixed #btnActionN elements
 
       // Item scroll
@@ -72,6 +75,9 @@
       const itemIcon   = document.getElementById('itemIcon');
       const itemName   = document.getElementById('itemName');
       const itemCount  = document.getElementById('itemCount');
+      const itemBtnEl  = document.getElementById('itemBtn');
+      const isPrevIconEl = document.getElementById('isPrevIcon');
+      const isNextIconEl = document.getElementById('isNextIcon');
 
 
       // ── Split layout fit ──────────────────────────────────────────
@@ -136,6 +142,10 @@
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
         menuOpen = true;
+        // Release shoulder-surf's Pointer Lock (see requestShoulderSurfPointerLock
+        // below) so the cursor is free to click around the menu — it isn't
+        // visible/usable at all while locked.
+        releaseShoulderSurfPointerLock();
         window.WorldPopupText?.clearInteractionPrompts?.();
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
@@ -169,6 +179,10 @@
         menuPanel.classList.remove('open');
         paused = false;
         window.FurniturePlacer?.refreshVisibility();
+        // The click that closed the menu is itself a user gesture, so
+        // resume shoulder-surf's Pointer Lock immediately rather than
+        // waiting for a separate click on the game world.
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -189,7 +203,7 @@
         if (id === 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
         if (id === 'crafting') window.CraftingPanel.render();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
-        if (id === 'map') window.WildernessMap.renderMapPanel();
+        if (id === 'map') { window.WildernessMap.renderMapPanel(); renderNpcGatheringPanel(); }
         if (id === 'farm') window.FarmPanel.render();
         if (id === 'stable') window.FarmPanel.renderStablePanel();
         if (id === 'shipping') window.ShippingPanel.build();
@@ -202,7 +216,7 @@
         if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') window.WildlifeDebugPanel.render();
+        if (id === 'wildlife') { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); }
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -361,19 +375,42 @@
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
         // Task turn-in — checked before everything else (including a fresh
-        // favor ask): if this NPC posted/asked a quest that's now sitting
-        // ready in the player's log, offer to hand it over right here rather
-        // than piling a new favor ask on top of an already-completed one.
+        // request/favor ask): if this NPC posted/asked a quest that's now
+        // sitting ready in the player's log, offer to hand it over right
+        // here rather than piling a new ask on top of an already-completed
+        // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
-          const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
+          const _turnInLabel = _turnInTask.items.map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', ');
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: `Ah — did you bring what I asked for?`,
             choices: [
-              { label: `Here's your ${_turnInDef?.label || _turnInTask.itemKey} ×${_turnInTask.qty}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: `Here's your ${_turnInLabel}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
               { label: 'Not yet.', actions: [] },
+            ],
+          });
+          return;
+        }
+
+        // Named quest-givers — replaces the old bulletin board. Once a
+        // request has been announced (see ProceduralTasks.
+        // maybeRefreshRequestPostings, and the purple ambient greeting/
+        // compass '!' that flags it before this point), the first
+        // conversation after that proposes the job in the NPC's own voice.
+        // Checked ahead of the generic favor ask below since a named
+        // quest-giver's own request always takes priority over a random
+        // favor roll.
+        const _requestOffer = rec?.id ? await window.ProceduralTasks.maybeProposeRequest(rec) : null;
+        if (_requestOffer) {
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
+            type: 'choice',
+            text: _requestOffer.askText,
+            choices: [
+              { label: "I'll help.", actions: [{ type: 'acceptRequest', taskId: _requestOffer.task.id }] },
+              { label: 'Not right now.', actions: [{ type: 'declineRequest', taskId: _requestOffer.task.id }] },
             ],
           });
           return;
@@ -468,14 +505,16 @@
         npcDialogueStaging = null;
         window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+        player._lookAtDebug = null;
         if (_dialogueWalker) {
-          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
+          _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
-          _dialogueWalker.catchup = 3.5;
-          _dialogueWalker.catchupDur = 8;
+          // Resume at the normal schedule speed. Dialogue must not create a
+          // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
         }
-        activeCameraMode = cameraConfig().defaultMode || 'default';
+        enterDefaultCameraMode();
         activeCameraTarget = null;
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
@@ -537,9 +576,11 @@
       // walkers, and bandits: WALK is the amplitude right as a character
       // starts moving, RUN is the amplitude at full effort (current speed at
       // that character's own max) — each call site lerps between the two by
-      // its own effort ratio rather than using a flat distance.
-      const MOVE_BOB_WALK_AMP = 0.015;
-      const MOVE_BOB_RUN_AMP  = 0.03;
+      // its own effort ratio rather than using a flat distance. Kept subtle
+      // so the procedural feet carry the gait without making the whole body
+      // visibly bounce at ordinary walking speed.
+      const MOVE_BOB_WALK_AMP = 0.0075;
+      const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -547,6 +588,15 @@
       const JOYSTICK_RADIUS = 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
       const JOYSTICK_DEADZONE = 0.14; // used by updateJoystick() to prevent thumb drift near center.
       const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
+      // Floating camera-look joystick (materializes under the thumb on a
+      // right-half touch — see cameraDragRequested/updateCameraJoystick).
+      // Same deadzone/response shape as the movement joystick, but the knob
+      // offset drives an ongoing turn RATE for as long as it's held off
+      // center, instead of the movement stick's instantaneous speed/direction.
+      const CAMERA_JOYSTICK_RADIUS = 56;
+      const CAMERA_JOYSTICK_DEADZONE = 0.14;
+      const CAMERA_JOYSTICK_RESPONSE = 0.82;
+      const CAMERA_JOYSTICK_DEG_PER_SEC = 150; // turn rate at full deflection
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
@@ -579,38 +629,16 @@
 
       // ── Water simulation constants ──
       // Water is a float depth (0..MAX_WATER) sitting above the tile floor.
-      // Floor Z: RAISED=+1, GRASS/TILLED/PADDY/WEEDS=0, TRENCH=-1, ROCK/SHRUB=solid(no water)
-      // Water surface = floorZ + water depth.
+      // MAX_WATER/RAIN_RATE stay here (rather than moving into
+      // js/water-system.js with the rest of the sim) because other game.js
+      // code beyond the water sim itself reads them: the HUD precip/depth
+      // readouts, the day-one farm pond init, crop water-fitness, and
+      // AudioSystem's splash-sound threshold. Threaded into WaterSystem via
+      // its init(deps) call below. The rest of the sim's tuning constants
+      // (absorption/evaporation/flow rates, siltation, edge tracking) now
+      // live in js/water-system.js, private to that module.
       const MAX_WATER    = 3.0;  // max depth in "units"
       const RAIN_RATE    = 0.018; // depth added per sim tick during rain (×rainStrength)
-      const ABSORB_RATE  = {     // depth drained per tick by soil absorption
-        [TileType.GRASS]:  0.012,  // doubled — grass roots drink efficiently
-        [TileType.WEEDS]:  0.008,
-        [TileType.TILLED]: 0.018,  // broken soil drains fastest (no root binding)
-        [TileType.RAISED]: 0.025,  // elevated — gravity-drains quickly
-        [TileType.PADDY]:  0.003,  // sealed low bowl, retains water
-        [TileType.TRENCH]: 0.000,  // sealed clay — no absorption, only flow
-        [TileType.ROCK]:   0,
-        [TileType.SHRUB]:  0,
-        [TileType.PATH]:   0.006, // hard-packed surface drains slowly
-      };
-      const EVAP_RATE    = 0.002;  // evapotranspiration — drains all tiles slowly even when dry
-      const FLOW_RATE         = 0.45;  // fraction of head difference transferred per tick
-      const TRENCH_FLOW_BONUS = 3.0;   // trenches pull water from neighbours faster (scaled by tile.depth)
-      // West/east edges seep water in from the surrounding far terrain (instead of
-      // only the south edge draining out) so a player can't starve the whole
-      // irrigation system just by damming the north-south channel — the far
-      // terrain still gets in from the sides. Fraction of the gap to the far
-      // terrain's level closed per tick.
-      const SIDE_INFLOW_RATE  = 0.06;
-      // How fast the far terrain immediately south of the map (the decorative
-      // border terrain) tracks the south-edge tile's water level, per column.
-      // Low = the gap a player digs at the south edge visibly continues into
-      // the far terrain rather than snapping dry/wet instantly.
-      const FAR_SOUTH_TRACK_RATE = 0.2;
-      // Rain gradually silts trenches back in — depth drains while raining and the
-      // trench reverts to grass once fully filled. Redigging (single tap) restores depth to 1.
-      const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
       // Regional seasons (Stormtide/Deadgrass/Longpour/Coldmuck) also moved
@@ -658,7 +686,8 @@
         // the shovel slot for terrain work instead.
         pick:    ['mine'],
         harpoon: ['fish'],
-        weapon:  ['cut', 'slash'],
+        weapon:  ['cut', 'slash', 'potion_select'],
+        ranged:  ['shoot', 'ammo_select', 'potion_select'],
       };
 
       const actionLabels = {
@@ -673,8 +702,11 @@
         chop:       ['🪓', 'Chop'],
         hack:       ['💢', 'Hack'],
         mine:       ['⛏️', 'Mine'],
+        ammo_select:['🏹', 'Ammo'],
+        potion_select:['🧪', 'Potions'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
+        shoot:      ['🏹', 'Fire / Load'],
       };
 
       const tileStyles = {
@@ -695,16 +727,8 @@
       // playFootstepSfx, playObjectSfx, playWeaponHitSfx, etc.) now live in
       // js/audio-system.js (window.AudioSystem).
 
-      // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
-      function floorZ(type, depth = 1) {
-        if (type === TileType.RAISED) return  1;
-        if (type === TileType.TRENCH) return -clamp(depth, 0, 1);
-        return 0;  // ROCK, SHRUB, and all normal tiles sit at Z=0
-      }
-      // Max water a tile can hold — trenches scale down with depth as they silt in.
-      function tileWaterCapacity(tile) {
-        return tile.type === TileType.TRENCH ? MAX_WATER * clamp(tile.depth ?? 1, 0, 1) : MAX_WATER;
-      }
+      // floorZ/tileWaterCapacity (water-sim-only helpers) now live in
+      // js/water-system.js, private to that module.
       // Whether a tile blocks water entirely (solid column)
       function isSolid(type) {
         return type === TileType.ROCK || type === TileType.SHRUB;
@@ -732,7 +756,9 @@
         // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
-        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0, lungeHitTest: null,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeHeightUnits: 1.0, // Potion/food effects can adjust the player's vertical leap budget before the next attack.
+        lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -740,6 +766,11 @@
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
+        // Standing on a climbable tree branch (see climb-system.js's
+        // beginOnBranch) — onBranch holds the branch descriptor, branchT is
+        // the 0..1 position along it, branchSurfaceY is that branch's own
+        // height (used instead of terrain-follow while onBranch is set).
+        onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
       // All players present in this session — just the local `player` today
@@ -806,8 +837,31 @@
       const PLAYER_KNOCKBACK_PX_S = 600;
       const COMPANION_BITE_KNOCKBACK_PX_S = 560;
       const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
+      const PRONE_THROW_DUR_S = 0.34; // Drives the footing-break displacement channel consumed by prone player/creature updates.
+      const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
+      const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        if (target.onBranch) {
+          // Knockback while standing on a branch is resolved along the
+          // branch's own 1D axis instead of the usual free-plane impulse —
+          // if it doesn't push the target past either end, that's the whole
+          // effect (see resolveBranchKnockback). Pushed past an end, the
+          // target falls to the ground and lands hard rather than sliding —
+          // a flat Footing hit instead of the velocity impulse below.
+          const result = window.ClimbSystem?.resolveBranchKnockback(target, fromX, fromY, speedPxS);
+          if (result?.fell) {
+            // Branch falls are a real landing event: a small Health hit plus
+            // a large Footing hit, with a floor of one remaining Health.
+            const currentHealth = Number(target.health);
+            const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
+            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
+            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
+            if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+          }
+          return;
+        }
         const ang = Math.atan2(target.y - fromY, target.x - fromX);
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
@@ -816,6 +870,31 @@
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
         if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+      }
+
+      function startProneThrow(entity, isPlayer, facingAngle, direction) {
+        let vx = Number(entity.knockbackVX) || 0;
+        let vy = Number(entity.knockbackVY) || 0;
+        const minSpeed = isPlayer ? PRONE_THROW_PLAYER_MIN_PX_S : PRONE_THROW_CREATURE_MIN_PX_S;
+        const existingSpeed = Math.hypot(vx, vy);
+        if (existingSpeed > 1e-6) {
+          const speed = Math.max(existingSpeed, minSpeed);
+          vx = vx / existingSpeed * speed;
+          vy = vy / existingSpeed * speed;
+        } else {
+          // Reconstruct the attack bearing from the classified hit pole when
+          // a damage source has no conventional knockback vector.
+          const attackerOffset = direction === 'right' ? Math.PI / 2
+            : direction === 'left' ? -Math.PI / 2
+            : direction === 'back' ? Math.PI
+            : 0;
+          const awayAngle = (Number(facingAngle) || 0) + attackerOffset + Math.PI;
+          vx = Math.cos(awayAngle) * minSpeed;
+          vy = Math.sin(awayAngle) * minSpeed;
+        }
+        entity.proneThrowT = PRONE_THROW_DUR_S;
+        entity.proneThrowVX = vx;
+        entity.proneThrowVY = vy;
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -846,9 +925,10 @@
         const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
         const healthMultiplier = Number(multipliers.healthDamage ?? 1);
         const footingMultiplier = Number(multipliers.footingDamage ?? 1);
+        const footingOverride = Number(dmgOpts?.footingDamageMultiplier); // Ranged projectiles pass 0 by default; selected ammo can explicitly opt back in.
         return {
           health: amount * healthMultiplier,
-          footing: amount * footingMultiplier,
+          footing: amount * footingMultiplier * (Number.isFinite(footingOverride) ? Math.max(0, footingOverride) : 1),
         };
       }
 
@@ -880,18 +960,23 @@
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
-        if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
+        if (entity.footing <= 0) {
+          startProneThrow(entity, isPlayer, facingAngle, direction);
+          enterProneIfFootingDepleted(entity, isPlayer, direction);
+          return;
+        }
 
         const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
         const lossRange = 1 - maxDurationAtFootingFrac;
         const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
         const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
-        if (isPlayer) {
-          const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
-          const durationMultiplier = clip?.durationSeconds > 0 ? durationS / clip.durationSeconds : 1;
-          window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
-        }
+        const visualMinDurationS = Math.max(0, Number(staggerCfg.visualMinDurationSeconds) || 0);
+        const visualDurationS = Math.max(durationS, visualMinDurationS);
+        const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
+        const durationMultiplier = clip?.durationSeconds > 0 ? visualDurationS / clip.durationSeconds : 1;
+        if (isPlayer) window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
+        else window.ImpactRagdollPlayback?.triggerCreature(entity, 'impact', direction, { durationSeconds: visualDurationS });
         window.Combat?.beginStagger(entity, direction, durationS);
       }
 
@@ -932,19 +1017,20 @@
       // does it automatically the instant its Footing reaches full — see
       // updateHostiles' own `if (c.prone)` branch, which calls
       // beginCreatureSomersaultRecovery below once c.footing >= c.maxFooting.
-      // No bespoke ragdoll-fall visual exists for arbitrary creature rigs the
-      // way ImpactRagdollPlayback provides for the player (billboard sprite +
-      // procedural legs only) — a prone creature just holds still (see that
-      // `if (c.prone)` branch pre-empting its whole AI dispatch) until it
-      // springs back up.
+      // Creature planes use the same authored clips through
+      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
+      // channels remain player-only. Both kinds use a dedicated prone-throw
+      // displacement so compatibility adapters can still clear stale ordinary
+      // knockback without erasing the intentional knockdown launch.
       function enterProneIfFootingDepleted(entity, isPlayer, direction) {
         if (entity.footing > 0 || entity.prone) return;
         entity.prone = true;
-        // Creatures/bandits need nothing further here — damageCreature
-        // already cancelled any in-progress bandit action before calling
-        // applyHitStagger, and updateHostiles' `if (c.prone)` branch takes
-        // over from here (see beginCreatureSomersaultRecovery above).
-        if (!isPlayer) return;
+        // damageCreature already cancelled any in-progress attack; the
+        // creature playback holds its final breakThrow frame until recovery.
+        if (!isPlayer) {
+          window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
+          return;
+        }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
@@ -964,6 +1050,19 @@
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
         c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+      }
+
+      function advanceCreatureProneThrow(c, dt) {
+        if (!(c.proneThrowT > 0)) return false;
+        c.proneThrowT = Math.max(0, c.proneThrowT - dt);
+        const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
+        const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
+        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+        c.x = swept.x; c.y = swept.y;
+        if (swept.blockedX) c.proneThrowVX = 0;
+        if (swept.blockedY) c.proneThrowVY = 0;
+        if (c.proneThrowT <= 0) { c.proneThrowVX = 0; c.proneThrowVY = 0; }
+        return true;
       }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
@@ -1061,7 +1160,7 @@
           // no match for a hound's nose.
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff,
+          modelWidth: 1.6, tint: 0xffffff, lungeHeightUnits: 0.08, // Nearly grounded; high aim should shed almost all travel.
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
@@ -1124,7 +1223,7 @@
           attackStaminaCost: 12, attackCooldownS: 0.95,
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, lungeHeightUnits: 2.4, spriteAspect: 523 / 831, tint: 0xffffff,
           // See dabinggi-hound's matching comment.
           defaultSizeClass: 'small',
           mountSpeed: 340,
@@ -1231,7 +1330,7 @@
           attackStaminaCost: 15, attackCooldownS: 1.1,
           attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
-          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], spriteAspect: 523 / 831, tint: 0x789078,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], lungeHeightUnits: 2.8, spriteAspect: 523 / 831, tint: 0x789078,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra-den-mother',
         },
@@ -1291,8 +1390,44 @@
         map_southern_cloud_forest: {
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
-          groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          herbivoreSpecies: ['drenkirra'],
+          groundColor: 0x2d4a3a, fogColor: 0xffffff,
+          // It's a *cloud* forest — thicker than the 0.018 every other zone
+          // shares (see buildZoneScene's fogDensity fallback), and white
+          // rather than every other zone's dark tint, so the mist itself
+          // reads as part of the biome rather than an oversight. Layered on
+          // top by CloudForestFog's player-centered mist cylinders (see
+          // docs/js/cloud-forest-fog.js) for something with actual visual
+          // presence, since a flat per-pixel exponential fog alone reads as
+          // computed haze rather than something with real volume.
+          fogDensity: 0.055,
+          // updateZoneVegetationCulling uses this zone's presence here to
+          // switch from the other zones' camera-forward/rear/width box to a
+          // simple circle around the player — originally paired with
+          // CloudForestFog's outer mist cylinder so the ring where
+          // vegetation pops in/out sat inside the mist in every direction
+          // rather than just character-forward. This is now just the
+          // startup default: both the live cull radius and each fog layer's
+          // own radius/opacity are independently Settings-tab sliders (see
+          // s_cloudForestCullRadiusTiles and CloudForestFog's setLayerRadius/
+          // setLayerOpacity) — lowered from 34 to 30 by default since the
+          // full 34-tile radius was a real contributor to reported
+          // choppiness in this zone. At 34, fogDensity above had already
+          // made FogExp2 ~97% opaque out there, hiding the vegetation
+          // pop-in; at the smaller default the pop-in ring is more likely
+          // to be visible, tunable back up via the slider if that matters
+          // more than the performance it costs.
+          vegCullRadiusTiles: 30,
+          // Previously the only zone with no packSpecies pool at all, so
+          // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
+          // scratchbones-config.js's wildlife.denMothers) had no zone to
+          // ever spawn from, anywhere.
+          packSpecies: ['gar-wolf'],
+          // Drenkirra no longer den here — nativeSpeciesFor/spawnPackAtDen
+          // (via this pool) decide both a den's exterior pack and its
+          // cavern Den-Mother, and drenkirra now nest on shadewood branches
+          // instead (see wildlife-spawn.js's ensureCurrentZoneNestTrees),
+          // so every den in this zone is a gar-wolf den.
+          herbivoreSpecies: [],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -1384,6 +1519,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
+        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
         gold: 40,
       };
 
@@ -1466,6 +1602,14 @@
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
         fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+        crossbow:     { label: 'Crossbow',      icon: '🏹', sprite: 'assets/toolsprites/ranged_crossbow.png', loadedSprite: 'assets/toolsprites/ranged_crossbow_loaded.png', slots: ['ranged'], animStyle: 'ranged', rangedType: 'crossbow' },
+        scatterbow:   { label: 'Scatterbow',    icon: '🏹', sprite: 'assets/toolsprites/ranged_scatterbow.png', loadedSprite: 'assets/toolsprites/ranged_scatterbow_loaded.png', slots: ['ranged'], animStyle: 'ranged', rangedType: 'scatterbow' },
+        // Decorative only (no `slots`, so it's never equippable/craftable —
+        // see the TOOL_ITEM_DEFS.forEach ITEM_DEFS-registration loop below,
+        // which only fires for entries with a metalKey). Held by Foroji at
+        // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
+        // he visibly has his instrument out while playing.
+        kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
       };
 
       // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
@@ -1831,6 +1975,8 @@
         if (tool === 'axe' && (action === 'chop' || action === 'hack')) style = 'chop';
         else if (tool === 'weapon' && (action === 'cut' || action === 'slash')) {
           style = def.animStyle === 'thrust' ? 'jab' : def.animStyle === 'chop' ? 'chop' : 'sweep';
+        } else if (tool === 'ranged' && action === 'shoot') {
+          style = 'plain';
         } else if (tool === 'harpoon' && action === 'fish') {
           style = 'plain';
         }
@@ -1849,6 +1995,7 @@
         pick:    null,
         harpoon: null,
         weapon:  null,
+        ranged:  null,
         whistle: null,
       };
 
@@ -1860,7 +2007,7 @@
           // flat 1.0 metalDmgMultiplier — mid-hierarchy strength with no
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
-          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
+          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
           clothingItems: [],
           charms: [],
@@ -1874,6 +2021,11 @@
           // abilities' 5 upgrade levels can be chosen — see
           // combat-progression.js.
           toolMastery: {},
+          // Shared 0/8 resource spent once per special-ammo volley; weapon-
+          // specific rank picks and active ammo live beside it below.
+          specialAmmo: 0,
+          rangedAmmoLoadouts: {},
+          unlockedSpecialAmmo: ['shrapnel', 'concussive'],
           // toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey } —
           // Sloomi/Kzubug's cosmetic plating service (see setToolPlating).
           toolPlating: {},
@@ -1908,6 +2060,21 @@
           character.skillExperience = { ...snapshot.experience };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           Object.assign(window.__hobunjiPlayerProfile, { skillLevels: character.skillLevels, skillExperience: character.skillExperience });
+        } catch {}
+      }
+
+      // Perk ranks are character-scoped, same as skill levels/XP above — a
+      // Combat/Alchemy/Foraging/Fishing perk build follows the character
+      // across worlds rather than staying behind with one farm.
+      function savePerkProgress(snapshot) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId);
+          if (!character) return;
+          character.perkRanks = snapshot;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          Object.assign(window.__hobunjiPlayerProfile, { perkRanks: character.perkRanks });
         } catch {}
       }
 
@@ -2045,6 +2212,13 @@
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
+        // A portable camp, not ordinary decor — customPlace opts it out of
+        // the generic tile-grid "Place" button/canPlaceDecorativeFurnitureAt
+        // path (computeActionButtons/firePendingAction give it its own
+        // "Set Up Campfire" button and window.WildernessCampfire.placeFromKit
+        // instead), since only one can ever be placed and it's aimed
+        // anywhere in the wild rather than snapped to farm/interior tiles.
+        campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2057,6 +2231,14 @@
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
         counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
+        // Drenkirra nests — the bucket preset's shape, halved in height and
+        // colored yellow (see procedural-furniture.js's nestRecipe). Two
+        // footprints out of the same recipe: a small one for a nest lashed
+        // to a climbable branch, and the existing den-nest size (2x2, same
+        // as the marker _denNests previously placed by hand) for the ones
+        // still found in caverns/dens for other species.
+        nestBranch:    { itemKey: 'nestBranchFurniture',    icon: '🪺', name: 'Branch Nest',          modelFile: 'nest_branch.glb',              price: 0,  fw: 1, fd: 1, color: 0xc9a227, area: 'any',      desc: 'A woven nest lashed to a branch.', fixture: true },
+        nest:          { itemKey: 'nestFurniture',          icon: '🪺', name: 'Nest',                 modelFile: 'nest_den.glb',                 price: 0,  fw: 2, fd: 2, color: 0xc9a227, area: 'any',      desc: 'A large woven nest.', fixture: true },
         // Game-authored fixtures (fixture: true) — spawned by the game itself
         // inside specific building interiors (see BUILDING_FIXTURE_INTERACTABLES
         // below), never bought/carried by the player, so they're excluded from
@@ -2065,6 +2247,11 @@
         // duplicateable in the Interior Editor like anything else.
         alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
+        // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
+        // procedurally placed the same way alchemyTable/bulletinBoard are
+        // placed by an authored map, just synthesized instead of authored.
+        feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop, raw meat, or fish into Plant/Meat Fodder for barn troughs.', fixture: true },
+        trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS)
@@ -2089,6 +2276,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
+        'feedGrinder', 'trough', 'campfire',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -2127,7 +2315,11 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
-        price: Math.max(5, Math.round(item.price * 0.5)),
+        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
+        // building from a blueprint only ever spends Wood/Stone, never the
+        // blueprint itself), so it's priced above the finished piece's own
+        // price rather than a fraction of it.
+        price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item.price),
         category,
       }));
@@ -2582,6 +2774,7 @@
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
+        if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
           const dx = x - h.cx, dz = z - h.cz;
@@ -2979,7 +3172,7 @@
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
           if (tile.type !== TileType.TILLED && tile.type !== TileType.GRASS && tile.type !== TileType.RAISED) tile.type = TileType.TILLED;
@@ -3015,7 +3208,7 @@
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
         }
       }
 
@@ -3065,7 +3258,9 @@
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
               if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
-                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '' });
+                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
+                  cropAge: t.crop && t.crop !== CropType.NONE ? t.cropAge : undefined,
+                  cropReady: t.crop && t.crop !== CropType.NONE ? !!t.cropReady : undefined });
               }
             }
           }
@@ -3096,7 +3291,7 @@
           const fixtureInventory = window.HousePieces.getFixtureInventory();
           if (fixtureInventory.length) layout.architecturalInventory = fixtureInventory;
           if (farmBuildings.length) {
-            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage }));
+            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage, ...(b.troughs ? { troughs: b.troughs } : {}) }));
           }
           // Preserve map-editor-authored travel data through in-game saves
           if (worldRoutes.length)      layout.routes      = worldRoutes;
@@ -3120,7 +3315,7 @@
 
       function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
         if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile }) => {
+        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady }) => {
           if (grid[r]?.[c]) {
             const previousType = grid[r][c].type; // Used below to skip visual refreshes for non-terrain save data.
             const previousDepth = grid[r][c].depth; // Used below to detect restored trench-depth changes.
@@ -3130,13 +3325,56 @@
               ? (Number.isFinite(depth) ? clamp(depth, 0, 1) : 1)
               : 0;
             grid[r][c].crop = crop || CropType.NONE;
-            if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
+            if (crop) {
+              // Older layouts (and any other caller that omits cropAge) predate
+              // persisting real growth progress — fall back to the previous
+              // "fully grown but not yet flagged ready" placeholder, which
+              // self-corrects at the next morning's tickCropDay(). A layout
+              // that does carry real progress must restore it as-is: forcing
+              // cropReady=false here regardless of actual state used to demote
+              // an already-ripe, uncollected crop back to "growing" on every
+              // reload/re-entry, silently blocking harvest until the next day.
+              grid[r][c].cropAge = Number.isFinite(cropAge) ? cropAge : 50;
+              grid[r][c].cropReady = Number.isFinite(cropAge) ? !!cropReady : false;
+            }
             grid[r][c].dewPile = dewPile || null;
             if (refreshVisuals && (previousType !== grid[r][c].type || previousDepth !== grid[r][c].depth)) {
               markTileDirty(c, r);
             }
           }
         });
+      }
+
+      // Cleans up a legacy bug: createInitialGrid() used to stamp a hardcoded
+      // 3x5 raw-tile "north exit to town" road onto every brand-new farm,
+      // duplicating the real farm<->town connector (which is authored as a
+      // proper route with its own paved brick surface — see worldRoutes).
+      // That raw stub got persisted into every save the first time it ran
+      // (its tile.type differs from createDayOneTile's own default, so
+      // saveFarmLayout always wrote it out explicitly), so simply removing
+      // the stamp from createInitialGrid doesn't clear it from saves that
+      // already have it — applyFarmLayoutToGrid would just restore it from
+      // layout.tiles again. Revert each of those exact tiles back to a
+      // fresh default, but only if it still looks untouched (still a bare
+      // path tile, never tilled/planted/dug), so a player who deliberately
+      // built or farmed over that spot keeps whatever they made there.
+      const LEGACY_FARM_ENTRANCE_PATH_TILES = [
+        [16,0],[17,0],[18,0],
+        [16,1],[17,1],[18,1],
+        [16,2],[17,2],[18,2],
+        [16,3],[17,3],[18,3],
+        [16,4],[17,4],[18,4],
+      ];
+      function cleanupLegacyFarmEntranceRoad() {
+        for (const [c, r] of LEGACY_FARM_ENTRANCE_PATH_TILES) {
+          const t = grid[r]?.[c];
+          if (!t || t.type !== TileType.PATH) continue;
+          if (t.crop && t.crop !== CropType.NONE) continue;
+          if (t.dewPile || t.depth) continue;
+          const def = createDayOneTile(c, r);
+          t.type = def.type;
+          t.variation = def.variation;
+        }
       }
 
       function applyFarmLayoutObjects(layout) {
@@ -3242,7 +3480,7 @@
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
           if (farmBuildings.some(b => b.id === saved.id)) return;
-          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
           farmBuildings.push(entry);
           window.FarmBuildings.spawnEntry(entry);
         });
@@ -3298,9 +3536,123 @@
       // checks for the "Stand" override.
       let sitInteraction = null;
       const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+
+      // ── NPC gathering points: walk-to navigation, not teleport ─────────
+      // { path:[{col,row},...], npcId, label } while an auto-walk is in
+      // progress toward a nearby NPC's current schedule spot, else null.
+      // Player-driven the whole way — see advancePlayerAutoWalk's use in
+      // updateMovement, which feeds computed direction through the exact
+      // same ix/iy → speed/collision pipeline manual input uses, and any
+      // real manual input cancels it outright rather than fighting it.
+      // Tracks whether the player had real movement input last frame — used
+      // by updateMovement's stuck-recovery check to fire only on the
+      // idle→moving edge (the instant a movement key/stick is first
+      // pressed), not every single frame the player happens to be moving.
+      let _playerWasMoving = false;
+      let playerAutoWalk = null;
+      const PLAYER_AUTOWALK_ARRIVE_PX = TILE * 0.35;
+      const PLAYER_AUTOWALK_PATH_PADDING_TILES = 10;
+      const NPC_GATHERING_NEARBY_TILES = 16; // "nearby" scope for the walk-to list — a screen's-width-ish radius, not the whole map.
+
+      function nearbyNpcGatheringPoints() {
+        const px = player.x / TILE, py = player.y / TILE;
+        return npcWalkers
+          .filter(w => w.area === currentArea && w.rec?.id && w.currentScheduleTarget)
+          .map(w => {
+            const target = w.currentScheduleTarget;
+            const dist = Math.hypot(w.root.position.x - px, w.root.position.z - py);
+            return { id: w.rec.id, name: w.rec.name || w.rec.id, activity: target.activity || '', dist };
+          })
+          .filter(entry => entry.dist <= NPC_GATHERING_NEARBY_TILES)
+          .sort((a, b) => a.dist - b.dist);
+      }
+
+      // Sets a walk-to destination toward `npcId`'s current schedule spot —
+      // a navigation target the player still walks to themselves (through
+      // normal collision/speed/footsteps), not an instant teleport. Silently
+      // cancels any walk already in progress if the NPC can't be reached.
+      function startWalkToNpc(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId && w.area === currentArea);
+        const target = walker?.currentScheduleTarget;
+        if (!walker || !target || !Number.isFinite(target.c) || !Number.isFinite(target.r)) {
+          showToast("Can't find them right now.", false);
+          playerAutoWalk = null;
+          return;
+        }
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const path = window.TilePathfinding?.findPath(startCol, startRow, target.c, target.r,
+          (c, r) => isNpcTileWalkable(currentArea, c, r),
+          { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, PLAYER_AUTOWALK_PATH_PADDING_TILES) });
+        if (!path || !path.length) {
+          showToast('No clear path there.', false);
+          playerAutoWalk = null;
+          return;
+        }
+        playerAutoWalk = { path, npcId, label: walker.rec?.name || 'them' };
+      }
+
+      // Advances the current auto-walk one frame and returns the unit
+      // direction manual input would otherwise supply, or null once the
+      // path is exhausted (also clearing playerAutoWalk itself).
+      function advancePlayerAutoWalk() {
+        if (!playerAutoWalk) return null;
+        const wp = playerAutoWalk.path[0];
+        if (!wp) { playerAutoWalk = null; return null; }
+        const wx = (wp.col + 0.5) * TILE, wy = (wp.row + 0.5) * TILE;
+        const dx = wx - player.x, dy = wy - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= PLAYER_AUTOWALK_ARRIVE_PX) {
+          playerAutoWalk.path.shift();
+          if (!playerAutoWalk.path.length) {
+            showToast(`Arrived at ${playerAutoWalk.label}.`, true);
+            playerAutoWalk = null;
+            return null;
+          }
+          return advancePlayerAutoWalk();
+        }
+        return { x: dx / dist, y: dy / dist };
+      }
+
+      // Populates the Map tab's "Nearby" list — see nearbyNpcGatheringPoints/
+      // startWalkToNpc above. Called on entering the Map tab; the list is a
+      // one-shot snapshot rather than live-updating while the panel sits
+      // open, same as the rest of the menu's tab-switch-triggered renders.
+      function renderNpcGatheringPanel() {
+        const listEl = document.getElementById('wmapGatheringList');
+        if (!listEl) return;
+        const entries = nearbyNpcGatheringPoints();
+        if (!entries.length) {
+          listEl.innerHTML = '<div class="wmap-gathering-empty">No one nearby right now.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        for (const entry of entries) {
+          const row = document.createElement('div');
+          row.className = 'wmap-gathering-row';
+          const info = document.createElement('div');
+          info.className = 'wmap-gathering-info';
+          const name = document.createElement('div');
+          name.className = 'wmap-gathering-name';
+          name.textContent = entry.name;
+          info.appendChild(name);
+          if (entry.activity) {
+            const activity = document.createElement('div');
+            activity.className = 'wmap-gathering-activity';
+            activity.textContent = entry.activity;
+            info.appendChild(activity);
+          }
+          row.appendChild(info);
+          const goBtn = document.createElement('button');
+          goBtn.type = 'button';
+          goBtn.className = 'wmap-gathering-go';
+          goBtn.textContent = 'Go';
+          goBtn.addEventListener('click', () => { startWalkToNpc(entry.id); closeMenu(); });
+          row.appendChild(goBtn);
+          listEl.appendChild(row);
+        }
+      }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
       const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
-      const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -3337,6 +3689,8 @@
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
+        const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
+        const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
@@ -3345,13 +3699,15 @@
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
           seatWorldY: seat.y,
+          seatSurfaceY,
+          seatAbsoluteWorldY,
           seatNormalDeg: seat.normalDeg,
           seatFootprintHalfDepth: seat.footprintHalfDepth,
           seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
         activeCameraMode = 'seated';
-        activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
+        activeCameraTarget = { position: new THREE.Vector3(seat.x, seatAbsoluteWorldY + 0.15, seat.z) };
         // Start looking at the seated character's BACK rather than whatever
         // the 'seated' mode's base azimuth happens to be (which has no
         // relationship to which way the character is actually facing).
@@ -3398,30 +3754,8 @@
           if (Math.abs(iy) > 0.001) {
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
           }
-          // Head-turn (not the whole body) toward wherever the camera has
-          // orbited to, using the same neck-bone mechanism the animation-
-          // author tool/NPC dialogue staging use (see
-          // faceNpcDialogueParticipants) — lets you inspect your own
-          // character's face as you swing the camera around without the
-          // body itself rotating. playerMesh.rotation.y = activeCameraAzimuthRad()
-          // is exactly the sprite orientation that faces the camera (both
-          // are the same THREE.js Y-rotation convention — the plane's local
-          // +Z, after that rotation, points from the character straight at
-          // the camera), so the residual against the body's own CURRENT
-          // rotation (whatever the dead zone has it holding at right now)
-          // is exactly how far the head alone needs to turn. Only within a
-          // realistic range — past it, look straight ahead (0) rather than
-          // holding at the clamp like the NPC dialogue case, so an extreme
-          // camera angle just shows the back of a naturally forward-facing
-          // head instead of a craned neck.
-          if (playerNeckJoint) {
-            const residual = angleDiff(activeCameraAzimuthRad(), playerMesh.rotation.y);
-            const maxYawRad = SEATED_HEAD_MAX_YAW_DEG * Math.PI / 180;
-            playerNeckJoint.rotation.y = Math.abs(residual) <= maxYawRad ? residual : 0;
-          }
           return;
         }
-        if (playerNeckJoint) playerNeckJoint.rotation.y = 0;
         s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
         const e = s.t;
         const [fromX, fromY, fromAngle, toX, toY, toAngle] = s.phase === 'in'
@@ -3434,13 +3768,73 @@
         if (e >= 1) {
           if (s.phase === 'in') { s.phase = 'active'; s.t = 0; }
           else {
-            activeCameraMode = s.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            enterDefaultCameraMode(s.prevCameraMode);
             activeCameraTarget = s.prevCameraTarget ?? null;
-            cameraAzimuthOffsetDeg = 0;
-            cameraAngleOffsetDeg = 0;
+            // enterDefaultCameraMode already snapped these behind the player
+            // when landing back in shoulder-surf — don't stomp that back to
+            // due-south here too.
+            if (activeCameraMode !== SHOULDER_SURF_MODE) {
+              cameraAzimuthOffsetDeg = 0;
+              cameraAngleOffsetDeg = 0;
+            }
             sitInteraction = null;
           }
         }
+      }
+
+      // Keep the head's WORLD yaw on the player's actual look/aim direction,
+      // independently of the body/avatar plane. The plane can lag behind aim
+      // because of its camera-facing dead zone, and combat poses can add their
+      // own bodyYaw flourish; this local neck residual counters both. Seated
+      // free-look treats the orbited camera direction as the aim target.
+      function updatePlayerHeadAim() {
+        if (!playerNeckJoint || cutscenePreviewActive) return;
+        // During dialogue, faceNpcDialogueParticipants owns the player's
+        // neck bone exclusively (a continuous eye-contact aim at the NPC —
+        // see its own comment) — step aside entirely rather than fighting
+        // it with a second, different rotation write on the same bone.
+        if (dialogueOpen) return;
+        if (characterViewMode.enabled) {
+          playerNeckJoint.rotation.x = characterViewMode.lockedNeckX;
+          playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
+          return;
+        }
+        // Shoulder-surf: the head locks onto the shared aim point
+        // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
+        // raycast) rather than the camera's own raw azimuth. Those two agree
+        // when the camera looks straight at the player, but a horizontal
+        // camera-offset slide points the camera at a spot beside the player
+        // instead — using the raycast's actual ground target keeps the head
+        // (and the body catch-up / WASD-relative movement below, which read
+        // the same value) aimed at what's really in front of the reticle
+        // instead of visibly disagreeing with it. Same facingAngle-
+        // convention-to-world-yaw conversion the default case below applies
+        // to player.angle, just fed the shared aim angle instead.
+        const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE
+          ? -mouseLookAngle + Math.PI / 2
+          : sitInteraction?.phase === 'active'
+            ? activeCameraAzimuthRad()
+            : -player.angle + Math.PI / 2;
+        // playerMesh.rotation.y is this function's only body-yaw signal, but
+        // channels like weapon-idle-stance-body-yaw (see
+        // weapon-idle-body-yaw-runtime.js) never touch it directly — they
+        // only reach playerMesh through PlayerBodyTransformComposer's
+        // render-time world delta. Left out, the neck counters only the
+        // pre-delta resting yaw and the head renders off-target by whatever
+        // yaw the active channels are about to add.
+        const composerYawDelta = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0;
+        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y + composerYawDelta);
+        // Purely cosmetic head nod matching the camera's own up/down tilt
+        // (cameraAngleOffsetDeg — how far the player has pitched the camera
+        // off the mode's neutral framing) — this rig has no other pitch
+        // consumer, so a plain local X rotation on the neck bone (not a
+        // world-yaw-style correction like above) is enough. Scaled down from
+        // the camera's own pitch range since a flat cutout head tilting a
+        // full ±45° reads as exaggerated compared to the same swing on an
+        // actual 3D head.
+        playerNeckJoint.rotation.x = activeCameraMode === SHOULDER_SURF_MODE
+          ? THREE.MathUtils.degToRad(cameraAngleOffsetDeg) * 0.6
+          : 0;
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -3525,7 +3919,7 @@
       // forever, one full composeFrame call at a time, competing with every
       // other creature's real compose work for the same main thread).
       const _genotypeUnsupportedKinds = new Set();
-      function _getGenotypeTextures(kind, frame, genotype) {
+      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
           window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
@@ -3539,7 +3933,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}`;
+        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
         if (_genotypeTexCache.front.has(key)) {
           return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
         }
@@ -3555,9 +3949,9 @@
           _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
-            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" — kicking off composeFrame`, 'wildlife');
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          renderer.composeFrame(kind, frame, genotype).then(canvas => {
+          renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
@@ -3592,11 +3986,11 @@
       // frame/genotype completed, permanently stranding it on the plain
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
-      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
-        for (const child of avatarRef.group.children) {
+        for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child.material) continue;
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
@@ -3610,13 +4004,16 @@
       // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
+      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
 
       // Scans a species' idle sprite (cached per URL, so only the first
       // creature of each species actually pays for it) for how far down its
-      // real opaque pixels extend. All these sprites are nominally
+      // fully opaque pixels extend. All these sprites are nominally
       // 1375×600, but if the art itself doesn't reach the canvas's bottom
       // edge (transparent padding), anchoring on the raw rectangle leaves
       // the visible creature hovering above the ground/its own shadow.
+      // Using alpha 255 deliberately ignores antialiased fringe pixels that
+      // would otherwise make the apparent foot line vary with faint padding.
       function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
         const cached = _creatureGroundAnchorCache.get(spriteUrl);
         if (typeof cached === 'number') { onReady(cached); return; }
@@ -3629,7 +4026,7 @@
         };
         const img = new Image();
         img.onload = () => {
-          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
           finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
         };
         img.onerror = () => finish(1);
@@ -3670,10 +4067,12 @@
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: creatureKey + '_' + idUniq,
+          creatureId: creatureKey,
+          headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
-        avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+        window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Animal planes face along group Z, so visible width cannot use group X.
         // Skip the species-differentiation tint for genotype-bearing
         // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
         // replaced by a genotype-composited texture and def.tint would
@@ -3765,6 +4164,11 @@
           (c.scene || scene).remove(c._banditToolHolder);
           c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
           c._banditToolHolder = null;
+        }
+        if (c._banditRangedToolHolder) {
+          (c.scene || scene).remove(c._banditRangedToolHolder);
+          c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          c._banditRangedToolHolder = null;
         }
         if (c._banditTrailMesh) {
           (c.scene || scene).remove(c._banditTrailMesh);
@@ -3872,6 +4276,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
+          promptRoot: c.avatarRef?.group || null,
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -3887,6 +4292,8 @@
               if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
               parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
+            const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
+            if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
             corpseObjects.delete(c);
             despawnCreature(c);
             return {
@@ -3907,6 +4314,25 @@
         return null;
       }
 
+      // The action arch can be clicked a frame after the reticle has shifted
+      // off the corpse tile (especially in shoulder cam). Keep corpse loot
+      // tied to the same nearby interaction target instead of dropping it on
+      // a stale "No object here" result.
+      function getCorpseObjectForAction(action, col, row) {
+        const exact = getCorpseObjectAt(col, row);
+        if (exact || action !== 'obj_loot_corpse') return exact;
+        let best = null, bestDist = Infinity;
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y);
+          const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
+          if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
+          best = c;
+          bestDist = dist;
+        }
+        return best ? makeCorpseWorldObject(best) : null;
+      }
+
       // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
       // through the resource-afflictions system (bleeding/bruising/wounded
       // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
@@ -3924,6 +4350,7 @@
       const BANDIT_COUNTER_COOLDOWN_S = 0.6;
       function banditTryGuard(c, amount, targetPlayer) {
         if (!c.isBandit || !(c._banditGuardUntil > performance.now())) return amount;
+        window.AudioSystem?.playCounterShieldBlockSfx(c.x, c.y, c.areaId);
         const t = performance.now() / 1000;
         if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
           c._banditLastCounterAt = t;
@@ -3932,15 +4359,40 @@
         return amount * (1 - window.BanditCombat.GUARD_DAMAGE_ABSORB);
       }
 
+      let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        // Player melee must overlap the target vertically as well as pass its
+        // existing top-down cone/range test. Ranged projectiles already run
+        // their own swept 3D Box3 collision and deliberately bypass this.
+        const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
+        if (!dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+          const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
+          if (reach && !reach.reachable) {
+            lastMeleeHeightBlock = {
+              at: Date.now(),
+              target: c.id || c.name || c.def?.id || 'hostile',
+              verticalGap: Number(reach.verticalGap.toFixed(3)),
+              allowance: reach.allowance,
+              playerOnBranch: !!player.onBranch,
+              targetOnBranch: !!c.onBranch,
+            };
+            window.__farmLog?.(`[combat] melee height blocked target=${lastMeleeHeightBlock.target} gap=${lastMeleeHeightBlock.verticalGap}`, 'combat');
+            return false;
+          }
+        }
         // Only the player currently ever calls damageCreature (see
         // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+        amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
         amount = banditTryGuard(c, amount, player);
         window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
+        resourceDamage.footing *= impactMultiplier;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
         c.hitFlashT = 0.25;
@@ -3968,8 +4420,41 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        // Referenced by wildlife-territorial.js's own attackedDuringWarning
+        // check (an already-attacked creature escalates straight to
+        // fighting even from outside its proximity trigger) — that check
+        // has been silently dead since territorial.js shipped, since
+        // nothing was ever setting this field.
+        c.lastAttackReceivedAt = performance.now();
+        // A passive creature (drenkirra, uumkaoii-wild, etc. — hostile:false,
+        // so it never picks up player aggro at all, see updateHostiles'
+        // aggro-pickup check) had no reaction to being attacked whatsoever
+        // before this: knockback/stagger applied below, then it carried on
+        // with whatever it was already doing — no flee, no fight-back.
+        // Reuses the exact 'fleeing-low-health' state wildlife-vs-wildlife
+        // skirmishes already use (see wildlife-spawn.js's
+        // applyWildlifeSkirmishDamage) — beelines home ignoring aggro/prey
+        // detection, then starts a re-aggro cooldown once settled. Excludes
+        // companions (an incidental hit on a passive-type follower
+        // shouldn't make it bolt) and a creature wildlife-territorial.js
+        // already has actively defending its nest — attacking a territorial
+        // animal mid-fight should never make it flee instead; it's
+        // supposed to protect its home, not bail the moment it takes a hit.
+        const territorialPhase = c._territorialBehavior?.phase;
+        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+          // A drenkirra mid-forage or asleep is pinned to a branch —
+          // clear that (see wildlife-cloud-forest-behavior.js's
+          // interruptForFlee) before the state flip below, or the
+          // branch-pin's own per-frame early-continue in updateHostiles
+          // keeps re-snapping it right back to that spot forever, never
+          // actually reaching the movement this state is supposed to
+          // trigger. A no-op for anything not currently on a branch.
+          window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
+          c.state = 'fleeing-low-health';
+          c.targetCreature = null;
+        }
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
 
@@ -3982,6 +4467,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        player._nestTakeActive = false;
         window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -4066,12 +4552,21 @@
         window.AudioSystem?.playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
-        const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
+        const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
+        const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
-          if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
+          if (c._denHidden) continue; // Tucked out of sight in its den — not actually there to hit.
+          if (!window.Combat?.meleeHit?.(player, c, {
+            rangePx: abil.rangePx,
+            halfConeRad: abil.halfConeRad,
+            yaw: player.angle,
+            pitch: currentPlayerMeleeAimPitch(),
+          })) continue;
           damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
+          window.AudioSystem?.playWeaponHitSfx(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
           hits++;
           lastName = c.def.label;
         }
@@ -4084,19 +4579,84 @@
       // nearest-hostile default until it dies, leaves range/area, or the
       // player swaps again. Cleared automatically once invalid.
       let manualAutoTarget = null;
+      let gameFrameSerial = 0; // Identifies the current animation frame for shared auto-target and profiler work.
+      let autoTargetCacheFrame = -1; // Prevents every hostile resource ring from repeating the same target search in one frame.
+      let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
+      // Melee-only auto-target toggle (see updateMeleeAutoTarget below) —
+      // an opt-in aim assist the player switches on/off themselves (Shift-
+      // tap desktop, right-stick click controller, the arch's 6th mobile
+      // button), unlike the old always-on lock this replaced. Forced back
+      // off the instant a melee weapon isn't actually out (see
+      // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
+      let meleeAutoTargetOn = false;
+      let meleeAutoTargetFreeAim = false; // Mouse movement releases the lock without turning the targeting toggle off.
+      const MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD = 0.48; // Small 3D radius around the centered reticle used for reacquisition.
+      const DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX = 2; // Ignore sub-pixel noise, but any real desktop mouse movement breaks the lock.
+
+      // Find a hostile whose 3D portrait hitbox is close enough to the centered
+      // reticle. Expanding the same hitbox used by projectiles keeps reacquisition
+      // forgiving without making a target behind the player eligible.
+      function desktopAutoTargetNearReticle(maxDistanceWorld) {
+        const ray = currentPlayerInteractionRay();
+        if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
+          const candidates = Array.from(hostileObjects)
+            .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden)
+            .map(c => {
+              const hitbox = window.RangedWeapons.actorHitbox(c);
+              return hitbox?.box ? {
+                type: 'hostile',
+                id: c.id,
+                data: c,
+                box: hitbox.box.clone().expandByScalar(MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD),
+              } : null;
+            })
+            .filter(Boolean);
+          const focus = window.RangedWeapons.focusCandidates(candidates, maxDistanceWorld / TILE);
+          if (focus?.candidate?.data) return focus.candidate.data;
+        }
+        // Fallback for a not-yet-initialized renderer: use a small ground-space
+        // cone around the current aim bearing rather than nearest hostile.
+        const aim = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const radiusPx = MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD * TILE;
+        let best = null, bestDist = maxDistanceWorld;
+        const fx = Math.cos(aim), fy = Math.sin(aim);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const along = dx * fx + dy * fy;
+          if (along < 0 || along > bestDist) continue;
+          const lateral = Math.abs(dx * fy - dy * fx);
+          if (lateral > radiusPx) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist < bestDist) { best = c; bestDist = dist; }
+        }
+        return best;
+      }
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
-      // Hardened at the source (not left to every caller to remember): auto
-      // target is only ever active while the weapon tool slot is both
-      // selected AND actually has a weapon equipped in it — every caller
-      // gets this for free instead of some checking activeTool alone.
-      function findAutoTarget() {
-        if (activeTool !== 'weapon' || !equipmentSlots.weapon) {
+      // Desktop melee only acquires while the targeting toggle is on. Once
+      // mouse-look releases a lock, it waits for the reticle to pass close to
+      // another hostile before reacquiring.
+      function computeAutoTarget() {
+        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeActive && !rangedActive) {
           manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
           return null;
         }
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        if (meleeActive && isDesktop && !meleeAutoTargetOn) {
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          return null;
+        }
+        const maxDist = rangedActive
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         if (manualAutoTarget) {
           if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
               Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) {
@@ -4104,13 +4664,90 @@
           }
           manualAutoTarget = null;
         }
+        if (meleeActive && isDesktop && meleeAutoTargetOn) {
+          const reacquired = desktopAutoTargetNearReticle(maxDist);
+          if (reacquired) {
+            manualAutoTarget = reacquired;
+            meleeAutoTargetFreeAim = false;
+            return reacquired;
+          }
+          meleeAutoTargetFreeAim = true;
+          return null;
+        }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      function invalidateAutoTargetCache() {
+        autoTargetCacheFrame = -1;
+      }
+
+      function findAutoTarget() {
+        if (autoTargetCacheFrame === gameFrameSerial) return autoTargetCacheValue;
+        autoTargetCacheValue = computeAutoTarget();
+        autoTargetCacheFrame = gameFrameSerial;
+        return autoTargetCacheValue;
+      }
+
+      // Where a ranged shot currently flies, in the flat XY logical-angle
+      // convention (atan2(y,x), matching player.angle/facingAngle) — shared
+      // by RangedWeapons.init's getPlayerAimAngle (below) and
+      // updateToolMesh's ranged pose branch, which rotates the hands/tool
+      // to face this instantly rather than waiting on the body. Shoulder-
+      // surf mode always uses the raycast-derived shared aim point
+      // (mouseLookAngle, same one the head/reticle use); the ordinary
+      // camera falls back to whatever auto-target lock (if any) is
+      // steering facing, then to plain body facing.
+      function currentPlayerAimAngle() {
+        if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
+        const target = findAutoTarget();
+        return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
+      }
+
+      // Vertical companion to currentPlayerAimAngle(), passed to RangedWeapons
+      // as getPlayerAimPitch. An auto-target lock assists elevation the same
+      // way it already assists heading — aiming at the target's actual
+      // rendered height rather than just its ground tile. With no lock,
+      // pitch reuses the existing camera-tilt input (shift-drag or
+      // shoulder-surf drag write cameraAngleOffsetDeg already) as manual
+      // up/down aim, rather than inventing a second control scheme.
+      const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
+      function currentPlayerAimPitch() {
+        const target = activeCameraMode === SHOULDER_SURF_MODE ? null : findAutoTarget();
+        if (target) {
+          const originY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55;
+          const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
+          const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
+          if (horizDist < 0.05) return 0;
+          return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+        }
+        return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+      }
+
+      // Shared player melee direction. A hostile under the centered reticle
+      // converges from the player's body center to that same portrait Box3;
+      // otherwise the camera/facing yaw and pitch remain authoritative.
+      function currentPlayerMeleeAimDirection() {
+        const focused = window.RangedWeapons?.focusedHostile?.(24);
+        if (focused?.candidate?.data && window.Combat?.meleeAimSolution) {
+          const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
+          return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
+        }
+        const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        if (cameraRay?.direction) return { ...cameraRay.direction };
+        const yaw = currentPlayerAimAngle();
+        const pitch = currentPlayerAimPitch();
+        const horizontal = Math.cos(pitch);
+        return { x: Math.cos(yaw) * horizontal, y: Math.sin(pitch), z: Math.sin(yaw) * horizontal };
+      }
+      function currentPlayerMeleeAimPitch() {
+        const direction = currentPlayerMeleeAimDirection();
+        return Math.asin(clamp(Number(direction?.y) || 0, -1, 1));
       }
 
       // Used by updateAmbientCues() to duck exploration/dawn music during a
@@ -4136,12 +4773,16 @@
       // weapon tool slot selected.
       const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        if (activeTool !== 'weapon' || !equipmentSlots.weapon) return false;
+        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeActive && !rangedActive) return false;
         const current = findAutoTarget();
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = rangedActive
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
@@ -4151,7 +4792,110 @@
         }
         if (!best) return false;
         manualAutoTarget = best;
+        meleeAutoTargetFreeAim = false;
+        invalidateAutoTargetCache();
         return true;
+      }
+
+      // Melee-only auto-target: is the currently equipped/active tool a
+      // melee weapon? (Ranged/farm tools/bare hands never engage this —
+      // ranged already went fully manual last session.)
+      function meleeWeaponOut() {
+        return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+      }
+
+      // "Am I roughly looking at a targetable hostile right now" — used
+      // only to decide whether starting a melee swing should auto-engage
+      // the toggle (see tryAutoEngageMeleeTarget below), not for anything
+      // continuous. Reads whichever look/aim signal is actually driving
+      // facing right now (shoulder-surf's camera reticle, manual mouse/
+      // stick look, or plain body facing) rather than just nearest-in-
+      // range regardless of where the player is pointed.
+      const MELEE_AUTO_TARGET_ENGAGE_CONE_RAD = Math.PI / 4;
+      function meleeAttackTargetCandidate() {
+        const aimAngle = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        let best = null, bestDist = maxDist;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > bestDist) continue;
+          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > MELEE_AUTO_TARGET_ENGAGE_CONE_RAD) continue;
+          bestDist = dist; best = c;
+        }
+        return best;
+      }
+
+      // Turns melee auto-target on the instant an attack is thrown while
+      // roughly looking at something targetable — lets a player who's
+      // never touched the toggle just swing at what they're already
+      // looking at and have it pick up from there. No-ops if already on, no
+      // melee weapon out, or nothing qualifies.
+      function tryAutoEngageMeleeTarget() {
+        if (isDesktop || meleeAutoTargetOn || !meleeWeaponOut()) return;
+        const candidate = meleeAttackTargetCandidate();
+        if (!candidate) return;
+        manualAutoTarget = candidate;
+        meleeAutoTargetOn = true;
+        invalidateAutoTargetCache();
+      }
+
+      // Cycles melee auto-target's current lock among every hostile within
+      // range, ordered by angle around the player ("orbitally") — Shift+
+      // wheel desktop, right-stick tilt controller, and the hidden mobile
+      // joystick's left/right all drive this while a lock is already
+      // active. A no-op while auto-target is off (per spec, cycling only
+      // matters once there's something to cycle among) or with no
+      // candidates in range.
+      function cycleMeleeAutoTarget(direction) {
+        if (!meleeAutoTargetOn || !meleeWeaponOut()) return;
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const candidates = Array.from(hostileObjects)
+          .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
+          .map(c => ({ c, angle: Math.atan2(c.y - player.y, c.x - player.x) }))
+          .sort((a, b) => a.angle - b.angle);
+        if (!candidates.length) return;
+        const current = findAutoTarget();
+        let idx = candidates.findIndex(entry => entry.c === current);
+        idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
+        manualAutoTarget = candidates[idx].c;
+        meleeAutoTargetFreeAim = false;
+        invalidateAutoTargetCache();
+      }
+
+      // Drives melee auto-target's actual aim, once per frame (see its call
+      // site in gameLoop, right before updateMovement) — by simulating
+      // exactly the input a real mouse/stick would give, not a separate
+      // hard override: in shoulder-surf that means smoothly turning the
+      // camera itself (mouseLookAngle then follows for free via
+      // updateShoulderSurfReticleAim, same as manual mouse-look/the touch
+      // joystick already do); in the ordinary camera it means driving
+      // mouseLookAngle/controllerLookAngle directly, exactly the values
+      // manual input already feeds into updateMovement's FACING section.
+      const MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC = 320;
+      function updateMeleeAutoTarget(dt) {
+        if (!meleeWeaponOut()) { meleeAutoTargetOn = false; return; }
+        if (!meleeAutoTargetOn) return;
+        const target = findAutoTarget();
+        if (!target) return;
+        const aimAngle = Math.atan2(target.y - player.y, target.x - player.x);
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const targetAzimuthDeg = wrapAzimuthDeg(-(aimAngle * 180 / Math.PI) - 90 - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+          const diffDeg = angleDiff(THREE.MathUtils.degToRad(targetAzimuthDeg), THREE.MathUtils.degToRad(cameraAzimuthOffsetDeg)) * 180 / Math.PI;
+          const maxStepDeg = MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC * dt;
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + clamp(diffDeg, -maxStepDeg, maxStepDeg));
+        } else {
+          mouseLookAngle = aimAngle;
+          targetAimAngle = aimAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+          controllerLookAngle = aimAngle;
+          controllerLookActive = true;
+        }
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -4248,7 +4992,8 @@
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
-        const nx = dx / dist, ny = dy / dist;
+        const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
+        const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
         const baseSpeed = speed * devGlobalSpeedMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
@@ -4332,21 +5077,64 @@
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
 
+      // A ground companion settled near the player (see the "settle" branch
+      // of updateCompanions below) used to pick its idle wander points from
+      // a plain disk centered on the player — including points arbitrarily
+      // close to (or right on top of) them. This keeps that same wander
+      // rhythm but samples from a donut instead: its hole is the player's
+      // own "personal space" (1.5x the player's actual rendered portrait
+      // width, so it scales with whatever avatar is currently equipped),
+      // and its outer edge sits one more portrait-width further out, giving
+      // the ring some visible thickness rather than pinning to one exact
+      // distance.
+      function _companionPersonalSpacePx() {
+        return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
+      }
+      function _companionFollowWanderTick(c, dt, master) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          // Kept safely inside FOLLOW_FAR_PX (the "gone too far, catch up"
+          // trigger below) so a freshly-picked wander target never sits
+          // just past it and immediately yanks the companion back into
+          // chase — and the inner/outer clamps guarantee a real ring even
+          // for a hypothetical unusually wide portrait.
+          const maxOuterPx = FOLLOW_FAR_PX * 0.9;
+          const innerPx = Math.min(_companionPersonalSpacePx(), maxOuterPx * 0.8);
+          const outerPx = Math.max(innerPx + TILE * 0.2, Math.min(innerPx + (playerAvatarModelWidth || 0.9) * TILE, maxOuterPx));
+          const ang = rnd() * Math.PI * 2;
+          const r = innerPx + rnd() * (outerPx - innerPx);
+          c.wanderTarget = { x: master.x + Math.cos(ang) * r, y: master.y + Math.sin(ang) * r };
+          c.wanderT = 1.5 + rnd() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
-        const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+        // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
+        // spawn) uses that branch's own height instead of terrain-follow —
+        // same override the player gets while climbing/on a branch.
+        const surfY = c.onBranch ? c.branchSurfaceY : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const grp = c.avatarRef.group;
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY;
-        grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
-        grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
-        grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
+        c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
+        const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
+        if (c._wildlifeVisualLodJustWoke) {
+          grp.position.set(tx, ty, tz);
+          c._wildlifeVisualLodJustWoke = false;
+        } else {
+          grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
+          grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
+          grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        }
         // Bob animation when moving — mirrors the player's own effort-based
         // move bob (updateMovement): amplitude ramps from the calm-walking
         // baseline up to the full-effort peak as speed approaches this
@@ -4362,8 +5150,8 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        grp.scale.x = c.visualScaleX || 1;
-        grp.scale.y = (c.visualScaleY || 1) * scaleY;
+        const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now());
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -4374,7 +5162,12 @@
           // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
           // a red target-lock ring renders around a hostile's resource rings
           // while it's the current target (see resource-rings.js).
-          const isTarget = !c.isCompanion && c === findAutoTarget();
+          // Ranged still shows its lock unconditionally (unaffected by the
+          // melee-only auto-target toggle below); melee only shows it once
+          // that toggle is actually on, so the ring never lies about a hit
+          // that isn't really being auto-aimed.
+          const isTarget = !c.isCompanion && c === findAutoTarget()
+            && (activeTool === 'ranged' || meleeAutoTargetOn);
           const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
           ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
@@ -4424,6 +5217,7 @@
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
+        window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -4459,7 +5253,7 @@
       // 0.18s/frame cadence this replaced.
       const RUN_FRAME_STRIDE_PX = 30;
 
-      function updateCreatureAnimFrame(c, dt, moving) {
+      function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
         // texture re-applied once the async compose finishes, even if the
@@ -4477,6 +5271,22 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        // Item 3: eyes-open/eyes-shut blinking, layered into the same
+        // genotype composite pass above the eyes' own layer (see
+        // composeFrame's blinkShut param) — only meaningful for
+        // genotype-bearing creatures, since a plain (no-genotype) creature
+        // never goes through composeFrame at all. blinkFrameKey folds the
+        // blink state into the readiness/retry bookkeeping below so a
+        // blink toggle forces a re-apply even though the underlying
+        // idle/run frame key hasn't changed.
+        // A sleeping drenkirra (js/wildlife-cloud-forest-behavior.js's
+        // beginGoToSleep/_cfDrenkirra.mode) should stay eyes-shut the whole
+        // time it's asleep, not keep cycling open/closed on the normal
+        // ambient blink timer — CreatureBlink has no notion of sleep, so
+        // short-circuit it here instead of teaching a shared, per-instance
+        // timer about one species' mode field.
+        const asleep = c._cfDrenkirra?.mode === 'sleeping';
+        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -4485,17 +5295,19 @@
         if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
-          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-          if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+          if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
           }
-          if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
-            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
+          if (c.currentFrameUrl !== c.def.sprites.idle || c._blinkAppliedShut !== blinkShut || needsRetry) {
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut);
             c.currentFrameUrl = c.def.sprites.idle;
+            c._blinkAppliedShut = blinkShut;
             if (genotypeKind && applied) {
-              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
             }
           }
           // Not tracking ground covered while idle, so resuming movement
@@ -4510,7 +5322,9 @@
         // networked peer already has to agree on, so a distance-driven frame
         // index falls out of position sync for free instead of needing its
         // own state kept in lockstep.
-        const movedPx = Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
+        const movedPx = runInPlace
+          ? Math.max(0, c.def.moveSpeed * 0.5 * dt)
+          : Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
         c._animLastX = c.x; c._animLastY = c.y;
         c.runFrameDistPx = (c.runFrameDistPx || 0) + movedPx;
         while (c.runFrameDistPx >= RUN_FRAME_STRIDE_PX) {
@@ -4519,17 +5333,19 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
-        if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
-          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
-          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
+        if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
+          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
+          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
         }
-        if (c.currentFrameUrl !== url || needsRetry) {
-          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
+        if (c.currentFrameUrl !== url || c._blinkAppliedShut !== blinkShut || needsRetry) {
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut);
           c.currentFrameUrl = url;
+          c._blinkAppliedShut = blinkShut;
           if (genotypeKind && applied) {
-            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
-            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(blinkFrameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${blinkFrameKey}" texture APPLIED`, 'wildlife');
           }
         }
       }
@@ -4576,6 +5392,25 @@
       const STAGE_BACKUP_S = 2;
       const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
       const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
+      // Default head-yaw turn budget for _updateCreatureHeadLookAtWorldPoint's
+      // ordinary chase-correction (a deliberately modest nudge, not an
+      // anatomy claim — see png-plane-avatar.js's DEFAULT_LIMITS, which caps
+      // an unauthored rig's own minDeg/maxDeg, and therefore updateHeadYaw's
+      // internal clamp, at exactly this same ±30° for any species with no
+      // custom-authored head rig).
+      const CREATURE_HEAD_YAW_LIMIT_DEG = 30;
+
+      // evasiveOrbit's own sidestep geometry (see below: an 0.8-weighted
+      // tangent blended with a 0.2-weighted radial component) needs roughly
+      // 76-104° of head correction to keep eye contact with the target from
+      // a body actually facing its movement — nowhere near
+      // CREATURE_HEAD_YAW_LIMIT_DEG's own tighter ordinary-chase tuning
+      // value, which would leave the fallback-to-facing-target case always
+      // winning and no sidestep ever visible at all. 80° is a firm ceiling
+      // per explicit design direction — the closing-in case (~76°) still
+      // gets a genuine sidestep, while the extreme backing-off case (~104°)
+      // still falls back to facing the target outright.
+      const EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG = 80;
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
@@ -4631,7 +5466,22 @@
 
         if (stageName === 'evasiveOrbit') {
           const orbitRadiusPx = def.attackRangePx * EVASIVE_ORBIT_RADIUS_MUL;
-          const radialSign = dist > orbitRadiusPx ? 1 : -1; // 1: close the gap, -1: back off
+          // The 20%-weighted radial pull below is exactly what keeps this
+          // orbit settled right at orbitRadiusPx, so a single shared
+          // threshold here flips sign almost every frame as dist hovers
+          // around that boundary — and since the body-facing decision
+          // further down depends on radialSign through blendAngle, every
+          // flip snapped the whole body between two very different
+          // orientations, reading as a violent see-saw. Sticky/hysteresis
+          // state (only flips once dist clearly crosses OUT of a dead zone
+          // around the boundary, not just past it) is the same anti-chatter
+          // shape LEASH_REENTER_FRAC already uses above for the identical
+          // "settled right on its own threshold" problem.
+          const EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC = 0.15;
+          if (st.radialSign === undefined) st.radialSign = dist > orbitRadiusPx ? 1 : -1;
+          if (st.radialSign > 0 && dist < orbitRadiusPx * (1 - EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = -1;
+          else if (st.radialSign < 0 && dist > orbitRadiusPx * (1 + EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = 1;
+          const radialSign = st.radialSign; // 1: close the gap, -1: back off
           const tangentAngle = towardAngle + st.orbitSign * Math.PI / 2;
           const blendAngle = Math.atan2(
             Math.sin(tangentAngle) * 0.8 + Math.sin(towardAngle) * radialSign * 0.2,
@@ -4640,19 +5490,113 @@
           const moveX = c.x + Math.cos(blendAngle) * TILE, moveY = c.y + Math.sin(blendAngle) * TILE;
           const moving = moveCreatureToward(c, moveX, moveY, def.chaseSpeed * 0.85, dt);
           if (st.t >= STAGE_MAX_DURATION_S.evasiveOrbit) beginCreatureBackup(st);
-          return { aimAngle: towardAngle, moving };
+          // Body normally turns to face the direction it's actually
+          // sidestepping in, same as any other moving creature — the head
+          // (see _updateCreatureHeadLookAtCombatTarget, which reads c.facing
+          // as its baseline) independently tracks the target on top of that
+          // within its own yaw budget. Movement itself (moveX/moveY above)
+          // never changes; only which way is a real neck twist away from
+          // the target decides whether the body ALSO gets to face that way.
+          // When it isn't, keep the body (and so the head, trivially) facing
+          // the target instead — reads as backpedaling/strafing backward
+          // rather than a body no head could actually keep up with.
+          const yawNeededDeg = Math.abs(angleDiff(towardAngle, blendAngle)) * 180 / Math.PI;
+          const bodyAngle = yawNeededDeg <= EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG ? blendAngle : towardAngle;
+          return { aimAngle: bodyAngle, moving };
         }
 
         return { aimAngle: towardAngle, moving: false };
       }
 
+      const CREATURE_RESOURCE_TICK_INTERVAL_S = 0.1; // Used to update non-player resources at 10 Hz while preserving accumulated elapsed time.
+      const FAR_CREATURE_RESOURCE_TICK_INTERVAL_S = 0.5; // Used by visually sleeping wildlife that cannot currently affect the player.
+      const WILDLIFE_VISUAL_LOD_HIDE_TILES = 28; // Used to remove calm, distant wildlife from scene rendering and visual-rig updates.
+      const WILDLIFE_VISUAL_LOD_SHOW_TILES = 24; // Used as the nearer wake boundary so wildlife does not flicker at one distance.
+      const FAR_WILDLIFE_AI_TICK_INTERVAL_S = 0.2; // Used to advance calm hidden wildlife at 5 Hz with accumulated time instead of every render frame.
+      const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
+      const currentHostilesFrame = []; // Reused rather than allocated for every updateHostiles frame.
+      const grazingPreyByPatchFrame = new Map(); // Reuses per-patch prey buckets while the player remains in one area.
+      const EMPTY_GRAZING_PREY = Object.freeze([]); // Avoids allocating an empty fallback list for predators without a matching herbivore patch.
+      let grazingPreyIndexArea = null; // Clears retained patch buckets when the active area changes.
+
+      function tickCreatureResources(c, dt, far = false) {
+        const interval = far ? FAR_CREATURE_RESOURCE_TICK_INTERVAL_S : CREATURE_RESOURCE_TICK_INTERVAL_S; // Selects the active or distant maintenance cadence.
+        const step = Math.max(0, Number(dt) || 0); // Accumulates real elapsed simulation time between resource-system calls.
+        if (!Number.isFinite(c._resourceTickRemainingS)) c._resourceTickRemainingS = rnd() * interval;
+        c._resourceTickRemainingS = Math.min(c._resourceTickRemainingS, interval) - step;
+        c._resourceTickElapsedS = (c._resourceTickElapsedS || 0) + step;
+        if (c._resourceTickRemainingS > 0) return;
+        const elapsed = Math.min(0.75, c._resourceTickElapsedS); // Bounds recovery catch-up after stalls or background-tab pauses.
+        c._resourceTickElapsedS = 0;
+        c._resourceTickRemainingS = interval;
+        const opts = c._resourceTickOptions || (c._resourceTickOptions = { staminaRegenPerSec: c.maxStamina * 0.25 }); // Reuses the mutable options object instead of allocating one per tick.
+        opts.staminaRegenPerSec = c.maxStamina * 0.25;
+        window.ResourceSystem?.tick(c, elapsed, opts);
+      }
+
+      function wildlifeVisualLodCanHide(c) {
+        if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
+        if (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
+        if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
+        return true;
+      }
+
+      function updateWildlifeVisualLod(c, distanceTiles) {
+        const eligible = wildlifeVisualLodCanHide(c); // Keeps combatants, companions, and active movement states fully simulated and rendered.
+        const shouldHide = eligible && (c._wildlifeVisualLodHidden // Applies the separate wake threshold as LOD hysteresis.
+          ? distanceTiles > WILDLIFE_VISUAL_LOD_SHOW_TILES
+          : distanceTiles >= WILDLIFE_VISUAL_LOD_HIDE_TILES);
+        if (shouldHide === !!c._wildlifeVisualLodHidden) return shouldHide;
+        c._wildlifeVisualLodHidden = shouldHide;
+        if (c.avatarRef?.group) c.avatarRef.group.visible = !shouldHide && !c._denHidden;
+        if (c.groundShadow) c.groundShadow.visible = !shouldHide;
+        if (c._ringHud) c._ringHud.visible = !shouldHide;
+        if (!shouldHide) c._wildlifeVisualLodJustWoke = true;
+        return shouldHide;
+      }
+
       function updateHostiles(dt) {
+        currentHostilesFrame.length = 0;
+        if (grazingPreyIndexArea !== currentArea) {
+          grazingPreyIndexArea = currentArea;
+          grazingPreyByPatchFrame.clear();
+        } else {
+          for (const patchPrey of grazingPreyByPatchFrame.values()) patchPrey.length = 0;
+        }
         for (const c of hostileObjects) {
-          if (c.health <= 0) continue;
-          if (c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          currentHostilesFrame.push(c);
+          if (c.def?.diet !== 'herbivore' || c.state !== 'at-station-grazing') continue;
+          const patchPrey = grazingPreyByPatchFrame.get(c.grazingPatchId) || []; // Narrows predator scans to grazing herbivores at their linked patch.
+          patchPrey.push(c);
+          grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
+        }
+        for (const c of currentHostilesFrame) {
+          // Tucked inside its den for the off-shift/overnight branch below
+          // (see the denKey settle branch) — frozen and invisible rather
+          // than idling in the open, so no AI/vocalization/stamina tick
+          // runs for it until its shift or the day resumes, at which point
+          // it steps back out from exactly the mouth tile it went in at.
+          if (c._denHidden) {
+            const stillOff = c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c));
+            if (stillOff) continue;
+            c._denHidden = false;
+            if (c.avatarRef?.group) c.avatarRef.group.visible = true;
+          }
+          const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
+          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
+          let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
+          if (initiallyLodSleeping) {
+            c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
+            if (c._farWildlifeAiAccumS < FAR_WILDLIFE_AI_TICK_INTERVAL_S) continue;
+            entityDt = Math.min(0.6, c._farWildlifeAiAccumS);
+            c._farWildlifeAiAccumS = 0;
+          } else {
+            c._farWildlifeAiAccumS = 0;
+          }
+          window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
 
           // Aggro/chase locks onto whichever player is nearest at the moment
           // it's acquired (see nearestPlayer) rather than the single global
@@ -4664,13 +5608,25 @@
           // flicker between equally-near players every frame.
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
+          // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
+          // parks a drenkirra on a branch to forage/sleep, outside the
+          // player-facing defend hop above — same "skip ordinary ground AI
+          // entirely this frame" escape hatch, gated on its own per-creature
+          // marker so it never touches the Nestmother's branch-defend flow.
+          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
+          tickCreatureResources(c, entityDt, visuallyLodSleeping);
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
           const onFleeCooldown = c._fleeCooldownUntil > performance.now();
+          const livestockLookCandidate = def.hostile === false
+            && !onFleeCooldown
+            && distToPlayer <= LIVESTOCK_LOOK_RANGE_PX;
 
           // distFromHome <= leashRangePx is required to re-aggro, not just
           // distToPlayer <= aggroRangePx, specifically to break a real
@@ -4718,13 +5674,18 @@
           const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
             && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
           if (predatorAvailable) {
-            for (const prey of hostileObjects) {
-              if (prey === c || prey.health <= 0 || prey.areaId !== c.areaId) continue;
-              if (prey.def?.diet !== 'herbivore' || prey.state !== 'at-station-grazing') continue;
-              if (prey.grazingPatchId !== c.linkedPatchId) continue;
-              if (Math.hypot(prey.x - c.x, prey.y - c.y) > PATROL_SIGHT_RANGE_PX) continue;
-              c.state = 'patrol-chase'; c.targetCreature = prey;
-              break;
+            if (!Number.isFinite(c._predatorSightT)) c._predatorSightT = rnd() * PREDATOR_SIGHT_INTERVAL_S;
+            c._predatorSightT -= entityDt;
+            if (c._predatorSightT <= 0) {
+              c._predatorSightT = PREDATOR_SIGHT_INTERVAL_S;
+              for (const prey of (grazingPreyByPatchFrame.get(c.linkedPatchId) || EMPTY_GRAZING_PREY)) {
+                if (prey === c || prey.health <= 0) continue;
+                const preyDx = prey.x - c.x, preyDy = prey.y - c.y; // Feeds allocation-free box and squared-radius sight checks.
+                if (Math.abs(preyDx) > PATROL_SIGHT_RANGE_PX || Math.abs(preyDy) > PATROL_SIGHT_RANGE_PX) continue;
+                if (preyDx * preyDx + preyDy * preyDy > PATROL_SIGHT_RANGE_PX * PATROL_SIGHT_RANGE_PX) continue;
+                c.state = 'patrol-chase'; c.targetCreature = prey;
+                break;
+              }
             }
           }
           // Leaving chase mid-windup (player broke the leash) abandons the
@@ -4734,30 +5695,28 @@
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
-            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+            if (c.isBandit) {
+              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              window.BanditCombat?.restNeckLook?.(c, entityDt);
+            }
           }
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.prone) {
-            // Zero-Footing knockdown (see enterProneIfFootingDepleted) — the
-            // same state the player goes into, just without a bespoke
-            // ragdoll-fall visual (no rig/blend data for arbitrary creature
-            // avatars — see that function's comment): holds completely still,
-            // immune to further Footing loss (resource-system.js's
-            // spendFooting), pre-empting every other branch below (attacks,
-            // telegraph, chase/return/patrol) until Footing regenerates back
-            // to full, at which point its own AI immediately springs it back
-            // up and away from whatever it was fighting — see
-            // beginCreatureSomersaultRecovery above.
-            if (c.footing >= c.maxFooting) beginCreatureSomersaultRecovery(c, targetPlayer);
+            // The dedicated throw channel survives the general prone-motion
+            // cleanup adapters and moves through the same swept terrain test
+            // as ordinary knockback. ImpactRagdollPlayback simultaneously
+            // drives the quarter-turned animal/bandit breakThrow pose.
+            advanceCreatureProneThrow(c, entityDt);
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
             // the player's own knockback/dodge/lunge and the pounce/guard-
             // charge leaps below) so a hard shove can't punch a creature
             // through a cliff face, water, or the map edge.
-            c.knockbackT = Math.max(0, c.knockbackT - dt);
-            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            c.knockbackT = Math.max(0, c.knockbackT - entityDt);
+            const nkx = c.x + c.knockbackVX * entityDt, nky = c.y + c.knockbackVY * entityDt;
             const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX) c.knockbackVX = 0;
@@ -4771,7 +5730,7 @@
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
+              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
               if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
             }
           } else if (c.state === 'patrol-chase') {
@@ -4790,7 +5749,7 @@
                 c.state = 'return'; c.targetCreature = null;
               } else {
                 aimAngle = Math.atan2(pdy, pdx);
-                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, dt);
+                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
                 const triggerRangePx = def.attackRangePx || TILE * 0.85;
                 if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
                   c.attackCooldownT = def.attackCooldownS || 1.0;
@@ -4806,30 +5765,41 @@
               // see updateBanditCombatAI, defined with the rest of the
               // Bandit Gangs section) instead of the plain bite-telegraph/
               // behaviorStage machinery below, which stays wildlife-only.
-              const result = window.BanditCombat.updateCombatAI(c, dt, targetPlayer, distToPlayer);
+              const result = window.BanditCombat.updateCombatAI(c, entityDt, targetPlayer, distToPlayer);
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else if (c.retreatT > 0) {
               // Jump back after landing a bite, keeping eyes on the player.
-              c.retreatT = Math.max(0, c.retreatT - dt);
+              c.retreatT = Math.max(0, c.retreatT - entityDt);
               const awayAng = Math.atan2(-dyp, -dxp);
-              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, entityDt);
             } else if (window.Combat?.telegraph?.isBusy(c)) {
               // Stand and wind up — the tell (game.js's tint) is the
               // player's cue to step out of attackRangePx before the strike
               // frame's range check below fires.
-              window.Combat.telegraph.update(c, dt);
+              window.Combat.telegraph.update(c, entityDt);
             } else if (window.Combat?.animalAttacks?.isBusy(c)) {
               // Modular named attack (e.g. Pounce) owns position, facing,
               // scale, and sprite frame for its full duration.
-              window.Combat.animalAttacks.update(c, dt);
+              window.Combat.animalAttacks.update(c, entityDt);
               aimAngle = c.facing;
             } else if (def.behaviorStages) {
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
-              const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
-                const triggerRangePx = creatureAimColliderReachPx(c);
+              const result = updateCreatureBehaviorStage(c, entityDt, targetPlayer, def, (dist) => {
+                // Drenkirra's 'pounce' behaviorStage entry actually resolves to
+                // the Caustic Pellet ranged attack (see combat-drenkirra-pellet.js's
+                // attacks.start override) — gating it by the same short melee
+                // lunge reach every other pounceAttempt creature uses meant it
+                // could only ever fire once it had walked up next to its target,
+                // which a target up a tree (or across a gap it can't climb/cross)
+                // is often never close enough for. Use the pellet's own real
+                // range instead so it engages like the ranged attack it is.
+                const isRangedDrenkirra = window.HobunjiDrenkirraPellet?.isDrenkirra?.(c);
+                const triggerRangePx = isRangedDrenkirra
+                  ? TILE * (window.HobunjiDrenkirraPellet.tuning.PROJECTILE_RANGE_TILES * 0.92)
+                  : creatureAimColliderReachPx(c);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
@@ -4840,7 +5810,7 @@
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else {
-              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
+              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, entityDt);
               // Pounce-capable creatures commit once the target enters their
               // forward aim collider (always pointed straight at the target
               // via aimAngle above) rather than the bite's short flat range.
@@ -4867,8 +5837,22 @@
                       // pass deliberately doesn't take on. Harmless today
                       // since targetPlayer === player whenever `players` has
                       // one entry.
-                      if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+                      const attackTag = def.attackTag || 'sharp'; // Used to tint the hostile's new 3D swipe and preserve its existing affliction type.
+                      const enemyAim = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing || 0, 0);
+                      const attackHalfConeRad = def.attackHalfConeRad || THREE.MathUtils.degToRad(38); // Shared by this hostile's trail and exact 3D hit test.
+                      const trailColor = attackTag === 'blunt' ? 0xffaa55 : attackTag === 'toxin' || attackTag === 'poison' ? 0x78ff62 : 0xff6a6a;
+                      window.Combat?.spawnMeleeTrail?.({
+                        actor: c, target: targetPlayer,
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        color: trailColor,
+                      });
+                      if (window.Combat?.meleeHit?.(c, targetPlayer, {
+                        rangePx: def.attackRangePx,
+                        halfConeRad: attackHalfConeRad,
+                        direction: enemyAim?.direction,
+                      })) {
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -4878,17 +5862,28 @@
               }
             }
           } else if (c.state === 'return') {
-            moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+            moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.denKey && window.Music?.isNightTime()) {
-            // Denned pack, off the clock — head back to the den and settle
-            // there instead of continuing to wander (see spawnPackAtDen for
-            // homeX/homeY = the den's own anchor point).
-            const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-            if (distFromDen > DEN_SETTLE_RADIUS_PX) {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
-              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
+            // Denned pack, off the clock — head for the den's own mouth
+            // tile (denEntranceX/Y, set at spawn from the den's
+            // mouthAnchor — see spawnPackAtDen) rather than just the
+            // footprint center (homeX/Y), and disappear once there instead
+            // of idling in the open, so it actually reads as "went inside"
+            // rather than "stopped walking near the den." isPackOffShift
+            // extends this beyond true night for cloud-forest gar-wolf packs,
+            // which only hunt during their two dawn/dusk shifts (see
+            // js/wildlife-cloud-forest-behavior.js) and rest the whole
+            // rest of the day, not just after dark.
+            const denX = c.denEntranceX ?? c.homeX, denY = c.denEntranceY ?? c.homeY;
+            const distFromDenMouth = Math.hypot(c.x - denX, c.y - denY);
+            if (distFromDenMouth > DEN_SETTLE_RADIUS_PX) {
+              moving = travelCreatureToward(c, denX, denY, def.moveSpeed, entityDt);
+              if (moving) aimAngle = Math.atan2(denY - c.y, denX - c.x);
             } else {
+              c.x = denX; c.y = denY;
+              c._denHidden = true;
+              if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
           } else if (def.diet === 'herbivore') {
@@ -4908,12 +5903,12 @@
               const distToWater = Math.hypot(c.x - wx, c.y - wy);
               if (distToWater > DEN_SETTLE_RADIUS_PX) {
                 c.state = 'traveling-to-drink';
-                moving = travelCreatureToward(c, wx, wy, def.moveSpeed, dt);
+                moving = travelCreatureToward(c, wx, wy, def.moveSpeed, entityDt);
                 if (moving) aimAngle = Math.atan2(wy - c.y, wx - c.x);
               } else {
                 c.state = 'drinking';
                 aimAngle = idleCreatureAimAngle(c.groupRot);
-                c._drinkT = (c._drinkT || 0) + dt;
+                c._drinkT = (c._drinkT || 0) + entityDt;
                 if (c._drinkT >= WILDLIFE_DRINK_DURATION_S) {
                   c._drinkT = 0;
                   c.nextDrinkHour = nowHours + WILDLIFE_DRINK_INTERVAL_HOURS;
@@ -4926,7 +5921,7 @@
                 const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
                 if (distToStation > DEN_SETTLE_RADIUS_PX) {
                   c.state = 'scheduled-travel-to-station';
-                  moving = travelCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                  moving = travelCreatureToward(c, stationX, stationY, def.moveSpeed, entityDt);
                   if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
                 } else {
                   c.state = 'at-station-grazing';
@@ -4934,7 +5929,7 @@
                 }
               } else {
                 const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-                moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+                moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
                 aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
               }
             }
@@ -4953,19 +5948,74 @@
               c.patrolIndex = ((c.patrolIndex || 0) + 1) % c.patrolPoints.length;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = travelCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
+              moving = travelCreatureToward(c, targetX, targetY, def.moveSpeed, entityDt);
               if (moving) aimAngle = Math.atan2(targetY - c.y, targetX - c.x);
             }
           } else {
             // Pack creatures roam a wider territory around their den by day
             // than the tight loiter radius everything else uses.
             const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+            moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
             // specific direction to look, so settle broadside to the camera.
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
+          // Passive livestock keep their useful movement state, but when the
+          // player comes within approach range they turn their head toward
+          // the character's face. If they are settled (grazing/drinking or
+          // paused between wander legs), their body also squares to that
+          // face target; combat, fleeing, and patrol movement retain priority.
+          // A territorially warning/fighting drenkirra (see
+          // wildlife-territorial.js) is genuinely engaged in combat despite
+          // its own def.hostile: false (that flag only governs ordinary
+          // aggro pickup) — route it through the same combat head-look
+          // system as any other fighting creature below instead of the
+          // livestock glance-at-the-player branch, which only ever nods
+          // (pitch) and has no yaw tracking at all.
+          const territorialActive = c._territorialBehavior?.phase === 'warning' || c._territorialBehavior?.phase === 'fight';
+          if (def.hostile === false && !territorialActive) {
+            const canLook = livestockLookCandidate
+              && !c.prone
+              && c.state !== 'return'
+              && c.state !== 'patrol-chase'
+              && !window.Combat?.telegraph?.isBusy(c)
+              && !window.Combat?.animalAttacks?.isBusy(c);
+            if (canLook) {
+              const faceAimAngle = _updateCreatureLookAtFace(c, targetPlayer, entityDt);
+              if (!moving) aimAngle = faceAimAngle;
+            } else {
+              _restoreCompanionHead(c, entityDt);
+            }
+          } else if (!c.isBandit) {
+            // A genuinely hostile animal creature: nod its head (the
+            // authored rig's Z/pitch "nod" axis, see
+            // _updateCreatureHeadLookAtCombatTarget) toward whatever it's
+            // currently engaged with — the player during a chase, or the
+            // grazing prey it's stalking during patrol-chase. Bandits are
+            // excluded here; their own head-look (a neck yaw, not this
+            // pitch rig) is driven separately by
+            // combat-bandit.js's _updateBanditLookAtTarget.
+            const combatTarget = c.state === 'patrol-chase' ? c.targetCreature
+              : c.state === 'chase' ? c.targetPlayer
+              : null;
+            // evasiveOrbit's own body-facing decision (see
+            // updateCreatureBehaviorStage) already checked whether this
+            // wider budget reaches the target from wherever the body ends
+            // up — reuse the same figure here so the visual head yaw isn't
+            // separately capped back down to the tighter ordinary-chase
+            // default underneath it.
+            const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, entityDt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
+            else _restoreCompanionHead(c, entityDt);
+          }
           c.facing = aimAngle;
+          // Grehlr foraging (js/wildlife-grehlr-foraging.js) — deliberately
+          // placed after the livestock-look/combat-head-nod block above so
+          // its eating-dip/fishing-lookdown head pitch wins this frame's
+          // interpolation target instead of being immediately smoothed back
+          // to rest by that block's own unconditional _restoreCompanionHead.
+          window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
+          if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
@@ -4981,7 +6031,9 @@
             c._prevAiState = c.state;
           }
 
-          updateCreatureMesh(c, dt, aimAngle);
+          const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
+          if (skipDistantVisualUpdate) continue;
+          updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
           // swing, updateBanditToolMesh leans the avatar body's own rotation
           // into the same bodyYaw the weapon uses (see its own comment),
@@ -4991,11 +6043,11 @@
           // same frame, since it always hard-sets grp.rotation.y from
           // c.groupRot. Also lets feetY read this frame's fresh avatar Y
           // position instead of last frame's.
-          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
+          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, entityDt); }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, entityDt, moving);
         }
       }
 
@@ -5045,18 +6097,19 @@
         if (!anchor) return null;
         // 'posterior' is special: docs/tools/animation-author/index.html's own
         // export always writes position.y = 0 for it and stores the real
-        // per-species height as posteriorRule.heightPercentOffset instead (the
+        // per-species height as posteriorRule.heightPercentFromFloor instead (the
         // tool's own live preview recomputes from that rule — see
         // resolvedCharacterPosteriorSnapshot in that file) — reading
         // position.y directly here was always wrong (flat 0 for every
         // species), which is why mounting used to seat the player too high.
-        // Recompute the same way: handAttachY + portraitModelHeight *
-        // heightPercentOffset / 100, both terms already in this same
-        // floor-anchored space (see playerToolBaseY's own usage elsewhere).
+        // Resolve the shared floor-relative height percentage. Legacy imports
+        // still fall back to their old handAttachY + height-offset rule.
         if (anchorName === 'posterior' && rec.posteriorRule) {
-          const offset = Number(rec.posteriorRule.heightPercentOffset);
           const modelHeight = Number(playerAvatarModelHeight) || 0.9;
-          const y = (Number(playerToolBaseY) || modelHeight / 2) + modelHeight * (Number.isFinite(offset) ? offset : -18) / 100;
+          const legacyOffset = Number(rec.posteriorRule.heightPercentOffset);
+          const y = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rec.posteriorRule, modelHeight, playerToolBaseY)
+            ?? ((Number.isFinite(Number(playerToolBaseY)) ? Number(playerToolBaseY) : modelHeight / 2)
+              + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
           return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
@@ -5078,24 +6131,37 @@
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName, genotypeOrSizeClass = null) { return creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass)?.y ?? null; }
-      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
-      // shared by updateCompanions' shoulderPet branch (which also needs
-      // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
-      // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
-      // RENDERED position after updatePlayerMesh — see that function's own
-      // comment for why it exists). A pure function of the player's current
-      // rig anchor + facing, not of playerMesh.position itself, so it's
-      // cheap (rig anchors are cached — see playerAttachmentAnchor/
-      // creatureAttachmentAnchor) and safe to call twice a frame rather than
-      // needing dx/dz stashed as extra state on the creature.
-      function _shoulderPetOffsetXZ(perch, grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = playerMesh.rotation.y;
-        return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
+      // Resolves the authored shoulder attachment as a real transform instead
+      // of the old yaw-only shortcut. The perch POSITION remains in the
+      // player's body-local frame (it is a shoulder coordinate), while its
+      // authored ROTATION is interpreted relative to the live face/neck bone.
+      // This lets a perched animal turn and nod with the face without making
+      // the shoulder coordinate itself orbit around the neck pivot.
+      function _shoulderPetFaceRelativeTransform(perch, grip) {
+        const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
+          const degrees = rotationDeg || {};
+          return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            THREE.MathUtils.degToRad(Number(degrees.x) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.y) || 0),
+            THREE.MathUtils.degToRad(Number(degrees.z) || 0),
+            'YXZ',
+          ));
+        };
+        const faceRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Supplies the live face frame, with a body-frame fallback for rigs that have no neck bone.
+        playerMesh.updateWorldMatrix?.(true, false);
+        faceRotationSource.updateWorldMatrix?.(true, false);
+        const faceWorldQuaternion = faceRotationSource.getWorldQuaternion(new THREE.Quaternion()); // Carries the current face yaw/pitch into the authored perch rotation.
+        const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotation, now local to the live face.
+        const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Cancels the creature's authored shoulderGrip frame during anchor alignment.
+        const worldQuaternion = faceWorldQuaternion.clone().multiply(perchQuaternion).multiply(inverseGripQuaternion); // Final pet root orientation: face × perch × inverse grip.
+        const perchWorldPosition = playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Keeps the perch point fixed to the body-local shoulder coordinate.
+        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Moves the pet origin so its rotated grip still lands exactly on the fixed perch point.
+        return {
+          worldPosition: perchWorldPosition.sub(gripWorldOffset),
+          worldQuaternion,
+          faceWorldQuaternion,
+          faceRotationSource: faceRotationSource === playerNeckJoint ? 'player-neck-bone' : 'player-body-fallback',
+        };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
@@ -5107,6 +6173,563 @@
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
+      const TREASURE_ANNOUNCE_S = 3.2; // Holds the companion player-facing for the full overhead treasure utterance and alert bark.
+      const TREASURE_MARK_ARRIVAL_PX = TILE * 0.55; // Switches the lead into its stationary marking pose near the buried tile center.
+      const TREASURE_MARK_HEAD_DEG = 10; // Drives authored animal head rigs downward while indicating the dig spot (this rig's own convention is negative degrees = up, positive = down — see png-plane-avatar.js's applyDegrees).
+      const LIVESTOCK_LOOK_RANGE_PX = TILE * 3.75; // Passive livestock notice the player at a short, readable approach distance.
+      const PLAYER_FACE_HEIGHT_RATIO = 0.76; // Face target measured from the player's floor to the authored portrait height.
+      const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
+      const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
+      const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
+      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
+      const SHOULDER_PET_CURIOUS_LOOK_MIN_S = 0.65; // Brief hold after easing into the glance.
+      const SHOULDER_PET_CURIOUS_LOOK_MAX_S = 1.35;
+      const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3.4; // A cooldown keeps the glance spontaneous rather than constant.
+      const SHOULDER_PET_CURIOUS_WAIT_MAX_S = 7.2;
+      const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
+      const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
+      const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
+      const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
+
+      function _companionHeadRestDeg(c) {
+        return c.avatarRef?.headRig?.rig?.restDeg ?? 0;
+      }
+
+      function _fallbackCompanionHeadState(c) {
+        const front = c.avatarRef?.frontPlane;
+        const back = c.avatarRef?.backPlane;
+        if (!front && !back) return null;
+        return c._fallbackHeadPose || (c._fallbackHeadPose = {
+          baseFrontX: front?.rotation?.x || 0,
+          baseBackX: back?.rotation?.x || 0,
+          currentDeg: 0,
+        });
+      }
+
+      function _updateCompanionHeadRotation(c, targetDeg, dt) {
+        if (typeof c.avatarRef?.updateHeadRotation === 'function') {
+          c.avatarRef.updateHeadRotation(targetDeg, dt);
+          return;
+        }
+        // Older saves/preview builds can still have the legacy rigid animal
+        // planes. Keep their fallback pose visible rather than silently making
+        // every head request a no-op until the painted rig is loaded.
+        const state = _fallbackCompanionHeadState(c);
+        if (!state) return;
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentDeg += clamp(targetDeg - state.currentDeg, -step, step);
+        const radians = state.currentDeg * Math.PI / 180;
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.x = state.baseFrontX + radians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.x = state.baseBackX + radians;
+      }
+
+      function _restoreCompanionHead(c, dt) {
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        // Every "stop looking at X" caller below needs the yaw axis eased
+        // back to center too, not just the pitch/nod — without this, a head
+        // that had turned to track a combat target or an idle scan focus
+        // stayed frozen at that last yaw forever the instant its caller
+        // switched to this shared rest path instead, since nothing else
+        // here ever drove it back down.
+        if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+        if (c) c._lookAtDebug = null;
+      }
+
+      // Look targets use the character's face, not the feet/body center. The
+      // horizontal X/Z projection remains the character position in this
+      // top-down world; worldY supplies the portrait face height to the
+      // authored animal head bone so a nearby animal actually lifts its gaze.
+      function _playerFaceTarget(master = player) {
+        const isPlayer = master === player;
+        const pos = isPlayer
+          ? window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight })
+          : window.CreatureHeadCache.getHeadWorld(master, 'companion-portrait');
+        return { x: pos.x, y: pos.z, worldY: pos.worldY };
+      }
+
+      function _creatureHeadWorldY(c) {
+        return window.CreatureHeadCache.getHeadWorld(c, 'animal')?.worldY || 0;
+      }
+
+      // Feeds docs/js/debug-hitboxes.js's "Show Interaction Raycast" debug
+      // toggle — every head-look system below records the exact head/target
+      // world points it just aimed at here, in Three.js world (tile) units,
+      // rather than the debug drawer trying to reverse-engineer a direction
+      // out of a rotated (and, for animals, mirrored front/back) bone
+      // transform. Cleared wherever the corresponding look resets to rest.
+      function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        looker._lookAtDebug = {
+          head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
+          target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
+        };
+      }
+
+      function _updateCreatureLookAtFace(c, master, dt) {
+        const target = _playerFaceTarget(master);
+        const dx = target.x - c.x, dy = target.y - c.y;
+        const horizontalPx = Math.hypot(dx, dy);
+        const aimAngle = horizontalPx > 1 ? Math.atan2(dy, dx) : (c.facing || 0);
+        const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
+        // Negated — this rig's own convention is negative degrees = up,
+        // positive = down (confirmed via the vocalization head-nod, see
+        // png-plane-avatar.js's applyDegrees), the opposite of what a
+        // plain atan2 of the vertical delta gives.
+        const pitchDeg = -Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, target.x, target.y, target.worldY);
+        return aimAngle;
+      }
+
+      // Where a living thing's "head" is, in the raw-px + worldY convention
+      // _updateCreatureHeadLookAtCombatTarget/companion horizon-scan both
+      // use (see below). The player has a real authored face height
+      // (_playerFaceTarget); an NPC walker has the same eye-position math
+      // dialogue's eye contact uses (_dialogueEyeWorldPosition), just
+      // converted out of its native tile-scale units into this function's
+      // raw-px convention; any other creature (patrol-chase predator/prey,
+      // a horizon-scan lock) doesn't carry anything that precise, so its
+      // head is approximated as its own head-rig pivot's height, nudged 5%
+      // of its own sprite width toward its face/snout (the authored sprites
+      // all face the same "front" edge of their own local frame) rather
+      // than sitting dead-center on the pivot.
+      const COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC = 0.05;
+      function _combatTargetHeadWorld(target) {
+        if (target === player) {
+          const t = _playerFaceTarget(target);
+          return { x: t.x, y: t.y, worldY: t.worldY };
+        }
+        if (target?.root?.position && Number.isFinite(Number(target?.avatarHeight))) {
+          const eye = _dialogueEyeWorldPosition(target.root.position, target.avatarHeight);
+          return { x: eye.x * TILE, y: eye.z * TILE, worldY: eye.y };
+        }
+        const modelWidth = Number(target?.def?.modelWidth) || Number(target?.visualModelWidth) || Number(target?.modelHeight) || 1.5;
+        return {
+          x: (Number(target?.x) || 0) - COMBAT_TARGET_HEAD_SNOUT_OFFSET_FRAC * modelWidth * TILE,
+          y: Number(target?.y) || 0,
+          worldY: _creatureHeadWorldY(target),
+        };
+      }
+
+      // Head-nod (Z/pitch axis on the authored animal head rig) toward
+      // whichever target this creature is currently engaged with in combat
+      // — see updateHostiles' hostile branch below. Mirrors
+      // _updateCreatureLookAtFace's math exactly, just generalized to any
+      // combat target (player or another creature) via
+      // _combatTargetHeadWorld instead of always assuming the player.
+      function _updateCreatureHeadLookAtCombatTarget(c, target, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
+        if (!target) {
+          _restoreCompanionHead(c, dt); // Also eases yaw back to center — see its own comment.
+          return;
+        }
+        // Yaw here corrects for the gap between the target's exact bearing
+        // and wherever this creature's body is currently facing (c.facing,
+        // one frame stale here — same convention/timing bandit's own
+        // _updateBanditLookAtTarget already relies on) -- the body's own
+        // camera-relative plane deadzone (CREATURE_PLANE_ROT_MODE) only
+        // ever snaps to a handful of discrete facings, so without this the
+        // head can visibly undershoot exactly where the target's face is
+        // even once the body looks "close enough," reading as not locked
+        // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
+        // yawLimitDeg defaults to the ordinary-chase budget — evasiveOrbit's
+        // caller below passes EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG instead,
+        // since a sidestep only ever gets a body facing its movement
+        // direction (rather than the target) when that wider turn is
+        // enough to still reach the target.
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt, yawLimitDeg);
+      }
+
+      // The shared "aim my head at this exact world point" core both
+      // _updateCreatureHeadLookAtWorldPoint's callers rely on: an actual
+      // living combat target (via _combatTargetHeadWorld) or, for the
+      // horizon-scan idle fixation below, a plain fixed {x,y,worldY} point
+      // with no entity behind it at all. Pulled out of
+      // _updateCreatureHeadLookAtCombatTarget so both share the exact same
+      // pitch+yaw+debug-ray math instead of a hand copy.
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
+        const dx = head.x - c.x, dy = head.y - c.y;
+        const horizontalPx = Math.hypot(dx, dy);
+        const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
+        // Negated — see _updateCreatureLookAtFace's identical fix above.
+        const pitchDeg = -Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        _updateCompanionHeadRotation(c, pitchDeg, dt);
+        _setLookAtDebug(c, head.x, head.y, head.worldY);
+        if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
+          const rawBearing = Math.atan2(dy, dx);
+          const residualRad = angleDiff(rawBearing, c.facing || 0);
+          // Negated — the head bone's local yaw is composed underneath the
+          // group's own rotation.y, which is itself -aimAngle (see
+          // rawTargetRotY above updateCreatureMesh's plane rotation). A
+          // residual computed in this function's plain world-angle
+          // convention (atan2(dy,dx), same as c.facing/aimAngle) turns the
+          // WRONG way once applied as-is to that already-negated local
+          // frame — reported in real gameplay as a gar-wolf's head visibly
+          // turning away from the player instead of toward it.
+          const yawDeg = -Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
+          c.avatarRef.updateHeadYaw(yawDeg, dt);
+        }
+      }
+
+      function _tickShoulderPetCuriosity(c, dt) {
+        const state = c.shoulderCuriosity || (c.shoulderCuriosity = {
+          phase: 'wait',
+          timer: 1.4 + rnd() * 2.2, // First glance arrives soon enough to be noticed after equipping a pet.
+          currentLeanDeg: 0,
+          targetLeanDeg: 0,
+          currentPitchDeg: 0,
+          targetPitchDeg: 0,
+          currentYawDeg: 0,
+          targetYawDeg: 0,
+          baseFrontRoll: null,
+          baseBackRoll: null,
+        });
+        state.timer -= dt;
+        if (state.timer <= 0) {
+          if (state.phase === 'wait') {
+            const side = rnd() < 0.5 ? -1 : 1;
+            state.phase = 'look';
+            state.timer = SHOULDER_PET_CURIOUS_LOOK_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_LOOK_MAX_S - SHOULDER_PET_CURIOUS_LOOK_MIN_S);
+            state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
+            // The actual "turns its head to look" motion is yaw (the same
+            // axis a real head-shake/head-turn rotates on), driven through
+            // the authored head rig's Y-axis bone (see
+            // png-plane-avatar.js's updateHeadYaw) — kept separate from the
+            // small up/down pitch jitter below, which stays on the rig's
+            // existing Z/nod axis.
+            state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+              + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG));
+            state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
+          } else if (state.phase === 'look') {
+            state.phase = 'settle';
+            state.timer = 0.55;
+            state.targetLeanDeg = 0;
+            state.targetPitchDeg = 0;
+            state.targetYawDeg = 0;
+          } else {
+            state.phase = 'wait';
+            state.timer = SHOULDER_PET_CURIOUS_WAIT_MIN_S
+              + rnd() * (SHOULDER_PET_CURIOUS_WAIT_MAX_S - SHOULDER_PET_CURIOUS_WAIT_MIN_S);
+          }
+        }
+        const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
+        state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        return state;
+      }
+
+      function _applyShoulderPetCuriosity(c, dt) {
+        const state = _tickShoulderPetCuriosity(c, dt);
+        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
+        if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
+        if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
+        // updateCreatureMesh owns the attachment root and will be followed by
+        // updateShoulderPetMeshPin. A local Y turn on the whole plane
+        // foreshortens these flat side-view planes and used to look exactly
+        // like the small pet was randomly becoming medium-sized. Roll the
+        // mirrored planes within their own image instead; the authored head
+        // rig's own Y-axis bone (below) supplies the real independent
+        // curious head-turn without disturbing genotype scale or plane width.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
+        _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
+        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
+      }
+
+      function _isPlayerGenuinelyIdle() {
+        const keyboard = getKeyboardVector();
+        const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
+        if (rawMoveInput || playerAutoWalk) return false;
+        if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
+        if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
+        if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld || fishThrowActive) return false;
+        if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
+        if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) return false;
+        return !isPlayerInCombat();
+      }
+
+      function _clearCompanionWatchIdle(c, reason) {
+        if (!c.watchPlayerIdle) return;
+        window.__farmLog?.(`[companion-idle] ${c.creatureKey} (${c.id}): watch-player -> cleared (${reason})`, 'wildlife');
+        c.watchPlayerIdle = null;
+      }
+
+      function _startCompanionWatchIdle(c) {
+        c.watchPlayerIdle = { // Holds the one spontaneous stare timer so random sampling cannot restart it every frame.
+          timer: COMPANION_WATCH_IDLE_MIN_S + rnd() * (COMPANION_WATCH_IDLE_MAX_S - COMPANION_WATCH_IDLE_MIN_S),
+        };
+        c.wanderTarget = null;
+        c.vx = 0; c.vy = 0;
+        window.__farmLog?.(`[companion-idle] ${c.creatureKey} (${c.id}): watch-player started`, 'wildlife');
+      }
+
+      function _tickCompanionWatchIdle(c, master, dt) {
+        const watch = c.watchPlayerIdle;
+        if (!watch) return null;
+        watch.timer -= dt;
+        if (watch.timer <= 0) {
+          _clearCompanionWatchIdle(c, 'timer elapsed');
+          return null;
+        }
+        c.vx = 0; c.vy = 0;
+        return { aimAngle: _updateCreatureLookAtFace(c, master, dt) };
+      }
+
+      // ── Companion horizon scan ────────────────────────────────────────
+      // A ground companion (not a shoulder pet — those keep their own
+      // curiosity system, see _tickShoulderPetCuriosity) spends its idle
+      // head time alternating between a slow "scanning" sweep and briefly
+      // locking eyes on a nearby living thing (a wild creature, bandit, or
+      // friendly NPC) that's actually approaching the player, rather than
+      // sitting dead-still whenever it isn't in combat.
+      const COMPANION_SCAN_RANGE_PX = TILE * 7;
+      const COMPANION_SCAN_CHECK_MIN_S = 1.6; // How long a "nothing found" scan waits before checking again.
+      const COMPANION_SCAN_CHECK_MAX_S = 3.2;
+      const COMPANION_SCAN_LOCK_MIN_S = 1.2; // How long a found lock holds before releasing back to scanning.
+      const COMPANION_SCAN_LOCK_MAX_S = 2.4;
+      // Idle "nothing locked" fixation: rather than a metronomic sweep, the
+      // companion picks a random point out in the world, holds its gaze
+      // fixed there (tracking it as its own body moves) for a random few
+      // seconds, then either picks a new point or relaxes back to rest —
+      // reads as noticing things rather than scanning on a fixed cycle.
+      const COMPANION_SCAN_FOCUS_MIN_S = 1.4;
+      const COMPANION_SCAN_FOCUS_MAX_S = 4.5;
+      const COMPANION_SCAN_FOCUS_REST_CHANCE = 0.3; // Some fixations are just relaxing to a forward rest pose, so the idle scan doesn't read as perpetually alert.
+      const COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG = 100; // How far off its own body-forward a scan point can land — never straight behind.
+      const COMPANION_SCAN_FOCUS_MIN_DIST_PX = TILE * 2.5;
+      const COMPANION_SCAN_FOCUS_MAX_DIST_PX = TILE * 6;
+      const COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE = 0.35; // Incidental up/down variety (world-scene units) so the gaze doesn't sit dead-level every time.
+      const COMPANION_SCAN_APPROACH_DROP_PX = TILE * 0.12; // Minimum distance-to-player closed per check interval to count as "coming towards."
+      const COMPANION_SCAN_APPROACH_CHECK_MS = 400;
+
+      // Shared (not per-companion) so every companion checking the same
+      // candidate reuses one tracked distance history instead of each
+      // maintaining its own — "is this thing approaching the player" is a
+      // property of the candidate, not of whichever companion is looking.
+      const _companionScanApproachCache = new WeakMap(); // candidate -> { lastDist, lastCheckedAt, approaching }
+      function _isApproachingPlayer(candidate, master, cx, cy) {
+        const now = performance.now();
+        const dist = Math.hypot(master.x - cx, master.y - cy);
+        const cached = _companionScanApproachCache.get(candidate);
+        if (!cached || now - cached.lastCheckedAt >= COMPANION_SCAN_APPROACH_CHECK_MS) {
+          const approaching = cached ? (cached.lastDist - dist) > COMPANION_SCAN_APPROACH_DROP_PX : false;
+          _companionScanApproachCache.set(candidate, { lastDist: dist, lastCheckedAt: now, approaching });
+          return approaching;
+        }
+        return cached.approaching;
+      }
+
+      // Nearest living thing within range that's actually closing distance
+      // on the player right now — wild/hostile creatures and friendly NPCs
+      // alike (not other companions/shoulder pets; staring at each other
+      // isn't the point of this).
+      function _findApproachingLivingThing(master) {
+        let best = null, bestDist = COMPANION_SCAN_RANGE_PX;
+        for (const h of hostileObjects) {
+          if (h.health <= 0 || h.areaId !== currentArea) continue;
+          const dist = Math.hypot(h.x - master.x, h.y - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(h, master, h.x, h.y)) continue;
+          best = h; bestDist = dist;
+        }
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea || !w.root) continue;
+          const wx = w.root.position.x * TILE, wz = w.root.position.z * TILE; // walker positions are tile-scale; match hostileObjects' raw-px convention.
+          const dist = Math.hypot(wx - master.x, wz - master.y);
+          if (dist >= bestDist) continue;
+          if (!_isApproachingPlayer(w, master, wx, wz)) continue;
+          best = w; bestDist = dist;
+        }
+        return best;
+      }
+
+      // A fresh idle fixation point/duration: usually a random point out in
+      // the world (picked relative to the companion's own position and
+      // facing at the moment of picking, then held fixed in world space —
+      // see _tickCompanionHorizonScan, which re-aims at this same {x,y,worldY}
+      // every frame as the companion walks), occasionally just "relax to
+      // rest" so the idle scan doesn't read as perpetually alert.
+      function _pickCompanionScanFocus(c) {
+        if (rnd() < COMPANION_SCAN_FOCUS_REST_CHANCE) return null;
+        const spreadRad = COMPANION_SCAN_FOCUS_ANGLE_SPREAD_DEG * Math.PI / 180;
+        const angle = (c.facing || 0) + (rnd() * 2 - 1) * spreadRad;
+        const dist = COMPANION_SCAN_FOCUS_MIN_DIST_PX + rnd() * (COMPANION_SCAN_FOCUS_MAX_DIST_PX - COMPANION_SCAN_FOCUS_MIN_DIST_PX);
+        return {
+          x: c.x + Math.cos(angle) * dist,
+          y: c.y + Math.sin(angle) * dist,
+          worldY: _creatureHeadWorldY(c) + (rnd() * 2 - 1) * COMPANION_SCAN_FOCUS_HEIGHT_VARIANCE,
+        };
+      }
+
+      function _applyCompanionScanFixation(c, state, dt) {
+        state.focusTimer -= dt;
+        if (state.focusTimer <= 0) {
+          state.focusPoint = _pickCompanionScanFocus(c);
+          state.focusTimer = COMPANION_SCAN_FOCUS_MIN_S + rnd() * (COMPANION_SCAN_FOCUS_MAX_S - COMPANION_SCAN_FOCUS_MIN_S);
+        }
+        if (state.focusPoint) _updateCreatureHeadLookAtWorldPoint(c, state.focusPoint, dt);
+        else _restoreCompanionHead(c, dt);
+      }
+
+      // "Stare back if you focus on their head" — is the player's own
+      // camera/cursor aim ray (the same ray the "Show Interaction Raycast"
+      // debug toggle already visualizes) currently passing close to this
+      // creature's actual head point? Reused by both ground companions
+      // (below) and farm livestock (see farm-animals.js's
+      // deps.isPlayerFocusedOnHead, backed by this same math).
+      const PLAYER_HEAD_FOCUS_RADIUS_WORLD = 0.7; // Generous on purpose — this is "is the player roughly looking this creature's way," not a pixel-precise headshot hitbox.
+      // Frame-cached (keyed off lastTime, set once per gameLoop tick) since
+      // this is now asked for by every ground companion (twice a frame —
+      // once for the horizon-scan lock, once for the movement freeze below)
+      // and every farm animal (once each, every frame, regardless of
+      // whether anything is actually in range) — without this, a farm with
+      // a couple dozen animals redid this same raycaster setFromCamera call
+      // that many times a frame for an identical answer.
+      let _cachedPlayerLookRay = null;
+      let _cachedPlayerLookRayAt = -1;
+      function _currentPlayerLookRay() {
+        if (_cachedPlayerLookRayAt === lastTime) return _cachedPlayerLookRay;
+        _cachedPlayerLookRay = currentPlayerInteractionRay() || currentPlayerAimRay();
+        _cachedPlayerLookRayAt = lastTime;
+        return _cachedPlayerLookRay;
+      }
+      function _isPlayerFocusedOnHead(c) {
+        const head = window.CreatureHeadCache?.getHeadWorld(c, 'animal');
+        if (!head) return false;
+        const ray = _currentPlayerLookRay();
+        if (!ray) return false;
+        return window.CreatureHeadCache.isRayNearPoint(ray, { x: head.x / TILE, y: head.worldY, z: head.z / TILE }, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+      }
+
+      function _tickCompanionHorizonScan(c, master, dt) {
+        // Eye contact on demand takes priority over ambient scanning/
+        // locking — a companion that's deliberately being looked at should
+        // always look back immediately, not wait for its own scan timer.
+        if (_isPlayerFocusedOnHead(c)) {
+          _updateCreatureHeadLookAtCombatTarget(c, player, dt);
+          return;
+        }
+        const state = c.horizonScan || (c.horizonScan = {
+          phase: 'scan',
+          timer: 1 + rnd() * 1.5, // First scan check arrives soon enough to be noticed, not instantly.
+          lockedTarget: null,
+          focusPoint: null,
+          focusTimer: 0, // Expired immediately, so the first fixation point is picked on the very first idle tick rather than waiting out a full cycle.
+        });
+        state.timer -= dt;
+        if (state.phase === 'scan' && state.timer <= 0) {
+          const found = _findApproachingLivingThing(master);
+          if (found) {
+            state.phase = 'lock';
+            state.lockedTarget = found;
+            state.timer = COMPANION_SCAN_LOCK_MIN_S + rnd() * (COMPANION_SCAN_LOCK_MAX_S - COMPANION_SCAN_LOCK_MIN_S);
+          } else {
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        } else if (state.phase === 'lock') {
+          const target = state.lockedTarget;
+          const targetAlive = target && (target.health === undefined || target.health > 0);
+          const targetArea = target?.areaId || target?.area;
+          if (!targetAlive || targetArea !== currentArea || state.timer <= 0) {
+            state.phase = 'scan';
+            state.lockedTarget = null;
+            state.timer = COMPANION_SCAN_CHECK_MIN_S + rnd() * (COMPANION_SCAN_CHECK_MAX_S - COMPANION_SCAN_CHECK_MIN_S);
+          }
+        }
+        if (state.phase === 'lock' && state.lockedTarget) {
+          // Reuses the exact pitch+yaw+debug-ray logic combat head-lock
+          // already uses (see updateHostiles) — a horizon-scan lock is the
+          // same "aim my head at this living thing's head" behavior, just
+          // triggered by ambient noticing instead of being someone's
+          // combat target.
+          _updateCreatureHeadLookAtCombatTarget(c, state.lockedTarget, dt);
+        } else {
+          _applyCompanionScanFixation(c, state, dt);
+        }
+      }
+
+      function _clearCompanionTreasureCue(c, dt, reason) {
+        if (!c.treasureCue) return;
+        window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): ${c.treasureCue.phase} -> cleared (${reason})`, 'wildlife');
+        c.treasureCue = null;
+        c._travelPath = null;
+        c._travelPathTarget = null;
+        _restoreCompanionHead(c, dt);
+      }
+
+      function _treasureCueTargetStillBuried(cue) {
+        if (!cue || cue.mapId !== currentArea || !_isZoneArea(currentArea)) return false;
+        const nearest = window.WildTreasure?.nearestBuriedPixelPos(currentArea, cue.targetX, cue.targetY);
+        return !!nearest && nearest.dist < 1;
+      }
+
+      function _startCompanionTreasureCue(c, treasureHint) {
+        c.treasureCue = { // Tracks one notification so announcement, travel, and marking cannot retrigger independently each frame.
+          phase: 'announce',
+          mapId: currentArea,
+          targetX: treasureHint.x,
+          targetY: treasureHint.y,
+          timer: TREASURE_ANNOUNCE_S,
+          markFacingAngle: Math.atan2(treasureHint.y - c.y, treasureHint.x - c.x), // Seed the exact tile bearing even if the companion is already standing on the site.
+        };
+        c.wanderTarget = null;
+        c._travelPath = null;
+        c._travelPathTarget = null;
+        window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): detected buried treasure; announce -> lead -> mark`, 'wildlife');
+        window.AmbientDialogue?.companionTreasure(c);
+        if (!window.AnimalVocalizations?.companionDiscovery?.(c, 'treasure')) {
+          window.AudioSystem?.playCreatureTreasureAlert?.(c); // Legacy species without a recorded voice pool.
+        }
+        // Keep the cue readable even when audio is muted/blocked or the
+        // companion's species bark is unfamiliar. This toast is deliberately
+        // emitted alongside (rather than instead of) the existing utterance.
+        showToast(`${c.def.label} found buried treasure!`, true, true);
+      }
+
+      function _tickCompanionTreasureCue(c, master, dt) {
+        const cue = c.treasureCue;
+        let moving = false;
+        let runInPlace = false;
+        let aimAngle = c.facing || 0;
+
+        if (cue.phase === 'announce') {
+          cue.timer -= dt;
+          c.vx = 0; c.vy = 0;
+          aimAngle = _updateCreatureLookAtFace(c, master, dt);
+          if (cue.timer <= 0) {
+            cue.phase = 'lead';
+            window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): announce -> lead`, 'wildlife');
+          }
+        } else if (cue.phase === 'lead') {
+          const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
+          const distToTreasure = Math.hypot(treasureDx, treasureDy);
+          if (distToTreasure > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx); // Preserves the last real bearing if pathing lands exactly on the tile center.
+          aimAngle = cue.markFacingAngle ?? aimAngle;
+          _restoreCompanionHead(c, dt);
+          if (distToTreasure > TREASURE_MARK_ARRIVAL_PX) {
+            moving = travelCreatureToward(c, cue.targetX, cue.targetY, c.def.chaseSpeed, dt);
+          } else {
+            cue.phase = 'mark';
+            c.vx = 0; c.vy = 0;
+            c._travelPath = null;
+            c._travelPathTarget = null;
+            window.__farmLog?.(`[companion-treasure] ${c.creatureKey} (${c.id}): lead -> mark`, 'wildlife');
+          }
+        }
+
+        if (cue.phase === 'mark') {
+          c.vx = 0; c.vy = 0;
+          const treasureDx = cue.targetX - c.x, treasureDy = cue.targetY - c.y;
+          if (Math.hypot(treasureDx, treasureDy) > 0.05) cue.markFacingAngle = Math.atan2(treasureDy, treasureDx);
+          aimAngle = cue.markFacingAngle ?? aimAngle;
+          _updateCompanionHeadRotation(c, TREASURE_MARK_HEAD_DEG, dt);
+          runInPlace = true;
+        }
+        return { moving, runInPlace, aimAngle };
+      }
 
       // Depth-write priority between the player's own avatar and a freely-
       // roaming companion (NOT a shoulder pet — see updatePetLayering
@@ -5155,7 +6778,12 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
+          // A neck-rigged portrait is one SkinnedMesh with separate front/back
+          // materials in an array; rigid fallback portraits still expose one
+          // material per mesh. Flatten both shapes for the depth arbiter.
+          const childMaterials = Array.isArray(child.material) ? child.material : [child.material]; // Used by updateAvatarDepthPriority below.
+          mats.push(...childMaterials.filter(Boolean));
         });
         _playerAvatarBodyMaterialsCache = mats;
         return mats;
@@ -5206,63 +6834,46 @@
 
       // Shoulder-pet-vs-player layering: fixed, NOT distance-based. A
       // shoulder pet is always glued to the same authored offset near the
-      // player's head/shoulder (see the shoulderPet branch below), so
-      // unlike a companion there's a single visual relationship that's
-      // always correct: the pet sits ON somebody's shoulder, so it belongs
-      // in front of whichever body plane is currently facing the camera —
-      // UNLESS that's the player's own BACK (the player is facing away),
-      // in which case the body itself is between the camera and the pet,
-      // so the back plane has to win instead. That never depends on which
-      // way the camera happens to be looking or how close the pet's
-      // anchor happens to land relative to the body plane this frame — a
-      // per-frame distance comparison between two points that are always
-      // glued within a few centimeters of each other is exactly what kept
-      // flickering (the "winner" of two near-identical camera-space
-      // distances is effectively floating-point noise from one frame to
-      // the next).
-      //
-      // Implemented as a fixed renderOrder stack — front body plane (2,
-      // its unchanged default) < shoulder pet planes (3) < back body
-      // plane (4, bumped in refreshPlayerAvatar) < back hat-xray overlay
-      // (5, bumped in buildPlayerHatXrayOverlay) — plus disabling
-      // depthWrite on whichever layers could otherwise block a later one
-      // via their own real (overlapping/interleaved) depth: the front
-      // body plane and the pet's own planes. depthTest stays on
-      // throughout, so real-world occlusion (trees, buildings) is
-      // untouched; renderOrder only ever arbitrates these specific layers
-      // against each other, never against the rest of the scene.
-      const SHOULDER_PET_PLANE_RENDER_ORDER = 3;
-      // Player back body plane's renderOrder — bumped above the front
-      // plane's unchanged default (2) and the pet's (3) in refreshPlayerAvatar,
-      // so the back plane always wins whenever it's the one facing camera.
-      // Declared here (rather than as a literal in refreshPlayerAvatar) so
-      // buildPlayerHatXrayOverlay's back-facing hat overlay can derive its
-      // own renderOrder from it and stay correctly stacked above it.
+      // player's head/shoulder (see the shoulderPet branch below), so a
+      // per-frame distance comparison between nearly identical points only
+      // creates flicker. Keep depth testing enabled (terrain and buildings
+      // can still occlude the pet), but disable depth writes on both portrait
+      // faces and draw the pet after both faces and hat overlays.
+      const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
+      // Keep the back portrait above the front portrait. The pet is
+      // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
       let _petLayeringActive = false;
       let _petLayeringPet = null;
+      function _setLayerDepthWrite(material, depthWrite) {
+        if (!material || material.depthWrite === depthWrite) return;
+        material.depthWrite = depthWrite;
+        material.needsUpdate = true;
+      }
       function updatePetLayering(active, pet) {
-        if (active === _petLayeringActive && pet === _petLayeringPet) return;
         // A previously-arbitrated pet (deactivated, or swapped for a
         // different creature) needs its own planes restored to normal —
         // otherwise a former shoulder pet demoted to a plain wandering
         // companion would be stuck permanently unable to write depth.
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
-            if (m) { m.depthWrite = true; m.needsUpdate = true; }
+            _setLayerDepthWrite(m, true);
           }
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = 2;
+            if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
           }
         }
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        if (_playerAvatarFrontMaterial) { _playerAvatarFrontMaterial.depthWrite = !active; _playerAvatarFrontMaterial.needsUpdate = true; }
+        for (const m of [_playerAvatarFrontMaterial, _playerAvatarBackMaterial]) {
+          _setLayerDepthWrite(m, !active);
+        }
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) { m.depthWrite = !active; m.needsUpdate = true; }
+        for (const m of petMats) _setLayerDepthWrite(m, !active);
         if (active && pet) {
           for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+            if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
           }
         }
       }
@@ -5286,6 +6897,9 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          window.AnimalVocalizations?.tickCreature?.(c, dt, {
+            allowPassive: c.stableRole !== 'mount',
+          });
 
           // The entity this companion follows/defends — the real player for
           // an ordinary whistle-summoned companion, but not necessarily: see
@@ -5295,6 +6909,8 @@
           const master = c.master || player;
 
           if (master.climbing) {
+            _clearCompanionTreasureCue(c, dt, 'master climbing');
+            _clearCompanionWatchIdle(c, 'master climbing');
             // Teleport-and-stick: an untagged companion can't path through an
             // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
             // so for the duration of the climb it just clings to its master's
@@ -5369,6 +6985,7 @@
             }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
+            _applyShoulderPetCuriosity(c, dt);
             if (perch && grip) {
               // perch.y/grip.y are floor-relative — the same total
               // height-above-playerMesh convention playerToolBaseY already
@@ -5421,7 +7038,7 @@
 
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
+          tickCreatureResources(c, dt);
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
@@ -5429,6 +7046,7 @@
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
+            if (h._denHidden) continue;
             // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
             // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
             // fight — companions should ignore them, not treat them as prey.
@@ -5440,8 +7058,38 @@
           if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target) c._stage = null;
 
-          let moving = false, aimAngle = c.facing || 0;
-          if (c.knockbackT > 0) {
+          if (target && c.treasureCue) _clearCompanionTreasureCue(c, dt, 'combat');
+          if (target && c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'combat');
+          if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
+            _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
+          }
+          if (!target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+            const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
+            if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
+          }
+          const playerIdle = _isPlayerGenuinelyIdle();
+          if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
+          if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
+            const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
+            if (rnd() < startChance) _startCompanionWatchIdle(c);
+          }
+          if (!c.treasureCue
+            && !window.Combat?.animalAttacks?.isBusy(c)
+            && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
+
+          let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          if (c.prone) {
+            _clearCompanionTreasureCue(c, dt, 'prone');
+            _clearCompanionWatchIdle(c, 'prone');
+            advanceCreatureProneThrow(c, dt);
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) {
+              c.prone = false;
+              window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
+              c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+            }
+          } else if (c.knockbackT > 0) {
+            _clearCompanionTreasureCue(c, dt, 'knockback');
+            _clearCompanionWatchIdle(c, 'knockback');
             // Mirrors updateHostiles' knockback branch — per-axis canOccupyAt
             // check so a companion caught by a stray hit can't get shoved
             // through solid terrain either.
@@ -5502,33 +7150,31 @@
                 }
               }
             }
+          } else if (c.treasureCue) {
+            const cueMotion = _tickCompanionTreasureCue(c, master, dt);
+            moving = cueMotion.moving;
+            runInPlace = cueMotion.runInPlace;
+            aimAngle = cueMotion.aimAngle;
           } else if (distToMaster > FOLLOW_FAR_PX) {
             moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
-          } else {
-            // Fable 2-style treasure hint: with nothing else to do, a
-            // companion bounces toward the nearest still-buried treasure
-            // chest in this zone instead of wandering aimlessly near its
-            // master — "leading you to it". Only wilderness zones carry
-            // buried treasure (see _zoneTreasureObjects), so elsewhere this
-            // is always a no-op and behavior is unchanged.
-            const treasureHint = _isZoneArea(currentArea) ? window.WildTreasure.nearestBuriedPixelPos(currentArea, master.x, master.y) : null;
-            if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
-              if (!c._treasureHintAnnounced) {
-                c._treasureHintAnnounced = true;
-                // The companion keeps the existing Fable-style lead behavior,
-                // but announces the find through its species voice overhead.
-                // Fall back to the old mobile-visible toast if the secondary
-                // dialogue module failed to load for any reason.
-                if (!window.AmbientDialogue?.companionTreasure(c)) {
-                  showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
-                }
-              }
-              moving = wanderTick(c, dt, treasureHint.x, treasureHint.y, TILE * 1.4);
-            } else {
-              c._treasureHintAnnounced = false;
-              moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+          } else if (_isPlayerFocusedOnHead(c)) {
+            // The player is staring right at its head — hold position and
+            // let them approach instead of drifting back out to the donut
+            // ring or dropping into a separate watch-idle animation.
+            // _tickCompanionHorizonScan (called above, same trigger) already
+            // has the head staring back; this just keeps the body from
+            // fighting that by wandering away mid-approach.
+            c.vx = 0; c.vy = 0;
+          } else if (c.watchPlayerIdle) {
+            const watchMotion = _tickCompanionWatchIdle(c, master, dt);
+            if (watchMotion) aimAngle = watchMotion.aimAngle;
+            else {
+              moving = _companionFollowWanderTick(c, dt, master);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             }
+          } else {
+            moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -5536,7 +7182,7 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
         }
 
         // Run last, after every avatar's position has actually been updated
@@ -5564,6 +7210,38 @@
       // for this creature (not playerMesh-based), already applied once in
       // updateCompanions with nothing stale about it — re-adding it here
       // too would double it.
+      function _applyShoulderPetFinalTransform(c, finalTransform) {
+        const group = c.avatarRef?.group;
+        if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
+        const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
+        parent?.updateWorldMatrix?.(true, false);
+        const parentWorldQuaternion = parent?.getWorldQuaternion
+          ? parent.getWorldQuaternion(new THREE.Quaternion())
+          : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
+        const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the requested face-relative world rotation.
+        const localPosition = parent?.worldToLocal
+          ? parent.worldToLocal(finalTransform.worldPosition.clone())
+          : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
+        group.position.copy(localPosition);
+        group.quaternion.copy(localQuaternion);
+        // updateCreatureMesh authored the inner planes against c.groupRot,
+        // but the face-relative attachment can now replace the root's full
+        // pitch/yaw/roll in this later pass. The onBeforeRender compensation
+        // in png-plane-avatar.js owns the exact world-facing plane matrix;
+        // this Euler write remains the first-frame/legacy fallback.
+        const finalGroupRotY = new THREE.Euler().setFromQuaternion(localQuaternion, 'YXZ').y; // Supplies the legacy plane fallback with the new attachment root's local yaw.
+        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Preserves the camera-relative plane yaw chosen by updateCreatureMesh.
+        const planeDelta = billboardWorldYaw - finalGroupRotY; // Cancels the final attachment-group yaw in the legacy plane fallback.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final face-relative pin.
+          recentChange: 'Authored shoulderPerch rotation is face-relative and follows the live face.',
+          rotationSource: finalTransform.faceRotationSource,
+          expectedWorldPosition: finalTransform.worldPosition.toArray(),
+          faceWorldQuaternion: finalTransform.faceWorldQuaternion?.toArray?.() || null,
+          finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
+        };
+      }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
@@ -5571,17 +7249,23 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
-            c.avatarRef.group.position.x = playerMesh.position.x + dx;
-            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-            c.avatarRef.group.position.z = playerMesh.position.z + dz;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y - gripYawRad;
+            const finalTransform = _shoulderPetFaceRelativeTransform(perch, grip); // Composes live face × authored perch × inverse authored grip.
+            _applyShoulderPetFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
             // THREE.js Y rotation, so fallback pets follow bodyYaw too.
-            c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
-            c.avatarRef.group.rotation.y = playerMesh.rotation.y;
+            const fallbackWorldPosition = new THREE.Vector3( // Supplies the no-authored-anchor path to the shared full-transform helper.
+              playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3,
+              c.avatarRef.group.position.y,
+              playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3,
+            );
+            const fallbackWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()); // Keeps legacy pets body-relative when either authored anchor is absent.
+            _applyShoulderPetFinalTransform(c, {
+              worldPosition: fallbackWorldPosition,
+              worldQuaternion: fallbackWorldQuaternion,
+              faceWorldQuaternion: fallbackWorldQuaternion,
+              faceRotationSource: 'player-body-fallback-no-authored-anchors',
+            });
           }
         }
       }
@@ -5851,11 +7535,11 @@
       }
 
       // ── Breeding pairs (world-scoped, same rationale as livestock) ─────
-      // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are
+      // [{ id, parentA, parentB, startedDay, progress }] — parentA/B are
       // { source: 'world'|'stable', id, characterId? } refs (see
-      // js/farm-animals.js's resolveBreedingParent). Resolved by
-      // window.FarmAnimals.tickBreeding() on the day-tick, same cadence as
-      // crop growth.
+      // js/farm-animals.js's resolveBreedingParent). Resolved hourly by
+      // window.FarmAnimals.tickBreedingProgress() (see updateCalendar/
+      // sleepInBed) — finer-grained than crop growth's once-a-morning tick.
       function _loadWorldBreedingPairs() {
         const worldId = _tothalWorldId();
         if (!worldId) return [];
@@ -5963,7 +7647,7 @@
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
           alcoholBottleSwigs: {}, npcAlcoholState: {},
-          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
+          alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
           joinedAt: Date.now(),
         };
       }
@@ -6056,13 +7740,22 @@
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+          member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
           member.cookingState = window.CookingSystem.serialize();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
+          member.wildernessChunkState = serializeWildernessChunkState();
+          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          // Only ever consumed on the next boot if it lands in a wilderness
+          // zone with a still-active campfire there (see spawnPlayerAvatar) —
+          // saved unconditionally anyway since it's cheap and harmless
+          // otherwise; farm/town/interior/building sessions keep spawning at
+          // the farm's usual default exactly as before.
+          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -6118,6 +7811,132 @@
       // exact same map, not a fresh reroll.
       let _tothalShiftedThisSession = false;
 
+      // Cache of performTothalShift's per-zone generator output, keyed by
+      // world+year+zone (the same string already used to seed the
+      // generator) plus the generator/fold scripts' own cache-busting
+      // ?v= tags. generateZoneWorkspace + buildMergedZoneGrid are pure
+      // functions of that seed — reachability validation/repair, plateau
+      // generation and animal-route pathfinding inside them measured at
+      // several seconds of blocking main-thread work per zone, redone from
+      // scratch on *every single page load* even though a same-year reload
+      // always reproduces the exact same result. Caching their raw output
+      // here lets a same-year session skip straight to replaying the
+      // (cheap) NPC-station/building/decor bookkeeping that follows.
+      //
+      // IndexedDB, not localStorage: one zone's merged tile grid alone
+      // serializes to several MB, which blew straight through localStorage's
+      // ~5-10MB per-origin quota after just the first zone — the other three
+      // zones' writes then failed (silently, since caching here is a pure
+      // optimization) and kept regenerating every load anyway. IndexedDB's
+      // quota is disk-sized, and its structured-clone storage accepts the
+      // tiles Map directly, no JSON (de)serialization needed. Mirrors the
+      // openDb/idbGet/idbSet helper shape docs/js/local-save-folder-core.js
+      // already uses for its own IndexedDB store, as its own separate DB
+      // (this one is a disposable cache, not save data worth backing up).
+      const _TOTHAL_GEN_VERSION_TAG = (() => {
+        const versionOf = (fileName) => {
+          const el = document.querySelector(`script[src*="${fileName}"]`);
+          const m = el && el.src.match(/[?&]v=([^&]+)/);
+          return m ? m[1] : 'noversion';
+        };
+        return `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}`;
+      })();
+      const _TOTHAL_CACHE_DB_NAME = 'hobunji-tothal-zone-cache';
+      const _TOTHAL_CACHE_STORE = 'zones';
+      function _tothalCacheOpenDb() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(_TOTHAL_CACHE_DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            if (!req.result.objectStoreNames.contains(_TOTHAL_CACHE_STORE)) req.result.createObjectStore(_TOTHAL_CACHE_STORE);
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      }
+      async function _tothalCacheGet(key) {
+        try {
+          const db = await _tothalCacheOpenDb();
+          return await new Promise((resolve, reject) => {
+            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).get(key);
+            req.onsuccess = () => resolve(req.result ?? null);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (_) { return null; }
+      }
+      async function _tothalCacheSet(key, value) {
+        try {
+          const db = await _tothalCacheOpenDb();
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
+            tx.objectStore(_TOTHAL_CACHE_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (_) {
+          // Quota exceeded or storage unavailable — this cache is a pure
+          // optimization; silently skip it and let next session regenerate.
+        }
+      }
+      async function _tothalCacheDeleteKeys(keys) {
+        if (!keys.length) return;
+        try {
+          const db = await _tothalCacheOpenDb();
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
+            keys.forEach(k => tx.objectStore(_TOTHAL_CACHE_STORE).delete(k));
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (_) {}
+      }
+      async function _tothalCacheAllKeys() {
+        try {
+          const db = await _tothalCacheOpenDb();
+          return await new Promise((resolve, reject) => {
+            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).getAllKeys();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (_) { return []; }
+      }
+      function _tothalZoneCacheKey(worldId, year, zoneId) {
+        return `hobunji_tothal_zonecache_v1_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
+      }
+      async function _loadTothalZoneCache(key) {
+        const cached = await _tothalCacheGet(key);
+        if (!cached?.merged || !cached?.workspace) return null;
+        return cached; // merged.tiles is already a real Map (IndexedDB structured clone, not JSON)
+      }
+      async function _saveTothalZoneCache(key, workspace, merged) {
+        await _tothalCacheSet(key, {
+          workspace: {
+            entry: workspace.entry || null,
+            animalDens: workspace.animalDens || [],
+            localeInstances: workspace.localeInstances || [],
+            rootTotems: workspace.rootTotems || [],
+            foliagePatches: workspace.foliagePatches || [],
+            wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
+            ambushStations: workspace.ambushStations || [],
+          },
+          merged: {
+            cols: merged.cols, rows: merged.rows, tiles: merged.tiles,
+            mesas: merged.mesas, buildings: merged.buildings,
+          },
+        });
+      }
+      // Drops this world's stale zone caches (older years or a stale
+      // generator/fold version) before writing this shift's entries, so a
+      // save that's played across many Tothal years doesn't accumulate an
+      // unbounded pile of dead cache entries. Other worlds' caches are left
+      // untouched.
+      async function _evictStaleTothalZoneCaches(worldId, year) {
+        const prefix = 'hobunji_tothal_zonecache_v1_';
+        const keep = new Set(WildernessMapGenerator.zoneMapIds().map(zoneId => _tothalZoneCacheKey(worldId, year, zoneId)));
+        const allKeys = await _tothalCacheAllKeys();
+        const stale = allKeys.filter(k => typeof k === 'string' && k.startsWith(prefix) && k.includes(`_${worldId}_y`) && !keep.has(k));
+        await _tothalCacheDeleteKeys(stale);
+      }
+
       // Regenerates all four wilderness zones for the given Tothal year and
       // saves that year to the world file so future checks this session skip
       // redundant rebuilds. Seeded from the world id + year + zone, so the
@@ -6134,6 +7953,10 @@
         _tothalShiftInFlight = true;
         const worldId = _tothalWorldId() || 'default';
         const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
+        if (_wildernessChunkTileStateYear !== null && _wildernessChunkTileStateYear !== year) {
+          _wildernessChunkTileDeltas.clear();
+        }
+        _wildernessChunkTileStateYear = year;
         debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
         try {
           // Each singleton locale should exist exactly once across all four
@@ -6149,31 +7972,39 @@
           // against the finished zone (see ensureCurrentZoneBanditCamps).
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
+          await _evictStaleTothalZoneCaches(worldId, year);
           let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
-            let workspace;
-            try {
-              // Random seed, entry side set per zone — otherwise the tool's own
-              // defaults, no post-processing. This is meant to be exactly what
-              // a human would get generating a map with the standalone tool and
-              // importing it into the Map Editor by hand. remainingLocales are
-              // the not-yet-placed locales this shift (see above).
-              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
-            } catch (e) {
-              debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
-              continue;
+            const cacheKey = _tothalZoneCacheKey(worldId, year, zoneId);
+            const cached = await _loadTothalZoneCache(cacheKey);
+            let workspace, merged;
+            if (cached) {
+              ({ workspace, merged } = cached);
+              debugLog(`Tothal Shift: ${zoneId} restored from cache (same seed as last time)`);
+            } else {
+              try {
+                // Random seed, entry side set per zone — otherwise the tool's own
+                // defaults, no post-processing. This is meant to be exactly what
+                // a human would get generating a map with the standalone tool and
+                // importing it into the Map Editor by hand. remainingLocales are
+                // the not-yet-placed locales this shift (see above).
+                workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
+              } catch (e) {
+                debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
+                continue;
+              }
+              const root = workspace.maps[0];
+              try {
+                merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
+              } catch (e) {
+                debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
+                continue;
+              }
+              if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+              await _saveTothalZoneCache(cacheKey, workspace, merged);
             }
-            const root = workspace.maps[0];
-            let merged;
-            try {
-              merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
-            } catch (e) {
-              debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
-              continue;
-            }
-            if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
 
             const localeInstances = workspace.localeInstances || [];
             if (localeInstances.length) {
@@ -6286,11 +8117,24 @@
               .filter(den => den.mouthAnchor)
               .map(den => {
                 const cavernMapId = window.WildlifeSpawn.denCavernMapId(zoneId, den.id);
-                const { exitCol, exitRow } = window.CavernGenerator.generateCavernFloor(cavernMapId);
+                // No eager generateCavernFloor(cavernMapId) call here on
+                // purpose: its SDF carve is real work (unlike the old
+                // blob-growth generator this replaced), and this transition
+                // list gets rebuilt for every den in the zone whenever the
+                // zone itself (re)generates — including at world boot's
+                // fire-and-forget Tothal Shift across all four zones (see
+                // spawnPlayerAvatar's checkTothalShift() call). Eagerly
+                // resolving every den's spawn tile here meant carving every
+                // den in every zone up front, whether or not the player
+                // ever visits it, which is exactly the boot-time freeze
+                // this avoids. targetCol/targetRow are left unset;
+                // loadBuildingScene's cavern branch resolves the real
+                // (guaranteed-walkable) spawn tile itself, the one time a
+                // player actually enters this specific den — see its
+                // _pendingEntrySpawnFromExit handling.
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
                   target: 'building', targetMapId: cavernMapId,
-                  targetCol: exitCol, targetRow: exitRow,
                 };
               });
             _zoneLayouts.set(zoneId, {
@@ -6304,6 +8148,7 @@
               dens: workspace.animalDens || [],
               rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
+              wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
               ambushStations: workspace.ambushStations || [],
               localeInstances,
             });
@@ -6312,6 +8157,12 @@
             // ensureZoneDenPacks/spawnPackAtDen).
             window.WildlifeSpawn.forgetZoneDenState(zoneId);
             window.BanditCamps.forgetZoneState(zoneId);
+            // A campfire the player left standing in this zone (it now
+            // persists indefinitely across leaving — see wilderness-
+            // campfire.js's own header comment) is pinned to terrain that
+            // no longer exists the instant this zone reshapes, whether or
+            // not the player happens to be standing in it right now.
+            window.WildernessCampfire?.clearIfZone(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -6481,6 +8332,11 @@
         getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
+        // Runtime grass toggle (see the Settings-tab checkbox and ?hideGrass=1
+        // for the other two ways in) — for visually inspecting anything
+        // world grass tends to bury, without a reload.
+        setGrassVisible: (visible) => applyGrassVisible(visible),
+        getGrassVisible: () => s_grass,
         addLivestockFromItem: (itemKey) => window.FarmAnimals.addFromItem(itemKey),
         addToStable: (itemKey) => window.FarmAnimals.addToStable(itemKey),
         getWorldLivestock: () => _loadWorldLivestock(),
@@ -6553,8 +8409,45 @@
       // directly from the separate per-frame leg-update site (guarded by its
       // own isActive() there), both during the settled hold and during the
       // recovery roll, so there's nothing else to drive here.
+      function advancePlayerKnockback(dt) {
+        player.knockbackT = Math.max(0, player.knockbackT - dt);
+        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
+        const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+        const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        player.x = kbSwept.x; player.y = kbSwept.y;
+        if (kbSwept.blockedX) player.knockbackVX = 0;
+        if (kbSwept.blockedY) player.knockbackVY = 0;
+        player.vx = player.knockbackVX;
+        player.vy = player.knockbackVY;
+        if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+      }
+
+      function advancePlayerProneThrow(dt) {
+        player.proneThrowT = Math.max(0, player.proneThrowT - dt);
+        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
+        const desiredY = clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
+        const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        player.x = swept.x; player.y = swept.y;
+        if (swept.blockedX) player.proneThrowVX = 0;
+        if (swept.blockedY) player.proneThrowVY = 0;
+        player.vx = Number(player.proneThrowVX) || 0;
+        player.vy = Number(player.proneThrowVY) || 0;
+        if (player.proneThrowT <= 0) {
+          player.proneThrowVX = 0; player.proneThrowVY = 0;
+          player.vx = 0; player.vy = 0;
+        }
+      }
+
       function updateProneState(dt) {
-        player.vx = 0; player.vy = 0;
+        // The dedicated throw channel is separate from ordinary knockback so
+        // prone-motion cleanup can erase stale impulses without cancelling
+        // the intentional footing-break launch. Input remains locked.
+        if (player.proneThrowT > 0) advancePlayerProneThrow(dt);
+        else { player.vx = 0; player.vy = 0; }
       }
 
       // Somersault recovery — the dodge input's meaning while prone (see
@@ -6593,13 +8486,15 @@
           dirX = player.inputX;
           dirY = player.inputY;
         } else {
-          const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+          const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
           const target = weaponEngaged ? findAutoTarget() : null;
           const aimAngle = target
             ? Math.atan2(target.y - player.y, target.x - player.x)
             : player.angle;
-          dirX = -Math.cos(aimAngle);
-          dirY = -Math.sin(aimAngle);
+          // A no-input dodge is a forward dodge, matching the direction used
+          // to enter a climb instead of unexpectedly zipping backward.
+          dirX = Math.cos(aimAngle);
+          dirY = Math.sin(aimAngle);
         }
         if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
         else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
@@ -6630,11 +8525,29 @@
       // start swimming needs no separate trigger of its own now that water
       // is a real (slow, non-swimmer) crossing instead of a hard block —
       // see tileSpeedAt.
+      function dodgeInputIsForward() {
+        const kb = getKeyboardVector();
+        const ix = kb.active ? kb.x : input.x;
+        const iy = kb.active ? kb.y : input.y;
+        const length = Math.hypot(ix, iy);
+        if (length < 0.08) return true; // No direction means a forward dodge in facing direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // Shoulder movement is camera-relative: local up (-Y) is forward.
+          return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
+        }
+        const facing = player.angle;
+        const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
+        const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
+        return forward > 0.35 && side < 0.85;
+      }
+
       function performContextAction() {
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
+        // Climbing is now the forward-dodge context action. Sideways/backward
+        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
-        if (climb) { window.ClimbSystem.startClimb(climb); return; }
+        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -6668,12 +8581,26 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
-        player.lungeDirX = Math.cos(player.angle);
-        player.lungeDirY = Math.sin(player.angle);
-        player.lungeDistancePx = distancePx;
-        player.lungeHopUnits = hopUnits;
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
+        const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
+        const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
+        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
+          || { distancePx, hopUnits, pitch: aimPitch };
+        player.lungeDirX = Math.cos(aimYaw);
+        player.lungeDirY = Math.sin(aimYaw);
+        player.lungeDistancePx = lungeProfile.distancePx;
+        player.lungeHopUnits = lungeProfile.hopUnits;
+        player.lungeAimPitch = lungeProfile.pitch;
         player.lungeHitTest = hitTest;
       }
+
+      // Public effect seam: food/potion systems can set or add to the
+      // player's next lunge height without knowing combat's internal state.
+      window.PlayerLunge = {
+        getHeight: () => Math.max(0, Number(player.lungeHeightUnits) || 0),
+        setHeight: (value) => { player.lungeHeightUnits = Math.max(0, Number(value) || 0); },
+        addHeight: (delta) => { player.lungeHeightUnits = Math.max(0, (Number(player.lungeHeightUnits) || 0) + (Number(delta) || 0)); },
+      };
 
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
@@ -6681,8 +8608,13 @@
       function isHostileInLungeCone(hitTest) {
         if (!hitTest) return false;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          if (inCone(player.x, player.y, player.angle, c.x, c.y, hitTest.rangePx, hitTest.halfConeRad)) return true;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          if (window.Combat?.meleeHit?.(player, c, {
+            rangePx: hitTest.rangePx,
+            halfConeRad: hitTest.halfConeRad,
+            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
+            pitch: player.lungeAimPitch || 0,
+          })) return true;
         }
         return false;
       }
@@ -6690,10 +8622,22 @@
       const _vbHealthFill  = document.getElementById('vbHealthFill');
       const _vbStaminaFill = document.getElementById('vbStaminaFill');
       const _vbFootingFill = document.getElementById('vbFootingFill');
+      // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
+      // rewrite the same style.width value every frame.
+      let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
       function refreshVitalsHud() {
-        if (_vbHealthFill)  _vbHealthFill.style.width  = `${Math.max(0, Math.min(100, player.health  / player.maxHealth  * 100))}%`;
-        if (_vbStaminaFill) _vbStaminaFill.style.width = `${Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100))}%`;
-        if (_vbFootingFill && player.maxFooting) _vbFootingFill.style.width = `${Math.max(0, Math.min(100, player.footing / player.maxFooting * 100))}%`;
+        if (_vbHealthFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.health / player.maxHealth * 100)));
+          if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
+        }
+        if (_vbStaminaFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100)));
+          if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
+        }
+        if (_vbFootingFill && player.maxFooting) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.footing / player.maxFooting * 100)));
+          if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
+        }
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -6703,7 +8647,9 @@
       let worldTownTransitions = [];   // town: same shape
       let worldRoutes          = [];   // shared routes: { id, label, area, nodes: [[c,r],...] }
       let worldTownRoutes      = [];   // town shared routes
-      const npcStationsById    = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec }
+      // npcStationsById (stationId → { id, label, area, c, r, rotY, pose,
+      // toolKey, toolIntervalSec, ... }) now lives in js/npc-scheduling.js —
+      // aliased back near spawnScheduledNpcs below.
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
@@ -6718,6 +8664,14 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
+      // of a dialogue portrait's canvas/profile, kept around so
+      // _tickPlayerPortraitLife can cheaply re-render just the front texture
+      // (blink/breathing) every so often without repeating the full gear/
+      // cosmetic rebuild refreshPlayerAvatar() itself does.
+      let playerAvatarGroup = null;
+      let playerAvatarFrontCanvas = null;
+      let playerAvatarProfile = null;
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
       // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
       // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
@@ -6730,6 +8684,12 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // The player's own rendered bust-portrait model WIDTH (avatarWidth in
+      // refreshPlayerAvatar) — same idea as playerAvatarModelHeight above.
+      // Used to size a ground companion's "personal space" donut (see
+      // _companionPersonalSpacePx) so its settle-wander radius scales with
+      // how wide the player's own avatar actually renders.
+      let playerAvatarModelWidth = 0.9;
       // Procedural leg/foot animation handle for the player's own avatar —
       // rebuilt in refreshPlayerAvatar (species/gender can change there),
       // driven each frame from updatePlayerMesh. See
@@ -6739,18 +8699,17 @@
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
       // staging uses (see faceNpcDialogueParticipants), driven here for the
-      // seated look-around head-turn instead (see updateSitInteraction).
+      // player aim tracking (see updatePlayerHeadAim).
       let playerNeckJoint = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
-      let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
+      let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
-      // updateCompanions) to toggle the front plane's depthWrite without
-      // disturbing the back plane's, which _playerAvatarBodyMaterials()'s
-      // combined front+back traversal can't do on its own.
+      // updateCompanions) to make both portrait faces transparent to the
+      // attached pet's depth pass without affecting ordinary world occlusion.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
       // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
@@ -6766,7 +8725,58 @@
       let playerItemHoldY = 0.64;
 
       let npcDialogueStaging = null;
-      let activeCameraMode   = cameraConfig().defaultMode || 'default';
+      // Over-the-shoulder camera (Settings → Camera) — the default camera
+      // mode as of this build, no longer experimental. See
+      // defaultCameraModeKey()/enterDefaultCameraMode() below — every place
+      // that already resolves "back to the ordinary gameplay camera" (initial
+      // load, dialogue close, standing up, cutscene end) goes through those,
+      // so this substitutes for the normal follow camera without needing any
+      // special-casing in the other camera modes (seated/fishing/music/etc.
+      // all restore whatever mode they captured on entry, unaffected).
+      let s_shoulderSurf = true;
+      // Shoulder-surf's over-the-shoulder framing offsets (Settings →
+      // Camera), in tiles, applied relative to the camera's own right/up
+      // axes — see updateCameraPosition. Positive H = shift camera/framing
+      // to the head's right; positive V = raise the framing. Kept as two
+      // separate presets rather than one flat value — a weapon/ranged tool
+      // actually being drawn (see shoulderSurfCombatStanceActive()) wants a
+      // wider H offset to clear the weapon out of the middle of the screen
+      // than plain movement/farming does — and the settings sliders read
+      // and write whichever preset is currently active (see their input
+      // handlers and the per-frame sync below) rather than a single value.
+      let s_shoulderSurfOffsetH_default = 0.35;
+      let s_shoulderSurfOffsetV_default = -0.05;
+      let s_shoulderSurfOffsetH_combat = 0.60;
+      let s_shoulderSurfOffsetV_combat = -0.05;
+      // What the camera actually reads (see updateCameraPosition) — eased
+      // toward whichever preset is active every frame (see the per-frame
+      // sync below) rather than snapping the instant a weapon is drawn/
+      // sheathed, so swapping stances reads as a smooth push-in/pull-back
+      // instead of a jump-cut. Slider input handlers set these directly
+      // instead of letting them ease, since a live drag should track the
+      // mouse immediately.
+      let s_shoulderSurfOffsetH_current = s_shoulderSurfOffsetH_default;
+      let s_shoulderSurfOffsetV_current = s_shoulderSurfOffsetV_default;
+      const SHOULDER_SURF_OFFSET_LERP = 6;
+      let _shoulderSurfOffsetSliderCombat = false; // last-synced stance, for the slider UI sync below
+      // One-shot azimuth snap for whenever shoulder-surf is already the
+      // active mode the very first time the camera-follow code below runs
+      // (i.e. it's the default) — mirrors the snap the settingShoulderSurf
+      // checkbox handler does when toggling it on mid-session, since the
+      // module-level activeCameraMode init just above can't call it itself
+      // (facingAngle/player aren't real yet at that point in the script).
+      let _shoulderSurfBootSnapped = false;
+      // Mode key substituted for the ordinary gameplay camera by the
+      // shoulder-surf toggle above. Kept as its own constant rather than
+      // reading cameraConfig().defaultMode so a modder renaming/removing
+      // "default" in scratchbones-config.js can't silently break the
+      // toggle. Declared here (not next to cameraModeConfig() below, where
+      // it conceptually belongs) because defaultCameraModeKey() reads it
+      // eagerly on the very next line — a const only reads as declared
+      // once its own declaration has actually run, and s_shoulderSurf now
+      // defaulting to true means that ternary branch is hit immediately.
+      const SHOULDER_SURF_MODE = 'shoulderSurf';
+      let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
       // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
@@ -6780,6 +8790,21 @@
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
         return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+      }
+      // The world direction the camera is actually looking (as opposed to
+      // activeCameraAzimuthRad(), which is where the camera SITS relative to
+      // its target) — used by shoulder-surf to make WASD relative to
+      // wherever the mouse has turned the camera. updateCameraPosition
+      // places the camera at world offset (sin(az), cos(az))*distance from
+      // its look-at target and then looks back at that target, so the
+      // camera's own view direction is the negation of that offset;
+      // converting (-sin(az), -cos(az)) into this game's atan2(y,x) facing
+      // convention (matching facingAngle/lastMoveAngle elsewhere) reduces to
+      // -az - 90°. Cross-checked against beginSitInteraction's "camera sits
+      // opposite the character's facing" azimuth (270 - facingDeg): feeding
+      // that back through this gives exactly facingAngle again.
+      function cameraFacingAngleRad() {
+        return angleDiff(-activeCameraAzimuthRad() - Math.PI / 2, 0);
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -6861,13 +8886,56 @@
             return { ok: true, message: 'Opened the alchemy table.' };
           },
         }),
+        // Barn-interior fixtures — synthesizeBarnInteriorMapData bakes
+        // barnId/troughIndex right onto the furniture record so these
+        // factories (called with that record as their one argument) don't
+        // need to re-derive which barn/trough they belong to.
+        feedGrinderFurniture: () => ({
+          getButtons() {
+            const active = getActiveInventoryItem();
+            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            if (!outputs) return [{ icon: '⚙️', label: 'Hold a crop, raw meat, or fish to grind', action: 'obj_feed_grind', style: 'secondary', allowed: false }];
+            return [{ icon: '⚙️', label: `Grind → ${outputs[0].label}`, action: 'obj_feed_grind', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_feed_grind') return { ok: false, message: 'Unknown action.' };
+            if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can use the feed grinder." };
+            const active = getActiveInventoryItem();
+            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            if (!active || !outputs) return { ok: false, message: 'Hold a crop, raw meat, or fish to grind it into feed.' };
+            inventory[active.key] = Math.max(0, (inventory[active.key] || 0) - 1);
+            clampInventoryStack(active.key);
+            const out = outputs[0];
+            inventory[out.key] = Math.min(99, (inventory[out.key] || 0) + 1);
+            refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+            saveMemberWorldData();
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processHandmill);
+            return { ok: true, message: `⚙️ Ground 1 ${ITEM_DEFS[out.key]?.label || out.key}.` };
+          },
+        }),
+        troughFurniture: (f) => ({
+          getButtons() {
+            const list = _loadWorldLivestock();
+            const barn = farmBuildings.find(b => b.id === f.barnId && b.kind === 'barn');
+            const trough = barn && window.FarmAnimals.ensureBarnTroughs(barn)[f.troughIndex];
+            const total = window.FarmTroughs.troughSlotCount(trough);
+            const assigned = list.find(l => l.barnId === f.barnId && l.troughIndex === f.troughIndex);
+            const cap = window.FarmAnimals.TROUGH_CAPACITY;
+            return [{ icon: '🪣', label: `Open Trough (${assigned ? assigned.name : 'Unassigned'} — ${total}/${cap})`, action: 'obj_trough_open', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_trough_open') return { ok: false, message: 'Unknown action.' };
+            window.FarmTroughs.open(f.barnId, f.troughIndex);
+            return { ok: true, message: 'Opened the trough.' };
+          },
+        }),
         bulletinBoardFurniture: () => ({
           getButtons() {
             return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
           },
           onAction(action) {
             if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
-            window.ProceduralTasks.maybeRefreshBoardTask();
+            window.ProceduralTasks.maybeRefreshRequestPostings();
             openMenu('tasks');
             return { ok: true, message: 'Read the notice board.' };
           },
@@ -6928,6 +8996,8 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
+      let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
+      const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -7060,12 +9130,22 @@
       // raising with a shovel/pick — see applyAction) without disposing/
       // rebuilding the whole zone scene. Returns every mesh it added to
       // zScene, so the caller can track and later remove them.
-      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
+      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, options = {}) {
         const meshes = [];
-        const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
-        const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
+        const resetState = options.resetState !== false; // Controls one-time per-zone indexes versus additive chunk builds.
+        const vegetationByTile = resetState ? new Map() : (_zoneVegetationMeshes.get(mapId) || new Map()); // Used for O(1) runtime foliage removal by tile.
+        const mineableRocksByTile = resetState ? new Map() : (_zoneMineableRockMeshes.get(mapId) || new Map()); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
+        if (resetState) window.ClimbSystem?.resetAreaBranches(mapId); // Loaded shadewood chunks re-register their climbable branches below.
+        const bounds = {
+          colStart: Math.max(0, Math.floor(options.bounds?.colStart ?? 0)),
+          rowStart: Math.max(0, Math.floor(options.bounds?.rowStart ?? 0)),
+          colEnd: Math.min(ZCOLS, Math.ceil(options.bounds?.colEnd ?? ZCOLS)),
+          rowEnd: Math.min(ZROWS, Math.ceil(options.bounds?.rowEnd ?? ZROWS)),
+        }; // Restricts tile-owned meshes to one streaming chunk.
+        const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
+        const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -7086,8 +9166,8 @@
           for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
         }
 
-        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
-        if (pathNet) {
+        const pathNet = options.pathNet || buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
+        if (includeGlobalPath && pathNet) {
           // Tiny lift above the plateau mesa lid (which shares this exact
           // tier height wherever a path crosses a plateau — see
           // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
@@ -7106,13 +9186,15 @@
         // below): built once the shared recipe/GLB are ready, chunked and
         // culled by camera corridor rather than tied to this zone's own
         // scene-build timing.
-        ensurePathSurfaceReady().then(() => {
-          const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
-          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
-          if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
-        }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        if (includeGlobalPath) {
+          ensurePathSurfaceReady().then(() => {
+            const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
+            const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
+            if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+          }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+        }
 
-        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+        if (includeTiles) for (let r = bounds.rowStart; r < bounds.rowEnd; r++) for (let c = bounds.colStart; c < bounds.colEnd; c++) {
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
@@ -7147,6 +9229,7 @@
                 geometry.computeVertexNormals();
                 const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
+                rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
                 rockGroup.add(rockMesh);
               }
@@ -7163,7 +9246,7 @@
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
               tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid, { includeCutWalls: true });
             const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -7196,6 +9279,12 @@
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
               const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (isCrownedPine || isShadewood) {
+                // Their visible trunk base is centered on this solid SHRUB
+                // tile. Projectile cover can therefore use the existing tile
+                // collision instead of raycasting the full procedural tree.
+                vegGroup.userData.projectileCoverUsesTile = true;
+              }
               if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
               // Small bushes are short enough that a player standing behind
               // one is still mostly visible over/around it, and they're
@@ -7241,6 +9330,22 @@
                     undersideY: groundY + canopyLocal.undersideY * scaleTotal,
                   };
                 }
+                // This instance's tree shape may have rolled a climbable
+                // mid-trunk branch (see foliage-generator.js's
+                // climbBranchChance) — register it with ClimbSystem in world
+                // px (matching player.x/y), keyed by this zone's mapId.
+                const branchWorld = window.FoliageGenerator.getClimbBranchWorld(vegGroup);
+                if (branchWorld) {
+                  const baseX = branchWorld.a.x * TILE, baseY = branchWorld.a.z * TILE;
+                  const tipX = branchWorld.b.x * TILE, tipY = branchWorld.b.z * TILE;
+                  window.ClimbSystem?.registerBranch(mapId, {
+                    col: c, row: r,
+                    baseX, baseY, tipX, tipY,
+                    baseWorldY: branchWorld.a.y, tipWorldY: branchWorld.b.y,
+                    length: Math.max(1, Math.hypot(tipX - baseX, tipY - baseY)),
+                    radius: branchWorld.radius,
+                  });
+                }
               }
               if (isNativeBuild) {
                 // Bounding sphere for view-corridor culling (see
@@ -7281,6 +9386,11 @@
           merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
+          mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
+            mesh.userData.wildernessGlobalPathGround = true;
+            pathNet.bindGlobalGroundMesh?.(mesh);
+          }
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -7288,9 +9398,14 @@
         return meshes;
       }
 
-      function buildZoneScene(mapId) {
+      function buildZoneScene(mapId, focusCol = null, focusRow = null) {
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
-        if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
+        if (_zoneScenes.has(mapId)) {
+          if (Number.isFinite(focusCol) && Number.isFinite(focusRow)) {
+            window.WildernessChunks?.primeZone(mapId, focusCol, focusRow);
+          }
+          return _zoneScenes.get(mapId);
+        }
         const zdef = EXTERIOR_ZONES[mapId];
         const zoneData = _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
@@ -7299,7 +9414,13 @@
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(fogColor);
-        zScene.fog = new THREE.FogExp2(fogColor, 0.018); // match town/farm fog density
+        // match town/farm fog density unless the zone overrides it (see
+        // map_southern_cloud_forest) — but respect the Cloud Forest Mist
+        // toggle if it's already been switched off this session, so
+        // (re)entering the zone doesn't silently re-enable the mist the
+        // player just turned off.
+        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
+        zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -7332,6 +9453,10 @@
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
           if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+        }
+        const restoredChunkTiles = applyWildernessChunkTileDeltas(mapId, zGrid);
+        if (restoredChunkTiles) {
+          debugLog(`[wilderness-chunks] restored ${restoredChunkTiles} edited tile(s) in ${mapId}`);
         }
         // Re-apply any trees felled with the axe that haven't regrown yet
         // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
@@ -7396,7 +9521,17 @@
         // mesh per material — see _buildZoneFloorMeshes. Tracked per-zone so a
         // runtime tile change (digging/filling/raising — see
         // refreshZoneGroundVisuals) can rebuild just this layer later.
-        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        // The route network is one connected, zone-wide topology, so build it
+        // once and keep it outside streamed chunks. Ordinary floor tiles,
+        // removable rocks, trees, ramps, water and grass are built by the
+        // 16x16 chunk factory below.
+        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Initial route apron; info.pathNet below becomes its runtime-mutable owner.
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
+          includeTiles: false,
+          includeGlobalPath: true,
+          resetState: true,
+          pathNet: zonePathNet,
+        }));
 
         // Each tier transition in the merged plateau stack renders as one continuous
         // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
@@ -7407,18 +9542,10 @@
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
-        window.ZoneTerrainFeatures.buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        window.ZoneTerrainFeatures.buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
-        _zoneWaterMeshes.set(mapId, [
-          ...window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-          ...window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-        ]);
-
-        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
-        window.ZoneGrassBillboards.buildRichFoliageBillboards(zScene, zoneData, zGrid);
+        _zoneWaterMeshes.set(mapId, []);
+        _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
         window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
@@ -7457,10 +9584,122 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
+
+        const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
+        const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
+        const removeRefs = (list, values) => {
+          if (!list?.length || !values?.length) return;
+          const removed = new Set(values);
+          for (let i = list.length - 1; i >= 0; i--) if (removed.has(list[i])) list.splice(i, 1);
+        };
+        const buildRuntimeChunk = ({ group, bounds }) => {
+          const floorMeshes = _buildZoneFloorMeshes(group, zGrid, ZCOLS, ZROWS, mapId, {
+            bounds,
+            includeGlobalPath: false,
+            resetState: false,
+            pathNet: info.pathNet,
+          }); // Chunk-owned ground, rocks and vegetation.
+          const featureMeshes = [
+            ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned ramps and solved rock faces.
+          for (const object of [...floorMeshes, ...featureMeshes]) {
+            object.traverse?.(mesh => {
+              if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) {
+                const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+                if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
+              }
+            });
+          }
+          const waterMeshes = [
+            ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned water surfaces and falls.
+          const grassGroups = [
+            window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds),
+            window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds),
+          ].filter(Boolean); // Chunk-owned ordinary and rich foliage billboards.
+          const chunkOcclusionMeshes = [];
+          const chunkCanopyZones = [];
+          const chunkCullables = [];
+          group.traverse(object => {
+            if (object.userData?.cameraObstacle) chunkOcclusionMeshes.push(object);
+            if (object.userData?.canopyClamp) chunkCanopyZones.push(object.userData.canopyClamp);
+            if (object.userData?.cullSphere) chunkCullables.push(object);
+          });
+          return { floorMeshes, featureMeshes, waterMeshes, grassGroups, chunkOcclusionMeshes, chunkCanopyZones, chunkCullables };
+        };
+        const integrateRuntimeChunk = payload => {
+          floorRegistry.push(...payload.floorMeshes);
+          waterRegistry.push(...payload.waterMeshes);
+          info.occlusionMeshes.push(...payload.chunkOcclusionMeshes);
+          info.canopyZones.push(...payload.chunkCanopyZones);
+          info.cullables.push(...payload.chunkCullables);
+        };
+        const detachRuntimeChunk = (payload, bounds, group) => {
+          removeRefs(floorRegistry, payload.floorMeshes);
+          removeRefs(waterRegistry, payload.waterMeshes);
+          removeRefs(info.occlusionMeshes, payload.chunkOcclusionMeshes);
+          removeRefs(info.canopyZones, payload.chunkCanopyZones);
+          removeRefs(info.cullables, payload.chunkCullables);
+          for (const registry of [_zoneVegetationMeshes.get(mapId), _zoneMineableRockMeshes.get(mapId)]) {
+            if (!registry) continue;
+            for (const key of [...registry.keys()]) {
+              const [col, row] = key.split(',').map(Number);
+              if (col >= bounds.colStart && col < bounds.colEnd && row >= bounds.rowStart && row < bounds.rowEnd) registry.delete(key);
+            }
+          }
+          window.ClimbSystem?.removeBranchesInBounds(mapId, bounds);
+          group.traverse(object => {
+            _treeFadeActive.delete(object);
+            for (const material of (object.userData?._fadeMaterials || [])) material.dispose?.();
+          });
+        };
+        const disposeRuntimeChunk = record => {
+          record.group.traverse(object => {
+            if (object.userData?.wildernessChunkOwnsGeometry) object.geometry?.dispose?.();
+            if (object.userData?.wildernessChunkOwnsMaterial) {
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              for (const material of materials) {
+                material?.map?.dispose?.();
+                for (const uniform of Object.values(material?.uniforms || {})) {
+                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                }
+                material?.dispose?.();
+              }
+            }
+            if (object.userData?.mergedWaterStatKey) window.MergedWaterRenderer?.clearStats?.(object.userData.mergedWaterStatKey);
+          });
+        };
+        const arrivalCol = Number.isFinite(focusCol) ? focusCol : (zdef?.entryCol ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        const arrivalRow = Number.isFinite(focusRow) ? focusRow : (zdef?.entryRow ?? 0); // Centers the synchronous arrival chunk neighborhood.
+        if (window.WildernessChunks) {
+          info.chunkController = window.WildernessChunks.createZone({
+            mapId,
+            scene: zScene,
+            cols: ZCOLS,
+            rows: ZROWS,
+            focusCol: arrivalCol,
+            focusRow: arrivalRow,
+            buildChunk: buildRuntimeChunk,
+            onChunkLoaded: record => integrateRuntimeChunk(record.payload),
+            onChunkUnloaded: record => detachRuntimeChunk(record.payload, record.bounds, record.group),
+            disposeChunk: disposeRuntimeChunk,
+          });
+        } else {
+          // Defensive fallback for a stale/cached index that omitted the new
+          // module: preserve complete terrain rather than showing an empty zone.
+          integrateRuntimeChunk(buildRuntimeChunk({
+            group: zScene,
+            bounds: { colStart: 0, rowStart: 0, colEnd: ZCOLS, rowEnd: ZROWS },
+          }));
+        }
         window.TownZoneBuildings.spawnZoneBuildings(mapId);
         window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
+        window.FoliageFurnitureRuntime?.spawnForMap(mapId);
         // Any NPC whose schedule targeted this zone before its (expensive,
         // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
@@ -7790,6 +10029,39 @@
         const modes = cameraModesConfig();
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
+      function defaultCameraModeKey() {
+        return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+      }
+      // Same "weapon tool actually equipped AND selected" gate as
+      // updateMovement's own weaponEngaged/findAutoTarget's meleeActive —
+      // duplicated rather than shared since this one only ever needs to
+      // answer "which shoulder-surf offset preset applies" (see
+      // s_shoulderSurfOffsetH_default/_combat above).
+      function shoulderSurfCombatStanceActive() {
+        return heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
+      }
+      // One-shot reset used only when freshly entering shoulder-surf (mode
+      // toggled on, standing up from a chair, dialogue/cutscene ending) —
+      // snaps directly behind the player's current facing and levels the
+      // pitch, the same "camera sits opposite the direction the character
+      // faces" derivation beginSitInteraction uses for the seated camera's
+      // initial framing. From here on, plain mouse movement (see the
+      // mousemove handler's freeRotate branch) drives cameraAzimuthOffsetDeg
+      // directly — this only ever runs once per mode-entry, not continuously.
+      function snapShoulderSurfAzimuth() {
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(270 - facingAngle * 180 / Math.PI - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
+        cameraAngleOffsetDeg = 0;
+      }
+      // Every call site that resolves "return to the ordinary gameplay
+      // camera" (dialogue close, standing up from a chair, cutscene end)
+      // should go through this instead of assigning defaultCameraModeKey()
+      // directly, so landing back in shoulder-surf always re-centers behind
+      // the player rather than resuming wherever a prior free-look drag left
+      // the azimuth.
+      function enterDefaultCameraMode(prevMode) {
+        activeCameraMode = prevMode ?? defaultCameraModeKey();
+        if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+      }
       function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
       function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
       function dialogueZoomEnabled() { return dialogueZoomConfig().enabled !== false; }
@@ -7828,9 +10100,6 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
       }
       function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
-      function normalizeStationLabel(label) {
-        return String(label || '').trim().toLowerCase();
-      }
       function isGeneralStoreNpcOnDuty(walker) {
         const cfg = generalStoreButtonConfig();
         const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
@@ -7883,6 +10152,13 @@
         };
       }
 
+      // INSTRUMENT_NPC_DEFS, isNpcOnDutyAtStation, listInstrumentPerformers,
+      // and window.__farmDebugTools now live in js/npc-scheduling.js —
+      // aliased back to these same names below, right after
+      // window.NpcScheduling.init(...) (see the NPC scheduling module init
+      // block further down, near spawnScheduledNpcs) so every existing call
+      // site here keeps working unchanged.
+
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
         return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
@@ -7911,6 +10187,39 @@
         player.vy = 0;
       }
 
+      // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
+      // Author's actor gaze system (aimActorNeckAtTarget/actorEyeWorldPosition
+      // in docs/tools/animation-author/index.html — used there for e.g. the
+      // dance preset, where two actors of different heights still need to
+      // convincingly meet each other's eyes): computes yaw AND pitch together
+      // from the real 3D direction between two eye-height world points, then
+      // transforms that direction into the neck bone's own parent space, so
+      // the result is automatically correct regardless of how the body is
+      // currently rotated — unlike aiming at the residual gap against the
+      // body's own (slower) facing lerp, this doesn't decay back toward zero
+      // once the body catches up. Called every frame, it holds a steady
+      // "looking at you" pose for as long as it keeps being called, which is
+      // what a conversation needs (the gaze should persist for the whole
+      // exchange, not just the moment right after it opens).
+      function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
+        return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        if (!neckJoint?.parent) return false;
+        neckJoint.parent.updateMatrixWorld(true);
+        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const horizontal = Math.hypot(direction.x, direction.z);
+        if (direction.lengthSq() < 1e-8) return false;
+        const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        return true;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -7926,15 +10235,20 @@
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
-        // Head rotation: the body above only catches up to npcTargetRot
-        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
-        // neck bone at however much of that gap remains right now (clamped to
-        // a natural-looking max) — the NPC glances at the player immediately
-        // and the head straightens on its own as the body finishes turning.
+        // Eye contact: aims BOTH the NPC's and the player's own neck bone
+        // straight at the other's eyes, held for the whole conversation (see
+        // _aimNeckAtEyeContact above) — this owns the player's neck bone
+        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
+        // for exactly this reason, see its own dialogueOpen guard).
+        walker.root.updateMatrixWorld(true);
+        playerMesh.updateMatrixWorld(true);
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
-          const residual = angleDiff(npcTargetRot, walker.rot);
-          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+        }
+        if (playerNeckJoint) {
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
         }
       }
 
@@ -8102,39 +10416,14 @@
         return path;
       }
 
-      function isNpcTileWalkable(area, c, r) {
-        const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
-        const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
-        if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
-        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
-        if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
-        if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
-        if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
-        return true;
-      }
+      // isNpcTileWalkable and canNpcBeeline now live in js/npc-pathfinding.js
+      // — aliased back below (see the NpcPathfinding init block further
+      // down, right after the functions they depend on are all defined) so
+      // every call site above and below keeps working unchanged.
 
-      function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
-        const tx = targetC + 0.5, tz = targetR + 0.5;
-        const dist = Math.hypot(tx - fromX, tz - fromZ);
-        const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
-        const samples = Math.max(1, Math.ceil(dist / step));
-        for (let i = 0; i <= samples; i++) {
-          const t = i / samples;
-          const c = Math.floor(fromX + (tx - fromX) * t);
-          const r = Math.floor(fromZ + (tz - fromZ) * t);
-          if (!isNpcTileWalkable(area, c, r) && !(allowOccupiedTarget && c === targetC && r === targetR)) return false;
-        }
-        return true;
-      }
-
-      function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
-      function isNowWithinNpcRuleWindow(now, start, end) {
-        if (start === null || end === null) return false;
-        if (start <= end) return now >= start && now < end;
-        return now >= start || now < end;
-      }
+      // parseNpcTimeMinutes/currentGameMinutes/isNowWithinNpcRuleWindow now
+      // live in js/npc-scheduling.js (schedule-rule time-window matching);
+      // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
         if (!area) return 'farm';
         if (area === 'interior') return 'interior';
@@ -8144,52 +10433,11 @@
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
-      function normalizeNpcStation(station, fallbackArea) {
-        if (!station || !station.id) return null;
-        const c = station.c ?? station.col;
-        const r = station.r ?? station.row;
-        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
-        return {
-          id: station.id,
-          label: station.label || station.id,
-          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
-          c, r,
-          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
-          pose: station.pose || 'stand',
-          furnitureKey: station.furnitureKey
-            || getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
-            || (DECORATIVE_FURNITURE_DEFS[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
-          seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
-          toolKey: station.toolKey || '',
-          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
-          toolAnimStyle: station.toolAnimStyle || '',
-          // Multi-tile wander footprint around this station's root tile —
-          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
-          // wanderMode 'radius' (default) samples a random offset within
-          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
-          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
-          // from (c,r), authored in the Map Editor's station paint tool) —
-          // lets an author cover an irregular region a circle can't express
-          // (an L-shaped yard, a field that hugs a path, etc). Neither set
-          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
-          // exactly at (c,r).
-          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
-          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
-          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
-            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
-            : [],
-        };
-      }
-      function registerNpcStations(stations, fallbackArea) {
-        (stations || []).forEach(st => {
-          const normalized = normalizeNpcStation(st, fallbackArea);
-          if (normalized) npcStationsById.set(normalized.id, normalized);
-        });
-      }
-      function resolveNpcStationTarget(stationId) {
-        const station = npcStationsById.get(stationId);
-        return station ? { ...station, stationId: station.id } : null;
-      }
+      // normalizeNpcStation/registerNpcStations/resolveNpcStationTarget and
+      // the npcStationsById registry they operate on now live in js/npc-
+      // scheduling.js — aliased back below (see the NpcScheduling init block
+      // near spawnScheduledNpcs) so registerNpcStations/npcStationsById here
+      // keep working exactly as before.
 
       // Chairs auto-register as NPC scheduling stations wherever they're
       // placed — no map author has to hand-add an npcStations entry for
@@ -8239,22 +10487,8 @@
         return target;
       }
 
-      const _scheduleFallbackLogKeys = new Set();
-      function logScheduleFallbackOnce(rec, kind, area, c, r) {
-        const minuteBucket = Math.floor(currentGameMinutes() / 10);
-        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
-        if (_scheduleFallbackLogKeys.has(key)) return;
-        _scheduleFallbackLogKeys.add(key);
-        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
-      }
-
-      // A rule may restrict itself to one or more weekdays via "day" (single
-      // name) or "days" (array); rules with neither run every day, same as before.
-      function isNpcRuleActiveOnDay(rule) {
-        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
-        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
-        return true;
-      }
+      // _scheduleFallbackLogKeys, logScheduleFallbackOnce, and isNpcRuleActiveOnDay
+      // now live in js/npc-scheduling.js alongside resolveNpcScheduleTarget below.
 
       // Village-wide shared schedule overrides (e.g. Temple Service, Anan
       // 9-11am): any NPC tagged `appliesToTag`, without a rule of their own
@@ -8266,75 +10500,8 @@
       // spawnScheduledNpcs() below. Used to be hardcoded Temple-Service-only
       // constants here; kept generic so any future event just needs data.
       let npcSharedSchedules = [];
-      function hashNpcIdToIndex(id, mod) {
-        let h = 0;
-        const s = String(id || '');
-        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-        return Math.abs(h) % mod;
-      }
-
-      function resolveNpcScheduleTarget(rec) {
-        const hooks = rec?.scheduleHooks || {};
-        const now = currentGameMinutes();
-        for (const rule of hooks.rules || []) {
-          if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
-          if (!isNpcRuleActiveOnDay(rule)) continue;
-          const start = parseNpcTimeMinutes(rule.start ?? rule.from);
-          const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
-          const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
-          if (ruleActive && rule.stationId) {
-            const stationTarget = resolveNpcStationTarget(rule.stationId);
-            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
-            // The station's building scene may simply not have been visited/loaded
-            // yet this session (its npcStations only register once it loads) —
-            // warm it up so the lookup succeeds on a later tick, and throttle the
-            // warning instead of spamming it every tick until that load completes.
-            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
-            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
-            if (!_scheduleFallbackLogKeys.has(warnKey)) {
-              _scheduleFallbackLogKeys.add(warnKey);
-              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
-            }
-          }
-          const c = rule.c ?? rule.position?.c;
-          const r = rule.r ?? rule.position?.r;
-          const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-          if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
-            return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
-        }
-        for (const shared of npcSharedSchedules) {
-          if (!shared || shared.contentIncomplete) continue;
-          const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
-          if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
-          if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
-          if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
-          const ids = shared.stationIds || [];
-          if (!ids.length) continue;
-          const target = resolveNpcStationTarget(ids[hashNpcIdToIndex(rec?.id, ids.length)]);
-          if (target) return { ...target, activity: shared.label || shared.id || 'Shared Event' };
-        }
-        if (hooks.defaultStationId) {
-          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
-          if (stationTarget) return stationTarget;
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
-        }
-        // contentIncomplete NPCs (flagged by the migration/Schedule Editor —
-        // e.g. a defaultPosition that was only ever a {0,0} placeholder)
-        // skip the raw-position fallback entirely rather than spawn at a
-        // made-up tile; they fall through to "no target" below, which
-        // spawnScheduledNpcs()/​_retrySpawnDeferredNpcs() already treat as
-        // "defer and retry" instead of a visible glitch.
-        if (!hooks.contentIncomplete && hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
-          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
-          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
-          return { ...hooks.defaultPosition, area: defArea };
-        }
-        const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
-        return null;
-      }
+      // hashNpcIdToIndex and resolveNpcScheduleTarget now live in
+      // js/npc-scheduling.js — aliased back below near spawnScheduledNpcs.
 
       // Pool of transition spots that live "in" the given area, in the same
       // shape checkTransitionSpots() uses for the player.
@@ -8344,59 +10511,8 @@
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
-      // One-hop links reachable directly from `area`, in the shape
-      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
-      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
-      // single-hop version of this code used to use, so existing direct links
-      // (town↔building, building→town, farm↔interior) behave identically.
-      function areaLinksFrom(area) {
-        const pool = npcTransitionPool(area);
-        const links = [];
-        for (const t of pool) {
-          if (t.target === 'building' && t.targetMapId) {
-            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
-            const bi = _buildingScenes.get(t.targetMapId);
-            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
-              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
-            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
-          } else if (t.target === 'exit_building') {
-            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
-            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
-          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
-            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
-          }
-        }
-        return links;
-      }
-
-      // Resolves the door an NPC should walk to in order to leave `fromArea`
-      // toward `toArea`, plus the spot they should appear at once they arrive —
-      // i.e. the Spot doubles as both the movement target on the way out and
-      // the spawn point on the way in, so NPCs are never warped straight to
-      // their final schedule target through a wall. `toArea` may be several
-      // hops away (e.g. town → a building's ground floor → one of its
-      // upstairs rooms) — this does a short BFS over the area graph and
-      // returns only the *first* hop; the caller re-resolves on arrival,
-      // which naturally chains the walk leg by leg instead of skipping
-      // straight to the final room.
-      function findNpcAreaLink(fromArea, toArea) {
-        if (fromArea === toArea) return null;
-        const visited = new Set([fromArea]);
-        const queue = [{ area: fromArea, firstHop: null }];
-        while (queue.length) {
-          const { area, firstHop } = queue.shift();
-          for (const link of areaLinksFrom(area)) {
-            const hop = firstHop || link;
-            if (link.toArea === toArea) return hop;
-            if (!visited.has(link.toArea)) {
-              visited.add(link.toArea);
-              queue.push({ area: link.toArea, firstHop: hop });
-            }
-          }
-        }
-        return null;
-      }
+      // areaLinksFrom/findNpcAreaLink now live in js/npc-pathfinding.js —
+      // aliased back below alongside isNpcTileWalkable/canNpcBeeline.
 
       async function spawnScheduledNpcs(extraRecords) {
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
@@ -8465,6 +10581,67 @@
         }, 1000);
       }
 
+      // NPC scheduling (resolveNpcScheduleTarget, the station registry, and
+      // the on-duty check ambient performances poll) lives in
+      // js/npc-scheduling.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcScheduling.init({
+        npcWalkers,
+        calendar,
+        getCurrentArea: () => currentArea,
+        getWorldNpcPaths: () => worldNpcPaths,
+        getSharedSchedules: () => npcSharedSchedules,
+        isBuildingArea: _isBuildingArea,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        normalizeNpcArea,
+        getDecorativeFurnitureKeyByItemKey,
+        decorativeFurnitureDefs: DECORATIVE_FURNITURE_DEFS,
+      });
+      const {
+        registerNpcStations,
+        resolveNpcStationTarget,
+        resolveNpcScheduleTarget,
+        isNpcOnDutyAtStation,
+        listInstrumentPerformers,
+        normalizeStationLabel,
+      } = window.NpcScheduling;
+      const npcStationsById = window.NpcScheduling.stationsById;
+
+      // NPC walkability/beeline checks and area-graph search (isNpcTileWalkable,
+      // canNpcBeeline, areaLinksFrom, findNpcAreaLink) live in
+      // js/npc-pathfinding.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcPathfinding.init({
+        getGrid: () => grid,
+        getTownGrid: () => townGrid,
+        // interiorGrid is a plain const (never reassigned) but is declared
+        // further down in this same closure — referencing it directly here
+        // would hit the const/let temporal dead zone (unlike the function
+        // declarations below, which are hoisted regardless of position).
+        getInteriorGrid: () => interiorGrid,
+        TileType,
+        worldObjects,
+        isSolid,
+        isHouseFootprint,
+        isTownBuildingCollisionTile,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        furnitureBlocksMovementAt,
+        npcGridForArea,
+        npcMovementConfig,
+        npcTransitionPool,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        buildingSpawnFromExit,
+      });
+      const {
+        isNpcTileWalkable,
+        canNpcBeeline,
+        areaLinksFrom,
+        findNpcAreaLink,
+      } = window.NpcPathfinding;
+
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
 
@@ -8510,13 +10687,16 @@
         // the NPC's world model with its eyes shut forever (see
         // renderProfile's forceEyesOpen handling in portrait-utils.js).
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
+        headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -8660,7 +10840,7 @@
               if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
             }
             const nextHop = this._gridPath[0];
-            if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
+            if (this.moveToward(nextHop.col + 0.5, nextHop.row + 0.5, dt)) this._gridPath.shift();
             if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
           },
           // Station wander — active once state === 'station-wander' (entered
@@ -8718,7 +10898,7 @@
             }
             if (this._wanderGridPath && this._wanderGridPath.length) {
               const hop = this._wanderGridPath[0];
-              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              if (this.moveToward(hop.col + 0.5, hop.row + 0.5, dt)) this._wanderGridPath.shift();
               return;
             }
             if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
@@ -8783,7 +10963,17 @@
               footprintHalfDepth: seatTransform.footprintHalfDepth,
               anchorZ: seatTransform.anchorZ,
             } : undefined;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false, seatedPose);
+            // Procedural leg IK is real per-frame cost (stride/lift solving
+            // for both legs) that's purely visual — pointless work for an
+            // NPC nobody can see because they're not in the player's
+            // current area. Suppressed mode (the same one drink-interaction
+            // locks use) just holds a neutral resting pose instead of
+            // solving a gait, at a fraction of the cost. Every walker still
+            // updates every frame regardless of area (see updateNpcWalkers)
+            // so schedules/arrivals stay correct — only the parts nobody
+            // can see get cheaper.
+            const isVisibleArea = this.area === currentArea;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose);
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
@@ -8823,7 +11013,19 @@
               return;
             }
             this._exitSpot = null;
-            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
+            // Station wander takes over completely once entered (see below) and
+            // returns early every tick from then on — it never reaches the
+            // toolKey-equip block or the state:'idle' this sets, both further
+            // down. That's invisible for a plain wander-while-working station
+            // (no toolKey to equip, nothing reads its 'idle' state), but for a
+            // toolKey station it means the NPC can wander right past ever
+            // picking up their tool, and isNpcOnDutyAtStation (which requires
+            // state==='idle') never sees them as on duty either — exactly what
+            // happened to Foroji's inn station, the only one with a wander
+            // radius set: he'd circle near the stage, kurraya never in hand, no
+            // ambient music. A performer needs to actually stay at their
+            // instrument to play it, so toolKey stations opt out of wandering.
+            const wanderEnabled = !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
@@ -8840,14 +11042,25 @@
               this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
             }
             if (this.state === 'station-wander') {
-              this._updateStationWander(target, dt);
-              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-              root.position.y += (wty - root.position.y) * 0.2;
-              if (this._moveSpeedTiles > 0.05) {
-                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
-                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              // _updateStationWander is real per-frame cost when it's not
+              // just idly waiting — picking a random tile, a canNpcBeeline
+              // scan, and potentially a full TilePathfinding.findPath — for
+              // an NPC nobody can see because they're not in the player's
+              // current area. Wandering itself is pure flavor with no
+              // gameplay consequence off-screen, so an invisible NPC just
+              // holds its current spot instead of paying for it; the next
+              // tick after the player actually visits resumes wandering
+              // normally from wherever it was left.
+              if (isVisibleArea) {
+                this._updateStationWander(target, dt);
+                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                root.position.y += (wty - root.position.y) * 0.2;
+                if (this._moveSpeedTiles > 0.05) {
+                  const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                  root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+                }
+                groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               }
-              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
@@ -8865,13 +11078,41 @@
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) root.add(this.stationToolMesh);
                 }
-                if (this.stationToolMesh) {
+                if (this.stationToolMesh && isKurraya) {
+                  // Same held-still-until-a-note-sounds treatment as the
+                  // player's own Kurraya (see updateHeldItemHolder) — driven
+                  // externally by triggerNpcKurrayaTwitch on each real
+                  // 'sounded-note' from this NPC's ambient performance iframe,
+                  // not a canned swing loop.
+                  //
+                  // Position/scale mirror the player's own updateHeldItemHolder
+                  // isKurraya branch exactly — that's the one place in this
+                  // codebase with an already-proven-right Kurraya pose (cradled
+                  // across the chest at its authored rest tilt; the assembly
+                  // itself carries that tilt). An earlier version of this code
+                  // used the raw per-species hand-attach point directly instead,
+                  // on the theory that an actively-performing pose should sit
+                  // further out than the player's carry pose — but the player
+                  // uses this exact cradled formula whether just carrying the
+                  // Kurraya or actively playing it; there's no separate
+                  // "performing" pose anywhere else in this codebase to diverge
+                  // toward, and that version was also missing the player's 0.85
+                  // scale-down, which alone would render the NPC's copy visibly
+                  // larger than the player's own.
+                  const handX = avatarGroup.userData?.handAttachX ?? -(avatarGroup.userData?.portraitModelWidth || avatarHeight) / 2;
+                  const handY = avatarGroup.userData?.handAttachY ?? avatarHeight / 2;
+                  this.stationToolMesh.position.set(handX * 0.4, handY + 0.14, HELD_ITEM_FORWARD_OFFSET);
+                  this.stationToolMesh.scale.setScalar(0.85);
+                  updateKurrayaTwitch(this.stationKurrayaTwitch, this.stationToolMesh);
+                } else if (this.stationToolMesh) {
                   // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
                   // entirely in root-local space: the mesh is a child of `root`, so root's
                   // own rotation.y already carries this NPC's facing — using the fixed
@@ -8897,12 +11138,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -9033,9 +11274,81 @@
         window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
       }
 
+      // ── World-space blink/breathing/default-expression (item 3) ─────────
+      // The dialogue/cutscene portrait canvas already re-renders periodically
+      // with the breathing composer (see runAnimation's own breathTimer just
+      // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
+      // blinks/breathes and shows each NPC's own authored restingExpression
+      // — the WORLD-space walking avatar never did, since makeNpcWalker/
+      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
+      // at spawn/gear-change and never touch it again. This applies that
+      // same periodic-recompose idea (the identical cheap
+      // refreshSinglePlaneAvatarModel texture-only path runAnimation already
+      // uses, not a full geometry rebuild) to both NPC walkers and the
+      // player, at a coarser interval than dialogue's 120ms since many NPCs
+      // can be on screen at once — and only the player's current area's
+      // walkers pay this cost at all (see the area guard below).
+      function _worldPortraitLifeConfig() {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
+        return {
+          enabled: cfg.enabled !== false,
+          intervalS: Number.isFinite(Number(cfg.intervalS)) ? Number(cfg.intervalS) : 0.16,
+        };
+      }
+
+      function _tickNpcPortraitLife(walker, dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || walker.area !== currentArea) return; // Only the player's current scene pays this cost.
+        if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
+        walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
+        if (walker._portraitLifeT < cfg.intervalS) return;
+        walker._portraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
+        if (!walker._portraitLifeExpressionSet) {
+          // The NPC's own authored default expression (rec.restingExpression
+          // — see dialogue-content.js's _npcRestingExpression, now shared via
+          // window.DialogueContent.npcRestingExpression) applies here too, so
+          // a walking NPC shows the same resting face dialogue already gives
+          // them, not a generic neutral one. Set once per walker (this seatId
+          // is stable for its whole lifetime) rather than every tick.
+          composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
+          walker._portraitLifeExpressionSet = true;
+        }
+        if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
+        walker._portraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+        }).then(() => {
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+        }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
+      }
+
+      let _playerPortraitLifeT = 0;
+      let _playerPortraitLifePending = false;
+      function _tickPlayerPortraitLife(dt) {
+        const cfg = _worldPortraitLifeConfig();
+        if (!cfg.enabled || _playerPortraitLifePending) return;
+        if (!playerAvatarGroup?.userData?.frontTexture || !playerAvatarFrontCanvas || !playerAvatarProfile) return;
+        _playerPortraitLifeT += dt;
+        if (_playerPortraitLifeT < cfg.intervalS) return;
+        _playerPortraitLifeT = 0;
+        const composer = window.portraitBreathingComposer;
+        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
+        _playerPortraitLifePending = true;
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
+          breathingComposer: composer, seatId: 'player',
+        }).then(() => {
+          if (generation !== playerAvatarRefreshGeneration) return;
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
+        }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) w.update(dt);
+        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -9278,11 +11591,24 @@
             // override), must NOT stomp the ring/interior staking already written
             // above — only default to flat grass if no caller has touched this
             // world cell yet.
+            const isCarvedPlateauOverride = t => !!(t?.plateau && CARVED_TILE_TYPES.has(t.type)); // Used below so authored/generated cuts survive the plateau footprint fold.
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
               const key = `${c + offsetC},${r + offsetR}`;
-              if (!t || t.plateau) {
+              if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
                 if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+                continue;
+              }
+              if (isCarvedPlateauOverride(t)) {
+                // Generated waterways retain their plateau group so they still
+                // participate in the mesa footprint. They are also real surface
+                // overrides, though: discarding their type here turns the mesa's
+                // continuous grass lid back on over rivers, waterfalls, and dug
+                // holes. Preserve the already-staked tier/ring flags and replace
+                // only the surface type; buildPlateauMesa then omits this cell's
+                // lid while _buildZoneFloorMeshes supplies its carved geometry.
+                const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false };
+                outTiles.set(key, { ...staked, type: t.type });
                 continue;
               }
               let type = t.type || 'grass';
@@ -9525,6 +11851,16 @@
       // pickDenMotherKind/synthesizeCavernMapData) now lives in
       // js/cavern-generator.js — call via window.CavernGenerator.*.
 
+      // Synthesizes a hobunji_building_interior.v1-shaped mapData for a
+      // barn's interior, entirely in-memory — never authored/persisted,
+      // same reasoning as a den's cavern (see synthesizeCavernMapData). The
+      // rest of the barn trough feature (interior synthesis, the live
+      // fill-level mesh registry, and the open-trough panel) lives in
+      // window.FarmTroughs — see docs/js/farm-troughs.js.
+      function synthesizeBarnInteriorMapData(mapId) {
+        return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -9532,9 +11868,28 @@
         let loadSource = 'missing';
         if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
-          // (see synthesizeCavernMapData).
+          // (see synthesizeCavernMapData) — but that generation is one
+          // unbroken synchronous SDF carve (~25-40s), during which the
+          // browser can't repaint at all, so the black scene-transition
+          // fade (see startSceneTransition/updateSceneTransition, which
+          // already holds it until _buildingScenes resolves) would
+          // otherwise sit there with no indication anything is happening.
+          // Two rAFs guarantee this label actually paints before the
+          // blocking call starts — a single rAF can still land in the
+          // same paint as this DOM write, showing nothing at all.
+          const denLoadingLabel = document.getElementById('denLoadingLabel');
+          if (denLoadingLabel) denLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
           mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
           loadSource = 'cavern';
+          if (denLoadingLabel) denLoadingLabel.style.display = 'none';
+        } else if (mapId.startsWith('map_i_barn_')) {
+          // A barn's interior is generated in-memory from its own exterior
+          // record (see synthesizeBarnInteriorMapData) — never fetched/
+          // persisted, same reasoning as a den's cavern above, just
+          // synchronous (no SDF carve, no loading-label needed).
+          mapData = synthesizeBarnInteriorMapData(mapId);
+          loadSource = 'barn';
         } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
@@ -9604,27 +11959,52 @@
           }
           const bScene = new THREE.Scene();
           bScene.background = new THREE.Color(0x2a1a0a);
-          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
-          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          // A den's cavern is meant to read as genuinely dark — the warm
+          // door light + floor glow patch below (built fresh every time
+          // this scene loads, i.e. every time the player actually enters)
+          // is the only real light source, standing in for daylight
+          // spilling through the mouth. A near-zero ambient/key light keeps
+          // the rest of the room from washing that out — every other
+          // interior style keeps the normal bright, evenly-lit look.
+          // Matches the farmhouse interior's own "dark room, single warm
+          // lantern" baseline (see the _intAmbient/_intKey pair near the
+          // Three.js renderer setup) rather than a guessed-lower value —
+          // near-zero ambient read as almost pure black even right next to
+          // the door light in a headless render check, since a point
+          // light's falloff only reaches surfaces facing toward it.
+          const isCavernInterior = mapData.wallStyle === 'cavern';
+          bScene.add(new THREE.AmbientLight(0xfff5e0, isCavernInterior ? 0.15 : 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
-          // Floor tiles only for defined floor set
-          for (const [c, r] of (mapData.floor || [])) {
-            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
-            fl.position.set(c + 0.5, -0.05, r + 0.5);
-            bScene.add(fl);
-          }
-          // Irregular brick walls with gaps at all exit tiles — or, for a den's
-          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
-          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
-          // flat cloth-colored panels matching the exterior tent piece's
-          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
-          const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
-          if (wallPanels.length) {
-            const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
-            _markOutline(wallGroup);
-            bScene.add(wallGroup);
+          // A den's cavern (mapData.wallStyle === 'cavern') carries its own
+          // pre-carved organic rock shell (see generateCavernFloor/
+          // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
+          // one mesh, replacing the flat per-tile floor boxes and flat wall
+          // panels every other interior style still uses below.
+          if (mapData.wallStyle === 'cavern' && mapData.mesh) {
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh);
+            _markOutline(cavernMesh);
+            bScene.add(cavernMesh);
+          } else {
+            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            // Floor tiles only for defined floor set
+            for (const [c, r] of (mapData.floor || [])) {
+              const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.position.set(c + 0.5, -0.05, r + 0.5);
+              bScene.add(fl);
+            }
+            // Irregular brick walls with gaps at all exit tiles, or for a
+            // canvas tent interior (mapData.wallStyle === 'canvas'), flat
+            // cloth-colored panels matching the exterior tent piece's
+            // 'canvas' material (see HousePieceGen's matCanvas) instead of
+            // brick.
+            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+            if (wallPanels.length) {
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
+              _markOutline(wallGroup);
+              bScene.add(wallGroup);
+            }
           }
           // A den's cavern entrance had no visual distinguishing it from any
           // other dark corner of the cave (see generateCavernFloor's
@@ -9642,7 +12022,16 @@
             const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
             const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
             glow.rotation.x = -Math.PI / 2;
-            glow.position.set(ex, 0.02, ez);
+            // y=0.02 used to sit right at the entrance's own carved floor
+            // surface — not reliably ABOVE it: confirmed directly (SDF
+            // field sampling, not just visual guessing) that the true
+            // floor at the entrance's exact centroid only clears open air
+            // somewhere between y=0.02 and y=0.05, so the glow patch was
+            // landing inside the floor/rock there on every single den,
+            // reading as "a little arch of light placed inside a rock,
+            // cutting a hole in it" instead of lying flat on open floor.
+            // 0.15 clears that transition with real margin.
+            glow.position.set(ex, 0.15, ez);
             bScene.add(glow);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
@@ -9671,6 +12060,10 @@
               bScene.add(model);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
               registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
+              if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
+                const authoredData = window.AuthoredFurniture?.peek('trough');
+                window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
+              }
             } else {
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
@@ -9698,7 +12091,7 @@
               const footprint = decorativeFurnitureSize(furnitureKey, f.rotY || 0); // Used so every occupied tile of a multi-cell fixture shares its interaction.
               for (let rowOffset = 0; rowOffset < footprint.fd; rowOffset++) {
                 for (let colOffset = 0; colOffset < footprint.fw; colOffset++) {
-                  _buildingInteractables.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), interactableFactory());
+                  _buildingInteractables.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), interactableFactory(f));
                 }
               }
             } else if (def?.sit) {
@@ -9756,6 +12149,75 @@
             const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
             nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
             bScene.add(nestMarker);
+
+            // A "bigger, tunnely" den (see generateCavernFloor) deserves real
+            // content along the crawl to the Den-Mother rather than an empty
+            // corridor — sparse mineable ore rocks and a few regular
+            // (non-Den-Mother) creatures from the same native pool, both
+            // picked deterministically by synthesizeCavernMapData (see
+            // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
+            const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
+            // Fresh map each build (rather than reusing any Map left over
+            // from a stale pre-Tothal-Shift cavern of the same mapId — see
+            // forgetZoneDenState) so removeZoneMineableRockVisual never
+            // targets an orphaned rock group from a layout that no longer
+            // exists.
+            const oreRockMeshes = new Map();
+            if (mapData.oreRocks?.length) _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            for (const rock of (mapData.oreRocks || [])) {
+              if (bGrid[rock.row]?.[rock.col]) {
+                bGrid[rock.row][rock.col].type = TileType.ROCK;
+                bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
+                bGrid[rock.row][rock.col].oreKind = rock.oreKind;
+              }
+              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              if (!stoneGeo) continue;
+              const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
+              rockMesh.castShadow = rockMesh.receiveShadow = true;
+              const rockGroup = new THREE.Group();
+              rockGroup.add(rockMesh);
+              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+              bScene.add(rockGroup);
+              _markOutline(rockGroup);
+              // Reuses the same mineableRocksByTile/isMineableRockTile/
+              // removeZoneMineableRockVisual pipeline the outdoor ore rocks
+              // already go through (see mergeZoneTiles/buildMergedZoneGrid),
+              // so mining one here needs no new gameplay code.
+              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+            }
+            // Regular wildlife species (e.g. uumkaoii-wild) are hostile:false
+            // outdoors — pure fleeable prey, per CREATURE_DB's own comment —
+            // with no aggroRangePx/attack stats at all. A den's own pack
+            // defends its home turf regardless of species though, so a
+            // spawn here whose species wouldn't otherwise fight gets a
+            // modest defensive combat profile merged onto a per-instance
+            // clone of its def (creature.def, not the shared CREATURE_DB
+            // entry — makeCreatureEntity's opts.def overrides it cleanly via
+            // restOpts, which spreads after `def` in the creature object
+            // literal, so every existing hostile/aggroRangePx/attack* read
+            // throughout updateHostiles picks it up with no other changes
+            // needed). Weaker/shorter-ranged than an actual predator's pack
+            // (e.g. gar-wolf) — a startled herbivore defending its nest, not
+            // a hunter.
+            const DEN_HERBIVORE_DEFENDER_STATS = {
+              hostile: true, aggroRangePx: TILE * 4.5, leashRangePx: TILE * 4,
+              attackDamage: 10, attackRangePx: TILE * 0.8, attackHalfConeRad: 40 * Math.PI / 180,
+              attackStaminaCost: 10, attackCooldownS: 1.3, attacks: ['pounce'], attackTag: 'blunt',
+            };
+            for (const spawn of (mapData.creatureSpawns || [])) {
+              const spawnFamily = window.WildlifeSpawn.denGenotypeFamily(spawn.kind);
+              const spawnGenotype = spawnFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, spawnFamily) : null;
+              const sx = (spawn.col + 0.5) * TILE, sy = (spawn.row + 0.5) * TILE;
+              const baseDef = CREATURE_DB[spawn.kind];
+              const defOverride = baseDef && baseDef.hostile === false ? Object.assign({}, baseDef, DEN_HERBIVORE_DEFENDER_STATS) : null;
+              const creature = makeCreatureEntity(spawn.kind, sx, sy, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX: sx, homeY: sy, state: 'idle',
+                isDenMother: false, genotype: spawnGenotype,
+                ...(defOverride ? { def: defOverride } : {}),
+              });
+              if (creature) hostileObjects.add(creature);
+            }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
@@ -9768,7 +12230,14 @@
             worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
             rebuildRouteGraphs();
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
+          // Meshes tall enough to get between the fixed follow camera and the
+          // player (cavern rock walls, house/shop wall panels — see their
+          // own `.userData.cameraObstacle` tags) — collected once here, same
+          // as buildZoneScene's occlusionMeshes, rather than walking the
+          // whole scene graph every frame in occlusionSafeCameraPosition.
+          const occlusionMeshes = [];
+          bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -9786,7 +12255,16 @@
             }
             if (_pendingEntrySpawnFromExit) {
               _pendingEntrySpawnFromExit = false;
-              const sp = buildingSpawnFromExit(info, cols, rows);
+              // A den's cavern skips the generic "average exit col, one
+              // tile north" heuristic — mapData.exitCol/exitRow (the
+              // guaranteed-walkable middle entrance tile generateCavernFloor
+              // already computed above) is exact, where that heuristic can
+              // land outside the organic floor blob (see denTransitions'
+              // comment in performTothalShift for why this is resolved
+              // lazily here rather than eagerly at zone-generation time).
+              const sp = mapData.wallStyle === 'cavern' && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+                ? { col: mapData.exitCol, row: mapData.exitRow }
+                : buildingSpawnFromExit(info, cols, rows);
               player.x = (sp.col + 0.5) * TILE;
               player.y = (sp.row + 0.5) * TILE;
               _snapCameraTarget();
@@ -9838,7 +12316,9 @@
           _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
+        const occlusionMeshes = [];
+        bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId, occlusionMeshes };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -9957,7 +12437,7 @@
           // area silently landed the player on the farm scene instead (see
           // enterZone, which builds/adds to the zone scene the same way on
           // the way in).
-          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea, player.x / TILE, player.y / TILE)?.scene : scene);
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -9980,7 +12460,9 @@
         }
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
-        const zi = buildZoneScene(mapId);
+        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
+        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        const zi = buildZoneScene(mapId, col, row);
         if (!zi) return;
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
@@ -9988,8 +12470,6 @@
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
-        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
-        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2; player.angle = facingAngle;
@@ -10014,6 +12494,7 @@
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
+        window.WildernessCampfire?.onZoneEntered(mapId);
       }
 
       // Town/zone building mesh spawning (detectTownBuildings/
@@ -10087,6 +12568,7 @@
         for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
         for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
         for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+        for (const f of (zoneData?.wildernessFoliageFurniture || [])) markOccupied(f.col, f.row, f.footprintW || 1, f.footprintD || 1);
         // Lets a second scatter system (wild berries) avoid the tiles another
         // one (reagents) already claimed for the same day — see
         // scatterBerriesForZone.
@@ -10109,6 +12591,95 @@
         }
         return candidates.slice(0, count);
       }
+
+      function wildernessChunkTileSize() {
+        return window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+      }
+
+      function recordWildernessChunkTileDelta(mapId, col, row) {
+        const tile = _zoneScenes.get(mapId)?.grid?.[row]?.[col];
+        if (!tile) return false;
+        const chunkTiles = wildernessChunkTileSize();
+        const chunkKey = Math.floor(col / chunkTiles) + ',' + Math.floor(row / chunkTiles);
+        let zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) _wildernessChunkTileDeltas.set(mapId, zone = new Map());
+        let chunk = zone.get(chunkKey);
+        if (!chunk) zone.set(chunkKey, chunk = new Map());
+        chunk.set(col + ',' + row, {
+          col, row,
+          type: tile.type,
+          elevTier: tile.elevTier || 0,
+          rampElevation: tile.rampElevation || 0,
+          skipFloor: !!tile.skipFloor,
+          incline: !!tile.incline,
+          floraKind: tile.floraKind || null,
+          rockKind: tile.rockKind || null,
+          water: Number(tile.water) || 0,
+          crop: tile.crop,
+          cropAge: Number(tile.cropAge) || 0,
+          cropReady: !!tile.cropReady,
+          stress: tile.stress || '',
+          variation: Number(tile.variation) || 0,
+        });
+        _wildernessChunkTileStateYear = currentTothalYear();
+        return true;
+      }
+
+      function applyWildernessChunkTileDeltas(mapId, zGrid) {
+        if (_wildernessChunkTileStateYear !== currentTothalYear()) return 0;
+        const zone = _wildernessChunkTileDeltas.get(mapId);
+        if (!zone) return 0;
+        let applied = 0;
+        for (const chunk of zone.values()) {
+          for (const delta of chunk.values()) {
+            const tile = zGrid?.[delta.row]?.[delta.col];
+            if (!tile) continue;
+            Object.assign(tile, delta);
+            delete tile.col;
+            delete tile.row;
+            applied++;
+          }
+        }
+        return applied;
+      }
+
+      function serializeWildernessChunkState() {
+        const zones = {};
+        for (const [mapId, chunks] of _wildernessChunkTileDeltas) {
+          const serializedChunks = {};
+          for (const [chunkKey, tiles] of chunks) serializedChunks[chunkKey] = [...tiles.values()];
+          zones[mapId] = serializedChunks;
+        }
+        return { version: 1, year: currentTothalYear(), chunkTiles: wildernessChunkTileSize(), zones };
+      }
+
+      function restoreWildernessChunkState(saved) {
+        _wildernessChunkTileDeltas.clear();
+        const currentYear = currentTothalYear();
+        _wildernessChunkTileStateYear = currentYear;
+        if (!saved || saved.version !== 1 || Number(saved.year) !== currentYear) return;
+        for (const [mapId, chunks] of Object.entries(saved.zones || {})) {
+          const zone = new Map();
+          for (const [chunkKey, tiles] of Object.entries(chunks || {})) {
+            const tileMap = new Map();
+            for (const delta of (Array.isArray(tiles) ? tiles : [])) {
+              if (!Number.isFinite(delta?.col) || !Number.isFinite(delta?.row)) continue;
+              tileMap.set(delta.col + ',' + delta.row, { ...delta });
+            }
+            if (tileMap.size) zone.set(chunkKey, tileMap);
+          }
+          if (zone.size) _wildernessChunkTileDeltas.set(mapId, zone);
+        }
+      }
+
+      window.__wildernessChunkPersistenceDebug = () => {
+        let chunks = 0, tiles = 0;
+        for (const zone of _wildernessChunkTileDeltas.values()) {
+          chunks += zone.size;
+          for (const chunk of zone.values()) tiles += chunk.size;
+        }
+        return { year: _wildernessChunkTileStateYear, chunks, editedTiles: tiles };
+      };
 
       // Save/restore _zoneFelledTreePersist as a plain object — see
       // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
@@ -10145,6 +12716,8 @@
       // wilderness terrain. Only disposes geometries; tileMats/houseWallBuilder
       // materials are shared across every map and must outlive this.
       function _disposeZoneScene(mapId) {
+        window.FoliageFurnitureRuntime?.disposeMap(mapId);
+        window.WildernessChunks?.destroyZone(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
@@ -10197,7 +12770,7 @@
         const byTile = _zoneVegetationMeshes.get(mapId);
         const vegGroup = byTile?.get(`${col},${row}`);
         if (!zi || !vegGroup) return false;
-        zi.scene.remove(vegGroup);
+        vegGroup.parent?.remove(vegGroup);
         byTile.delete(`${col},${row}`);
         _treeFadeActive.delete(vegGroup);
         for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
@@ -10214,15 +12787,19 @@
         return true;
       }
 
-      // Removes one separately-built wilderness resource rock. Its full
-      // grass floor tile is already in the merged ground mesh, so only the
-      // small mound group needs to disappear when mining completes.
+      // Removes one separately-built resource rock's mound. For a wilderness
+      // zone its full grass floor tile is already in the merged ground mesh,
+      // so only the small mound group needs to disappear when mining
+      // completes; for a den's cavern (see loadBuildingScene's oreRocks
+      // handling) the mound sits directly on the carved floor with nothing
+      // else to reveal underneath. Resolves either scene registry so both
+      // share this one removal path instead of duplicating it per area kind.
       function removeZoneMineableRockVisual(mapId, col, row) {
-        const zi = _zoneScenes.get(mapId);
+        const zi = _zoneScenes.get(mapId) || _buildingScenes.get(mapId);
         const byTile = _zoneMineableRockMeshes.get(mapId);
         const rockGroup = byTile?.get(`${col},${row}`);
         if (!zi || !rockGroup) return false;
-        zi.scene.remove(rockGroup);
+        rockGroup.parent?.remove(rockGroup);
         byTile.delete(`${col},${row}`);
         rockGroup.traverse(object => object.geometry?.dispose());
 
@@ -10254,7 +12831,7 @@
           tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
           row + 0.5
         );
-        zi.scene.add(patch);
+        if (!window.WildernessChunks?.attachObject(mapId, col, row, patch)) zi.scene.add(patch);
         _markTerrainEdgeId(patch, TileType.GRASS);
         _zoneFloorMeshGroups.get(mapId)?.push(patch);
         return true;
@@ -10274,9 +12851,26 @@
       // alone, so it's safe to call immediately while the player is
       // standing in the zone (unlike a full zone rebuild — see
       // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
-      function refreshZoneGroundVisuals(mapId) {
+      function refreshZoneGroundVisuals(mapId, col = null, row = null) {
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
+        if (zi.chunkController && window.WildernessChunks) {
+          // The route network's grass apron is zone-wide, but its index ranges
+          // are recorded per tile when it is first built. Toggle only this
+          // edited tile's handful of triangles instead of regenerating the
+          // entire route heightfield (which previously froze large wilderness
+          // maps for several seconds). Filling/smoothing restores the original
+          // indices through the same path.
+          const routeApronUpdated = zi.pathNet?.refreshTile?.(col, row) || false; // Reported in the mobile-visible debug log below.
+          // The live grid already contains the authoritative edit. Rebuild
+          // only its resident chunk plus one-chunk seam halo; unloaded chunks
+          // will naturally read the updated grid when they are next streamed.
+          const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
+          rebuildZoneMesaMeshes(mapId);
+          window.WildTreasure.syncZoneInteractivity(mapId);
+          debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
+          return;
+        }
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
         if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
         const oldGrass = _zoneGrassMeshes.get(mapId);
@@ -10491,7 +13085,7 @@
             flowX: fx, flowZ: fz,
           };
         });
-        const townRiverMesh = _buildMergedWaterMesh(townScene, riverSurfaceCells, {
+        const townRiverMesh = window.WaterSystem.buildMergedWaterMesh(townScene, riverSurfaceCells, {
           name: 'town_merged_river_water', statKey: 'town rivers',
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
@@ -10688,6 +13282,21 @@
         if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
         if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
         if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
+        // Feed Grinder (barn interior fixture) — harvested crops grind into
+        // Plant Fodder, raw meat and fish grind into Meat Fodder. Mulch is
+        // deliberately not a valid input (it's clearing waste, not feed).
+        // Checked live off cropData/ITEM_DEFS tags rather than a Set
+        // snapshotted at load — fish items in particular only get merged
+        // into ITEM_DEFS asynchronously (see fish-catalog.js's
+        // registerItems), well after this file's own top-level code runs.
+        // Reuses this same generic "hold a valid item, interact" processing
+        // pipeline rather than a one-off — see PROCESSING_FURNITURE_DEFS.feedGrinder.
+        if (methodId === 'grindingFeed' && cropData[inputKey]) {
+          return { key: 'plantFodder', icon: ITEM_DEFS.plantFodder.icon, label: ITEM_DEFS.plantFodder.label, cat: 'material', sellPrice: ITEM_DEFS.plantFodder.sellPrice, tags: ITEM_DEFS.plantFodder.tags, desc: ITEM_DEFS.plantFodder.desc };
+        }
+        if (methodId === 'grindingFeed' && (input.tags?.includes('Meat') || input.tags?.includes('Fish'))) {
+          return { key: 'meatFodder', icon: ITEM_DEFS.meatFodder.icon, label: ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: ITEM_DEFS.meatFodder.sellPrice, tags: ITEM_DEFS.meatFodder.tags, desc: ITEM_DEFS.meatFodder.desc };
+        }
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
         if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
           const berryKey = inputKey.replace(/Juice$/, '');
@@ -10833,6 +13442,10 @@
       // days the cooldown takes. A kind with no entry here can be housed but
       // won't produce anything yet.
       const LIVESTOCK_RESOURCE_DEFS = window.SCRATCHBONES_CONFIG?.game?.livestock?.resources || {};
+
+      // Predator/prey/omnivore diet per kind, used by barn troughs to gate
+      // which fodder type (plantFodder/meatFodder) a housed animal eats.
+      const LIVESTOCK_DIET = window.SCRATCHBONES_CONFIG?.game?.livestock?.diet || {};
 
       // Which action verb the in-world "Collect" button shows, per kind —
       // gar-wolf/dabinggi-hound's resource is milked out of them rather than
@@ -10980,9 +13593,11 @@
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         if (_isZoneArea(currentArea)) {
-          return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
+          return window.FoliageFurnitureRuntime?.objectAt(currentArea, col, row)
+              || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
         if (currentArea !== 'farm') return null;
@@ -11107,6 +13722,11 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        // isInstrument gates the held-item "Play" action button (see
+        // computeActionButtons' item-context section) — held it opens the
+        // music minigame instead of any tool-slot behavior, so this is
+        // deliberately not also a TOOL_ITEM_DEFS entry.
+        kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Hold it and play — solo, or fall in behind whoever's already playing nearby." },
         pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
@@ -11136,6 +13756,8 @@
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
         fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
         pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
+        crossbow:     { icon: '🏹', label: 'Crossbow',      cat: 'tool', sellPrice: 0, tags: ['Tool', 'Ranged Weapon'], desc: 'A loading crossbow. Fires one long bolt and fits in the ranged slot.' },
+        scatterbow:   { icon: '🏹', label: 'Scatterbow',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Ranged Weapon'], desc: 'A loading scatterbow. Fires a cone of short bolts and fits in the ranged slot.' },
 
         // ── Uumkao'ii Dew ────────────────────────────────────────────
         // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
@@ -11160,6 +13782,10 @@
         garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
         grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
+
+        // ── Livestock feed (ground at the Feed Grinder, stored in barn troughs) ─
+        plantFodder: { icon: '🌿', label: 'Plant Fodder', cat: 'material', sellPrice: 2, tags: ['Material', 'Feed'], desc: 'Coarsely ground crop matter. Feeds plant-eating livestock from a barn trough.' },
+        meatFodder: { icon: '🍖', label: 'Meat Fodder', cat: 'material', sellPrice: 3, tags: ['Material', 'Feed'], desc: 'Ground and cured raw meat. Feeds meat-eating livestock from a barn trough.' },
       };
 
       // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
@@ -11277,7 +13903,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
           };
         }
       });
@@ -11290,7 +13916,7 @@
           ITEM_DEFS[key] = {
             icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
             tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
-            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${window.AlchemySystem.EFFECT_DEFS[def.effects[0]].label}.`,
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Traits: ${def.traits.humour}, ${def.traits.drive}, ${def.traits.magnetism}.`,
           };
         }
       });
@@ -11535,9 +14161,8 @@
         });
       }
 
-      function getActiveInventoryItem() {
+      function getActiveInventoryItem(stacks = getInventoryStackItems()) {
         // Used by planting, shipping-box quick deposit, HUD, and item scroll.
-        const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         if (activeItemIndex >= stacks.length) activeItemIndex = 0;
         if (activeItemIndex < 0) activeItemIndex = stacks.length - 1;
@@ -11575,7 +14200,7 @@
         const keys = getInventoryStackKeys(invActiveCat);
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length, 1) / 7) * 7);
 
-        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W' };
+        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
         keys.forEach(key => {
           const def   = ITEM_DEFS[key];
           const count = inventory[key] || 0;
@@ -11662,14 +14287,15 @@
               if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
             });
           }
-          // Potions are drinkable from right here — the Inventory panel is
-          // reachable from anywhere, so this is the "consume anywhere" path
-          // (as opposed to brewing, which still needs the Alchemy Table).
+          // Alchemical items follow the same physical held-item language as
+          // every other bag item. Selecting here only places the bottle in
+          // hand; Drink/Throw/Read/Eat remains on the normal action arch.
           if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
-            mkBtn('🧪 Drink', 'equip', () => {
-              const result = window.AlchemySystem.drinkPotion(key);
-              showToast(result.message, result.ok !== false);
-              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            mkBtn('🤲 Hold', 'equip', () => {
+              const index = getInventoryStackItems().findIndex(item => item.key === key);
+              if (index >= 0) activeItemIndex = index;
+              heldMode = 'item';
+              refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
           if (def.isCookedFood && count > 0) {
@@ -11730,8 +14356,17 @@
       // (applyGearClothingToPlayerData/clothingSpriteForCosmetic/etc) now
       // live in js/equipment-panel.js — call via window.EquipmentPanel.*.
 
+      // Routes through the shared PNGPlaneAvatar.disposeAvatarModel() rather than
+      // disposing geometry/materials locally. Sibling systems attached under
+      // playerMesh alongside the avatar sprite (procedural-hand-frame-driver.js's
+      // hand rig, portrait-arm-cloud-mask.js's alpha texture) only tear down their
+      // per-avatar state when that shared entry point is called on the outgoing
+      // avatarRoot — bypassing it orphans them on every refresh instead of
+      // replacing them, e.g. a gear change leaving a stale extra pair of hands
+      // attached next to the new one.
       function disposeAvatarGroup(group) {
-        group?.traverse?.(node => {
+        if (window.PNGPlaneAvatar?.disposeAvatarModel) window.PNGPlaneAvatar.disposeAvatarModel(group);
+        else group?.traverse?.(node => {
           node.geometry?.dispose?.();
           if (node.material) {
             const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -11791,6 +14426,27 @@
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
       }
 
+      function freezePlayerAvatarPortraitComposer(nowMs) {
+        const source = window.portraitBreathingComposer;
+        if (!source) return null;
+        return {
+          getExpression(seatId) {
+            return typeof source.getExpression === 'function' ? source.getExpression(seatId, nowMs) : 'neutral';
+          },
+          getOverlayOnlyPoints(_ignoredNowMs, seatId) {
+            return typeof source.getOverlayOnlyPoints === 'function' ? source.getOverlayOnlyPoints(nowMs, seatId) : null;
+          },
+          getInterpolatedPoints(speciesId, gender, _ignoredNowMs, phaseOffsetMs, seatId) {
+            return typeof source.getInterpolatedPoints === 'function'
+              ? source.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId)
+              : null;
+          },
+          getAnimData(speciesId, gender) {
+            return typeof source.getAnimData === 'function' ? source.getAnimData(speciesId, gender) : null;
+          },
+        };
+      } // Freezes every full/hatless canvas in one avatar rebuild to the same deformation sample so the xray pixel diff contains only hat pixels.
+
       // Ported from the animation-author tool's shoulder-pet hat-xray feature
       // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
       // docs/tools/animation-author/index.html): a shoulder pet perched near
@@ -11803,7 +14459,7 @@
       // specifically, without touching how the hat occludes anything else,
       // and without ever affecting the body layer's own normal occlusion (so
       // this never makes the player see-through, only the hat).
-      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration, staticRenderOptions) {
         try {
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
@@ -11811,11 +14467,11 @@
           const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, staticRenderOptions);
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
           const hatlessBackCanvas = document.createElement('canvas');
           hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
-          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { ...staticRenderOptions, portraitView: 'behind' });
           if (refreshGeneration !== playerAvatarRefreshGeneration) return;
 
           // Diff through the SAME per-face variant transform (front: as-is;
@@ -11839,6 +14495,8 @@
 
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
+          const neckRig = avatarGroup.userData?.neckRig; // Used below to give the separated hat overlay the portrait plane's exact skin weights.
+          const skinnedSource = neckRig?.available ? neckRig.skinnedPlane : null; // Used below as the overlay's geometry/skeleton source instead of an unrigged card.
           const backOffsetZ = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.backPlaneOffsetZ ?? 0.001;
           const materials = [], meshes = [];
           const addPlane = (canvas, facingBack) => {
@@ -11851,22 +14509,42 @@
               side: THREE.FrontSide, depthWrite: true, depthTest: true,
               name: `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_material`,
             });
-            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+            let mesh; // Becomes a weight-matched SkinnedMesh when the avatar has a neck rig, with a rigid fallback for legacy avatars.
+            if (skinnedSource?.geometry && skinnedSource?.skeleton) {
+              const overlayGeometry = skinnedSource.geometry.clone(); // Used only by this face-specific overlay, so normal avatar disposal remains ownership-safe.
+              const sourceGroup = skinnedSource.geometry.groups[facingBack ? 1 : 0]; // Selects the already-authored rear or front face without duplicating the opposite face.
+              if (!sourceGroup) {
+                overlayGeometry.dispose();
+                material.map?.dispose();
+                material.dispose();
+                return;
+              }
+              overlayGeometry.clearGroups();
+              overlayGeometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
+              material.skinning = true;
+              mesh = new THREE.SkinnedMesh(overlayGeometry, material);
+              mesh.position.copy(skinnedSource.position);
+              mesh.position.z += facingBack ? -0.0015 : 0.0015;
+              mesh.bind(skinnedSource.skeleton, skinnedSource.bindMatrix);
+            } else {
+              mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+              mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
+              if (facingBack) mesh.rotation.y = Math.PI;
+            }
             mesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_plane`;
             // Nudged a hair closer to camera than its sibling body plane (in
             // the SAME outward direction that plane already leans relative to
             // anchorZ) so the hat consistently draws on top instead of
             // z-fighting with the now-hatless body layer underneath it.
-            mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
-            if (facingBack) mesh.rotation.y = Math.PI;
-            // Front stays at the body planes' shared default (2) — resolved
+            // Front stays at the body plane's shared default — resolved
             // against the front body plane by the Z-nudge above, same as
             // always. Back has to explicitly out-rank the body's own back
             // plane (bumped to PLAYER_BACK_PLANE_RENDER_ORDER in
             // refreshPlayerAvatar, for the shoulder-pet layering rule — see
             // updatePetLayering), since renderOrder is compared before the
             // Z-nudge ever comes into play.
-            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
+            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : PLAYER_FRONT_PLANE_RENDER_ORDER;
+            mesh.frustumCulled = false;
             assembly.add(mesh);
             materials.push(material);
             meshes.push(mesh);
@@ -11879,8 +14557,9 @@
             for (const m of materials) { m.map?.dispose(); m.dispose(); }
             return;
           }
-          _playerHatXrayOverlay = { materials, meshes };
+          _playerHatXrayOverlay = { materials, meshes, skinningMode: skinnedSource ? 'shared-portrait-skeleton' : 'rigid-fallback' };
           _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
+          window.__farmLog?.(`[avatar] hat-xray overlay uses ${_playerHatXrayOverlay.skinningMode}`, 'info');
         } catch (err) {
           window.__farmLog?.(`[avatar] hat-xray overlay build failed: ${err.message}`, 'warn');
         }
@@ -11916,37 +14595,48 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        const staticRenderOptions = {
+          forceEyesOpen: true,
+          breathingComposer: freezePlayerAvatarPortraitComposer(Date.now()),
+        }; // Shared by the full and hatless renders below so cold-cache load time cannot leak hood/poncho deformation into the hat-only overlay.
         // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
         // this bakes one static texture and never re-renders it, so an
         // unlucky blink-timing roll here would leave the player's own world
         // model stuck with its eyes shut until the next gear/cosmetic change
         // happens to trigger a fresh bake.
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
+        headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { ...staticRenderOptions, onlyHeadSprite: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { ...staticRenderOptions, portraitView: 'behind' });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
-        // Direct front/back plane refs for updatePetLayering (see near
-        // updateCompanions) — createSinglePlaneAssembly always nests them
-        // as the assembly's first two children (frontMesh, then backMesh).
-        // The back plane's renderOrder is bumped here (once, unconditionally
-        // — harmless when idle, since front/back are never simultaneously
-        // visible) so it always out-ranks a shoulder pet's planes whenever
-        // it's the one actually facing the camera.
+        // Direct front/back material refs for updatePetLayering. A neck-rigged
+        // avatar is one SkinnedMesh with [front, back] materials, whereas the
+        // fallback assembly keeps two separate meshes. Resolve either shape
+        // instead of writing depth state onto the SkinnedMesh's material array.
         const _bodyAssembly = avatarGroup.children[0];
-        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
-        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
-        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        const _skinnedBodyPlane = avatarGroup.userData?.neckRig?.available ? avatarGroup.userData.neckRig.skinnedPlane : null; // Used here to identify the dual-material portrait shape.
+        const _skinnedBodyMaterials = _skinnedBodyPlane
+          ? (Array.isArray(_skinnedBodyPlane.material) ? _skinnedBodyPlane.material : [_skinnedBodyPlane.material])
+          : null; // Used here to map the skinned mesh's material groups to their front/back faces.
+        _playerAvatarFrontMaterial = _skinnedBodyMaterials?.[0] || _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _skinnedBodyMaterials?.[1] || _bodyAssembly?.children?.[1]?.material || null;
+        if (_skinnedBodyPlane) _skinnedBodyPlane.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        else if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
+        playerAvatarModelWidth = avatarWidth;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
         // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
         // and bottom-edge pixel row (see handAttachX/handAttachY in
@@ -11979,7 +14669,10 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
-        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        playerAvatarGroup = avatarGroup;
+        playerAvatarFrontCanvas = frontCanvas;
+        playerAvatarProfile = profile;
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration, staticRenderOptions);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
         // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
@@ -12006,25 +14699,32 @@
       // js/whistle-equip.js — call via window.WhistleEquip.build().
 
       let activeItemIndex = 0;
-      // Declared before createInitialGrid() because recomputeWater() (called
-      // inside createInitialGrid) sets these — they must not be in TDZ.
-      let _waterSimDirty = true;
-      let _flowingTrenchTiles = [];
-      // The town's average water level (0..1), refreshed every time the town's
-      // water sim ticks. The farm's far terrain (and its west/east edge inflow)
-      // tracks this, so the town's own water state shows up out past the farm's
-      // playable edges. Town itself has no "upstream" grid to draw from, so its
-      // own far terrain/edge inflow tracks its own average instead (see
-      // recomputeWater's farLevel computation).
-      let _townWaterLevel = 0.5;
-      // Per-column water level (0..1) of the far terrain immediately south of
-      // the farm's playable grid — tracks each column's south-edge tile so a
-      // player-made gap in the water reaching the bottom row continues into
-      // the far terrain beyond the map instead of stopping dead at the seam.
-      let farSouthLevel = new Float32Array(COLS).fill(0.5);
+
+      // window.WaterSystem.init(deps) must run before createInitialGrid()
+      // just below — that call rolls day-one water levels via
+      // WaterSystem.recomputeWater() synchronously, so deps has to be ready
+      // first (unlike WeatherFX, whose init() can wait until much later —
+      // see js/water-system.js's header comment for why every binding here
+      // is threaded as a getter rather than read once, right up to the
+      // still-null-at-this-point `scene`/`townScene`/SLAB_H/WATER_UNIT/etc).
+      window.WaterSystem.init({
+        calendar, TileType, ROWS, COLS, MAX_WATER, RAIN_RATE,
+        clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
+        getGrid: () => grid,
+        getTownGrid: () => townGrid,
+        getTownZone: () => _townZone,
+        getTownSouthLevel: () => townSouthLevel,
+        getZoneWaterMeshes: () => _zoneWaterMeshes,
+        getScene: () => scene,
+        getTownScene: () => townScene,
+        getSlabH: () => SLAB_H,
+        getWaterUnit: () => WATER_UNIT,
+        getNormalTop: () => NORMAL_TOP,
+      });
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
+      cleanupLegacyFarmEntranceRoad();
 
       // ── Area-switching state ───────────────────────────────────────
       let currentArea     = 'farm';   // 'farm' | 'interior'
@@ -12145,7 +14845,18 @@
       function isAnimalDenCollisionTile(col, row, area) {
         for (const den of (_zoneLayouts.get(area)?.dens || [])) {
           if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+          const w = den.w || 1, h = den.h || 1;
+          if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
+          // Doorway gap carved into the south wall, mirroring the mesh's own
+          // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
+          // zone-den-totem-features.js). Without this the footprint box was
+          // fully solid with no way through it at all — mouthAnchor alone
+          // never punched a hole here since it's defined as the tile just
+          // OUTSIDE the footprint, not a tile inside it.
+          const mouthColStart = den.x + Math.floor(w * 0.3);
+          const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
+          if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
+          return true;
         }
         return false;
       }
@@ -12163,15 +14874,10 @@
 
       let activeTool = 'shovel';
       let activeAction = 'dig';
-      let heldMode = 'tool'; // 'tool' | 'item'
-      // Snapshot of { heldMode, tool, itemIndex } taken when the weapon
-      // quick-switch engages; null when not engaged. 'weapon' is no longer
-      // one of the regular tool-select options (see WHEEL_SLOTS below) —
-      // this snapshot/restore toggle is the only way in and out of it.
-      let weaponQuickSwitchSaved = null;
+      let heldMode = 'tool'; // 'tool' | 'item' | 'none' (hands free without clearing gear assignments)
+      let lastHeldFarmTool = 'shovel'; // Tool Select tap recalls the last valid tool from its ordinary farm-tool arch.
       let lastTime = performance.now();
       let simAccumulator = 0;
-      let waterFlowPhase = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
       let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
@@ -12180,8 +14886,60 @@
       // facingAngle is what the reticle and sprite actually use.
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
       let facingAngle = -Math.PI / 2;   // starts facing north
+      const characterViewMode = {
+        enabled: false,
+        lockedFacingAngle: facingAngle,
+        lockedPlayerAngle: facingAngle,
+        lockedPlayerFacing: 0,
+        lockedNeckX: 0,
+        lockedNeckY: 0,
+        lastChangeReason: 'boot',
+        changedAtMs: 0,
+      }; // Used by the utility-wheel viewer to pin logical facing, rendered body yaw, and neck aim while the camera orbits independently.
+      function publishCharacterViewStatus() {
+        window.HOBUNJI_CHARACTER_VIEW_STATUS = {
+          enabled: characterViewMode.enabled,
+          lastChangeReason: characterViewMode.lastChangeReason,
+          changedAtMs: characterViewMode.changedAtMs,
+          facingAngleDeg: characterViewMode.lockedFacingAngle * 180 / Math.PI,
+          bodyYawDeg: characterViewMode.lockedPlayerFacing * 180 / Math.PI,
+          neckYawDeg: characterViewMode.lockedNeckY * 180 / Math.PI,
+        }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
+      }
+      function setCharacterViewMode(enabled, reason = 'utility-wheel') {
+        const nextEnabled = Boolean(enabled);
+        if (nextEnabled === characterViewMode.enabled) return;
+        if (nextEnabled) {
+          characterViewMode.lockedFacingAngle = facingAngle;
+          characterViewMode.lockedPlayerAngle = player.angle;
+          characterViewMode.lockedPlayerFacing = playerFacing;
+          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
+          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
+        }
+        characterViewMode.enabled = nextEnabled;
+        if (nextEnabled) {
+          requestShoulderSurfPointerLock();
+        } else if (!cursorlessMouseAimRequested()) {
+          releaseShoulderSurfPointerLock();
+        }
+        characterViewMode.lastChangeReason = reason;
+        characterViewMode.changedAtMs = Date.now();
+        publishCharacterViewStatus();
+        showToast(nextEnabled ? 'Character View: On' : (reason === 'movement' ? 'Character View: Off — movement' : 'Character View: Off'), true, false);
+      }
+      publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
+      // is free to lag the (mouse-driven) camera by up to this much before
+      // it starts turning to catch up — a comfortable human neck's
+      // horizontal rotation range, not the full "look over your shoulder"
+      // 90° a real shoulder/torso twist could reach. While MOVING, the body
+      // instead straightens all the way out to match the camera exactly
+      // (see the FACING section below) — a real person squares up to their
+      // direction of travel rather than continuing to crane their neck.
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60°
+      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // rad/sec effective turn rate once past the free-look range
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
@@ -12205,6 +14963,15 @@
       // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
+      // Shoulder-surf's crosshair-style aim raycast (updateShoulderSurfReticleAim)
+      // runs on both desktop (no cursor to raycast once the mouse is
+      // Pointer-Locked) and touch (the floating camera joystick has no
+      // cursor either), so unlike _raycaster/_groundPlane/_mouseWorld above
+      // these are always allocated, not just on desktop.
+      const _screenCenterNDC = new THREE.Vector2(0, 0);
+      const _shoulderSurfReticleRaycaster = new THREE.Raycaster();
+      const _shoulderSurfReticleGroundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const _shoulderSurfReticleWorld = new THREE.Vector3();
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
       const _edRay = new THREE.Raycaster();
       const _edNDC = new THREE.Vector2();
@@ -12266,15 +15033,15 @@
         const farmPondTiles = [[1,1],[2,1],[1,2],[2,2],[3,2],[2,3]];
         farmPondTiles.forEach(([col, row]) => { nextGrid[row][col].type = TileType.RIVER; nextGrid[row][col].water = MAX_WATER; });
 
-        // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
-        const farmPathTiles = [
-          [16,0],[17,0],[18,0],
-          [16,1],[17,1],[18,1],
-          [16,2],[17,2],[18,2],
-          [16,3],[17,3],[18,3],
-          [16,4],[17,4],[18,4],
-        ];
-        farmPathTiles.forEach(([c, r]) => { nextGrid[r][c].type = TileType.PATH; });
+        // NOTE: a hardcoded 3x5 raw-tile stub used to be stamped here as a
+        // "north exit to town" road (col 17, row 0 going south). It duplicated
+        // the real farm<->town connector, which is authored as a proper
+        // route (see worldRoutes/preparePathSplineData) with its own paved
+        // brick surface — the raw stub just showed up as a second, unpaved
+        // dirt road wherever it happened to sit, including straight through
+        // any house piece built near the farm's north entrance. Removed; see
+        // LEGACY_FARM_ENTRANCE_PATH_TILES below for the save-migration that
+        // cleans up already-persisted copies of it.
 
         // Used as a tiny player-spawn clearing so movement and the reticle are immediately readable.
         [[8, 9], [9, 9], [8, 10], [9, 10], [10, 10]].forEach(([col, row]) => {
@@ -12292,7 +15059,7 @@
         // calendar.day, day 1's roll is the same for every player on every
         // load, which is why the game once appeared to always start clear
         // regardless of the intended "raining on day one" state.
-        recomputeWater(false, nextGrid);
+        window.WaterSystem.recomputeWater(false, nextGrid);
         return nextGrid;
       }
 
@@ -12319,6 +15086,25 @@
       }
 
       function updateMovement(dt) {
+        const viewModeKeyboard = getKeyboardVector();
+        const viewModeMoveMagnitude = viewModeKeyboard.active
+          ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
+          : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
+        const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || Math.hypot(player.vx, player.vy) > 1;
+        if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
+          setCharacterViewMode(false, 'movement');
+        }
+        // Every mode below that takes over movement/input outright (dialogue,
+        // fishing, the music minigame, sitting, mounted, prone...) should
+        // drop a walk-to-NPC in progress rather than silently resuming it
+        // once that mode ends somewhere the player never chose to walk to.
+        if (playerAutoWalk && (
+          window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement') ||
+          window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || dialogueOpen ||
+          window.FarmAnimals.isHarvesting() || sitInteraction ||
+          window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+          window.Mounts?.rideState === 'mounted' || player.prone
+        )) playerAutoWalk = null;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) {
           input.x = 0; input.y = 0;
           player.vx = 0; player.vy = 0;
@@ -12352,6 +15138,7 @@
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
+        if (window.MusicMinigame?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
@@ -12365,6 +15152,11 @@
 
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
+          return;
+        }
+
+        if (player.onBranch) {
+          window.ClimbSystem.updateBranchMovement(dt);
           return;
         }
 
@@ -12388,18 +15180,7 @@
         }
 
         if (player.knockbackT > 0) {
-          player.knockbackT = Math.max(0, player.knockbackT - dt);
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
-          const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
-          const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
-          player.x = kbSwept.x; player.y = kbSwept.y;
-          if (kbSwept.blockedX) player.knockbackVX = 0;
-          if (kbSwept.blockedY) player.knockbackVY = 0;
-          player.vx = player.knockbackVX;
-          player.vy = player.knockbackVY;
-          if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+          advancePlayerKnockback(dt);
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
@@ -12410,12 +15191,22 @@
           // the target is guaranteed to still be within the collider right
           // where the lunge halts instead of the player sliding past it.
           if (isHostileInLungeCone(player.lungeHitTest)) {
-            player.lunging = false;
-            player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
-            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
-            tickLungeTrail(_fsPrevX, _fsPrevY);
-            return;
+            if ((player.lungeHopUnits || 0) > 0.01) {
+              // Keep finishing the vertical arc after reaching an elevated
+              // target, but freeze horizontal travel so the leap cannot
+              // carry through and past that target.
+              player.lungeHitTest = null;
+              player.lungeStartX = player.x;
+              player.lungeStartY = player.y;
+              player.lungeDistancePx = 0;
+            } else {
+              player.lunging = false;
+              player.lungeHopCurrent = 0;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+              tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+              tickLungeTrail(_fsPrevX, _fsPrevY);
+              return;
+            }
           }
           // Gently re-aim the lunge toward the locked target's *current*
           // position each frame, capped at LUNGE_HOMING_RATE so it reads as
@@ -12426,12 +15217,15 @@
           // player right past it.
           const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
           if (lungeTarget) {
-            const desiredLungeAngle = Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
+            const aimed = window.Combat?.meleeAimSolution?.(player, lungeTarget, player.angle, player.lungeAimPitch || 0);
+            const desiredLungeAngle = aimed?.yaw ?? Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
             const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+            const homingT = Math.min(1, LUNGE_HOMING_RATE * dt);
             const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
-            const newLungeAngle = curLungeAngle + lungeDiff * Math.min(1, LUNGE_HOMING_RATE * dt);
+            const newLungeAngle = curLungeAngle + lungeDiff * homingT;
             player.lungeDirX = Math.cos(newLungeAngle);
             player.lungeDirY = Math.sin(newLungeAngle);
+            if (aimed) player.lungeAimPitch += (aimed.pitch - (player.lungeAimPitch || 0)) * homingT;
           }
 
           player.lungeT = Math.max(0, player.lungeT - dt);
@@ -12464,6 +15258,19 @@
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
         let iy = usingKeyboard ? keyboardVector.y : input.y;
+
+        if (playerAutoWalk) {
+          if (usingKeyboard || Math.hypot(ix, iy) > 0.15) {
+            playerAutoWalk = null; // Any real movement input takes back manual control.
+          } else {
+            const auto = advancePlayerAutoWalk();
+            if (auto) { ix = auto.x; iy = auto.y; }
+          }
+        }
+
+        // Disorient reverses the player's locomotion input. Aim remains a
+        // separate concern and continues to use the game's usual aim rules.
+        if (window.RangedWeapons?.movementDirectionMultiplier?.(player) === -1) { ix = -ix; iy = -iy; }
         let inputLen = Math.hypot(ix, iy);
 
         // Keyboard is digital, joystick is analog. Normalize keyboard to full speed,
@@ -12476,6 +15283,21 @@
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
           if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
+
+        // Universal stuck-recovery: the instant the player first presses a
+        // movement input after standing still, check whether they're
+        // actually embedded in solid geometry right now (spawned/
+        // teleported into a wall sliver — see canPlayerOccupy's own
+        // escape-hatch fallback just below, which keeps movement usable in
+        // this state but still leaves the player to wander their own way
+        // out). If so, snap straight to the nearest genuinely clear tile
+        // instead, so getting stuck never requires guessing which
+        // direction happens to be open.
+        if (inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          const rescue = findNearestWalkableTileCenter(player.x, player.y);
+          if (rescue) { player.x = rescue.x; player.y = rescue.y; player.vx = 0; player.vy = 0; }
+        }
+        _playerWasMoving = inputStrength > 0.001;
 
         // Raw per-frame move intent, read by hold abilities (Blink Dodge)
         // that need to know which way the player is trying to go.
@@ -12495,6 +15317,31 @@
           const biasedLen = Math.hypot(ix, iy) || 1;
           ix /= biasedLen;
           iy /= biasedLen;
+        }
+
+        // Shoulder-surf: rotate the final (already cardinal-biased) local
+        // move vector into world space relative to the direction the camera
+        // is actually facing (cameraFacingAngleRad()) instead of leaving it
+        // on world-fixed axes, so "forward" always means "toward wherever
+        // the camera is looking," like a standard third-person action
+        // camera. Deliberately NOT mouseLookAngle (the shared aim point head
+        // yaw/body catch-up use, a bearing toward a specific ground spot):
+        // that's fine for orientation, which just re-aims every frame, but
+        // using it here would feed the player's own position back into the
+        // "forward" direction itself — walking toward a close reticle point
+        // swings its bearing as you approach and pass it, so "forward" would
+        // spin (even flip outright) mid-stride instead of holding steady.
+        // cameraFacingAngleRad() is a pure direction with no such point to
+        // pass, so it can't destabilize this way. Deliberately last, after
+        // cardinal bias: biasing this vector toward world cardinals instead
+        // of the player's actual local forward/strafe axes would visibly
+        // skew the intended camera-relative direction.
+        if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
+          const aim = cameraFacingAngleRad();
+          const s = Math.sin(aim), c = Math.cos(aim);
+          const rIx = -ix * s - iy * c;
+          const rIy =  ix * c - iy * s;
+          ix = rIx; iy = rIy;
         }
 
         // ── Tile-speed lookup ─────────────────────────────────
@@ -12539,6 +15386,8 @@
         const desiredY = player.y + player.vy * dt;
         const nextX = clamp(desiredX, minX, maxX);
         const nextY = clamp(desiredY, minY, maxY);
+        const moveStartX = player.x;
+        const moveStartY = player.y;
 
         if (canPlayerOccupy(nextX, player.y)) { player.x = nextX; }
         else { player.vx = 0; }
@@ -12548,37 +15397,70 @@
         else { player.vy = 0; }
         if (desiredY !== nextY) player.vy = 0;
 
+        // When direct tile collision stops both axes, take a tiny consistent
+        // tangent step. This lets held movement naturally slide around a tree
+        // tile without bringing rendered-mesh collision back into movement.
+        if (Math.hypot(player.x - moveStartX, player.y - moveStartY) < 0.001) {
+          tryPlayerTileSidestep(moveStartX, moveStartY, nextX, nextY, minX, maxX, minY, maxY);
+        }
+
         // ── Facing ────────────────────────────────────────────
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
-        const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
-        const autoTarget = weaponEngaged ? findAutoTarget() : null;
+        const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
+        btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
+        // Melee auto-target's sixth arch button: hidden entirely unless
+        // melee is actually out; otherwise grayed out (base style) until a
+        // targetable hostile is in range (.abt-target-ready lights it up),
+        // and solid once actually engaged (.active).
+        const meleeOutNow = meleeWeaponOut();
+        btnMeleeAutoTarget?.classList.toggle('abt-hidden', !meleeOutNow);
+        if (meleeOutNow) {
+          btnMeleeAutoTarget?.classList.toggle('abt-target-ready', !!findAutoTarget());
+          btnMeleeAutoTarget?.classList.toggle('active', meleeAutoTargetOn);
+        }
 
-        // Auto-aim lock takes absolute priority over mouse-look/right-stick
-        // look while it's engaged, so neither can interrupt or steal facing
-        // away from the locked target. It now keeps tracking through an
-        // attack swing too (toolSwingT > 0), just at a slower rate — it used
-        // to fully release during swings ("the swing pose drives its own
-        // body rotation instead"), but combo steps chain fast enough that
-        // facing/lunge direction were effectively frozen at whatever they
-        // were when the string started (see combat-combo.js's onTap, which
-        // samples player.angle fresh on every tap). A target that moved or
-        // got knocked back by an earlier combo hit would then drift right
-        // out of the next step's hit cone. The slower mid-swing rate keeps
-        // the swing pose's own bodyYaw flourish reading as the dominant
-        // motion. Only the weapon being switched away from/unequipped fully
-        // releases it (weaponEngaged false, so autoTarget is already null).
-        const autoAiming = !!autoTarget;
-
-        if (autoAiming) {
-          const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
-          const diff = angleDiff(targetAngle, facingAngle);
-          const autoAimRate = toolSwingT > 0 ? FACING_LERP : FACING_LERP * 2;
-          facingAngle += diff * Math.min(1, autoAimRate * dt);
-          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
-          cardinalHoldTimer = CARDINAL_HOLD;
+        // The old always-on auto-aim lock (hard-overrode facing the instant
+        // a weapon was out and a hostile was in range, "absolute priority
+        // over mouse-look/right-stick") is gone — replaced by
+        // updateMeleeAutoTarget(), called once per frame before this
+        // function, which drives melee-only, opt-in target tracking by
+        // simulating the same mouse-move/right-stick-tilt input a real
+        // player would give (mouseLookAngle/controllerLookAngle in the
+        // ordinary camera, cameraAzimuthOffsetDeg in shoulder-surf), so it
+        // flows through the exact same catch-up branches below/above rather
+        // than a separate override. Ranged weapons are unaffected — see
+        // getPlayerAimAngle/currentPlayerAimAngle for their own aim.
+        if (characterViewMode.enabled) {
+          facingAngle = characterViewMode.lockedFacingAngle;
+          player.angle = characterViewMode.lockedPlayerAngle;
+        } else if (activeCameraMode === SHOULDER_SURF_MODE) {
+          // The body doesn't chase raw movement DIRECTION here (that's what
+          // every other mode does below) — moving camera-relative already
+          // means walking backward/strafing shouldn't spin the character to
+          // face sideways. It does fully square up to the shared aim point
+          // (mouseLookAngle, same one the head and reticle use — see
+          // updateShoulderSurfReticleAim) the instant there's any movement
+          // input though — a real person straightens their neck out to walk
+          // instead of continuing to crane it sideways. Only while standing
+          // still is the body left free to lag that aim point (up to a
+          // comfortable neck-rotation range), turning just enough to stay
+          // within it — the over-the-shoulder body/camera coupling
+          // described where the constants are declared above.
+          const camFacing = mouseLookAngle;
+          if (inputStrength > 0.001) {
+            const diff = angleDiff(camFacing, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * dt);
+            lastMoveAngle = Math.atan2(iy, ix);
+          } else {
+            const diff = angleDiff(facingAngle, camFacing);
+            if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
+              const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+              const turnDiff = angleDiff(targetFacing, facingAngle);
+              facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+            }
+          }
           player.angle = facingAngle;
         } else {
           if (controllerLookActive) {
@@ -12634,7 +15516,77 @@
       }
 
       function canPlayerOccupy(wx, wy) {
-        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+        if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
+        // Universal "unstuck" escape: if the player's own true position is
+        // itself embedded in solid geometry (spawned/teleported into a wall
+        // sliver, a boundary tile a mesh fix didn't quite seal, etc.), the
+        // full-radius box check above can never pass for ANY nearby
+        // candidate whose box still grazes that same solid region — every
+        // direction reads as blocked and the player is permanently welded
+        // in place. While that's true, fall back to a bare center-point
+        // sample (ignores the radius) so movement keeps working and the
+        // player can walk free of the solid patch under their own input
+        // instead of needing a teleport/reload to recover. Normal strict
+        // box collision resumes automatically the instant their real
+        // position is valid again, so this never opens a lasting way to
+        // squeeze through walls.
+        if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+          return tileSpeedAt(wx, wy) !== null;
+        }
+        return false;
+      }
+
+      let _playerTileSidestepSide = 1; // Remembers the last successful tangent so a held direction does not jitter left/right each frame.
+      function tryPlayerTileSidestep(startX, startY, desiredX, desiredY, minX, maxX, minY, maxY) {
+        const dx = desiredX - startX, dy = desiredY - startY;
+        const travel = Math.hypot(dx, dy);
+        if (travel < 0.001) return false;
+        const forwardX = dx / travel, forwardY = dy / travel;
+        const sideOrder = [_playerTileSidestepSide, -_playerTileSidestepSide];
+        const sideStep = Math.min(TILE * 0.12, Math.max(TILE * 0.025, travel));
+        for (const side of sideOrder) {
+          const tangentX = -forwardY * side, tangentY = forwardX * side;
+          for (const scale of [0.55, 1, 1.45]) {
+            // A small forward component rounds corners; the tangent-only
+            // fallback still slides along a flat wall when forward is blocked.
+            for (const forwardScale of [0.22, 0]) {
+              const candidateX = clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
+              const candidateY = clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
+              if (!canPlayerOccupy(candidateX, candidateY)) continue;
+              player.x = candidateX;
+              player.y = candidateY;
+              _playerTileSidestepSide = side;
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      // Expanding-ring search for the nearest genuinely-clear tile center
+      // around (px, py) — used by updateMovement's stuck-recovery teleport.
+      // Deliberately checks the strict box occupancy (canOccupyAt), not
+      // canPlayerOccupy's own lenient escape-hatch fallback above: that
+      // fallback only reads "clear" relative to the player's CURRENT
+      // (stuck) position, so using it here while the player hasn't moved
+      // yet would happily hand back a candidate tile that doesn't actually
+      // satisfy full-radius collision either. Rings out from the player's
+      // own tile outward (Chebyshev distance) so the result is always the
+      // closest real fit, capped at a generous search radius so a
+      // pathologically fully-blocked area can't spin forever.
+      const STUCK_RECOVERY_MAX_RING = 24;
+      function findNearestWalkableTileCenter(px, py) {
+        const col0 = Math.floor(px / TILE), row0 = Math.floor(py / TILE);
+        for (let ring = 0; ring <= STUCK_RECOVERY_MAX_RING; ring++) {
+          for (let dr = -ring; dr <= ring; dr++) {
+            for (let dc = -ring; dc <= ring; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue; // only this ring's perimeter
+              const cx = (col0 + dc + 0.5) * TILE, cy = (row0 + dr + 0.5) * TILE;
+              if (canOccupyAt(cx, cy, PLAYER_RADIUS * 0.72)) return { x: cx, y: cy };
+            }
+          }
+        }
+        return null;
       }
 
       // A fast forced move (combat lunge, knockback, dodge) recomputes its
@@ -12778,6 +15730,7 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'ranged') return true; // projectile targeting is world-space, not tile-gated
         if (tool === 'harpoon' && action === 'fish') {
           return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
         }
@@ -13142,38 +16095,6 @@
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
       }
 
-      function drawCombatConeReticle() {
-        const cfg = combatConfig().combatConeReticle || {};
-        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
-        const abil = weaponAbility('cut');
-        if (!abil) return;
-        const rangeTiles = abil.rangePx / TILE;
-        const baseX = player.x / TILE;
-        const baseZ = player.y / TILE;
-        const y = activeSurfaceYAtWorld(baseX, baseZ) + 0.035;
-        const alpha = Number(cfg.alpha) || 0.24;
-        const lineWidth = Number(cfg.lineWidth) || 2;
-        const color = cfg.color || '#d9ffe0';
-        const left = player.angle - abil.halfConeRad;
-        const right = player.angle + abil.halfConeRad;
-        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-        const origin = worldToOverlay(baseX, y, baseZ);
-        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
-        octx.save();
-        octx.globalAlpha = alpha;
-        octx.strokeStyle = color;
-        octx.lineWidth = lineWidth;
-        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(leftEnd.x, leftEnd.y);
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(rightEnd.x, rightEnd.y);
-        octx.stroke();
-        octx.restore();
-      }
-
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
@@ -13316,11 +16237,16 @@
           return;
         }
 
-        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const { rangePx, halfConeRad, angle, pitch = 0 } = combatSwingCone;
         const rangeTiles = rangePx / TILE;
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
         const y = weaponTrailCenterY();
+        const trailDirection = new THREE.Vector3(
+          Math.cos(angle) * Math.cos(pitch),
+          Math.sin(pitch),
+          Math.sin(angle) * Math.cos(pitch),
+        ).normalize(); // Used to tilt the entire swipe plane toward the 3D aim direction.
         const ids = combatSwingAfflictionIds;
         const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
         // Which tip (u=0 or u=1) the bright spike starts from — mirrors
@@ -13340,23 +16266,23 @@
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
           const posAttr = mesh.geometry.attributes.position;
           const colorAttr = mesh.geometry.attributes.color;
-          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
-            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
-            const a = angle - halfConeRad + (2 * halfConeRad) * u;
-            const cosA = Math.cos(a), sinA = Math.sin(a);
-            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
-            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
-            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
-            const innerR = laneRadius - half, outerR = laneRadius + half;
-            const vi = s * 2;
-            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
-            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+          window.Combat?.writeMeleeTrailRibbon?.(posAttr, {
+            samples: COMBAT_CONE_TRAIL_SAMPLES,
+            origin: new THREE.Vector3(baseX, y, baseZ),
+            direction: trailDirection,
+            rangeTiles: laneRadius,
+            halfConeRad,
+            halfThickness: COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES,
+            archUnits: COMBAT_CONE_TRAIL_ARCH_UNITS,
+          });
+          for (let sample = 0; sample <= COMBAT_CONE_TRAIL_SAMPLES; sample++) {
+            const u = sample / COMBAT_CONE_TRAIL_SAMPLES;
+            const vi = sample * 2;
             const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
             const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
             colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
             colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
           }
-          posAttr.needsUpdate = true;
           colorAttr.needsUpdate = true;
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
@@ -13610,6 +16536,9 @@
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
           // freeze (especially in the Southern Cloud Forest).
+          // Let every branch occupant fall before the decorative tree group
+          // is removed. collapseTree also starts the nest's ground lerp.
+          window.ClimbSystem?.collapseTree?.(currentArea, col, row);
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
@@ -13705,9 +16634,24 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
           refreshActionBar();
+          return;
+        }
+        if (activeAction === 'alchemy_flask_primary') {
+          window.AlchemyFlasks?.primaryAction?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'alchemy_flask_cancel') {
+          window.AlchemyFlasks?.cancelAim?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'potion_select') {
+          // Selectors are opened only by their held-input adapters and commit on release.
           return;
         }
         if (activeAction === 'consume_food_item') {
@@ -13717,15 +16661,61 @@
           refreshActionBar();
           return;
         }
+        if (activeAction === 'play_instrument') {
+          window.MusicMinigame?.beginPlayerSession();
+          return;
+        }
+        // Fires immediately, like the item actions above — the generic
+        // pendingAction/firePendingAction path below only ever gets consumed
+        // by updateToolMesh's tool-swing progress tracker, which explicitly
+        // skips its own body while heldMode === 'item' (it hands off to
+        // updateHeldItemHolder instead), so anything routed through that
+        // path while holding an item — including every other place_*/
+        // plant_* action — never actually fires. Immediate dispatch here
+        // sidesteps that entirely.
+        if (activeAction === 'place_campfire_kit') {
+          const reticle = getReticleTile();
+          const result = window.WildernessCampfire?.placeFromKit(reticle.col, reticle.row) || { ok: false, message: 'Campfires are unavailable right now.' };
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
+          return;
+        }
+        // Same immediate-dispatch reasoning as place_campfire_kit above —
+        // each of these fires straight from its own action-bar slot near a
+        // placed campfire (see getNearbyActions in wilderness-campfire.js)
+        // instead of opening a shared panel first.
+        if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
+        if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
+        if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
           return;
         }
-        if (activeAction === 'climb') {
-          if (player.climbing) return;
-          const climb = window.ClimbSystem.getClimbTarget();
-          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
+        // The frame update owns the five-second aimed nest hold; do not let
+        // the same physical Action 1 press fall through into a weapon swing.
+        if (activeAction === 'nest_take') return;
+        // Same story as nest_take just above: updateBanditTentInteraction
+        // (bandit-camps.js) owns this hold-to-loot/burn timer entirely via
+        // deps.getActionHeldDown(), every frame. Without this guard a tap
+        // fell all the way through to the generic applyAction(tool, action,
+        // col, row) fallback below, which doesn't recognize
+        // 'bandit_tent_interact' as a real tile action and always failed
+        // with "...cannot be used on that tile."
+        if (activeAction === 'bandit_tent_interact') return;
+        // Climb is no longer an Action 1/tool action. The dodge input owns
+        // the forward-dodge climb context; keep this legacy branch inert for
+        // saved bindings or stale UI events from older sessions.
+        if (activeAction === 'climb') return;
+        // Tapping the listed "Climb Tree"/"Climb Down" prompt re-resolves
+        // the climb target fresh (it's proximity/facing based, not tied to
+        // the reticle tile, so the button's own moment-of-press state could
+        // be stale by the time the tap lands) and starts it immediately —
+        // unlike nest_take/bandit_tent_interact this isn't a hold action.
+        if (activeAction === 'climb_branch') {
+          const climb = window.ClimbSystem?.getClimbTarget?.();
+          if (climb) window.ClimbSystem.startClimb(climb);
           return;
         }
         if (activeTool === 'shovel') {
@@ -13767,6 +16757,16 @@
         if (activeTool === 'weapon') {
           const slot = activeAction === toolActions.weapon[0] ? 1 : activeAction === toolActions.weapon[1] ? 2 : null;
           if (slot && window.Combat?.input) { window.Combat.input.fireTap(slot); return; }
+        }
+        if (activeTool === 'ranged' && activeAction === 'shoot') {
+          if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          window.RangedWeapons?.startPlayerAction?.(equipmentSlots.ranged);
+          return;
+        }
+        if (activeTool === 'ranged' && activeAction === 'ammo_select') {
+          if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          // Selectors are opened only by their held-input adapters and commit on release.
+          return;
         }
 
         // Digging a brand-new trench or filling an existing one in requires a
@@ -13833,7 +16833,7 @@
           // and now sittable furniture — see the mapData.furniture loader).
           const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
             : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
-            : getWorldObjectAt(_r.col, _r.row);
+            : getCorpseObjectForAction(activeAction, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -13881,6 +16881,10 @@
 
         const tile = getActiveGrid()[row][col];
         let result;
+        // place_campfire_kit is NOT handled here — it fires immediately from
+        // useActiveAction() instead (see its own comment there): this
+        // pendingAction path only ever gets consumed while heldMode ===
+        // 'tool', so an item-mode action routed through it would never fire.
         if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
@@ -13902,7 +16906,7 @@
         // The farm tile-mesh/water systems below are farm-grid specific; off
         // the farm (town, zones) col/row index into a different grid entirely.
         if (currentArea === 'farm') {
-          recomputeWater(false);
+          window.WaterSystem.recomputeWater(false);
           // dig/fill/raise/till/smooth/plant/harvest/place_* all land here —
           // previously none of them ever called saveFarmLayout() (only the
           // farm editor's brush path did), so any terraforming or planting
@@ -13920,7 +16924,8 @@
           // per-tile array, so the whole ground+grass layer needs rebuilding
           // (not just this one tile) for the change to actually show up. See
           // refreshZoneGroundVisuals.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -13928,6 +16933,75 @@
 
       function targetingConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
+      }
+
+      // Shoulder-surf has no cursor to raycast onto the ground for aim (the
+      // desktop mouse is Pointer-Locked and hidden, the touch floating
+      // camera joystick has no cursor either), so it raycasts from
+      // dead-center of the screen instead, same ground-plane technique the
+      // normal cursor-aim code uses just with a fixed screen-center NDC.
+      // Writes the exact same mouseLookAngle/mouseLookActive/targetAimAngle
+      // state the cursor version does — this is the SHARED aim point
+      // getReticleTile, updatePlayerHeadAim, and updateMovement's body
+      // catch-up all read off of, deliberately, rather than each computing
+      // its own idea of "where the camera is looking": once a horizontal
+      // camera offset is in play the camera's own azimuth stops lining up
+      // with the actual point on the ground being targeted, and every
+      // consumer needs to agree on that one real point or the head/body/
+      // reticle visibly disagree with each other.
+      // Supplies one exact screen-center ray to both combat and world focus.
+      // Shoulder cam always has a meaningful 3D reticle; other camera modes
+      // retain their existing ranged-weapon-only ray behavior.
+      function currentPlayerAimRay() {
+        if (activeCameraMode !== SHOULDER_SURF_MODE
+          && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
+        camera.updateMatrixWorld?.();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
+      function currentPlayerInteractionRay() {
+        if (menuOpen || farmEditMode || dialogueOpen || sitInteraction ||
+            window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
+        camera.updateMatrixWorld?.();
+        // Desktop normal-camera interactions follow the actual cursor reticle;
+        // shoulder/mobile interactions remain screen-centered.
+        const ndc = activeCameraMode === SHOULDER_SURF_MODE ? _screenCenterNDC : _mouseNDC;
+        _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
+        const ray = _shoulderSurfReticleRaycaster.ray;
+        return {
+          origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+          direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
+      function updateShoulderSurfReticleAim() {
+        const rangedAim = heldMode === 'tool' && activeTool === 'ranged'
+          ? window.RangedWeapons?.playerAimSolution?.(equipmentSlots.ranged)
+          : null;
+        const rangedHorizontal = rangedAim ? Math.hypot(rangedAim.direction.x, rangedAim.direction.z) : 0;
+        if (rangedHorizontal > 0.0001) {
+          mouseLookAngle = Math.atan2(rangedAim.direction.z, rangedAim.direction.x);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+          return;
+        }
+        _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
+        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
+        const dx = _shoulderSurfReticleWorld.x - player.x / TILE;
+        const dz = _shoulderSurfReticleWorld.z - player.y / TILE;
+        if (Math.hypot(dx, dz) > 0.3) {
+          mouseLookAngle = Math.atan2(dz, dx);
+          targetAimAngle = mouseLookAngle;
+          mouseLookActive = true;
+          lastMouseMoveTime = performance.now();
+        }
       }
 
       function getReticleTile() {
@@ -14221,15 +17295,94 @@
       // otherwise; shared by every rebuildInteriorGeometry() floor tile.
       const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
 
+      // ── Outline rendering tuning (config/outline-rendering.json) ──────
+      // Every numeric/color knob across the three outline sources below
+      // (shell, colored target highlight, furniture material-seam) used to
+      // be baked into the shader/material literals directly. Pulled out
+      // the same way atmosphere-lighting.json tunes CloudForestFog: a
+      // frozen built-in default so rendering never blocks on the fetch,
+      // overwritten in place onto the already-created materials/uniforms
+      // once the config loads (see loadOutlineRenderingConfig below,
+      // called once these materials exist).
+      const OUTLINE_RENDERING_DEFAULTS = Object.freeze({
+        shell: Object.freeze({ thicknessNdc: 0.006 }),
+        targetHighlight: Object.freeze({ thicknessNdc: 0.009, allyColor: '#14f22e', hostileColor: '#f21f14' }),
+        materialSeam: Object.freeze({ hueStep: 0.6180339887, saturation: 0.85, lightness: 0.55, colorDistanceThreshold: 0.1, occlusionToleranceDepth: 0.05 }),
+        depthEdge: Object.freeze({ baseThreshold: 0.01, sensitivityMinThreshScale: 2.0, sensitivityMaxThreshScale: 0.25 }),
+      });
+      let _outlineRenderingConfig = {
+        shell: { ...OUTLINE_RENDERING_DEFAULTS.shell },
+        targetHighlight: { ...OUTLINE_RENDERING_DEFAULTS.targetHighlight },
+        materialSeam: { ...OUTLINE_RENDERING_DEFAULTS.materialSeam },
+        depthEdge: { ...OUTLINE_RENDERING_DEFAULTS.depthEdge },
+      };
+      function _applyOutlineRenderingConfig(raw) {
+        const finiteOr = (v, fb) => Number.isFinite(Number(v)) ? Number(v) : fb;
+        const hexOr = (v, fb) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) ? v.trim() : fb;
+        const shell = raw?.shell || {};
+        const target = raw?.targetHighlight || {};
+        const seam = raw?.materialSeam || {};
+        const depth = raw?.depthEdge || {};
+        _outlineRenderingConfig = {
+          shell: { thicknessNdc: finiteOr(shell.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.shell.thicknessNdc) },
+          targetHighlight: {
+            thicknessNdc: finiteOr(target.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.targetHighlight.thicknessNdc),
+            allyColor: hexOr(target.allyColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.allyColor),
+            hostileColor: hexOr(target.hostileColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.hostileColor),
+          },
+          materialSeam: {
+            hueStep: finiteOr(seam.hueStep, OUTLINE_RENDERING_DEFAULTS.materialSeam.hueStep),
+            saturation: finiteOr(seam.saturation, OUTLINE_RENDERING_DEFAULTS.materialSeam.saturation),
+            lightness: finiteOr(seam.lightness, OUTLINE_RENDERING_DEFAULTS.materialSeam.lightness),
+            colorDistanceThreshold: finiteOr(seam.colorDistanceThreshold, OUTLINE_RENDERING_DEFAULTS.materialSeam.colorDistanceThreshold),
+            occlusionToleranceDepth: finiteOr(seam.occlusionToleranceDepth, OUTLINE_RENDERING_DEFAULTS.materialSeam.occlusionToleranceDepth),
+          },
+          depthEdge: {
+            baseThreshold: finiteOr(depth.baseThreshold, OUTLINE_RENDERING_DEFAULTS.depthEdge.baseThreshold),
+            sensitivityMinThreshScale: finiteOr(depth.sensitivityMinThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMinThreshScale),
+            sensitivityMaxThreshScale: finiteOr(depth.sensitivityMaxThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMaxThreshScale),
+          },
+        };
+        // Re-apply onto whatever's already built — materials/uniforms exist
+        // by the time this ever runs (loadOutlineRenderingConfig is only
+        // called after them), shader source (the literals turned into
+        // uniforms above) never needs recompiling.
+        shellOutlineMat.uniforms.uThickness.value = _outlineRenderingConfig.shell.thicknessNdc;
+        targetOutlineGreenMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
+        targetOutlineRedMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
+        try { targetOutlineGreenMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.allyColor); } catch {}
+        try { targetOutlineRedMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.hostileColor); } catch {}
+        _postMat.uniforms.uBaseDepthThresh.value = _outlineRenderingConfig.depthEdge.baseThreshold;
+        _postMat.uniforms.uSeamColorDistThresh.value = _outlineRenderingConfig.materialSeam.colorDistanceThreshold;
+        _postMat.uniforms.uSeamOcclusionTolerance.value = _outlineRenderingConfig.materialSeam.occlusionToleranceDepth;
+      }
+      function loadOutlineRenderingConfig() {
+        fetch('config/outline-rendering.json')
+          .then(r => r.ok ? r.json() : null)
+          .then(cfg => { if (cfg) _applyOutlineRenderingConfig(cfg); })
+          .catch(() => {});
+      }
+
       // ── Inverted shell outline ────────────────────────────────────
       // Second render pass: back faces only, vertices extruded along
       // normals → solid black border on every mesh edge. No render
       // targets or screen-space sampling required.
       const shellOutlineMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: {
-          uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
-        },
+        // fog:true + the merged UniformsLib.fog entries below are the
+        // standard (only) way three.js feeds a raw ShaderMaterial the
+        // active scene's actual fog uniforms — refreshed automatically from
+        // whichever scene is being rendered (farm's light 0.018 fog, a
+        // wilderness zone's own, or the Cloud Forest's dense white one).
+        // The shader below does the actual color-mix by hand rather than
+        // relying on the built-in fog_vertex/fog_fragment #include chunks,
+        // since those assume a varying named exactly `mvPosition`, which
+        // this shader computes as `viewPos` instead.
+        fog: true,
+        uniforms: THREE.UniformsUtils.merge([
+          THREE.UniformsLib.fog,
+          { uThickness: { value: 0.006 } },  // NDC units → constant screen-pixel width
+        ]),
         vertexShader: `
           // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
           // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
@@ -14238,6 +17391,7 @@
           // attribute and fails to compile/link, which silently dropped the
           // outline for every InstancedMesh (wall bricks) using this material.
           uniform float uThickness;
+          varying float vFogDepth;
           void main() {
             #ifdef USE_INSTANCING
               mat4 mvMatrix = modelViewMatrix * instanceMatrix;
@@ -14270,11 +17424,33 @@
             dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
             clip.xy    += dir * uThickness * clip.w;
             gl_Position = clip;
+            // Same depth convention THREE's own fog_vertex chunk uses (the
+            // view-space position's negated Z), computed here by hand since
+            // this shader's view-space variable is named viewPos, not the
+            // mvPosition that chunk expects.
+            vFogDepth = -viewPos.z;
           }
         `,
         fragmentShader: `
+          uniform vec3 fogColor;
+          #ifdef FOG_EXP2
+            uniform float fogDensity;
+          #else
+            uniform float fogNear;
+            uniform float fogFar;
+          #endif
+          varying float vFogDepth;
           void main() {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            vec3 outlineColor = vec3(0.0);
+            #ifdef USE_FOG
+              #ifdef FOG_EXP2
+                float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
+              #else
+                float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+              #endif
+              outlineColor = mix(outlineColor, fogColor, fogFactor);
+            #endif
+            gl_FragColor = vec4(outlineColor, 1.0);
           }
         `,
         // depthWrite off: shell only reads the scene depth, never corrupts it.
@@ -14305,8 +17481,17 @@
       // different subset of back-facing cards each time the view changes.
       function _markOutline(obj) {
         if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
-        if (obj.isMesh) { if (!obj.userData.noOutline) obj.layers.enable(1); return; }
-        obj.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); });
+        // PNG planes already contain their authored outline ink. Never enroll
+        // them (or a parent group containing them) in the inverted-hull shell
+        // pass, which is reserved for volumetric 3D geometry.
+        if (obj.userData?.isPngPlane === true) return;
+        if (obj.isMesh) {
+          if (!obj.userData.noOutline && obj.userData.isPngPlane !== true) obj.layers.enable(1);
+          return;
+        }
+        obj.traverse(child => {
+          if (child.isMesh && !child.userData.noOutline && child.userData.isPngPlane !== true) child.layers.enable(1);
+        });
       }
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
@@ -14335,18 +17520,26 @@
           gl_Position = clip;
         }
       `;
+      // Thickness/colors default from OUTLINE_RENDERING_DEFAULTS below and
+      // are overwritten in place once config/outline-rendering.json loads
+      // (see loadOutlineRenderingConfig) — created with the built-in
+      // defaults so rendering never blocks on that fetch.
+      const _targetOutlineFrag = `
+        uniform vec3 uColor;
+        void main() { gl_FragColor = vec4(uColor, 1.0); }
+      `;
       const targetOutlineGreenMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 } },
+        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0x14f22e) } },
         vertexShader: _targetOutlineVert,
-        fragmentShader: `void main() { gl_FragColor = vec4(0.08, 0.95, 0.18, 1.0); }`,
+        fragmentShader: _targetOutlineFrag,
         depthWrite: false, depthFunc: THREE.LessDepth,
       });
       const targetOutlineRedMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 } },
+        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0xf21f14) } },
         vertexShader: _targetOutlineVert,
-        fragmentShader: `void main() { gl_FragColor = vec4(0.95, 0.12, 0.08, 1.0); }`,
+        fragmentShader: _targetOutlineFrag,
         depthWrite: false, depthFunc: THREE.LessDepth,
       });
       let _targetOutlineMeshes = [];
@@ -14403,7 +17596,14 @@
         if (!obj) return;
         obj.userData.isPngPlane = true;
         obj.traverse(child => {
-          if (child.isMesh) child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          if (!child.isMesh) return;
+          // PNG art supplies its own outline. Disable the shell layer on the
+          // mesh itself, while retaining layer 4 for depth-only occlusion of
+          // genuine 3D outlines behind the sprite.
+          child.userData.isPngPlane = true;
+          child.userData.noOutline = true;
+          child.layers.disable(1);
+          child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
         });
       }
 
@@ -14412,8 +17612,9 @@
         if (!obj) return;
         const apply = (m) => {
           m.layers.enable(3);
-          const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
-          const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          const seamCfg = _outlineRenderingConfig.materialSeam;
+          const hue = (_furnitureEdgeIdSeq++ * seamCfg.hueStep) % 1;
+          const idColor = new THREE.Color().setHSL(hue, seamCfg.saturation, seamCfg.lightness);
           m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
             if (material !== _furnitureIdMat) return;
             _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
@@ -14484,6 +17685,11 @@
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
       let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
+      // Reused across calls instead of allocated fresh each frame — this
+      // runs unconditionally every frame outlines are on (the default), for
+      // every visible player/NPC/creature/mount mesh, so a per-frame Map
+      // plus a per-mesh temp array here was pure steady-state GC churn.
+      const _pngOutlineMaterialStates = new Map();
 
       // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
       // Their original alpha-tested materials preserve the real sprite
@@ -14491,17 +17697,25 @@
       // image, while forcing depthWrite on makes every visible pet/player/NPC
       // capable of blocking the shell and material-seam passes that follow.
       function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        const materialStates = new Map(); // Restores avatar materials after this depth-only draw.
+        const materialStates = _pngOutlineMaterialStates;
         let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
         activeScene.traverse(object => {
           if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
           meshCount++;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          for (const material of materials) {
-            if (!material || materialStates.has(material)) continue;
-            materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
-            material.colorWrite = false;
-            material.depthWrite = true;
+          if (Array.isArray(object.material)) {
+            for (const material of object.material) {
+              if (!material || materialStates.has(material)) continue;
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
+          } else {
+            const material = object.material;
+            if (material && !materialStates.has(material)) {
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              material.colorWrite = false;
+              material.depthWrite = true;
+            }
           }
         });
         if (meshCount === 0) return;
@@ -14516,6 +17730,7 @@
             material.colorWrite = state.colorWrite;
             material.depthWrite = state.depthWrite;
           }
+          materialStates.clear();
         }
         if (meshCount !== _lastPngOutlineOccluderCount) {
           _lastPngOutlineOccluderCount = meshCount;
@@ -14541,6 +17756,12 @@
           uTexel: { value: new THREE.Vector2(1, 1) },
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
           uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
+          uSeamOutlinesOn: { value: 0 },
+          // Defaults from OUTLINE_RENDERING_DEFAULTS below, overwritten in
+          // place once config/outline-rendering.json loads.
+          uBaseDepthThresh: { value: 0.01 },
+          uSeamColorDistThresh: { value: 0.1 },
+          uSeamOcclusionTolerance: { value: 0.05 },
         },
         depthTest: false, depthWrite: false,
         vertexShader: `
@@ -14552,6 +17773,8 @@
           uniform vec2 uTexel;
           uniform float uCameraNear, uCameraFar;
           uniform float uDepthOutlinesOn, uDepthThreshScale;
+          uniform float uSeamOutlinesOn;
+          uniform float uBaseDepthThresh, uSeamColorDistThresh, uSeamOcclusionTolerance;
           varying vec2 vUv;
           float linearDepth(float z) {
             float zNdc = z * 2.0 - 1.0;
@@ -14577,7 +17800,7 @@
             // depth) still triggers at any distance while a smooth receding
             // surface does not.
             float relDepthDelta = depthDelta / max(d0, uCameraNear);
-            float depthThresh   = 0.010 * uDepthThreshScale;
+            float depthThresh   = uBaseDepthThresh * uDepthThreshScale;
             float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
@@ -14586,10 +17809,10 @@
             vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
             vec4 idD = texture2D(tEdgeId, vUv - vec2(0.0, uTexel.y));
             float idEdge = 0.0;
-            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
-            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
 
             // Occlusion test — the ID buffer was rendered with only the
             // tagged objects in view, so it has no idea a wall or other
@@ -14598,7 +17821,7 @@
             // if something closer to the camera is actually there.
             float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
             float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
-            idEdge *= step(idDepth, sceneDepth + 0.05);
+            idEdge *= step(idDepth, sceneDepth + uSeamOcclusionTolerance) * uSeamOutlinesOn;
 
             float edge = max(depthEdge, idEdge);
             gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
@@ -14606,6 +17829,7 @@
         `,
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
+      loadOutlineRenderingConfig();
 
       let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
       // Declared up here (rather than down by the rest of the Cutscene
@@ -14722,6 +17946,15 @@
           return meshes;
         }
         const meshes = [];
+        // Generic building interiors (map_i_* — dens, shops, workshops...):
+        // same tagged-mesh snapshot as zones, collected once when the
+        // building's scene is built (see loadBuildingScene). Without this,
+        // a den's carved cavern rock (or any other building's walls) never
+        // pulled the camera in when it got between the camera and the
+        // player, unlike the outdoor case just above.
+        if (_isBuildingArea(currentArea)) {
+          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) meshes.push(m);
+        }
         if (currentArea === 'farm') {
           for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
@@ -14844,6 +18077,8 @@
               desiredDistance: desiredSafeDist,
               solvedDistance: safeDist,
               sideOffsetDeg: chosenSideOffsetDeg,
+              targetY: camTargetY,
+              floorY: _playerGroundY(),
             };
           } else {
             _seatedOcclusionDistance = null;
@@ -14944,13 +18179,27 @@
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
-        const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
-        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
-        const groundDistance = Math.cos(angle) * distance;
+        let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         // Camera sits at `azimuth` east of due-south from the target, elevated,
         // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
         // original due-south-looking-north framing.
-        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        let lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        // Shoulder-surf's horizontal/vertical camera-offset sliders (Settings
+        // → Camera), applied relative to the camera's own right/world-up axes
+        // — the same over-the-shoulder framing knobs most third-person games
+        // expose — so they stay "camera-left/right" and "higher/lower"
+        // regardless of which way the head/camera currently points. Shifting
+        // the look-at point here (rather than the final camera position
+        // directly) carries the offset into idealX/idealZ/cameraY below too,
+        // sliding the whole camera rig rather than just skewing its aim.
+        if (activeCameraMode === SHOULDER_SURF_MODE && !portraitAim) {
+          const rightX = Math.cos(azimuth), rightZ = -Math.sin(azimuth);
+          lookAtX += rightX * s_shoulderSurfOffsetH_current;
+          lookAtZ += rightZ * s_shoulderSurfOffsetH_current;
+          lookY += s_shoulderSurfOffsetV_current;
+        }
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
+        const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
         const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
         const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
@@ -15040,9 +18289,20 @@
       // Re-enabled the instant a tree stops blocking, same as depthWrite.
       function setTreeBlocking(vegGroup, mats, blocking) {
         for (const m of mats || []) m.depthWrite = !blocking;
+      }
+      // Split out of setTreeBlocking so the Cloud Forest's distance-based
+      // Outline Radius (independent of occlusion blocking — see
+      // updateZoneVegetationCulling's radialCullRadius branch) can toggle
+      // just the outline layer without also touching depthWrite/occlusion
+      // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
+      // toggle only actually runs on a real transition, not every frame for
+      // every visible tree.
+      function setTreeOutlineEnabled(vegGroup, enabled) {
+        if (vegGroup.userData._outlineEnabled === enabled) return;
+        vegGroup.userData._outlineEnabled = enabled;
         vegGroup.traverse(child => {
           if (!child.isMesh || child.userData.noOutline) return;
-          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+          if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
       function updateTreeFadeAnimation(dt) {
@@ -15086,15 +18346,29 @@
         const cullables = zi?.cullables;
         if (!cullables || !cullables.length) return;
         const camX = camera.position.x, camZ = camera.position.z;
-        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
-        let viewLen = Math.hypot(viewX, viewZ);
-        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
-        viewX /= viewLen; viewZ /= viewLen;
-        const rightX = viewZ, rightZ = -viewX;
-        const forwardRange = VEG_CULL_FORWARD_TILES;
-        const rearRange = VEG_CULL_REAR_TILES;
-        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const px = player.x / TILE, pz = player.y / TILE;
+        // A handful of zones (currently just the Southern Cloud Forest, via
+        // vegCullRadiusTiles — see its EXTERIOR_ZONES comment) swap the
+        // camera-forward/rear/width box every other zone uses below for a
+        // plain circle centered on the PLAYER, not the camera — pairing with
+        // CloudForestFog's own player-centered mist cylinders so the ring
+        // where vegetation pops in/out sits inside the mist uniformly in
+        // every direction instead of only character-forward.
+        const radialCullRadius = s_cloudForestWideCull
+          ? (currentArea === 'map_southern_cloud_forest' ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
+          : null;
+        let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
+        if (!radialCullRadius) {
+          let vx = camTargetX - camX, vz = camTargetZ - camZ;
+          let viewLen = Math.hypot(vx, vz);
+          if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
+          viewX = vx / viewLen; viewZ = vz / viewLen;
+          rightX = viewZ; rightZ = -viewX;
+          forwardRange = VEG_CULL_FORWARD_TILES;
+          rearRange = VEG_CULL_REAR_TILES;
+          halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        }
         // Every character worth revealing an occluder for, not just the
         // player -- a tree that only fades for the player would leave a
         // companion standing behind the SAME tree fully hidden by it, since
@@ -15103,37 +18377,88 @@
         // without also sitting on the camera-to-player line (they're rarely
         // standing on exactly the same spot), so this needs its own check
         // per target rather than reusing the player's.
-        const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
+        const revealTargets = [{ x: px, z: pz }];
         for (const c of companionObjects) {
           if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
         }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
-          const dx = s.x - camX, dz = s.z - camZ;
-          const along = dx * viewX + dz * viewZ;
-          const side = Math.abs(dx * rightX + dz * rightZ);
+          // Used below to cull grass without running tree fade/outline bookkeeping.
+          const isGrassChunk = obj.userData.isWildernessGrassChunk === true;
           const sticky = obj.visible ? hysteresis : 0;
           const expandedRadius = s.radius + sticky;
-          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
-            && side <= halfWidth + expandedRadius;
+          let show;
+          if (radialCullRadius) {
+            // Distance to the tree's own center, plus only the small
+            // anti-flicker hysteresis margin — NOT + s.radius (each tree's
+            // own bounding-sphere size, which the box-cull path below adds
+            // deliberately). A shadewood's canopy bounding sphere can run
+            // several tiles wide on its own, so adding it here made the
+            // Tree Cull Radius slider's number bear little relation to the
+            // actual load-in distance (e.g. "5" behaving nothing like 5
+            // tiles). The distance fade (see below) already softens any
+            // mid-canopy pop/clip this used to guard against.
+            const chunkOverlap = isGrassChunk ? (s.xzRadius ?? s.radius) : 0;
+            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky + chunkOverlap;
+          } else {
+            const dx = s.x - camX, dz = s.z - camZ;
+            const along = dx * viewX + dz * viewZ;
+            const side = Math.abs(dx * rightX + dz * rightZ);
+            show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+              && side <= halfWidth + expandedRadius;
+          }
           if (force || show !== obj.visible) obj.visible = show;
+          if (isGrassChunk) continue;
 
           if (show) {
             const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
-            const blocking = !obj.userData.skipOcclusionFade
+            const blocking = activeCameraMode !== SHOULDER_SURF_MODE
+              && !obj.userData.skipOcclusionFade
               && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
-            const target = blocking ? TREE_FADE_OPACITY : 1;
+            let target = blocking ? TREE_FADE_OPACITY : 1;
+            let outlineAllowed = true;
+            // Cloud Forest only (radialCullRadius implies it — see above):
+            // ramp opacity in over the outer band of the cull radius
+            // instead of popping a tree in solid the instant it crosses the
+            // cull sphere, and keep the (pricier) outline pass off outside
+            // its own closer radius regardless of the tree's own opacity.
+            if (radialCullRadius) {
+              const distFromPlayer = Math.hypot(s.x - px, s.z - pz);
+              const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
+              if (distFromPlayer > fadeStartAt) {
+                const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
+                target = Math.min(target, clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+              }
+              outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
+            }
             if (target !== 1 || obj.userData._fadeMaterials) {
+              const isFirstFade = !obj.userData._fadeMaterials;
               const mats = ensureTreeFadeMaterials(obj);
+              // ensureTreeFadeMaterials always inits _fadeOpacity at 1 (its
+              // original occlusion-only design never needed anything else —
+              // a tree was always fully visible until something started
+              // blocking it). For the Cloud Forest's distance fade that's
+              // wrong the first time a tree is seen: a tree already out
+              // near the fade band would pop in fully opaque and then
+              // visibly animate down to its real target, instead of just
+              // reading at the right opacity immediately. Snap straight to
+              // target on this first frame only; every later frame still
+              // lerps normally as target keeps changing with distance.
+              if (isFirstFade) {
+                obj.userData._fadeOpacity = target;
+                for (const m of mats) m.opacity = target;
+              }
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
               setTreeBlocking(obj, mats, blocking);
             }
+            setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
           } else if (obj.userData._fadeMaterials) {
             obj.userData._fadeTarget = 1;
             obj.userData._fadeOpacity = 1;
             for (const m of obj.userData._fadeMaterials) m.opacity = 1;
             setTreeBlocking(obj, obj.userData._fadeMaterials, false);
+            setTreeOutlineEnabled(obj, true);
             _treeFadeActive.delete(obj);
           }
         }
@@ -15460,42 +18785,11 @@
         }
       `;
 
-      // The PNG tiles across world X/Z and scrolls as one continuous surface,
-      // like the shared rain-plane texture. Per-vertex depth and flow retain
-      // simulation tint/detail without returning to one material per tile.
-      const mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
-        textureUrl: 'assets/textures/wibbly_surface.png',
-        opacity: 0.8,
-        log: debugLog,
-      });
-
-      function _disposeMergedWaterMesh(sceneObj, mesh, statKey) {
-        if (!mesh) return null;
-        if (sceneObj?.remove) sceneObj.remove(mesh);
-        mesh.geometry.dispose();
-        window.MergedWaterRenderer.clearStats(statKey);
-        return null;
-      }
-
-      function _buildMergedWaterMesh(sceneObj, cells, options) {
-        if (!sceneObj?.add) {
-          debugLog(`[water-render] deferred ${options?.name || options?.statKey || 'merged water'} until its scene exists`, 'warn');
-          return null;
-        }
-        const mesh = window.MergedWaterRenderer.createMesh(THREE, mergedWaterMaterial, cells, {
-          joinThreshold: SLAB_H * 0.55,
-          yOffset: 0.015,
-          log: debugLog,
-          ...options,
-        });
-        if (!mesh) return null;
-        sceneObj.add(mesh);
-        _markTerrainEdgeId(mesh, 'water');
-        return mesh;
-      }
-
-      // Global water time — updated in gameLoop
-      let waterTime = 0;
+      // Merged water mesh material/builder (mergedWaterMaterial,
+      // _disposeMergedWaterMesh, _buildMergedWaterMesh) and the global
+      // water-time accumulator now live in js/water-system.js — call the
+      // farm/town river-building paths below via
+      // window.WaterSystem.buildMergedWaterMesh().
       const reticleMat = new THREE.MeshBasicMaterial({
         color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
       });
@@ -15862,10 +19156,14 @@
         const CELLS = 6, STEP = 1 / CELLS;
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
-        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
+        // The path mesh owns a broad grass apron around the route, so every
+        // surface with its own relief/water geometry must punch through that
+        // apron too. Reuse the mesa-lid carve set to keep waterfalls (formerly
+        // omitted here) in parity with rivers/streams/trenches/raised beds;
+        // ramps and paddies likewise own their complete surface.
+        const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
-        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
 
         // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
         // average their path-membership so the mask starts as a clean 0 /
@@ -15954,10 +19252,10 @@
           for (let ci = 0; ci < GW-1; ci++) {
             const tci = Math.min(bw-1, Math.floor(ci / CELLS));
             const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
-            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
             const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
-            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+            const target = isPath ? pathIdx : grassIdx;
+            target.push(v00, v01, v11, v00, v11, v10);
           }
 
         const vertCount = GW * GH;
@@ -15975,12 +19273,69 @@
           return g;
         };
 
-        return {
+        const network = {
           pathGeo: makeGeo(pathIdx),
           grassGeo: makeGeo(grassIdx),
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
           isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+          globalGroundMesh: null,
+          globalGroundGeometry: null,
+          originalGroundIndex: null,
+          renderedTileIndexRanges: new Map(),
+          bindGlobalGroundMesh(mesh) {
+            this.globalGroundMesh = mesh;
+            // TerrainRenderChunks replaces and spatially reorders large
+            // terrain index buffers immediately before their first render.
+            // Bind only after that handoff, so runtime digs edit the index
+            // buffer the GPU-facing child meshes actually share.
+            mesh.userData.onTerrainGeometryReady = geometry => this.bindRenderedGroundGeometry(geometry);
+            if (!window.TerrainRenderChunks?.installed) this.bindRenderedGroundGeometry(mesh.geometry);
+          },
+          bindRenderedGroundGeometry(geometry) {
+            const position = geometry?.getAttribute?.('position');
+            const indexAttr = geometry?.index;
+            if (!position || !indexAttr) return false;
+            const ranges = new Map(); // Maps a world tile to triangle starts in the final rendered index order.
+            for (let offset = 0; offset + 2 < indexAttr.count; offset += 3) {
+              const a = indexAttr.getX(offset), b = indexAttr.getX(offset + 1), c = indexAttr.getX(offset + 2);
+              const tileC = Math.floor((position.getX(a) + position.getX(b) + position.getX(c)) / 3);
+              const tileR = Math.floor((position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3);
+              if (tileC < minC || tileC > maxC || tileR < minR || tileR > maxR) continue;
+              const key = `${tileC},${tileR}`;
+              let starts = ranges.get(key);
+              if (!starts) ranges.set(key, starts = []);
+              starts.push(offset);
+            }
+            this.globalGroundGeometry = geometry;
+            this.originalGroundIndex = indexAttr.array.slice();
+            this.renderedTileIndexRanges = ranges;
+            // Collapse authored/generated basins before the first real draw.
+            // Their original triangles remain available for fill/redig.
+            for (const key of ranges.keys()) {
+              const [c, r] = key.split(',').map(Number);
+              if (EXCLUDED.has(srcGrid[r]?.[c]?.type)) this.refreshTile(c, r);
+            }
+            return true;
+          },
+          refreshTile(c, r) {
+            const indexAttr = this.globalGroundGeometry?.index;
+            const original = this.originalGroundIndex;
+            const starts = this.renderedTileIndexRanges.get(`${c},${r}`);
+            if (!indexAttr || !original || !starts) return false;
+            const excluded = EXCLUDED.has(srcGrid[r]?.[c]?.type);
+            for (const offset of starts) {
+              if (excluded) {
+                const collapsedVertex = original[offset];
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = collapsedVertex;
+              } else {
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = original[offset + i];
+              }
+            }
+            indexAttr.needsUpdate = true;
+            return true;
+          },
         };
+        return network;
       }
 
       // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
@@ -16371,7 +19726,7 @@
       //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
       //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
       //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
-      function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
+      function buildTerrainTileGeo(col, row, type, srcGrid = grid, options = {}) {
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
         // Trench is a dug pit meant to mirror the raised bed's wide flat top
@@ -16386,26 +19741,23 @@
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
         // A dug TRENCH is a deliberate, hand-cut square pit — full depth to
-        // every edge, not a natural waterway that should taper into its
-        // banks. Force every side/diagonal "open" for it regardless of the
-        // actual neighbor, so a lone dug tile still reads as a real cut
-        // square instead of shrinking to a small dirt patch surrounded by
-        // grass sloping down to it (the old behavior, shared with RIVER/
-        // STREAM/WATERFALL, which DO still want that natural blend/taper).
-        // Adjacent trench tiles were already "open" toward each other via
-        // sameWaterway (a === b) — this only changes trench-vs-non-trench
-        // edges, i.e. a chain's outer boundary and any isolated tile.
+        // every edge. Wilderness waterways opt into the same basin profile
+        // through includeCutWalls, while town waterways retain their softer
+        // bank blend. Adjacent basin cells omit their internal walls below,
+        // leaving one continuous bottom with walls only along the outer bank.
         const isTrench = type === TileType.TRENCH;
-        const openN = isTrench || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
-        const openS = isTrench || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
-        const openW = isTrench || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
-        const openE = isTrench || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
+        const isCutWaterBasin = options.includeCutWalls && WATERWAY_TYPES.has(type); // Gives wilderness water the same full-depth basin treatment as its trenches.
+        const isCutBasin = isTrench || isCutWaterBasin;
+        const openN = isCutBasin || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
+        const openS = isCutBasin || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
+        const openW = isCutBasin || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
+        const openE = isCutBasin || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
 
         // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = isTrench || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
-        const diagNE = isTrench || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
-        const diagSW = isTrench || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
-        const diagSE = isTrench || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
+        const diagNW = isCutBasin || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
+        const diagNE = isCutBasin || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
+        const diagSW = isCutBasin || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
+        const diagSE = isCutBasin || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -16454,6 +19806,45 @@
             uvs.push(col + vi * STEP, row + vj * STEP);
           }
 
+        // Farm ground uses individual box slabs, whose exposed side faces
+        // naturally wall an adjacent trench. Wilderness route/mesa surfaces
+        // are top-only heightfields, so removing their grass quad would expose
+        // an empty vertical gap around the trench. Add segmented dirt cut walls
+        // to the trench geometry itself for that renderer. Ordered samples keep
+        // each quad front-facing toward the surrounding ground and share edge
+        // vertices so normals remain smooth along the wall.
+        const wallIdx = [];
+        if (isDepression && options.includeCutWalls) {
+          const sharesBasin = neighborType => isTrench
+            ? neighborType === TileType.TRENCH
+            : WATERWAY_TYPES.has(neighborType);
+          const appendWall = (samples, horizontal) => {
+            const first = positions.length / 3;
+            for (let i = 0; i < samples.length; i++) {
+              const { vi, vj } = samples[i];
+              const x = vi * STEP - 0.5, z = vj * STEP - 0.5;
+              const worldX = col + vi * STEP, worldZ = row + vj * STEP;
+              const bottomY = Y[vj * VERTS + vi];
+              const topY = seamDisp(worldX, worldZ);
+              const along = horizontal ? worldX : worldZ;
+              positions.push(x, topY, z, x, bottomY, z);
+              uvs.push(along, topY, along, bottomY);
+            }
+            for (let i = 0; i < samples.length - 1; i++) {
+              const top0 = first + i * 2, bottom0 = top0 + 1;
+              const top1 = top0 + 2, bottom1 = top0 + 3;
+              // Faces point into the basin, where the camera sees them from
+              // above. The opposite winding points out into the surrounding
+              // solid ground and gets removed by normal backface culling.
+              wallIdx.push(top0, bottom1, bottom0, top0, top1, bottom1);
+            }
+          };
+          if (!sharesBasin(srcGrid[row - 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
+          if (!sharesBasin(srcGrid[row + 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
+          if (!sharesBasin(srcGrid[row]?.[col - 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
+          if (!sharesBasin(srcGrid[row]?.[col + 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
+        }
+
         // Split cells: dirt where significantly depressed (trench) or elevated (raised);
         // grass on flat edge cells that blend back to ground level.
         const DIRT_THRESH = 0.05;
@@ -16471,6 +19862,7 @@
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
         const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+        dirtIdx.push(...wallIdx);
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
@@ -16520,29 +19912,14 @@
       // ── Mesh stores ───────────────────────────────────────────────
       // Tile meshes are indexed by row*COLS+col. Water is intentionally not:
       // the simulation remains tile-based, but every wet tile contributes its
-      // four height-aware vertices to one world-UV merged surface mesh.
+      // four height-aware vertices to one world-UV merged surface mesh (the
+      // farm/town dynamic water meshes and far-terrain south aprons now live
+      // as private state in js/water-system.js).
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
-      let farmWaterMesh = null; // Rebuilt by updateWaterMeshes() after each farm simulation tick.
 
-      // ── Town water (ditches fill with rain just like farm trenches) ────
-      // Town tiles are keyed "col,row" (the town grid is independently sized
-      // and isn't laid out in the farm's flat row*COLS+col mesh arrays).
-      let townWaterMesh = null; // Rebuilt by updateTownWaterMeshes() after each town simulation tick.
-      let _townWaterSimDirty = true;
-      let _townFlowingTrenchTiles = [];
       // Static river/stream water-surface meshes built once in buildTownScene
       // (not part of the rain-fed water sim — rivers always flow).
       let _townRiverWaterMeshes = [];
-
-      // ── Far-terrain south apron (gap continuation) ─────────────────
-      // Shallow decorative puddle strip just past the map's south edge,
-      // keyed "col,depthRow". Its per-column depth tracks farSouthLevel /
-      // townSouthLevel, so a player-made dry gap at the bottom row visibly
-      // keeps going out into the far terrain instead of stopping at the seam.
-      const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
-      const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
-      let farmFarAquiferMesh = null; // Used by the farm's south-edge continuation renderer.
-      let townFarAquiferMesh = null; // Used by the town's south-edge continuation renderer.
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -16559,6 +19936,17 @@
       // ambientDialogueRuntime owns only lightweight proximity checks and
       // its temporary world-space speech planes. Game state, NPC routing,
       // and creature treasure movement remain authoritative here in game.js.
+      // Shared by AmbientDialogue's {dayPart} greeting substitutions and
+      // ProceduralTasks' named quest-giver lines (e.g. Eldress Teacup's
+      // "Good {dayPart}, ...").
+      function dayPartNow() {
+        const hour = window.CalendarSystem.getHour();
+        if (hour < 8) return 'dawn';
+        if (hour < 12) return 'morning';
+        if (hour < 17) return 'afternoon';
+        if (hour < 20) return 'evening';
+        return 'night';
+      }
       const ambientDialogueRuntime = window.AmbientDialogue?.init({
         THREE,
         camera,
@@ -16567,23 +19955,18 @@
         getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
         getSeason: () => window.CalendarSystem.currentSeason?.().name || null,
         getWeather: () => calendar.isRaining ? ((calendar.rainStrength || 0) >= 3 ? 'storm' : 'rain') : 'clear',
-        getDayPart: () => {
-          const hour = window.CalendarSystem.getHour(); // Used by ambient greeting {dayPart} substitutions.
-          if (hour < 8) return 'dawn';
-          if (hour < 12) return 'morning';
-          if (hour < 17) return 'afternoon';
-          if (hour < 20) return 'evening';
-          return 'night';
-        },
+        getDayPart: dayPartNow,
         getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
         getCurrentArea: () => currentArea,
         getNpcWalkers: () => npcWalkers,
         getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
-        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname
+          || (_playerData || window.__hobunjiPlayerProfile)?.name
           || (_playerData || window.__hobunjiPlayerProfile)?.displayName
           || 'neighbor',
         getPlayerSpecies: () => (_playerData || window.__hobunjiPlayerProfile)?.appearance?.speciesId || null,
         getNpcRelationship: npcId => window.DialogueContent?.npcRelationshipsSnapshot?.()?.[npcId]?.favor ?? 0,
+        getPendingRequestGreeting: npcId => window.ProceduralTasks?.pendingRequestGreetingLine?.(npcId) || null,
         isDialogueOpen: () => dialogueOpen,
         isPaused: () => paused,
         debugLog,
@@ -16591,7 +19974,8 @@
       const playerSocialPoseRuntime = window.PlayerSocialPoses?.init({ player, playerMesh });
       const playerChatRuntime = window.PlayerChat?.init({
         getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
-        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname
+          || (_playerData || window.__hobunjiPlayerProfile)?.name
           || (_playerData || window.__hobunjiPlayerProfile)?.displayName
           || 'Player',
         clearMovementInput: () => {
@@ -16631,9 +20015,11 @@
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
       let playerFacing = 0;
+      let _debugRangedToolYawRad = null; // set each frame by updateToolMesh's ranged branch — debug/QA only
       // Pending tool action queued to fire at the strike phase of the current swing
       let pendingAction = null;
       let strikeFired   = false;
+      let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
       // True while the primary action input (key/click/button) is physically held
       // down. Drives the multi-stage dig/fill charge below — releasing it, or
@@ -16649,14 +20035,14 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Digging up a dew pile — same held input and same two-animation
       // (thrust/toss) shape as digging a brand-new trench, just at half the
       // base duration per rep.
       const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
-        { anim: 'thrust', dur },
+        { anim: 'thrust', dur, sfxKey: 'dig', sfxAt: 0.16 },
         { anim: 'toss',   dur },
       ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
@@ -16665,8 +20051,8 @@
       // quick stance reset. Repeats 3x like the old plain fill swings did.
       const REFILL_TURN_ANGLE = Math.PI / 4;
       const REFILL_FLOURISH_REP = [
-        { anim: 'refillTurnOut',    dur: 1.0  },
-        { anim: 'refillStrikeBack', dur: 0.5  },
+        { anim: 'refillTurnOut',    dur: 1.0,  sfxKey: 'dig' },
+        { anim: 'refillStrikeBack', dur: 0.5,  sfxKey: 'dig' },
         { anim: 'refillTwistOut',   dur: 0.25 },
         { anim: 'refillTwistBack',  dur: 0.25 },
         { anim: 'refillReset',      dur: 0.15 },
@@ -16679,7 +20065,13 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
+        pose: true,
+        dirSign,
+        dur: 0.55,
+        sfxKey: 'chop',
+        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
+      }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
@@ -16687,7 +20079,12 @@
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
       // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55 }));
+      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
+        anim: 'thrust',
+        dur: 0.55,
+        sfxKey: 'pick',
+        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
+      }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -16711,6 +20108,10 @@
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
+      let combatSwingSequence = 'attack';
+      // Used when a pose sequence authors its own normalized hold endpoint;
+      // null keeps ordinary melee swings on updateToolMesh's derived HF.
+      let combatSwingSequenceHoldFrac = null;
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
@@ -16801,7 +20202,16 @@
         // currently closer to, so the turn-out reads as a natural pivot.
         const turnDelta = angleDiff(0, playerFacing);
         const refillTurnSign = turnDelta === 0 ? 1 : Math.sign(turnDelta);
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages, refillTurnSign };
+        chargeAction = {
+          col: reticle.col,
+          row: reticle.row,
+          action: activeAction,
+          tool: activeTool,
+          stage: 0,
+          stages,
+          refillTurnSign,
+          finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
+        };
         beginChargeStage();
       }
 
@@ -16814,6 +20224,7 @@
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
+        chargeStageSfxFired = false;
         pendingAction = null;
         if (stageDef.pose) {
           // Reuses the melee combo's own authored sweep pose (see
@@ -16883,9 +20294,30 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingSequence = 'attack';
+        combatSwingSequenceHoldFrac = null;
         combatSwingAfflictionIds = opts.afflictionIds || [];
         combatSwingAfflictionMuls = opts.afflictions || {};
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
+      }
+
+      // Ranged actions supply separate load/fire pose sets and independently
+      // authored playback sequences. Current loading weapons use the full
+      // neutral→windup→strike→hold→neutral sequence for both actions.
+      function triggerRangedWeaponVisual(durationS, opts = {}) {
+        if (activeTool !== 'ranged') return;
+        toolSwingDur = Math.max(0.05, durationS);
+        toolSwingT = toolSwingDur;
+        combatSwingAnim = 'ranged';
+        combatSwingPose = opts.pose || null;
+        combatSwingSign = 1;
+        combatSwingPower = 1;
+        combatSwingWindupFrac = opts.windupFrac ?? 0.55;
+        combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
+        combatSwingHoldS = 0;
+        combatSwingHeld = false;
+        combatSwingSequence = opts.sequence || 'fire';
+        combatSwingSequenceHoldFrac = opts.holdFrac ?? null;
       }
 
       // Abilities whose final range/angle isn't known at trigger time
@@ -16893,10 +20325,15 @@
       // than at the hold-start windup) call this directly once those
       // numbers are settled instead of going through triggerWeaponSwingVisual's
       // opts. Pass rangePx == null to clear the cone (no trail to draw).
-      function setCombatSwingCone(rangePx, halfConeRad, angle) {
-        combatSwingCone = (rangePx != null)
-          ? { rangePx, halfConeRad: halfConeRad ?? 0, angle: angle ?? player.angle }
-          : null;
+      function setCombatSwingCone(rangePx, halfConeRad, angle, pitch = null) {
+        if (rangePx == null) { combatSwingCone = null; return; }
+        const aimDirection = currentPlayerMeleeAimDirection(); // Used by the pitched 3D ribbon and the strike's matching cone.
+        combatSwingCone = {
+          rangePx,
+          halfConeRad: halfConeRad ?? 0,
+          angle: angle ?? Math.atan2(aimDirection.z, aimDirection.x),
+          pitch: pitch ?? Math.asin(clamp(aimDirection.y, -1, 1)),
+        };
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -16952,7 +20389,7 @@
         spawnActionParticles(col, row, action, result.ok !== false);
         debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
         if (currentArea === 'farm') {
-          recomputeWater(false);
+          window.WaterSystem.recomputeWater(false);
           // See the matching branch in firePendingAction — a completed dig/
           // fill charge (new trench, fill-in) needs the same saveFarmLayout()
           // fix, or it's just as silently lost as a single-tap action.
@@ -16961,7 +20398,8 @@
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
-          refreshZoneGroundVisuals(currentArea);
+          recordWildernessChunkTileDelta(currentArea, col, row);
+          refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -16971,9 +20409,11 @@
       // or cancels it the moment the button is released or the target changes.
       function updateChargeAction() {
         if (!chargeAction) return;
-        if (!actionHeldDown) { cancelChargeAction(); return; }
-        const reticle = getReticleTile();
-        if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        if (!chargeAction.finalStrikeCommitted) {
+          if (!actionHeldDown) { cancelChargeAction(); return; }
+          const reticle = getReticleTile();
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+        }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
         if (chargeAction.stage >= chargeAction.stages.length) {
@@ -17010,6 +20450,7 @@
       // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
+      const loadedToolTextures = {};
       for (const [key, def] of Object.entries(TOOL_ITEM_DEFS)) {
         const tex = _toolTexLoader.load(def.sprite, (t) => {
           const img = t.image;
@@ -17028,6 +20469,15 @@
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         toolTextures[key] = tex;
+        if (def.loadedSprite) {
+          const loadedTex = _toolTexLoader.load(def.loadedSprite, () => {
+            rebuildToolMeshes();
+            setRangedLoadedVisual(key, window.RangedWeapons?.isLoaded?.(key) !== false);
+          });
+          loadedTex.magFilter = THREE.NearestFilter;
+          loadedTex.minFilter = THREE.NearestFilter;
+          loadedToolTextures[key] = loadedTex;
+        }
       }
 
       // Swaps a crafted tool's in-hand mesh texture to its current metal/
@@ -17083,8 +20533,41 @@
         // from whichever anim is actually playing rather than baked in per-item here — see
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
+        _markPngPlane(g);
         return g;
       }
+
+      function setToolMeshLoadedState(mesh, itemKey, loaded) {
+        const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane;
+        if (!plane) return;
+        plane.material.map = loaded && loadedToolTextures[itemKey] ? loadedToolTextures[itemKey] : toolTextures[itemKey];
+        plane.material.needsUpdate = true;
+      }
+
+      function setRangedLoadedVisual(itemKey, loaded, owner = null) {
+        const mesh = owner ? owner._banditRangedToolHolder?.children?.[0] : toolMeshMap.ranged;
+        setToolMeshLoadedState(mesh, itemKey, loaded);
+      }
+
+      // ── Kurraya hold assembly + reactive twitch ─────────────────────
+      // Lives in js/kurraya-instrument.js (window.KurrayaInstrument) —
+      // ported directly from the reference mockup's authored two-plane
+      // "avatarEquipmentAuthoring.kurraya" fit rather than approximated
+      // here. Thin local aliases below so call sites (updateHeldItemHolder,
+      // the NPC station prop, and the 'sounded-note' relay in
+      // js/music-minigame.js) read the same as before the split.
+      window.KurrayaInstrument?.init({
+        THREE,
+        toolTextures,
+        TOOL_MODEL_WIDTH,
+        toolTexLoader: _toolTexLoader,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        getKurrayaDef: () => TOOL_ITEM_DEFS.kurraya,
+      });
+      const buildKurrayaAssembly = (...a) => window.KurrayaInstrument?.buildAssembly(...a) ?? null;
+      const newKurrayaTwitchState = (...a) => window.KurrayaInstrument?.newTwitchState(...a);
+      const triggerKurrayaTwitch = (...a) => window.KurrayaInstrument?.triggerTwitch(...a);
+      const updateKurrayaTwitch = (...a) => window.KurrayaInstrument?.updateTwitch(...a);
 
       // Build/rebuild the toolMeshMap from currently equipped items
       const toolMeshMap = {};
@@ -17098,6 +20581,7 @@
           // pick-shovel equipped in both the shovel and pick slots at once
           // still reads as two distinct tools at rest, not just mid-swing.
           toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: slot === 'pick' }) : null;
+          if (slot === 'ranged' && itemKey) setToolMeshLoadedState(toolMeshMap[slot], itemKey, window.RangedWeapons?.isLoaded?.(itemKey) !== false);
         }
         // machete alias → weapon mesh for legacy code paths
         if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
@@ -17168,6 +20652,7 @@
         plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
+        _markPngPlane(plane);
         if (def.spriteIcon && window.SpriteRecolor) {
           window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor ?? 0xFFFFFF, def.spriteMode || 'direct')
             .then(canvas => {
@@ -17196,6 +20681,12 @@
         plane.geometry?.dispose?.();
         plane.material?.dispose?.();
         ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
       }
 
       function usesThrustHeldPose(item) {
@@ -17220,6 +20711,11 @@
       let _heldItemPlane = null, _heldItemKey = null;
       // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
       let _heldDrinkAnimT = 0;
+      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
+      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
+      let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -17251,7 +20747,7 @@
         playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
       }
 
-      function triggerHeldDrinkAnimation(itemKey) {
+      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
         const animation = window.HeldActionAnimations?.drink;
         if (!animation) {
           window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
@@ -17263,6 +20759,8 @@
         if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
         _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
         _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
+        _heldDrinkApplied = false;
         heldItemHolder.visible = true;
         window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
         return Math.round(_heldDrinkAnimDuration * 1000);
@@ -17300,6 +20798,7 @@
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
         clamp,
         getCurrentArea: () => currentArea,
+        getActiveTool: () => activeTool,
         getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
         getItemDef: itemKey => ITEM_DEFS[itemKey],
@@ -17320,18 +20819,58 @@
           _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
           const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
           applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
+            _heldDrinkApplied = true;
+            _heldDrinkApply?.();
+          }
+          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
+          heldItemHolder.visible = true;
+          return;
+        }
+        const throwAnimation = window.HeldActionAnimations?.throwFlask;
+        if (_heldThrowAimT && throwAnimation && _heldItemPlane) {
+          if (_heldThrowAimT === 1) _heldThrowAnimProgress = throwAnimation.windupFrac || 0.44;
+          else {
+            _heldThrowAnimProgress = Math.min(1, _heldThrowAnimProgress + Math.max(0, dt) / Math.max(0.1, throwAnimation.durationS || 0.62));
+            if (_heldThrowAnimProgress >= 1) _heldThrowAimT = 0;
+          }
+          applyHeldDrinkPose(throwAnimation, _heldThrowAnimProgress);
           heldItemHolder.visible = true;
           return;
         }
         if (!item) { heldItemHolder.visible = false; return; }
+        const isKurraya = item.key === 'kurraya';
         if (item.key !== _heldItemKey) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
-          _heldItemPlane = makeHeldItemPlaneMesh(item);
+          // The Kurraya's real art lives at assets/toolsprites (the same
+          // sprite/texture Foroji's NPC station prop uses — see
+          // TOOL_ITEM_DEFS.kurraya) rather than assets/objectsprites, and
+          // it's a finished painted asset, not a dye-tintable template —
+          // makeHeldItemPlaneMesh's spriteIcon path assumes the latter
+          // (recolors through window.SpriteRecolor). Uses the authored
+          // crossed front+top plane assembly (see buildKurrayaAssembly)
+          // instead of a single flat billboard.
+          _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
+          _playerKurrayaTwitch = newKurrayaTwitchState();
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
-          window.__farmLog?.(`[held-item] ${item.key}: pose=${usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${ITEM_DEFS[item.key]?.spriteIcon || 'emoji'}`);
+          window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
-        if (usesThrustHeldPose(item)) {
+        if (isKurraya) {
+          // Cradled across the chest at its authored rest tilt (see
+          // buildKurrayaAssembly) — the assembly itself carries that tilt
+          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
+          // called from js/music-minigame.js on each 'sounded-note'
+          // relay); only position/scale belong to the outer holder.
+          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
+          heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(0.85);
+          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
           // Potion/alcohol sprites stay on the same hand pivot, but render
@@ -17413,19 +20952,38 @@
         return strikeV + (neutralV - strikeV) * ((progress - hf) / (1.0 - hf));
       }
 
+      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
+        if (combatSwingSequence === 'load') {
+          if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
+          return windupV + (neutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
+        }
+        if (combatSwingSequence === 'fire') {
+          if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
+          if (progress <= hf) return strikeV;
+          return strikeV + (neutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
+        }
+        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV);
+      }
+
       // Each tool style's natural at-rest pose (degrees for angle channels) —
       // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
       // (docs/tools/attack-animation-editor/index.html). Used as the fallback
       // neutral for the pose-driven combat branch below when a step's own
       // pose.neutral doesn't specify a channel.
       const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0 },
-        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0 },
-        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2 },
+        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
+        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
+        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
+        ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
       };
 
       function updateToolMesh(dt) {
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
+          toolHolder.visible = false;
+          heldItemHolder.visible = false;
+          return;
+        }
+        if (heldMode === 'none') {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
           return;
@@ -17442,6 +21000,9 @@
         heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
+        // Never inherit a previous tool/weapon's authored neutral scale.
+        // Pose-driven actions override this below from pose.neutral.scale.
+        toolHolder.scale.setScalar(1);
 
         // Use logical facing for game-logic vectors; sweep will additively rotate the body.
         const θ      = playerFacing;
@@ -17536,14 +21097,16 @@
           const pose = combatSwingPose;
           const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
           const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
           const sign = combatSwingSign;
           const power = combatSwingPower;
+          const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
           const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
           const chan = (ch, mirror = false) => {
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
-            return fourPhaseLerp(progress, WF, SF, HF, w, s, n);
+            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n);
           };
 
           const x = chan('x', true);
@@ -17568,6 +21131,39 @@
             playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z
+          );
+
+        } else if (anim === 'ranged') {
+          const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
+          const neutral = { ...STYLE_NEUTRAL_POSE.ranged, ...(rangedIdlePose || {}) };
+          toolHolder.scale.setScalar(neutral.scale);
+          const bodyYawOffsetRad = THREE.MathUtils.degToRad(neutral.bodyYaw);
+          const vθ = θ + bodyYawOffsetRad;
+          playerMesh.rotation.y = vθ;
+          // While actually loaded/fire-ready, the hands+tool track the
+          // current aim (mouse/camera/auto-target — see
+          // currentPlayerAimAngle(), same convention playerFacing already
+          // converts facingAngle with) instantly, ahead of and independent
+          // from the body's own slower catch-up — even while standing
+          // still with the aim still inside the comfortable neck-turn
+          // range where the body hasn't turned at all yet. Reloading/empty
+          // keeps the ordinary body-relative stance, since there's nothing
+          // to aim yet.
+          const toolVθ = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false
+            ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
+            : vθ;
+          _debugRangedToolYawRad = toolVθ;
+          const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
+          const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
+          _qFac.setFromAxisAngle(_tUp, toolVθ);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * (playerToolBaseX + neutral.x) + vFX * neutral.z,
+            playerMesh.position.y + playerToolBaseY + neutral.y,
+            playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
 
         } else if (anim === 'thrust') {
@@ -17833,12 +21429,26 @@
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
+        const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
+        const chargeSfxProgress = activeChargeStage?.sfxAt ?? SF; // Hole-dig thrusts sound at contact start; pick/chop and terminal breaks retain their proven strike endpoint.
+        if (chargeAction && !chargeStageSfxFired && progress >= chargeSfxProgress) {
+          chargeStageSfxFired = true;
+          const stageDef = activeChargeStage; // Used to resolve impact and final-break cues from the same contact frame.
+          const chargeSfxKey = stageDef?.sfxKey;
+          if (chargeSfxKey) window.AudioSystem?.playObjectSfxKey?.(chargeSfxKey);
+          if (stageDef?.terminalSfxKey) {
+            chargeAction.finalStrikeCommitted = true;
+            window.AudioSystem?.playObjectSfxKey?.(stageDef.terminalSfxKey);
+          }
+        }
         if (pendingAction && !strikeFired && progress >= SF) {
           strikeFired = true;
+          const pendingSfxKey = pendingAction.tool === 'shovel' && ['dig', 'fill', 'raise'].includes(pendingAction.action) ? 'dig' : null; // Used for single-strike shovel actions outside the held sequence state machine.
+          if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -17940,6 +21550,15 @@
       const _grassBillVert = `
         uniform float uTime;
         uniform float uStrength;
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            uniform float fogDensity;
+          #else
+            uniform float fogNear;
+            uniform float fogFar;
+          #endif
+          varying float vGrassFogFactor;
+        #endif
         varying vec2 vUv;
         varying float vRandom;
         void main() {
@@ -17960,7 +21579,18 @@
           float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
           worldPos.x += sway;
           worldPos.z += sway2;
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
+          vec4 mvPosition = viewMatrix * worldPos;
+          #ifdef USE_FOG
+            // Evaluate fog four times per blade plane and interpolate it, rather
+            // than running exp() for every overlapping grass fragment.
+            float fogDepth = -mvPosition.z;
+            #ifdef FOG_EXP2
+              vGrassFogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDepth * fogDepth);
+            #else
+              vGrassFogFactor = smoothstep(fogNear, fogFar, fogDepth);
+            #endif
+          #endif
+          gl_Position = projectionMatrix * mvPosition;
         }
       `;
 
@@ -17968,6 +21598,10 @@
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
         uniform float uDensity;
+        uniform vec3 fogColor;
+        #ifdef USE_FOG
+          varying float vGrassFogFactor;
+        #endif
         varying vec2 vUv;
         varying float vRandom;
         void main() {
@@ -17984,6 +21618,9 @@
           vec3 tinted = uTint * (0.7 + lum * 0.8);
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
+          #ifdef USE_FOG
+            col = mix(col, fogColor, vGrassFogFactor);
+          #endif
           gl_FragColor = vec4(col, texel.a);
         }
       `;
@@ -18006,8 +21643,21 @@
           uTime:       { value: 0 },
           uStrength:   { value: 0.04 },
           uDensity:    { value: 1 },
+          // Fog uniform slots _grassBillFrag's USE_FOG block reads, refreshed
+          // every frame from whichever scene is active — declared directly
+          // here rather than via THREE.UniformsUtils.merge(UniformsLib.fog):
+          // merge() deep-clones every merged uniform, and cloning uGrassTex
+          // (a real Texture, not a Color/number) here somehow left the
+          // resulting InstancedMesh instances rendering nothing at all —
+          // confirmed live (every farm grass tuft vanished) and isolated to
+          // this specific clone call, not fog itself or the shader changes.
+          fogColor:    { value: new THREE.Color() },
+          fogDensity:  { value: 0 },
+          fogNear:     { value: 1 },
+          fogFar:      { value: 1000 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
+          fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
           uniforms:       sharedUniforms(),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
@@ -18368,7 +22018,9 @@
           const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
           vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
           vegGroup._windAmp   = 0.06;
-          vegGroup.scale.set(2, 2, 2);
+          // buildShrubMesh now returns TREE_PRESETS.bush, so its native scale
+          // is already the regular wilderness-bush size. Do not apply the old
+          // generic shrub x2 farm boost here.
           vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
           scene.add(vegGroup);
           setVegFoliageMesh(i, vegGroup);
@@ -18487,8 +22139,7 @@
       }
 
       function buildTileMeshes() {
-        farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
-        _waterSimDirty = true;
+        window.WaterSystem.resetFarmWaterMesh();
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
@@ -18513,126 +22164,10 @@
         _rebuildFarmBillboards();
       }
 
-      // ── Update merged water surfaces each frame ────────────────────
-      // The simulation remains a per-tile grid. This collector translates its
-      // current state into one batch of height/depth/flow vertices only when a
-      // sim tick marks the area dirty; the render fast path merely advances the
-      // shared texture uniform.
-      function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
-        const cells = []; // Used by _buildMergedWaterMesh for one simulation snapshot.
-        const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const tile = targetGrid[row][col];
-            if (isSolid(tile.type) || tile.water < 0.003
-                || (skipPermanentWater && (tile.type === TileType.RIVER || tile.type === TileType.STREAM))) {
-              tile._wCached = false;
-              continue;
-            }
-
-            if (tile.type === TileType.TRENCH && tile.flow) flowingTrenches.push({ col, row });
-            const depthFrac = tile.water / MAX_WATER;
-            const surfaceA = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-            let fx = 0, fz = 0;
-            for (const { dc, dr, ax, az } of [
-              { dc: 0, dr: 1, ax: 0, az: 1 },
-              { dc: 0, dr: -1, ax: 0, az: -1 },
-              { dc: 1, dr: 0, ax: 1, az: 0 },
-              { dc: -1, dr: 0, ax: -1, az: 0 },
-            ]) {
-              const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
-              const neighbor = targetGrid[nr][nc];
-              if (isSolid(neighbor.type)) continue;
-              const surfaceB = tileSurfaceY(neighbor.type) + neighbor.water * WATER_UNIT;
-              const head = surfaceA - surfaceB;
-              if (head > 0.01) { fx += ax * head; fz += az * head; }
-            }
-            const flowLength = Math.hypot(fx, fz);
-            const flowX = flowLength > 0.001 ? fx / flowLength : 0;
-            const flowZ = flowLength > 0.001 ? fz / flowLength : 0;
-            tile._wCached = true;
-            tile._wSurfA = surfaceA;
-            tile._wDepth = depthFrac;
-            tile._wFlowNX = flowX;
-            tile._wFlowNZ = flowZ;
-            cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, flowX, flowZ });
-          }
-        }
-        return { cells, flowingTrenches };
-      }
-
-      // The shallow decorative puddle apron is also one merged draw call. Its
-      // World-space UVs keep the tiled PNG continuous across the playable-grid
-      // seam without making a separate texture instance for the apron.
-      function _buildFarAquiferApron(cols, seamRow, southLevel, sceneObj, statKey) {
-        const cells = []; // Used by the shared merged-water geometry builder below.
-        for (let col = 0; col < cols; col++) {
-          const level = southLevel[col];
-          for (let d = 0; d < FAR_APRON_ROWS; d++) {
-            const depthFrac = level * Math.pow(FAR_APRON_FALLOFF, d);
-            if (depthFrac < 0.02) continue;
-            const surfaceA = NORMAL_TOP + depthFrac * WATER_UNIT;
-            cells.push({ col, row: seamRow + d, surfaceY: surfaceA, depth: depthFrac, flowX: 0, flowZ: 1 });
-          }
-        }
-        return _buildMergedWaterMesh(sceneObj, cells, {
-          name: statKey.replace(/\s+/g, '_') + '_mesh', statKey,
-        });
-      }
-
-      function updateWaterMeshes() {
-        waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
-
-        if (_waterSimDirty) {
-          _waterSimDirty = false;
-          const snapshot = _collectDynamicWaterCells(grid, ROWS, COLS, false);
-          _flowingTrenchTiles = snapshot.flowingTrenches;
-          farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
-          farmWaterMesh = _buildMergedWaterMesh(scene, snapshot.cells, {
-            name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
-          });
-          farmFarAquiferMesh = _disposeMergedWaterMesh(scene, farmFarAquiferMesh, 'farm south apron');
-          farmFarAquiferMesh = _buildFarAquiferApron(COLS, ROWS, farSouthLevel, scene, 'farm south apron');
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
-
-      // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
-      // so town weather can fill them with water exactly like farm trenches.
-      function updateTownWaterMeshes() {
-        waterTime += 0.016;
-        if (!townScene) return;
-        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-
-        if (_townWaterSimDirty) {
-          _townWaterSimDirty = false;
-          const snapshot = _collectDynamicWaterCells(townGrid, TROWS, TCOLS, true);
-          _townFlowingTrenchTiles = snapshot.flowingTrenches;
-          townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
-          townWaterMesh = _buildMergedWaterMesh(townScene, snapshot.cells, {
-            name: 'town_merged_dynamic_water', statKey: 'town dynamic',
-          });
-          townFarAquiferMesh = _disposeMergedWaterMesh(townScene, townFarAquiferMesh, 'town south apron');
-          townFarAquiferMesh = _buildFarAquiferApron(TCOLS, TROWS, townSouthLevel, townScene, 'town south apron');
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
-
-      // Animates a zone's waterfall curtain mesh(es) (see
-      // buildWaterfallCurtainMeshes) — there's no per-tile dynamic water sim
-      // here like updateTownWaterMeshes/updateWaterMeshes, just the uTime
-      // uniform driving the shader's scroll/ripple, so this is a thin loop.
-      function updateZoneWaterMeshes(mapId) {
-        waterTime += 0.016;
-        const meshes = _zoneWaterMeshes.get(mapId);
-        if (!meshes) return;
-        for (const wm of meshes) {
-          if (wm.material === mergedWaterMaterial) continue;
-          if (wm.material.uniforms?.uTime) wm.material.uniforms.uTime.value = waterTime;
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
+      // Merged-water-surface collection/rendering (_collectDynamicWaterCells,
+      // _buildFarAquiferApron, updateWaterMeshes, updateTownWaterMeshes,
+      // updateZoneWaterMeshes) now lives in js/water-system.js — called from
+      // gameLoop via window.WaterSystem.*.
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
@@ -18652,7 +22187,8 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const standY = player.climbing ? player.climbSurfaceY
+        const standY = player.onBranch ? player.branchSurfaceY
+          : player.climbing ? player.climbSurfaceY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
 
         // Riding a mount lifts the rider up so their posterior anchor
@@ -18695,6 +22231,12 @@
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // updateMountRide has already written the carrier's final smoothed
+        // mesh transform this frame. In steady riding, use that exact render
+        // position so rider and mount cannot trail each other through two
+        // independent lerps. Mounting/dismounting states intentionally keep
+        // the transition positioning above.
+        window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
@@ -18715,6 +22257,10 @@
         // the camera, and this recompute runs every frame regardless of fishing state, so
         // without the guard it fought that and spun the character back around immediately.
         if (window.Fishing?.state?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (characterViewMode.enabled) {
+          playerFacing = characterViewMode.lockedPlayerFacing;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
@@ -18974,13 +22520,48 @@
       }
 
       // ── Visual feature toggles (Settings tab) ────────────────────
+      // Southern Cloud Forest-specific effects added in the same window as
+      // Shoulder Cam's promotion out of experimental (mist cylinders, the
+      // zone's wide player-centered vegetation cull radius, and its dense
+      // instanced background forest along the north town-entrance edge) —
+      // off switches for isolating which one (if any) is behind reported
+      // choppiness/hitching specifically in that zone. Default on (no
+      // change from current behavior); each is meant to be flipped off one
+      // at a time to A/B test.
+      let s_cloudForestFog = true;
+      let s_cloudForestWideCull = true;
+      let s_cloudForestBgForest = true;
+      // Live Settings-tab slider value for the radial vegetation cull
+      // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
+      // vegCullRadiusTiles default (30) but is independently adjustable
+      // without touching that config.
+      let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
+      // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
+      // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
+      // beyond this fraction of the radius a tree ramps from opaque (at the
+      // fraction) down to fully transparent (at the radius) instead of
+      // popping in solid the instant it enters the cull sphere. Outline:
+      // the (cheaper-to-skip, pricier-to-draw) shell outline pass only
+      // draws within this closer fraction, independent of the tree's own
+      // opacity fade.
+      let s_cloudForestFadeStartFrac = 0.70;
+      let s_cloudForestOutlineFrac = 0.40;
       let s_outlines  = true;
       let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
       let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
+      // Furniture "material ID" seam outline (see _markFurnitureEdgeId/
+      // idEdge in the composite shader) — unlike the shell and depth-edge
+      // passes above, this one never had a Settings toggle of its own; it
+      // just always ran whenever s_outlines was on. Off by default now: the
+      // shell pass alone (see shellOutlineMat's fog handling) is the
+      // intended outline style, and this extra seam layer isn't fog-aware
+      // (it always draws a solid line regardless of distance), so leaving it
+      // on would keep punching crisp lines through the Cloud Forest's mist
+      // that the fogged shell outline is specifically meant to fade into.
+      let s_furnitureSeamOutlines = false;
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
-      let s_fpsCounter = false;
       let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
       // Debug hitbox overlay — unlike the other visual toggles above, its
       // state is cached across sessions (it's a dev tool you flip on once
@@ -18988,6 +22569,9 @@
       const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
       let s_showHitboxes = false;
       try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      const INTERACTION_RAY_DEBUG_STORAGE_KEY = 'hobunjiDebugInteractionRay'; // Persists the separate ray visualization toggle.
+      let s_showInteractionRaycast = false; // Read by DebugHitboxes.draw() independently of Show Hitboxes.
+      try { s_showInteractionRaycast = localStorage.getItem(INTERACTION_RAY_DEBUG_STORAGE_KEY) === '1'; } catch {}
       // Global dev-mode flag — same "flip on once, stays on" persistence as
       // s_showHitboxes above. Currently only gates the +1 Mastery button in
       // each tool's item-info panel (see selectGearTool/selectEquipSlot),
@@ -19003,8 +22587,6 @@
       // contributing to the reported translucency.
       let s_disableHatXray = false;
 
-      const fpsCounterEl = document.getElementById('fpsCounter');
-      let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
       let _pathBrickCullAccum = 0;
 
@@ -19055,15 +22637,36 @@
       document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
         // Slider is "sensitivity" (higher = catches smaller depth gaps), so
         // invert it into the threshold-scale multiplier used by the shader.
+        // Bounds come from config/outline-rendering.json (read live off
+        // _outlineRenderingConfig, not captured at listener-setup time, so
+        // a config load that lands after this wiring still takes effect).
         const sensitivity = Number(e.target.value);
-        s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
+        const { sensitivityMinThreshScale: lo, sensitivityMaxThreshScale: hi } = _outlineRenderingConfig.depthEdge;
+        s_depthOutlineThreshScale = lo + (hi - lo) * sensitivity;
       });
-      document.getElementById('settingGrass').addEventListener('change', e => {
-        s_grass = e.target.checked;
+      // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
+      // so a headless/console toggle doesn't need to click through Settings —
+      // visually verifying hands/feet/outlines against dense world grass
+      // otherwise means hunting for open ground first.
+      function applyGrassVisible(visible) {
+        s_grass = !!visible;
+        const settingCheckbox = document.getElementById('settingGrass');
+        if (settingCheckbox) settingCheckbox.checked = s_grass;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
+        // Streamed zone grass/rich-foliage groups live below their owning
+        // chunk groups, so traverse rather than assuming direct scene children.
+        for (const zoneInfo of _zoneScenes.values()) {
+          zoneInfo.scene?.traverse?.(object => {
+            if (object.userData?.isWildernessGrassChunkGroup || object.userData?.isRichFoliageBillboard) object.visible = s_grass;
+          });
+        }
         window.BorderTerrain.setGrassVisible(s_grass);
-      });
+      }
+      document.getElementById('settingGrass').addEventListener('change', e => applyGrassVisible(e.target.checked));
+      // ?hideGrass=1 starts a session with grass already off, same convention
+      // as the 'tothal' force param above.
+      if (new URLSearchParams(location.search).get('hideGrass') === '1') applyGrassVisible(false);
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
       });
@@ -19071,11 +22674,122 @@
         s_weed3D = e.target.checked;
         _rebuildWeedTiles();
       });
-      document.getElementById('settingFpsCounter').addEventListener('change', e => {
-        s_fpsCounter = e.target.checked;
-        fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
-        _fpsFrames = 0; _fpsAccum = 0;
+      // Cloud Forest perf-testing toggles — each takes effect immediately,
+      // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
+      // declaration comment).
+      document.getElementById('settingCloudForestFog')?.addEventListener('change', e => {
+        s_cloudForestFog = e.target.checked;
+        window.CloudForestFog?.setEnabled(s_cloudForestFog);
+        // CloudForestFog only owns the player-centered mist cylinders — the
+        // zone's own THREE.FogExp2 (density 0.055, vs. every other zone's
+        // 0.018 — see EXTERIOR_ZONES.map_southern_cloud_forest's fogDensity
+        // comment) is a second, independent haze source the toggle used to
+        // leave untouched, so turning it off didn't visibly remove the mist.
+        // Set it to zero when off so the checkbox removes every mist source,
+        // then restore the authored density when on, live if the zone exists.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        if (zi?.scene?.fog) {
+          zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0;
+        }
       });
+      document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
+        s_cloudForestWideCull = e.target.checked;
+      });
+      document.getElementById('settingCloudForestBgForest')?.addEventListener('change', e => {
+        s_cloudForestBgForest = e.target.checked;
+        if (window.CloudForestRuntimeV2) window.CloudForestRuntimeV2.bgForestEnabled = s_cloudForestBgForest;
+        // Also hide/show whatever's already built this session, so the
+        // toggle is instant instead of only affecting the next zone build.
+        const zi = _zoneScenes.get('map_southern_cloud_forest');
+        zi?.scene?.traverse?.(obj => { if (obj.userData?.cloudForestScenery) obj.visible = s_cloudForestBgForest; });
+      });
+      function applyNearbyVolumeCollisionSettings() {
+        window.NearbyVolumeCollision?.setOptions?.({
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+        });
+      }
+      for (const settingId of [
+        'settingVolumeCollisionMaster',
+        'settingVolumeCollisionProjectiles',
+        'settingVolumeCollisionAlpha',
+      ]) {
+        document.getElementById(settingId)?.addEventListener('change', applyNearbyVolumeCollisionSettings);
+      }
+      document.getElementById('settingBanditCamps')?.addEventListener('change', e => {
+        if (window.BanditCamps) window.BanditCamps.campsEnabled = e.target.checked;
+      });
+      // Shared by the cull-radius and all six fog-layer sliders below: wires
+      // an <input type=range> to a live value getter/setter plus its
+      // paired display span, all taking effect on the very next frame.
+      function wireSlider(inputId, valueId, apply) {
+        const input = document.getElementById(inputId);
+        const valueEl = document.getElementById(valueId);
+        if (!input) return;
+        input.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = String(v);
+          apply(v);
+        });
+      }
+      wireSlider('settingCloudForestCullRadius', 'settingCloudForestCullRadiusValue', v => { s_cloudForestCullRadiusTiles = v; });
+      // These two show a "%" suffix instead of the raw slider number, so
+      // they can't share wireSlider's plain String(v) display — wired by
+      // hand instead, same underlying pattern.
+      (() => {
+        const input = document.getElementById('settingCloudForestFadeStart');
+        const valueEl = document.getElementById('settingCloudForestFadeStartValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestFadeStartFrac = v / 100;
+        });
+      })();
+      (() => {
+        const input = document.getElementById('settingCloudForestOutlineRadius');
+        const valueEl = document.getElementById('settingCloudForestOutlineRadiusValue');
+        input?.addEventListener('input', e => {
+          const v = Number(e.target.value);
+          if (valueEl) valueEl.textContent = `${v}%`;
+          s_cloudForestOutlineFrac = v / 100;
+        });
+      })();
+      wireSlider('settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerRadiusValue', v => window.CloudForestFog?.setLayerRadius(0, v));
+      wireSlider('settingCloudForestFogInnerOpacity', 'settingCloudForestFogInnerOpacityValue', v => window.CloudForestFog?.setLayerOpacity(0, v));
+      wireSlider('settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleRadiusValue', v => window.CloudForestFog?.setLayerRadius(1, v));
+      wireSlider('settingCloudForestFogMiddleOpacity', 'settingCloudForestFogMiddleOpacityValue', v => window.CloudForestFog?.setLayerOpacity(1, v));
+      wireSlider('settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterRadiusValue', v => window.CloudForestFog?.setLayerRadius(2, v));
+      wireSlider('settingCloudForestFogOuterOpacity', 'settingCloudForestFogOuterOpacityValue', v => window.CloudForestFog?.setLayerOpacity(2, v));
+      // Used by the mobile-friendly reset button to restore every slider in
+      // the Cloud Forest performance-testing group from its HTML default.
+      const CLOUD_FOREST_DEV_SLIDER_IDS = Object.freeze([
+        'settingCloudForestCullRadius',
+        'settingCloudForestFadeStart',
+        'settingCloudForestOutlineRadius',
+        'settingCloudForestFogInnerRadius',
+        'settingCloudForestFogInnerOpacity',
+        'settingCloudForestFogMiddleRadius',
+        'settingCloudForestFogMiddleOpacity',
+        'settingCloudForestFogOuterRadius',
+        'settingCloudForestFogOuterOpacity',
+      ]);
+      document.getElementById('settingCloudForestResetDefaults')?.addEventListener('click', () => {
+        for (const inputId of CLOUD_FOREST_DEV_SLIDER_IDS) {
+          const input = document.getElementById(inputId);
+          if (!input) continue;
+          input.value = input.defaultValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+      });
+      // FPS Counter's checkbox is owned entirely by js/performance-debug.js
+      // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
+      // it used to also be independently wired up right here, which meant
+      // two separate frame loops fought over the same #fpsCounter element's
+      // text every half second. Draw calls/triangles/GPU memory/render CPU
+      // time are already available too, via the adjacent "Performance
+      // Profiler" checkbox and its overlay (perfState in that file).
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
@@ -19141,6 +22855,12 @@
       settingShowHitboxesEl.addEventListener('change', e => {
         s_showHitboxes = e.target.checked;
         try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
+      });
+      const settingShowInteractionRaycastEl = document.getElementById('settingShowInteractionRaycast');
+      settingShowInteractionRaycastEl.checked = s_showInteractionRaycast;
+      settingShowInteractionRaycastEl.addEventListener('change', e => {
+        s_showInteractionRaycast = e.target.checked;
+        try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
       });
       const settingDevModeEl = document.getElementById('settingDevMode');
       settingDevModeEl.checked = s_devMode;
@@ -19213,7 +22933,7 @@
             player.y = (anchor.y + 0.5) * TILE;
             player.vx = 0; player.vy = 0;
             _snapCameraTarget();
-            const toScene = buildZoneScene(zoneId)?.scene;
+            const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
             if (toScene) {
               toScene.add(playerMesh); toScene.add(playerGroundShadow);
               toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -19237,6 +22957,7 @@
         player.y = (anchor.y + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         _snapCameraTarget();
+        window.WildernessChunks?.primeZone(currentArea, anchor.x, anchor.y);
         showToast(`Teleported to a den (${dens.length} on this map).`, true);
         closeMenu();
       }
@@ -19244,7 +22965,7 @@
 
       // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
       // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
-      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); });
       document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
         await checkTothalShift(true);
         window.WildlifeDebugPanel.render();
@@ -19274,6 +22995,7 @@
           player.y = (anchor.y + 0.5) * TILE;
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
+          window.WildernessChunks?.primeZone(zoneId, anchor.x, anchor.y);
         };
         if (currentArea === zoneId) {
           land();
@@ -19287,7 +23009,7 @@
           if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
           currentArea = zoneId;
           land();
-          const toScene = buildZoneScene(zoneId)?.scene;
+          const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -19330,10 +23052,41 @@
         const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
         return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
       }
+      function aimedCavernNest(nest) {
+        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
+        const interactionRay = currentPlayerInteractionRay();
+        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
+        const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
+        const box = new THREE.Box3(
+          new THREE.Vector3(cx / TILE - halfW, groundY, cy / TILE - halfH),
+          new THREE.Vector3(cx / TILE + halfW, groundY + 0.75, cy / TILE + halfH),
+        );
+        const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
+        if (!focus) return null;
+        const hostile = window.RangedWeapons.focusedHostile?.(24);
+        if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+        window.DebugHitboxes?.noteInteractionFocus?.(focus);
+        return nest;
+      }
+      function currentAimedNest() {
+        const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
+        if (branchNest) return branchNest;
+        return aimedCavernNest(_denNests.get(currentArea));
+      }
+      function refreshInteractionFocusDebug() {
+        if (!s_showInteractionRaycast) return;
+        // Match computeActionButtons priority: a nest owns the shared input
+        // before branch climbing is considered.
+        if (currentAimedNest()) return;
+        if (_isZoneArea(currentArea) && !player.climbing) window.ClimbSystem?.getClimbTarget?.();
+      }
       function updateNestInteraction(dt) {
-        const nest = _denNests.get(currentArea);
-        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
-        if (!near || !actionHeldDown) {
+        const nest = currentAimedNest();
+        const taking = nest && activeAction === 'nest_take' && actionHeldDown;
+        player._nestTakeActive = !!taking;
+        if (!taking) {
           if (_nestHoldT > 0) _nestHoldT = 0;
           if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
           return;
@@ -19344,6 +23097,7 @@
         _nestTakeHudEl?.classList.add('visible');
         if (_nestHoldT >= NEST_TAKE_HOLD_S) {
           _nestHoldT = 0;
+          player._nestTakeActive = false;
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
@@ -19366,20 +23120,84 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
+      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
+      // the OS cursor itself must never move (a free-roaming cursor runs out
+      // of screen/desk space and pins at the display edge, capping how far
+      // you can turn) — so it Pointer-Locks the canvas instead of just
+      // reading movementX/Y off a visible cursor. Locked or not, the
+      // mousemove handler below always reads movementX/Y the same way;
+      // locking only stops the OS cursor from moving/being visible at all,
+      // so those deltas keep coming no matter how far or how many times the
+      // physical mouse moves in one direction.
+      function cursorlessMouseAimRequested() {
+        return characterViewMode.enabled
+          || (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE);
+      }
+      
+      function shoulderSurfPointerLockActive() {
+        return document.pointerLockElement === threeContainer;
+      }
+      function requestShoulderSurfPointerLock() {
+        if (!cursorlessMouseAimRequested() || !isDesktop || shoulderSurfPointerLockActive()) return;
+        // Can reject (no transient user activation, or the browser's own
+        // rate-limit on repeated requests) — that's fine, the click-to-relock
+        // handler below gives the player another chance.
+        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
+      }
+      function releaseShoulderSurfPointerLock() {
+        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
+      }
+      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
+        s_shoulderSurf = e.target.checked;
+        // Only live-swap while in one of the two plain gameplay camera
+        // states — mid-dialogue/fishing/seated/cutscene, leave the active
+        // mode alone and let its own existing restore path (now routed
+        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
+        // the new toggle state next time it resolves back to gameplay.
+        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
+          activeCameraMode = defaultCameraModeKey();
+          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
+        }
+        if (s_shoulderSurf) {
+          requestShoulderSurfPointerLock();
+          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
+        } else releaseShoulderSurfPointerLock();
+      });
+      // Re-engage after the browser's own Escape-releases-lock behavior, or
+      // after the settings menu (below) let go of it — a plain click on the
+      // game world is the same click-to-resume-look convention most desktop
+      // games with Pointer Lock use.
+      threeContainer.addEventListener('click', () => {
+        if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock();
+      });
+      // Both offset sliders read/write whichever stance preset is currently
+      // active (see shoulderSurfCombatStanceActive()) rather than a single
+      // flat value — the per-frame sync below snaps the slider itself back
+      // to the other preset's stored number the instant the stance flips,
+      // so what's on screen always matches what's actually driving the
+      // camera.
+      document.getElementById('settingShoulderSurfOffsetH')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetH_combat = v; else s_shoulderSurfOffsetH_default = v;
+        s_shoulderSurfOffsetH_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetHValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
+      document.getElementById('settingShoulderSurfOffsetV')?.addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0;
+        if (shoulderSurfCombatStanceActive()) s_shoulderSurfOffsetV_combat = v; else s_shoulderSurfOffsetV_default = v;
+        s_shoulderSurfOffsetV_current = v; // a live drag should track the mouse immediately, not ease in
+        const valueEl = document.getElementById('settingShoulderSurfOffsetVValue');
+        if (valueEl) valueEl.textContent = v.toFixed(2);
+        updateCameraPosition();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
-
-        if (s_fpsCounter) {
-          _fpsFrames++;
-          _fpsAccum += dt;
-          if (_fpsAccum >= 0.5) {
-            fpsCounterEl.textContent = Math.round(_fpsFrames / _fpsAccum) + ' FPS';
-            _fpsFrames = 0;
-            _fpsAccum  = 0;
-          }
-        }
+        gameFrameSerial++;
 
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
@@ -19401,21 +23219,29 @@
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
+        window.MusicMinigame?.tick(dt);
 
         window.Music?.updateRainAudio();
         window.Music?.updateExteriorBgs();
         window.Music?.updateFurnitureSfxSources();
         window.Music?.updateAmbientCues();
+        window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
 
         if (!paused) {
           updateCalendar(dt);
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
+          updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
+          window.WildernessChunks?.update(dt);
+          window.PerfProfiler?.end(wildernessChunkPerf);
+          window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
+          window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
 
@@ -19437,16 +23263,21 @@
             window.BanditCamps.updateCompanionPerception(dt);
             window.BanditCamps.updateCampBanners(dt);
             window.WildlifeSpawn.updateHostileSpawning(dt);
+            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
             updateHostiles(dt);
+            window.PerfProfiler?.end(hostilePerf);
             window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
             // Ordinary building interiors still have no wild spawns; this
             // branch only keeps any authored interior hostile/corpse active.
+            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
             updateHostiles(dt);
+            window.PerfProfiler?.end(hostilePerf);
             window.CreatureDeath.updateCorpses(dt);
           }
 
-          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          window.ClimbSystem?.updateFallenNests?.(dt);
+          updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -19460,7 +23291,6 @@
           if (sceneTransDir === 0) checkTransitionSpots();
 
           if (currentArea === 'farm' || currentArea === 'town') {
-            waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
             window.WeatherFX.updateWaterParticles(dt);
             window.WeatherFX.updateRipples(dt);
             window.WeatherFX.updateLightningFlash(dt);
@@ -19476,11 +23306,11 @@
           if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
             simAccumulator -= 0.125;
             if (currentArea === 'farm') {
-              recomputeWater(false);
+              window.WaterSystem.recomputeWater(false);
               tickWorldObjects();
             } else {
               const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-              recomputeWater(false, townGrid, TROWS, TCOLS);
+              window.WaterSystem.recomputeWater(false, townGrid, TROWS, TCOLS);
             }
             window.WeatherFX.spawnRipples();
           }
@@ -19490,12 +23320,105 @@
         const targetPosition = activeCameraTarget?.position;
         const wx = targetPosition ? targetPosition.x : player.x / TILE;
         const wz = targetPosition ? targetPosition.z : player.y / TILE;
-        const wy = targetPosition ? targetPosition.y : _playerGroundY();
+        // Shoulder-surf tracks the actual rendered player mesh height rather
+        // than bare ground height, so the camera rises and sinks along with
+        // it — mountSeatLift/chairSeatSink/water bob/etc. (see the movement
+        // update's targetY) already compose into playerMesh.position.y every
+        // frame before this runs, so mounting a tall creature or wading into
+        // water carries straight through to the camera for free.
+        const wy = targetPosition ? targetPosition.y
+          : (activeCameraMode === SHOULDER_SURF_MODE ? playerMesh.position.y : _playerGroundY());
         const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
+        // Safety net: some camera-mode transitions (fishing, the music
+        // minigame, NPC dialogue, harvest interactions...) assign
+        // activeCameraMode directly rather than through
+        // enterDefaultCameraMode(), so this catches any of them landing
+        // outside shoulder-surf while its Pointer Lock is still held —
+        // cheap enough (one property read) to just check every frame rather
+        // than hunting down every such call site individually.
+        if (!cursorlessMouseAimRequested()) releaseShoulderSurfPointerLock();
+        // Same "don't hunt down every mode-switch call site" reasoning as
+        // the Pointer Lock release above — held-item ground x-ray reads as
+        // clarity from the normal top-down view but just looks wrong at
+        // shoulder-surf's close third-person range, so keep it in lockstep
+        // with the camera mode every frame instead.
+        window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
+        // Eases the camera's actual offset (…_current) toward whichever
+        // stance preset applies right now — every frame, not just the
+        // instant the stance flips — so drawing/sheathing a weapon (or any
+        // other tool/item swap that changes stance) reads as a smooth
+        // push-in/pull-back instead of a jump-cut. The offset sliders'
+        // displayed value still jumps immediately on the flip, since that's
+        // just showing which preset's number is now in charge, not the
+        // transient eased position.
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const combatStance = shoulderSurfCombatStanceActive();
+          const targetH = combatStance ? s_shoulderSurfOffsetH_combat : s_shoulderSurfOffsetH_default;
+          const targetV = combatStance ? s_shoulderSurfOffsetV_combat : s_shoulderSurfOffsetV_default;
+          s_shoulderSurfOffsetH_current += (targetH - s_shoulderSurfOffsetH_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          s_shoulderSurfOffsetV_current += (targetV - s_shoulderSurfOffsetV_current) * Math.min(1, SHOULDER_SURF_OFFSET_LERP * dt);
+          if (combatStance !== _shoulderSurfOffsetSliderCombat) {
+            _shoulderSurfOffsetSliderCombat = combatStance;
+            const hEl = document.getElementById('settingShoulderSurfOffsetH');
+            const vEl = document.getElementById('settingShoulderSurfOffsetV');
+            const hValEl = document.getElementById('settingShoulderSurfOffsetHValue');
+            const vValEl = document.getElementById('settingShoulderSurfOffsetVValue');
+            if (hEl) hEl.value = targetH;
+            if (vEl) vEl.value = targetV;
+            if (hValEl) hValEl.textContent = targetH.toFixed(2);
+            if (vValEl) vValEl.textContent = targetV.toFixed(2);
+          }
+        }
+        // Floating camera joystick: held-off-center knob position drives an
+        // ongoing turn rate every frame, for as long as the touch lasts (see
+        // the pointerdown/pointermove handlers below that materialize it and
+        // fill in cameraJoystickX/Y). Self-heals if some other UI claims
+        // input mid-hold instead of leaving the joystick stuck on screen.
+        if (cameraDragPointerId !== null) {
+          if (!cameraDragAllowed()) {
+            cameraDragPointerId = null;
+            hideCameraJoystick();
+          } else if (meleeAutoTargetOn && meleeWeaponOut()) {
+            // While melee auto-target is locked on, this same hidden stick
+            // swaps targets left/right instead of rotating the camera —
+            // akin to the controller's right-stick-tilt cycling. Edge-
+            // triggered off the raw X value (not cameraJoystickX, which is
+            // already deadzone/response-curved for the camera-rotate case)
+            // so one full push-past-threshold reads as exactly one cycle
+            // step, the same discrete feel as the controller's synthesized
+            // RightStickLeft/RightStickRight buttons.
+            const past = Math.abs(cameraJoystickX) >= CAMERA_JOYSTICK_DEADZONE * 2;
+            if (past && !_cameraJoystickTargetCyclePast) cycleMeleeAutoTarget(cameraJoystickX > 0 ? 1 : -1);
+            _cameraJoystickTargetCyclePast = past;
+          } else if (cameraJoystickX !== 0 || cameraJoystickY !== 0) {
+            _cameraJoystickTargetCyclePast = false;
+            const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
+              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            // Inverted relative to X on purpose — matches the desktop
+            // Shift-drag/plain-mouselook convention just below (+movementY
+            // pitches the same way), whereas the raw touch delta this knob
+            // is built from reads the other way for vertical.
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+          }
+        }
+        if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
+          _shoulderSurfBootSnapped = true;
+          snapShoulderSurfAzimuth();
+        }
         updateCameraPosition();
+        // Refreshes the shared head/body/reticle aim point every frame
+        // (rather than only on a mousemove/touch event) so it always
+        // reflects the current camera — including a horizontal offset slide
+        // — even if the player is just standing still having already turned
+        // the camera. Must run after updateCameraPosition() above, not
+        // before, or the raycast would use last frame's stale camera
+        // position/orientation.
+        if (activeCameraMode === SHOULDER_SURF_MODE) updateShoulderSurfReticleAim();
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
@@ -19521,7 +23444,9 @@
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
+          const npcPerf = window.PerfProfiler?.begin('npc walkers'); // Measures cross-area schedule updates plus current-area portrait-life scheduling.
           updateNpcWalkers(dt);
+          window.PerfProfiler?.end(npcPerf);
           window.NpcDrinkInteraction?.update?.(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
@@ -19529,11 +23454,11 @@
         // its speaker toward the intended target for the rendered frame.
         ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
-          updateTownWaterMeshes();
+          window.WaterSystem.updateTownWaterMeshes();
           updateTownThreeLighting();
         }
         if (_isZoneArea(currentArea)) {
-          updateZoneWaterMeshes(currentArea);
+          window.WaterSystem.updateZoneWaterMeshes(currentArea);
         }
         // Tools and held bag items render and animate in every playable map.
         // Ordinary interiors still omit combat/reticle updates below; this
@@ -19543,15 +23468,17 @@
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateCombatConeTrail();
           updateChargeAction();
+          const combatPerf = window.PerfProfiler?.begin('combat'); // Measures the modular player/projectile combat update separately from hostile AI.
           window.Combat?.update(dt);
+          window.PerfProfiler?.end(combatPerf);
           updateReticleMesh();
         }
-        // Must run after updateToolMesh: attack/tool poses can rotate the
-        // player's body after updatePlayerMesh, and the attached pet needs
-        // that final transform in the same frame.
+        window.RangedWeapons?.update(dt);
+        updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        _tickPlayerPortraitLife(dt);
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
-          updateWaterMeshes();
+          window.WaterSystem.updateWaterMeshes();
           updateCropMeshes();
           window.FarmAnimals.updateAnimalMeshes(dt);
           updateThreeLighting();
@@ -19605,6 +23532,7 @@
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
+        if (s_cloudForestFog) window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
@@ -19642,14 +23570,19 @@
 
           // Furniture material-ID buffer (layer-3 objects only) — feeds the
           // material-seam edge detection in the composite shader below.
-          renderer.setRenderTarget(_edgeIdRT);
-          renderer.setClearColor(0x000000, 0);
-          renderer.clear(true, true, false);
-          camera.layers.set(3);
-          activeScene.overrideMaterial = _furnitureIdMat;
-          renderer.render(activeScene, camera);
-          activeScene.overrideMaterial = null;
-          camera.layers.enableAll();
+          // Skipped entirely while s_furnitureSeamOutlines is off — the
+          // composite's uSeamOutlinesOn uniform also zeroes its contribution
+          // regardless, so leaving _edgeIdRT's contents stale here is safe.
+          if (s_furnitureSeamOutlines) {
+            renderer.setRenderTarget(_edgeIdRT);
+            renderer.setClearColor(0x000000, 0);
+            renderer.clear(true, true, false);
+            camera.layers.set(3);
+            activeScene.overrideMaterial = _furnitureIdMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            camera.layers.enableAll();
+          }
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
           // (see _markPngPlane) and grass billboards (userData.isBillboard,
@@ -19685,6 +23618,7 @@
           _postMat.uniforms.uCameraFar.value       = camera.far;
           _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
           _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
+          _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
         } else {
           renderer.setRenderTarget(null);
@@ -19736,7 +23670,6 @@
           octx.fillRect(0, 0, W, H);
         }
 
-        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
@@ -19773,6 +23706,12 @@
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           window.WeatherFX.updateRainState();
           if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
+          // Breeding progress ticks per in-game hour crossed (rather than
+          // once per day) so a pair's bar visibly creeps forward through
+          // the day and can complete the moment it fills, not just at the
+          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
+          // covers whatever fraction of the day this real-time path skips.
+          window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
           // rollovers still only loses a few minutes of in-game time
@@ -19785,9 +23724,12 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
-        window.FarmAnimals.tickBreeding();
+        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // here — by the time a day naturally rolls over, every one of its
+        // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
-        window.ProceduralTasks.maybeRefreshBoardTask();
+        window.FarmAnimals.tickHearts();
+        window.ProceduralTasks.maybeRefreshRequestPostings();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -19809,13 +23751,20 @@
       // clock itself and restoring the player, which advanceDay() doesn't
       // need to do since it only ever fires from a real elapsed-time wrap.
       function sleepInBed() {
+        // Whatever fraction of today's waking hours hadn't been played
+        // through yet (and so never got an hourly breeding tick from
+        // updateCalendar) gets credited here in one lump, so a pair
+        // progresses the same one day's worth whether that day was played
+        // out in real time or slept through.
+        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
         calendar.day += 1;
         calendar.time01 = 0; // wake at MORNING_HOUR
         window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
-        window.FarmAnimals.tickBreeding();
+        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
         window.FarmAnimals.tickResources();
-        window.ProceduralTasks.maybeRefreshBoardTask();
+        window.FarmAnimals.tickHearts();
+        window.ProceduralTasks.maybeRefreshRequestPostings();
         checkTothalShift();
         window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
@@ -19873,189 +23822,8 @@
         return waterMul * ditchMul;
       }
 
-      // Average water fraction (0..1) across a grid's non-solid tiles — used
-      // as the "how wet is this place overall" reading the far terrain and
-      // edge inflow track. Rivers/streams are included at their pinned
-      // MAX_WATER, same as any other tile, since they're real wet ground.
-      function avgGridWaterLevel(targetGrid, rows, cols) {
-        let sum = 0, n = 0;
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            if (isSolid(t.type)) continue;
-            sum += t.water / MAX_WATER;
-            n++;
-          }
-        }
-        return n ? sum / n : 0;
-      }
-
-      // ═══════════════════════════════════════════════════════════════
-      //  WATER SIMULATION
-      //  Model: each tile has a float `water` = depth above its floor.
-      //  Floor Z: RAISED=+1, normal=0, TRENCH=-1, ROCK/SHRUB=solid (no flow).
-      //  Water surface = floorZ(type) + water.
-      //  Each sim tick (called from gameLoop ~every 0.7s):
-      //    1. Rain adds depth to every non-solid tile.
-      //    2. Soil absorption drains a small amount.
-      //    3. Cross-tile flow: water moves from high-surface to low-surface
-      //       neighbours, south-biased, half-difference per tick.
-      //       Trenches pull with TRENCH_FLOW_BONUS multiplier.
-      //    4. Overflow: any water above MAX_WATER is shed to neighbours.
-      //  Edges: south is a runoff outlet (always was); west/east instead seep
-      //  water IN from the surrounding far terrain, so damming the north-south
-      //  channel alone can't cut off the whole map (see SIDE_INFLOW_RATE).
-      //  The farm's far terrain tracks the town's overall water level; the
-      //  town (having no upstream grid of its own) tracks its own average.
-      //  Whatever water actually reaches each south-edge column also drives
-      //  that column's far-terrain level just past the map's south edge, so a
-      //  player-made dry gap at the bottom row continues out into the far
-      //  terrain instead of stopping dead at the seam (farSouthLevel/townSouthLevel).
-      // ═══════════════════════════════════════════════════════════════
-
-      function recomputeWater(decayOnly, targetGrid = grid, rows = ROWS, cols = COLS) {
-        const str = calendar.rainStrength || 1;
-        const isRaining = calendar.isRaining && !decayOnly;
-        const isTown = targetGrid === townGrid;
-
-        // The far terrain's level for this grid's edges: the town tracks its
-        // own average (it has nothing upstream of it); the farm tracks the
-        // town's last-known average, so the town's water shows up beyond the
-        // farm's edges too. Read before Pass 1 mutates anything, one tick of
-        // lag is imperceptible at this sim's ~0.7s cadence.
-        const farLevel = isTown ? avgGridWaterLevel(targetGrid, rows, cols) : _townWaterLevel;
-        if (isTown) _townWaterLevel = farLevel;
-
-        // Pass 1: rain + absorption + evaporation + edge exchange
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            if (isSolid(t.type)) continue;
-            t.flow = false;
-
-            // Rivers/streams are a permanent water body, not part of the
-            // irrigation sim — always full, never absorbed/evaporated/drained.
-            if (t.type === TileType.RIVER || t.type === TileType.STREAM) {
-              t.water = MAX_WATER;
-              continue;
-            }
-
-            if (isRaining) {
-              const rainMul = t.type === TileType.TRENCH ? 2.0
-                            : t.type === TileType.PADDY  ? 1.4 : 1.0;
-              t.water += RAIN_RATE * str * rainMul;
-
-              // Rain gradually silts trenches back in; once fully silted the
-              // trench reverts to plain grass (single-tap dig restores depth to 1).
-              if (t.type === TileType.TRENCH) {
-                t.depth = Math.max(0, (t.depth ?? 1) - TRENCH_SILT_RATE * str);
-                if (t.depth <= 0) {
-                  t.type = TileType.GRASS; t.depth = 0;
-                  // This mutates tile.type outside any of the normal
-                  // dig/fill/action paths, which are the only places that
-                  // otherwise call markTileDirty — without it, the trench's
-                  // dirt-pit mesh and grass billboards for this tile never
-                  // get rebuilt to match the new type, leaving a stale pit
-                  // mesh sitting under (or grass tufts sprouting through) a
-                  // tile the data now says is plain grass.
-                  if (!isTown) markTileDirty(col, row);
-                }
-              }
-            }
-
-            // Soil absorption
-            const absorb = ABSORB_RATE[t.type] ?? 0.012;
-            t.water = Math.max(0, t.water - absorb);
-
-            // Evapotranspiration — slow background loss on all tiles
-            t.water = Math.max(0, t.water - EVAP_RATE);
-
-            // South-edge runoff — bottom 2 rows drain aggressively (gravity outlet)
-            if (row >= rows - 2) {
-              const runoffRate = row === rows - 1 ? 0.08 : 0.03;
-              t.water = Math.max(0, t.water - runoffRate);
-            }
-
-            // West/east edge inflow — the far terrain seeps water into the
-            // side columns toward its own level, entering the map from the
-            // sides instead of only ever draining out the south.
-            if (col === 0 || col === cols - 1) {
-              const target = farLevel * MAX_WATER;
-              if (t.water < target) t.water += (target - t.water) * SIDE_INFLOW_RATE;
-            }
-
-            t.water = Math.min(tileWaterCapacity(t), t.water);
-          }
-        }
-
-        // Pass 2: cross-tile flow — process south→north for southward bias
-        const dirs = [
-          { dc:  0, dr:  1 },  // south
-          { dc:  1, dr:  0 },  // east
-          { dc: -1, dr:  0 },  // west
-          { dc:  0, dr: -1 },  // north
-        ];
-
-        for (let row = rows - 1; row >= 0; row--) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            // Rivers/streams donate no water to neighbours — contained body, no spillover.
-            if (isSolid(t.type) || t.water <= 0 || t.type === TileType.RIVER || t.type === TileType.STREAM) continue;
-
-            let surfA = floorZ(t.type, t.depth) + t.water;
-
-            for (const { dc, dr } of dirs) {
-              const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
-              const n = targetGrid[nr][nc];
-              if (isSolid(n.type)) continue;
-
-              const surfB = floorZ(n.type, n.depth) + n.water;
-              const head  = surfA - surfB;
-              if (head <= 0.001) continue;
-
-              // A silted-in (shallow) trench pulls water less eagerly than a fresh one.
-              const bonus = (n.type === TileType.TRENCH) ? TRENCH_FLOW_BONUS * Math.max(0.15, n.depth ?? 1) : 1.0;
-              let transfer = Math.min(head * FLOW_RATE * bonus * 0.5, t.water);
-              transfer = Math.min(transfer, tileWaterCapacity(n) - n.water);
-              if (transfer <= 0) continue;
-
-              t.water -= transfer;
-              n.water += transfer;
-              surfA = floorZ(t.type, t.depth) + t.water; // update after transfer
-              if (n.type === TileType.TRENCH) n.flow = true;
-              if (t.type === TileType.TRENCH) t.flow = true;
-              // Don't break — allow multiple transfers per tick for faster spread
-            }
-          }
-        }
-
-        // Pass 3: clamp
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            t.water = clamp(t.water, 0, tileWaterCapacity(t));
-          }
-        }
-
-        // Pass 4: far-terrain gap continuation — each column's south-edge
-        // tile (post-flow, so it reflects any upstream damming) eases the
-        // matching far-terrain column level toward it. A player who blocks
-        // water from reaching that column's bottom row drives its far-terrain
-        // level toward 0 too, so the dry gap keeps going past the map edge.
-        {
-          const southLevel = isTown ? townSouthLevel : farSouthLevel;
-          const southRow = targetGrid[rows - 1];
-          for (let col = 0; col < cols; col++) {
-            const edgeFrac = clamp(southRow[col].water / MAX_WATER, 0, 1);
-            southLevel[col] += (edgeFrac - southLevel[col]) * FAR_SOUTH_TRACK_RATE;
-          }
-        }
-
-        // Signal the matching mesh updater to do a full refresh this frame.
-        if (isTown) _townWaterSimDirty = true;
-        else _waterSimDirty = true;
-      }
+      // The water simulation itself (avgGridWaterLevel/recomputeWater) now
+      // lives in js/water-system.js — call via window.WaterSystem.*.
 
       function trenchNeighbors(col, row) {
         // Used by water routing: south is first to preserve the visible north-to-south bias.
@@ -20082,24 +23850,21 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
-        // Picking a tool through any of the normal paths (arc, digit keys,
-        // scroll) while the weapon quick-switch is engaged cancels its
-        // "return to X" memory — there's nothing sensible left to return to.
-        if (tool !== 'weapon') weaponQuickSwitchSaved = null;
+        if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
+        heldMode = 'tool';
         activeTool = tool;
+        if (WHEEL_SLOTS.includes(tool)) lastHeldFarmTool = tool; // Direct hotkeys/cycling must update the same recall memory as arch selection.
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
         const def = TOOL_ITEM_DEFS[equipped];
-        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️' }[tool] || '🔧';
-        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', machete:'Weapon' }[tool] || tool;
+        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️' }[tool] || '🔧';
+        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', ranged:'Ranged Weapon', machete:'Weapon' }[tool] || tool;
         toolBtnIcon.innerHTML  = toolSelectIconHTML(def, fallbackIcon, '0.85em');
         toolBtnLabel.textContent = label;
-        toolPickBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
         // Swap visible tool mesh
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[tool]) toolHolder.add(toolMeshMap[tool]);
-        closeToolPicker();
         refreshActionBar();
         refreshWeaponSwitchBtn();
         // opts.silent: hydrating the tool held last session (see
@@ -20118,34 +23883,40 @@
       // in/out state.
       function refreshWeaponSwitchBtn() {
         if (!btnWeaponSwitchIcon) return;
-        const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
-        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, '🗡️', '0.85em');
+        const showRanged = activeTool !== 'ranged';
+        const def = TOOL_ITEM_DEFS[showRanged ? equipmentSlots.ranged : equipmentSlots.weapon];
+        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, showRanged ? '🏹' : '🗡️', '0.85em');
+        btnWeaponSwitch?.setAttribute('aria-label', showRanged ? 'Switch to ranged weapon' : 'Switch to melee weapon');
       }
 
-      // Press once: snapshot whatever tool/item is currently active and jump
-      // straight to the weapon slot. Press again: restore that snapshot.
-      // This is the only path that sets activeTool to 'weapon' now — it's
-      // been removed from WHEEL_SLOTS (the regular tool-select cycle).
+      // One combat toggle: melee↔ranged. From a farming tool or held item the
+      // first press enters melee, preserving the existing binding.
       function toggleQuickWeaponSwitch() {
-        if (weaponQuickSwitchSaved) {
-          const saved = weaponQuickSwitchSaved;
-          weaponQuickSwitchSaved = null;
-          // Restore the underlying tool slot first (icon/mesh/actions), then
-          // re-enter item mode on top of it if that's what was active.
-          setActiveTool(saved.tool);
-          if (saved.heldMode === 'item') {
-            heldMode = 'item';
-            activeItemIndex = saved.itemIndex;
-            refreshItemScroll();
-            refreshActionBar();
-          } else {
-            heldMode = 'tool';
-          }
-        } else {
-          weaponQuickSwitchSaved = { heldMode, tool: activeTool, itemIndex: activeItemIndex };
-          heldMode = 'tool';
-          setActiveTool('weapon');
-        }
+        heldMode = 'tool';
+        if (activeTool === 'weapon') setActiveTool('ranged');
+        else if (activeTool === 'ranged') setActiveTool('weapon');
+        else setActiveTool('weapon');
+      }
+
+      // Holsters the visible tool/weapon or bag item without unassigning any
+      // gear slots. The remembered activeTool/activeItemIndex are restored by
+      // the next tool, item, or weapon selection.
+      function putAwayHeldEquipment() {
+        if (heldMode === 'none') return;
+        heldMode = 'none';
+        activeAction = 'none';
+        actionHeldDown = false;
+        window.Combat?.input?.cancelPress?.(1);
+        window.Combat?.input?.cancelPress?.(2);
+        window.Combat?.cancelAllStaged?.();
+        window.RangedWeapons?.cancelPlayerAction?.();
+        cancelPlayerToolAnimationForInteraction();
+        toolHolder.visible = false;
+        heldItemHolder.visible = false;
+        window._desktopSelectionArc?.close?.();
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+        showToast('Put away held equipment.', true);
       }
 
       function setActiveAction(action) {
@@ -20154,75 +23925,9 @@
         useActiveAction();
       }
 
-      // ── Tool wheel (radial picker) ─────────────────────────
-      const toolWheelOverlay = document.getElementById('toolWheelOverlay');
-      const toolWheelEl      = document.getElementById('toolWheel');
-      // 'weapon' deliberately excluded — it's reachable only via the
-      // dedicated weapon quick-switch (toggleQuickWeaponSwitch), not the
-      // regular tool-select cycle.
+      // Both combat slots are deliberately excluded — the dedicated combat
+      // toggle swaps weapon↔ranged without putting either in the farm-tool cycle.
       const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
-      const WHEEL_RADIUS = 72; // px — distance from center to each spoke button
-
-      let toolPickerOpen = false;
-
-      function openToolPicker() {
-        toolPickerOpen = true;
-        const rect = toolBtn.getBoundingClientRect();
-        const cx = rect.left + rect.width  / 2;
-        const cy = rect.top  + rect.height / 2;
-
-        // Clamp center so all spoke buttons stay fully on screen
-        const margin = WHEEL_RADIUS + 32;
-        const wcx = Math.max(margin, Math.min(window.innerWidth  - margin, cx));
-        const wcy = Math.max(margin, Math.min(window.innerHeight - margin, cy));
-
-        toolWheelEl.innerHTML = '';
-        const n = WHEEL_SLOTS.length;
-        WHEEL_SLOTS.forEach((slot, i) => {
-          const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // 0 = top
-          const sx = wcx + Math.cos(angle) * WHEEL_RADIUS;
-          const sy = wcy + Math.sin(angle) * WHEEL_RADIUS;
-
-          const equippedKey = equipmentSlots[slot];
-          const eqDef = equippedKey ? TOOL_ITEM_DEFS[equippedKey] : null;
-          const icon  = eqDef?.icon  || ({shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'})[slot] || '🔧';
-          const label = ({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'})[slot] || slot;
-
-          const spoke = document.createElement('div');
-          spoke.className = 'tw-spoke';
-          spoke.style.cssText = `left:${sx}px;top:${sy}px;animation-delay:${i * 0.018}s`;
-
-          const btn = document.createElement('button');
-          btn.className = 'tw-btn' + (activeTool === slot ? ' active' : '');
-          btn.textContent = icon;
-
-          const chip = document.createElement('span');
-          chip.className = 'tw-chip';
-          chip.textContent = label;
-
-          spoke.appendChild(btn);
-          spoke.appendChild(chip);
-
-          const pick = () => { setActiveTool(slot); closeToolPicker(); };
-          btn.addEventListener('pointerup', (e) => { e.stopPropagation(); pick(); });
-
-          toolWheelEl.appendChild(spoke);
-        });
-
-        toolWheelOverlay.classList.add('open');
-        toolWheelEl.classList.add('open');
-        toolBtn.setAttribute('aria-expanded', 'true');
-        toolBtn.style.borderColor = 'rgba(249,226,138,0.6)';
-      }
-
-      function closeToolPicker() {
-        toolPickerOpen = false;
-        toolWheelOverlay.classList.remove('open');
-        toolWheelEl.classList.remove('open');
-        toolWheelEl.innerHTML = '';
-        toolBtn.setAttribute('aria-expanded', 'false');
-        toolBtn.style.borderColor = '';
-      }
 
       // ── Outer arch — tool & item arc-dial ─────────────────
       {
@@ -20231,6 +23936,7 @@
         const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
         const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
         const SAFE_M = Number.isFinite(configuredSafeMarginPx) ? configuredSafeMarginPx : 0;
+        const actionArchRadiusClamp = mobileControls.actionArch?.radiusClamp || {};
         const outerArchRadiusClamp = mobileControls.outerArch?.radiusClamp || {};
 
         function _clampedVmin({ minPx, vmin, maxPx }) {
@@ -20247,8 +23953,12 @@
           const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
           return Number.isFinite(colPx) && colPx > 0 ? colPx * 10 : _clampedVmin(outerArchRadiusClamp);
         }
-        function _arcPt(deg) {
-          const r = _outerR(), a = deg * Math.PI / 180;
+        function _innerR() {
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.6 : _clampedVmin(actionArchRadiusClamp);
+        }
+        function _arcPt(deg, radius = _outerR()) {
+          const r = radius, a = deg * Math.PI / 180;
           return { x: window.innerWidth  + Math.cos(a) * r - SAFE_M,
                    y: window.innerHeight - Math.sin(a) * r - SAFE_M };
         }
@@ -20257,10 +23967,11 @@
         }
 
         let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
+        let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
         let _fadingEls = [];
 
-        function _clearArc() {
-          if (_arcBd) { _arcBd.remove(); _arcBd = null; }
+        function _clearArc(keepBackdrop = false) {
+          if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
           _arcEls.forEach(e => e.remove()); _arcEls = [];
           _fadingEls.forEach(e => e.remove()); _fadingEls = [];
           _arcSlots = []; _arcActive = -1; _arcOpen = null;
@@ -20268,8 +23979,8 @@
           if (_itemBtn) _itemBtn.style.visibility = '';
         }
 
-        function _mkSlot(deg, icon, label, extra) {
-          const pt = _arcPt(deg);
+        function _mkSlot(deg, icon, label, extra, radius = _outerR()) {
+          const pt = _arcPt(deg, radius);
           const el = document.createElement('div');
           el.className = 'arc-slot' + (extra ? ' ' + extra : '');
           el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;`;
@@ -20306,7 +24017,160 @@
           });
         }
 
-        let _lastHeldTool = activeTool;
+        function _openAmmoArc() {
+          const choices = window.RangedWeapons?.ammoChoices?.(equipmentSlots.ranged) || [];
+          const activeAmmo = window.RangedWeapons?.activeAmmoId?.(equipmentSlots.ranged) || 'basic';
+          _openEntries('ammo', choices.map(choice => ({
+            id: choice.id, icon: choice.icon, label: choice.available ? choice.label : `${choice.label} · 0/8`,
+            disabled: !choice.available, active: choice.id === activeAmmo,
+            onSelect: () => window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, choice.id),
+          }))); // Special ammo uses the same ordinary-radius arch primitive.
+        }
+
+        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
+        // openDesktopHoldArc below), for quick actions that don't belong on
+        // the per-tile action bar: warping back to a placed wilderness
+        // campfire or the farm, quick-selecting a Campfire Kit without
+        // scrolling the item wheel, or orbiting around the stationary player.
+        function _openUtilitiesArc() {
+          // A placed campfire now persists indefinitely, including outside
+          // its own zone (see wilderness-campfire.js's header comment) —
+          // serialize() is the "does one exist, and where" query for that;
+          // isHere() only ever answers "is it in the CURRENT zone", which
+          // used to be the same question back when leaving destroyed it.
+          const campfire = window.WildernessCampfire?.serialize?.();
+          const kitCount = inventory.campfireKitFurniture || 0;
+          _openEntries('utilities', [
+            {
+              id: 'character-view', icon: '👁️', label: characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
+              active: characterViewMode.enabled,
+              onSelect: () => setCharacterViewMode(!characterViewMode.enabled),
+            },
+            {
+              id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
+              disabled: !campfire,
+              onSelect: () => {
+                if (!campfire) return;
+                if (campfire.mapId === currentArea) {
+                  // Already in the right zone — just reposition onto the tile.
+                  const result = window.WildernessCampfire.returnToCampfire();
+                  showToast(result.message, result.ok);
+                  refreshActionBar();
+                } else {
+                  // A different zone (or the farm/town/a building) — travel
+                  // there first, landing exactly on the campfire's own tile
+                  // since its saved x/z are passed straight through as the
+                  // entry col/row (same fire-and-forget async-inside-
+                  // startSceneTransition pattern performTravel's own 'zone'
+                  // case uses for an ordinary authored zone transition).
+                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                }
+              },
+            },
+            {
+              id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
+              disabled: kitCount <= 0,
+              onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
+            },
+            {
+              id: 'return-farm', icon: '🏡', label: currentArea === 'farm' ? 'Already on Farm' : 'Return to Farm',
+              disabled: currentArea === 'farm',
+              onSelect: () => startSceneTransition(() => performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+            },
+          ]);
+        }
+
+        function _openEntries(mode, entries, radius = _outerR()) {
+          const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
+          _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          toolBtn.style.visibility = 'hidden';
+          if (!_arcBd) {
+            _arcBd = document.createElement('div');
+            _arcBd.className = 'arc-backdrop';
+            let pointerId = null; // One pointer owns general entry-arch navigation until commit/cancel.
+            _arcBd.addEventListener('pointerdown', event => {
+              pointerId = event.pointerId;
+              try { _arcBd.setPointerCapture(pointerId); } catch (error) { /* Pointer capture is an optional enhancement. */ }
+              _arcMove(event.clientX, event.clientY);
+              event.preventDefault();
+            });
+            _arcBd.addEventListener('pointermove', event => { if (event.pointerId === pointerId) _arcMove(event.clientX, event.clientY); });
+            _arcBd.addEventListener('pointerup', event => { if (event.pointerId === pointerId) { pointerId = null; _arcUp(); } });
+            _arcBd.addEventListener('pointercancel', event => { if (event.pointerId === pointerId) { pointerId = null; _clearArc(); } });
+            document.body.appendChild(_arcBd);
+          }
+          const n = entries.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
+          entries.forEach((entry, index) => {
+            const deg = ARC_S - index * step;
+            const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
+            const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
+            _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
+            if (entry.active) _arcActive = index;
+          });
+          if (_arcActive < 0 && entries.length) _setActive(Math.floor((entries.length - 1) / 2));
+        }
+
+        function _selectHeldInventoryKey(itemKey) {
+          const index = getInventoryStackItems().findIndex(item => item.key === itemKey);
+          if (index < 0) return;
+          activeItemIndex = index;
+          heldMode = 'item';
+          refreshItemScroll(); refreshActionBar();
+        }
+
+        const CURE_FAMILY_ICONS = { damage: '🩸', control: '🌀', offensiveDebuff: '⚔️', defensiveDebuff: '🛡️' }; // Four-family selector vocabulary.
+        function _cureCoverageIcon(coverage, urgent = true) {
+          return `<span class="cure-family-grid">${window.AlchemySystem.FAMILY_ORDER.map(family => {
+            const state = coverage[family] || {};
+            const severity = state.activeAmount >= 45 ? ' severe' : state.activeAmount > 0 ? ' active' : '';
+            const missing = state.owned ? '' : `<b class="cure-family-x${state.urgentMissing && urgent ? ' urgent' : ''}">×</b>`;
+            return `<span class="cure-family${severity}" data-family="${family}">${CURE_FAMILY_ICONS[family]}${missing}</span>`;
+          }).join('')}</span>`;
+        }
+
+        function _openPotionRoot() {
+          _openEntries('potion-root', [
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:() => _openPotionBranch('medicine') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:() => _openPotionBranch('utility') },
+          ], _outerR());
+        }
+
+        function _openPotionBranch(branch) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const healing = state.healing || {}, cures = state.cures || {}, buffs = state.buffs || {}, flasks = state.flasks || {};
+          const urgent = state.inCombat !== false; // Outside combat, unavailable marks stay muted.
+          const healingClass = `potion-category${healing.needed ? '' : ' muted'}${healing.urgentMissing ? ` unavailable${urgent ? ' urgent' : ''}` : ''}`;
+          const curesUseful = (cures.usefulItems || []).length > 0;
+          const buffsUseful = (buffs.usefulItems || []).length > 0;
+          const entries = branch === 'medicine' ? [
+            { id:'healing', icon:`💚${healing.urgentMissing ? '<b class="category-x red">×</b>' : ''}`, label:'Healing', className:healingClass, disabled:!(healing.needed && healing.owned), onSelect:() => _openPotionItems('healing') },
+            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:_openPotionRoot },
+            { id:'cures', icon:_cureCoverageIcon(cures.coverage || {}, urgent), label:'Cures', className:`potion-category${curesUseful ? '' : ' muted'}`, disabled:!curesUseful, onSelect:() => _openPotionItems('cures') },
+          ] : [
+            { id:'buffs', icon:`✨${buffs.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Buffs', className:`potion-category${buffsUseful ? '' : ' muted'}`, disabled:!buffsUseful, onSelect:() => _openPotionItems('buffs') },
+            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:_openPotionRoot },
+            { id:'flasks', icon:`🫙${flasks.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Flasks', className:`potion-category${flasks.owned ? '' : ' muted'}`, disabled:!flasks.owned, onSelect:() => _openPotionItems('flasks') },
+          ];
+          _openEntries(`potion-${branch}`, entries, _outerR());
+        }
+
+        function _openPotionItems(category) {
+          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
+          const items = category === 'healing' ? state.healing?.usefulItems
+            : category === 'cures' ? state.cures?.usefulItems
+              : category === 'buffs' ? state.buffs?.items : state.flasks?.items;
+          const itemEntries = (items || []).map(entry => {
+            const definition = entry.recipe || window.AlchemySystem.RECIPE_DEFS[entry.payload.recipeId];
+            const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
+            return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
+          });
+          const cancelEntry = { id:`cancel-${category}`, icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:() => _clearArc() }; // Occupies the focused category's former angle and closes only when the held selector is released on it.
+          if (category === 'healing' || category === 'buffs') itemEntries.unshift(cancelEntry);
+          else itemEntries.push(cancelEntry);
+          _openEntries(`potion-items-${category}`, itemEntries, _outerR());
+        }
+
         let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
         const ITEM_VIS = 5;
 
@@ -20396,6 +24260,19 @@
             }
           }
           _setActive(best);
+          if (_arcOpen === 'entries:potion-root') {
+            const branch = _arcSlots[best]?.data.id;
+            if (branch === 'medicine' || branch === 'utility') {
+              _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
+              _arcMove(px, py); // Re-evaluate the same continuous drag against the newly populated category arch.
+            }
+          } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+            const category = _arcSlots[best]?.data;
+            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) {
+              _openPotionItems(category.id);
+              _arcMove(px, py); // The replacement Cancel button becomes selected immediately under the uninterrupted drag.
+            }
+          }
         }
 
         function _arcUp() {
@@ -20403,12 +24280,19 @@
           if (!_arcOpen) return;
           const slot = _arcSlots[_arcActive];
           if (_arcOpen === 'tool' && slot) {
-            heldMode = 'tool'; _lastHeldTool = slot.data;
+            heldMode = 'tool'; lastHeldFarmTool = slot.data;
             setActiveTool(slot.data); // calls refreshActionBar internally
           } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
             heldMode = 'item';
             activeItemIndex = slot.data.index;
             refreshItemScroll(); refreshActionBar();
+          } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
+            const select = slot.data.onSelect;
+            if (typeof select === 'function') {
+              const previousMode = _arcOpen; // Branch callbacks replace the current arch; item callbacks do not.
+              select();
+              if (_arcOpen !== previousMode) return;
+            }
           }
           _clearArc();
         }
@@ -20416,12 +24300,24 @@
         window._desktopSelectionArc = {
           openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
+          openPotions() { _openPotionRoot(); },
+          openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
+          openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
+          recallLastTool() {
+            const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
+            const recalled = WHEEL_SLOTS.includes(lastHeldFarmTool) && equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
+            lastHeldFarmTool = recalled;
+            heldMode = 'tool';
+            setActiveTool(recalled);
+            return recalled;
+          },
           scrollTool(dir) {
             if (_arcOpen !== 'tool') _openToolArc();
             const idx = WHEEL_SLOTS.indexOf(activeTool);
             const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
             heldMode = 'tool';
-            _lastHeldTool = WHEEL_SLOTS[next];
+            lastHeldFarmTool = WHEEL_SLOTS[next];
             setActiveTool(WHEEL_SLOTS[next]);
             _arcSlots.forEach((s, i) => {
               const active = s.data === activeTool;
@@ -20442,8 +24338,55 @@
               if (active) _arcActive = i;
             });
           },
-          close() { _clearArc(); }
+          scrollAmmo(dir) {
+            if (_arcOpen !== 'entries:ammo') _openAmmoArc();
+            const available = _arcSlots.map((slot, index) => ({ slot, index })).filter(entry => !entry.slot.data.disabled);
+            if (!available.length) return false;
+            let position = available.findIndex(entry => entry.index === _arcActive);
+            position = (position + (dir < 0 ? -1 : 1) + available.length) % available.length;
+            _setActive(available[position].index); // Highlight only; the held input's release commits setActiveAmmo.
+            return true;
+          },
+          scrollEntries(dir) {
+            if (!_arcOpen?.startsWith('entries:') || !_arcSlots.length) return false;
+            if (_arcOpen === 'entries:potion-root') {
+              _openPotionBranch(dir < 0 ? 'medicine' : 'utility'); // Direction itself chooses the first hierarchical branch.
+              return true;
+            }
+            if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
+              const categoryId = _arcOpen.endsWith('medicine') ? (dir < 0 ? 'healing' : 'cures') : (dir < 0 ? 'buffs' : 'flasks');
+              const category = _arcSlots.find(slot => slot.data.id === categoryId);
+              if (category && !category.data.disabled) _openPotionItems(categoryId);
+              else if (category) _setActive(_arcSlots.indexOf(category));
+              return true;
+            }
+            const nextIndex = _arcActive + (dir < 0 ? -1 : 1);
+            if (_arcOpen.startsWith('entries:potion-items-')) {
+              _setActive(Math.max(0, Math.min(_arcSlots.length - 1, nextIndex))); // Final lists stop at Cancel instead of wrapping past it on repeated wheel events.
+            } else {
+              _setActive((nextIndex + _arcSlots.length) % _arcSlots.length);
+            }
+            return true;
+          },
+          movePointer(x, y) { _arcMove(x, y); },
+          commit() { _arcUp(); },
+          releaseSelection() {
+            if (_arcOpen?.startsWith('entries:potion-') && !_arcOpen.startsWith('entries:potion-items-')) _clearArc();
+            else _arcUp();
+          }, // Releasing a held selector commits only a concrete item/ammo choice, never a hierarchy branch.
+          beginHeldSelection(kind) { _heldEntrySelectorKind = kind === 'ammo' ? 'ammo' : kind === 'potions' ? 'potions' : null; },
+          endHeldSelection() { _heldEntrySelectorKind = null; },
+          heldSelectionKind() { return _heldEntrySelectorKind; },
+          close() { _clearArc(); },
+          entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
+          toolMenuOpen() { return _arcOpen === 'tool'; }
         };
+        window.SharedSelectionArch = window._desktopSelectionArc; // One configurable arch presenter for tools/items/ammo/potions.
+        document.addEventListener('hobunji-alchemy-change', () => {
+          if (_arcOpen === 'entries:potion-medicine') _openPotionBranch('medicine');
+          else if (_arcOpen === 'entries:potion-utility') _openPotionBranch('utility');
+          else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
+        }); // Refresh the open hierarchy only when its thresholded context changes.
 
         let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
         toolBtn.addEventListener('pointerdown', ev => {
@@ -20469,10 +24412,13 @@
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld && !_tMoved && heldMode === 'item') {
-            // Tap while in item mode → return to last held tool
-            heldMode = 'tool';
-            setActiveTool(_lastHeldTool); // calls refreshActionBar internally
+          else if (!_tHeld && !_tMoved) {
+            // A Tool Select tap recalls the last valid held tool — unless a
+            // tool is already out, in which case the same tap now dequips
+            // instead (replacing the removed dedicated put-away button; see
+            // its matching case in itemBtn's own pointerup below).
+            if (heldMode === 'tool') putAwayHeldEquipment();
+            else window._desktopSelectionArc.recallLastTool();
           }
           _tHeld = false; _tMoved = false;
         });
@@ -20504,11 +24450,18 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved && heldMode === 'tool') {
-              // Tap while in tool mode → switch to item mode
-              _lastHeldTool = activeTool;
-              heldMode = 'item';
-              refreshItemScroll(); refreshActionBar();
+            else if (!_iHeld && !_iMoved) {
+              if (heldMode === 'item') {
+                // An item is already selected — the same tap now dequips
+                // instead (replacing the removed dedicated put-away button;
+                // see its matching case in toolBtn's own pointerup above).
+                putAwayHeldEquipment();
+              } else {
+                // Tap while holding a tool or hands-free → switch to item mode.
+                if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
+                heldMode = 'item';
+                refreshItemScroll(); refreshActionBar();
+              }
             }
             _iHeld = false; _iMoved = false;
           });
@@ -20520,6 +24473,42 @@
             _clearArc(); _iHeld = false; _iMoved = false;
           });
         }
+
+        // Utility menu button: sixth/new outer-ring control, replacing the
+        // removed put-away button's old slot (see the CSS angle comment on
+        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
+        // above — it only ever does anything while held, exactly like the
+        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // mirrors their hold-then-drag-to-select pattern but skips their
+        // "what does a plain tap do" branch entirely.
+        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
+        if (btnUtilityMenu) {
+          let _uPtId = null, _uHeld = false, _uTimer = null;
+          btnUtilityMenu.addEventListener('pointerdown', ev => {
+            if (_uPtId !== null) return;
+            _uPtId = ev.pointerId; _uHeld = false;
+            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
+            ev.preventDefault();
+          });
+          btnUtilityMenu.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
+          });
+          btnUtilityMenu.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            if (_arcOpen === 'entries:utilities') _arcUp();
+            _uHeld = false;
+          });
+          btnUtilityMenu.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            _clearArc(); _uHeld = false;
+          });
+        }
       }
 
       // ── Action bar update ──────────────────────────────────
@@ -20528,6 +24517,12 @@
       // Buttons are packed into rows of 1, 2, 1, 2... (hex packing).
       // Each button: { icon, label, action, style, allowed }
 
+      // Climb targets are pure data (branchesByArea holds positions, not a
+      // per-branch mesh handle — trees are batched into merged chunk
+      // geometry), so the climb-tree prompt needs its own positioned anchor
+      // rather than the reticle-tile fallback other buttons share.
+      const _climbPromptAnchor = new THREE.Object3D();
+      _climbPromptAnchor.name = 'climb_prompt_anchor';
 
       function computeActionButtons() {
         // Sitting overrides every other action — Stand is the only way out,
@@ -20554,6 +24549,10 @@
             { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
           ];
         }
+        // Music minigame overlay has its own full-screen controls (see
+        // js/music-minigame.js) and the close button lives in the overlay
+        // itself — no action-bar buttons underneath it.
+        if (window.MusicMinigame?.state?.active) return [];
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -20596,10 +24595,10 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const nest = _denNests.get(currentArea);
-          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+          const nest = currentAimedNest();
+          if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
-            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
@@ -20626,6 +24625,23 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Building interiors return early above and never reach the
+          // farm/zone/town item-context block further down (it also relies
+          // on a reticle/tile pair this branch never computes) — without
+          // this, held-item actions like eating or playing a Kurraya
+          // silently had no button anywhere indoors, not just in the inn.
+          // Mirrors the same three checks in that block, in the same
+          // priority order; the plant/seed part below them doesn't apply
+          // indoors so isn't duplicated here.
+          if (heldMode === 'item') {
+            const heldItem = getActiveInventoryItem();
+            const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+            if (flaskActions.length) return flaskActions;
+            const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+            if (consumeAction) return [consumeAction];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+          }
           return [];
         }
 
@@ -20643,13 +24659,57 @@
           return btnsSpot;
         }
 
-        // Zone: a climbable cliff face straight ahead takes priority over tool use.
-        if (_isZoneArea(currentArea) && !player.climbing && window.ClimbSystem.getClimbTarget()) {
-          return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
+        // A branch nest claims Action 1 only while its 3D volume is under
+        // the centered reticle and its Nestmother is no longer guarding it.
+        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        if (zoneNest) {
+          const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
 
+        // Bandit tents are runtime props rather than worldObjects, so expose
+        // their context action explicitly. Pointer/keyboard holds still feed
+        // the shared actionHeldDown flag consumed by BanditCamps.
+        const banditTentAction = _isZoneArea(currentArea)
+          ? window.BanditCamps?.getNearbyTentAction?.()
+          : null;
+        if (banditTentAction) return [banditTentAction];
+
+        // A placed wilderness campfire, same runtime-prop pattern as bandit
+        // tents above — walking up to it puts Save/Cook/Brew each on their
+        // own action-bar slot (Return to Camp lives on the utilities wheel
+        // instead — see the 'c' hold-key handling further down).
+        const campfireActions = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyActions?.()
+          : null;
+        if (campfireActions?.length) return campfireActions;
+
+        // Climbing is still triggered by a forward dodge (see
+        // performContextAction) so an attack/item press never grabs a
+        // nearby trunk by accident — but a facing climb target also gets a
+        // listed prompt here purely for discoverability, since the dodge
+        // trigger itself is otherwise silent/undiscoverable.
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
+
+        if (_isZoneArea(currentArea) && !player.climbing) {
+          const climbTarget = window.ClimbSystem?.getClimbTarget?.();
+          if (climbTarget && (climbTarget.type === 'branch' || climbTarget.type === 'branchJumpDown')) {
+            const branch = climbTarget.branch;
+            const anchorX = branch ? (branch.baseX + branch.tipX) / 2 : player.x;
+            const anchorY = branch ? (branch.baseY + branch.tipY) / 2 : player.y;
+            const anchorWorldY = branch
+              ? Math.max(branch.baseWorldY ?? 0, branch.tipWorldY ?? 0) + 0.4
+              : (activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 1.2);
+            _climbPromptAnchor.position.set(anchorX / TILE, anchorWorldY, anchorY / TILE);
+            btns.push({
+              icon: climbTarget.type === 'branchJumpDown' ? '🪂' : '🧗',
+              label: climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree',
+              action: 'climb_branch', style: 'secondary', allowed: true,
+              worldInteraction: true, promptRoot: _climbPromptAnchor,
+            });
+          }
+        }
 
         // 0. World object at reticle — its buttons take priority. Town has
         // no worldObjects of its own (see its "farm-scene-only" comment
@@ -20661,6 +24721,22 @@
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
+        }
+
+        // 0b. Harvest, same priority tier as a world object (a ready crop
+        // should behave exactly like picking a wild herb/berry: available
+        // as Action 1 regardless of what's in your hand, not just while an
+        // inventory item happens to be selected) — previously this only
+        // ever appeared down in the item-mode-only section below, so aiming
+        // at a ready crop while holding a tool showed no pick button at all.
+        if (tile.crop) {
+          const data = cropData[tile.crop];
+          btns.push({
+            icon: tile.cropReady ? data.emoji : '🌱',
+            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
+            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            allowed: tile.cropReady,
+          });
         }
 
         // 1. Tool's own actions (suppressed in item mode)
@@ -20683,9 +24759,13 @@
         // A selected consumable is Item Action 1. Its configured binding owns
         // consumption; raw Space/Enter/Interact keys have no special behavior.
         const heldItem = getActiveInventoryItem();
+        const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+        if (flaskActions.length) flaskActions.slice().reverse().forEach(action => btns.unshift(action));
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
-        if (consumeAction) btns.unshift(consumeAction);
+        if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -20713,7 +24793,7 @@
             });
           }
           const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
-          if (decorKey) {
+          if (decorKey && !DECORATIVE_FURNITURE_DEFS[decorKey]?.customPlace) {
             const def = DECORATIVE_FURNITURE_DEFS[decorKey];
             const count = inventory[item.key] || 0;
             const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
@@ -20727,24 +24807,18 @@
           }
         }
 
-        // 3. Context: Harvest button if reticled tile has a ready crop
-        if (tile.crop) {
-          const data = cropData[tile.crop];
-          btns.push({
-            icon: tile.cropReady ? data.emoji : '🌱',
-            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
-            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
-            allowed: tile.cropReady,
-          });
-        }
-
         return btns;
       }
+
+      // Fallback anchor for interactibles without their own Object3D. It is
+      // moved to the aimed tile before the world-space list is synchronized.
+      const _worldInteractionPromptAnchor = new THREE.Object3D(); // Used by refreshActionBar for non-mesh world objects.
+      _worldInteractionPromptAnchor.name = 'world_interaction_prompt_anchor';
 
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
-      function refreshActionBar() {
+      function refreshActionBar(stacks = getInventoryStackItems()) {
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
@@ -20759,27 +24833,46 @@
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
         // Consumable counts must invalidate the cached action after the last item is used.
-        const selectedItem = getActiveInventoryItem();
+        const selectedItem = getActiveInventoryItem(stacks);
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
-        // Contextual held-item interactions always use the world popup list.
-        // Ordinary world targets use it once they expose more than one choice,
-        // establishing the same path for future actions such as Invite to Dance.
-        const isWorldInteraction = button => button?.contextualHeldItem
+        // Every action supplied by an aimed world object is a world
+        // interaction even if its id predates the obj_* naming convention.
+        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const isWorldInteraction = button => button?.worldInteraction
+          || button?.contextualHeldItem
+          || objectActionIds.has(button?.action)
           || button?.action === npcDialogueAction()
           || button?.action === generalStoreAction()
           || button?.action === carpenterAction()
           || button?.action === 'use_spot'
+          || button?.action === 'nest_take'
+          || button?.action === 'bandit_tent_interact'
+          || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
-        const interactionRoot = nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        const interactionButton = btns.find(isWorldInteraction) || null;
+        if (interactionButton) {
+          _worldInteractionPromptAnchor.position.set(
+            reticle.col + 0.5,
+            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            reticle.row + 0.5,
+          );
+        }
+        const interactionRoot = interactionButton?.promptRoot
+          || nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
+        const promptKeys = promptActionIds.map((actionId, index) =>
+          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          desktop: isDesktop,
           scene: getActiveScene(),
+          promptKeys,
+          showInputHints: true,
           isWorldInteraction,
         });
         // Dynamic providers (including the asynchronously loaded consumable
@@ -20794,21 +24887,45 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${actionButtonKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
-        // Update activeAction even without DOM rebuild
-        const first = btns.find(b => b.allowed) || btns[0];
+        // Update activeAction even without DOM rebuild. climb_branch
+        // (pushed first in computeActionButtons purely to feed the 3D
+        // floating world-space prompt over a climbable branch — see its
+        // own comment) is excluded outright here, not just deprioritized:
+        // climbing is only ever supposed to trigger from a forward dodge
+        // (see performContextAction), never from Action 1/a tool press —
+        // an earlier "prefer non-secondary, fall back to secondary only if
+        // it's the sole allowed action" version of this still let a lone
+        // climb target win Action 1 whenever nothing else was interactable
+        // (e.g. no tool equipped), which is exactly the case a player
+        // facing a tree is most likely to be in.
+        const climbBtn = btns.find(b => b.action === 'climb_branch');
+        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
+        // The dodge button is climbing's only real trigger, so it's the
+        // one that should visually say so — swaps to the climb/climb-down
+        // icon+label while a target's in reach, back to the plain dodge
+        // icon otherwise.
+        if (dodgeBtn) {
+          const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
+          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
+          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+        }
 
         if (!needsRebuild) return;
 
-        // Split tool actions from item-owned consume/plant/place/harvest actions.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action.startsWith('plant_')
+        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // climb_branch is excluded from every arch slot below for the same
+        // reason it's excluded from activeAction above — it still stays in
+        // the full btns array so the 3D world-space prompt keeps working.
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
-        const toolBtns = btns.filter(b => !isItemButton(b));
-        const itemBtns = btns.filter(isItemButton);
+        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
+        const itemBtns = nonClimbBtns.filter(isItemButton);
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -20832,6 +24949,8 @@
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
+            let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -20854,7 +24973,17 @@
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
-              if (isNavAction || toolSwingT <= 0) useActiveAction();
+              // Same reasoning again for every item-mode action (place_campfire_kit,
+              // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
+              // tool swings either, so a leftover toolSwingT from whatever tool was
+              // out before switching to item mode — which updateToolMesh never
+              // decays while heldMode === 'item' (it early-returns before reaching
+              // that logic) — would otherwise silently eat every item-mode tap on
+              // mobile until the player switched back to a tool and let the stale
+              // timer run out. Desktop's direct pointerdown→useActiveAction() click
+              // path never had this gate at all, which is why this only ever
+              // surfaced as "the button doesn't work" on touch.
+              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
             }
 
             // Weapon tool-action buttons (cut/slash) route taps through the
@@ -20894,6 +25023,20 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              // Continuous world interactions use the same press-time selected
+              // action contract as Drenkirra nests, so their frame timers can
+              // begin immediately instead of waiting for pointer release.
+              if (act === 'nest_take' || act === 'bandit_tent_interact') activeAction = act;
+              _flaskGesture = act === 'alchemy_flask_primary';
+              _flaskCanceled = false;
+              if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
+              if (act === 'ammo_select' || act === 'potion_select') {
+                _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
+                window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
+                _selectorArcOpen = true; // These actions have no tap behavior to preserve, so show their choices as soon as the held input begins.
+                if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
+                else window._desktopSelectionArc?.openPotions();
+              }
               _chargeFiredOnPress = Boolean(act && !el.classList.contains('abt-hidden') && wouldStartCharge(activeTool, act));
               if (_chargeFiredOnPress) {
                 activeAction = act;
@@ -20902,7 +25045,7 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
-                if (_pressSlot) window.Combat.input.pressStart(_pressSlot);
+                if (_pressSlot) { tryAutoEngageMeleeTarget(); window.Combat.input.pressStart(_pressSlot); }
               }
             });
 
@@ -20914,6 +25057,21 @@
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              if (_flaskGesture && window.AlchemyFlasks?.aiming) {
+                window.AlchemyFlasks.setTargetFromVector(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
+                const cancelButton = [...document.querySelectorAll('[data-action="alchemy_flask_cancel"]')][0]; // Current Item Action 2 cancel region.
+                const cancelRect = cancelButton?.getBoundingClientRect(); // Used for continuous drag-over cancellation.
+                if (cancelRect && ev.clientX >= cancelRect.left && ev.clientX <= cancelRect.right && ev.clientY >= cancelRect.top && ev.clientY <= cancelRect.bottom) {
+                  cancelButton.classList.add('flask-cancel-hover');
+                  window.AlchemyFlasks.cancelAim();
+                  _flaskCanceled = true;
+                }
+                return;
+              }
+              if (_selectorKind) {
+                if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
+                return;
+              }
               // With a weapon equipped, action buttons are tap/hold only — dragging
               // must never act like a directional stick, otherwise a thumb wobbling
               // mid-hold reads as an aim-drag, cancels the pending hold ability, and
@@ -20948,18 +25106,32 @@
               if (ev.pointerId !== _ptId) return;
               _ptId = null;
               actionHeldDown = false;
+              if (_selectorHoldTimer) { clearTimeout(_selectorHoldTimer); _selectorHoldTimer = null; }
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
               _stack.classList.remove('drag-active');
               if (_socket) { _socket.remove(); _socket = null; }
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (!_drag && !_chargeFiredOnPress) {
+              if (_selectorKind) {
+                if (_selectorArcOpen) {
+                  if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
+                  else window._desktopSelectionArc?.releaseSelection();
+                }
+              } else if (_flaskGesture) {
+                if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+              } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
                 else _abtFire();
               }
               _drag = false;
               _chargeFiredOnPress = false;
+              _selectorArcOpen = false;
+              if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
+              _selectorKind = null;
+              document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
+              _flaskGesture = false;
+              _flaskCanceled = false;
               _pressSlot = null;
             }
 
@@ -20970,11 +25142,12 @@
 
         if (heldMode === 'item') {
           // Item mode: all actions spread across all 5 arch positions
-          applyAbt('btnAction1',    btns[0], 0);
-          applyAbt('btnAction2',    btns[1], 1);
-          applyAbt('btnAction3',    btns[2], 2);
-          applyAbt('btnItemAction1', btns[3], 3);
-          applyAbt('btnItemAction2', btns[4], 4);
+          // (climb_branch excluded — see nonClimbBtns above)
+          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
+          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
+          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
+          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
+          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
         } else {
           applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
           applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
@@ -21064,24 +25237,29 @@
         if (action === 'mine')  return 'Mine';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
         if (action === 'fish') return 'Fish';
+        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
+        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
+        if (action === 'potion_select') return 'Potions';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
       }
 
       // ── Item scroll ────────────────────────────────────────
-      function refreshItemScroll() {
-        const stacks = getInventoryStackItems();
+      let _lastItemScrollKey = null;
+      function refreshItemScroll(stacks = getInventoryStackItems()) {
         const n = stacks.length;
-        const iBtnEl = document.getElementById('itemBtn');
+        const iBtnEl = itemBtnEl;
         if (n === 0) {
+          if (_lastItemScrollKey === 'empty') return;
+          _lastItemScrollKey = 'empty';
           itemIcon.textContent  = '□';
           itemName.textContent  = 'EMPTY';
           itemCount.textContent = '×0';
           itemCount.className   = 'is-count empty';
           if (iBtnEl) iBtnEl.textContent = '□';
-          const prevEl = document.getElementById('isPrevIcon');
-          const nextEl = document.getElementById('isNextIcon');
+          const prevEl = isPrevIconEl;
+          const nextEl = isNextIconEl;
           clearItemSpriteIcon(itemIcon);
           clearItemSpriteIcon(iBtnEl);
           if (prevEl) prevEl.textContent = '□';
@@ -21096,6 +25274,9 @@
         const prev = stacks[(activeItemIndex - 1 + n) % n];
         const next = stacks[(activeItemIndex + 1) % n];
         const count = inventory[curr.key] || 0;
+        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
+        if (key === _lastItemScrollKey) return;
+        _lastItemScrollKey = key;
         // Current item
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
@@ -21105,8 +25286,8 @@
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
-        const prevEl = document.getElementById('isPrevIcon');
-        const nextEl = document.getElementById('isNextIcon');
+        const prevEl = isPrevIconEl;
+        const nextEl = isNextIconEl;
         if (prevEl) {
           prevEl.textContent = prev.icon;
           applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
@@ -21127,12 +25308,21 @@
         refreshActionBar();
       });
 
+      // Status-pill fields only actually change a few times a (real) second
+      // at most (season/weather/day/gold on world-state events, time once a
+      // simulated minute, tool/tile/water on reticle or equip changes) —
+      // updateHud runs every frame, so each field caches its last-written
+      // string/color and skips the DOM write (and, for spTile/spWater,
+      // the string-building) when nothing changed.
+      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
+
       function updateHud() {
         const season = window.CalendarSystem.currentSeason();
         const clock  = formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
-        spSeason.textContent = season.emoji + ' ' + season.name;
+        const seasonText = season.emoji + ' ' + season.name;
+        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
 
         // Current weather + precipitation rate
         let weatherText, precipText;
@@ -21151,43 +25341,57 @@
           weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
           precipText  = '⬇️ none';
         }
-        spWeather.textContent = weatherText + ' ' + precipText;
+        const weatherFull = weatherText + ' ' + precipText;
+        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
 
-        spTime.textContent = clock;
-        if (spDay) spDay.textContent = window.CalendarSystem.formatCalendarDate();
-        spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
+        if (spDay) {
+          const dayText = window.CalendarSystem.formatCalendarDate();
+          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
+        }
+        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
 
         // Reticle tile info
         const reticle  = getReticleTile();
         const tile     = getActiveTileAt(reticle.col, reticle.row);
         const tStyle   = tileStyles[tile.type] || tileStyles.grass;
         const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        spTile.textContent = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
 
         const waterPct = Math.round((tile.water / MAX_WATER) * 100);
         const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
-        spWater.textContent  = '💧 ' + depthStr;
-        spWater.style.color  = waterPct > 80 ? '#4488ff'
-                             : waterPct > 40 ? '#6ec6f0'
-                             : waterPct > 10 ? '#aaddee' : '#888';
-        if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
+        const waterText = '💧 ' + depthStr;
+        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
+        const waterColor = waterPct > 80 ? '#4488ff'
+                          : waterPct > 40 ? '#6ec6f0'
+                          : waterPct > 10 ? '#aaddee' : '#888';
+        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
+        if (spGoldAmount && inventory.gold !== _hud.gold) { _hud.gold = inventory.gold; spGoldAmount.textContent = inventory.gold; }
+
+        // Computed once and threaded through below instead of letting
+        // refreshItemScroll/refreshActionBar (and the desktop item pill)
+        // each re-filter-and-sort the whole inventory from scratch — this
+        // runs every frame, and inventory contents don't change nearly
+        // that often.
+        const stacks = getInventoryStackItems();
 
         // Desktop: show active item in status pill (item scroll is hidden)
         if (isDesktop) {
-          const item = getActiveInventoryItem();
-          const spItem = document.getElementById('spItem');
-          const spItemDiv = document.getElementById('spItemDiv');
+          const item = getActiveInventoryItem(stacks);
           if (spItem && item) {
             spItem.style.display = '';
             spItemDiv.style.display = '';
-            spItem.textContent = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
           }
         }
 
-        refreshItemScroll();
+        refreshItemScroll(stacks);
         // refreshActionBar is called after actions and on tool/item change;
         // the dirty-key check makes it cheap to call here too for reticle updates
-        refreshActionBar();
+        refreshActionBar(stacks);
         if (menuOpen) {
           // Keep wallet display live while menu is open
           const wd = document.getElementById('invWalletAmount');
@@ -21202,7 +25406,7 @@
       function toolEmoji(tool) {
         const equipped = equipmentSlots[tool];
         if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
-        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
       }
 
       function nextRainText() {
@@ -21235,7 +25439,7 @@
         const equipped = equipmentSlots[tool];
         const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
         if (def) return `${def.icon} ${def.label}`;
-        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
+        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
       }
 
       function seededRandom(seed) {
@@ -21403,6 +25607,7 @@
         else if (gearInventory?.tools?.pickshovel)       equipmentSlots.shovel = 'pickshovel';
         if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
         else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.tools?.crossbow)               equipmentSlots.ranged = 'crossbow';
         if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
@@ -21437,7 +25642,7 @@
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
-              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
               farmBuildings.push(entry);
               window.FarmBuildings.spawnEntry(entry);
             });
@@ -21488,6 +25693,22 @@
       btnCallMount?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         window.Mounts?.toggleMount();
+      });
+
+      // Melee auto-target's sixth outer-ring button: a plain tap toggles —
+      // off turns it on and locks the closest hostile in range (no facing
+      // cone required, unlike the attack-triggered auto-engage), on turns
+      // it back off. No-ops if melee isn't out or (turning on) nothing is
+      // in range.
+      btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        if (!meleeWeaponOut()) return;
+        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; manualAutoTarget = null; meleeAutoTargetFreeAim = false; return; }
+        const target = findAutoTarget();
+        if (!target) return;
+        manualAutoTarget = target;
+        meleeAutoTargetOn = true;
+        meleeAutoTargetFreeAim = false;
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -21546,15 +25767,29 @@
       }
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
-        e: { down: false, held: false, timer: null, arc: 'tool' }
+        e: { down: false, held: false, timer: null, arc: 'tool' },
+        // Utilities wheel — an entries arc like potion/ammo select, not a
+        // tool/item wheel, so it commits via releaseSelection() below
+        // (whichever entry mouse-drag/scroll last highlighted) instead of
+        // close()'s "already applied live, just dismiss" behavior.
+        c: { down: false, held: false, timer: null, arc: 'utilities' },
       };
       function openDesktopHoldArc(key) {
         const state = desktopHoldKeys[key];
         if (!state || !state.down) return;
         state.held = true;
-        if (state.arc === 'item') window._desktopSelectionArc?.openItem();
+        if (state.arc === 'utilities') {
+          // Same reasoning as CookingSystem's setInteractionBlocked above —
+          // no visible cursor to pick a wedge with under cursor-less camera
+          // Pointer Lock otherwise.
+          releaseShoulderSurfPointerLock();
+          window._desktopSelectionArc?.openUtilities();
+        }
+        else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
         else window._desktopSelectionArc?.openTool();
       }
       function startDesktopHoldKey(key, event) {
@@ -21571,7 +25806,14 @@
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }
         const wasHeld = state.held;
         state.held = false;
-        if (wasHeld) window._desktopSelectionArc?.close();
+        if (wasHeld) {
+          if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
+          else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
+          else window._desktopSelectionArc?.close();
+        }
+        if (wasHeld && state.arc === 'utilities' && cursorlessMouseAimRequested()) {
+          requestShoulderSurfPointerLock();
+        }
         return wasHeld;
       }
 
@@ -21662,10 +25904,12 @@
         if (actionPromptEls) return;
         const el = document.getElementById('actionPrompt');
         if (!el) return;
+        // World prompts use the same stacked list-row treatment as merchant
+        // dialogue choices, including when there is only one available action.
         el.innerHTML = `
-          <div class="ap-row">
-            <button class="ap-btn" id="apBtn"></button>
-            <button class="ap-cancel" id="apCancel"></button>
+          <div class="ap-list">
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-btn" id="apBtn"></button>
+            <button class="dlg-opt dlg-opt-visible ap-world-option ap-cancel" id="apCancel"></button>
           </div>
           <div class="ap-status" id="apStatus"></div>
           <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
@@ -21728,9 +25972,18 @@
         actionPromptEls.btn.onpointerup = null;
         actionPromptEls.cancel.onpointerup = null;
       }
+      // Resolve the action currently rendered in the physical arch button.
+      // The visible stack is split into tool/item rows, so computeActionButtons()
+      // index 0 is not necessarily btnAction1 anymore.
+      function actionButtonForPhysicalSlot(slotIndex) {
+        const el = document.getElementById('btnAction' + slotIndex);
+        const action = el?.dataset.action;
+        const buttons = computeActionButtons();
+        return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
+      }
       function runActionButtonAtSlot(slotIndex) {
-        const btn = computeActionButtons()[slotIndex - 1];
-        if (!btn) return;
+        const btn = actionButtonForPhysicalSlot(slotIndex);
+        if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
         actionHeldDown = slotIndex === 1;
         useActiveAction();
@@ -21739,8 +25992,9 @@
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item'
+        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
+          || action.startsWith('alchemy_flask_')
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && !toolSet.has(b.action) && !isItemAction(b.action));
@@ -21765,12 +26019,99 @@
       // instant-fire behavior unchanged.
       function weaponActionSlot(actionId) {
         if (!(actionId === 'action1' || actionId === 'action2')) return 0;
-        if (activeTool !== 'weapon' || !window.Combat?.input) return 0;
+        if (heldMode !== 'tool' || activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
+      function visibleActionOverrideForWeaponSlot(actionId) {
+        const slot = weaponActionSlot(actionId);
+        if (!slot) return null;
+        const button = actionButtonForPhysicalSlot(slot); // Preserve the world-context action actually rendered in this physical weapon slot.
+        if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
+        return { slot, button };
+      }
+      const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
+      const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
+      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
+      function potionSelectorAvailable(actionId) {
+        return actionId === 'action3' && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
+          && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
+      }
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'toolSelect') {
+          if (phase === 'release') {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.down = false;
+            if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; }
+            if (toolSelectPress.held) window._desktopSelectionArc?.commit();
+            else window._desktopSelectionArc?.recallLastTool?.();
+            toolSelectPress.held = false;
+            return;
+          }
+          if (toolSelectPress.down) return;
+          toolSelectPress.down = true; toolSelectPress.held = false;
+          toolSelectPress.timer = setTimeout(() => {
+            if (!toolSelectPress.down) return;
+            toolSelectPress.held = true;
+            window._desktopSelectionArc?.openTool?.();
+          }, desktopTapWindowMs());
+          return;
+        }
+        if (window._desktopSelectionArc?.toolMenuOpen?.()) {
+          const isToolBrowseAction = ['action1', 'action2', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Keyboard browsing mirrors controller stick selection while Tool Select is held.
+          if (isToolBrowseAction && phase === 'press') {
+            if (actionId === 'action1') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollTool(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isToolBrowseAction) return;
+        }
+        if (potionSelectorAvailable(actionId) || (actionId === 'action3' && potionAction3Press.down)) {
+          if (phase === 'release') {
+            if (!potionAction3Press.down) return;
+            potionAction3Press.down = false;
+            if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
+            if (potionAction3Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
+            potionAction3Press.held = false;
+            return;
+          }
+          if (potionAction3Press.down) return;
+          potionAction3Press.down = true;
+          potionAction3Press.held = true; // Potion Select is exclusively a held selector; its root choices should be visible immediately.
+          window._desktopSelectionArc?.beginHeldSelection?.('potions');
+          window._desktopSelectionArc?.openPotions();
+          return;
+        }
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !(actionId === 'action2' && activeTool === 'ranged' && rangedAmmoAction2Press.down) && !(actionId === 'action3' && potionAction3Press.down)) {
+          const isSelectorAction = ['action1', 'action2', 'interact', 'itemPrev', 'itemNext', 'toolPrev', 'toolNext'].includes(actionId); // Common keyboard/controller selector vocabulary.
+          if (isSelectorAction && phase === 'press') {
+            if (actionId === 'action1' || actionId === 'interact') window._desktopSelectionArc.commit();
+            else if (actionId === 'action2') window._desktopSelectionArc.close();
+            else window._desktopSelectionArc.scrollEntries(actionId === 'itemPrev' || actionId === 'toolPrev' ? -1 : 1);
+          }
+          if (isSelectorAction) return;
+        }
+        if (actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged') {
+          if (phase === 'release') {
+            if (!rangedAmmoAction2Press.down) return;
+            rangedAmmoAction2Press.down = false;
+            if (rangedAmmoAction2Press.timer) { clearTimeout(rangedAmmoAction2Press.timer); rangedAmmoAction2Press.timer = null; }
+            if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.releaseSelection();
+            window._desktopSelectionArc?.endHeldSelection?.();
+            rangedAmmoAction2Press.held = false;
+            return;
+          }
+          if (rangedAmmoAction2Press.down) return;
+          rangedAmmoAction2Press.down = true;
+          rangedAmmoAction2Press.held = true; // Ammo Select likewise has no competing tap action while ranged is drawn.
+          window._desktopSelectionArc?.beginHeldSelection?.('ammo');
+          window._desktopSelectionArc?.openAmmo();
+          return;
+        }
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
+          if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
@@ -21781,9 +26122,16 @@
         }
         if (menuOpen || farmEditMode) return;
         if (actionId === 'interact') { runInteractAction(); return; }
+        const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
+        if (visibleOverride) {
+          visibleWeaponContextPresses.add(actionId);
+          runActionButtonAtSlot(visibleOverride.slot);
+          return;
+        }
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
+          tryAutoEngageMeleeTarget();
           window.Combat.input.pressStart(weaponSlot);
           return;
         }
@@ -21798,6 +26146,11 @@
           swapAutoTarget(aimAngle);
           return;
         }
+        // Right-stick tilt (controller only — desktop cycles via Shift+
+        // wheel instead) — a no-op unless melee auto-target is already on,
+        // per cycleMeleeAutoTarget's own gate.
+        if (actionId === 'meleeTargetPrev') { cycleMeleeAutoTarget(-1); return; }
+        if (actionId === 'meleeTargetNext') { cycleMeleeAutoTarget(1); return; }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);
@@ -21839,9 +26192,43 @@
         const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
         input.x = ax; input.y = ay;
         controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          controllerLookActive = false;
+          const now = performance.now();
+          if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
+            pollControllerInput._selectionArchMovedAt = now;
+            const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
+            window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+          }
+        }
+        if (window.AlchemyFlasks?.aiming) {
+          controllerLookActive = false;
+          window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
+        }
         if (controllerLookActive) {
           controllerLookAngle = Math.atan2(ry, rx);
           targetAimAngle = controllerLookAngle;
+        }
+        if (rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
+            rangedAmmoAction2Press.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        if (potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - potionAction3Press.lastScrollAt >= 220) {
+            potionAction3Press.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
+        }
+        if (toolSelectPress.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - toolSelectPress.lastScrollAt >= 220) {
+            toolSelectPress.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
         }
         const down = new Set();
         pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
@@ -21852,6 +26239,20 @@
         if (rx >= axisPress) down.add('RightStickRight');
         if (ry <= -axisPress) down.add('RightStickUp');
         if (ry >= axisPress) down.add('RightStickDown');
+        // Right-stick click (Button11 — R3) toggles melee auto-target
+        // while a melee weapon is out, taking over from its default
+        // weaponSwitch binding for exactly that window (weaponSwitch still
+        // works normally the rest of the time, and via its other bindings/
+        // the action-bar button even then).
+        if (down.has('Button11') && meleeWeaponOut()) {
+          if (!gamepadState.previous.has('Button11')) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = false;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          down.delete('Button11');
+        }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) controllerLookActive = false;
         for (const button of down) {
@@ -21886,7 +26287,21 @@
         saveInputBindings,
       });
       window.InputSettingsPanel.render();
+      window.MusicMinigame?.renderNoteKeySettings();
+      window.MusicMinigame?.renderPatternLoadoutSettings();
+      window.MusicMinigame?.renderFreeplayKeySettings();
 
+      // Desktop Shift's dual role: held + mouse movement rotates the camera
+      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
+      // clean TAP — pressed and released within the same tap window as
+      // every other tap/hold gesture here, with no mouse movement in
+      // between — toggles melee auto-target instead. _shiftDragged is set
+      // the instant any mousemove event fires while Shift is down
+      // (regardless of which branch handles it — shoulder-surf's own free
+      // mouselook included), so a hold-to-rotate never gets misread as a
+      // toggle on release.
+      let _shiftDownAt = null;
+      let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
         if (window.Fishing?.state?.active) {
@@ -21898,7 +26313,32 @@
           }
           return;
         }
-        if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        if (key === 'escape') {
+          event.preventDefault();
+          // Normally unreachable — the overlay's iframe holds focus and
+          // handles Escape itself (see requestExitOrPause in
+          // lyre-performance.html, which asks js/music-minigame.js to
+          // close()) — but if focus ever lands back on the host page while
+          // the overlay is still open, this is the same fallback Fishing
+          // uses above rather than opening the menu underneath it.
+          if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; }
+          if (dialogueOpen) { closeNpcDialogue(); return; }
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
+        // Tab: same menu open/close as Escape, without Escape's browser side
+        // effect of exiting Fullscreen — added specifically so a player in
+        // fullscreen doesn't have to drop out of it just to reach the menu.
+        // Shift+Tab does the same (no direction to pick between for a plain
+        // open/close toggle); item-cycling moved to [ / ] below to free up
+        // both bindings. Skipped during dialogue/the music minigame, same
+        // as Escape, so the menu can't pop open over either overlay.
+        if (key === 'tab') {
+          event.preventDefault();
+          if (window.MusicMinigame?.state?.active || dialogueOpen) return;
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
         // M: wilderness map — closes if already open on the map tab (mirrors
         // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
         if (key === 'm') {
@@ -21909,10 +26349,19 @@
           return;
         }
         if (menuOpen) return;
+        if (key === 'z') {
+          event.preventDefault();
+          if (!event.repeat) putAwayHeldEquipment();
+          return;
+        }
         const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          return;
+        }
+        if (key === 'shift') {
+          if (!event.repeat) { _shiftDownAt = performance.now(); _shiftDragged = false; }
           return;
         }
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
@@ -21921,7 +26370,17 @@
 
         if (key === 'e') {
           event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+          if (isDesktop) {
+            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
+              desktopTentInteractHeld = true;
+              activeAction = 'bandit_tent_interact';
+              actionHeldDown = true;
+              useActiveAction();
+              return;
+            }
+            startDesktopHoldKey('e', event);
+            return;
+          }
         }
         if (key === 'q') {
           event.preventDefault();
@@ -21931,6 +26390,14 @@
           activeAction = actions[(idx + 1) % actions.length];
           refreshActionBar();
           return;
+        }
+        // C: hold to open the utilities wheel (Character View, Return to Camp,
+        // quick-select a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
+        // nothing pattern as E/Q above, but there's no separate tap
+        // behavior to fall back to on release (see the keyup handler).
+        if (key === 'c') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('c', event); return; }
         }
 
         // Legacy unbound primary keys. Configured action bindings return above;
@@ -21951,12 +26418,13 @@
         if (key === '5') setActiveTool('pick');
         if (key === '6') setActiveTool('harpoon');
 
-        // Item scroll: , / . or Tab/Shift+Tab
-        if (key === ',') {
+        // Item scroll: , / . or [ / ] — Tab/Shift+Tab moved to opening the
+        // menu (see the keydown handler above) so both are free here.
+        if (key === ',' || key === '[') {
           cycleActiveInventoryItem(-1);
           refreshItemScroll(); refreshActionBar();
         }
-        if (key === '.' || key === 'tab') {
+        if (key === '.' || key === ']') {
           event.preventDefault();
           cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
           refreshItemScroll(); refreshActionBar();
@@ -22006,11 +26474,25 @@
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
+        }
+        if (key === 'shift') {
+          const heldMs = performance.now() - (_shiftDownAt ?? 0);
+          if (!menuOpen && !_shiftDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) {
+            meleeAutoTargetOn = !meleeAutoTargetOn;
+            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
+          }
+          _shiftDownAt = null;
+          return;
         }
         if (key === 'e' && isDesktop) {
           event.preventDefault();
+          if (desktopTentInteractHeld) {
+            desktopTentInteractHeld = false;
+            actionHeldDown = false;
+            return;
+          }
           const wasHeld = finishDesktopHoldKey('e');
           if (!wasHeld) runInteractAction();
           return;
@@ -22025,6 +26507,14 @@
           }
           return;
         }
+        if (key === 'c' && isDesktop) {
+          event.preventDefault();
+          // No tap fallback — the utilities wheel only ever does anything
+          // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
+          // branch commits whatever entry was highlighted via releaseSelection()).
+          finishDesktopHoldKey('c');
+          return;
+        }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
       });
 
@@ -22032,16 +26522,51 @@
       function handleGameWheel(e, heldOnly = false) {
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
+        // Shift+wheel cycles melee auto-target's lock orbitally around the
+        // player instead of zooming — only once a lock is already active,
+        // same "nothing happens if it's off" rule the controller/mobile
+        // cycling inputs follow.
+        if (e.shiftKey && meleeAutoTargetOn && meleeWeaponOut()) {
+          e.preventDefault();
+          cycleMeleeAutoTarget(dir);
+          return true;
+        }
+        const heldEntrySelectorKind = window._desktopSelectionArc?.heldSelectionKind?.(); // Includes keyboard/controller and pointer-held action buttons.
+        if (isDesktop && (potionAction3Press.down || heldEntrySelectorKind === 'potions')) {
+          e.preventDefault();
+          if (potionAction3Press.down && !potionAction3Press.held) {
+            potionAction3Press.held = true;
+            if (potionAction3Press.timer) { clearTimeout(potionAction3Press.timer); potionAction3Press.timer = null; }
+            window._desktopSelectionArc?.openPotions();
+          } else if (!window._desktopSelectionArc?.entryMenuOpen?.()) {
+            window._desktopSelectionArc?.openPotions();
+          }
+          window._desktopSelectionArc?.scrollEntries(-dir);
+          return true;
+        }
+        if (isDesktop && heldEntrySelectorKind === 'ammo') {
+          e.preventDefault();
+          window._desktopSelectionArc?.openAmmo();
+          window._desktopSelectionArc?.scrollAmmo(-dir);
+          return true;
+        }
         if (isDesktop && desktopHoldKeys.q.down) {
           e.preventDefault();
           openDesktopHoldArc('q');
-          window._desktopSelectionArc?.scrollItem(-dir);
+          if (activeTool === 'ranged') window._desktopSelectionArc?.scrollAmmo(-dir);
+          else window._desktopSelectionArc?.scrollItem(-dir);
           return true;
         }
         if (isDesktop && desktopHoldKeys.e.down) {
           e.preventDefault();
           openDesktopHoldArc('e');
           window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.c.down) {
+          e.preventDefault();
+          openDesktopHoldArc('c');
+          window._desktopSelectionArc?.scrollEntries(-dir);
           return true;
         }
         if (heldOnly) return false;
@@ -22095,11 +26620,19 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
-      // ── Camera drag-to-look: single-finger drag on mobile, Shift+mouse movement on desktop.
-      // Nudges the look angle on top of the active mode's base framing, clamped to the configured range.
+      // ── Camera look: a floating joystick that materializes under the
+      // thumb on a right-half touch (mobile), Shift+mouse movement on
+      // desktop. The mobile half used to be a raw delta-drag (camera offset
+      // tracked 1:1 with however far the finger had traveled from its start
+      // point); it's a rate-control stick now instead — hold the knob off
+      // center and the camera keeps turning, same paradigm as the movement
+      // joystick's own analog stick, and the genre-standard "look stick"
+      // behavior on mobile (materialize-under-thumb dynamic joysticks, the
+      // way most twin-stick mobile games handle look input).
       let cameraDragPointerId = null;
-      let cameraDragStartX = 0, cameraDragStartY = 0;
-      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
+      let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
+      let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
@@ -22107,10 +26640,10 @@
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
       // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players get genuine 360° horizontal orbit instead — see the 'seated'
-      // camera mode's freeRotate flag in scratchbones-config.js.
+      // players and the utility-wheel Character View get genuine 360°
+      // horizontal orbit instead.
       function freeRotateCameraActive() {
-        return cameraModeConfig(activeCameraMode).freeRotate === true;
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -22120,16 +26653,32 @@
         if (d <= -180) d += 360;
         return d;
       }
+      // Right half only — the left half is the movement joystick's territory
+      // (see #joystickZone, bottom-left) and this keeps the two thumbs from
+      // ever fighting over the same touch. A touch that lands on an existing
+      // button never reaches here at all: buttons are separate overlaid
+      // elements that catch their own pointerdown before it could bubble to
+      // #threeContainer, so nothing extra is needed to exclude them.
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch';
+        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+      }
+      function hideCameraJoystick() {
+        cameraJoystickZone.style.display = 'none';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
       }
       threeContainer.addEventListener('pointerdown', (e) => {
         if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
         cameraDragPointerId = e.pointerId;
-        cameraDragStartX = e.clientX;
-        cameraDragStartY = e.clientY;
-        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
-        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        cameraJoystickOriginX = e.clientX;
+        cameraJoystickOriginY = e.clientY;
+        cameraJoystickX = 0;
+        cameraJoystickY = 0;
+        cameraJoystickZone.style.left = e.clientX + 'px';
+        cameraJoystickZone.style.top = e.clientY + 'px';
+        cameraJoystickZone.style.display = 'block';
+        cameraJoystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
         // Can throw ("No active pointer with the given id is found") for a
         // touch that starts before the browser considers the pointer fully
         // active — e.g. right as the page/layout is still settling after
@@ -22141,19 +26690,26 @@
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
-        const dx = e.clientX - cameraDragStartX;
-        const dy = e.clientY - cameraDragStartY;
-        const cfg = desktopControlsConfig();
-        const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
-        const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-        cameraAzimuthOffsetDeg = freeRotateCameraActive()
-          ? wrapAzimuthDeg(cameraDragStartAzimuthOffset + dx * degPerPx)
-          : clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
-        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
-        updateCameraPosition();
+        // Base stays put where the thumb first touched down — only the knob
+        // (and the resulting turn rate) tracks the finger from there, same
+        // clamp/deadzone/response-curve shape as updateJoystick() below.
+        const rawX = e.clientX - cameraJoystickOriginX;
+        const rawY = e.clientY - cameraJoystickOriginY;
+        const distance = Math.hypot(rawX, rawY);
+        const angle = Math.atan2(rawY, rawX);
+        const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
+        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
+          ? 0
+          : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
+        cameraJoystickX = remapped > 0 ? Math.cos(angle) * remapped : 0;
+        cameraJoystickY = remapped > 0 ? Math.sin(angle) * remapped : 0;
+        cameraJoystickKnob.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`;
       });
       function clearCameraDragPointer(e) {
-        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+        if (e.pointerId !== cameraDragPointerId) return;
+        cameraDragPointerId = null;
+        hideCameraJoystick();
       }
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
@@ -22167,11 +26723,20 @@
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
-          if (activeTool === 'weapon' && window.Combat?.input) {
+          if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
+            const pointerActionId = e.button === 0 ? 'action1' : e.button === 2 ? 'action2' : null; // Used to map mouse presses through the same visible-slot override as keyboard/controller input.
+            const visibleOverride = pointerActionId ? visibleActionOverrideForWeaponSlot(pointerActionId) : null;
+            if (visibleOverride) {
+              visibleWeaponContextPresses.add('mouse:' + e.button);
+              runActionButtonAtSlot(visibleOverride.slot);
+              return;
+            }
+            tryAutoEngageMeleeTarget();
             if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
             return;
           }
+          if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -22184,17 +26749,38 @@
       }
       window.addEventListener('pointerup', (e) => {
         if (e.pointerType !== 'mouse') return;
-        if (activeTool === 'weapon' && window.Combat?.input) {
+        if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
+          if (e.button === 0) actionHeldDown = false;
+          return;
+        }
+        if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
           else if (e.button === 2) { window.Combat.input.pressEnd(2); }
           return;
         }
+        if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
       });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A floating menu (the pause/inventory menu incl. its Alchemy tab,
+          // the cooking hearth/campfire modal via setInteractionBlocked, or
+          // the utilities wheel/an entries arc like potion/ammo select) owns
+          // the cursor while open — without this, mouse movement kept
+          // driving facing/camera rotation underneath it via this same
+          // handler (Shift-drag and shoulder-surf's Pointer Lock read
+          // movementX/Y regardless of what's visually on top), so the
+          // camera spun out from under a menu the player was trying to
+          // click into. entryMenuOpen() covers arcs opened by mouse-button
+          // drag (which the arc's own full-screen backdrop already isolates
+          // from this handler) as well as ones opened by a held key like
+          // 'c' below (which doesn't drag a mouse button, so nothing else
+          // stops this handler from firing while it's up).
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
+          if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
+          if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
@@ -22202,7 +26788,23 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
-          if (e.shiftKey && cameraDragAllowed()) {
+          // Desktop auto-target is intentionally loose: micro pointer noise is
+          // ignored, but any real mouse movement releases the camera from its
+          // current target. The toggle stays on so simply moving the reticle
+          // back over an enemy reacquires it.
+          if (isDesktop && meleeAutoTargetOn && meleeWeaponOut() &&
+              Math.hypot(Number(e.movementX) || 0, Number(e.movementY) || 0) > DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX) {
+            manualAutoTarget = null;
+            meleeAutoTargetFreeAim = true;
+          }
+          // Shoulder-surf gets mouse-look "for free" here: plain mouse
+          // movement drives the camera exactly like Shift+drag does
+          // everywhere else, no modifier key needed, and freeRotateCameraActive()
+          // (true for shoulder-surf's config, same as 'seated') already makes
+          // this wrap into a full 360° orbit instead of the usual ±45° peek
+          // clamp. Falls through to the raycast-based facing/aim below
+          // otherwise, same as it always has.
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
@@ -22225,6 +26827,7 @@
           // via _playerGroundY) instead of always sitting at world Y=0.
           _groundPlane.constant = -_playerGroundY();
           if (_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) {
+            if (window.AlchemyFlasks?.aiming) window.AlchemyFlasks.setTarget(_mouseWorld.x * TILE, _mouseWorld.z * TILE); // Mouse ground-target cursor.
             const dx = _mouseWorld.x - player.x / TILE;
             const dz = _mouseWorld.z - player.y / TILE;
             if (Math.hypot(dx, dz) > 0.3) {
@@ -22343,11 +26946,15 @@
         get sitState() { return sitInteraction; },
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
+        foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
+        npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        npcGridTileAt: (area, c, r) => { const g = npcGridForArea(area); return g?.[r]?.[c] || null; },
+        farmGridTileAt: (c, r) => grid?.[r]?.[c] || null,
         placeProcessing: placeProcessingFurniture,
         moveProcessing: moveProcessingFurniture,
         rotateProcessing: rotateProcessingFurniture,
@@ -22376,8 +26983,27 @@
         get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerNeckJointRotX() { return playerNeckJoint ? playerNeckJoint.rotation.x : null; },
         get playerMeshRotY() { return playerMesh.rotation.y; },
+        get playerMeshWorldY() { return playerMesh.position.y; },
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        get cameraFacingAngleDeg() { return cameraFacingAngleRad() * 180 / Math.PI; },
+        get facingAngleDeg() { return facingAngle * 180 / Math.PI; },
+        get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
+        get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
+        get mouseLookActive() { return mouseLookActive; },
+        get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
+        get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
+        setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),
+        get currentPlayerAimAngleDeg() { return currentPlayerAimAngle() * 180 / Math.PI; },
+        get rangedToolYawDeg() { return _debugRangedToolYawRad === null ? null : _debugRangedToolYawRad * 180 / Math.PI; },
+        get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
+        get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
+        get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
+        get meleeAutoTargetOn() { return meleeAutoTargetOn; },
+        setMeleeAutoTargetOn: (v) => { meleeAutoTargetOn = !!v; },
+        get meleeAutoTarget() { const t = findAutoTarget(); return t ? { x: t.x, y: t.y, id: t.id } : null; },
+        cycleMeleeAutoTargetDebug: (dir) => cycleMeleeAutoTarget(dir),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
@@ -22439,12 +27065,14 @@
         renderer,
         camera,
         playerMesh,
+        toolHolder,
         companionObjects,
         npcWalkers,
         player,
         getActiveScene,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
+        getPlayerGroundY: _playerGroundY,
         getPlayerLegs: () => playerLegs,
         getPetLayeringPet: () => _petLayeringPet,
         getPetLayeringActive: () => _petLayeringActive,
@@ -22497,6 +27125,12 @@
         audioUrlFailed: (...a) => window.Music?.audioUrlFailed(...a),
       });
 
+      window.AnimalVocalizations?.init({
+        random: rnd,
+        hasVoice: (c) => window.AudioSystem?.hasAnimalVoice?.(c),
+        renderUtterance: (c, opts) => window.AudioSystem?.playAnimalVoiceUtterance?.(c, opts),
+      });
+
       window.Combat?.init({
         player,
         players,
@@ -22504,6 +27138,23 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        // Named animal projectiles use the same live Three.js elevation as
+        // the player/creature renderers so Drenkirra's vertical spit aim is
+        // based on actual target height, not a flattened ground plane.
+        getActorWorldY: (actor) => {
+          if (actor === player) return playerMesh.position.y;
+          const avatarY = actor?.avatarRef?.group?.position?.y;
+          if (Number.isFinite(avatarY)) return avatarY;
+          if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y)) return activeSurfaceYAtWorld(actor.x / TILE, actor.y / TILE) + 0.4;
+          return 0.4;
+        },
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        getActiveScene,
+        getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
+        getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
+        getHeldMode: () => heldMode,
+        getActiveTool: () => activeTool,
+        getMeleeReticleTarget: () => findAutoTarget() || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
         inCone,
         damageCreature,
         damagePlayer,
@@ -22526,9 +27177,12 @@
         setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
+        requestThreatGrowl: (c, reason) => window.AnimalVocalizations?.threatGrowl?.(c, reason)
+          || window.AudioSystem?.playCreatureBark?.(c),
         playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
         playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
         playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
+        playCounterShieldBlockSfx: (...a) => window.AudioSystem?.playCounterShieldBlockSfx(...a),
         // Named animal attacks (e.g. Pounce) own the creature's position
         // directly for their leap instead of going through moveCreatureToward
         // — without this, that ground covered during the leap never ticked
@@ -22578,6 +27232,88 @@
         },
       });
 
+      window.NearbyVolumeCollision?.init({
+        THREE,
+        TILE,
+        player,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        isCombatActive: () => isPlayerInCombat() ||
+          (heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) ||
+            (activeTool === 'ranged' && !!equipmentSlots.ranged))),
+        options: {
+          enabled: document.getElementById('settingVolumeCollisionMaster')?.checked !== false,
+          projectiles: document.getElementById('settingVolumeCollisionProjectiles')?.checked !== false,
+          textureAlpha: document.getElementById('settingVolumeCollisionAlpha')?.checked !== false,
+        },
+        debugLog,
+      });
+
+      window.RangedWeapons?.init({
+        player,
+        playerRadius: PLAYER_RADIUS,
+        TILE,
+        hostileObjects,
+        npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        // Same live render-height lookup Combat.init supplies for named
+        // animal projectiles (see its own getActorWorldY) — a shooter or
+        // target standing somewhere other than flat ground (a tree branch)
+        // fires/gets aimed at from their real height, not the terrain
+        // straight below them.
+        getActorWorldY: (actor) => {
+          if (actor === player) return playerMesh.position.y;
+          const avatarY = actor?.avatarRef?.group?.position?.y;
+          if (Number.isFinite(avatarY)) return avatarY;
+          if (Number.isFinite(actor?.x) && Number.isFinite(actor?.y)) return activeSurfaceYAtWorld(actor.x / TILE, actor.y / TILE) + 0.4;
+          return 0.4;
+        },
+        getPlayerAimAngle: currentPlayerAimAngle,
+        getPlayerAimPitch: currentPlayerAimPitch,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        getPlayerAvatarGroup: () => {
+          let avatarGroup = null;
+          playerMesh?.traverse?.(child => {
+            if (!avatarGroup && Number.isFinite(child.userData?.portraitModelHeight)) avatarGroup = child;
+          });
+          return avatarGroup;
+        },
+        worldSurfaceY: (x, y) => {
+          const grid = getActiveGrid();
+          const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
+          const row = clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
+        },
+        canOccupyAt,
+        damageCreature,
+        damagePlayer,
+        angleDiff,
+        cameraRelativeCreaturePerps,
+        creaturePerpDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        triggerRangedWeaponVisual,
+        setRangedLoadedVisual,
+        refreshActionBar,
+        moveCreatureToward,
+        awardRangedMastery: (itemKey) => awardToolMasteryXp(itemKey, MASTERY_XP_PER_COMBAT_HIT),
+        toolMasteryLevel,
+        devBumpToolMasteryLevel,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        getEquippedRangedKey: () => equipmentSlots.ranged,
+        isWeaponAiming: () => heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged)),
+        getAimLabelRangeWorld: () => activeTool === 'ranged'
+          ? (window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7) / TILE
+          : Math.max(3, Number(combatConfig().autoTargetRangeTiles) || 4),
+        showToast,
+        random: () => window.GameRandom?.random?.() ?? Math.random(),
+        getLastMeleeHeightBlock: () => lastMeleeHeightBlock,
+        debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
+      });
+
       window.Mounts?.init({
         player,
         scene,
@@ -22625,6 +27361,8 @@
         getControllerLookAngle: () => controllerLookAngle,
         getLastMouseMoveTime: () => lastMouseMoveTime,
         getMouseLookAngle: () => mouseLookAngle,
+        isShoulderSurfMode: () => activeCameraMode === SHOULDER_SURF_MODE,
+        cameraFacingAngleRad,
       });
 
       window.Fishing?.init({
@@ -22648,6 +27386,7 @@
         rollItemStars,
         starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
         awardToolUseMasteryXp,
@@ -22669,11 +27408,84 @@
         setFishThrowActive: (v) => { fishThrowActive = v; },
       });
 
+      let _musicPrevCameraMode = null;
+      let _musicPrevCameraTarget = null;
+      // Resolves a random real-recording footstep URL for whatever surface
+      // this NPC is currently standing on — same surface resolution
+      // _tickFootsteps uses for their actual footfalls — turned into an
+      // absolute URL so it still loads correctly from inside the Lyre
+      // minigame's own iframe (a different base path under assets/minigames/).
+      // Used to give an ambient NPC performance's metronome a beat that
+      // matches the ground they're actually playing on instead of a
+      // generic click.
+      function npcFootstepSampleUrl(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId);
+        if (!walker || !window.AudioSystem) return null;
+        const wx = walker.root.position.x * TILE, wy = walker.root.position.z * TILE;
+        const tile = window.AudioSystem.footstepTileAt(walker.area, wx, wy, npcGridForArea(walker.area));
+        const surfaceKey = window.AudioSystem.footstepSurfaceKey(walker.area, tile?.type ?? null);
+        const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls;
+        if (!urls?.length) return null;
+        const url = urls[Math.floor(Math.random() * urls.length)];
+        try { return new URL(url, document.baseURI).href; } catch { return url; }
+      }
+
+      window.MusicMinigame?.init({
+        refreshActionBar,
+        getCurrentArea: () => currentArea,
+        listInstrumentPerformers,
+        getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        showToast,
+        // Frames the performance in third-person (see the "music" camera
+        // mode in scratchbones-config.js) instead of leaving the default
+        // camera in place — matches how fishing/dialogue each get their
+        // own framing. In backup mode the target sits at the midpoint
+        // between the player and whichever NPC they joined, so both stay
+        // in shot; in lead/solo mode it just follows the player as usual.
+        beginMusicCamera: (npcId) => {
+          _musicPrevCameraMode = activeCameraMode;
+          _musicPrevCameraTarget = activeCameraTarget;
+          activeCameraMode = 'music';
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.root) {
+            const midX = (player.x / TILE + walker.root.position.x) / 2;
+            const midZ = (player.y / TILE + walker.root.position.z) / 2;
+            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
+          } else {
+            activeCameraTarget = null;
+          }
+        },
+        endMusicCamera: () => {
+          activeCameraMode = _musicPrevCameraMode ?? 'default';
+          activeCameraTarget = _musicPrevCameraTarget ?? null;
+          _musicPrevCameraMode = null;
+          _musicPrevCameraTarget = null;
+        },
+        // Driven by js/music-minigame.js's 'sounded-note' relay from either
+        // the player's overlay iframe or an NPC's ambient performance iframe
+        // — see updateHeldItemHolder (player) and the station-tool block
+        // above (NPC) for what actually owns each twitch state.
+        triggerPlayerKurrayaTwitch: () => {
+          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        },
+        triggerNpcKurrayaTwitch: (npcId) => {
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);
+        },
+      });
+
       window.BanditCombat?.init({
         rnd,
         clamp,
         debugLog,
         TILE,
+        // Used only for the "Show Interaction Raycast" debug overlay's
+        // head-to-target line — a bandit's own combat AI aims at real
+        // hitbox geometry (meleeAimSolution), not this.
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x, y: pos.z, worldY: pos.worldY };
+        },
         PLAYER_RADIUS,
         JUMP_BACK_DUR_S,
         JUMP_BACK_SPEED,
@@ -22731,7 +27543,15 @@
         random: rnd,
         setInteractionBlocked(blocked) {
           menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
-          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            // Same reasoning as openMenu's own call: without this, a player
+            // in shoulder-surf mode gets no visible cursor at all inside
+            // this modal (Pointer Lock hides the OS cursor and keeps
+            // streaming raw movementX/Y to threeContainer no matter what's
+            // drawn on top of it — see the mousemove guard above).
+            releaseShoulderSurfPointerLock();
+          }
         },
       });
 
@@ -22744,12 +27564,54 @@
         isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
       });
 
+      window.PerkSystem?.init({ savePerkProgress });
+
       window.AlchemySystem?.init({
         ITEM_DEFS,
         inventory,
         clampInventoryStack,
         refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
         showToast,
+        saveMemberWorldData,
+        random: rnd,
+        getPlayer: () => player,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getInCombat: () => isPlayerInCombat(),
+      });
+
+      window.AlchemyFlasks?.init({
+        THREE,
+        TILE,
+        inventory,
+        clampInventoryStack,
+        getPlayer: () => player,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
+        getGroundY: () => _playerGroundY() + 0.025,
+        getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
+        getHeldWorldPosition: () => {
+          const position = new THREE.Vector3(); // Used to release the rendered flask from the player's hand.
+          heldItemHolder.getWorldPosition(position);
+          return position;
+        },
+        getSplashEntities: (area, x, y, radiusPx) => {
+          const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
+          return entities.filter(entity => entity && !entity._denHidden && (entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx));
+        },
+        spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
+          const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.
+          const fx = { isCone: true, x: x / TILE, z: y / TILE, y: _playerGroundY() + 0.08, angle: 0, halfConeRad: Math.PI, rangeTiles: radiusTiles, age: 0, maxAge: 0.34, ok: true, color }; // Uses the same bounded radial-particle renderer as combat/Grehlr-style bursts.
+          fx.particles = weaponTrailParticleSeeds(fx);
+          weaponTrailEffects.push(fx);
+        },
+        startThrowWindup: () => { _heldThrowAimT = 1; },
+        confirmThrowAnimation: () => { _heldThrowAimT = 2; },
+        cancelThrowWindup: () => { _heldThrowAimT = 0; },
+        refreshItemScroll,
+        refreshActionBar,
         saveMemberWorldData,
       });
 
@@ -22786,6 +27648,12 @@
         esc,
       });
 
+      // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
+      // declared here (game.js scope) rather than inside the deps object
+      // literal, since that object's own methods don't close over each
+      // other's sibling keys the way a plain local variable does.
+      let _furnitureLightScanCache = { scene: null, objs: null, lastScan: 0 };
+
       window.WeatherFX?.init({
         calendar,
         seededRandom,
@@ -22796,6 +27664,7 @@
         showToast,
         debugLog,
         worldToOverlay,
+        camera,
         lctx,
         player,
         npcWalkers,
@@ -22807,23 +27676,38 @@
         getThreeRect: () => _threeRect,
         _isBuildingArea,
         getActiveGrid, getActiveCols, getActiveRows,
-        getFlowingTrenchTiles: () => _flowingTrenchTiles,
-        getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
+        getFlowingTrenchTiles: () => window.WaterSystem.getFlowingTrenchTiles(),
+        getTownFlowingTrenchTiles: () => window.WaterSystem.getTownFlowingTrenchTiles(),
         threeContainer,
         getCamX: () => camX,
         getCamY: () => camY,
         // Used by WeatherFX's player lantern mask to follow the avatar's
         // smoothed world elevation instead of projecting from flat Y=0.
         getPlayerWorldY: () => playerMesh.position.y,
-        // Lighting is sampled at 10 Hz, so collecting the active scene's
-        // tagged furniture lights here stays cheap and avoids stale coords.
+        // Lighting is sampled at 10 Hz, but a full scene.traverse() every one
+        // of those ticks still visits every node in the active scene (not
+        // just the lights) to find the handful tagged furnitureLightMask —
+        // real, avoidable cost in a decor-dense area (a lot of furniture/
+        // NPCs/terrain chunks, e.g. the inn) since it scales with total
+        // scene size, not light count. Re-scanning is still cheap and
+        // correctness matters more than shaving cost further, so this only
+        // throttles the traversal itself down to 2s (light *positions* are
+        // re-read fresh from world matrices every call regardless — only
+        // which objects count as sources is cached) rather than trying to
+        // track furniture add/remove sites to invalidate it precisely.
         getFurnitureLightSources: () => {
-          const sources = [];
+          const cache = _furnitureLightScanCache;
+          const scene = getActiveScene();
+          const now = performance.now();
+          if (cache.scene !== scene || now - cache.lastScan >= 2000) {
+            const objs = [];
+            scene?.traverse(obj => { if (obj.isPointLight && obj.userData?.furnitureLightMask) objs.push(obj); });
+            cache.scene = scene; cache.objs = objs; cache.lastScan = now;
+          }
           const worldPosition = new THREE.Vector3();
-          getActiveScene()?.traverse(obj => {
-            if (!obj.isPointLight || !obj.userData?.furnitureLightMask) return;
+          return (cache.objs || []).map(obj => {
             obj.getWorldPosition(worldPosition);
-            sources.push({
+            return {
               x: worldPosition.x,
               y: worldPosition.y,
               z: worldPosition.z,
@@ -22834,9 +27718,8 @@
                 g: Math.round(obj.color.g * 255),
                 b: Math.round(obj.color.b * 255),
               },
-            });
+            };
           });
-          return sources;
         },
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
@@ -22853,6 +27736,15 @@
         getActiveScene,
         getCurrentArea: () => currentArea,
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
+      });
+
+      window.CloudForestFog?.init({
+        THREE,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
       });
 
       window.FarmPanel?.init({
@@ -22984,6 +27876,18 @@
         esc,
         _zoneLayouts,
         hostileObjects,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
+      });
+
+      window.WildlifeBehaviorMap?.init({
+        TILE,
+        TileType,
+        player,
+        hostileObjects,
+        zoneLayouts: _zoneLayouts,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
       });
 
       window.ShippingPanel?.init({
@@ -23070,6 +27974,25 @@
         isDevMode: () => s_devMode,
       });
 
+      window.WildernessCampfire?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getActiveScene,
+        getPlayer: () => player,
+        getFacingAngle: () => facingAngle,
+        surfaceYAt: activeSurfaceYAtWorld,
+        TILE,
+        AuthoredFurniture: window.AuthoredFurniture,
+        persist: saveMemberWorldData,
+        showToast,
+        openMenu,
+        isPaused: () => paused,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+      });
+
       window.TownZoneBuildings?.init({
         getTownZone: () => _townZone,
         debugLog,
@@ -23098,6 +28021,18 @@
         PLATEAU_UNIT,
       });
 
+      window.FoliageFurnitureRuntime?.init({
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        sit: beginSitInteraction,
+        debugLog,
+      });
+
       window.WildlifeSpawn?.init({
         TILE,
         TileType,
@@ -23119,6 +28054,16 @@
         denNests: _denNests,
         getCutscenePreviewActive: () => cutscenePreviewActive,
         buildZoneScene,
+        DEN_MOTHER_DEFS,
+        DEN_MOTHER_ITEM_KEYS,
+        zoneScenes: _zoneScenes,
+        makeDecorativeFurnitureMesh,
+        // Used by js/wildlife-cloud-forest-behavior.js for its gar-wolf
+        // shift/LOD player-distance checks and its game-hour-scheduled
+        // fruit respawn/eating timers — no other WildlifeSpawn consumer
+        // needs either today.
+        player,
+        calendar,
       });
 
       window.CavernGenerator?.init({
@@ -23137,7 +28082,7 @@
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
-        buildMergedWaterMesh: _buildMergedWaterMesh,
+        buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
       });
 
       window.ZoneDenTotemFeatures?.init({
@@ -23197,10 +28142,19 @@
         WMAP_ZONE_LABELS,
       });
 
+      window.WildernessChunks?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        player,
+        TILE,
+      });
+
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
+        hostileObjects,
+        companionObjects,
         facingCardinal,
         getActiveGrid,
         getActiveCols,
@@ -23209,9 +28163,28 @@
         isSolid,
         tileSurfaceYInArea,
         clamp,
+        getMountRideState: () => window.Mounts?.rideState ?? 'none',
+        showToast,
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        // Read fresh input because player.inputX/Y are written after the
+        // on-branch early return. Shoulder cam uses the exact same
+        // camera-relative transform as ordinary ground movement.
+        getMovementInput: () => {
+          const kb = getKeyboardVector();
+          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+          const aim = cameraFacingAngleRad();
+          const sin = Math.sin(aim), cos = Math.cos(aim);
+          return {
+            x: -move.x * sin - move.y * cos,
+            y: move.x * cos - move.y * sin,
+          };
+        },
       });
 
       window.BanditCombatLog?.init({
@@ -23229,18 +28202,22 @@
       window.DebugHitboxes?.init({
         getActiveTileAt,
         tileSurfaceY,
+        surfaceYAtWorld: activeSurfaceYAtWorld,
         worldToOverlay,
         octx,
         TILE,
         player,
         hostileObjects,
         companionObjects,
+        npcWalkers,
+        animalObjects,
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
+        getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
-        creatureAimColliderReachPx,
-        cameraRelativeCreaturePerps,
-        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
       });
 
       window.RelationshipsPanel?.init({
@@ -23403,12 +28380,31 @@
         LIVESTOCK_RESOURCE_DEFS,
         LIVESTOCK_RESOURCE_VERB,
         LIVESTOCK_ITEM_KINDS,
+        LIVESTOCK_DIET,
         UUMKAOII_DEFAULT_DEW_COLOR,
         UUMKAOII_DEW_COOLDOWN_DAYS,
         animalObjects,
         calendar,
         inventory,
         player,
+        // Farm livestock has its own tile-space update loop, so give it the
+        // same explicit face target used by companion/wildlife gaze.  The
+        // horizontal point is in farm tiles; worldY is the player's actual
+        // smoothed portrait face height, never the feet/body center.
+        getPlayerFaceTarget: () => {
+          const pos = window.CreatureHeadCache.getHeadWorld(player, 'player', { x: player.x, y: player.y, mesh: playerMesh, avatarModelHeight: playerAvatarModelHeight });
+          return { x: pos.x / TILE, z: pos.z / TILE, worldY: pos.worldY };
+        },
+        // "Stare back if you focus on their head" for livestock, backed by
+        // the exact same aim-ray math ground companions use (game.js's
+        // _isPlayerFocusedOnHead). headWorldTileScale is
+        // {x, y, z} in farm tiles (x/z) + real scene worldY (y) — the same
+        // shape _farmAnimalFaceLook already builds for its debug ray.
+        isPlayerFocusedOnHead: (headWorldTileScale) => {
+          const ray = _currentPlayerLookRay();
+          if (!ray || !headWorldTileScale) return false;
+          return window.CreatureHeadCache.isRayNearPoint(ray, headWorldTileScale, PLAYER_HEAD_FOCUS_RADIUS_WORLD);
+        },
         scene,
         worldObjects,
         angleDiff,
@@ -23416,6 +28412,10 @@
         cameraRelativeCreaturePerps,
         cameraRelativePerps,
         clampInventoryStack,
+        getHeldItemKey: () => heldMode === 'item' ? getActiveInventoryItem()?.key || null : null,
+        refreshItemScroll,
+        refreshActionBar,
+        saveMemberWorldData,
         companionAiTypeForKind,
         creatureAttachmentAnchor,
         creaturePlaneGroundOffset,
@@ -23436,6 +28436,7 @@
         _saveWorldBreedingPairs,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
         getBarnTiers: () => BARN_TIERS,
         getPlayerData: () => _playerData,
         getGrid: () => grid,
@@ -23449,6 +28450,20 @@
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
+        refreshTroughVisual: (barnId, troughIndex) => window.FarmTroughs.refreshVisual(barnId, troughIndex),
+      });
+
+      window.FarmTroughs?.init({
+        getBarnTiers: () => BARN_TIERS,
+        getFarmBuildings: () => farmBuildings,
+        inventory,
+        ITEM_DEFS,
+        esc,
+        showToast,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        loadWorldLivestock: _loadWorldLivestock,
       });
 
       window.FarmBuildings?.init({
@@ -23463,7 +28478,7 @@
         loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
-        recomputeWater,
+        recomputeWater: window.WaterSystem.recomputeWater,
         saveFarmLayout,
         saveMemberWorldData,
         scene,
@@ -23471,12 +28486,14 @@
         houseWallBuilder,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
+        enterBuilding: (mapId) => enterBuilding(mapId),
         getBarnTiers: () => BARN_TIERS,
         getGrid: () => grid,
         getHousePieceRects: () => window.HousePieces.getPieceRects(),
         getFarmBuildings: () => farmBuildings,
         setFarmBuildings: (v) => { farmBuildings = v; },
         setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
+        UUMKAOII_DEW_COOLDOWN_DAYS,
       });
 
       window.HousePieces?.init({
@@ -23490,7 +28507,7 @@
         loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
-        recomputeWater,
+        recomputeWater: window.WaterSystem.recomputeWater,
         getGrid: () => grid,
         saveFarmLayout,
         saveMemberWorldData,
@@ -23566,6 +28583,8 @@
         inventory,
         clampInventoryStack,
         showToast,
+        getDayPart: dayPartNow,
+        getPlayerNickname: () => (_playerData || window.__hobunjiPlayerProfile)?.nickname || 'friend',
       });
 
       window.BountyBoard?.init({
@@ -23602,7 +28621,12 @@
         player,
         showZoneBanner,
         showToast,
+        requestCompanionDiscovery: (c, reason) => window.AnimalVocalizations?.companionDiscovery?.(c, reason)
+          || window.AudioSystem?.playCreatureTreasureAlert?.(c),
         rollLootPool,
+        inventory,
+        clampInventoryStack,
+        itemIconForKey,
         refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
@@ -23615,6 +28639,7 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
+        getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getPackClothing: () => packClothing,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
@@ -23729,7 +28754,7 @@
           } catch (e) { console.error('starter bed seed:', e); }
         }
         window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
-        recomputeWater(false);
+        window.WaterSystem.recomputeWater(false);
 
         // Non-gear inventory (resources) and pack clothing are world-scoped
         // per character — they stay behind in this world's member record
@@ -23738,26 +28763,34 @@
         Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
           ? { ...playerData.nonGearInventory }
           : { ...STARTING_INVENTORY });
+        // Worlds saved before the Campfire Kit blueprint joined
+        // STARTING_INVENTORY never picked it up — backfill it for free,
+        // once, same as existing characters getting the crossbow/scatterbow
+        // slots below, so it's available without a carpenter trip either way.
+        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);
+        window.PerkSystem?.restore(playerData);
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
         window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
-        window.ProceduralTasks.maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
+        window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all
         // world-scoped per character, same as the fields just above.
-        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreKnownRecipes(playerData.alchemyKnownRecipes, playerData.alchemyKnownEffects);
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreWildernessChunkState(playerData.wildernessChunkState);
+        window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
@@ -23765,15 +28798,22 @@
         // session, unlike the static reagent/furniture/fish tables) — rebuild
         // each one's display/Drink metadata straight from its key, which
         // deterministically encodes its effects (see ensurePotionItemDef).
+        window.AlchemySystem.migrateLegacyPotionInventory(inventory);
         Object.keys(inventory).forEach(key => {
-          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
-          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
+          const payload = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (payload?.recipeId) window.AlchemySystem.ensureRecipeItemDef(payload.recipeId, payload.potencyTier);
+          else if (payload?.legacyEffects) window.AlchemySystem.ensurePotionItemDef(payload.legacyEffects);
+          if (key.startsWith('alchemy_recipe_')) window.AlchemySystem.ensureRecipeScrollItemDef(key.slice('alchemy_recipe_'.length));
         });
 
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
           : makeDefaultGear();
         if (!gearInventory.tools)    gearInventory.tools    = {};
+        // Existing characters receive the first two ranged weapons so the
+        // new slot is immediately testable without invalidating old saves.
+        gearInventory.tools.crossbow ??= true;
+        gearInventory.tools.scatterbow ??= true;
         if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
@@ -23781,6 +28821,10 @@
         }
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
+        gearInventory.specialAmmo = Math.max(0, Math.min(8, Math.floor(Number(gearInventory.specialAmmo) || 0)));
+        if (!gearInventory.rangedAmmoLoadouts || typeof gearInventory.rangedAmmoLoadouts !== 'object') gearInventory.rangedAmmoLoadouts = {};
+        if (!Array.isArray(gearInventory.unlockedSpecialAmmo)) gearInventory.unlockedSpecialAmmo = [];
+        for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
         window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
 
@@ -23833,6 +28877,7 @@
         else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
         else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
@@ -23864,6 +28909,32 @@
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {
           console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        // Resume out in the wilderness, exactly where last session left off,
+        // if that's genuinely where the player was: a wilderness zone that
+        // still has this character's own campfire established in it (see
+        // saveMemberWorldData's lastPosition and WildernessCampfire.restore
+        // just above). Nothing else here ever moves the player away from
+        // the farm's fixed boot position, so without this a wilderness trip
+        // always reset to the farm on reload — the same reason a campfire
+        // used to be destroyed just for leaving its own map. Deliberately
+        // narrower than "resume anywhere": farm/town/interior/building all
+        // keep spawning at the usual farm default, since only the
+        // wilderness-with-an-active-camp case is actually being asked for
+        // here, and re-entering a building/cavern/NPC schedule context from
+        // a cold boot has its own preconditions this isn't set up to satisfy.
+        const _lastPos = playerData.lastPosition;
+        const _resumeCampfire = window.WildernessCampfire?.serialize?.();
+        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+            && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
+          await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
+          // enterZone already placed the player at the tile center of the
+          // col/row above — refine to the exact saved sub-tile position/
+          // facing now that the zone (and its campfire, via enterZone's own
+          // onZoneEntered call) has actually finished building.
+          player.x = _lastPos.x; player.y = _lastPos.y;
+          if (Number.isFinite(_lastPos.angle)) { player.angle = _lastPos.angle; facingAngle = _lastPos.angle; }
+          _snapCameraTarget();
         }
         gameStarted = true;
         window.__hobunjiGameStarted = true;
@@ -24437,7 +29508,7 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           cutscenePreviewDialogueSpeaker = null;
-          activeCameraMode = cameraConfig().defaultMode || 'default';
+          enterDefaultCameraMode();
           activeCameraTarget = null;
           cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
         };

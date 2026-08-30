@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Hobunji Hollow Fish Editor</title>
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#111513;--panel:#1b211e;--panel2:#232b27;--line:#3a463f;--text:#eef6ef;--muted:#a9b6ad;
+    --accent:#9ed39e;--accent2:#e8d58a;--bad:#ff8c82;--good:#9ed39e;--ink:#070907;
+    font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);min-height:100vh}
+  button,input,select,textarea{font:inherit;color:inherit;background:#121714;border:1px solid var(--line);border-radius:8px}
+  button{padding:.68rem .9rem;cursor:pointer;background:#28322c;font-weight:700}
+  button:hover{border-color:var(--accent)} button:disabled{opacity:.45;cursor:not-allowed}
+  input,select,textarea{padding:.6rem .65rem;width:100%} input[type="color"]{padding:.2rem;height:2.5rem}
+  input[type="checkbox"]{width:auto;accent-color:var(--accent)} input[type="range"]{padding:0}
+  h1,h2,h3,p{margin-top:0} h1{font-size:1.2rem;margin-bottom:.15rem} h2{font-size:1rem} h3{font-size:.9rem;color:var(--accent2)}
+  .app{min-height:100vh;display:flex;flex-direction:column}
+  header{position:sticky;top:0;z-index:8;background:rgba(17,21,19,.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:.75rem max(.75rem,env(safe-area-inset-left));display:flex;gap:.75rem;align-items:center;justify-content:space-between}
+  .subtle{color:var(--muted);font-size:.78rem}.status-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:#727d76;margin-right:.35rem}.status-dot.ok{background:var(--good)}.status-dot.bad{background:var(--bad)}
+  .workspace{display:grid;grid-template-columns:270px minmax(0,1fr) 330px;gap:.65rem;padding:.65rem;flex:1;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}.panel-head{padding:.7rem;border-bottom:1px solid var(--line);background:var(--panel2)}.panel-body{padding:.7rem}
+  .scroll{overflow:auto;max-height:calc(100vh - 155px)}
+  .toolbar{display:flex;gap:.4rem;flex-wrap:wrap}.toolbar button{flex:1;min-width:4.5rem}
+  .fish-list{display:flex;flex-direction:column;gap:.4rem;margin-top:.6rem}.fish-card{padding:.55rem;border:1px solid var(--line);border-radius:9px;background:#151b18;cursor:pointer}.fish-card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}.fish-card strong{display:block}.fish-card small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .preview-wrap{display:grid;grid-template-rows:auto auto 1fr;min-height:0}.preview-stage{position:relative;display:grid;place-items:center;padding:.7rem;min-height:290px;background-image:linear-gradient(45deg,#161b18 25%,transparent 25%),linear-gradient(-45deg,#161b18 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#161b18 75%),linear-gradient(-45deg,transparent 75%,#161b18 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0}
+  #fishPreview{width:min(100%,560px);height:auto;max-height:330px;touch-action:none}.preview-caption{position:absolute;left:.7rem;bottom:.6rem;background:rgba(0,0,0,.72);padding:.3rem .45rem;border-radius:6px;font-size:.72rem;color:#fff}
+  .raw-preview-wrap{display:grid;grid-template-columns:minmax(220px,340px) minmax(0,1fr);gap:.8rem;align-items:start}.raw-stage{position:relative;display:grid;place-items:center;padding:.55rem;min-height:220px;border:1px solid var(--line);border-radius:10px;background-image:linear-gradient(45deg,#161b18 25%,transparent 25%),linear-gradient(-45deg,#161b18 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#161b18 75%),linear-gradient(-45deg,transparent 75%,#161b18 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}.raw-stage canvas{width:100%;height:auto;max-width:420px;image-rendering:pixelated;cursor:crosshair;touch-action:none}.raw-caption{position:absolute;left:.55rem;bottom:.5rem;background:rgba(0,0,0,.72);padding:.25rem .4rem;border-radius:6px;font-size:.7rem;color:#fff}.sample-box{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}.sample-chip{width:26px;height:26px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}.swatch-list{display:flex;flex-wrap:wrap;gap:.5rem}.swatch-chip{display:flex;align-items:center;gap:.45rem;padding:.35rem .45rem;border:1px solid var(--line);border-radius:999px;background:#0b0f0c}.swatch-chip .chip-color{width:18px;height:18px;border-radius:999px;border:1px solid rgba(255,255,255,.22)}.swatch-chip button{padding:.2rem .45rem;border-radius:999px}
+  .tabs{display:flex;gap:.25rem;padding:.5rem;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:auto}.tabs button{white-space:nowrap;padding:.5rem .7rem;background:#18201b}.tabs button.active{background:#344138;border-color:var(--accent)}
+  .tab-content{padding:.75rem;overflow:auto}.tab-page{display:none}.tab-page.active{display:block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.55rem}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.55rem}.field{display:flex;flex-direction:column;gap:.28rem}.field label{font-size:.72rem;color:var(--muted);font-weight:700}.field .hint{font-size:.67rem;color:var(--muted)}
+  .section{border:1px solid var(--line);border-radius:10px;padding:.65rem;margin-bottom:.65rem;background:#161c19}.section:last-child{margin-bottom:0}
+  .range-row{display:grid;grid-template-columns:1fr 86px;gap:.5rem;align-items:center}.range-row input[type="number"]{text-align:right}
+  .pattern-list,.asset-grid{display:grid;gap:.45rem}.pattern-row{display:grid;grid-template-columns:auto minmax(0,1fr) 58px 70px;gap:.45rem;align-items:center;padding:.45rem;border:1px solid var(--line);border-radius:8px;background:#111613}.pattern-name{font-size:.73rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .asset-grid{grid-template-columns:repeat(3,minmax(0,1fr));max-height:460px;overflow:auto}.asset{border:1px solid var(--line);border-radius:8px;padding:.35rem;background:#111613;cursor:pointer;min-width:0}.asset.selected{border-color:var(--accent)}.asset img{display:block;width:100%;height:74px;object-fit:contain;image-rendering:auto}.asset span{display:block;font-size:.65rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.25rem}
+  .test-wrap{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:.7rem}.ring-card{background:#0b1418;border:1px solid #38525a;border-radius:12px;padding:.55rem;display:grid;place-items:center}.ring-card canvas{width:min(100%,520px);height:auto;touch-action:none}.test-side{display:flex;flex-direction:column;gap:.5rem}.meter{height:16px;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:#0c100e}.meter>div{height:100%;background:linear-gradient(90deg,#d9c96e,#dc6058);width:0%}.statline{display:flex;justify-content:space-between;font-size:.76rem;color:var(--muted)}
+  .debug-log{height:245px;overflow:auto;background:#090c0a;border:1px solid #29312c;border-radius:8px;padding:.5rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.69rem;white-space:pre-wrap;word-break:break-word}.log-bad{color:#ff9d94}.log-ok{color:#a7e1aa}.log-info{color:#d0d7d2}
+  .notice{padding:.55rem .65rem;border-left:3px solid var(--accent2);background:#242519;color:#e8e3c4;border-radius:6px;font-size:.76rem}.danger{border-color:#5c3531;color:#ffd6d2}.good{border-color:#36523a;color:#d6ffda}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.hidden{display:none!important}
+  .sticky-actions{position:sticky;bottom:0;background:linear-gradient(transparent,var(--panel) 22%);padding-top:1.2rem;display:flex;gap:.45rem}.sticky-actions button{flex:1}
+  @media(max-width:1050px){.workspace{grid-template-columns:230px minmax(0,1fr)}.right-panel{grid-column:1/-1}.right-panel .scroll{max-height:none}.asset-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+  @media(max-width:720px){header{align-items:flex-start}.workspace{display:flex;flex-direction:column}.scroll{max-height:none}.left-panel{order:2}.center-panel{order:1}.right-panel{order:3}.preview-stage{min-height:240px}.grid2,.grid3,.test-wrap{grid-template-columns:1fr}.asset-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pattern-row{grid-template-columns:auto minmax(0,1fr) 50px 62px}.raw-preview-wrap{grid-template-columns:1fr}.tabs{position:sticky;top:0;background:var(--panel);z-index:3}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div><h1>Hobunji Hollow Fish Editor</h1><div class="subtle">Subspecies appearance, ecology, economy & Spear Bridge behavior lab</div></div>
+  <div style="text-align:right"><div id="repoStatus"><span class="status-dot"></span>Repo assets not loaded</div><div class="subtle" id="saveStatus">Local project ready</div></div>
+</header>
+<div class="workspace">
+  <aside class="panel left-panel">
+    <div class="panel-head"><strong>Subspecies Library</strong></div>
+    <div class="panel-body scroll">
+      <div class="toolbar"><button id="newFishBtn">New</button><button id="duplicateFishBtn">Duplicate</button><button id="deleteFishBtn">Delete</button></div>
+      <div class="toolbar" style="margin-top:.4rem"><button id="undoBtn">Undo</button><button id="redoBtn">Redo</button></div>
+      <div class="field" style="margin-top:.65rem"><label>Filter</label><input id="fishSearch" type="search" placeholder="name / key / parent" /></div>
+      <div id="fishList" class="fish-list"></div>
+      <div class="sticky-actions"><button id="importProjectBtn">Import JSON</button><button id="exportProjectBtn">Project JSON</button></div>
+      <input id="projectFileInput" class="hidden" type="file" accept="application/json,.json" />
+    </div>
+  </aside>
+
+  <main class="panel center-panel preview-wrap">
+    <div class="panel-head"><strong id="selectedFishTitle">Fish Preview</strong><span class="subtle" id="selectedFishSubtitle"></span></div>
+    <div class="preview-stage"><canvas id="fishPreview" width="560" height="330"></canvas><div class="preview-caption" id="previewCaption">Item / held sprite preview</div></div>
+    <div class="tabs" id="tabs">
+      <button data-tab="identity" class="active">Identity</button><button data-tab="appearance">Appearance</button><button data-tab="behavior">Behavior</button><button data-tab="ecology">Ecology & Price</button><button data-tab="test">Minigame Test</button><button data-tab="export">Export</button>
+    </div>
+    <div class="tab-content">
+      <section id="tab-identity" class="tab-page active">
+        <div class="section"><h3>Subspecies identity</h3><div class="grid2">
+          <div class="field"><label>Display name</label><input id="fishLabel" /></div>
+          <div class="field"><label>Game key</label><input id="fishKey" class="mono" /></div>
+          <div class="field"><label>Parent / base species</label><input id="fishParent" placeholder="e.g. sixfin" /></div>
+          <div class="field"><label>Fallback text icon</label><input id="fishIcon" placeholder="🐟" maxlength="8" /></div>
+        </div><div class="field" style="margin-top:.55rem"><label>Notes / description</label><textarea id="fishDescription" rows="4" placeholder="What distinguishes this subspecies?"></textarea></div></div>
+        <div class="notice">A subspecies is authored deliberately: duplicating an entry copies its item/glyph sprite, recolor and masks, minigame silhouette scale, behavior, ecology and price. Nothing here randomizes breeds.</div>
+      </section>
+
+      <section id="tab-appearance" class="tab-page">
+        <div class="section"><h3>Item / glyph artwork</h3><div class="notice">The selected image from <span class="mono">objectsprites</span> is the fish's actual item artwork: it is used for the inventory glyph and for the item sprite shown when the fish is held. Recoloring and Sixfin mask layers apply to this image only.</div><div class="grid2" style="margin-top:.55rem">
+          <div class="field"><label>Base target color</label><input id="baseColor" type="color" /></div>
+          <div class="field"><label>Recolor enabled</label><select id="baseTintEnabled"><option value="true">Yes — brightness-preserving recolor</option><option value="false">No — original item sprite colors</option></select></div>
+        </div><div class="grid2" style="margin-top:.55rem">
+          <div class="field"><label>Held item scale</label><input id="heldScale" type="number" min="0.2" max="4" step="0.05" /></div>
+          <div class="field"><label>Inventory glyph scale</label><input id="glyphScale" type="number" min="0.2" max="4" step="0.05" /></div>
+        </div><div class="grid2" style="margin-top:.55rem">
+          <div class="field"><label>Value boost</label><input id="valueBoost" type="number" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label>Outline threshold</label><input id="outlineThreshold" type="number" min="0" max="0.35" step="0.005" /></div>
+        </div><div class="toolbar" style="margin-top:.55rem"><button id="resetTintBtn">Reset recolor defaults</button><button id="exportPngBtn">Export item sprite PNG</button></div>
+        <div class="section" style="margin-top:.8rem"><h3>Original raw sprite inspector</h3><div class="notice">This shows the entire unmodified source sprite fitted into view before recolor or Sixfin overlays. Click or tap any visible pixel to sample its exact source color, then add that color to the ignore list so it stays untouched during base-sprite recolor.</div><div class="raw-preview-wrap" style="margin-top:.55rem"><div class="raw-stage"><canvas id="rawSpritePreview" width="420" height="300"></canvas><div class="raw-caption" id="rawPreviewCaption">Raw source sprite preview</div></div><div><div class="field"><label>Sampled source color</label><div class="sample-box"><input id="ignoreColorPicker" type="color" value="#cbbba0" /><div id="sampleColorChip" class="sample-chip" aria-hidden="true"></div><input id="sampledColorHex" class="mono" type="text" value="#cbbba0" readonly /><button id="addIgnoreColorBtn" type="button">Ignore This Color</button></div><div id="sampledPixelMeta" class="subtle" style="margin-top:.35rem">Click the raw sprite to sample a source pixel.</div></div><div class="field" style="margin-top:.65rem"><label>Ignore sensitivity <span class="subtle">(<span id="ignoreSensitivityValue">0</span>)</span></label><input id="ignoreSensitivity" type="range" min="0" max="96" step="1" value="0" /><div class="subtle" style="margin-top:.25rem">0 = exact match only. Higher values also preserve nearby source colors.</div></div><div class="toolbar" style="margin-top:.6rem"><button id="clearIgnoreColorsBtn" type="button">Clear Ignored Colors</button></div><div style="margin-top:.6rem"><label>Ignored source colors</label><div id="ignoredColorList" class="swatch-list" style="margin-top:.35rem"></div><div class="subtle" style="margin-top:.35rem">Ignored colors are matched against the raw base sprite before recolor using each entry's sensitivity. Pattern mask overlays are unaffected.</div></div></div></div></div></div>
+
+        <div class="section"><h3>Minigame fish</h3><div class="notice">The fishing minigame never uses the species/item artwork above. Every fish uses Hobunji's shared animated fish silhouette from <span class="mono">assets/hud/fish_silhouette-body.png</span> + whiskers. Subspecies differ visually in the minigame only by scale.</div><div class="field" style="margin-top:.55rem"><label>Minigame silhouette scale</label><input id="minigameScale" type="number" min="0.2" max="4" step="0.05" /></div></div>
+
+        <div class="section"><h3>Fish item sprites</h3><div class="notice">Choose the source image that becomes this fish's inventory/held sprite. The preview above shows the recolored/composited result, not the generic minigame silhouette.</div><div class="toolbar"><button id="refreshAssetsBtn">Fetch / Refresh Repo Assets</button><button id="localSpriteBtn">Use Local Item Sprite</button></div><input id="localSpriteInput" class="hidden" type="file" accept="image/png,image/webp,image/jpeg" />
+          <div class="grid2" style="margin-top:.55rem"><div class="field"><label>Search objectsprites</label><input id="assetSearch" type="search" placeholder="sixfin, eel, ..." /></div><div class="field"><label>View</label><select id="assetFilter"><option value="all">All object sprites (except fish_patterns)</option><option value="likely">Likely fish filenames</option></select></div></div>
+          <div id="assetGrid" class="asset-grid" style="margin-top:.55rem"></div>
+        </div>
+
+        <div class="section"><h3>Sixfin pattern masks</h3><div class="notice">Masks are fetched from <span class="mono">objectsprites/fish_patterns</span> and composite over the item/glyph sprite. They are useful for Sixfin subspecies; masks authored to Sixfin may misalign on unrelated fish artwork.</div>
+          <div class="toolbar" style="margin-top:.55rem"><button id="localPatternsBtn">Add Local Mask(s)</button><button id="clearPatternsBtn">Disable All</button></div><input id="localPatternsInput" class="hidden" type="file" accept="image/png,image/webp" multiple />
+          <div id="patternList" class="pattern-list" style="margin-top:.55rem"></div>
+        </div>
+      </section>
+
+      <section id="tab-behavior" class="tab-page">
+        <div class="section"><h3>Game-facing behavior</h3><div class="grid2">
+          <div class="field"><label>Behavior class</label><select id="fishClass"><option>smooth</option><option>sinker</option><option>floater</option><option>dart</option><option>mixed</option></select></div>
+          <div class="field"><label>Difficulty (0–100)</label><div class="range-row"><input id="difficultyRange" type="range" min="0" max="100" step="1" /><input id="difficulty" type="number" min="0" max="100" step="1" /></div></div>
+        </div><div class="toolbar" style="margin-top:.55rem"><button id="applyClassDefaultsBtn">Apply Current Class Defaults</button></div></div>
+        <div class="section"><h3>Fine behavior overrides — editor/test harness</h3><div class="notice">The current game runtime uses class + difficulty. These extra knobs are exported separately so they can be integrated later without being mistaken for already-live fields.</div>
+          <div id="behaviorFields" style="margin-top:.6rem"></div>
+        </div>
+      </section>
+
+      <section id="tab-ecology" class="tab-page">
+        <div class="section"><h3>Availability</h3><div class="field"><label>Fishing zones</label><div class="grid2" id="zoneChecks">
+          <label><input type="checkbox" value="farm" /> farm</label><label><input type="checkbox" value="town" /> town</label><label><input type="checkbox" value="northernCliffs" /> northernCliffs</label><label><input type="checkbox" value="cloudForest" /> cloudForest</label>
+        </div></div><div class="grid2" style="margin-top:.55rem">
+          <div class="field"><label>Seasons</label><input id="seasons" placeholder="any or comma-separated exact season names" /></div>
+          <div class="field"><label>Time of day</label><select id="timesOfDay" multiple size="5"><option value="any">any</option><option value="dawn">dawn</option><option value="day">day</option><option value="dusk">dusk</option><option value="night">night</option></select></div>
+        </div><div class="grid2" style="margin-top:.55rem"><div class="field"><label>Rarity</label><select id="rarity"><option>common</option><option>uncommon</option><option>rare</option></select></div><div class="field"><label>Sell price</label><input id="sellPrice" type="number" min="0" step="1" /></div></div></div>
+      </section>
+
+      <section id="tab-test" class="tab-page">
+        <div class="test-wrap"><div class="ring-card"><canvas id="testCanvas" width="520" height="520"></canvas></div><div class="test-side">
+          <button id="startTestBtn">Start / Reset Test</button><button id="fireBtn">Ready Harpoon</button>
+          <div><div class="statline"><span>Panic</span><span id="panicText">0 / 100</span></div><div class="meter"><div id="panicBar"></div></div></div>
+          <div class="section" style="margin:0"><div class="statline"><span>Round</span><span id="roundCount">0</span></div><div class="statline"><span>Catches</span><span id="catchCount">0</span></div><div class="statline"><span>Misses</span><span id="missCount">0</span></div><div class="statline"><span>Dive</span><span id="diveState">surface</span></div><div class="statline"><span>Fish velocity</span><span id="velocityReadout">0.000</span></div></div>
+          <div id="testMessage" class="notice">Tap Start, then use Ready Harpoon / Throw Harpoon. On touch devices, you can also tap the ring.</div>
+          <label><input id="showTestDebug" type="checkbox" checked /> Show debug geometry</label>
+        </div></div>
+      </section>
+
+      <section id="tab-export" class="tab-page">
+        <div class="section"><h3>Exports</h3><div class="toolbar"><button id="exportGamePatchBtn">Game Patch JSON</button><button id="exportSelectedBtn">Selected Fish JSON</button><button id="copyIntegrationBtn">Copy Runtime Integration Notes</button></div></div>
+        <div class="section"><h3>Game patch preview</h3><textarea id="exportPreview" rows="18" class="mono" readonly></textarea></div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="panel right-panel">
+    <div class="panel-head"><strong>Inspector & Debug</strong></div>
+    <div class="panel-body scroll">
+      <div class="section"><h3>Asset status</h3><div id="assetSummary" class="subtle">No repository scan yet.</div><div class="toolbar" style="margin-top:.5rem"><button id="copyDiagBtn">Copy Diagnostics</button><button id="clearLogBtn">Clear Log</button></div></div>
+      <div class="section"><h3>Validation</h3><div id="validationBox" class="subtle">No errors.</div></div>
+      <div class="section"><h3>Live selected entry</h3><textarea id="liveJson" rows="13" class="mono" readonly></textarea></div>
+      <div class="section"><h3>Debug log</h3><div id="debugLog" class="debug-log"></div></div>
+    </div>
+  </aside>
+</div>
+</div>
+<script>
+(() => {
+  'use strict';
+
+  // Repository coordinates are used by the one-request Git tree scan and raw asset URLs.
+  const REPO = Object.freeze({ owner:'Oolnokk', repo:'HobunjiHollowUnity', branch:'main', root:'docs/assets/objectsprites', patternsRoot:'docs/assets/objectsprites/fish_patterns' });
+  const GENERIC_FISH_ART = Object.freeze({ bodyPath:'docs/assets/hud/fish_silhouette-body.png', whiskersPath:'docs/assets/hud/fish_silhouette-whiskers.png' });
+  const STORAGE_KEY = 'hobunjiFishEditorProjectV3';
+  // Recolor defaults for the current brightness-preserving fill method.
+  const TINT_DEFAULTS = Object.freeze({ valueBoost:0, outlineThreshold:0.08, preserveNearBlackOutlines:true });
+  // Current Spear Bridge class tables are mirrored here so Apply Class Defaults starts from game values.
+  const CLASS_DEFAULTS = Object.freeze({
+    smooth:{ velocityMin:-0.15, velocityMax:0.15, retargetPerSecond:0.25, smoothness:0.8, diveCadence:0.82, diveRadius:0.78, diveStartIndecision:0.8, diveInspectIndecision:0.78 },
+    sinker:{ velocityMin:0.05, velocityMax:0.55, retargetPerSecond:0.5, smoothness:1.5, diveCadence:0.95, diveRadius:0.92, diveStartIndecision:0.9, diveInspectIndecision:0.9 },
+    floater:{ velocityMin:-0.55, velocityMax:-0.05, retargetPerSecond:0.5, smoothness:1.5, diveCadence:0.95, diveRadius:0.92, diveStartIndecision:1.05, diveInspectIndecision:1.0 },
+    dart:{ velocityMin:-0.55, velocityMax:0.55, retargetPerSecond:1.2, smoothness:4.0, diveCadence:1.28, diveRadius:1.3, diveStartIndecision:1.35, diveInspectIndecision:1.42 },
+    mixed:{ velocityMin:-0.35, velocityMax:0.35, retargetPerSecond:0.55, smoothness:1.4, diveCadence:1.0, diveRadius:1.0, diveStartIndecision:1.0, diveInspectIndecision:1.0 }
+  });
+  // Fine-field metadata builds compact paired slider/number controls and validates editor behavior values.
+  const SPECIES_DEFAULT_IGNORED_SOURCE_COLORS = Object.freeze({
+    gurumahi: Object.freeze([
+      Object.freeze({ hex:'#7d7d76', sensitivity:22 }),
+      Object.freeze({ hex:'#98978e', sensitivity:48 }),
+      Object.freeze({ hex:'#706f69', sensitivity:48 })
+    ]),
+    rockscale: Object.freeze([
+      Object.freeze({ hex:'#7f6e77', sensitivity:7 }),
+      Object.freeze({ hex:'#bababa', sensitivity:45 })
+    ])
+  });
+  const STARTER_FISH_SEEDS = Object.freeze([
+    { key:'gurumahi_tawny', label:'Gurumahi Tawny', parentSpecies:'gurumahi', icon:'🐟', description:'Mammalian fish starter in a tawny river-mammal palette.', appearance:{ baseTintEnabled:true, baseColor:'#9b6f49', minigameScale:1.06, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7d7d76', sensitivity:22 },{ hex:'#98978e', sensitivity:48 },{ hex:'#706f69', sensitivity:48 }] }, behavior:{ fishClass:'smooth', difficulty:34 }, availability:{ zones:['farm','town'], seasons:'spring,summer,fall', timesOfDay:['day','dusk'], rarity:'common' }, economy:{ sellPrice:30 }, starterHints:{ spriteTerms:['gurumahi'], paletteRule:'mammalian' } },
+    { key:'gurumahi_charcoal', label:'Gurumahi Charcoal', parentSpecies:'gurumahi', icon:'🐟', description:'Mammalian fish starter in charcoal and pale gray.', appearance:{ baseTintEnabled:true, baseColor:'#4e4f52', minigameScale:1.12, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7d7d76', sensitivity:22 },{ hex:'#98978e', sensitivity:48 },{ hex:'#706f69', sensitivity:48 }] }, behavior:{ fishClass:'mixed', difficulty:46 }, availability:{ zones:['town','northernCliffs'], seasons:'any', timesOfDay:['dawn','day'], rarity:'uncommon' }, economy:{ sellPrice:42 }, starterHints:{ spriteTerms:['gurumahi'], paletteRule:'mammalian' } },
+    { key:'gurumahi_creamback', label:'Gurumahi Creamback', parentSpecies:'gurumahi', icon:'🐟', description:'Mammalian fish starter with tan and white coat-like coloring.', appearance:{ baseTintEnabled:true, baseColor:'#d7c39d', minigameScale:0.98, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7d7d76', sensitivity:22 },{ hex:'#98978e', sensitivity:48 },{ hex:'#706f69', sensitivity:48 }] }, behavior:{ fishClass:'floater', difficulty:28 }, availability:{ zones:['farm'], seasons:'spring,summer', timesOfDay:['dawn','day'], rarity:'common' }, economy:{ sellPrice:24 }, starterHints:{ spriteTerms:['gurumahi'], paletteRule:'mammalian' } },
+    { key:'gurumahi_snowmuzzle', label:'Gurumahi Snowmuzzle', parentSpecies:'gurumahi', icon:'🐟', description:'Mammalian fish starter in cool white and gray fur-like tones.', appearance:{ baseTintEnabled:true, baseColor:'#c9ced1', minigameScale:1.03, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7d7d76', sensitivity:22 },{ hex:'#98978e', sensitivity:48 },{ hex:'#706f69', sensitivity:48 }] }, behavior:{ fishClass:'sinker', difficulty:39 }, availability:{ zones:['cloudForest','northernCliffs'], seasons:'winter', timesOfDay:['day','night'], rarity:'uncommon' }, economy:{ sellPrice:38 }, starterHints:{ spriteTerms:['gurumahi'], paletteRule:'mammalian' } },
+
+    { key:'rockscale_goldplate', label:'Rockscale Goldplate', parentSpecies:'rockscale', icon:'🐟', description:'Common gold-plated Rockscale starter; its shelled plates reflect the abundant mineral gold.', appearance:{ baseTintEnabled:true, baseColor:'#c9a24f', minigameScale:1.14, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'sinker', difficulty:52 }, availability:{ zones:['town','northernCliffs'], seasons:'any', timesOfDay:['day','dusk'], rarity:'common' }, economy:{ sellPrice:48 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'gold-common' } },
+    { key:'rockscale_giltback', label:'Rockscale Giltback', parentSpecies:'rockscale', icon:'🐟', description:'Another common gold-bearing Rockscale with warmer gilded plates.', appearance:{ baseTintEnabled:true, baseColor:'#e0bc67', minigameScale:1.18, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'mixed', difficulty:56 }, availability:{ zones:['town','cloudForest'], seasons:'any', timesOfDay:['dawn','day'], rarity:'common' }, economy:{ sellPrice:52 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'gold-common' } },
+    { key:'rockscale_silverplate', label:'Rockscale Silverplate', parentSpecies:'rockscale', icon:'🐟', description:'Rockscale starter with silver-rich plated armor and cool argent seams.', appearance:{ baseTintEnabled:true, baseColor:'#b9bec8', minigameScale:1.15, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'smooth', difficulty:50 }, availability:{ zones:['town','northernCliffs'], seasons:'any', timesOfDay:['dawn','day'], rarity:'uncommon' }, economy:{ sellPrice:58 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'silver' } },
+    { key:'rockscale_ironvein', label:'Rockscale Ironvein', parentSpecies:'rockscale', icon:'🐟', description:'Rockscale starter with rust-red ironstone plates.', appearance:{ baseTintEnabled:true, baseColor:'#8e5541', minigameScale:1.17, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'dart', difficulty:63 }, availability:{ zones:['northernCliffs'], seasons:'fall,winter', timesOfDay:['day','dusk'], rarity:'uncommon' }, economy:{ sellPrice:64 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'iron' } },
+    { key:'rockscale_slateplate', label:'Rockscale Slateplate', parentSpecies:'rockscale', icon:'🐟', description:'Rockscale starter with dark slate and basalt armor.', appearance:{ baseTintEnabled:true, baseColor:'#58616c', minigameScale:1.2, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'sinker', difficulty:60 }, availability:{ zones:['cloudForest','northernCliffs'], seasons:'any', timesOfDay:['night'], rarity:'uncommon' }, economy:{ sellPrice:66 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'slate' } },
+    { key:'rockscale_quartzshield', label:'Rockscale Quartzshield', parentSpecies:'rockscale', icon:'🐟', description:'Rockscale starter with pale quartz and calcite plates.', appearance:{ baseTintEnabled:true, baseColor:'#d8d4ca', minigameScale:1.1, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'smooth', difficulty:44 }, availability:{ zones:['farm','cloudForest'], seasons:'spring,winter', timesOfDay:['dawn','day'], rarity:'common' }, economy:{ sellPrice:44 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'quartz' } },
+    { key:'rockscale_copperbloom', label:'Rockscale Copperbloom', parentSpecies:'rockscale', icon:'🐟', description:'Rockscale starter with copper-rich plates and muted oxidized seams.', appearance:{ baseTintEnabled:true, baseColor:'#9a7352', minigameScale:1.16, heldScale:1, glyphScale:1, ignoredSourceColors:[{ hex:'#7f6e77', sensitivity:7 },{ hex:'#bababa', sensitivity:45 }] }, behavior:{ fishClass:'mixed', difficulty:58 }, availability:{ zones:['town','cloudForest'], seasons:'summer,fall', timesOfDay:['day','dusk'], rarity:'uncommon' }, economy:{ sellPrice:61 }, starterHints:{ spriteTerms:['rockscale'], mineralRule:'copper' } },
+
+    { key:'sixfin_honeystripe', label:'Sixfin Honeystripe', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter. The main sprite stays un-recolored; only the base and stripe overlays are tinted.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:0.94, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'mixed', difficulty:36 }, availability:{ zones:['farm','town'], seasons:'spring,summer', timesOfDay:['day'], rarity:'common' }, economy:{ sellPrice:26 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#d7b161'},{slot:'stripes', terms:['sixfin','stripe'], color:'#5c3520'}] } },
+    { key:'sixfin_coalbar', label:'Sixfin Coalbar', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with dark overlay banding over the unchanged base sprite.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:1.02, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'dart', difficulty:49 }, availability:{ zones:['town','northernCliffs'], seasons:'any', timesOfDay:['dusk','night'], rarity:'uncommon' }, economy:{ sellPrice:34 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#7c7366'},{slot:'stripes', terms:['sixfin','stripe'], color:'#2f2f34'}] } },
+    { key:'sixfin_redlash', label:'Sixfin Redlash', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with warm reddish stripes on a muted base overlay.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:0.98, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'mixed', difficulty:41 }, availability:{ zones:['farm','town'], seasons:'summer,fall', timesOfDay:['dawn','day'], rarity:'common' }, economy:{ sellPrice:28 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#c7a794'},{slot:'stripes', terms:['sixfin','stripe'], color:'#8e4938'}] } },
+    { key:'sixfin_mossband', label:'Sixfin Mossband', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with mossy green overlays while the main sprite remains untouched.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:1.01, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'smooth', difficulty:32 }, availability:{ zones:['cloudForest','farm'], seasons:'spring,summer,fall', timesOfDay:['day','dusk'], rarity:'common' }, economy:{ sellPrice:27 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#94a780'},{slot:'stripes', terms:['sixfin','stripe'], color:'#415d3e'}] } },
+    { key:'sixfin_azureband', label:'Sixfin Azureband', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with cool blue overlay combinations.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:1.04, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'floater', difficulty:38 }, availability:{ zones:['cloudForest','town'], seasons:'summer', timesOfDay:['dawn','day'], rarity:'uncommon' }, economy:{ sellPrice:33 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#8ab9c8'},{slot:'stripes', terms:['sixfin','stripe'], color:'#315d78'}] } },
+    { key:'sixfin_sunember', label:'Sixfin Sunember', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with ember stripes on a pale sun-warmed overlay.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:0.97, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'dart', difficulty:54 }, availability:{ zones:['town','cloudForest'], seasons:'summer,fall', timesOfDay:['day','dusk'], rarity:'uncommon' }, economy:{ sellPrice:36 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#dbc890'},{slot:'stripes', terms:['sixfin','stripe'], color:'#b55a2c'}] } },
+    { key:'sixfin_milkstripe', label:'Sixfin Milkstripe', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with light creamy plates and cool charcoal striping overlays.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:0.92, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'smooth', difficulty:29 }, availability:{ zones:['farm'], seasons:'spring,winter', timesOfDay:['dawn','day'], rarity:'common' }, economy:{ sellPrice:23 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#e5dbc6'},{slot:'stripes', terms:['sixfin','stripe'], color:'#545257'}] } },
+    { key:'sixfin_violetreef', label:'Sixfin Violetreef', parentSpecies:'sixfin', icon:'🐟', description:'Sixfin starter with bold violet stripe overlays for a distinct authored variant.', appearance:{ baseTintEnabled:false, baseColor:'#ffffff', minigameScale:1.05, heldScale:1, glyphScale:1 }, behavior:{ fishClass:'mixed', difficulty:47 }, availability:{ zones:['cloudForest','town'], seasons:'any', timesOfDay:['dusk','night'], rarity:'uncommon' }, economy:{ sellPrice:35 }, starterHints:{ spriteTerms:['sixfin'], disableBaseTint:true, patternAssignments:[{slot:'base', terms:['sixfin','base'], color:'#ab99bf'},{slot:'stripes', terms:['sixfin','stripe'], color:'#5a4379'}] } }
+  ]);
+  const BEHAVIOR_META = Object.freeze([
+    ['velocityMin','Target velocity min',-1.5,1.5,0.01],['velocityMax','Target velocity max',-1.5,1.5,0.01],['retargetPerSecond','Retargets / sec',0,4,0.01],['smoothness','Velocity smoothness',0,8,0.05],
+    ['diveCadence','Dive cadence multiplier',0,3,0.01],['diveRadius','Dive pull multiplier',0,2,0.01],['diveStartIndecision','Dive start indecision',0,3,0.01],['diveInspectIndecision','Underwater indecision',0,3,0.01],
+    ['diveTargetPercent','Target submerged %',0,90,1],['colliderRadius','Fish hitbox radius',4,40,1],['panicStep','Panic per miss',1,100,1],['sweepSpeed','Aim sweep deg/sec',20,720,1],['segmentSize','Aim segment degrees',4,90,1]
+  ]);
+  // Browser state owns editable project data, fetched assets, render caches, history, logs and the live test round.
+  const state = {
+    project:{ schema:'hobunji-fish-editor-project-v1', repo:`${REPO.owner}/${REPO.repo}`, updatedAt:new Date().toISOString(), migrations:{}, fish:[] },
+    selectedId:null, assets:{ sprites:[], patterns:[], status:'idle', source:'repo tree' }, localAssets:new Map(), compositeCanvas:null,
+    history:[], historyIndex:-1, applyingHistory:false, saveTimer:null, renderSeq:0, logs:[], test:null, raf:0, lastFrame:0, minigameArt:{body:null,whiskers:null,promise:null}, minigameDeformCanvas:null,
+    rawPreview:{ imageCanvas:null, imageData:null, drawX:0, drawY:0, drawW:0, drawH:0, sourceW:0, sourceH:0, sourceName:'' }
+  };
+  // DOM cache keeps frequently touched controls out of repeated querySelector calls.
+  const el = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id,node]));
+
+  function uid(){ return (crypto.randomUUID ? crypto.randomUUID() : `fish-${Date.now()}-${Math.random().toString(36).slice(2)}`); }
+  function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+  function deepClone(value){ return JSON.parse(JSON.stringify(value)); }
+  function slugify(value){ return String(value||'fish').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'fish'; }
+  function fileName(path){ return String(path||'').split('/').pop() || path || ''; }
+  function rawUrl(path){ return `https://raw.githubusercontent.com/${REPO.owner}/${REPO.repo}/${REPO.branch}/${path}`; }
+  function log(message,type='info'){
+    const line = { at:new Date().toLocaleTimeString(), type, message:String(message) }; state.logs.push(line); if(state.logs.length>300) state.logs.splice(0,state.logs.length-300);
+    renderLog();
+  }
+  function renderLog(){ el.debugLog.innerHTML = state.logs.map(x=>`<div class="log-${x.type}">[${escapeHtml(x.at)}] ${escapeHtml(x.message)}</div>`).join(''); el.debugLog.scrollTop=el.debugLog.scrollHeight; }
+  function escapeHtml(value){ return String(value??'').replace(/[&<>'"]/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c])); }
+  function currentFish(){ return state.project.fish.find(f=>f.id===state.selectedId) || null; }
+  function defaultIgnoredSourceColorsForSpecies(species){ return deepClone(SPECIES_DEFAULT_IGNORED_SOURCE_COLORS[String(species||'').toLowerCase()] || []); }
+  function starterSeedByKey(key){ return STARTER_FISH_SEEDS.find(seed => seed.key===key) || null; }
+  function applyV9StarterMigration(project){
+    if(!project) return false;
+    project.migrations = project.migrations || {};
+    if(project.migrations.v9SpeciesIgnoreDefaultsAndSilverRockscale) return false;
+    let changed=false;
+    for(const fish of project.fish || []){
+      const species=String(fish.parentSpecies||'').toLowerCase();
+      if((species==='gurumahi' || species==='rockscale') && (!Array.isArray(fish.appearance?.ignoredSourceColors) || !fish.appearance.ignoredSourceColors.length)){
+        fish.appearance.ignoredSourceColors = defaultIgnoredSourceColorsForSpecies(species);
+        changed=true;
+      }
+    }
+    if(!(project.fish || []).some(f => f.key==='rockscale_silverplate')){
+      const silverSeed=starterSeedByKey('rockscale_silverplate');
+      if(silverSeed){ project.fish.push(makeFish(silverSeed)); changed=true; }
+    }
+    project.migrations.v9SpeciesIgnoreDefaultsAndSilverRockscale = true;
+    return changed;
+  }
+
+  function makeFish(seed={}){
+    const baseClass = seed.behavior?.fishClass || 'mixed';
+    const defaults = CLASS_DEFAULTS[baseClass] || CLASS_DEFAULTS.mixed;
+    return {
+      id:seed.id || uid(), key:seed.key || 'new_fish', label:seed.label || 'New Fish', parentSpecies:seed.parentSpecies || '', icon:seed.icon || '🐟', description:seed.description || '',
+      appearance:{ itemSpritePath:seed.appearance?.itemSpritePath || seed.appearance?.referenceSpritePath || seed.appearance?.spritePath || '', itemSpriteName:seed.appearance?.itemSpriteName || seed.appearance?.referenceSpriteName || seed.appearance?.spriteName || '', baseTintEnabled:seed.appearance?.baseTintEnabled ?? true, baseColor:seed.appearance?.baseColor || '#7aa58f', minigameScale:Math.max(0.2, Number(seed.appearance?.minigameScale ?? seed.appearance?.silhouetteScale ?? 1)), heldScale:Math.max(0.2, Number(seed.appearance?.heldScale ?? 1)), glyphScale:Math.max(0.2, Number(seed.appearance?.glyphScale ?? 1)), tint:{...TINT_DEFAULTS,...(seed.appearance?.tint||{})}, ignoredSourceColors:(Array.isArray(seed.appearance?.ignoredSourceColors) && seed.appearance.ignoredSourceColors.length ? deepClone(seed.appearance.ignoredSourceColors) : defaultIgnoredSourceColorsForSpecies(seed.parentSpecies)), patterns:deepClone(seed.appearance?.patterns||[]) },
+      behavior:{ fishClass:baseClass, difficulty:clamp(Number(seed.behavior?.difficulty ?? 50),0,100), ...defaults, diveTargetPercent:Number(seed.behavior?.diveTargetPercent ?? 50), colliderRadius:Number(seed.behavior?.colliderRadius ?? 14), panicStep:Number(seed.behavior?.panicStep ?? 34), sweepSpeed:Number(seed.behavior?.sweepSpeed ?? 240), segmentSize:Number(seed.behavior?.segmentSize ?? 18), ...(seed.behavior||{}) },
+      availability:{ zones:deepClone(seed.availability?.zones || ['farm']), seasons:seed.availability?.seasons ?? 'any', timesOfDay:deepClone(seed.availability?.timesOfDay || ['any']), rarity:seed.availability?.rarity || 'common' },
+      economy:{ sellPrice:Math.max(0,Number(seed.economy?.sellPrice ?? 20)) },
+      starterHints:deepClone(seed.starterHints || {})
+    };
+  }
+
+  function makeSeedProjectFish(){ return STARTER_FISH_SEEDS.map(seed=>makeFish(seed)); }
+  function ensureSeedProject(){
+    if(state.project.fish.length) return;
+    state.project.fish = makeSeedProjectFish();
+    state.selectedId=state.project.fish[0]?.id || null;
+  }
+
+  function selectedPattern(fish,path){ return fish.appearance.patterns.find(p=>p.path===path) || null; }
+  function ensurePattern(fish,asset){
+    let pattern=selectedPattern(fish,asset.path); if(!pattern){ pattern={ path:asset.path, name:asset.name, enabled:false, color:'#d9b86c', opacity:1, blend:'source-over' }; fish.appearance.patterns.push(pattern); }
+    return pattern;
+  }
+
+  function pushHistory(reason='edit'){
+    if(state.applyingHistory) return;
+    const snapshot=JSON.stringify({project:state.project,selectedId:state.selectedId});
+    if(state.history[state.historyIndex]===snapshot) return;
+    state.history.splice(state.historyIndex+1); state.history.push(snapshot); if(state.history.length>80) state.history.shift(); state.historyIndex=state.history.length-1;
+    el.undoBtn.disabled=state.historyIndex<=0; el.redoBtn.disabled=true; scheduleSave(); if(reason) el.saveStatus.textContent=`Unsaved change: ${reason}`;
+  }
+  function restoreHistory(index){
+    if(index<0||index>=state.history.length) return; state.applyingHistory=true; const snap=JSON.parse(state.history[index]); state.project=snap.project; state.selectedId=snap.selectedId; state.historyIndex=index; state.applyingHistory=false; renderAll(); scheduleSave();
+    el.undoBtn.disabled=index<=0; el.redoBtn.disabled=index>=state.history.length-1; log(`History restored to ${index+1}/${state.history.length}`,'ok');
+  }
+  function scheduleSave(){ clearTimeout(state.saveTimer); state.saveTimer=setTimeout(()=>{ state.project.updatedAt=new Date().toISOString(); localStorage.setItem(STORAGE_KEY,JSON.stringify(state.project)); el.saveStatus.textContent=`Autosaved ${new Date().toLocaleTimeString()}`; },220); }
+  function normalizeProject(parsed){
+    if(!parsed || parsed.schema!=='hobunji-fish-editor-project-v1' || !Array.isArray(parsed.fish)) return null;
+    const project = { ...parsed, migrations:{ ...(parsed.migrations||{}) }, fish: parsed.fish.map(f=>makeFish(f)) };
+    applyV9StarterMigration(project);
+    return project;
+  }
+  function loadLocalProject(){
+    try{ const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return false; const parsed=normalizeProject(JSON.parse(raw)); if(parsed){ state.project=parsed; state.selectedId=parsed.fish[0]?.id||null; log(`Loaded ${parsed.fish.length} fish from local autosave.`,'ok'); return true; } }catch(err){ log(`Autosave load failed: ${err.message}`,'bad'); } return false;
+  }
+
+  function scoreAssetMatch(asset,terms=[]){
+    const text=`${asset?.path||''} ${asset?.name||''}`.toLowerCase();
+    let score=0;
+    for(const rawTerm of (terms||[])){
+      const term=String(rawTerm||'').trim().toLowerCase();
+      if(!term) continue;
+      if(text.includes(term)) score += text.includes(`/${term}.`) || text.includes(`/${term}_`) || text.includes(`_${term}.`) ? 8 : Math.max(2, Math.min(6, term.length));
+    }
+    return score;
+  }
+  function findBestAssetByTerms(assets,terms=[],excludePaths=null){
+    const blocked = excludePaths || new Set();
+    let best=null,bestScore=-1;
+    for(const asset of assets||[]){
+      if(blocked.has(asset.path)) continue;
+      const score=scoreAssetMatch(asset,terms);
+      if(score>bestScore){ best=asset; bestScore=score; }
+    }
+    if(bestScore>0) return best;
+    return (assets||[]).find(asset=>!blocked.has(asset.path)) || null;
+  }
+  function hydrateStarterFishAssets(){
+    if(!state.assets.sprites.length) return 0;
+    let changed=0;
+    for(const fish of state.project.fish){
+      const hints=fish.starterHints || {};
+      if(hints.disableBaseTint===true && fish.appearance.baseTintEnabled!==false){ fish.appearance.baseTintEnabled=false; changed++; }
+      const spriteMissing=!fish.appearance.itemSpritePath || !state.assets.sprites.some(a=>a.path===fish.appearance.itemSpritePath) && !String(fish.appearance.itemSpritePath).startsWith('local://');
+      if(spriteMissing){
+        const sprite=findBestAssetByTerms(state.assets.sprites, hints.spriteTerms || [fish.parentSpecies, fish.key]);
+        if(sprite && fish.appearance.itemSpritePath!==sprite.path){ fish.appearance.itemSpritePath=sprite.path; fish.appearance.itemSpriteName=sprite.name; changed++; }
+      }
+      if(Array.isArray(hints.patternAssignments) && state.assets.patterns.length){
+        fish.appearance.patterns = Array.isArray(fish.appearance.patterns) ? fish.appearance.patterns : [];
+        const usedPaths=new Set();
+        for(const assignment of hints.patternAssignments){
+          let pattern=fish.appearance.patterns.find(p=>p.slot===assignment.slot);
+          const asset=pattern?.path && state.assets.patterns.find(a=>a.path===pattern.path) ? state.assets.patterns.find(a=>a.path===pattern.path) : findBestAssetByTerms(state.assets.patterns, assignment.terms || [], usedPaths);
+          if(!asset) continue;
+          usedPaths.add(asset.path);
+          if(!pattern){
+            pattern={ slot:assignment.slot, path:asset.path, name:asset.name, enabled:true, color:assignment.color || '#d9b86c', opacity:assignment.opacity ?? 1, blend:assignment.blend || 'source-over' };
+            fish.appearance.patterns.push(pattern);
+            changed++;
+          }else{
+            if(pattern.path!==asset.path || pattern.name!==asset.name || pattern.enabled!==true || pattern.color!== (assignment.color || pattern.color) || Number(pattern.opacity)!==Number(assignment.opacity ?? pattern.opacity ?? 1)){
+              pattern.path=asset.path; pattern.name=asset.name; pattern.enabled=true; pattern.color=assignment.color || pattern.color || '#d9b86c'; pattern.opacity=assignment.opacity ?? (pattern.opacity ?? 1); pattern.blend=assignment.blend || pattern.blend || 'source-over';
+              changed++;
+            }
+          }
+        }
+      }
+    }
+    if(changed){ state.project.updatedAt=new Date().toISOString(); scheduleSave(); }
+    return changed;
+  }
+
+  async function fetchRepoAssets(){
+    state.assets.status='loading'; renderRepoStatus(); log('Fetching GitHub recursive tree for objectsprites + fish_patterns...');
+    try{
+      const api=`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/git/trees/${encodeURIComponent(REPO.branch)}?recursive=1`;
+      const response=await fetch(api,{headers:{Accept:'application/vnd.github+json'}}); if(!response.ok) throw new Error(`GitHub API ${response.status} ${response.statusText}`);
+      const payload=await response.json(); if(!Array.isArray(payload.tree)) throw new Error('GitHub tree response did not contain tree[].');
+      const imageExt=/\.(png|webp|jpg|jpeg)$/i;
+      const sprites=payload.tree.filter(x=>x.type==='blob'&&imageExt.test(x.path||'')&&String(x.path).startsWith(REPO.root+'/')&&!String(x.path).startsWith(REPO.patternsRoot+'/')).map(x=>({path:x.path,name:fileName(x.path),url:rawUrl(x.path),kind:'repo'}));
+      const patterns=payload.tree.filter(x=>x.type==='blob'&&imageExt.test(x.path||'')&&String(x.path).startsWith(REPO.patternsRoot+'/')).map(x=>({path:x.path,name:fileName(x.path),url:rawUrl(x.path),kind:'repo'}));
+      state.assets.sprites=sprites.sort((a,b)=>a.name.localeCompare(b.name)); state.assets.patterns=patterns.sort((a,b)=>a.name.localeCompare(b.name)); state.assets.status='ok';
+      log(`Repo asset scan complete: ${sprites.length} object sprites, ${patterns.length} fish pattern masks.`,'ok');
+      const hydrated=hydrateStarterFishAssets();
+      if(hydrated) log(`Starter catalog hydrated from repo assets: ${hydrated} seeded appearance assignments updated.`,'ok');
+      renderRepoStatus(); renderAssetBrowser(); renderPatternList(); renderInspector(); if(hydrated) renderAll();
+    }catch(err){ state.assets.status='error'; log(`Repo asset scan failed: ${err.message}. Local sprite/mask imports still work.`,'bad'); renderRepoStatus(); renderInspector(); }
+  }
+  function renderRepoStatus(){
+    const dot=el.repoStatus.querySelector('.status-dot'); dot.className='status-dot'+(state.assets.status==='ok'?' ok':state.assets.status==='error'?' bad':'');
+    el.repoStatus.childNodes[1].nodeValue = state.assets.status==='ok' ? ` ${state.assets.sprites.length} sprites / ${state.assets.patterns.length} masks` : state.assets.status==='loading' ? ' Loading repo assets…' : state.assets.status==='error' ? ' Repo fetch failed' : ' Repo assets not loaded';
+  }
+
+  function addLocalImage(file,kind){
+    const key=`local://${kind}/${uid()}/${file.name}`; const url=URL.createObjectURL(file); const asset={path:key,name:file.name,url,kind:'local'}; state.localAssets.set(key,asset);
+    if(kind==='sprite') state.assets.sprites.unshift(asset); else state.assets.patterns.unshift(asset); log(`Added local ${kind}: ${file.name}`,'ok'); return asset;
+  }
+
+  function assetForPath(path){ if(!path) return null; if(state.localAssets.has(path)) return state.localAssets.get(path); return [...state.assets.sprites,...state.assets.patterns].find(a=>a.path===path) || {path,name:fileName(path),url:path.startsWith('http')?path:rawUrl(path),kind:'repo'}; }
+  function loadImage(url){ return new Promise((resolve,reject)=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=()=>reject(new Error(`Failed image load: ${url}`)); img.src=url; }); }
+  function hexToRgb(hex){ const safe=/^#[0-9a-f]{6}$/i.test(hex)?hex:'#ffffff'; const n=parseInt(safe.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+  function rgbToHsl(r,g,b){
+    const rn=r/255,gn=g/255,bn=b/255,max=Math.max(rn,gn,bn),min=Math.min(rn,gn,bn),l=(max+min)/2;
+    if(max===min) return [0,0,l];
+    const d=max-min;
+    const s=l>.5 ? d/(2-max-min) : d/(max+min);
+    let h;
+    switch(max){
+      case rn: h=(gn-bn)/d + (gn<bn?6:0); break;
+      case gn: h=(bn-rn)/d + 2; break;
+      default: h=(rn-gn)/d + 4; break;
+    }
+    h/=6;
+    return [h,s,l];
+  }
+  function hueToRgb(p,q,t){
+    if(t<0) t+=1;
+    if(t>1) t-=1;
+    if(t<1/6) return p + (q-p)*6*t;
+    if(t<1/2) return q;
+    if(t<2/3) return p + (q-p)*(2/3-t)*6;
+    return p;
+  }
+  function hslToRgb(h,s,l){
+    if(s===0){ const v=Math.round(l*255); return [v,v,v]; }
+    const q=l<.5 ? l*(1+s) : l+s-l*s;
+    const p=2*l-q;
+    return [
+      Math.round(hueToRgb(p,q,h+1/3)*255),
+      Math.round(hueToRgb(p,q,h)*255),
+      Math.round(hueToRgb(p,q,h-1/3)*255)
+    ];
+  }
+  function rgbToHex(r,g,b){ return `#${[r,g,b].map(v=>clamp(Number(v)||0,0,255).toString(16).padStart(2,'0')).join('')}`; }
+  function normalizeHexColor(value){ const safe=String(value||'').trim().toLowerCase(); return /^#[0-9a-f]{6}$/.test(safe) ? safe : null; }
+  function normalizeIgnoredColorEntry(entry){
+    if(typeof entry==='string') return { hex: normalizeHexColor(entry), sensitivity: 0 };
+    return { hex: normalizeHexColor(entry?.hex), sensitivity: clamp(Number(entry?.sensitivity)||0,0,96) };
+  }
+  function colorDistanceRgb(r1,g1,b1,r2,g2,b2){
+    const dr=r1-r2,dg=g1-g2,db=b1-b2;
+    return Math.sqrt(dr*dr + dg*dg + db*db);
+  }
+  function shouldIgnoreSourceColor(r,g,b,ignoredColors=[]){
+    if(!Array.isArray(ignoredColors) || !ignoredColors.length) return false;
+    return ignoredColors.some(rawEntry => {
+      const entry=normalizeIgnoredColorEntry(rawEntry);
+      if(!entry.hex) return false;
+      const [er,eg,eb]=hexToRgb(entry.hex);
+      return colorDistanceRgb(r,g,b,er,eg,eb) <= entry.sensitivity;
+    });
+  }
+  function recolorImageData(data,color,tint,ignoredColors=[]){
+    const px=data.data,[tr,tg,tb]=hexToRgb(color),[targetH,targetS]=rgbToHsl(tr,tg,tb),threshold=Number(tint.outlineThreshold)||0,valueBoost=clamp(Number(tint.valueBoost)||0,0,1);
+    for(let i=0;i<px.length;i+=4){
+      if(px[i+3]===0) continue;
+      const r=px[i],g=px[i+1],b=px[i+2];
+      if(shouldIgnoreSourceColor(r,g,b,ignoredColors)) continue;
+      const [, , lightness] = rgbToHsl(r,g,b);
+      if(tint.preserveNearBlackOutlines!==false&&lightness<=threshold) continue;
+      const boostedLightness=clamp(lightness * (1 + valueBoost), 0, 1);
+      const [nr,ng,nb]=hslToRgb(targetH,targetS,boostedLightness);
+      px[i]=nr; px[i+1]=ng; px[i+2]=nb;
+    }
+  }
+  async function recoloredCanvas(asset,color,tint,enabled=true,ignoredColors=[]){
+    const img=await loadImage(asset.url); const canvas=document.createElement('canvas'); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight; const ctx=canvas.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0); if(enabled){ const data=ctx.getImageData(0,0,canvas.width,canvas.height); recolorImageData(data,color,tint,ignoredColors); ctx.putImageData(data,0,0); } return canvas;
+  }
+  function genericArtAsset(path){ return { path, name:fileName(path), url:rawUrl(path), kind:'generic' }; }
+  function makeFallbackFishCanvas(fish){
+    const canvas=document.createElement('canvas'); canvas.width=96; canvas.height=60; const ctx=canvas.getContext('2d');
+    const color=fish?.appearance?.baseColor || '#7aa58f';
+    ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle=color; ctx.strokeStyle='#0d1311'; ctx.lineWidth=4; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(16,31); ctx.quadraticCurveTo(24,16,48,15); ctx.quadraticCurveTo(74,14,82,28); ctx.quadraticCurveTo(74,44,48,45); ctx.quadraticCurveTo(24,44,16,31);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(16,31); ctx.lineTo(4,21); ctx.lineTo(7,31); ctx.lineTo(4,41); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(46,18); ctx.lineTo(56,6); ctx.lineTo(60,19); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(44,42); ctx.lineTo(56,54); ctx.lineTo(60,40); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#0d1311'; ctx.beginPath(); ctx.arc(63,26,3.5,0,Math.PI*2); ctx.fill();
+    return canvas;
+  }
+  async function composeSelectedFish(){
+    const fish=currentFish(); if(!fish){ state.compositeCanvas=null; renderPreviewCanvas(null); return null; }
+    const seq=++state.renderSeq;
+    const itemAsset=assetForPath(fish.appearance.itemSpritePath);
+    if(!itemAsset){ state.compositeCanvas=makeFallbackFishCanvas(fish); renderPreviewCanvas(state.compositeCanvas); return state.compositeCanvas; }
+    try{
+      const base=await recoloredCanvas(itemAsset,fish.appearance.baseColor,fish.appearance.tint,fish.appearance.baseTintEnabled,fish.appearance.ignoredSourceColors||[]);
+      if(seq!==state.renderSeq) return null;
+      const composite=document.createElement('canvas'); composite.width=base.width; composite.height=base.height; const ctx=composite.getContext('2d'); ctx.drawImage(base,0,0);
+      for(const pattern of fish.appearance.patterns.filter(p=>p.enabled)){
+        const asset=assetForPath(pattern.path); if(!asset) continue;
+        try{ const layer=await recoloredCanvas(asset,pattern.color,fish.appearance.tint,true); ctx.save(); ctx.globalAlpha=clamp(Number(pattern.opacity)||0,0,1); ctx.globalCompositeOperation=pattern.blend||'source-over'; ctx.drawImage(layer,0,0,composite.width,composite.height); ctx.restore(); }
+        catch(err){ log(`Pattern skipped (${pattern.name||pattern.path}): ${err.message}`,'bad'); }
+      }
+      state.compositeCanvas=composite; renderPreviewCanvas(composite); return composite;
+    }catch(err){ state.compositeCanvas=makeFallbackFishCanvas(fish); renderPreviewCanvas(state.compositeCanvas); log(`Item sprite render failed: ${err.message}. Using the built-in placeholder fish.`, 'bad'); return state.compositeCanvas; }
+  }
+  function renderPreviewCanvas(source){
+    const canvas=el.fishPreview,ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save();
+    const fish=currentFish();
+    if(!source){ ctx.fillStyle='#a9b6ad'; ctx.textAlign='center'; ctx.font='16px system-ui'; ctx.fillText('Select a fish item sprite',canvas.width/2,canvas.height/2); el.previewCaption.textContent='No item sprite selected'; ctx.restore(); return; }
+    const scale=Math.min((canvas.width-60)/source.width,(canvas.height-60)/source.height,6); const w=source.width*scale,h=source.height*scale; ctx.imageSmoothingEnabled=true; ctx.drawImage(source,(canvas.width-w)/2,(canvas.height-h)/2,w,h); ctx.restore();
+    const name=fish?.appearance?.itemSpriteName || 'local / placeholder';
+    el.previewCaption.textContent=`Item/glyph art • ${name} • held ${(fish?.appearance?.heldScale ?? 1).toFixed(2)}× • glyph ${(fish?.appearance?.glyphScale ?? 1).toFixed(2)}× • minigame silhouette ${(fish?.appearance?.minigameScale ?? 1).toFixed(2)}×`;
+  }
+  async function renderRawSpriteInspector(){
+    const canvas=el.rawSpritePreview,ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    state.rawPreview.imageCanvas=null; state.rawPreview.imageData=null; state.rawPreview.drawX=0; state.rawPreview.drawY=0; state.rawPreview.drawW=0; state.rawPreview.drawH=0; state.rawPreview.sourceW=0; state.rawPreview.sourceH=0;
+    const fish=currentFish(); const asset=assetForPath(fish?.appearance?.itemSpritePath);
+    if(!asset){ ctx.fillStyle='#a9b6ad'; ctx.textAlign='center'; ctx.font='15px system-ui'; ctx.fillText('Select a fish item sprite',canvas.width/2,canvas.height/2); el.rawPreviewCaption.textContent='No raw source sprite selected'; return; }
+    try{
+      const img=await loadImage(asset.url);
+      const src=document.createElement('canvas'); src.width=img.naturalWidth; src.height=img.naturalHeight; const sctx=src.getContext('2d',{willReadFrequently:true}); sctx.drawImage(img,0,0);
+      state.rawPreview.imageCanvas=src; state.rawPreview.imageData=sctx.getImageData(0,0,src.width,src.height); state.rawPreview.sourceW=src.width; state.rawPreview.sourceH=src.height; state.rawPreview.sourceName=asset.name;
+      const fitScale=Math.min((canvas.width-20)/src.width,(canvas.height-20)/src.height);
+      const scale=Math.max(0.01, fitScale);
+      const drawW=src.width*scale, drawH=src.height*scale, drawX=(canvas.width-drawW)/2, drawY=(canvas.height-drawH)/2;
+      state.rawPreview.drawX=drawX; state.rawPreview.drawY=drawY; state.rawPreview.drawW=drawW; state.rawPreview.drawH=drawH;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(src,drawX,drawY,drawW,drawH);
+      el.rawPreviewCaption.textContent=`Raw source sprite • ${asset.name} • ${src.width}×${src.height} • fit ${Math.round(scale*100)}%`;
+    }catch(err){ ctx.fillStyle='#e6b0a7'; ctx.textAlign='center'; ctx.font='14px system-ui'; ctx.fillText('Raw source preview failed to load',canvas.width/2,canvas.height/2); el.rawPreviewCaption.textContent='Raw source preview unavailable'; log(`Raw sprite preview failed: ${err.message}`,'bad'); }
+  }
+  function renderIgnoredColorEditor(fish){
+    const list=Array.isArray(fish?.appearance?.ignoredSourceColors) ? fish.appearance.ignoredSourceColors : [];
+    el.sampleColorChip.style.background=el.ignoreColorPicker.value;
+    el.ignoreSensitivityValue.textContent=String(clamp(Number(el.ignoreSensitivity.value)||0,0,96));
+    el.ignoredColorList.innerHTML=list.length ? list.map((entry,idx)=>{ const normalized=normalizeIgnoredColorEntry(entry); const hex=normalized.hex || '#000000'; const sensitivity=normalized.sensitivity; return `<div class="swatch-chip" data-ignore-index="${idx}"><div class="chip-color" style="background:${escapeHtml(hex)}"></div><span class="mono">${escapeHtml(hex)}</span><span class="subtle">±${escapeHtml(String(sensitivity))}</span><button type="button" class="remove-ignore-btn">×</button></div>`; }).join('') : '<div class="subtle">No source colors are currently ignored.</div>';
+    el.ignoredColorList.querySelectorAll('[data-ignore-index]').forEach(row=>row.querySelector('.remove-ignore-btn').addEventListener('click',()=>{ const f=currentFish(); if(!f) return; f.appearance.ignoredSourceColors.splice(Number(row.dataset.ignoreIndex),1); pushHistory('remove ignored source color'); renderIgnoredColorEditor(f); composeSelectedFish(); renderInspector(); }));
+  }
+  function sampleRawSpriteAtClientPoint(clientX,clientY){
+    const rp=state.rawPreview, canvas=el.rawSpritePreview;
+    if(!rp.imageData || !rp.drawW || !rp.drawH) return;
+    const rect=canvas.getBoundingClientRect();
+    const localX=(clientX-rect.left)*(canvas.width/rect.width), localY=(clientY-rect.top)*(canvas.height/rect.height);
+    if(localX<rp.drawX || localY<rp.drawY || localX>=rp.drawX+rp.drawW || localY>=rp.drawY+rp.drawH) return;
+    const sx=clamp(Math.floor((localX-rp.drawX)/(rp.drawW/rp.sourceW)),0,rp.sourceW-1), sy=clamp(Math.floor((localY-rp.drawY)/(rp.drawH/rp.sourceH)),0,rp.sourceH-1);
+    const i=(sy*rp.sourceW+sx)*4, data=rp.imageData.data, a=data[i+3];
+    if(a===0){ el.sampledPixelMeta.textContent=`Sampled transparent pixel at (${sx}, ${sy}).`; return; }
+    const hex=rgbToHex(data[i],data[i+1],data[i+2]);
+    el.ignoreColorPicker.value=hex; el.sampledColorHex.value=hex; el.sampleColorChip.style.background=hex; el.sampledPixelMeta.textContent=`Sampled ${hex} at raw pixel (${sx}, ${sy}) in ${rp.sourceName||'sprite'} • current sensitivity ±${clamp(Number(el.ignoreSensitivity.value)||0,0,96)}.`;
+  }
+
+  function renderFishList(){
+    const query=el.fishSearch.value.trim().toLowerCase(); const fish=state.project.fish.filter(f=>!query||`${f.label} ${f.key} ${f.parentSpecies}`.toLowerCase().includes(query));
+    el.fishList.innerHTML=fish.map(f=>`<div class="fish-card ${f.id===state.selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><strong>${escapeHtml(f.label)}</strong><small>${escapeHtml(f.key)}${f.parentSpecies?` · parent ${escapeHtml(f.parentSpecies)}`:''}</small></div>`).join('') || '<div class="subtle">No matches.</div>';
+    el.fishList.querySelectorAll('[data-id]').forEach(card=>card.addEventListener('click',()=>{ state.selectedId=card.dataset.id; renderAll(); }));
+  }
+  function renderIdentity(fish){ el.fishLabel.value=fish.label; el.fishKey.value=fish.key; el.fishParent.value=fish.parentSpecies; el.fishIcon.value=fish.icon; el.fishDescription.value=fish.description; }
+  function renderAppearance(fish){ const a=fish.appearance; el.baseColor.value=a.baseColor; el.baseTintEnabled.value=String(a.baseTintEnabled); el.minigameScale.value=a.minigameScale; el.heldScale.value=a.heldScale; el.glyphScale.value=a.glyphScale; el.valueBoost.value=Number(a.tint.valueBoost)||0; el.outlineThreshold.value=a.tint.outlineThreshold; if(!normalizeHexColor(el.ignoreColorPicker.value)) el.ignoreColorPicker.value='#cbbba0'; if(Number.isNaN(Number(el.ignoreSensitivity.value))) el.ignoreSensitivity.value='0'; el.ignoreSensitivityValue.textContent=String(clamp(Number(el.ignoreSensitivity.value)||0,0,96)); el.sampledColorHex.value=normalizeHexColor(el.ignoreColorPicker.value)||'#cbbba0'; el.sampleColorChip.style.background=el.ignoreColorPicker.value; renderAssetBrowser(); renderPatternList(); renderIgnoredColorEditor(fish); renderRawSpriteInspector(); }
+  function renderBehavior(fish){ const b=fish.behavior; el.fishClass.value=b.fishClass; el.difficulty.value=b.difficulty; el.difficultyRange.value=b.difficulty; BEHAVIOR_META.forEach(([key])=>{ const range=document.getElementById(`behavior-${key}-range`),num=document.getElementById(`behavior-${key}`); if(range)range.value=b[key]; if(num)num.value=b[key]; }); }
+  function renderEcology(fish){ document.querySelectorAll('#zoneChecks input').forEach(box=>box.checked=fish.availability.zones.includes(box.value)); el.seasons.value=Array.isArray(fish.availability.seasons)?fish.availability.seasons.join(', '):fish.availability.seasons; [...el.timesOfDay.options].forEach(o=>o.selected=fish.availability.timesOfDay.includes(o.value)); el.rarity.value=fish.availability.rarity; el.sellPrice.value=fish.economy.sellPrice; }
+  function renderInspector(){
+    const fish=currentFish(); el.liveJson.value=fish?JSON.stringify(fish,null,2):''; const problems=validateProject(); el.validationBox.innerHTML=problems.length?problems.map(x=>`<div class="notice danger" style="margin-bottom:.35rem">${escapeHtml(x)}</div>`).join(''):'<div class="notice good">No blocking validation errors.</div>';
+    const itemName = fish?.appearance?.itemSpriteName || 'none selected'; el.assetSummary.innerHTML=`Status: <b>${escapeHtml(state.assets.status)}</b><br>Object sprites: ${state.assets.sprites.length}<br>Pattern masks: ${state.assets.patterns.length}<br>Selected item/glyph sprite: ${escapeHtml(itemName)}<br>Ignored base-source colors: ${fish?.appearance?.ignoredSourceColors?.length || 0}<br>Minigame silhouette scale: ${(fish?.appearance?.minigameScale ?? 1).toFixed(2)}×<br>Local temporary assets: ${state.localAssets.size}<br><span class="subtle">Item artwork comes from objectsprites; Spear Bridge always renders the shared animated HUD fish silhouette.</span>`;
+    el.exportPreview.value=JSON.stringify(buildGamePatch(),null,2);
+  }
+  function renderAll(){
+    ensureSeedProject(); const fish=currentFish() || state.project.fish[0]; if(fish&&!state.selectedId) state.selectedId=fish.id; renderFishList(); if(!fish)return; el.selectedFishTitle.textContent=fish.label; el.selectedFishSubtitle.textContent=` · ${fish.key}`; renderIdentity(fish); renderAppearance(fish); renderBehavior(fish); renderEcology(fish); renderInspector(); composeSelectedFish();
+  }
+
+  function renderAssetBrowser(){
+    const fish=currentFish(),search=el.assetSearch.value.trim().toLowerCase(),likely=/fish|sixfin|fin|eel|ray|shark|trout|carp|bass|salmon|pike|catfish|gill|perch|cod/i;
+    let items=state.assets.sprites.filter(a=>(!search||a.name.toLowerCase().includes(search))&&(el.assetFilter.value!=='likely'||likely.test(a.name))).slice(0,180);
+    el.assetGrid.innerHTML=items.map(a=>`<div class="asset ${fish?.appearance.itemSpritePath===a.path?'selected':''}" data-path="${escapeHtml(a.path)}" title="${escapeHtml(a.path)}"><img loading="lazy" crossorigin="anonymous" src="${escapeHtml(a.url)}" alt=""><span>${escapeHtml(a.name)}</span></div>`).join('') || `<div class="subtle">${state.assets.status==='idle'?'Fetch repo assets to populate this browser.':'No matching sprites.'}</div>`;
+    el.assetGrid.querySelectorAll('[data-path]').forEach(card=>card.addEventListener('click',()=>{ const f=currentFish(); if(!f)return; const asset=assetForPath(card.dataset.path); f.appearance.itemSpritePath=asset.path; f.appearance.itemSpriteName=asset.name; if(!f.parentSpecies)f.parentSpecies=slugify(asset.name.replace(/\.[^.]+$/,'')); pushHistory(`item sprite → ${asset.name}`); renderAll(); }));
+  }
+  function renderPatternList(){
+    const fish=currentFish(); if(!fish){el.patternList.innerHTML='';return;} const assets=state.assets.patterns.slice(0,220);
+    el.patternList.innerHTML=assets.map(a=>{ const p=selectedPattern(fish,a.path); return `<div class="pattern-row" data-path="${escapeHtml(a.path)}"><input class="pat-enable" type="checkbox" ${p?.enabled?'checked':''}><div class="pattern-name" title="${escapeHtml(a.path)}">${escapeHtml(a.name)}</div><input class="pat-color" type="color" value="${escapeHtml(p?.color||'#d9b86c')}"><input class="pat-opacity" type="number" min="0" max="1" step="0.05" value="${escapeHtml(p?.opacity ?? 1)}"></div>`; }).join('') || `<div class="subtle">${state.assets.status==='idle'?'Fetch repo assets to discover fish_patterns.':'No pattern masks found.'}</div>`;
+    el.patternList.querySelectorAll('.pattern-row').forEach(row=>{ const asset=assetForPath(row.dataset.path); const enable=row.querySelector('.pat-enable'),color=row.querySelector('.pat-color'),opacity=row.querySelector('.pat-opacity');
+      enable.addEventListener('change',()=>{ const p=ensurePattern(fish,asset);p.enabled=enable.checked;p.color=color.value;p.opacity=Number(opacity.value);pushHistory(`pattern ${p.name} ${p.enabled?'on':'off'}`);composeSelectedFish();renderInspector(); });
+      color.addEventListener('input',()=>{ const p=ensurePattern(fish,asset);p.color=color.value; if(enable.checked)p.enabled=true; pushHistory(`pattern color ${p.name}`); composeSelectedFish();renderInspector(); });
+      opacity.addEventListener('change',()=>{ const p=ensurePattern(fish,asset);p.opacity=clamp(Number(opacity.value),0,1);pushHistory(`pattern opacity ${p.name}`);composeSelectedFish();renderInspector(); });
+    });
+  }
+
+  function buildBehaviorControls(){
+    el.behaviorFields.innerHTML=BEHAVIOR_META.map(([key,label,min,max,step])=>`<div class="field" style="margin-bottom:.55rem"><label>${escapeHtml(label)}</label><div class="range-row"><input id="behavior-${key}-range" type="range" min="${min}" max="${max}" step="${step}"><input id="behavior-${key}" type="number" min="${min}" max="${max}" step="${step}"></div></div>`).join('');
+    BEHAVIOR_META.forEach(([key,,min,max])=>{ const range=document.getElementById(`behavior-${key}-range`),num=document.getElementById(`behavior-${key}`); const apply=value=>{const fish=currentFish();if(!fish)return;const v=clamp(Number(value),min,max);fish.behavior[key]=v;range.value=v;num.value=v;pushHistory(`behavior ${key}`);renderInspector();}; range.addEventListener('input',()=>apply(range.value));num.addEventListener('change',()=>apply(num.value)); });
+  }
+  function applyClassDefaults(){ const fish=currentFish(); if(!fish)return; const d=CLASS_DEFAULTS[fish.behavior.fishClass]||CLASS_DEFAULTS.mixed; Object.assign(fish.behavior,d); pushHistory(`class defaults: ${fish.behavior.fishClass}`); renderBehavior(fish); renderInspector(); resetTest(); }
+
+  function validateProject(){
+    const errors=[],keys=new Set(); state.project.fish.forEach((f,i)=>{ const prefix=`${i+1}. ${f.label||'(unnamed)'}`; if(!f.key)errors.push(`${prefix}: missing game key.`); else if(keys.has(f.key))errors.push(`${prefix}: duplicate key “${f.key}”.`); else keys.add(f.key); if(!f.label)errors.push(`${prefix}: missing label.`); if(f.appearance.minigameScale<=0||f.appearance.heldScale<=0||f.appearance.glyphScale<=0)errors.push(`${prefix}: item/glyph/minigame scales must be greater than zero.`); if(!f.appearance.itemSpritePath)errors.push(`${prefix}: no item/glyph sprite selected.`); if(f.behavior.velocityMin>f.behavior.velocityMax)errors.push(`${prefix}: velocity min is greater than max.`); if(!f.availability.zones.length)errors.push(`${prefix}: no fishing zone enabled.`); if(f.economy.sellPrice<0)errors.push(`${prefix}: negative sell price.`); }); return errors;
+  }
+  function parseSeasons(value){ const text=String(value||'').trim(); if(!text||text.toLowerCase()==='any') return 'any'; return text.split(',').map(x=>x.trim()).filter(Boolean); }
+  function buildGamePatch(){
+    const fishDefsByZone={farm:[],town:[],northernCliffs:[],cloudForest:[]},itemDefsPatch={},appearanceDefs={},behaviorOverrides={};
+    for(const f of state.project.fish){ const def={ key:f.key,label:f.label,icon:f.icon||'🐟',rarity:f.availability.rarity,seasons:f.availability.seasons,timesOfDay:f.availability.timesOfDay,difficulty:f.behavior.difficulty,fishClass:f.behavior.fishClass }; for(const zone of f.availability.zones){ (fishDefsByZone[zone] ||= []).push(deepClone(def)); }
+      itemDefsPatch[f.key]={ label:f.label, icon:f.icon||'🐟', sellPrice:f.economy.sellPrice };
+      appearanceDefs[f.key]={ parentSpecies:f.parentSpecies||null, item:{ renderMode:'authoredObjectSprite', spritePath:f.appearance.itemSpritePath || null, spriteName:f.appearance.itemSpriteName || null, heldScale:f.appearance.heldScale, glyphScale:f.appearance.glyphScale, baseTintEnabled:f.appearance.baseTintEnabled, baseColor:f.appearance.baseColor, tint:deepClone(f.appearance.tint), ignoredSourceColors:deepClone(f.appearance.ignoredSourceColors||[]), patterns:f.appearance.patterns.filter(p=>p.enabled).map(p=>deepClone(p)) }, minigame:{ renderMode:'genericAnimatedFishSilhouette', silhouetteAssetPaths:deepClone(GENERIC_FISH_ART), scale:f.appearance.minigameScale } };
+      const custom=deepClone(f.behavior); delete custom.fishClass; delete custom.difficulty; behaviorOverrides[f.key]=custom;
+    }
+    return { schema:'hobunji-fish-catalog-patch-v1', generatedAt:new Date().toISOString(), compatibility:{ currentRuntimeReads:['key','label','icon','rarity','seasons','timesOfDay','difficulty','fishClass'], currentRuntimeSellPriceSource:'ITEM_DEFS[key].sellPrice', note:'appearanceDefs and behaviorOverrides require runtime integration. Item/glyph/held rendering uses each fish object sprite; Spear Bridge uses the shared animated HUD silhouette with a per-fish scale.' }, fishDefsByZone,itemDefsPatch,appearanceDefs,behaviorOverrides };
+  }
+
+  function downloadText(filename,text,type='application/json'){ const blob=new Blob([text],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000); log(`Downloaded ${filename}`,'ok'); }
+  async function copyText(text){ if(navigator.clipboard?.writeText){ try{ await navigator.clipboard.writeText(text); return true; }catch(err){ log(`Clipboard API unavailable: ${err.message}; trying fallback.`, 'info'); } } const area=document.createElement('textarea'); area.value=text; area.style.position='fixed'; area.style.opacity='0'; document.body.appendChild(area); area.focus(); area.select(); const ok=document.execCommand('copy'); area.remove(); if(!ok) throw new Error('Browser blocked clipboard access.'); return true; }
+  function downloadCanvas(filename,canvas){ canvas.toBlob(blob=>{ if(!blob){log('PNG export failed: canvas.toBlob returned null.','bad');return;}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);log(`Downloaded ${filename}`,'ok'); },'image/png'); }
+  function integrationNotes(){ return `Hobunji Fish Editor integration notes\n\n1. fishDefsByZone matches the current fishing picker shape: key, label, icon, rarity, seasons, timesOfDay, difficulty, fishClass.\n2. itemDefsPatch is intended to merge into the game's ITEM_DEFS so sellPrice remains the canonical economy value.\n3. appearanceDefs now uses a brightness-preserving fill rule for recolor: it applies the target hue/saturation while preserving the source lightness, so white stays white and black stays black. tint.valueBoost brightens the result using a multiplicative lightness boost, which preserves the shading relationship better than pulling all tones toward white. appearanceDefs.item.ignoredSourceColors can also preserve exact raw source colors, or near-matching ones via per-entry sensitivity, such as the bone-like colors in Gurumahi sprites. Fish still need a runtime compositor before these appearance fields become live in-game.\n4. behaviorOverrides are intentionally NOT folded into FISH_DEFS compatibility claims. The current Spear Bridge class tables live in docs/js/fishing-minigame.js. To make overrides live, resolve behavior values from behaviorOverrides[fish.key] first, then fall back to the class tables.\n5. Sixfin pattern assets are authored from docs/assets/objectsprites/fish_patterns. For Sixfins, keep the main sprite itself unchanged and tint the base/stripe overlay masks to create authored varieties.\n`;
+  }
+
+  function newFish(){ const fish=makeFish(); state.project.fish.push(fish);state.selectedId=fish.id;pushHistory('new fish');renderAll(); }
+  function duplicateFish(){ const source=currentFish();if(!source)return;const copy=makeFish(deepClone(source));copy.id=uid();copy.label=`${source.label} Copy`;copy.key=`${source.key}_copy`;state.project.fish.push(copy);state.selectedId=copy.id;pushHistory(`duplicate ${source.key}`);renderAll(); }
+  function deleteFish(){ const fish=currentFish();if(!fish)return;if(state.project.fish.length===1){log('Kept the last fish entry; create another before deleting it.','bad');return;}const idx=state.project.fish.findIndex(f=>f.id===fish.id);state.project.fish.splice(idx,1);state.selectedId=state.project.fish[Math.max(0,idx-1)]?.id||state.project.fish[0]?.id||null;pushHistory(`delete ${fish.key}`);renderAll(); }
+
+  async function ensureMinigameArt(){
+    if(state.minigameArt.body) return state.minigameArt;
+    if(state.minigameArt.promise) return state.minigameArt.promise;
+    state.minigameArt.promise=Promise.all([loadImage(rawUrl(GENERIC_FISH_ART.bodyPath)),loadImage(rawUrl(GENERIC_FISH_ART.whiskersPath))]).then(([body,whiskers])=>{state.minigameArt.body=body;state.minigameArt.whiskers=whiskers;log('Loaded generic animated minigame fish silhouette.','ok');return state.minigameArt;}).catch(err=>{state.minigameArt.promise=null;log(`Generic minigame silhouette load failed: ${err.message}`,'bad');return state.minigameArt;});
+    return state.minigameArt.promise;
+  }
+  function buildFishBoneOffsets(sliceCount,amp,phase,rateScale){
+    const boneCount=6,bones=[]; for(let i=0;i<boneCount;i++){const t=boneCount===1?.5:i/(boneCount-1),taper=Math.sin(Math.PI*t),leadLag=t*Math.PI*2.15;bones.push(Math.sin(phase*rateScale+leadLag)*amp*taper);} const offsets=[]; for(let i=0;i<sliceCount;i++){const t=sliceCount===1?.5:i/(sliceCount-1),scaled=t*(bones.length-1),left=Math.max(0,Math.min(bones.length-2,Math.floor(scaled))),local=scaled-left;offsets.push(bones[left]+(bones[left+1]-bones[left])*local);} return offsets;
+  }
+  function drawFishImageAlongBones(ctx,image,canvasW,canvasH,drawW,drawH,offsets,alpha){
+    if(!image?.naturalWidth)return;const sliceCount=Math.max(4,offsets.length||4),srcSliceW=image.naturalWidth/sliceCount,dstSliceW=drawW/sliceCount,startX=(canvasW-drawW)*.5,startY=(canvasH-drawH)*.5;ctx.save();ctx.globalAlpha=alpha;ctx.imageSmoothingEnabled=true;for(let i=0;i<sliceCount;i++){const next=offsets[Math.min(offsets.length-1,i+1)]??offsets[i]??0,off=offsets[i]||0,shear=clamp((next-off)/Math.max(1,dstSliceW),-.32,.32),sx=i*srcSliceW,dx=startX+i*dstSliceW,dy=startY+off;ctx.save();ctx.beginPath();ctx.rect(dx-1,0,dstSliceW+2,canvasH);ctx.clip();ctx.transform(1,shear,0,1,0,0);ctx.drawImage(image,sx,0,srcSliceW+1,image.naturalHeight,dx,dy-shear*dx,dstSliceW+1.5,drawH);ctx.restore();}ctx.restore();
+  }
+  function genericMinigameFrame(test){
+    const body=state.minigameArt.body;if(!body?.naturalWidth)return null;let c=state.minigameDeformCanvas;if(!c){c=document.createElement('canvas');state.minigameDeformCanvas=c;}c.width=96;c.height=72;const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);const phase=(test.animT||0)*7.5+test.angle*.025,amp=Math.max(2,40*.075*.82),bodyOffsets=buildFishBoneOffsets(28,amp,phase,1),whiskerOffsets=buildFishBoneOffsets(28,amp*.3,phase+.85,.38);drawFishImageAlongBones(ctx,body,c.width,c.height,64,40,bodyOffsets,1);if(state.minigameArt.whiskers)drawFishImageAlongBones(ctx,state.minigameArt.whiskers,c.width,c.height,64,40,whiskerOffsets,.95);return c;
+  }
+
+  function polar(angleDeg,radius,cx=260,cy=260){ const a=(angleDeg-90)*Math.PI/180;return{x:cx+Math.cos(a)*radius,y:cy+Math.sin(a)*radius}; }
+  function distPointToSegment(px,py,x1,y1,x2,y2){ const vx=x2-x1,vy=y2-y1,wx=px-x1,wy=py-y1,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-x1,py-y1);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-x2,py-y2);const t=c1/c2,bx=x1+t*vx,by=y1+t*vy;return Math.hypot(px-bx,py-by); }
+  function randomTargetVelocity(test){ const b=test.behavior,d=b.difficulty/100; return (b.velocityMin+Math.random()*(b.velocityMax-b.velocityMin))*(0.6+d*0.9); }
+  function resetTest(){
+    cancelAnimationFrame(state.raf); const fish=currentFish(); if(!fish)return; const b=deepClone(fish.behavior); state.test={ behavior:b,pos:Math.random()*.7+.15,vel:0,targetVel:0,moveDir:1,angle:0,renderAngle:0,renderRadius:156,bridgeAngle:0,bridgeDir:1,markerA:null,markerB:null,shot:null,panic:0,round:(state.test?.round||0)+1,catches:state.test?.catches||0,misses:state.test?.misses||0,dive:{active:false,timer:0,duration:0,cooldown:0.5+Math.random()*1.5,visualOffset:0,centerRadius:70},message:'Ready.',resolved:false,animT:0}; ensureMinigameArt(); state.test.targetVel=randomTargetVelocity(state.test); state.lastFrame=performance.now(); el.fireBtn.textContent='Ready Harpoon'; updateTestHud(); loopTest(state.lastFrame); }
+  function startDive(test){ const b=test.behavior; test.dive.active=true;test.dive.timer=0; const percent=clamp(b.diveTargetPercent,0,90)/100; test.dive.duration=0.65+percent*2.2+(Math.random()-.5)*.35; test.dive.centerRadius=clamp(156*(0.46-0.18*clamp(b.diveRadius,0,2)),34,112); test.message='Fish dove into the safe zone.'; }
+  function updateDive(test,dt){ const d=test.dive,b=test.behavior;if(!d.active){d.cooldown-=dt;const difficulty=b.difficulty/100,startRate=Math.max(.02,b.diveCadence)*(0.12+0.32*difficulty)*(0.65+0.35*b.diveStartIndecision);if(d.cooldown<=0&&Math.random()<startRate*dt)startDive(test);test.renderRadius+=(156-test.renderRadius)*Math.min(1,dt*5);test.renderAngle=test.angle;return;}
+    d.timer+=dt; const t=d.timer/d.duration,ind=b.diveInspectIndecision; if(t<.25){test.renderRadius+=(d.centerRadius-test.renderRadius)*Math.min(1,dt*(4+ind));}else if(t<.78){test.renderRadius+=(d.centerRadius-test.renderRadius)*Math.min(1,dt*(2.6+ind));d.visualOffset+=Math.sin(d.timer*(3.2+ind*1.2))*(8+ind*10)*dt;d.visualOffset=clamp(d.visualOffset,-42,42);}else{test.renderRadius+=(156-test.renderRadius)*Math.min(1,dt*5.3);d.visualOffset*=Math.max(0,1-dt*4);} test.renderAngle=test.angle+d.visualOffset;if(t>=1){d.active=false;d.cooldown=Math.max(.25,2.1/Math.max(.15,b.diveCadence))*(.7+Math.random()*.9);test.renderRadius=156;test.renderAngle=test.angle;test.message='Fish resurfaced.';}
+  }
+  function updateFishMotion(test,dt){ const b=test.behavior,d=b.difficulty/100;if(Math.random()<b.retargetPerSecond*dt)test.targetVel=randomTargetVelocity(test);const desired=Math.abs(test.targetVel)>.01?test.targetVel:(Math.abs(test.vel)>.01?test.vel:test.moveDir),desiredDir=desired<0?-1:1;if(desiredDir!==test.moveDir)test.moveDir=desiredDir;test.vel+=(test.targetVel-test.vel)*Math.min(1,dt*(2.5+b.smoothness*2.2));if(b.fishClass==='sinker')test.vel+=.08*dt*(.5+d);if(b.fishClass==='floater')test.vel-=.08*dt*(.5+d);test.pos=clamp(test.pos+test.vel*dt,.02,.98);if(test.pos<=.021){test.vel=Math.abs(test.vel)*.18;test.targetVel=Math.max(.04,Math.abs(test.targetVel));test.moveDir=1;}if(test.pos>=.979){test.vel=-Math.abs(test.vel)*.18;test.targetVel=-Math.max(.04,Math.abs(test.targetVel));test.moveDir=-1;}test.angle=(test.pos*359)%360; }
+  function fireTest(){ const t=state.test;if(!t||t.resolved)return;if(t.shot)return;if(t.markerA==null){t.markerA=t.bridgeAngle;t.message='First marker placed. Tap again to throw.';el.fireBtn.textContent='Throw Harpoon';return;}t.markerB=t.bridgeAngle;const outer=212,a=polar(t.markerA,outer),b=polar(t.markerB,outer);t.shot={a,b,elapsed:0,duration:.16,retract:0,retractDuration:.28,tip:{...a},prev:{...a},caught:false};t.bridgeDir*=-1;t.markerA=null;t.markerB=null;t.message='Spear thrown!';el.fireBtn.textContent='Ready Harpoon'; }
+  function resolveMiss(test){ test.panic=clamp(test.panic+test.behavior.panicStep,0,100);test.misses++;test.message=test.panic>=100?'Fish escaped — panic maxed out. Resetting round.':'Missed! Panic rising.'; if(test.panic>=100){test.resolved=true;setTimeout(()=>{ if(state.test===test)resetTest(); },850);} }
+  function resolveCatch(test){ test.catches++;test.message='Caught! Behavior test succeeded.';test.resolved=true;setTimeout(()=>{ if(state.test===test)resetTest(); },850); }
+  function updateShot(test,dt){ const s=test.shot;if(!s)return;s.prev={...s.tip};if(s.elapsed<s.duration){s.elapsed=Math.min(s.duration,s.elapsed+dt);const q=s.elapsed/s.duration;s.tip={x:s.a.x+(s.b.x-s.a.x)*q,y:s.a.y+(s.b.y-s.a.y)*q};if(!test.dive.active&&!s.caught){const fishPt=polar(test.renderAngle,test.renderRadius);if(distPointToSegment(fishPt.x,fishPt.y,s.prev.x,s.prev.y,s.tip.x,s.tip.y)<=test.behavior.colliderRadius){s.caught=true;test.message='Hit! Retracting catch…';}}return;}if(s.retract<s.retractDuration){s.retract=Math.min(s.retractDuration,s.retract+dt);const q=s.retract/s.retractDuration;s.tip={x:s.b.x+(s.a.x-s.b.x)*q,y:s.b.y+(s.a.y-s.b.y)*q};return;}test.shot=null;if(s.caught)resolveCatch(test);else resolveMiss(test); }
+  function updateTest(test,dt){ if(test.resolved)return;test.animT=(test.animT||0)+dt;test.bridgeAngle=(test.bridgeAngle+test.bridgeDir*test.behavior.sweepSpeed*dt)%360;if(test.bridgeAngle<0)test.bridgeAngle+=360;updateFishMotion(test,dt);updateDive(test,dt);updateShot(test,dt); }
+  function drawTest(){ const c=el.testCanvas,ctx=c.getContext('2d'),t=state.test;ctx.clearRect(0,0,c.width,c.height);ctx.save();ctx.fillStyle='#07151c';ctx.fillRect(0,0,c.width,c.height);const cx=260,cy=260;ctx.strokeStyle='#577f8a';ctx.lineWidth=9;ctx.beginPath();ctx.arc(cx,cy,156,0,Math.PI*2);ctx.stroke();ctx.strokeStyle='#2e4850';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,212,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#0d2b35';ctx.beginPath();ctx.arc(cx,cy,78,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#86b5bc';ctx.stroke();
+    if(!t){ctx.fillStyle='#dfeff1';ctx.textAlign='center';ctx.font='18px system-ui';ctx.fillText('Start a behavior test',cx,cy);ctx.restore();return;}
+    const half=t.behavior.segmentSize/2,a1=polar(t.bridgeAngle-half,212),a2=polar(t.bridgeAngle+half,212);ctx.strokeStyle='#f0d981';ctx.lineWidth=6;ctx.lineCap='round';ctx.beginPath();ctx.arc(cx,cy,212,(t.bridgeAngle-half-90)*Math.PI/180,(t.bridgeAngle+half-90)*Math.PI/180);ctx.stroke();
+    if(t.markerA!=null){const p=polar(t.markerA,212);ctx.fillStyle='#ff866e';ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fill();}
+    if(t.shot){ctx.strokeStyle='#e8ddba';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(t.shot.a.x,t.shot.a.y);ctx.lineTo(t.shot.tip.x,t.shot.tip.y);ctx.stroke();ctx.fillStyle='#efe4be';ctx.beginPath();ctx.arc(t.shot.tip.x,t.shot.tip.y,7,0,Math.PI*2);ctx.fill();}
+    const fish=currentFish(); const fishPt=t.shot?.caught?t.shot.tip:polar(t.renderAngle,t.renderRadius);ctx.save();ctx.translate(fishPt.x,fishPt.y);ctx.rotate((t.renderAngle+(t.moveDir<0?180:0))*Math.PI/180);const miniScale=Math.max(0.2, Number(fish?.appearance?.minigameScale ?? 1)),src=genericMinigameFrame(t);if(src){const scale=Math.min(76/src.width,48/src.height)*miniScale;ctx.save();ctx.scale(-1,1);ctx.drawImage(src,-src.width*scale/2,-src.height*scale/2,src.width*scale,src.height*scale);ctx.restore();}else{ctx.fillStyle='#9aa5a0';ctx.beginPath();ctx.ellipse(0,0,27*miniScale,13*miniScale,0,0,Math.PI*2);ctx.fill();}if(el.showTestDebug.checked){ctx.strokeStyle=t.dive.active?'#ffcb77':'#ff7c71';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,t.behavior.colliderRadius,0,Math.PI*2);ctx.stroke();}ctx.restore();
+    if(el.showTestDebug.checked){ctx.fillStyle='#d6e7e9';ctx.font='12px ui-monospace';ctx.fillText(`angle ${t.angle.toFixed(1)}°`,12,20);ctx.fillText(`targetVel ${t.targetVel.toFixed(3)}`,12,37);ctx.fillText(`renderRadius ${t.renderRadius.toFixed(1)}`,12,54);}
+    ctx.restore(); }
+  function updateTestHud(){ const t=state.test;if(!t){el.panicText.textContent='0 / 100';el.panicBar.style.width='0%';return;}el.panicText.textContent=`${Math.round(t.panic)} / 100`;el.panicBar.style.width=`${t.panic}%`;el.roundCount.textContent=t.round;el.catchCount.textContent=t.catches;el.missCount.textContent=t.misses;el.diveState.textContent=t.dive.active?'submerged':'surface';el.velocityReadout.textContent=t.vel.toFixed(3);el.testMessage.textContent=t.message; }
+  function loopTest(now){ const t=state.test;if(!t)return;const dt=clamp((now-state.lastFrame)/1000,0,.04);state.lastFrame=now;updateTest(t,dt);drawTest();updateTestHud();state.raf=requestAnimationFrame(loopTest); }
+
+  function bindText(id,apply,event='input'){ el[id].addEventListener(event,()=>{const f=currentFish();if(!f)return;apply(f,el[id].value);pushHistory(id);renderFishList();renderInspector();}); }
+  function bindEvents(){
+    document.querySelectorAll('#tabs button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b===btn));document.querySelectorAll('.tab-page').forEach(p=>p.classList.toggle('active',p.id===`tab-${btn.dataset.tab}`));if(btn.dataset.tab==='test'&&!state.test)resetTest();if(btn.dataset.tab==='export')renderInspector();}));
+    el.newFishBtn.onclick=newFish;el.duplicateFishBtn.onclick=duplicateFish;el.deleteFishBtn.onclick=deleteFish;el.undoBtn.onclick=()=>restoreHistory(state.historyIndex-1);el.redoBtn.onclick=()=>restoreHistory(state.historyIndex+1);el.fishSearch.oninput=renderFishList;
+    bindText('fishLabel',(f,v)=>f.label=v);bindText('fishKey',(f,v)=>f.key=slugify(v));bindText('fishParent',(f,v)=>f.parentSpecies=v);bindText('fishIcon',(f,v)=>f.icon=v);bindText('fishDescription',(f,v)=>f.description=v);
+    el.baseColor.oninput=()=>{const f=currentFish();if(!f)return;f.appearance.baseColor=el.baseColor.value;pushHistory('base color');composeSelectedFish();renderInspector();}; el.baseTintEnabled.onchange=()=>{const f=currentFish();if(!f)return;f.appearance.baseTintEnabled=el.baseTintEnabled.value==='true';pushHistory('base tint toggle');composeSelectedFish();renderInspector();}; ['minigameScale','heldScale','glyphScale'].forEach(id=>el[id].addEventListener('change',()=>{const f=currentFish();if(!f)return;f.appearance[id]=Math.max(0.2, Number(el[id].value)||1);pushHistory(id);if(id==='minigameScale')drawTest();else composeSelectedFish();renderInspector();}));
+    el.ignoreColorPicker.oninput=()=>{ const hex=normalizeHexColor(el.ignoreColorPicker.value) || '#cbbba0'; el.ignoreColorPicker.value=hex; el.sampledColorHex.value=hex; el.sampleColorChip.style.background=hex; };
+    el.ignoreSensitivity.oninput=()=>{ el.ignoreSensitivityValue.textContent=String(clamp(Number(el.ignoreSensitivity.value)||0,0,96)); };
+    el.addIgnoreColorBtn.onclick=()=>{ const f=currentFish(); if(!f) return; const hex=normalizeHexColor(el.ignoreColorPicker.value); if(!hex) return; const sensitivity=clamp(Number(el.ignoreSensitivity.value)||0,0,96); f.appearance.ignoredSourceColors = Array.isArray(f.appearance.ignoredSourceColors) ? f.appearance.ignoredSourceColors : []; if(f.appearance.ignoredSourceColors.some(entry => normalizeIgnoredColorEntry(entry).hex===hex)){ el.sampledPixelMeta.textContent=`${hex} is already in the ignored source color list. Remove it first if you want a different sensitivity.`; return; } f.appearance.ignoredSourceColors.push({ hex, sensitivity }); pushHistory(`ignore source color ${hex} ±${sensitivity}`); renderIgnoredColorEditor(f); composeSelectedFish(); renderInspector(); };
+    el.clearIgnoreColorsBtn.onclick=()=>{ const f=currentFish(); if(!f) return; f.appearance.ignoredSourceColors=[]; pushHistory('clear ignored source colors'); renderIgnoredColorEditor(f); composeSelectedFish(); renderInspector(); };
+    el.rawSpritePreview.addEventListener('pointerdown',ev=>sampleRawSpriteAtClientPoint(ev.clientX,ev.clientY));
+    [['valueBoost','valueBoost'],['outlineThreshold','outlineThreshold']].forEach(([id,key])=>el[id].addEventListener('change',()=>{const f=currentFish();if(!f)return;f.appearance.tint[key]=Number(el[id].value);pushHistory(`tint ${key}`);composeSelectedFish();renderInspector();}));
+    el.resetTintBtn.onclick=()=>{const f=currentFish();if(!f)return;f.appearance.tint=deepClone(TINT_DEFAULTS);pushHistory('reset tint defaults');renderAll();};
+    el.exportPngBtn.onclick=async()=>{const c=await composeSelectedFish();const f=currentFish();if(c&&f)downloadCanvas(`${f.key||'fish'}_item_sprite.png`,c);};
+    el.refreshAssetsBtn.onclick=fetchRepoAssets;el.assetSearch.oninput=renderAssetBrowser;el.assetFilter.onchange=renderAssetBrowser;el.localSpriteBtn.onclick=()=>el.localSpriteInput.click();el.localSpriteInput.onchange=()=>{const file=el.localSpriteInput.files?.[0];if(!file)return;const asset=addLocalImage(file,'sprite'),f=currentFish();f.appearance.itemSpritePath=asset.path;f.appearance.itemSpriteName=asset.name;pushHistory(`local item sprite ${asset.name}`);renderAll();el.localSpriteInput.value='';};
+    el.localPatternsBtn.onclick=()=>el.localPatternsInput.click();el.localPatternsInput.onchange=()=>{for(const file of el.localPatternsInput.files||[])addLocalImage(file,'pattern');renderPatternList();renderInspector();el.localPatternsInput.value='';};el.clearPatternsBtn.onclick=()=>{const f=currentFish();if(!f)return;f.appearance.patterns.forEach(p=>p.enabled=false);pushHistory('disable all patterns');renderPatternList();composeSelectedFish();renderInspector();};
+    el.fishClass.onchange=()=>{const f=currentFish();if(!f)return;f.behavior.fishClass=el.fishClass.value;pushHistory('behavior class');renderInspector();}; const setDiff=v=>{const f=currentFish();if(!f)return;f.behavior.difficulty=clamp(Number(v),0,100);el.difficulty.value=f.behavior.difficulty;el.difficultyRange.value=f.behavior.difficulty;pushHistory('difficulty');renderInspector();};el.difficulty.onchange=()=>setDiff(el.difficulty.value);el.difficultyRange.oninput=()=>setDiff(el.difficultyRange.value);el.applyClassDefaultsBtn.onclick=applyClassDefaults;
+    document.querySelectorAll('#zoneChecks input').forEach(box=>box.onchange=()=>{const f=currentFish();if(!f)return;f.availability.zones=[...document.querySelectorAll('#zoneChecks input:checked')].map(x=>x.value);pushHistory('zones');renderInspector();}); el.seasons.onchange=()=>{const f=currentFish();if(!f)return;f.availability.seasons=parseSeasons(el.seasons.value);pushHistory('seasons');renderInspector();}; el.timesOfDay.onchange=()=>{const f=currentFish();if(!f)return;let values=[...el.timesOfDay.selectedOptions].map(o=>o.value);if(values.includes('any'))values=['any'];f.availability.timesOfDay=values.length?values:['any'];pushHistory('times of day');renderInspector();};el.rarity.onchange=()=>{const f=currentFish();if(!f)return;f.availability.rarity=el.rarity.value;pushHistory('rarity');renderInspector();};el.sellPrice.onchange=()=>{const f=currentFish();if(!f)return;f.economy.sellPrice=Math.max(0,Number(el.sellPrice.value)||0);pushHistory('sell price');renderInspector();};
+    el.startTestBtn.onclick=resetTest;el.fireBtn.onclick=fireTest;el.testCanvas.addEventListener('pointerdown',fireTest);el.showTestDebug.onchange=drawTest;
+    el.exportProjectBtn.onclick=()=>downloadText('HobunjiFishEditorProject.json',JSON.stringify(state.project,null,2));el.importProjectBtn.onclick=()=>el.projectFileInput.click();el.projectFileInput.onchange=async()=>{const file=el.projectFileInput.files?.[0];if(!file)return;try{const parsed=normalizeProject(JSON.parse(await file.text()));if(!parsed)throw new Error('Not a Hobunji fish editor project.');state.project=parsed;state.selectedId=parsed.fish[0]?.id||null;state.history=[];state.historyIndex=-1;pushHistory('import project');renderAll();log(`Imported project with ${parsed.fish.length} fish.`,'ok');}catch(err){log(`Project import failed: ${err.message}`,'bad');}el.projectFileInput.value='';};
+    el.exportGamePatchBtn.onclick=()=>downloadText('hobunji-fish-catalog-patch.json',JSON.stringify(buildGamePatch(),null,2));el.exportSelectedBtn.onclick=()=>{const f=currentFish();if(f)downloadText(`${f.key||'fish'}.json`,JSON.stringify(f,null,2));};el.copyIntegrationBtn.onclick=async()=>{try{await copyText(integrationNotes());log('Runtime integration notes copied.','ok');}catch(err){log(`Copy failed: ${err.message}`,'bad');}};
+    el.copyDiagBtn.onclick=async()=>{const diag={repo:REPO,assetStatus:state.assets.status,sprites:state.assets.sprites.length,patterns:state.assets.patterns.length,localAssets:state.localAssets.size,selected:currentFish()?.key||null,validation:validateProject(),logs:state.logs.slice(-80)};try{await copyText(JSON.stringify(diag,null,2));log('Diagnostics copied.','ok');}catch(err){log(`Diagnostics copy failed: ${err.message}`,'bad');}};el.clearLogBtn.onclick=()=>{state.logs=[];renderLog();};
+  }
+
+  function init(){ buildBehaviorControls();loadLocalProject();ensureSeedProject();pushHistory('initial state');bindEvents();renderAll();drawTest();log('Fish editor initialized with a seeded starter catalog, brightness-preserving fill recolor, and a full-fit raw sprite color-ignore inspector. Repo is not modified; this is a local authoring tool.','ok');fetchRepoAssets(); }
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1159,10 +1159,11 @@
     renderFarmBreedingPairsList(pairs, livestock);
   }
 
-  // Per-pair breeding detail — which two animals, and how many days until
-  // the litter/clutch resolves (see tickBreeding's readyDay). Previously
-  // this was just an aggregate "N pairs breeding" count with no way to
-  // tell which animals were paired or how much longer to wait.
+  // Per-pair breeding detail — which two animals, and a live progress bar
+  // (see FarmAnimals.tickBreedingProgress, which fills pair.progress by
+  // the hour rather than once a day, sped up by the parents' hearts) —
+  // previously this was just an aggregate "N pairs breeding" count with
+  // no way to tell which animals were paired or how much longer to wait.
   function _pairParentLabel(ref, livestock) {
     const entry = window.FarmAnimals.resolveBreedingParent(ref, livestock);
     if (!entry) return '❓ (removed)';
@@ -1174,12 +1175,16 @@
     if (!list) return;
     list.innerHTML = '';
     pairs.forEach(pair => {
-      const daysLeft = Math.max(0, pair.readyDay - deps.calendar.day);
+      const pct = Math.max(0, Math.min(100, Math.round((pair.progress || 0) * 100)));
       const row = document.createElement('div');
       row.className = 'farm-row';
+      row.style.flexWrap = 'wrap';
       row.innerHTML =
-        `<span class="farm-row-name" style="padding:2px 4px">${_pairParentLabel(pair.parentA, livestock)} × ${_pairParentLabel(pair.parentB, livestock)}</span>` +
-        `<span class="farm-note">${daysLeft > 0 ? `${daysLeft}d left` : 'Ready — resolves tonight'}</span>`;
+        `<span class="farm-row-name" style="padding:2px 4px;flex:1 0 100%">${_pairParentLabel(pair.parentA, livestock)} × ${_pairParentLabel(pair.parentB, livestock)}</span>` +
+        `<div style="flex:1 0 100%;display:flex;align-items:center;gap:6px;padding:0 4px 2px;">` +
+          `<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;"><div style="width:${pct}%;height:100%;background:#e08a3c;"></div></div>` +
+          `<span class="farm-note" style="white-space:nowrap">${pct >= 100 ? 'Ready — resolves this hour' : pct + '%'}</span>` +
+        `</div>`;
       list.appendChild(row);
     });
   }
@@ -1210,9 +1215,9 @@
   function setBreedingPair(refA, refB) {
     if (!deps.hasFarmPermission('livestock') || !refA || !refB || window.FarmAnimals.refsEqual(refA, refB)) return;
     const pairs = deps._loadWorldBreedingPairs();
-    pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: deps.calendar.day, readyDay: deps.calendar.day + window.FarmAnimals.GESTATION_DAYS });
+    pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: deps.calendar.day, progress: 0 });
     deps._saveWorldBreedingPairs(pairs);
-    deps.showToast(`Breeding pair set — check back in ${window.FarmAnimals.GESTATION_DAYS} days.`, true);
+    deps.showToast('Breeding pair set — track their progress bar in the Farm tab (keep them fed for a faster, luckier litter).', true);
   }
 
   // ── Farm livestock <-> personal stable transfers ────────────────────

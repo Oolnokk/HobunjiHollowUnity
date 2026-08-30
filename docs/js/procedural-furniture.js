@@ -335,6 +335,22 @@
     disc(0, .37, 0, .46, .03, .46, 1.3, { segments: 16 }),
   ];
 
+  // Drenkirra nest — the bucket recipe's exact tapered-cylinder-body +
+  // rim-disc shape, just halved in height and rendered in a yellow "woven"
+  // tint (see DECORATIVE_FURNITURE_DEFS.nestBranch/nest's color) instead of
+  // the bucket's tin gray. diameter is the caller's own knob rather than a
+  // fixed size, since a 1x1 branch nest and a 2x2 den nest need different
+  // footprints out of the same recipe.
+  function nestRecipe(diameter) {
+    const bodyH = .19; // Half of bucket's .38 body height.
+    return [
+      cyl(0, bodyH / 2, 0, diameter, bodyH, diameter, 1, { topScaleX: 1.08, topScaleZ: 1.08, bottomScaleX: .85, bottomScaleZ: .85, segments: 16 }),
+      disc(0, bodyH * 0.97, 0, diameter + .04, .03, diameter + .04, 1.3, { segments: 16 }),
+    ];
+  }
+  CATALOG.nestBranch = nestRecipe(.84); // 1x1 tile footprint, same scale as the bucket.
+  CATALOG.nest = nestRecipe(1.7); // 2x2 tile footprint — matches the den nest marker's existing w:2,h:2 size.
+
   CATALOG.candleTable = [
     box(0, .42, 0, .6, .08, .6, 1.05, { topScaleX: .96, topScaleZ: .96 }),
     leg(-.22, -.22, .38, .07, .8), leg(.22, -.22, .38, .07, .8),
@@ -380,6 +396,22 @@
     box(0, .22, 0, 1.7, .44, .85, .7),
     box(0, .42, .1, .9, .16, .55, 1.4, { color: 0xb35a2a }),
   ];
+
+function campfireRecipe() {
+    const parts = [
+      cyl(0, .12, 0, .16, .92, .16, .82, { rz: 90, ry: 45, segments: 8, color: 0x5b321b }),
+      cyl(0, .14, 0, .16, .92, .16, .70, { rz: 90, ry: -45, segments: 8, color: 0x6f3c1f }),
+    ];
+    for (let i = 0; i < 9; i++) {
+      const a = i * Math.PI * 2 / 9;
+      parts.push(cyl(Math.cos(a) * .42, .09, Math.sin(a) * .42, .23, .18, .23, 1, {
+        segments: 7,
+        color: i % 2 ? 0x68635a : 0x777168,
+      }));
+    }
+    return parts;
+  }
+  CATALOG.campfire = campfireRecipe();
 
   CATALOG.loom = [
     leg(-.3, -.85, 1.6, .12, .8), leg(.3, -.85, 1.6, .12, .8),
@@ -500,6 +532,24 @@
   CATALOG.agingVase = [
     cyl(0, .32, 0, .56, .64, .56, .9, { segments: 18, topScaleX: .55, topScaleZ: .55, bottomScaleX: .8, bottomScaleZ: .8 }),
     disc(0, .66, 0, .3, .04, .3, 1.2, { segments: 14 }),
+  ];
+
+  // -- Barn-interior fixtures (see game.js's synthesizeBarnInteriorMapData) --
+  // Same hand-mill silhouette as CATALOG.handMill, tipped on its side (the
+  // grinding face now points +X, toward the right wall) with a small catch
+  // bowl on top — the real look comes from feedGrinder.json (authored) once
+  // that loads; this is only the fallback before/if it doesn't.
+  CATALOG.feedGrinder = [
+    box(0, .14, 0, .5, .28, .42, .85),
+    cyl(0, .34, 0, .22, .55, .22, 1, { rz: 90, segments: 14 }),
+    disc(.26, .34, 0, .24, .07, .24, 1.1, { rz: 90, segments: 18 }),
+    cyl(-.06, .34, -.3, .045, .16, .045, .7, { rx: 90, segments: 8 }),
+    cyl(.34, .5, 0, .2, .18, .2, .9, { segments: 12, topScaleX: 1.1, topScaleZ: 1.1, bottomScaleX: .7, bottomScaleZ: .7 }),
+  ];
+
+  CATALOG.trough = [
+    box(0, .07, 0, .7, .14, .26, .85),
+    cyl(0, .2, 0, .76, .22, .32, 1, { segments: 16, topScaleX: 1.1, topScaleZ: 1.1, bottomScaleX: .82, bottomScaleZ: .82 }),
   ];
 
   window.ProceduralFurniture = {

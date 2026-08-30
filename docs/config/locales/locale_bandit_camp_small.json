@@ -283,8 +283,8 @@
     {
       "id": "obj_campfire",
       "kind": "decor",
-      "key": "hearth",
-      "label": "Camp Fire",
+      "key": "campfire",
+      "label": "Animated Campfire",
       "col": 4,
       "row": 3,
       "w": 1,

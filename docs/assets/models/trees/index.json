@@ -1,0 +1,63 @@
+{
+  "schema": "hobunji_tree_assets.v1",
+  "basePath": "assets/models/trees/",
+  "generatedBy": "docs/tools/tree-asset-exporter/index.html",
+  "note": "Near GLBs are used only within the immediate player vicinity. Far 90% LODs take over at lodSwitchDistance. Shadewoods that rolled a climbable perch use branchedFilename/branchedLodFilename while gameplay branch coordinates remain procedural.",
+  "lodSwitchDistance": 3,
+  "assets": [
+    {
+      "species": "crowned_pine",
+      "variant": 1,
+      "filename": "crowned_pine_01.glb",
+      "lodFilename": "crowned_pine_01_lod-decimate-90.glb",
+      "builder": "buildCrownedPineMesh",
+      "seed": 1
+    },
+    {
+      "species": "crowned_pine",
+      "variant": 2,
+      "filename": "crowned_pine_02.glb",
+      "lodFilename": "crowned_pine_02_lod-decimate-90.glb",
+      "builder": "buildCrownedPineMesh",
+      "seed": 2
+    },
+    {
+      "species": "crowned_pine",
+      "variant": 3,
+      "filename": "crowned_pine_03.glb",
+      "lodFilename": "crowned_pine_03_lod-decimate-90.glb",
+      "builder": "buildCrownedPineMesh",
+      "seed": 3
+    },
+    {
+      "species": "shadewood",
+      "variant": 1,
+      "filename": "shadewood_01.glb",
+      "lodFilename": "shadewood_01_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_01.glb",
+      "branchedLodFilename": "shadewood-branched_01_lod-decimate-90.glb",
+      "builder": "buildShadewoodMesh",
+      "seed": 1
+    },
+    {
+      "species": "shadewood",
+      "variant": 2,
+      "filename": "shadewood_02.glb",
+      "lodFilename": "shadewood_02_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_02.glb",
+      "branchedLodFilename": "shadewood-branched_02_lod-decimate-90.glb",
+      "builder": "buildShadewoodMesh",
+      "seed": 2
+    },
+    {
+      "species": "shadewood",
+      "variant": 3,
+      "filename": "shadewood_03.glb",
+      "lodFilename": "shadewood_03_lod-decimate-90.glb",
+      "branchedFilename": "shadewood-branched_03.glb",
+      "branchedLodFilename": "shadewood-branched_03_lod-decimate-90.glb",
+      "builder": "buildShadewoodMesh",
+      "seed": 3
+    }
+  ]
+}

@@ -9,16 +9,16 @@ assert.match(gameSource,
   /updateToolMesh\(dt\);[\s\S]{0,600}updateShoulderPetMeshPin\(\);/,
   'shoulder pets are re-pinned after attack and tool body rotation');
 assert.match(gameSource,
-  /group\.rotation\.y = playerMesh\.rotation\.y - gripYawRad;/,
-  'rig-anchored shoulder pets inherit the avatar body yaw');
+  /faceWorldQuaternion\.clone\(\)\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
+  'rig-anchored shoulder pets compose live face, authored perch, and inverse grip rotations');
 assert.match(gameSource,
-  /group\.rotation\.y = playerMesh\.rotation\.y;/,
-  'fallback shoulder pets inherit the avatar body yaw');
+  /const faceRotationSource = playerNeckJoint\?\.isObject3D \? playerNeckJoint : playerMesh;/,
+  'authored shoulder-pet rotation follows the live neck with a body fallback');
 assert.match(gameSource,
-  /position\.x = playerMesh\.position\.x - Math\.sin\(playerMesh\.rotation\.y\) \* 0\.3;/,
-  'fallback shoulder-pet position follows the rotated avatar');
+  /const perchWorldPosition = playerMesh\.localToWorld[\s\S]{0,420}worldPosition: perchWorldPosition\.sub\(gripWorldOffset\)/,
+  'the body-local perch position stays fixed while the pet pivots around its aligned grip');
 assert.match(gameSource,
-  /position\.z = playerMesh\.position\.z - Math\.cos\(playerMesh\.rotation\.y\) \* 0\.3;/,
-  'fallback shoulder-pet position follows the rotated avatar');
+  /const fallbackWorldQuaternion = playerMesh\.getWorldQuaternion[\s\S]{0,360}faceRotationSource: 'player-body-fallback-no-authored-anchors'/,
+  'no-anchor fallback shoulder pets continue to inherit the avatar body transform');
 
 console.log('shoulder pet attack rotation tests passed');

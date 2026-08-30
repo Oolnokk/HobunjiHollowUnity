@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "basePath": "./",
+  "description": "Descriptive animal/SFX utterance library used by the Ambient Dialogue Editor for experimentation and runtime call assignment.",
+  "clips": [
+    { "id": "sfx_bark-cricket.ogg", "file": "sfx_bark-cricket.ogg", "label": "Bark · cricket", "tags": ["bark", "cricket"] },
+    { "id": "sfx_bark-squeak.ogg", "file": "sfx_bark-squeak.ogg", "label": "Bark · squeak", "tags": ["bark", "squeak"] },
+    { "id": "sfx_bark-yap.ogg", "file": "sfx_bark-yap.ogg", "label": "Bark · yap", "tags": ["bark", "yap"] },
+    { "id": "sfx_chirp-rattle.ogg", "file": "sfx_chirp-rattle.ogg", "label": "Chirp · rattle", "tags": ["chirp", "rattle"] },
+    { "id": "sfx_clicky_howl-bark.ogg", "file": "sfx_clicky_howl-bark.ogg", "label": "Clicky howl · bark", "tags": ["click", "howl", "bark"] },
+    { "id": "sfx_growl-squeak-chirp.ogg", "file": "sfx_growl-squeak-chirp.ogg", "label": "Growl · squeak · chirp", "tags": ["growl", "squeak", "chirp"] },
+    { "id": "sfx_grunt-rattle.ogg", "file": "sfx_grunt-rattle.ogg", "label": "Grunt · rattle", "tags": ["grunt", "rattle"] },
+    { "id": "sfx_hollowhiss_rattling.ogg", "file": "sfx_hollowhiss_rattling.ogg", "label": "Hollow hiss · rattling", "tags": ["hiss", "rattle", "hollow"] },
+    { "id": "sfx_hoowee_caw.ogg", "file": "sfx_hoowee_caw.ogg", "label": "Hoowee · caw", "tags": ["hoowee", "caw"] },
+    { "id": "sfx_hound_growl.ogg", "file": "sfx_hound_growl.ogg", "label": "Hound growl", "tags": ["hound", "growl"] },
+    { "id": "sfx_rattle-bark-rattle.ogg", "file": "sfx_rattle-bark-rattle.ogg", "label": "Rattle · bark · rattle", "tags": ["rattle", "bark"] },
+    { "id": "sfx_rattle-caw-rattle.ogg", "file": "sfx_rattle-caw-rattle.ogg", "label": "Rattle · caw · rattle", "tags": ["rattle", "caw"] },
+    { "id": "sfx_rattle-caw.ogg", "file": "sfx_rattle-caw.ogg", "label": "Rattle · caw", "tags": ["rattle", "caw"] },
+    { "id": "sfx_rattle-ghostgrowl-rattle.ogg", "file": "sfx_rattle-ghostgrowl-rattle.ogg", "label": "Rattle · ghost growl · rattle", "tags": ["rattle", "growl", "ghost"] },
+    { "id": "sfx_rattling_growl_1.ogg", "file": "sfx_rattling_growl_1.ogg", "label": "Rattling growl 1", "tags": ["rattle", "growl"] },
+    { "id": "sfx_rattling_growl_2.ogg", "file": "sfx_rattling_growl_2.ogg", "label": "Rattling growl 2", "tags": ["rattle", "growl"] },
+    { "id": "sfx_rattling_monkey-chirp.ogg", "file": "sfx_rattling_monkey-chirp.ogg", "label": "Rattling monkey · chirp", "tags": ["rattle", "monkey", "chirp"] },
+    { "id": "sfx_spookyghost-ribbit.ogg", "file": "sfx_spookyghost-ribbit.ogg", "label": "Spooky ghost · ribbit", "tags": ["ghost", "ribbit"] },
+    { "id": "sfx_syrinx_yaps.ogg", "file": "sfx_syrinx_yaps.ogg", "label": "Syrinx yaps", "tags": ["syrinx", "yap"] },
+    { "id": "sfx_whine-cacaw.ogg", "file": "sfx_whine-cacaw.ogg", "label": "Whine · cacaw", "tags": ["whine", "caw"] },
+    { "id": "sfx_whinny-whistle-bark.ogg", "file": "sfx_whinny-whistle-bark.ogg", "label": "Whinny · whistle · bark", "tags": ["whinny", "whistle", "bark"] },
+    { "id": "sfx_whinny-yap.ogg", "file": "sfx_whinny-yap.ogg", "label": "Whinny · yap", "tags": ["whinny", "yap"] }
+  ],
+  "legacyAliases": {
+    "sfx_dabinggi-hound1.ogg": "sfx_rattling_monkey-chirp.ogg",
+    "sfx_dabinggi-hound2.ogg": "sfx_whine-cacaw.ogg",
+    "sfx_drenkirra1.ogg": "sfx_rattle-caw.ogg",
+    "sfx_drenkirra2.ogg": "sfx_rattle-caw-rattle.ogg",
+    "sfx_gar-wolf1.ogg": "sfx_rattle-bark-rattle.ogg",
+    "sfx_gar-wolf2.ogg": "sfx_clicky_howl-bark.ogg",
+    "sfx_grehlr1.ogg": "sfx_rattle-ghostgrowl-rattle.ogg",
+    "sfx_grehlr2.ogg": "sfx_bark-cricket.ogg",
+    "sfx_nelk1.ogg": "sfx_spookyghost-ribbit.ogg",
+    "sfx_uumkao'ii1.ogg": "sfx_grunt-rattle.ogg",
+    "sfx_uumkao'ii2.ogg": "sfx_chirp-rattle.ogg"
+  },
+  "legacySpeciesDefaults": {
+    "dabinggi-hound": ["sfx_rattling_monkey-chirp.ogg", "sfx_whine-cacaw.ogg"],
+    "drenkirra": ["sfx_rattle-caw.ogg", "sfx_rattle-caw-rattle.ogg"],
+    "gar-wolf": ["sfx_rattle-bark-rattle.ogg", "sfx_clicky_howl-bark.ogg"],
+    "grehlr": ["sfx_rattle-ghostgrowl-rattle.ogg", "sfx_bark-cricket.ogg"],
+    "nelk": ["sfx_spookyghost-ribbit.ogg"],
+    "uumkaoii": ["sfx_grunt-rattle.ogg", "sfx_chirp-rattle.ogg"]
+  }
+}

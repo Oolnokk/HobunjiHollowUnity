@@ -147,9 +147,57 @@
   const LIVESTOCK_PATTERN_DEFS = {
     'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-    grehlr: ['mitts', 'spectacles'],
+    grehlr: ['mitts', 'spectacles', 'coloredstripe'],
     drenkirra: ['bodystripes', 'spectacles'],
   };
+  // Per-pattern palette constraints. Grehlr's colored stripe is deliberately
+  // restricted to the brighter end of the existing earthy fur palette; Fawn
+  // is the authored lower brightness bound rather than a new stripe-only dye.
+  const LIVESTOCK_PATTERN_COLOR_RULES = {
+    grehlr: { coloredstripe: { minLightnessColorId: 'fawn' } },
+  }; // Used by fresh rolls and breeding so the stripe never drifts into dark fur shades.
+  function _patternColorRule(kind, patternId) {
+    return LIVESTOCK_PATTERN_COLOR_RULES[kind]?.[patternId] || null;
+  }
+  function _patternPalette(kind, patternId) {
+    const palette = _livestockPalette(kind);
+    const rule = _patternColorRule(kind, patternId);
+    if (!rule?.minLightnessColorId) return palette;
+    const thresholdEntry = palette.find(entry => entry.id === rule.minLightnessColorId);
+    if (!thresholdEntry) return palette;
+    const thresholdL = _furRgbToLab(..._furHexToRgb(thresholdEntry.hex))[0];
+    const brightEntries = palette.filter(entry => _furRgbToLab(..._furHexToRgb(entry.hex))[0] >= thresholdL);
+    return brightEntries.length ? brightEntries : palette;
+  }
+  function _patternPaletteEntry(color, kind, patternId) {
+    const palette = _patternPalette(kind, patternId);
+    const normalized = _furNormalizeHex(color) || palette[0]?.hex;
+    if (!normalized || !palette.length) return null;
+    const exact = palette.find(entry => entry.hex.toLowerCase() === normalized);
+    if (exact) return exact;
+    const [h, s] = _furRgbToHsv(..._furHexToRgb(normalized));
+    let best = palette[0], score = Infinity;
+    for (const entry of palette) {
+      const [eh, es] = _furRgbToHsv(..._furHexToRgb(entry.hex));
+      let dh = Math.abs(h - eh); dh = Math.min(dh, 1 - dh);
+      const d = dh * dh * 2.5 + (s - es) * (s - es);
+      if (d < score) { score = d; best = entry; }
+    }
+    return best;
+  }
+  function randomPatternColor(kind, patternId) {
+    return _pickWeightedFurEntry(_patternPalette(kind, patternId)).hex;
+  }
+  function normalizePatternColor(color, kind, patternId) {
+    return _patternPaletteEntry(color, kind, patternId)?.hex || randomPatternColor(kind, patternId);
+  }
+  function mutatePatternColor(color, kind, patternId) {
+    const palette = _patternPalette(kind, patternId);
+    const current = _patternPaletteEntry(color, kind, patternId);
+    const choices = current ? palette.filter(entry => entry.id !== current.id) : palette;
+    return _pickWeightedFurEntry(choices.length ? choices : palette).hex;
+  }
+
   // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
   // assets under a different creatureKey (different stats/label, same
   // art) — used to resolve which CreatureGeneticsRender.SPECIES entry
@@ -220,6 +268,33 @@
       y: Number.isFinite(y) && y > 0 ? y : 1,
     };
   }
+  function applyCreatureBillboardScale(group, sizeScale, heightMultiplier = 1) {
+    if (!group?.scale?.set) return false;
+    const visibleWidthScale = Number(sizeScale?.x); // Used on group Z because each animal plane is rotated ±90° inside the group.
+    const visibleHeightScale = Number(sizeScale?.y); // Used on group Y and optionally multiplied by an attack squash.
+    const resolvedHeightMultiplier = Number(heightMultiplier); // Used to preserve temporary pounce/burrow squash independently from genotype size.
+    group.scale.set(
+      1,
+      (Number.isFinite(visibleHeightScale) && visibleHeightScale > 0 ? visibleHeightScale : 1) * (Number.isFinite(resolvedHeightMultiplier) ? Math.max(0, resolvedHeightMultiplier) : 1),
+      Number.isFinite(visibleWidthScale) && visibleWidthScale > 0 ? visibleWidthScale : 1,
+    );
+    return true;
+  }
+  // Subtle idle breathing — a small extra Y-scale multiplier layered on
+  // top of genotype size/attack squash (see applyCreatureBillboardScale's
+  // heightMultiplier param), one continuous sine per creature instance so
+  // every animal reads as alive even standing perfectly still. Phase is
+  // randomized once per avatarRef (not per kind/species) so a pack of the
+  // same creature doesn't all breathe in lockstep.
+  const BREATH_PERIOD_MS = 2600; // One full inhale-exhale cycle.
+  const BREATH_AMPLITUDE = 0.018; // ~1.8% peak height change — readable without looking like a squash/stretch animation.
+  function creatureBreathScaleY(avatarRef, nowMs) {
+    if (!avatarRef) return 1;
+    if (!Number.isFinite(avatarRef._breathPhase)) avatarRef._breathPhase = Math.random() * Math.PI * 2;
+    const t = Number.isFinite(nowMs) ? nowMs : performance.now();
+    return 1 + Math.sin((t / BREATH_PERIOD_MS) * Math.PI * 2 + avatarRef._breathPhase) * BREATH_AMPLITUDE;
+  }
+
   function creatureSizeTrait(kind, genotype) {
     const sizeScale = creatureSizeScale(kind, genotype); // Supplies UI labels and the same percentages used in-world.
     const defaultSizeClass = normalizeCreatureSizeClass(deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'); // Flags inherited non-default sizes.
@@ -234,7 +309,7 @@
     };
   }
   function _traitLabel(id) {
-    const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail' }; // Keeps compact genetic IDs readable in the UI.
+    const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail', coloredstripe: 'Colored stripe' }; // Keeps compact genetic IDs readable in the UI.
     return overrides[id] || String(id || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').replace(/^./, char => char.toUpperCase());
   }
   function genotypeTraits(kind, genotype) {
@@ -283,20 +358,21 @@
   // to the species default for a parent with no sizeClass on record, e.g.
   // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
   // crossOffspring's coat genes use to instead step it by one.
-  function inheritedSizeClass(genotypeA, genotypeB, kind) {
+  function inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance = LIVESTOCK_MUTATION_CHANCE) {
     const fallback = deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium';
     const parentSize = Math.random() < 0.5
       ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
       : normalizeCreatureSizeClass(genotypeB?.sizeClass || fallback);
-    return Math.random() < LIVESTOCK_MUTATION_CHANCE ? mutateSizeClassStep(parentSize) : parentSize;
+    return Math.random() < mutationChance ? mutateSizeClassStep(parentSize) : parentSize;
   }
 
   // Fresh (non-bred) livestock gets two independently random fur colors —
   // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
-  // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
-  // one base fur color plus a shared pattern color applied to 0-3
-  // randomly-chosen optional pattern layers (copies:1, dominant) — the
-  // exact same odds used for wild-den pack genotypes (see
+  // are both permanent (copies:2, dominant). Pattern-bearing species get
+  // one base fur color plus optional inherited pattern layers; most share
+  // one pattern color, while authored color rules can constrain a specific
+  // layer (Grehlr coloredstripe) to a subset of the same fur palette.
+  // The exact same odds are used for wild-den pack genotypes (see
   // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
   // pack member are statistically the same roll. Palette selection is
   // species-aware: Drenkirra use the tropical palette configured in
@@ -316,9 +392,7 @@
     if (patterns) {
       const [first, second] = pickTwoLivestockFurColors(kind);
       // Each pattern layer gets an independently configured chance of showing
-      // up (rather than rolling "how many, then which") — with 3 patterns
-      // that's ~70% odds of at least one being visible per specimen,
-      // instead of leaving a pack looking plain too often.
+      // up (rather than rolling "how many, then which").
       const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
       const geneticsCfg = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics || {};
       for (const id of patterns) {
@@ -329,11 +403,13 @@
             ? Number(geneticsCfg.defaultPatternChance)
             : (1 / 3);
         const enabled = Math.random() < chance;
-        genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
+        const patternColor = _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Restricted patterns get their own valid palette roll.
+        genotype[id] = { color: patternColor, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
       }
       genotype.sizeClass = sizeClass;
       const enabledIds = patterns.filter(id => genotype[id].enabled);
-      window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
+      const enabledSummary = enabledIds.map(id => `${id}:${_furPaletteName(genotype[id].color)}`).join(','); // Shown in mobile-accessible farm debug logs.
+      window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) enabled=[${enabledSummary || 'none'}]`, 'wildlife');
       return genotype;
     }
     // null, not {} — an empty object is still truthy, and every caller
@@ -352,7 +428,7 @@
   // regions collapse to a flat bonus (as before); pattern-layer species
   // get a per-enabled-pattern bonus (HTML's patternBonuses table) plus
   // base-vs-pattern-color contrast.
-  const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
+  const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315, 490];
   function sellValueFor(genotype, kind = 'uumkaoii') {
     if (DUAL_REGION_GENOTYPE_KINDS.has(kind) || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
       const fur = genotype?.fur, plates = genotype?.plates;
@@ -398,17 +474,23 @@
     const copies = deps.clamp(Number(layer?.copies) || 0, 0, 2);
     return Math.random() < copies / 2 ? { color: layer.color } : null;
   }
-  function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
+  // mutationChance overrides the flat LIVESTOCK_MUTATION_CHANCE de-novo-
+  // trait roll used throughout this function (rarer colors, new pattern
+  // layers, a size-class step) — callers with a notion of parent quality
+  // (see farm-animals.js's tickBreeding, which scales this with the
+  // parents' average heart level) can raise the odds of a rarer offspring
+  // without duplicating this function's own trait math.
+  function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii', mutationChance = LIVESTOCK_MUTATION_CHANCE) {
     if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
       const child = {};
       for (const layerId of ['fur', 'plates']) {
         const la = genotypeA?.[layerId] || { color: randomFurColor(kind) };
         const lb = genotypeB?.[layerId] || { color: randomFurColor(kind) };
         let color = blendFurHex(la.color, lb.color, kind);
-        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
+        if (Math.random() < mutationChance) color = mutateFurColor(color, kind);
         child[layerId] = { color, copies: 2, inheritance: 'dominant' };
       }
-      child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
+      child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
       return child;
     }
     const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -416,24 +498,38 @@
     const child = {};
     const baseA = genotypeA?.base || { color: randomFurColor(kind) }, baseB = genotypeB?.base || { color: randomFurColor(kind) };
     let baseColor = blendFurHex(baseA.color, baseB.color, kind);
-    if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor, kind);
+    if (Math.random() < mutationChance) baseColor = mutateFurColor(baseColor, kind);
     child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
     for (const id of patterns) {
-      const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
-      const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
+      const la = genotypeA?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
+      const lb = genotypeB?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
       const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
       let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
-      if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
+      if (copies === 0 && Math.random() < mutationChance) { copies = 1; mutated = true; }
       const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
       const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
-      let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomFurColor(kind));
-      if (mutated) color = mutateFurColor(color, kind);
+      let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomPatternColor(kind, id));
+      color = normalizePatternColor(color, kind, id); // Re-applies authored palette limits after blending inherited colors.
+      if (mutated) color = mutatePatternColor(color, kind, id);
       child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
     }
-    child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
+    child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
     const childEnabledIds = patterns.filter(id => child[id].enabled);
-    window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
+    const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted stripe colors without desktop devtools.
+    window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledSummary || 'none'}]`, 'wildlife');
     return child;
+  }
+
+  // creature-genetics-render.js is intentionally loaded immediately after
+  // this file in docs/index.html. Registering now means this listener runs
+  // before game.js's later DOMContentLoaded setup, so prewarm/signature/
+  // composeFrame all see the new Grehlr overlay without duplicating the
+  // renderer's very large embedded head-rig data just to add one pattern id.
+  function installGrehlrColoredStripeRendererLayer() {
+    const patterns = window.CreatureGeneticsRender?.SPECIES?.grehlr?.patterns; // Runtime renderer list mutated once the sibling module has loaded.
+    if (!Array.isArray(patterns)) return false;
+    if (!patterns.includes('coloredstripe')) patterns.push('coloredstripe');
+    return true;
   }
 
   window.CreatureGenetics = {
@@ -445,10 +541,20 @@
     stableEntryRole,
     creatureSizeClass,
     creatureSizeScale,
+    applyCreatureBillboardScale,
+    creatureBreathScaleY,
     creatureSizeTrait,
     genotypeTraits,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
     SPECIES_ALIAS: GENOTYPE_SPECIES_ALIAS,
+    MUTATION_CHANCE: LIVESTOCK_MUTATION_CHANCE,
   };
+
+  if (!installGrehlrColoredStripeRendererLayer()) {
+    window.addEventListener('DOMContentLoaded', () => {
+      const installed = installGrehlrColoredStripeRendererLayer(); // Runs before later game.js DOMContentLoaded listeners because this listener is registered first.
+      window.__farmLog?.(`[genotype] Grehlr coloredstripe renderer layer ${installed ? 'enabled' : 'failed to install'}`, installed ? 'wildlife' : 'warn');
+    }, { once: true });
+  }
 })();

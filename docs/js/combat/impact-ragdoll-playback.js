@@ -1,16 +1,21 @@
-// Impact/ragdoll clip playback for the player avatar. Samples the baked
-// 4-directional blend clips from impact-blend-library.js and writes recorded
-// leg poses onto the existing procedural leg rig. Body rotation/translation is
-// published as a named channel to PlayerBodyTransformComposer; this module no
-// longer owns or resets playerMesh transforms directly.
+// Impact/ragdoll clip playback for player and creature avatars. Samples the
+// baked 4-directional blend clips from impact-blend-library.js. Player leg
+// poses target the procedural rig and body motion goes through
+// PlayerBodyTransformComposer; creature planes reuse the body channel through
+// an isolated, quarter-turned visual pivot and deliberately ignore humanoid IK.
 (() => {
   'use strict';
 
   const BODY_CHANNEL = 'ragdoll';
   const BODY_PRIORITY = 100;
+  const CREATURE_REFERENCE_HEIGHT = 0.9; // Converts player-authored body-height offsets to each animal plane's visible height in applyCreatureFrame.
+  const CREATURE_DIRECTION_QUARTER_TURN = Object.freeze({ front: 'left', right: 'front', back: 'right', left: 'back' }); // Rotates the humanoid blend poles +90° for side-on animal planes.
+  const CREATURE_BASIS_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // Rotates humanoid-authored motion axes into the animal card's local basis.
+  const CREATURE_BASIS_INVERSE = CREATURE_BASIS_QUATERNION.clone().invert(); // Reused each frame to avoid allocating basis transforms per active animal.
 
   let playerLegsRef = null;
   let baseBodyY = 0;
+  const creatureStates = new Set(); // Tracks active creature reactions for mobile diagnostics and cleanup when playback ends.
 
   const recoveryAxis = new THREE.Vector3(1, 0, 0); // Used by recovery rolls; dodge direction blends X/Z while prone recovery keeps +X.
   const playback = {
@@ -66,6 +71,21 @@
     };
   }
 
+  function sampleBody(frameA, frameB, t) {
+    return {
+      quaternion: slerpQuat(
+        frameA.ragdoll.body.localQuaternion,
+        frameB.ragdoll.body.localQuaternion,
+        t
+      ),
+      y: lerp(
+        frameA.ragdoll.body.localPosition.y,
+        frameB.ragdoll.body.localPosition.y,
+        t
+      ),
+    };
+  }
+
   function publishBodyPose(quaternion, yOffset = 0) {
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
@@ -78,17 +98,8 @@
   function applyFrame(frameA, frameB, t) {
     if (!frameA || !frameB) return;
 
-    const bodyQuat = slerpQuat(
-      frameA.ragdoll.body.localQuaternion,
-      frameB.ragdoll.body.localQuaternion,
-      t
-    );
-    const bodyY = lerp(
-      frameA.ragdoll.body.localPosition.y,
-      frameB.ragdoll.body.localPosition.y,
-      t
-    );
-    publishBodyPose(bodyQuat, bodyY - baseBodyY);
+    const body = sampleBody(frameA, frameB, t);
+    publishBodyPose(body.quaternion, body.y - baseBodyY);
 
     if (!playerLegsRef) return;
     playerLegsRef.applyRecordedLegPose(
@@ -99,6 +110,96 @@
       'right',
       sampleLeg(frameA.ragdoll.ik.right, frameB.ragdoll.ik.right, t)
     );
+  }
+
+  function ensureCreatureImpactPivot(entity) {
+    const avatarRef = entity?.avatarRef;
+    const front = avatarRef?.frontPlane;
+    const back = avatarRef?.backPlane;
+    if (!front?.isObject3D || !back?.isObject3D) return null;
+    if (avatarRef.impactPivot?.isObject3D) return avatarRef.impactPivot;
+    if (!front.parent || front.parent !== back.parent) return null;
+
+    const parent = front.parent;
+    const pivot = new THREE.Group(); // Isolates impact pitch/roll from the creature group's persistent facing yaw.
+    pivot.name = 'creature_impact_visual';
+    parent.add(pivot);
+    pivot.add(front);
+    pivot.add(back);
+    avatarRef.impactPivot = pivot;
+    return pivot;
+  }
+
+  function applyCreatureFrame(state, frameA, frameB, t) {
+    if (!frameA || !frameB || !state?.pivot) return;
+    const body = sampleBody(frameA, frameB, t);
+    // Animal cards face along local X rather than the player's local Z.
+    // Conjugating by +90° Y rotates the authored pitch/roll axes with the
+    // blendspace instead of merely renaming its four directional clips.
+    state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
+    state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
+  }
+
+  function stopCreature(entity) {
+    const state = entity?._impactRagdollPlayback;
+    if (!state) return;
+    state.pivot?.quaternion?.identity?.();
+    if (state.pivot?.position) state.pivot.position.y = 0;
+    creatureStates.delete(state);
+    entity._impactRagdollPlayback = null;
+  }
+
+  function triggerCreature(entity, bank, direction, opts = {}) {
+    const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
+    const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!clip?.frames?.length || !pivot) return 0;
+
+    stopCreature(entity);
+    const requestedDurationS = Number(opts.durationSeconds);
+    const durationMultiplier = requestedDurationS > 0 && clip.durationSeconds > 0
+      ? Math.max(0.01, requestedDurationS / clip.durationSeconds)
+      : Math.max(0.01, Number(opts.durationMultiplier) || 1);
+    const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
+    const state = {
+      entity,
+      pivot,
+      bank,
+      direction: mappedDirection,
+      clip,
+      elapsedS: 0,
+      playbackRate: 1 / durationMultiplier,
+      holding: false,
+      baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
+      heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
+    }; // Stored on the entity so updateCreatureMesh can advance only the creature it is already rendering.
+    entity._impactRagdollPlayback = state;
+    creatureStates.add(state);
+    const [frameA, frameB, blend] = findBracket(clip.frames, 0);
+    applyCreatureFrame(state, frameA, frameB, blend);
+    return clip.durationSeconds * durationMultiplier;
+  }
+
+  function updateCreature(entity, dt) {
+    const state = entity?._impactRagdollPlayback;
+    if (!state) return false;
+    if (state.holding) {
+      if (!entity.prone) stopCreature(entity);
+      return true;
+    }
+
+    state.elapsedS += Math.max(0, Number(dt) || 0) * state.playbackRate;
+    if (state.elapsedS >= state.clip.durationSeconds) {
+      const [lastFrame] = findBracket(state.clip.frames, state.clip.durationSeconds);
+      applyCreatureFrame(state, lastFrame, lastFrame, 0);
+      if (state.bank === 'breakThrow' && entity.prone) state.holding = true;
+      else stopCreature(entity);
+      return true;
+    }
+
+    const [frameA, frameB, blend] = findBracket(state.clip.frames, state.elapsedS);
+    applyCreatureFrame(state, frameA, frameB, blend);
+    return true;
   }
 
   function trigger(bank, direction, opts = {}) {
@@ -255,6 +356,7 @@
       suppressLocomotion: playback.suppressLocomotion,
       recoveryBlend: playback.recoveryBlend ? { ...playback.recoveryBlend } : null,
       recoveryAxis: { x: recoveryAxis.x, y: recoveryAxis.y, z: recoveryAxis.z },
+      activeCreatureReactions: creatureStates.size,
     };
   }
 
@@ -267,6 +369,9 @@
     isActive,
     isHolding,
     currentDirection,
+    triggerCreature,
+    updateCreature,
+    stopCreature,
     getDebug,
   };
 })();

@@ -28,6 +28,160 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // ── Heart levels (0-5, in 1/5-heart steps) ──────────────────────────
+  // A housed animal's heart level rises or falls by one step per day
+  // depending on whether its assigned trough held feed it actually eats
+  // (see tickHearts) — see collectResource for the quality/cooldown
+  // payoff and tickBreedingProgress for the offspring-rarity/gestation-speed one.
+  const HEART_MAX = 5;
+  const HEART_STEP = 1 / 5;
+  const HEART_DEFAULT = 2; // Starting point for newly released/born livestock — neither neglected nor doted on yet.
+
+  function dietFor(kind) {
+    return deps.LIVESTOCK_DIET?.[kind] || 'omnivore';
+  }
+  // Which barn-trough feed item keys a given diet will actually eat.
+  function feedKeysForDiet(diet) {
+    if (diet === 'predator') return ['meatFodder'];
+    if (diet === 'prey') return ['plantFodder'];
+    return ['plantFodder', 'meatFodder'];
+  }
+  const TROUGH_CAPACITY = 7; // "up to a week's feed in advance"
+
+  // Lazily creates/resizes a barn's troughs array to match its tier's
+  // slot count — barns built before this feature (or a tier whose slot
+  // count later changed) just grow/shrink to fit instead of erroring.
+  // Each trough is itself TROUGH_CAPACITY (7) individual feed slots —
+  // "akin to farm storage" but non-stacking, one fodder unit per slot —
+  // rather than a flat {plantFodder,meatFodder} count, so a trough can
+  // genuinely be picked apart/refilled slot by slot from its panel.
+  function _ensureBarnTroughs(barn) {
+    const slots = deps.getBarnTiers()[barn.tier]?.slots || 0;
+    if (!Array.isArray(barn.troughs)) barn.troughs = [];
+    while (barn.troughs.length < slots) barn.troughs.push({ slots: Array(TROUGH_CAPACITY).fill(null) });
+    if (barn.troughs.length > slots) barn.troughs.length = slots;
+    for (const trough of barn.troughs) {
+      if (Array.isArray(trough.slots)) continue;
+      // Migrate a pre-slot-inventory trough ({plantFodder,meatFodder}
+      // counts) into filled slots instead of just dropping its contents.
+      const migrated = [];
+      for (let i = 0; i < (trough.plantFodder || 0) && migrated.length < TROUGH_CAPACITY; i++) migrated.push('plantFodder');
+      for (let i = 0; i < (trough.meatFodder || 0) && migrated.length < TROUGH_CAPACITY; i++) migrated.push('meatFodder');
+      while (migrated.length < TROUGH_CAPACITY) migrated.push(null);
+      trough.slots = migrated;
+      delete trough.plantFodder; delete trough.meatFodder;
+    }
+    return barn.troughs;
+  }
+  function troughTotal(trough) {
+    return trough?.slots ? trough.slots.filter(Boolean).length : 0;
+  }
+
+  // Deposits up to `amount` held Plant/Meat Fodder into a specific barn
+  // trough's empty slots (one unit per slot, never stacked) — called from
+  // the trough's in-world panel (see game.js's openTroughPanel).
+  function depositFeedToTrough(barnId, troughIndex, itemKey, amount = 1) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    if (itemKey !== 'plantFodder' && itemKey !== 'meatFodder') return { ok: false, message: 'Troughs only hold Plant Fodder or Meat Fodder.' };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    const trough = troughs[troughIndex];
+    if (!trough) return { ok: false, message: 'No trough there.' };
+    const held = deps.inventory[itemKey] || 0;
+    let moved = 0;
+    for (let i = 0; i < trough.slots.length && moved < amount && moved < held; i++) {
+      if (trough.slots[i] == null) { trough.slots[i] = itemKey; moved++; }
+    }
+    if (moved <= 0) return { ok: false, message: troughTotal(trough) >= TROUGH_CAPACITY ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
+    deps.inventory[itemKey] -= moved;
+    deps.clampInventoryStack(itemKey);
+    deps.saveFarmLayout();
+    deps.refreshTroughVisual?.(barnId, troughIndex);
+    return { ok: true, message: `Added ${moved} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
+  }
+
+  // Takes one specific slot's fodder back out of a trough and returns it
+  // to the player's bag — called from the trough panel's "Take" button.
+  function withdrawFeedFromTrough(barnId, troughIndex, slotIndex) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    const trough = troughs[troughIndex];
+    const itemKey = trough?.slots?.[slotIndex];
+    if (!itemKey) return { ok: false, message: 'That slot is empty.' };
+    trough.slots[slotIndex] = null;
+    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + 1);
+    deps.saveFarmLayout();
+    deps.refreshTroughVisual?.(barnId, troughIndex);
+    return { ok: true, message: `Took 1 ${deps.ITEM_DEFS[itemKey]?.label || itemKey} from the trough.` };
+  }
+
+  // Re-homes a housed animal to a different trough within its own barn
+  // (or clears its assignment with troughIndex null) — separate from
+  // assignToBarn, which only auto-picks the first free trough.
+  function assignToTrough(livestockId, troughIndex) {
+    if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+    const list = deps.loadWorldLivestock();
+    const rec = list.find(l => l.id === livestockId);
+    if (!rec || !rec.barnId) return { ok: false, message: 'That animal is not housed in a barn.' };
+    const farmBuildings = deps.getFarmBuildings();
+    const barn = farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn');
+    if (!barn) return { ok: false, message: 'Barn not found.' };
+    const troughs = _ensureBarnTroughs(barn);
+    if (troughIndex != null) {
+      if (!troughs[troughIndex]) return { ok: false, message: 'No trough there.' };
+      const takenBy = list.find(l => l.barnId === rec.barnId && l.troughIndex === troughIndex && l.id !== livestockId);
+      if (takenBy) return { ok: false, message: `That trough is already ${takenBy.name}'s.` };
+    }
+    rec.troughIndex = troughIndex;
+    deps.saveWorldLivestock(list);
+    return { ok: true, message: troughIndex != null ? `${rec.name} assigned to trough ${troughIndex + 1}.` : `${rec.name} unassigned from its trough.` };
+  }
+
+  // Composites a genotype's textures onto an animal's front/back planes —
+  // shared by both factories' initial one-shot compose below and their
+  // per-frame blink-toggle recompose (item 3): a farm animal never runs,
+  // so there's no per-frame retry loop the way the wild/companion
+  // CREATURE_DB path needs via updateCreatureAnimFrame, but blinking still
+  // needs a fresh compose each time window.CreatureBlink's eyes-open/shut
+  // state actually flips. Resolves true once a real composited texture
+  // got applied, false otherwise (no genotype, no renderer, or a failed
+  // compose) — callers use this to know whether to retry.
+  function _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut) {
+    if (!genotype || !window.CreatureGeneticsRender) return Promise.resolve(false);
+    return window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+      if (!canvas) return false;
+      const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+      const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+      backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+      for (const child of avatarRef.group.children) {
+        if (!child.material) continue;
+        if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+      }
+      return true;
+    }).catch(() => false);
+  }
+
+  // Ticks a farm animal's eye-blink state and kicks off a recompose only
+  // when window.CreatureBlink's eyes-open/shut state actually flips —
+  // guarded by _blinkComposePending so an in-flight compose can't overlap
+  // with another one kicked off before it resolves.
+  function _tickFarmAnimalBlink(animal) {
+    if (!animal.genotype || !window.CreatureGeneticsRender || animal._blinkComposePending) return;
+    const blinkShut = window.CreatureBlink?.isShut(animal, performance.now()) || false;
+    if (animal._blinkAppliedShut === blinkShut) return;
+    animal._blinkComposePending = true;
+    _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, 'idle', animal.genotype, blinkShut).then(applied => {
+      animal._blinkComposePending = false;
+      if (applied) animal._blinkAppliedShut = blinkShut;
+    });
+  }
+
   function canSpawnAt(col, row) {
     const grid = deps.getGrid();
     const tile = grid[row]?.[col];
@@ -132,6 +286,69 @@
   const FARM_ANIMAL_WANDER_RADIUS_TILES = 5;
   const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
   const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
+  const LIVESTOCK_LOOK_RANGE_TILES = 3.75;
+
+  // Livestock use the same face-height contract as wild companions, but this
+  // module owns a separate tile-space update loop (farm animals are not in
+  // hostileObjects).  The game supplies the player's smoothed portrait face
+  // point in farm-world units so these animals never aim at the feet/body
+  // center by accident.
+  function _farmAnimalHeadWorldY(animal) {
+    // See docs/js/creature-head-cache.js — same formula, now shared and
+    // cached per-frame rather than a hand copy local to this module.
+    return window.CreatureHeadCache?.getHeadWorld(animal, 'animal')?.worldY ?? (Number(animal.wy) || 0);
+  }
+
+  function _farmAnimalFaceLook(animal, dt) {
+    const target = deps.getPlayerFaceTarget?.();
+    if (!target) return null;
+    const targetZ = Number.isFinite(Number(target.z)) ? Number(target.z) : Number(target.y);
+    const dx = Number(target.x) - Number(animal.wx);
+    const dz = targetZ - Number(animal.wz);
+    const distance = Math.hypot(dx, dz);
+    // "Stare back if you focus on their head" — the player's own aim/cursor
+    // ray (the same one "Show Interaction Raycast" already visualizes)
+    // landing on this animal's actual head point overrides the normal
+    // proximity gate below, same as it does for ground companions
+    // (game.js's _isPlayerFocusedOnHead).
+    const headWorld = { x: Number(animal.wx) || 0, y: _farmAnimalHeadWorldY(animal), z: Number(animal.wz) || 0 };
+    const focused = !!deps.isPlayerFocusedOnHead?.(headWorld);
+    if (!focused && (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES)) return null;
+
+    const targetWorldY = Number(target.worldY);
+    if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
+      const horizontal = Math.max(0.15, distance);
+      // Negated — this rig's own convention is negative degrees = up,
+      // positive = down (confirmed via the vocalization head-nod, see
+      // png-plane-avatar.js's applyDegrees), the opposite of what a plain
+      // atan2 of the vertical delta gives.
+      const pitchDeg = -Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
+      animal.avatarRef.updateHeadRotation(pitchDeg, dt);
+      // Feeds the "Show Interaction Raycast" debug overlay (docs/js/debug-hitboxes.js) —
+      // already in Three.js world (tile) units, unlike game.js's own
+      // _setLookAtDebug which converts from raw pixels.
+      animal._lookAtDebug = {
+        head: headWorld,
+        target: { x: Number(target.x), y: targetWorldY, z: targetZ },
+      };
+    }
+    return -Math.atan2(dz, dx) + Math.PI / 2;
+  }
+
+  function _restoreFarmAnimalHead(animal, dt) {
+    const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
+    animal._lookAtDebug = null;
+    if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
+      animal.avatarRef.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, dt);
+    }
+  }
+
+  function _farmAnimalLookTarget(animal, dt, idle) {
+    const faceTargetRot = _farmAnimalFaceLook(animal, dt);
+    if (faceTargetRot !== null) return faceTargetRot;
+    _restoreFarmAnimalHead(animal, dt);
+    return idle ? deps.nearestAngleAmong(animal.groupRot, deps.cameraRelativePerps()) : animal.targetRot;
+  }
 
   function _farmAnimalPickWanderTarget(animal) {
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -222,15 +439,23 @@
     if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
+    const buttons = []; // Livestock may offer both its normal resource action and an administered potion action.
+    const heldKey = deps.getHeldItemKey?.(); // Ordinary held-item selection is the only administration source.
+    const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
+    const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
+    if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
+      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'primary', allowed: true });
+    }
     if (rec?.resourceReady && resDef) {
       const itemLabel = deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
       const verb = deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
-      return [{ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
+      buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
     }
-    return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
+    return buttons.length ? buttons : [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
   }
 
   function _farmAnimalOnAction(animal, action, fallbackMessage) {
+    if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_collect_' + animal.id) {
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
       const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
@@ -238,6 +463,23 @@
       return collectResource(animal.livestockId);
     }
     return { ok: false, message: fallbackMessage };
+  }
+
+  function administerBreedingPotion(livestockId, itemKey) {
+    const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Permanent brewed potency payload.
+    const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authoritative administration mode.
+    if (definition?.useMode !== 'livestock' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
+    const list = deps.loadWorldLivestock();
+    const rec = list.find(entry => entry.id === livestockId);
+    if (!rec) return { ok: false, message: 'Livestock not found.' };
+    rec.pendingOffspringSizeShift = Math.sign(definition.sizeShift); // Exactly one pending next-offspring class shift.
+    deps.inventory[itemKey]--;
+    deps.clampInventoryStack(itemKey);
+    deps.saveWorldLivestock(list);
+    deps.saveMemberWorldData?.();
+    deps.refreshItemScroll?.();
+    return { ok: true, message: `${definition.icon} ${definition.label} will affect ${rec.name || 'this animal'}'s next offspring.` };
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
@@ -250,10 +492,12 @@
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: 'uumkaoii_' + col + '_' + row,
+      creatureId: 'uumkaoii',
+      headRig: window.CreatureGeneticsRender?.headRigForKind?.('uumkaoii') || undefined,
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -280,19 +524,7 @@
     // idle-only composite below (a farm animal never runs, so there's no
     // per-frame retry loop to wire up the way the wild/companion
     // CREATURE_DB path needs via updateCreatureAnimFrame).
-    if (genotype && window.CreatureGeneticsRender) {
-      window.CreatureGeneticsRender.composeFrame('uumkaoii', 'idle', genotype).then(canvas => {
-        if (!canvas) return;
-        const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-        const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-        backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-        for (const child of avatarRef.group.children) {
-          if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-          else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-        }
-      }).catch(() => {});
-    }
+    if (genotype && window.CreatureGeneticsRender) _applyGenotypeCompositeTexture(avatarRef, 'uumkaoii', 'idle', genotype, false);
 
     const animal = {
       id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
@@ -302,7 +534,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, avatarRef,
+      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -344,11 +576,13 @@
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
+        _tickFarmAnimalBlink(this);
 
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = idle ? deps.nearestAngleAmong(this.groupRot, deps.cameraRelativePerps()) : this.targetRot;
+        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
         const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
@@ -387,10 +621,12 @@
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
+      creatureId: kind,
+      headRig: window.CreatureGeneticsRender?.headRigForKind?.(kind) || undefined,
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
-    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
+    window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Rotated animal planes expose their visual width on group Z.
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -413,19 +649,7 @@
       if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
     });
 
-    if (genotype && window.CreatureGeneticsRender) {
-      window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
-        if (!canvas) return;
-        const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-        const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-        backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-        for (const child of avatarRef.group.children) {
-          if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-          else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-        }
-      }).catch(() => {});
-    }
+    if (genotype && window.CreatureGeneticsRender) _applyGenotypeCompositeTexture(avatarRef, kind, 'idle', genotype, false);
 
     const animal = {
       id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
@@ -435,7 +659,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, avatarRef,
+      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -463,9 +687,11 @@
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+        window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
+        _tickFarmAnimalBlink(this);
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = idle ? deps.nearestAngleAmong(this.groupRot, deps.cameraRelativePerps()) : this.targetRot;
+        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
         const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
@@ -543,9 +769,10 @@
     const livestock = deps.loadWorldLivestock();
     const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
     livestock.push({
-      id, kind, barnId: null, releasedAt: Date.now(),
+      id, kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
       name: window.CreatureGenetics.defaultLivestockName(kind), genotype,
       daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+      heartLevel: HEART_DEFAULT,
       ...(kind === 'uumkaoii' ? { dewColor: deps.UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: deps.UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
     });
     deps.saveWorldLivestock(livestock);
@@ -569,7 +796,16 @@
     const occupants = list.filter(l => l.barnId === barnId).length;
     if (occupants >= tier.slots) return { ok: false, message: `${tier.label} is full (${tier.slots} slots).` };
     const wasAssigned = !!rec.barnId;
+    const prevBarn = wasAssigned ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
+    if (prevBarn) { const prevTroughs = _ensureBarnTroughs(prevBarn); if (rec.troughIndex != null && prevTroughs[rec.troughIndex]) rec.troughIndex = null; }
     rec.barnId = barnId;
+    if (rec.heartLevel == null) rec.heartLevel = HEART_DEFAULT;
+    // Auto-pick the first trough in this barn no other housed animal has
+    // claimed — a farmhand can move it later via assignToTrough.
+    const troughs = _ensureBarnTroughs(barn);
+    const takenIndices = new Set(list.filter(l => l.barnId === barnId && l.id !== rec.id && l.troughIndex != null).map(l => l.troughIndex));
+    rec.troughIndex = troughs.findIndex((_, i) => !takenIndices.has(i));
+    if (rec.troughIndex < 0) rec.troughIndex = null;
     if (rec.daysUntilResource == null) rec.daysUntilResource = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
     if (rec.kind === 'uumkaoii' && rec.dewDaysUntil == null) {
       rec.dewColor = rec.dewColor || deps.UUMKAOII_DEFAULT_DEW_COLOR;
@@ -577,6 +813,7 @@
       rec.dewReady = false;
     }
     deps.saveWorldLivestock(list);
+    deps.saveFarmLayout();
     if (!wasAssigned) {
       const spot = deps.findOpenTileNearBarn(barn);
       if (spot) {
@@ -597,7 +834,16 @@
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     rec.barnId = null;
+    rec.troughIndex = null;
     rec.assignedVatId = null; // can't work a vat while unhoused — same gate as dew/egg cooldowns
+    if (rec.kind === 'uumkaoii') {
+      // Re-arm the dew cooldown so a ready-but-unclaimed dew doesn't fire
+      // on the very next tick after being re-housed — stasis should pause
+      // dew progress, not just delay collection of an already-armed drop.
+      rec.dewReady = false;
+      rec.dewDaysUntil = deps.UUMKAOII_DEW_COOLDOWN_DAYS;
+      rec.dewReadyStaleDays = 0;
+    }
     deps.saveWorldLivestock(list);
     const animal = [...deps.animalObjects].find(a => a.livestockId === livestockId);
     if (animal) { deps.worldObjects.delete(animal.col + ',' + animal.row); deps.animalObjects.delete(animal); animal.reset && animal.reset(); }
@@ -613,11 +859,19 @@
     const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
     if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
     deps.inventory[resDef.itemKey] = Math.min(99, (deps.inventory[resDef.itemKey] || 0) + 1);
-    const stars = deps.rollItemStars?.('farming') || 3; // Used for Farming's animal-good quality bonus.
+    const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
+    // A well-cared-for (well-fed, high-heart) animal nudges its own
+    // product quality up on top of whatever Farming rolls — every full
+    // heart above 2.5 (the "content" midpoint) is one extra guaranteed
+    // star, every full heart below it is one fewer, clamped to 1-5.
+    const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2));
+    const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
     deps.awardFarmingXp?.();
     rec.resourceReady = false;
-    rec.daysUntilResource = resDef.cooldownDays;
+    // Higher hearts also shorten the regen cooldown — up to 40% faster at
+    // a full 5 hearts, never below 1 day.
+    rec.daysUntilResource = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08)));
     deps.saveWorldLivestock(list);
     return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
@@ -694,6 +948,45 @@
       }
     });
     if (changed) deps.saveWorldLivestock(list);
+  }
+
+  // Daily feed consumption + heart-level tick — called from game.js's
+  // advanceDay()/sleepInBed() alongside tickResources() (breeding is now
+  // hourly — see tickBreedingProgress).
+  // Every housed animal assigned to a trough eats 1 unit/day of whichever
+  // fodder type(s) its diet allows (see feedKeysForDiet); eating raises
+  // its heart level by one 1/5 step (capped at HEART_MAX), no food it can
+  // eat in its trough drops it by one step (floored at 0). An animal with
+  // no trough assignment at all (e.g. a barn built before this feature)
+  // counts as unfed, same as an empty trough.
+  function tickHearts() {
+    const list = deps.loadWorldLivestock();
+    const farmBuildings = deps.getFarmBuildings();
+    const barnsById = new Map(farmBuildings.filter(b => b.kind === 'barn').map(b => [b.id, b]));
+    let changed = false;
+    const troughsToRefresh = []; // [{barnId, troughIndex}] — visuals refreshed once after saveFarmLayout below.
+    list.forEach(l => {
+      if (!l.barnId) return; // stasis — no upkeep, no decay
+      const barn = barnsById.get(l.barnId);
+      const troughs = barn ? _ensureBarnTroughs(barn) : null;
+      const trough = troughs && l.troughIndex != null ? troughs[l.troughIndex] : null;
+      const eatableKeys = feedKeysForDiet(dietFor(l.kind));
+      const eatenSlot = trough?.slots ? trough.slots.findIndex(s => s && eatableKeys.includes(s)) : -1;
+      if (l.heartLevel == null) l.heartLevel = HEART_DEFAULT;
+      if (eatenSlot >= 0) {
+        trough.slots[eatenSlot] = null;
+        troughsToRefresh.push({ barnId: l.barnId, troughIndex: l.troughIndex });
+        l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
+      } else {
+        l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
+      }
+      changed = true;
+    });
+    if (changed) deps.saveWorldLivestock(list);
+    if (troughsToRefresh.length) {
+      deps.saveFarmLayout();
+      for (const { barnId, troughIndex } of troughsToRefresh) deps.refreshTroughVisual?.(barnId, troughIndex);
+    }
   }
 
   // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
@@ -854,14 +1147,9 @@
   }
 
   // Gestation length for a set breeding pair, in in-game days — resolved
-  // by tickBreeding() on the same day-tick crops use.
+  // hourly by tickBreedingProgress() (see GESTATION_HOURS_PER_DAY below).
   const LIVESTOCK_GESTATION_DAYS = 3;
 
-  // Resolves every breeding pair whose gestation has elapsed: crosses
-  // the parents' genotypes (crossOffspring), spawns the offspring on an
-  // open tile, and appends it to world.livestock. Pairs are consumed on
-  // resolution — a farmhand must re-pair to breed again. Called from
-  // game.js's advanceDay()/sleepInBed() alongside tickCropDay().
   // A breeding-pair parent ref is { source: 'world'|'stable', id, characterId? }
   // — 'world' points into this farm's own livestock, 'stable' points into
   // a specific character's personal stable (characterId required so the
@@ -879,38 +1167,111 @@
       return (meta?.characters || []).find(c => c.id === characterId)?.stable ?? [];
     } catch { return []; }
   }
-  function resolveBreedingParent(ref, worldLivestock) {
+  function _saveCharacterStable(characterId, stableEntries) {
+    try {
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const character = (meta?.characters || []).find(entry => entry.id === characterId);
+      if (!character) return;
+      character.stable = stableEntries;
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+    } catch { /* A malformed legacy profile must not break the day tick. */ }
+  }
+  function resolveBreedingParent(ref, worldLivestock, stableCache) {
     if (!ref) return null;
-    if (ref.source === 'stable') return _loadCharacterStable(ref.characterId).find(s => s.id === ref.id) || null;
+    if (ref.source === 'stable') {
+      const stable = stableCache?.get(ref.characterId) || _loadCharacterStable(ref.characterId);
+      stableCache?.set(ref.characterId, stable);
+      return stable.find(s => s.id === ref.id) || null;
+    }
     return worldLivestock.find(l => l.id === ref.id) || null;
   }
 
-  function tickBreeding() {
+  function shiftedSizeClass(sizeClass, shift) {
+    const classes = ['small', 'medium', 'large']; // Existing genotype Size vocabulary.
+    const index = Math.max(0, classes.indexOf(String(sizeClass || 'medium').toLowerCase()));
+    return classes[Math.max(0, Math.min(classes.length - 1, index + Math.sign(shift || 0)))];
+  }
+
+  // A well-hearted pair breeds faster and throws rarer traits more often —
+  // 0 hearts (average of both parents) is the slow/plain end, 5 hearts the
+  // fast/lucky end. Both scale linearly off the same avgHeart input so
+  // "keep them fed" reads as one consistent payoff, not two unrelated dials.
+  function breedingSpeedMultiplier(avgHeart) {
+    return 0.6 + (avgHeart / HEART_MAX) * 0.9; // 0.6x .. 1.5x
+  }
+  function breedingMutationChance(avgHeart) {
+    const base = window.CreatureGenetics.MUTATION_CHANCE || 0.05;
+    return base * (1 + (avgHeart / HEART_MAX) * 2); // base .. 3x base
+  }
+  function parentHeartLevel(parent) {
+    return Number.isFinite(parent?.heartLevel) ? parent.heartLevel : HEART_DEFAULT; // Stable pets/legacy records carry no heart level — treat as the neutral default rather than penalizing them as starved.
+  }
+
+  // The game's "day" only actually models its waking hours (calendar's
+  // MORNING_HOUR..NIGHT_HOUR span, see CalendarSystem.getHour) — night is
+  // skipped straight through by sleeping rather than simulated — so that's
+  // the unit hourly breeding progress is denominated in.
+  const GESTATION_HOURS_PER_DAY = 16;
+
+  // Resolves every breeding pair's progress by `dayFraction` (a fraction
+  // of one full gestation *day*, not a whole day — see the two call
+  // sites: game.js's updateCalendar ticks 1/GESTATION_HOURS_PER_DAY per
+  // real in-game hour crossed during normal play, so a pair's bar visibly
+  // creeps forward through the day instead of only jumping once at
+  // morning; sleepInBed() instead passes whatever fraction of the day's
+  // waking hours sleeping skipped over, so the two paths always sum to
+  // the same one-day's-worth of progress regardless of how it was spent).
+  // Sped up by the parents' average heart level (see setBreedingPair's
+  // {startedDay, progress: 0} bar) and completes any pair that just
+  // filled, the moment it crosses 100% rather than waiting for the next
+  // morning: crosses the parents' genotypes (crossOffspring, itself
+  // heart-boosted toward rarer traits), spawns the offspring on an open
+  // tile, and appends it to world.livestock. Pairs are consumed on
+  // resolution — a farmhand must re-pair to breed again.
+  function tickBreedingProgress(dayFraction = 1 / GESTATION_HOURS_PER_DAY) {
     const pairs = deps._loadWorldBreedingPairs();
-    if (!pairs.length) return;
+    if (!pairs.length || dayFraction <= 0) return;
     const livestock = deps.loadWorldLivestock();
+    const stableCache = new Map(); // Persists pending modifiers for stable parents too.
     const remainingPairs = [];
     let changed = false;
     for (const pair of pairs) {
-      if (deps.calendar.day < pair.readyDay) { remainingPairs.push(pair); continue; }
-      const parentA = resolveBreedingParent(pair.parentA, livestock);
-      const parentB = resolveBreedingParent(pair.parentB, livestock);
+      const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
+      const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
+      if (!parentA || !parentB) { changed = true; continue; } // a parent was sold/removed/stable-emptied — pair quietly lapses
+      // Migrate a pre-heart-level pair (readyDay, no progress field yet)
+      // to an equivalent starting progress instead of losing its head start.
+      if (pair.progress == null) {
+        const totalDays = Math.max(1, Number(pair.readyDay) - Number(pair.startedDay));
+        const elapsedDays = Math.max(0, Number(deps.calendar.day) - Number(pair.startedDay));
+        pair.progress = Math.min(0.999, elapsedDays / totalDays);
+      }
+      const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
+      pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
       changed = true;
-      if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
+      if (pair.progress < 1) { remainingPairs.push(pair); continue; }
       const kind = parentA.kind;
-      const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind);
+      const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind, breedingMutationChance(avgHeart));
+      const shiftA = Math.sign(Number(parentA.pendingOffspringSizeShift) || 0); // Pending one-off parent A modifier.
+      const shiftB = Math.sign(Number(parentB.pendingOffspringSizeShift) || 0); // Pending one-off parent B modifier.
+      const resolvedShift = shiftA && shiftB ? (shiftA === shiftB ? shiftA : 0) : (shiftA || shiftB); // Same applies once; opposites cancel.
+      if (resolvedShift) childGenotype.sizeClass = shiftedSizeClass(childGenotype.sizeClass, resolvedShift); // Genetics first, authored shift second.
+      if (shiftA) parentA.pendingOffspringSizeShift = 0;
+      if (shiftB) parentB.pendingOffspringSizeShift = 0;
       // Newborns start in stasis just like a freshly-released crate
       // animal — the owner assigns them to a barn from the Farm tab
       // when there's room, same as any other unhoused livestock.
       livestock.push({
-        id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, releasedAt: Date.now(),
+        id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
         name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
         daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+        heartLevel: HEART_DEFAULT,
       });
       deps.showToast(`🐣 A new ${window.CreatureGenetics.defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
     }
     if (changed) {
       deps.saveWorldLivestock(livestock);
+      stableCache.forEach((entries, characterId) => _saveCharacterStable(characterId, entries));
       deps._saveWorldBreedingPairs(remainingPairs);
     }
   }
@@ -1013,19 +1374,33 @@
     addFromItem,
     assignToBarn,
     unassignFromBarn,
+    assignToTrough,
+    depositFeedToTrough,
+    withdrawFeedFromTrough,
+    ensureBarnTroughs: _ensureBarnTroughs,
+    dietFor,
+    feedKeysForDiet,
     tickResources,
+    tickHearts,
     isHarvesting,
     updateHarvestInteraction,
     addToStable,
+    administerBreedingPotion,
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,
     resolveBreedingParent,
-    tickBreeding,
+    shiftedSizeClass,
+    tickBreedingProgress,
+    GESTATION_HOURS_PER_DAY,
     clearAnimalObjects,
     updateAnimalMeshes,
     setVatWorkerPose,
     clearVatWorkerPose,
     GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,
+    HEART_MAX,
+    HEART_STEP,
+    HEART_DEFAULT,
+    TROUGH_CAPACITY,
   };
 })();

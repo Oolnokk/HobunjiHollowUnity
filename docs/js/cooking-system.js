@@ -7,7 +7,7 @@
   const CATEGORY_ICONS = {
     sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
-  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', crafting: '🛠️', mining: '⛏️' }; // Used by food previews and the shared buff bar.
+  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
 
   let deps = null; // Used as the only bridge to inventory, saving, and the host game's UI refreshes.
   let selectedRecipeId = null; // Used to preserve the selected recipe while rerendering.
@@ -16,6 +16,7 @@
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
+  let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
 
   const data = () => window.HobunjiCookingData || { items: {}, recipes: [] }; // Used to keep this module inert if content fails to load.
   const canonicalKey = key => ITEM_ALIASES[key] || key; // Used whenever prototype ids cross into the game's inventory.
@@ -144,8 +145,14 @@
     ).sort(([, a], [, b]) => String(a.label).localeCompare(String(b.label))); // Used to populate each category-constrained slot picker.
   }
 
+  function recipeAllowed(recipe) {
+    return !maxIngredientsLimit || recipe.slots.length <= maxIngredientsLimit;
+  }
+
   function selectedRecipe() {
-    return data().recipes.find(recipe => recipe.id === selectedRecipeId) || data().recipes[0] || null;
+    const explicit = data().recipes.find(recipe => recipe.id === selectedRecipeId);
+    if (explicit && recipeAllowed(explicit)) return explicit;
+    return data().recipes.find(recipeAllowed) || data().recipes[0] || null;
   }
 
   function selectionIsValid(recipe = selectedRecipe()) {
@@ -215,9 +222,9 @@
   function outputQuality(recipe) {
     const selections = recipe.slots.map(slot => selectedSlots[slot.id]).filter(Boolean); // Used to average actual input quality.
     const average = selections.reduce((sum, selected) => sum + selected.stars, 0) / Math.max(1, selections.length);
-    const craftingLift = Math.max(0, (window.SkillSystem?.effectiveLevel?.('crafting') || 0) / (window.SkillSystem?.MAX_LEVEL || 20) * 1.2); // Used to let Crafting improve food quality.
+    const cookingLift = Math.max(0, (window.SkillSystem?.effectiveLevel?.('cooking') || 0) / (window.SkillSystem?.MAX_LEVEL || 20) * 1.2); // Used to let Cooking improve food quality.
     const jitter = ((deps.random || Math.random)() - 0.5) * 0.8; // Used to keep cooking outcomes from being fully deterministic.
-    return Math.max(1, Math.min(5, Math.round(average + craftingLift + jitter)));
+    return Math.max(1, Math.min(5, Math.round(average + cookingLift + jitter)));
   }
 
   function recipeOutputIcon(recipe) {
@@ -247,7 +254,7 @@
       const label = foodName(recipe, effects);
       const saved = [];
       selections.forEach(({ selected }) => {
-        const saveChance = window.SkillSystem?.craftIngredientSaveChance?.() || 0; // Used for Crafting's independent per-ingredient save roll.
+        const saveChance = window.SkillSystem?.craftIngredientSaveChance?.() || 0; // Used for Cooking's independent per-ingredient save roll.
         if ((deps.random || Math.random)() < saveChance) saved.push(deps.ITEM_DEFS[selected.key]?.label || selected.key);
         else consumeQuality(selected.key, selected.stars, 1);
       });
@@ -262,7 +269,7 @@
       });
       deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);
       recordItemQuality(key, stars, 1);
-      window.SkillSystem?.award?.('crafting', window.SkillSystem?.XP_GAINS?.cook || 8, recipe.name);
+      window.SkillSystem?.award?.('cooking', window.SkillSystem?.XP_GAINS?.cook || 8, recipe.name);
       selectedSlots = {};
       cookTimer = null;
       deps.refreshItemScroll();
@@ -370,10 +377,10 @@
     const list = document.querySelector('[data-recipe-list]');
     if (!list) return;
     const query = document.querySelector('[data-recipe-search]')?.value.trim().toLowerCase() || ''; // Used to filter the 17 prototype recipes.
-    list.innerHTML = data().recipes.filter(recipe => !query || `${recipe.name} ${recipe.description}`.toLowerCase().includes(query)).map(recipe => {
+    list.innerHTML = data().recipes.filter(recipeAllowed).filter(recipe => !query || `${recipe.name} ${recipe.description}`.toLowerCase().includes(query)).map(recipe => {
       const ready = recipe.slots.every(slot => !slot.required || ingredientCandidates(slot).length); // Used to show whether any valid ingredient combination exists.
       return `<button type="button" class="cooking-recipe-card${recipe.id === selectedRecipeId ? ' selected' : ''}" data-recipe="${esc(recipe.id)}"><span>🍲</span><div><strong>${esc(recipe.name)}</strong><small>${recipe.slots.length} ingredients · ${ready ? 'available' : 'missing items'}</small></div></button>`;
-    }).join('') || '<p class="cooking-empty">No recipes match.</p>';
+    }).join('') || `<p class="cooking-empty">${maxIngredientsLimit ? 'No recipes this simple yet — improve Survivalist to cook more at camp.' : 'No recipes match.'}</p>`;
     list.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => { selectedRecipeId = button.dataset.recipe; selectedSlots = {}; render(); }));
   }
 
@@ -412,19 +419,24 @@
     renderDebug();
   }
 
-  function openAtHearth() {
+  function openAtHearth(options = {}) {
+    maxIngredientsLimit = Number.isFinite(options.maxIngredients) ? Math.max(1, Math.floor(options.maxIngredients)) : null; // Used by campfire cooking (Survivalist perk); unset for the ordinary indoor hearth.
+    if (maxIngredientsLimit && selectedRecipeId && !recipeAllowed(data().recipes.find(recipe => recipe.id === selectedRecipeId) || {})) selectedRecipeId = null;
     ensureUi();
     const layer = document.getElementById('hobunjiCookingLayer');
+    const kicker = layer.querySelector('.cooking-kicker');
+    if (kicker) kicker.textContent = maxIngredientsLimit ? 'CAMPFIRE COOKING' : 'HEARTH COOKING';
     layer.classList.add('open');
     layer.setAttribute('aria-hidden', 'false');
     deps.setInteractionBlocked?.(true);
     render();
     layer.querySelector('[data-recipe-search]')?.focus();
-    return { ok: true, message: 'Opened the hearth.' };
+    return { ok: true, message: maxIngredientsLimit ? 'Opened the campfire.' : 'Opened the hearth.' };
   }
 
   function close() {
     const layer = document.getElementById('hobunjiCookingLayer');
+    maxIngredientsLimit = null;
     if (!layer?.classList.contains('open')) return;
     layer.classList.remove('open');
     layer.setAttribute('aria-hidden', 'true');

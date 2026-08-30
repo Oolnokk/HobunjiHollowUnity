@@ -50,6 +50,43 @@
     return delta;
   }
 
+  function _pixelProbeShoulderPetTransformDebug() {
+    const pet = [...(deps?.companionObjects || [])].find(c =>
+      c?.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet');
+    if (!pet?.avatarRef?.group) return null;
+    const group = pet.avatarRef.group;
+    group.updateMatrixWorld?.(true);
+    const groupQuat = group.getWorldQuaternion?.(new THREE.Quaternion());
+    const groupEuler = group.getWorldRotation?.(new THREE.Euler(0, 0, 0, 'YXZ'));
+    const planes = {};
+    for (const [label, plane] of [['front', pet.avatarRef.frontPlane], ['back', pet.avatarRef.backPlane]]) {
+      if (!plane) continue;
+      plane.updateMatrixWorld?.(true);
+      const elements = plane.matrixWorld.elements;
+      const worldQuat = plane.getWorldQuaternion?.(new THREE.Quaternion());
+      const up = new THREE.Vector3(elements[4], elements[5], elements[6]).normalize();
+      const normal = new THREE.Vector3(elements[8], elements[9], elements[10]).normalize();
+      planes[label] = {
+        localEuler: [plane.rotation.x, plane.rotation.y, plane.rotation.z],
+        localQuat: [plane.quaternion.x, plane.quaternion.y, plane.quaternion.z, plane.quaternion.w],
+        worldQuat: worldQuat ? [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w] : null,
+        worldYaw: Math.atan2(normal.x, normal.z),
+        upY: up.y,
+        normal: [normal.x, normal.y, normal.z],
+        renderDebug: plane.userData?.hobunjiShoulderPetRenderDebug || null,
+      };
+    }
+    return {
+      time: performance.now(),
+      movementSpeed: Math.hypot(pet.vx || 0, pet.vy || 0),
+      groupYaw: groupEuler?.y ?? group.rotation.y,
+      groupWorldQuaternion: groupQuat ? [groupQuat.x, groupQuat.y, groupQuat.z, groupQuat.w] : null,
+      pngRot: pet.pngRot,
+      groupRot: pet.groupRot,
+      planes,
+    };
+  }
+
   function _pixelProbeCurrentFacingDebug() {
     const clamp = deps.player?.perpState?.pixelProbeDebug || {}; // Last clamp decision made specifically for the player state object.
     const renderYawRad = deps.playerMesh?.rotation?.y; // Final persistent body yaw after clamp and any tool/sweep override.
@@ -145,6 +182,35 @@
     } catch (e) { return null; }
   }
 
+  function _pixelProbeTextureMeta(mat) {
+    const tex = mat?.map;
+    if (!tex?.image) return null;
+    const img = tex.image;
+    const w = img.width || img.naturalWidth || 0, h = img.height || img.naturalHeight || 0;
+    const ud = tex.userData || {};
+    return {
+      size: `${w || '?'}x${h || '?'}`,
+      repeat: `${Number(tex.repeat?.x ?? 1).toFixed(2)}x${Number(tex.repeat?.y ?? 1).toFixed(2)}`,
+      flipY: tex.flipY !== false,
+      state: ud.hobunjiAuthoredSurfaceState || '-',
+      path: ud.hobunjiAuthoredSurfacePath || '-',
+      sourceSize: ud.hobunjiAuthoredSurfaceImageSize || '-',
+      error: ud.hobunjiAuthoredSurfaceError || null,
+    };
+  }
+
+  function _pixelProbeTextureNeighborhood(mat, uv) {
+    if (!mat?.map?.image || !uv) return null;
+    const offsets = [[0, 0], [-0.035, 0], [0.035, 0], [0, -0.035], [0, 0.035], [-0.025, -0.025], [0.025, 0.025]];
+    const samples = offsets.map(([du, dv]) => _pixelProbeTextureSampleAtUv(mat, { x: uv.x + du, y: uv.y + dv })).filter(Boolean);
+    if (samples.length < 2) return null;
+    const colors = samples.map(sample => sample.rgba);
+    const mins = [0, 1, 2].map(channel => Math.min(...colors.map(color => color[channel])));
+    const maxs = [0, 1, 2].map(channel => Math.max(...colors.map(color => color[channel])));
+    const unique = new Set(colors.map(color => color.join(','))).size;
+    return { unique, mins, maxs, samples: colors.length };
+  }
+
   // Walks up from a raycast hit to find which avatar (if any) owns it —
   // the player, an NPC walker, or a companion/mount/livestock creature —
   // and reports that owner's own current body colors alongside whatever
@@ -157,24 +223,199 @@
     while (node) {
       if (node === deps.playerMesh) {
         const appearance = deps.getPlayerData()?.appearance || {};
-        return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors };
+        return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors, root: deps.playerMesh };
       }
       for (const w of deps.npcWalkers) {
         if (node === w.root) {
           const appearance = w.rec?.appearance || {};
-          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors };
+          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, root: w.root };
         }
       }
       for (const c of deps.companionObjects) {
         if (node === c.avatarRef?.group) {
           const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
           const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.
-          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} ${scaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
+          const renderedScaleLabel = `${Math.round((c.avatarRef.group.scale.z || 1) * 100)}%w×${Math.round((c.avatarRef.group.scale.y || 1) * 100)}%h`; // Reports the rotated billboard's actual visible width/height axes.
+          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} configured ${scaleLabel} · rendered ${renderedScaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, root: c.avatarRef.group };
         }
       }
       node = node.parent;
     }
     return null;
+  }
+
+  // Node-by-node local position/rotation for every part of the hit character's
+  // rig (avatar body, head/neck bone, hand sockets, and — for the player only,
+  // since that's the one live tool-tracking case — the tool holder, which the
+  // combat/weapon system parents as a SIBLING of playerMesh rather than a
+  // child of it). Shares window.HobunjiTransformDump with the Attack Animation
+  // Editor's own "Dump preview transforms" button so the two reports are
+  // directly diffable field-for-field.
+  function _pixelProbeTransformDumpLines(hits) {
+    const dumpApi = window.HobunjiTransformDump;
+    if (!dumpApi) return Promise.resolve(null);
+    const owner = hits.map(h => _pixelProbeOwnerInfo(h.object)).find(o => o?.root);
+    if (!owner) return Promise.resolve(null);
+
+    function buildLines() {
+      const lines = ['', `=== Local transform dump: ${owner.kind} "${owner.label}" (compare against the same dump taken in the Attack Animation Editor) ===`];
+      lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(owner.root), { title: `${owner.kind} rig` }));
+      if (owner.kind === 'player' && deps.toolHolder) {
+        lines.push('');
+        lines.push(dumpApi.formatReport(dumpApi.dumpSubtree(deps.toolHolder), { title: 'player tool holder (parented as a sibling of playerMesh, not a child)' }));
+      }
+      return lines;
+    }
+
+    const composer = window.PlayerBodyTransformComposer;
+    if (owner.kind !== 'player' || !composer?.captureNextRenderTransforms) return Promise.resolve(buildLines());
+
+    // PlayerBodyTransformComposer applies body-tilt channels (e.g. the idle
+    // weapon-drawn bodyYaw) as a TEMPORARY delta to playerMesh/toolHolder only
+    // during the actual WebGLRenderer.render() call, then undoes it immediately
+    // after. Dumping between frames (the plain buildLines() path above) would
+    // read playerMesh/toolHolder back in their resting, untilted state while
+    // the hand sockets — synced during that same render, against the
+    // momentarily-tilted toolHolder — are left in their tilted state, an
+    // internally inconsistent snapshot that looks like a bogus editor/game
+    // desync. Wait for one real frame and dump from inside it instead, so
+    // every part of the report reflects the exact same as-rendered state.
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve(buildLines());
+      };
+      const scheduled = composer.captureNextRenderTransforms(finish);
+      if (!scheduled) { finish(); return; }
+      setTimeout(finish, 500); // Fallback if the game loop is paused/stalled — a resting-state report beats none.
+    });
+  }
+
+  function _runtimeVirtualRigTransform(label, transform, parent, source) {
+    const position = transform?.position || transform || {};
+    const rotation = transform?.rotationDeg || {};
+    const scale = transform?.scale || { x: 1, y: 1, z: 1 };
+    const localPosition = new THREE.Vector3(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
+    const localQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(Number(rotation.x) || 0),
+      THREE.MathUtils.degToRad(Number(rotation.y) || 0),
+      THREE.MathUtils.degToRad(Number(rotation.z) || 0),
+      'YXZ',
+    ));
+    parent?.updateWorldMatrix?.(true, false);
+    const worldPosition = parent?.localToWorld ? parent.localToWorld(localPosition.clone()) : localPosition.clone();
+    const parentQuaternion = parent?.getWorldQuaternion
+      ? parent.getWorldQuaternion(new THREE.Quaternion())
+      : new THREE.Quaternion();
+    const worldQuaternion = parentQuaternion.multiply(localQuaternion);
+    const parentScale = parent?.getWorldScale
+      ? parent.getWorldScale(new THREE.Vector3())
+      : new THREE.Vector3(1, 1, 1);
+    return {
+      label,
+      source,
+      localPosition: { x: localPosition.x, y: localPosition.y, z: localPosition.z },
+      localRotationDeg: { pitch: Number(rotation.x) || 0, yaw: Number(rotation.y) || 0, roll: Number(rotation.z) || 0 },
+      localScale: { x: Number(scale.x) || 1, y: Number(scale.y) || 1, z: Number(scale.z) || 1 },
+      worldPosition: { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z },
+      worldRotationDeg: window.HobunjiTransformDump.eulerYXZFromQuat(worldQuaternion),
+      worldScale: { x: parentScale.x * (Number(scale.x) || 1), y: parentScale.y * (Number(scale.y) || 1), z: parentScale.z * (Number(scale.z) || 1) },
+    };
+  }
+
+  // Direct runtime counterpart to MultiAvatarAnimationAuthor's rigger dump.
+  // The game resolves attachment anchors as data rather than scene objects,
+  // so their virtual transforms are composed through the live player root
+  // here using the same values playerAttachmentAnchor() supplies to gameplay.
+  function dumpRuntimeRigTransforms() {
+    const dumpApi = window.HobunjiTransformDump;
+    if (!dumpApi?.formatNamedTransformReport || !deps?.playerMesh) return null;
+    let portrait = null;
+    deps.playerMesh.traverse?.(object => {
+      if (!portrait && object.name === 'player_avatar') portrait = object;
+    });
+    const playerData = deps.getPlayerData?.() || {};
+    const appearance = playerData.appearance || {};
+    const groundY = Number(deps.getPlayerGroundY?.());
+    const playerWorld = deps.playerMesh.getWorldPosition(new THREE.Vector3());
+    const ground = {
+      label: 'ground',
+      source: 'activeSurfaceYAtWorld(player)',
+      localPosition: { x: 0, y: 0, z: 0 },
+      localRotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      localScale: { x: 1, y: 1, z: 1 },
+      worldPosition: { x: playerWorld.x, y: Number.isFinite(groundY) ? groundY : playerWorld.y, z: playerWorld.z },
+      worldRotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      worldScale: { x: 1, y: 1, z: 1 },
+    };
+    const anchor = (label, name) => {
+      const resolved = deps.playerAttachmentAnchor?.(name);
+      return resolved ? _runtimeVirtualRigTransform(label, {
+        position: resolved,
+        rotationDeg: resolved.rotationDeg,
+        scale: { x: 1, y: 1, z: 1 },
+      }, deps.playerMesh, `playerAttachmentAnchor('${name}')`) : null;
+    };
+    const entries = [
+      dumpApi.snapshotObject('portrait', portrait, { source: 'player_avatar Object3D' }),
+      ground,
+      anchor('posterior', 'posterior'),
+      anchor('left hand shoulder', 'leftHandShoulder'),
+      anchor('right hand shoulder', 'rightHandShoulder'),
+      anchor('shoulder perch', 'shoulderPerch'),
+    ];
+    const report = dumpApi.formatNamedTransformReport(entries, {
+      title: 'Runtime rig transforms',
+      actor: playerData.name || playerData.displayName || 'player',
+      species: appearance.speciesId || appearance.species || '-',
+      gender: appearance.gender || '-',
+      coordinateSpace: 'player-root local + live world',
+    });
+    if (facingSamples.length) {
+      const petSamples = facingSamples.map(sample => sample.shoulderPetTransform).filter(Boolean);
+      if (petSamples.length > 1) {
+        const angleDelta = (a, b) => {
+          let d = a - b;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          return d;
+        };
+        const summarizePlane = label => {
+          const entries = petSamples.map(sample => sample.planes?.[label]).filter(Boolean);
+          let maxYawStep = 0, maxQuatStep = 0, minUpY = 1, downFrames = 0;
+          for (let i = 0; i < entries.length; i++) {
+            minUpY = Math.min(minUpY, Number(entries[i].upY));
+            if (entries[i].upY < 0) downFrames++;
+            if (i) {
+              maxYawStep = Math.max(maxYawStep, Math.abs(angleDelta(entries[i].worldYaw, entries[i - 1].worldYaw)) * 180 / Math.PI);
+              const qa = entries[i].worldQuat, qb = entries[i - 1].worldQuat;
+              if (qa && qb) {
+                const dot = Math.min(1, Math.abs(qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3]));
+                maxQuatStep = Math.max(maxQuatStep, 2 * Math.acos(dot) * 180 / Math.PI);
+              }
+            }
+          }
+          return { label, count: entries.length, maxYawStep, maxQuatStep, minUpY, downFrames };
+        };
+        const front = summarizePlane('front'), back = summarizePlane('back');
+        lines.push('');
+        lines.push('=== Shoulder-pet motion transform trace ===');
+        const pausedCount = facingSamples.filter(sample => sample.paused).length;
+        lines.push('Samples=' + petSamples.length + ' movementSpeed=' + Math.max(...petSamples.map(sample => sample.movementSpeed || 0)).toFixed(3) + ' paused=' + pausedCount + '/' + facingSamples.length + ' maxGroupYawStep=' + Math.max(...petSamples.slice(1).map((sample, i) => Math.abs(angleDelta(sample.groupYaw, petSamples[i].groupYaw)) * 180 / Math.PI), 0).toFixed(2) + '°');
+        for (const info of [front, back]) lines.push('Plane ' + info.label + ': maxWorldYawStep=' + info.maxYawStep.toFixed(2) + '° maxQuaternionStep=' + info.maxQuatStep.toFixed(2) + '° minWorldUpY=' + info.minUpY.toFixed(4) + ' downFrames=' + info.downFrames + '/' + info.count);
+        if (front.downFrames || back.downFrames || front.maxQuatStep > 90 || back.maxQuatStep > 90) lines.push('>>> TRANSFORM FLIP DETECTED — a plane pointed downward or made a >90° world-orientation jump during the sampled motion window.');
+      }
+    }
+
+    const resultEl = document.getElementById('debugProbeResult');
+    if (resultEl) resultEl.textContent = report;
+    const screenshotEl = document.getElementById('debugProbeScreenshot');
+    if (screenshotEl) screenshotEl.style.display = 'none';
+    _setDebugView('probe');
+    deps.showToast?.('Runtime rig transforms dumped — Copy exports this report.', true);
+    return report;
   }
 
   // bodyColors slots are almost never stored as absolute color — they're
@@ -216,9 +457,12 @@
     const appearance = deps.getPlayerData()?.appearance || {};
     const sitInteraction = deps.getSitInteraction();
     const lines = [];
+    const localSeatY = Number(sitInteraction?.seatWorldY) || 0; // Used to distinguish authored floor-relative height in mobile diagnostics.
+    const surfaceSeatY = Number(sitInteraction?.seatSurfaceY) || 0; // Used to show the plateau/ramp contribution under the seat.
+    const absoluteSeatY = Number(sitInteraction?.seatAbsoluteWorldY) || localSeatY + surfaceSeatY; // Used to verify the camera's world-space target height.
     lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
     lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
-    lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
+    lines.push(`Seat anchor: localHeight=${localSeatY.toFixed(5)} surfaceY=${surfaceSeatY.toFixed(5)} absoluteY=${absoluteSeatY.toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
     for (const side of ['left', 'right']) {
       const leg = debug[side];
       if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
@@ -289,26 +533,112 @@
     else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
 
     if (liveActivePet) {
+      const sizeClass = liveActivePet.genotype?.sizeClass || liveActivePet.def?.defaultSizeClass || 'medium'; // Used in the mobile report to identify the stable role's authored size class.
+      const expectedScaleY = (Number(liveActivePet.visualScaleY) || 1) * (Number(liveActivePet.scaleY) || 1); // Used below to detect a real renderer scale overwrite rather than apparent foreshortening.
+      const expectedScaleZ = Number(liveActivePet.visualScaleX) || 1; // Used below because animal billboard width is carried on group Z.
+      const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
+      const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
+      lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
+      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
+        lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
+      }
+      const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
+      const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
+      const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
+      const backWorldYaw = groupYaw + (liveActivePet.avatarRef.backPlane?.rotation.y || 0); // Used below to compare the mirrored back card against the same billboard yaw.
+      const wrapAngle = radians => Math.atan2(Math.sin(radians), Math.cos(radians));
+      const frontYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(frontWorldYaw - (billboardYaw + Math.PI / 2))) : NaN; // Used below to expose bodyYaw leakage on mobile.
+      const backYawError = Number.isFinite(billboardYaw) ? Math.abs(wrapAngle(backWorldYaw - (billboardYaw - Math.PI / 2))) : NaN; // Used below to expose the mirrored plane's equivalent leakage.
+      lines.push(`Billboard yaw: selected=${Number.isFinite(billboardYaw) ? (billboardYaw * 180 / Math.PI).toFixed(2) + '°' : '-'} group=${(groupYaw * 180 / Math.PI).toFixed(2)}° frontWorld=${(frontWorldYaw * 180 / Math.PI).toFixed(2)}° backWorld=${(backWorldYaw * 180 / Math.PI).toFixed(2)}° error=${Number.isFinite(frontYawError) ? Math.max(frontYawError, backYawError).toFixed(4) : '-'} rad`);
+      if (Number.isFinite(frontYawError) && Math.max(frontYawError, backYawError) > 0.001) {
+        lines.push('>>> MISMATCH — final player body yaw leaked into the shoulder-pet billboard planes, so their projected width can change without any scale change.');
+      }
+      // Compare the two actual rendered cards, not only their shared parent.
+      // This catches child-scale, geometry-size, skinning, and coplanar-depth
+      // problems that can all look like one side suddenly became huge.
+      const planeDetails = [];
+      for (const [label, plane] of [['front', liveActivePet.avatarRef?.frontPlane], ['back', liveActivePet.avatarRef?.backPlane]]) {
+        if (!plane) continue;
+        plane.updateMatrixWorld?.(true);
+        const localScale = plane.scale;
+        const worldScale = plane.getWorldScale ? plane.getWorldScale(new THREE.Vector3()) : null;
+        const params = plane.geometry?.parameters || {};
+        const bounds = plane.geometry?.boundingBox;
+        const size = bounds ? bounds.getSize(new THREE.Vector3()) : null;
+        const worldPos = plane.getWorldPosition ? plane.getWorldPosition(new THREE.Vector3()) : plane.position;
+        planeDetails.push({ label, plane, localScale, worldScale, params, size, worldPos });
+        lines.push('Plane ' + label + ': localScale=(' + [localScale.x, localScale.y, localScale.z].map(v => v.toFixed(4)).join(',') + ') worldScale=(' + (worldScale ? [worldScale.x, worldScale.y, worldScale.z].map(v => v.toFixed(4)).join(',') : '-') + ') geometry=' + (Number.isFinite(params.width) ? params.width.toFixed(4) : '-') + '×' + (Number.isFinite(params.height) ? params.height.toFixed(4) : '-') + ' bounds=' + (size ? [size.x, size.y, size.z].map(v => v.toFixed(4)).join('×') : '-') + ' worldPos=(' + [worldPos.x, worldPos.y, worldPos.z].map(v => v.toFixed(4)).join(',') + ')');
+      }
+      if (planeDetails.length === 2) {
+        const [frontInfo, backInfo] = planeDetails;
+        const scaleDelta = Math.max(Math.abs(frontInfo.localScale.x - backInfo.localScale.x), Math.abs(frontInfo.localScale.y - backInfo.localScale.y), Math.abs(frontInfo.localScale.z - backInfo.localScale.z));
+        const geometryWidthDelta = Math.abs((frontInfo.params.width || frontInfo.size?.x || 0) - (backInfo.params.width || backInfo.size?.x || 0));
+        const geometryHeightDelta = Math.abs((frontInfo.params.height || frontInfo.size?.y || 0) - (backInfo.params.height || backInfo.size?.y || 0));
+        const separation = frontInfo.worldPos.distanceTo(backInfo.worldPos);
+        lines.push('Plane comparison: localScaleΔ=' + scaleDelta.toFixed(6) + ' geometryΔ=' + geometryWidthDelta.toFixed(6) + '×' + geometryHeightDelta.toFixed(6) + ' worldSeparation=' + separation.toFixed(6));
+        if (scaleDelta > 0.001 || geometryWidthDelta > 0.001 || geometryHeightDelta > 0.001) lines.push('>>> MISMATCH — the two rendered shoulder-pet planes do not have identical authored dimensions.');
+        if (separation < 0.0001) lines.push('>>> WARNING — the two rendered shoulder-pet planes are effectively coplanar; camera-angle flicker can alternate their pixels and mimic a scale jump.');
+      }
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
       const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
-        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-        const invGripYaw = -gripYawRad;
-        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-        const theta = deps.playerMesh.rotation.y;
-        const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-        const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
-        const expectedX = deps.playerMesh.position.x + dx, expectedZ = deps.playerMesh.position.z + dz;
-        const expectedY = deps.playerMesh.position.y + perch.y - grip.y;
-        const actual = liveActivePet.avatarRef.group.position;
-        const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
-        lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
-        if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
+        const attachmentDebug = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetAttachment; // Final face-relative transform recorded by updateShoulderPetMeshPin for mobile diagnosis.
+        const expected = attachmentDebug?.expectedWorldPosition; // Avoids comparing the new quaternion alignment against the obsolete yaw-only probe formula.
+        const expectedX = Number(expected?.[0]), expectedY = Number(expected?.[1]), expectedZ = Number(expected?.[2]);
+        const actual = liveActivePet.avatarRef.group.getWorldPosition(new THREE.Vector3()); // Compares world-to-world even if an area scene later gains its own transform.
+        const drift = Number.isFinite(expectedX) && Number.isFinite(expectedY) && Number.isFinite(expectedZ)
+          ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
+          : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
+        lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
+        if (Number.isFinite(drift)) {
+          lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
+          if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the final face-relative rig-anchor transform says it should be (drift ${drift.toFixed(4)} world units).`);
+        }
+        if (attachmentDebug?.recentChange) lines.push(`Most recent shoulder-pet change: ${attachmentDebug.recentChange}`);
       } else {
         lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
       }
+    }
+    return lines;
+  }
+
+  // A scheduled NPC behaving visibly wrong — wandering somewhere they
+  // shouldn't, or standing still without ever picking up their instrument
+  // — is a state-machine question, not a rendering one, but it's exactly
+  // the kind of "something is obviously off, why" report this tool exists
+  // to answer for pixels. Two real bugs have lived in this exact system
+  // (see js/npc-scheduling.js's own header comment): a positionRedirect
+  // silently dropping a station's toolKey/label metadata, and toolKey
+  // stations failing to opt out of station-wander, both invisible from a
+  // screenshot alone but immediate from the walker's own live state and
+  // resolved schedule target. Gated the same way seated-leg/shoulder-pet
+  // diagnostics are — only when the probe actually landed on an NPC's own
+  // avatar — so an unrelated click doesn't pad the report.
+  function _pixelProbeNpcSchedulingLines(hits) {
+    const owner = hits.map(h => _pixelProbeOwnerInfo(h.object)).find(o => o?.kind === 'npc' && o.walker);
+    if (!owner) return null;
+    const walker = owner.walker;
+    const target = walker.currentScheduleTarget;
+    const lines = ['', '=== NPC scheduling diagnostics ==='];
+    lines.push(`NPC: ${walker.rec?.name || walker.rec?.id || '?'} (id ${walker.rec?.id || '?'})   area=${walker.area}   walker.state=${walker.state}`);
+    if (target) {
+      lines.push(`Schedule target: "${target.label || target.stationId || '(unlabeled)'}" area=${target.area} c=${target.c} r=${target.r} pose=${target.pose || '-'} toolKey=${target.toolKey || '(none)'}`);
+      lines.push(`Wander config: mode=${target.wanderMode || '-'} radiusTiles=${target.wanderRadiusTiles ?? 0} shapeTiles=${target.wanderShapeTiles?.length ?? 0}`);
+      if (Number.isFinite(target.c) && Number.isFinite(target.r)) {
+        const dist = Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5));
+        lines.push(`Distance to target center: ${dist.toFixed(3)} tiles`);
+      }
+    } else {
+      lines.push('Schedule target: (none resolved this tick — see console for [schedule] warnings)');
+    }
+    lines.push(`Currently equipped station tool: ${walker.stationToolKey || '(none)'}`);
+    const onDuty = target?.label ? !!window.NpcScheduling?.isNpcOnDutyAtStation?.(walker, target.label) : null;
+    if (onDuty != null) lines.push(`isNpcOnDutyAtStation(this NPC, "${target.label}"): ${onDuty ? 'YES' : 'no'}`);
+    if (target?.toolKey && walker.state === 'station-wander') {
+      lines.push(`>>> MISMATCH — this station has a toolKey ("${target.toolKey}") but the walker is in 'station-wander' state. toolKey stations should opt out of wandering entirely — worth a closer look.`);
+    } else if (target?.toolKey && !walker.stationToolKey && walker.state === 'idle') {
+      lines.push(`>>> MISMATCH — walker is idle at a toolKey station ("${target.toolKey}") but hasn't equipped it (stationToolKey is empty).`);
     }
     return lines;
   }
@@ -358,6 +688,7 @@
     const facingAtClick = _pixelProbeCurrentFacingDebug(); // Preserves the state of the visibly bad frame before probe re-renders run.
     const drunkAtClick = window.HobunjiDrunkWalk?.getDebug?.() || null; // Captures the gait contribution at the clicked frame.
     const composerAtClick = window.PlayerBodyTransformComposer?.getDebug?.() || null; // Captures the last normal render's temporary transform choice.
+    const impactAtClick = window.ImpactRagdollPlayback?.getDebug?.() || null; // Makes player/creature impact-bank activity copyable on mobile without console access.
 
     const canvas = renderer.domElement;
     const rect = canvas.getBoundingClientRect();
@@ -486,6 +817,91 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
+    if (objectSfxDebug) {
+      const lastCue = objectSfxDebug.last;
+      const ready = objectSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
+      const lastCueAgeMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null; // Distinguishes a recent tool cue from unrelated companion footsteps.
+      lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${lastCueAgeMs}ms ago found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+    }
+    const combatSfxDebug = window.AudioSystem?.combatSfxDebugSnapshot?.(); // Copyable proof of the chosen swing/impact/block cue on mobile.
+    if (combatSfxDebug) {
+      const lastCue = combatSfxDebug.last;
+      const ready = combatSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
+      const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
+      lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+    }
+    const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
+    if (animalVoiceDebug) {
+      const last = animalVoiceDebug.last;
+      lines.push(`Animal voices: requested=${animalVoiceDebug.requested} rendered=${animalVoiceDebug.rendered} nods=${animalVoiceDebug.pulsed} nodding=${animalVoiceDebug.pulsing} maxNod=${animalVoiceDebug.maxHeadNodDeg}° startLag=${animalVoiceDebug.lastStartLatencyMs ?? 'none'}ms suppressed=${animalVoiceDebug.suppressed} active=${animalVoiceDebug.active} last=${last ? `${last.kind}/${last.reason || 'none'}/${last.species}` : 'none'}`);
+    }
+    const volumeDebug = window.NearbyVolumeCollision?.debugSnapshot?.(); // Makes local precise-cover state copyable on mobile without developer tools.
+    if (volumeDebug) {
+      const blocked = volumeDebug.lastBlock ? `${volumeDebug.lastBlock.kind}:${volumeDebug.lastBlock.object}@${volumeDebug.lastBlock.distanceWorld}u/${volumeDebug.lastBlock.ageMs}ms` : 'none';
+      const flags = volumeDebug.options || {};
+      lines.push(`Nearby cover: enabled=${flags.enabled} projectiles=${flags.projectiles} alpha=${flags.textureAlpha} mode=${volumeDebug.mode} radius=${volumeDebug.radiusTiles}t cached=${volumeDebug.candidates} segment=${volumeDebug.lastSegmentCandidateCount}/${volumeDebug.maxSegmentCandidateCount} refreshes=${volumeDebug.refreshCount} rebuild=${volumeDebug.lastRebuildMs}ms rays=${volumeDebug.testedRayCount} rayWork=${volumeDebug.lastSegmentMs}/${volumeDebug.maxSegmentMs}ms tileTrees=${volumeDebug.skippedTileCoverCount} leafCards=${volumeDebug.skippedLeafCardCount} lastBlock=${blocked}`);
+    }
+    const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
+    if (mountSync?.active) {
+      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
+    }
+    const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
+    if (climbSafety) {
+      lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
+    }
+    const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
+    if (creatureDeathDebug?.lastRecovery) {
+      const recovery = creatureDeathDebug.lastRecovery;
+      lines.push(`Creature death: RECOVERED ${recovery.creature} at ${recovery.areaId}:${recovery.col},${recovery.row} reason=${String(recovery.reason || 'unknown').split('\n')[0]}`);
+    } else if (creatureDeathDebug?.lastBegin) {
+      lines.push(`Creature death: last began ${creatureDeathDebug.lastBegin.creature} in ${creatureDeathDebug.lastBegin.areaId || 'unknown area'}; no recovery needed`);
+    }
+    const compassDebug = window.NavigationCompass?.getDebug?.(); // Used to verify quest/threat marker bearings and distance scaling on mobile.
+    if (compassDebug) {
+      const markerText = compassDebug.markers.map(marker => `${marker.source}:${marker.label}@${marker.distanceTiles}t/${marker.sizePx}px/${marker.bearingDeg}°`).join(' ');
+      lines.push(`Compass: ${compassDebug.visible ? 'visible' : 'hidden'} heading=${compassDebug.headingDeg}° markers=${compassDebug.markers.length} offAreaQuests=${compassDebug.offAreaQuestTargets}${markerText ? ' ' + markerText : ''}`);
+    }
+    const chunkAudit = window.WildernessChunks?.snapshot?.()?.lastResidencyAudit; // Used to carry the latest button-driven chunk leak result into copied probe reports.
+    if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);
+    const hitboxDebug = window.__hitboxDebug?.snapshot?.(); // Mobile-readable elevation proof for the Show Hitboxes overlay.
+    if (hitboxDebug?.actors?.length) {
+      // AI-state suffixes (state/passive/territorial/cfMode/...) — see
+      // debug-hitboxes.js's _actorAiDebug — added so "why isn't this
+      // creature reacting" is answerable straight from a copied probe
+      // report instead of a follow-up round trip for a separate console
+      // dump of the same creature's schedule-AI markers.
+      const aiSuffix = actor => {
+        let s = '';
+        if (actor.state) s += `/st:${actor.state}`;
+        if (actor.passive) s += '/passive';
+        if (actor.territorial) s += `/terr:${actor.territorial.phase}${actor.territorial.phase === 'warning' ? `@${actor.territorial.elapsedS}s` : ''}`;
+        if (actor.cfMode) s += `/cf:${actor.cfMode}`;
+        if (actor.garWolfOffShift) s += '/offshift';
+        if (actor.grehlrMode) s += `/gf:${actor.grehlrMode}`;
+        if (actor.denHidden) s += '/denhidden';
+        if (actor.nestTreeKey) s += `/nest:${actor.nestTreeKey}`;
+        if (actor.denKey) s += `/den:${actor.denKey}`;
+        return s;
+      };
+      const actorState = hitboxDebug.actors.map(actor => actor.missing
+        ? `${actor.label}=missing${aiSuffix(actor)}`
+        : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}${aiSuffix(actor)}`).join(' ');
+      lines.push(`3D hitboxes: ${actorState}`);
+    }
+    const interactionRay = hitboxDebug?.interactionRay;
+    if (interactionRay) {
+      lines.push(interactionRay.hit
+        ? `Interaction ray: ${interactionRay.targetType || 'target'}${interactionRay.targetId ? ':' + interactionRay.targetId : ''} at ${Number(interactionRay.distanceWorld).toFixed(2)}u${interactionRay.hostile ? ' (attack precedence)' : ''}`
+        : `Interaction ray: no 3D hit in ${Number(interactionRay.distanceWorld).toFixed(0)}u`);
+    }
+    const meleeDebug = window.__melee3DDebug?.snapshot?.(); // Exposes pitched melee acceptance and trail state without desktop developer tools.
+    if (meleeDebug) {
+      const result = meleeDebug.lastResult;
+      lines.push(result
+        ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
+        : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
+    }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.actionArch?.length) {
@@ -512,6 +928,10 @@
       if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const characterView = window.HOBUNJI_CHARACTER_VIEW_STATUS; // Published by game.js so mobile reports can verify the private camera/body lock state.
+    if (characterView) {
+      lines.push(`Character View: ${characterView.enabled ? 'ON' : 'off'} reason=${characterView.lastChangeReason || '-'} facing=${Number(characterView.facingAngleDeg || 0).toFixed(2)}° body=${Number(characterView.bodyYawDeg || 0).toFixed(2)}° neck=${Number(characterView.neckYawDeg || 0).toFixed(2)}°`);
+    }
     if (facingAtClick) {
       lines.push('');
       lines.push('=== Player facing state at the clicked frame (captured before probe-forced renders) ===');
@@ -521,6 +941,9 @@
         drunk: drunkAtClick,
         composer: composerAtClick,
       }, 0));
+    }
+    if (impactAtClick) {
+      lines.push(`Impact playback: active=${!!impactAtClick.active} bank=${impactAtClick.bank || '-'} direction=${impactAtClick.direction || '-'} creatureReactions=${impactAtClick.activeCreatureReactions || 0} composerChannels=${(composerAtClick?.channels || []).map?.(entry => entry.name || entry)?.join?.(',') || '-'}`);
     }
     lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
     hits.slice(0, 25).forEach((hit, i) => {
@@ -533,6 +956,10 @@
         const sample = _pixelProbeTextureSampleAtUv(m, hit.uv);
         if (sample) lines.push(`     texture sample at this mesh's own UV (${sample.uv[0].toFixed(3)},${sample.uv[1].toFixed(3)}) — occlusion-independent: rgba(${sample.rgba.join(',')})`);
         else if (m.map) lines.push(`     texture sample: unavailable (no UV on this hit)`);
+        const texMeta = _pixelProbeTextureMeta(m);
+        if (texMeta) lines.push(`     texture meta: image=${texMeta.size} repeat=${texMeta.repeat} flipY=${texMeta.flipY} state=${texMeta.state} source=${texMeta.path} sourceImage=${texMeta.sourceSize}${texMeta.error ? ` error=${texMeta.error}` : ''}`);
+        const neighborhood = _pixelProbeTextureNeighborhood(m, hit.uv);
+        if (neighborhood) lines.push(`     texture neighborhood: ${neighborhood.samples} samples unique=${neighborhood.unique} rgbRange=R${neighborhood.mins[0]}-${neighborhood.maxs[0]} G${neighborhood.mins[1]}-${neighborhood.maxs[1]} B${neighborhood.mins[2]}-${neighborhood.maxs[2]}`);
       });
       const owner = _pixelProbeOwnerInfo(o);
       if (owner) {
@@ -552,7 +979,7 @@
       if (cameraSolve) {
         const hit = cameraSolve.directHitDistance == null ? 'none' : cameraSolve.directHitDistance.toFixed(3);
         lines.push('');
-        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg`);
+        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg targetY=${Number(cameraSolve.targetY || 0).toFixed(3)} floorY=${Number(cameraSolve.floorY || 0).toFixed(3)}`);
       }
       const seatedLines = _pixelProbeSeatedLegReadoutLines();
       if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
@@ -560,6 +987,12 @@
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
+
+    const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
+    if (npcSchedulingLines) lines.push(...npcSchedulingLines);
+
+    const transformDumpLines = await _pixelProbeTransformDumpLines(hits);
+    if (transformDumpLines) lines.push(...transformDumpLines);
 
     if (blendCheck) {
       lines.push('');
@@ -600,16 +1033,18 @@
         setTimeout(finish, 200);
       });
       const captureStart = Date.now();
-      for (let i = 0; i < 45 && !deps.getPaused() && (Date.now() - captureStart) < 4000; i++) {
+      for (let i = 0; i < 45 && (Date.now() - captureStart) < 8000; i++) {
         await nextTick();
         glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
         const color = [bufF[0], bufF[1], bufF[2], bufF[3]]; // Frozen before the reused readPixels buffer changes next frame.
         flickerSamples.push(color);
         facingSamples.push({
           color,
+          paused: !!deps.getPaused?.(),
           facing: _pixelProbeCurrentFacingDebug(),
           drunk: window.HobunjiDrunkWalk?.getDebug?.() || null,
           composer: window.PlayerBodyTransformComposer?.getDebug?.() || null,
+          shoulderPetTransform: _pixelProbeShoulderPetTransformDebug(),
         });
       }
     } catch (e) { /* best-effort — the rest of the report still stands without it */ }
@@ -680,6 +1115,7 @@
   }
 
   document.getElementById('debugProbeArmBtn')?.addEventListener('click', () => armPixelProbe());
+  document.getElementById('debugRigTransformDumpBtn')?.addEventListener('click', () => dumpRuntimeRigTransforms());
   document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', () => disarmPixelProbe());
   document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
   document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));
@@ -687,6 +1123,7 @@
   window.PixelProbe = {
     init,
     copyPixelProbeResult,
+    dumpRuntimeRigTransforms,
     get armed() { return _pixelProbeArmed; },
   };
 })();

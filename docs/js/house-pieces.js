@@ -17,11 +17,14 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
+    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260827b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
-    ['HousePieces', 'house-pieces-core.js?v=20260811a'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260811c'],
+    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
+    ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
+    ['HousePieces', 'house-pieces-core.js?v=20260815b'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }

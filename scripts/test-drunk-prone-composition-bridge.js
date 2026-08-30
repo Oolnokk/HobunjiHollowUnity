@@ -114,7 +114,6 @@ const PlayerBodyTransformComposer = {
 const THREE = {
   Group: MockGroup,
   Quaternion: MockQuaternion,
-  DoubleSide: 2,
   WebGLRenderer,
 };
 
@@ -139,6 +138,10 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: modulePath });
 
 (async () => {
+  assert.doesNotMatch(source, /THREE\.DoubleSide|preserveBanditFacingSide/, 'bandit sway never overrides portrait material culling');
+  assert.ok(source.includes("portraitFaceCulling: 'material-frontside'"), 'bridge diagnostics expose normal FrontSide culling');
+  assert.ok(source.includes('forcedPortraitDoubleSide: false'), 'bridge diagnostics expose that two-sided portrait forcing is disabled');
+
   // Drunken Footing still caps standing entities.
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
 
@@ -238,7 +241,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(baseBanditAiCalls, 1);
 
   // The render-boundary wrapper republishes player pitch/roll as additive after
-  // gameplay-facing writers have resolved their base yaw for the frame.
+  // gameplay-facing writers have resolved their base yaw for the frame. It does
+  // not ask the compositor to freeze or double-side a pre-transform portrait face.
   const renderer = new WebGLRenderer();
   composerSet = null;
   composerCleared = null;
@@ -246,7 +250,7 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(baseRenderCount, 1);
   assert.strictEqual(composerSet?.name, 'drunk');
   assert.strictEqual(composerSet?.contribution?.mode, 'additive');
-  assert.strictEqual(composerSet?.contribution?.preserveFacingSide, true);
+  assert.strictEqual(Object.hasOwn(composerSet?.contribution || {}, 'preserveFacingSide'), false);
   assert.ok(Math.abs(composerSet.contribution.rotation.pitch - 12 * Math.PI / 180) < 1e-12);
   assert.ok(Math.abs(composerSet.contribution.rotation.roll - (-18 * Math.PI / 180)) < 1e-12);
 

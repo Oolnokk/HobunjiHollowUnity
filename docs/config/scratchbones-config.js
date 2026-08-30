@@ -74,6 +74,16 @@ window.SCRATCHBONES_CONFIG = {
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
       },
       "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
+      // Diet classification, used by barn troughs to decide which fodder
+      // (plantFodder/meatFodder) a housed animal will actually eat —
+      // predator: meatFodder only, prey: plantFodder only, omnivore: either.
+      "diet": {
+        "uumkaoii": "prey",
+        "gar-wolf": "predator",
+        "dabinggi-hound": "predator",
+        "grehlr": "omnivore",
+        "drenkirra": "prey"
+      },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
         "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true },
@@ -196,6 +206,14 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.9
         },
+        "music": {
+          "distanceTiles": 8.5,
+          "angleFromGroundDeg": 20,
+          "azimuthDeg": 28,
+          "fovDeg": 42,
+          "followLerp": 0.12,
+          "targetYOffsetTiles": 0.55
+        },
         "harvestInteraction": {
           "distanceTiles": 6,
           "angleFromGroundDeg": 16,
@@ -209,6 +227,14 @@ window.SCRATCHBONES_CONFIG = {
           "fovDeg": 42,
           "followLerp": 0.18,
           "targetYOffsetTiles": 0,
+          "freeRotate": true
+        },
+        "shoulderSurf": {
+          "distanceTiles": 2.6,
+          "angleFromGroundDeg": 9,
+          "fovDeg": 55,
+          "followLerp": 0.16,
+          "targetYOffsetTiles": 0.62,
           "freeRotate": true
         }
       }
@@ -241,8 +267,11 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
+        { "id": "meleeTargetPrev", "label": "Melee Auto-Target: Previous", "desktop": null, "controller": "RightStickLeft" },
+        { "id": "meleeTargetNext", "label": "Melee Auto-Target: Next", "desktop": null, "controller": "RightStickRight" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
-        { "id": "weaponSwitch", "label": "Switch to Weapon", "desktop": "Digit3", "controller": "Button11" },
+        { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "Digit3", "controller": "Button11" },
+        { "id": "toolSelect", "label": "Tool Select", "desktop": "KeyT", "controller": "Button10" },
         { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
         { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
         { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
@@ -299,6 +328,7 @@ window.SCRATCHBONES_CONFIG = {
         "baseDurationSeconds": 0.1,
         "maxDurationSeconds": 1,
         "maxDurationAtFootingFraction": 0.01,
+        "visualMinDurationSeconds": 0.45,
         "footingLossPerDamage": 1.6,
         "damageTypeMultipliers": {
           "blunt": {
@@ -3518,7 +3548,7 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.5
           },
           "dig": {
-            "url": "assets/audio/sfx/farming/sfx_dig.mp3",
+            "url": "assets/audio/sfx/sfx_dig.mp3?v=20260828loud2",
             "placeholderUrls": [
               "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
               "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
@@ -3526,9 +3556,28 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
               "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
             ],
-            "volume": 0.95,
-            "pitch": 0.8,
-            "gainBoost": 3
+            "volume": 1,
+            "preload": true
+          },
+          "pick": {
+            "url": "assets/audio/sfx/sfx_pick.mp3",
+            "volume": 0.8,
+            "preload": true
+          },
+          "chop": {
+            "url": "assets/audio/sfx/sfx_chop.mp3",
+            "volume": 0.8,
+            "preload": true
+          },
+          "breakTree": {
+            "url": "assets/audio/sfx/sfx_break_tree.mp3",
+            "volume": 0.8,
+            "preload": true
+          },
+          "breakRock": {
+            "url": "assets/audio/sfx/sfx_break_rock.mp3",
+            "volume": 0.8,
+            "preload": true
           },
           "climbStep": {
             "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
@@ -3664,10 +3713,22 @@ window.SCRATCHBONES_CONFIG = {
         },
         "combatSfx": {
           "enabled": true,
-          "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
-          "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
-          "weaponHitSharp": { "url": "assets/audio/sfx/sfx_weaponhit-sharp.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
-          "weaponHitBlunt": { "url": "assets/audio/sfx/sfx_weaponhit-blunt.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
+          "weaponSwing1": { "url": "assets/audio/sfx/combat/sfx_swing_1.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponSwing2": { "url": "assets/audio/sfx/combat/sfx_swing_2.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponSwing3": { "url": "assets/audio/sfx/combat/sfx_swing_3.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "rangedLoad": { "url": "assets/audio/sfx/combat/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "rangedFire": { "url": "assets/audio/sfx/combat/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
+          "rangedImpact": { "url": "assets/audio/sfx/combat/sfx_arrow_hit.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "creatureClawHit": { "url": "assets/audio/sfx/combat/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
+          "weaponHitSharpSmall": { "url": "assets/audio/sfx/combat/sfx_sharp_hit_small.mp3", "volume": 0.9, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponHitSharpMedium": { "url": "assets/audio/sfx/combat/sfx_sharp_hit_medium.mp3", "volume": 0.92, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponHitSharpLarge": { "url": "assets/audio/sfx/combat/sfx_sharp_hit_large.ogg", "volume": 0.96, "pitchVarianceMul": 0.02, "preload": true },
+          "weaponHitSharpHuge": { "url": "assets/audio/sfx/combat/sfx_sharp_hit_huge.mp3", "volume": 1.0, "pitchVarianceMul": 0.015, "preload": true },
+          "weaponHitBluntSmall": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_small.mp3", "volume": 0.9, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponHitBluntMedium": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_medium.mp3", "volume": 0.92, "pitchVarianceMul": 0.025, "preload": true },
+          "weaponHitBluntLarge": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_large.mp3", "volume": 0.96, "pitchVarianceMul": 0.02, "preload": true },
+          "weaponHitBluntHuge": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_huge.mp3", "volume": 1.0, "pitchVarianceMul": 0.015, "preload": true },
+          "counterShieldBlock": { "url": "assets/audio/sfx/combat/sfx_block.mp3", "volume": 1.0, "pitchVarianceMul": 0.02, "preload": true },
           "creatureBark": {
             "url": "assets/audio/sfx/sfx_gar-wolf_bark.wav",
             "volume": 0.85,
@@ -3838,6 +3899,7 @@ window.SCRATCHBONES_CONFIG = {
           "enabled": true,
           "stanceWidthFraction": 0.16,
           "footHeightFraction": 0.11,
+          "sizeBalanceMultiplier": 1.2,
           "referenceSpeedWorldUnitsPerSecond": 4.3,
           "alphaThreshold": 8,
           "boneColorHex": "#D8C7A3",

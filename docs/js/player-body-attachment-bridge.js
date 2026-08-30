@@ -33,6 +33,7 @@
     const originalInit = api.init.bind(api);
     api.init = function playerBodyAttachmentAwareInit(injectedDeps) {
       gameDeps = injectedDeps;
+      window.ProceduralHandAttachments?.installGameRuntime?.(injectedDeps);
       return originalInit(injectedDeps);
     };
     api.__playerBodyAttachmentInitHooked = true;
@@ -58,9 +59,11 @@
 
   window.PlayerBodyAttachmentBridge = {
     getDebug() {
+      const handDebug = window.ProceduralHandAttachments?.getActiveDebug?.().find(entry => entry?.speciesId) || null;
       return {
         hasGameDeps: !!gameDeps,
         hasToolHolder: !!gameDeps?.toolHolder,
+        proceduralHands: handDebug,
         activeShoulderPets: (window.Combat?.deps?.companionObjects
           ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
               companion?.health > 0
