@@ -807,9 +807,10 @@
     const pixelY = Number(sourcePixel?.y);
     if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
+    const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
     const localPoint = new THREE.Vector3(
-      -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth,
+      -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
       0,
     );
