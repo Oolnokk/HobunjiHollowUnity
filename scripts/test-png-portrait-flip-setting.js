@@ -11,6 +11,7 @@ const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the pl
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Guards cosmetic metadata propagation into runtime profiles.
 const frontHatSource = fs.readFileSync('docs/js/front-hat-head-facing.js', 'utf8'); // Guards ordinary headband behavior and auxiliary texture parity.
 const previewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards alternate Fine Hood composite texture parity.
+const attachmentRigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the authored shoulder-perch pixel handoff into gameplay anchors.
 const basicHeadband = JSON.parse(fs.readFileSync('docs/config/cosmetics/basic_headband.json', 'utf8')); // Authored opt-out for the cloth headband.
 const leatherHeadband = JSON.parse(fs.readFileSync('docs/config/cosmetics/leather_headband.json', 'utf8')); // Authored opt-out for the leather headband.
 
@@ -22,6 +23,14 @@ const legacySandbox = { window: {}, localStorage: { getItem: () => '0', setItem(
 vm.runInNewContext(avatarSource, legacySandbox, { filename: 'png-plane-avatar.js' });
 assert.equal(legacySandbox.window.PNGPlaneAvatar.getPortraitsFlipped(), false,
   'the hidden developer comparison remains reversible and persistent');
+const attachmentSandbox = { window: {} }; // Loads authored attachment data without game startup so runtime anchor shape can be verified directly.
+vm.runInNewContext(attachmentRigSource, attachmentSandbox, { filename: 'attachment-rig-profiles.js' });
+for (const profile of Object.values(attachmentSandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)) {
+  const rulePixel = profile?.shoulderPerchRule?.sourcePixel;
+  if (!rulePixel) continue;
+  assert.deepEqual(profile?.anchors?.shoulderPerch?.sourcePixel, rulePixel,
+    `${profile.species}/${profile.gender} shoulder-perch anchor exposes its authored portrait pixel to gameplay`);
+}
 
 assert.match(avatarSource, /let portraitsFlipped = true/,
   'horizontal flipping is the default PNG character presentation');
@@ -40,6 +49,8 @@ assert.match(avatarSource, /const renderedPixelX = portraitsFlipped \? pixelWidt
   'authored portrait landmarks mirror horizontally with the rendered portrait');
 assert.match(avatarSource, /-modelWidth \/ 2 \+ \(renderedPixelX \/ pixelWidth\) \* modelWidth/,
   'skinned source-pixel world placement uses the rendered portrait X coordinate');
+assert.match(attachmentRigSource, /shoulderPerch: \{ \.\.\.identityAnchor\(perch\), sourcePixel: \{ \.\.\.shoulderPerchRule\.sourcePixel \} \}/,
+  'the gameplay-facing shoulder-perch anchor carries the same authored pixel used by its rule');
 assert.match(avatarSource, /for \(const texture of trackedPortraitTextures\) applyPortraitTextureFlip\(texture\)/,
   'changing the setting updates already-spawned PNG character portraits immediately');
 assert.match(avatarSource, /localStorage\.setItem\(PORTRAIT_FLIP_STORAGE_KEY, portraitsFlipped \? '1' : '0'\)/,
