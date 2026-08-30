@@ -346,6 +346,27 @@
   const _banditZoneEntryPending = new Set();
   const _banditZoneWorkInFlight = new Set();
 
+  function _campDiscoveryKey(zoneId, slot) { return `camp:${zoneId}:slot:${slot}`; }
+
+  function _nextCampDiscoverySlot(tracked) {
+    const used = new Set((tracked || []).map(rec => rec.discoverySlot).filter(Number.isInteger));
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    return slot;
+  }
+
+  function _reconcileRememberedCamps(zoneId) {
+    const active = (_banditCampInstances.get(zoneId) || [])
+      .filter(rec => !isBanditCampCleared(rec))
+      .map(rec => ({
+        discoveryKey: rec.discoveryKey,
+        kind: 'camp', zoneId, label: 'Bandit Camp',
+        col: rec.instance.site.x + rec.instance.site.w / 2,
+        row: rec.instance.site.y + rec.instance.site.h / 2,
+      }));
+    window.WildernessMap?.reconcileDiscoveredCamps?.(zoneId, active);
+  }
+
   function banditTierForSite(cfg, view, site) {
     const per = Number(cfg?.difficultyTiers?.tierDistanceTiles || 14);
     const maxTier = Number(cfg?.difficultyTiers?.maxTier ?? 3);
@@ -376,7 +397,10 @@
     if (!deps.isZoneArea(deps.getCurrentArea())) return;
     const live = new Set();
     for (const rec of (_banditCampInstances.get(deps.getCurrentArea()) || [])) {
-      if (isBanditCampCleared(rec)) continue;
+      if (isBanditCampCleared(rec)) {
+        window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
+        continue;
+      }
       live.add(rec.instance.id);
       const col = rec.instance.site.x + rec.instance.site.w / 2;
       const row = rec.instance.site.y + rec.instance.site.h / 2;
@@ -410,9 +434,17 @@
     for (const [key, info] of _perceivedThreats) {
       if (info.kind === 'camp') {
         const rec = (_banditCampInstances.get(info.zoneId) || []).find(r => r.instance.id === info.instanceId);
-        if (!rec || isBanditCampCleared(rec)) _perceivedThreats.delete(key);
+        if (!rec || isBanditCampCleared(rec)) {
+          _perceivedThreats.delete(key);
+          window.WildernessMap?.forgetDiscoveredThreat?.(info.discoveryKey || key);
+        }
       } else if (info.kind === 'den') {
-        if (!deps.isDenPackAlive(info.denKey)) _perceivedThreats.delete(key);
+        if (!deps.isDenPackAlive(info.denKey)) {
+          _perceivedThreats.delete(key);
+          // A den is a lasting geographic discovery even while its current
+          // pack is dead and waiting to respawn; only a Tothal Shift moves
+          // it and expires the saved marker.
+        }
       }
     }
 
@@ -429,7 +461,9 @@
         if (_perceivedThreats.has(key) || isBanditCampCleared(rec)) continue;
         const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
         if (Math.hypot(col * deps.TILE - c.x, row * deps.TILE - c.y) > rangePx) continue;
-        _perceivedThreats.set(key, { kind: 'camp', zoneId: deps.getCurrentArea(), instanceId: rec.instance.id, col, row, label: 'Bandit Camp' });
+        const info = { discoveryKey: rec.discoveryKey, kind: 'camp', zoneId: deps.getCurrentArea(), instanceId: rec.instance.id, col, row, label: 'Bandit Camp' };
+        _perceivedThreats.set(key, info);
+        window.WildernessMap?.rememberDiscoveredThreat?.(rec.discoveryKey, info);
         deps.requestCompanionDiscovery?.(c, 'bandit-camp');
         deps.showToast(`${label} senses a bandit camp nearby — marked on the map!`, false);
       }
@@ -440,7 +474,9 @@
         if (_perceivedThreats.has(key) || !deps.isDenPackAlive(denKey)) continue;
         const col = den.x + (den.w || 1) / 2, row = den.y + (den.h || 1) / 2;
         if (Math.hypot(col * deps.TILE - c.x, row * deps.TILE - c.y) > rangePx) continue;
-        _perceivedThreats.set(key, { kind: 'den', zoneId: deps.getCurrentArea(), denKey, col, row, label: 'Animal Den' });
+        const info = { discoveryKey: key, kind: 'den', zoneId: deps.getCurrentArea(), denKey, col, row, label: 'Animal Den' };
+        _perceivedThreats.set(key, info);
+        window.WildernessMap?.rememberDiscoveredThreat?.(key, info);
         deps.requestCompanionDiscovery?.(c, 'animal-den');
         deps.showToast(`${label} senses an animal den nearby — marked on the map!`, false);
       }
@@ -614,8 +650,10 @@
       && (_banditCampInstances.get(zoneId) || []).some(r => r.captainName === bountyPin.captainName);
     const pinThisCamp = bountyPin && !alreadyHasPinnedCaptain;
     const tier = pinThisCamp ? bountyPin.tier : banditTierForSite(cfg, view, instance.site);
+    const tracked = _banditCampInstances.get(zoneId) || [];
+    const discoverySlot = _nextCampDiscoverySlot(tracked);
     const rec = {
-      zoneId, instance, tier, cfg, gangIds: new Set(),
+      zoneId, instance, tier, cfg, discoverySlot, discoveryKey: _campDiscoveryKey(zoneId, discoverySlot), gangIds: new Set(),
       props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
       homeX: (instance.site.x + instance.site.w / 2) * deps.TILE,
       homeY: (instance.site.y + instance.site.h / 2) * deps.TILE,
@@ -626,7 +664,6 @@
       captainSpawned: false,
       captainSpawnInFlight: false,
     };
-    const tracked = _banditCampInstances.get(zoneId) || [];
     tracked.push(rec);
     _banditCampInstances.set(zoneId, tracked);
     ensureBanditCampMeshes(zoneId);
@@ -664,7 +701,11 @@
 
   async function seedBanditCampsForZone(zoneId) {
     const [cfg, localeDefs] = await Promise.all([window.BanditCombat.loadGangConfig(), window.BanditCombat.loadCampLocaleDefs()]);
-    if (!cfg || !localeDefs.length) { _banditCampInstances.set(zoneId, []); return; }
+    if (!cfg || !localeDefs.length) {
+      _banditCampInstances.set(zoneId, []);
+      _reconcileRememberedCamps(zoneId);
+      return;
+    }
     if (!_banditCampInstances.has(zoneId)) _banditCampInstances.set(zoneId, []);
     const maxCamps = Math.max(0, Number(cfg.campLifecycle?.maxCampsPerZone ?? 1));
     for (let i = _banditCampInstances.get(zoneId).length; i < maxCamps; i++) {
@@ -674,6 +715,7 @@
       if (already >= maxInstances) continue;
       await spawnBanditCamp(zoneId, localeDef, cfg);
     }
+    _reconcileRememberedCamps(zoneId);
   }
 
   async function rerollBanditCamps(zoneId, clearedRecs) {
@@ -683,6 +725,7 @@
     if (!view) return;
     const tracked = _banditCampInstances.get(zoneId) || [];
     for (const rec of clearedRecs) {
+      window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
@@ -698,6 +741,10 @@
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);
     _banditZoneEntryPending.delete(zoneId);
+    for (const [key, info] of _perceivedThreats) {
+      if (info.zoneId !== zoneId) continue;
+      _perceivedThreats.delete(key);
+    }
   }
 
   let campsEnabled = true;

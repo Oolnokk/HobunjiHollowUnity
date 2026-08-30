@@ -278,43 +278,60 @@
     .buff-icon.boon .buff-icon-fill { background: linear-gradient(90deg, #4fbf74, #7fe89a); }
     .buff-icon.bane .buff-icon-fill { background: linear-gradient(90deg, #c0483a, #e86e5a); }
 
-    /* ── Wilderness minimap: top-left corner, only shown in a wilderness zone ──
-       #vitalsBar (health/stamina) used to own this corner but is display:none
-       now that those are ground-projected resource rings instead (see its own
-       comment above) -- this corner is otherwise empty on screen. */
-    #minimapWidget {
-      display: none;
-      position: fixed;
-      left: var(--play-left); top: var(--oy);
-      width: 75px; height: 75px;
-      z-index: 18;
-      padding: 4px;
-      opacity: 0.8;
-      background: var(--glass);
-      border: 1px solid var(--border-bright);
-      border-top: none; border-left: none;
-      border-radius: 0 0 18px 0;
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      pointer-events: none;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.32);
-    }
-    #minimapWidget.show { display: block; }
-    #minimapCanvas { width: 100%; height: 100%; border-radius: 0 0 14px 0; display: block; }
-
     /* ── Full wilderness map (menu pane) ─────────────────────────────── */
     #mpMap { padding: 14px; }
-    .wmap-canvas-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
-    #wildernessMapCanvas { max-width: 100%; border-radius: 12px; border: 1px solid var(--border-bright); background: #0c1a12; }
-    .wmap-zone-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
+    .wmap-layout {
+      display: grid; grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
+      gap: 16px; align-items: start;
+    }
+    .wmap-column { min-width: 0; display: flex; flex-direction: column; }
+    .wmap-map-column {
+      box-sizing: border-box; padding: 10px; border-radius: 14px;
+      border: 1px solid var(--border-bright); background: rgba(0,0,0,0.16);
+    }
+    .wmap-canvas-wrap { display: flex; width: 100%; justify-content: center; }
+    #wildernessMapCanvas {
+      display: block; width: min(100%, 410px); height: auto; aspect-ratio: 1;
+      max-width: 100%; border-radius: 12px; border: 1px solid var(--border-bright);
+      background: #0c1a12; cursor: crosshair; touch-action: manipulation;
+    }
+    .wmap-zone-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-start; margin-bottom: 10px; }
     .wmap-zone-tab {
       font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px;
       border-radius: 999px; border: 1px solid var(--border-bright);
       background: rgba(255,255,255,0.06); color: inherit; cursor: pointer;
     }
     .wmap-zone-tab.active { background: var(--accent-dim); border-color: rgba(249,226,138,0.6); }
-    .wmap-legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 12px; opacity: 0.85; }
+    .wmap-legend { display: flex; gap: 8px 14px; flex-wrap: wrap; justify-content: flex-start; font-size: 12px; opacity: 0.85; }
     .wmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
     .wmap-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+    .wmap-landmarks { margin-top: 12px; }
+    .wmap-waypoint-status {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 8px 10px; margin-bottom: 7px; border-radius: 9px;
+      color: #bdefff; background: rgba(88,216,255,0.09); border: 1px solid rgba(88,216,255,0.25);
+      font-size: 12px; font-weight: 700;
+    }
+    .wmap-waypoint-clear {
+      font: inherit; font-size: 11px; font-weight: 700; padding: 4px 8px; flex: 0 0 auto;
+      border-radius: 999px; color: inherit; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.2); cursor: pointer;
+    }
+    .wmap-landmark-list { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .wmap-landmark-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 7px 9px; border-radius: 9px; border: 1px solid var(--border-bright);
+      background: rgba(255,255,255,0.035);
+    }
+    .wmap-landmark-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; }
+    .wmap-landmark-label i { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; box-shadow: 0 0 0 1px #05070a; }
+    .wmap-waypoint-btn {
+      font: inherit; font-size: 11px; font-weight: 700; padding: 5px 9px; flex: 0 0 auto;
+      border-radius: 999px; border: 1px solid rgba(88,216,255,0.42);
+      color: inherit; background: rgba(88,216,255,0.1); cursor: pointer;
+    }
+    .wmap-waypoint-btn.active { color: #fff; background: rgba(88,216,255,0.28); border-color: #58d8ff; }
 
     .wmap-gathering { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-bright); }
     .wmap-gathering-title { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.03em; opacity: 0.8; }

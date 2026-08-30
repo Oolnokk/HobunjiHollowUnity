@@ -10,7 +10,7 @@
     { id: 'north', label: 'N', angle: -Math.PI / 2 },
   ]);
   let lastUpdateAt = 0; // Used to throttle the module's lightweight requestAnimationFrame bridge.
-  let lastDebug = { visible: false, areaId: '', headingDeg: 0, headingSource: 'none', markers: [], offAreaQuestTargets: 0 }; // Used by mobile Pixel Probe reports.
+  let lastDebug = { visible: false, areaId: '', headingDeg: 0, headingSource: 'none', markers: [], offAreaQuestTargets: 0, offAreaWaypoint: null }; // Used by mobile Pixel Probe reports.
 
   function angleDiff(target, source) {
     let delta = target - source;
@@ -66,6 +66,21 @@
   function collectTargets(areaId) {
     const targets = [];
     let offAreaQuestTargets = 0; // Used to tell mobile diagnostics why an active quest has no current bearing marker.
+    let offAreaWaypoint = null; // Used to explain why a saved waypoint is absent until its wilderness region is entered.
+    const waypoint = window.WildernessMap?.getCompassWaypoint?.();
+    if (waypoint) {
+      if (waypoint.zoneId === areaId) {
+        // Insert first with the strongest priority so a waypoint chosen on a
+        // camp/den marker replaces the automatic marker at the same position
+        // instead of drawing two symbols on top of each other.
+        targets.push({
+          id: `waypoint:${waypoint.id}`, source: 'waypoint', label: waypoint.label,
+          col: waypoint.col, row: waypoint.row, symbol: '⬙', color: '#58d8ff', priority: -1,
+        });
+      } else {
+        offAreaWaypoint = { id: waypoint.id, label: waypoint.label, zoneId: waypoint.zoneId };
+      }
+    }
     // One combined read per frame — see ProceduralTasks.allCompassTargets,
     // which caches the expensive quest-history scan and only re-resolves
     // live NPC positions here.
@@ -99,7 +114,7 @@
       otherIndex < index && other.priority < target.priority
       && Math.hypot(other.col - target.col, other.row - target.row) < 0.75
     ));
-    return { targets: deduped, offAreaQuestTargets };
+    return { targets: deduped, offAreaQuestTargets, offAreaWaypoint };
   }
 
   function makeIndicator(className, text) {
@@ -152,10 +167,10 @@
     const { heading, source: headingSource } = currentHeading(deps, player); // True camera-orbit heading; independent from character/body rotation on the farm and in Character View.
     const playerCol = player.x / deps.TILE;
     const playerRow = player.y / deps.TILE;
-    const { targets, offAreaQuestTargets } = collectTargets(areaId);
+    const { targets, offAreaQuestTargets, offAreaWaypoint } = collectTargets(areaId);
     const entries = [...CARDINALS.map(cardinal => ({ ...cardinal, symbol: cardinal.label })), ...targets];
     const markers = renderIndicators(layer, entries, heading, playerCol, playerRow);
-    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), headingSource, markers, offAreaQuestTargets };
+    lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), headingSource, markers, offAreaQuestTargets, offAreaWaypoint };
   }
 
   function frame(now) {
