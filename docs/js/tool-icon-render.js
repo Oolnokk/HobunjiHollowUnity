@@ -137,13 +137,13 @@
   document.head.appendChild(script);
 })();
 
-// Final item presentation reset: category grouping/rings remain, but icon
-// layout is returned to the pre-feature selector styles and the curved category
-// heading uses Potion Select's sharp gold/black text rather than category color.
+// Final item presentation pass: preserve original icon sizing, keep the
+// category heading fixed in screen space, and pull Item Select a few pixels
+// inward without changing Potion Select's shared geometry.
 (() => {
   'use strict';
   if (window.ItemArchOriginalPresentation?.installed || document.querySelector('script[data-item-arch-original-presentation]')) return;
-  const src = 'js/item-arch-original-presentation.js?v=20260830a'; // Used to cache-bust only the final icon/text presentation reset.
+  const src = 'js/item-arch-original-presentation.js?v=20260830b'; // Cache-bust fixed heading + tiny item-radius inset independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-original-presentation="1" src="${src}"><\/script>`);
     return;
