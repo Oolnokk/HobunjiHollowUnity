@@ -3522,6 +3522,15 @@ window.SCRATCHBONES_CONFIG = {
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
         },
+        // Flask gameplay emits these semantic phases without importing or
+        // calling the audio system. Set any value here to an objectSfx key
+        // below when a real recording is added; null deliberately stays
+        // silent while still appearing in flask diagnostics/debug logs.
+        "alchemyFlasks": {
+          "aimStart": null,
+          "release": null,
+          "impact": null
+        },
         // Generic object/machine/UI interaction sfx — see playObjectSfx in
         // game.js and docs/assets/audio/sfx/README.md. Every entry names a
         // real recording (`url`) that does NOT exist yet — a human needs to

@@ -463,6 +463,17 @@
     if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
   }
 
+  // AlchemyFlasks emits semantic events and never imports AudioSystem. This
+  // adapter is the only place that resolves those placeholders to ordinary
+  // object-SFX keys, so adding real recordings later is a config-only change.
+  document.addEventListener('hobunji-flask-sfx', event => {
+    const detail = event?.detail || {}; // Semantic flask phase and optional world context.
+    const cueMap = gameAudioConfig().alchemyFlasks || {}; // Configured phase/cue-ID -> objectSfx key mapping.
+    const configuredKey = cueMap[detail.cue] || cueMap[detail.cueId]; // Supports concise phase names or stable exported cue IDs.
+    if (configuredKey) playObjectSfxKey(configuredKey);
+    window.__farmLog?.(`[alchemy-flask-sfx] ${detail.cueId || detail.cue || 'unknown'}${configuredKey ? ` -> ${configuredKey}` : ' (placeholder)'}`, 'alchemy');
+  });
+
   function objectSfxDebugSnapshot() {
     return {
       last: lastObjectSfxKeyDebug ? { ...lastObjectSfxKeyDebug } : null,
