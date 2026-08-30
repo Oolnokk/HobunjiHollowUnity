@@ -4479,6 +4479,7 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          if (c._denHidden) continue; // Tucked out of sight in its den — not actually there to hit.
           if (!window.Combat?.meleeHit?.(player, c, {
             rangePx: abil.rangePx,
             halfConeRad: abil.halfConeRad,
@@ -4516,7 +4517,7 @@
         const ray = currentPlayerInteractionRay();
         if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
           const candidates = Array.from(hostileObjects)
-            .filter(c => c.health > 0 && c.areaId === currentArea)
+            .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden)
             .map(c => {
               const hitbox = window.RangedWeapons.actorHitbox(c);
               return hitbox?.box ? {
@@ -4540,7 +4541,7 @@
         let best = null, bestDist = maxDistanceWorld;
         const fx = Math.cos(aim), fy = Math.sin(aim);
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const along = dx * fx + dy * fy;
           if (along < 0 || along > bestDist) continue;
@@ -4592,7 +4593,7 @@
         }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
@@ -4687,7 +4688,7 @@
           : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
@@ -4724,7 +4725,7 @@
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > bestDist) continue;
@@ -4758,7 +4759,7 @@
         if (!meleeAutoTargetOn || !meleeWeaponOut()) return;
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         const candidates = Array.from(hostileObjects)
-          .filter(c => c.health > 0 && c.areaId === currentArea && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
+          .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
           .map(c => ({ c, angle: Math.atan2(c.y - player.y, c.x - player.x) }))
           .sort((a, b) => a.angle - b.angle);
         if (!candidates.length) return;
@@ -6775,6 +6776,7 @@
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
+            if (h._denHidden) continue;
             // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
             // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
             // fight — companions should ignore them, not treat them as prey.
@@ -8268,7 +8270,7 @@
       function isHostileInLungeCone(hitTest) {
         if (!hitTest) return false;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           if (window.Combat?.meleeHit?.(player, c, {
             rangePx: hitTest.rangePx,
             halfConeRad: hitTest.halfConeRad,
@@ -27010,7 +27012,7 @@
         },
         getSplashEntities: (area, x, y, radiusPx) => {
           const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
-          return entities.filter(entity => entity && entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx);
+          return entities.filter(entity => entity && !entity._denHidden && (entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx));
         },
         spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
           const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.

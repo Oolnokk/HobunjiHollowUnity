@@ -752,7 +752,7 @@
     if (!deps?.hostileObjects) return null;
     const candidates = [];
     for (const hostile of deps.hostileObjects) {
-      if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
+      if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea() || hostile._denHidden) continue;
       const hitbox = actorHitbox(hostile);
       if (hitbox) candidates.push({ type: 'hostile', id: hostile.id || hostile.name || hostile.def?.id, data: hostile, hitbox });
     }
@@ -789,7 +789,7 @@
       const rayEnd = cameraRay.origin.clone().addScaledVector(cameraRay.direction, rayDistance);
       let nearest = null;
       for (const hostile of deps.hostileObjects) {
-        if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
+        if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea() || hostile._denHidden) continue;
         const interval = segmentHitboxInterval(cameraRay.origin, rayEnd, actorHitbox(hostile), aimRadius);
         if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
         nearest = { hostile, interval };
@@ -877,7 +877,7 @@
   function nearestHostileHit(start, end, projectileRadius, areaId, exclude = null) {
     let nearest = null;
     for (const c of deps.hostileObjects) {
-      if (c === exclude || c.id === exclude?.id || c.health <= 0 || (c.areaId && c.areaId !== areaId)) continue;
+      if (c === exclude || c.id === exclude?.id || c.health <= 0 || (c.areaId && c.areaId !== areaId) || c._denHidden) continue;
       const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
       if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
       nearest = { creature: c, interval };
