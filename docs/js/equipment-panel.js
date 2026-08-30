@@ -14,6 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
+  const CLOTHING_SLOTS = ['hat', 'hood', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -135,7 +136,7 @@
 
   function makeClothingGearEntry(item) {
     if (!item) return null;
-    return {
+    const entry = { // Used as the persistent canonical gear record for one clothing article.
       uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId: item.cosmeticId,
       slot: item.slot,
@@ -143,9 +144,109 @@
       baseLabel: item.baseLabel || item.label,
       colorA: item.colorA,
       colorB: item.colorB,
+      articleDyeIds: Array.isArray(item.articleDyeIds) ? [...item.articleDyeIds] : [],
       sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
       sellPrice: item.sellPrice || 0,
     };
+    ensureArticleDyeIds(entry);
+    return entry;
+  }
+
+  function clothingDyeIds(item) {
+    const articleDyeIds = []; // Used to return the unique shades learned specifically for this article.
+    const seenDyeIds = new Set(); // Used to keep legacy/duplicate dye entries from multiplying in saves.
+    const addDyeId = (dyeId) => { // Used for both saved article shades and the article's current primary/trim colors.
+      if (!dyeId || seenDyeIds.has(dyeId)) return;
+      seenDyeIds.add(dyeId);
+      articleDyeIds.push(dyeId);
+    };
+    for (const dyeId of (Array.isArray(item?.articleDyeIds) ? item.articleDyeIds : [])) addDyeId(dyeId);
+    addDyeId(item?.colorA?.dyeId);
+    addDyeId(item?.colorB?.dyeId);
+    return articleDyeIds;
+  }
+
+  function ensureArticleDyeIds(item) {
+    if (!item) return false;
+    const nextDyeIds = clothingDyeIds(item); // Used as the normalized per-article dye list persisted on the clothing entry.
+    const previousDyeIds = Array.isArray(item.articleDyeIds) ? item.articleDyeIds : []; // Used to avoid unnecessary save writes when already normalized.
+    const unchanged = previousDyeIds.length === nextDyeIds.length && previousDyeIds.every((dyeId, index) => dyeId === nextDyeIds[index]); // Used to detect one-time migration work.
+    if (unchanged) return false;
+    item.articleDyeIds = nextDyeIds;
+    return true;
+  }
+
+  function mergeArticleDyes(target, source) {
+    if (!target) return 0;
+    ensureArticleDyeIds(target);
+    const knownDyeIds = new Set(target.articleDyeIds); // Used to merge a duplicate copy's shades without affecting the global dye collection.
+    let addedDyeCount = 0; // Used for transfer feedback when a duplicate teaches this article new shades.
+    for (const dyeId of clothingDyeIds(source)) {
+      if (knownDyeIds.has(dyeId)) continue;
+      knownDyeIds.add(dyeId);
+      target.articleDyeIds.push(dyeId);
+      addedDyeCount++;
+    }
+    return addedDyeCount;
+  }
+
+  function normalizeGearClothingItems(gearInventory) {
+    if (!gearInventory || !Array.isArray(gearInventory.clothingItems)) return false;
+    let changed = false; // Used to persist legacy duplicate cleanup only when the save actually changes.
+    const sourceItems = gearInventory.clothingItems.filter(Boolean); // Used as the migration input before duplicate articles are collapsed.
+    const groupsByCosmeticId = new Map(); // Used to group dye variants of the same authored clothing article.
+    const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
+
+    for (const item of sourceItems) {
+      if (ensureArticleDyeIds(item)) changed = true;
+      if (!item?.cosmeticId) continue;
+      if (!groupsByCosmeticId.has(item.cosmeticId)) groupsByCosmeticId.set(item.cosmeticId, []);
+      groupsByCosmeticId.get(item.cosmeticId).push(item);
+    }
+    for (const slot of CLOTHING_SLOTS) {
+      const worn = gearInventory.clothing?.[slot]; // Used to choose the visible copy as canonical when an old save has duplicates.
+      if (worn?.cosmeticId && worn?.uid) wornUidByCosmeticId.set(worn.cosmeticId, worn.uid);
+    }
+
+    const canonicalByCosmeticId = new Map(); // Used to map every duplicate article to its single retained gear entry.
+    for (const [cosmeticId, variants] of groupsByCosmeticId) {
+      const wornUid = wornUidByCosmeticId.get(cosmeticId); // Used to avoid changing the player's currently visible dye during migration.
+      const canonical = variants.find(item => item.uid === wornUid) || variants[0]; // Used as the one retained owned-clothing record.
+      for (const variant of variants) {
+        if (variant === canonical) continue;
+        if (mergeArticleDyes(canonical, variant) > 0) changed = true;
+      }
+      canonicalByCosmeticId.set(cosmeticId, canonical);
+      if (variants.length > 1) changed = true;
+    }
+
+    const normalizedItems = []; // Used to preserve original ordering while emitting only one item per cosmeticId.
+    const emittedCosmeticIds = new Set(); // Used to suppress duplicate dye variants in the Owned Clothing row.
+    for (const item of sourceItems) {
+      if (!item?.cosmeticId) {
+        normalizedItems.push(item);
+        continue;
+      }
+      if (emittedCosmeticIds.has(item.cosmeticId)) continue;
+      emittedCosmeticIds.add(item.cosmeticId);
+      normalizedItems.push(canonicalByCosmeticId.get(item.cosmeticId) || item);
+    }
+    const listChanged = normalizedItems.length !== gearInventory.clothingItems.length || normalizedItems.some((item, index) => gearInventory.clothingItems[index] !== item); // Used to avoid replacing the array when no migration is needed.
+    if (listChanged) {
+      gearInventory.clothingItems = normalizedItems;
+      changed = true;
+    }
+
+    for (const slot of CLOTHING_SLOTS) {
+      const worn = gearInventory.clothing?.[slot]; // Used to reconnect equipped slots to their retained canonical clothing record.
+      if (!worn?.cosmeticId) continue;
+      const canonical = canonicalByCosmeticId.get(worn.cosmeticId); // Used to keep slot and collection references on the same retained article.
+      if (canonical && gearInventory.clothing[slot] !== canonical) {
+        gearInventory.clothing[slot] = canonical;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   function clothingTintKeysForSlot(slot) {
@@ -161,7 +262,7 @@
     const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
     const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
     const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
-    for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+    for (const slot of CLOTHING_SLOTS) {
       // Clear out whatever cosmetic previously occupied this category
       // (character-creation's own pick, or a since-unequipped item)
       // before considering the current gearInventory item — this used to
@@ -223,17 +324,36 @@
 
   function ensureGearClothingCollection() {
     const gearInventory = deps.getGearInventory();
-    if (!gearInventory) return;
-    if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
-    if (!Array.isArray(gearInventory.clothingItems)) gearInventory.clothingItems = [];
-    for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+    if (!gearInventory) return false;
+    let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
+    if (!gearInventory.clothing) {
+      gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+      changed = true;
+    }
+    if (!Array.isArray(gearInventory.clothingItems)) {
+      gearInventory.clothingItems = [];
+      changed = true;
+    }
+    for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing[slot];
       if (!worn) continue;
       const wornEntry = makeClothingGearEntry({ ...worn, slot });
-      if (!worn.uid) gearInventory.clothing[slot] = wornEntry;
-      const hasItem = gearInventory.clothingItems.some(item => item.uid === wornEntry.uid);
-      if (!hasItem) gearInventory.clothingItems.push(wornEntry);
+      if (!worn.uid) {
+        gearInventory.clothing[slot] = wornEntry;
+        changed = true;
+      } else if (ensureArticleDyeIds(worn)) {
+        changed = true;
+      }
+      const storedWorn = gearInventory.clothing[slot]; // Used to seed the owned collection from older saves that only stored equipped clothing.
+      const hasItem = gearInventory.clothingItems.some(item => item.uid === storedWorn.uid);
+      if (!hasItem) {
+        gearInventory.clothingItems.push(storedWorn);
+        changed = true;
+      }
     }
+    if (normalizeGearClothingItems(gearInventory)) changed = true;
+    if (changed) deps.saveGearInventory();
+    return changed;
   }
 
   function transferClothingToGear(uid) {
@@ -243,13 +363,30 @@
     const item = makeClothingGearEntry(packClothing[idx]);
     ensureGearClothingCollection();
     const gearInventory = deps.getGearInventory();
-    gearInventory.clothingItems.push(item);
-    gearInventory.clothing[item.slot] = item;
+    const existingItem = item.cosmeticId ? gearInventory.clothingItems.find(c => c?.cosmeticId === item.cosmeticId) : null; // Used to collapse a newly acquired dye variant into an already-owned article.
+    let equippedItem = item; // Used so duplicate transfers equip the retained canonical article rather than a second copy.
+    let learnedDyeCount = 0; // Used to tell the player whether the duplicate taught this article any new shades.
+    if (existingItem) {
+      learnedDyeCount = mergeArticleDyes(existingItem, item);
+      equippedItem = existingItem;
+    } else {
+      gearInventory.clothingItems.push(item);
+    }
+    gearInventory.clothing[equippedItem.slot] = equippedItem;
     packClothing.splice(idx, 1);
     deps.saveGearInventory();
     deps.saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
     deps.refreshPlayerAvatar();
-    deps.showToast(item.label + ' moved to gear and equipped!', true);
+    if (existingItem) {
+      const articleLabel = existingItem.baseLabel || item.baseLabel || existingItem.label; // Used for duplicate-transfer feedback without baking the current dye into the article name.
+      if (learnedDyeCount > 0) {
+        deps.showToast(`${articleLabel}: added ${learnedDyeCount} new redye ${learnedDyeCount === 1 ? 'shade' : 'shades'}.`, true);
+      } else {
+        deps.showToast(`${articleLabel} is already in gear; those dyes were already available for it.`, true);
+      }
+    } else {
+      deps.showToast(item.label + ' moved to gear and equipped!', true);
+    }
     buildPackClothingSection(); buildEquipmentSlots(); deps.clearInventoryDetail();
   }
 
@@ -440,11 +577,10 @@
 
   // ── Redye panel ──────────────────────────────────────────────────
   // Opened from a clothing item's info panel (see selectGearClothing's
-  // Redye button). Lets the player freely re-apply any dye already in
-  // their collection (gearInventory.dyeCollection) to an owned clothing
-  // piece — permanent world dyes are what grow that collection (see
-  // useMysteryDye/rollTreasureDyeItemKeys); this panel only ever spends
-  // from it, never consumes anything itself.
+  // Redye button). It combines globally unlocked dye-item shades with the
+  // shades learned specifically by acquiring dyed copies of this article.
+  // Redyeing itself is free and never promotes an article-only shade into
+  // the global dye collection.
   function closeRedyePanel() {
     const panel = document.getElementById('dyePanel');
     if (!panel) return;
@@ -454,6 +590,7 @@
 
   function openRedyePanel(slot, item) {
     window.DyeSystem.ensureCollection();
+    ensureArticleDyeIds(item);
     const panel = document.getElementById('dyePanel');
     const titleEl = document.getElementById('dyePanelTitle');
     const subslotsEl = document.getElementById('dyePanelSubslots');
@@ -517,9 +654,9 @@
 
     function renderGroups() {
       groupsEl.innerHTML = '';
-      const groups = window.DyeSystem.ownedByHue();
+      const groups = window.DyeSystem.ownedByHue(item.articleDyeIds);
       if (!groups.length) {
-        groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes collected yet.</div>';
+        groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes available for this article yet.</div>';
         return;
       }
       for (const group of groups) {
@@ -683,7 +820,7 @@
 
     const clothRow = document.createElement('div');
     clothRow.className = 'inv-equip-row';
-    for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+    for (const slot of CLOTHING_SLOTS) {
       const item = gearInventory?.clothing?.[slot];
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
