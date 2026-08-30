@@ -96,3 +96,62 @@
   script.onerror = () => window.__farmLog?.('[action-arch-slot-colors] module failed to load', 'error');
   document.head.appendChild(script);
 })();
+
+// Item-selector grouping/category presentation is a separate HUD layer. It
+// classifies existing ITEM_DEFS metadata, keeps same-type items adjacent in the
+// canonical selectable order, and decorates the item arc + curved category
+// heading; selection/consumption behavior remains authoritative in game.js.
+(() => {
+  'use strict';
+  if (window.ItemArchCategoryColors?.installed || document.querySelector('script[data-item-arch-category-colors]')) return;
+  const src = 'js/item-arch-category-colors.js?v=20260830b'; // Used to cache-bust grouping/category presentation independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-category-colors="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load the item selector adapter when this bootstrap runs after parsing.
+  script.dataset.itemArchCategoryColors = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-category-colors] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
+
+// Mobile edge-scroll continuity is layered after the base item-category module:
+// while a scroll sentinel is active, keep the last real item's curved category
+// heading visible until the thumb reaches another real item slot. This adapter
+// also keeps item/category geometry aligned with Potion Select.
+(() => {
+  'use strict';
+  if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830e'; // Used to cache-bust the mobile continuity + geometry adapter independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load after the base category module when parsing has already completed.
+  script.dataset.itemArchStickyCategoryHeading = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-sticky-category-heading] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
+
+// Final item presentation pass: preserve original icon sizing, keep the
+// category heading fixed in screen space, and pull Item Select a few pixels
+// inward without changing Potion Select's shared geometry.
+(() => {
+  'use strict';
+  if (window.ItemArchOriginalPresentation?.installed || document.querySelector('script[data-item-arch-original-presentation]')) return;
+  const src = 'js/item-arch-original-presentation.js?v=20260830c'; // Cache-bust fixed heading + tiny item-radius inset independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-original-presentation="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load after every item-category presentation layer when parsing has completed.
+  script.dataset.itemArchOriginalPresentation = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-original-presentation] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
