@@ -22,7 +22,13 @@ assert.match(gameSource,
   'front and back shoulder x-ray controls remain independently wired');
 assert.match(gameSource,
   /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
-  'the authored perch position is aligned to the pet grip after surface resolution');
+  'the pet root is offset by the same authored grip transform used for rendering');
+assert.match(gameSource,
+  /alignedGripWorldPosition = finalTransform\.worldPosition\.clone\(\)\.add\(finalTransform\.gripWorldOffset/,
+  'the runtime diagnostic reconstructs the grip point to verify perch coincidence');
+assert.match(gameSource,
+  /authoritativeRootTransform: true/,
+  'the final attachment marks its root transform as authoritative');
 assert.match(gameSource,
   /const fallbackWorldQuaternion = playerMesh\.getWorldQuaternion[\s\S]{0,360}faceRotationSource: 'player-body-fallback-no-authored-anchors'/,
   'no-anchor fallback shoulder pets continue to inherit the avatar body transform');
