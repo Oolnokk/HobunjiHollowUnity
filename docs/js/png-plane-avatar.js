@@ -6,8 +6,11 @@
 
   const PORTRAIT_FLIP_STORAGE_KEY = 'hobunjiPngPortraitsFlipped'; // Persists the player-facing horizontal portrait setting across sessions.
   const trackedPortraitTextures = new Set(); // Lets the Settings toggle update already-spawned front/back character planes immediately.
-  let portraitsFlipped = false; // Read by texture creation and the public Settings/debug API below.
-  try { portraitsFlipped = localStorage.getItem(PORTRAIT_FLIP_STORAGE_KEY) === '1'; } catch {}
+  let portraitsFlipped = true; // New/default character presentation; Dev Mode can expose the opt-out checkbox below.
+  try {
+    const savedPortraitFlip = localStorage.getItem(PORTRAIT_FLIP_STORAGE_KEY); // Preserves an explicit older choice while treating a missing key as the new flipped default.
+    if (savedPortraitFlip !== null) portraitsFlipped = savedPortraitFlip !== '0';
+  } catch {}
 
   function cfg() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
@@ -929,14 +932,17 @@
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
+    trackPortraitTexture,
     getPortraitsFlipped: () => portraitsFlipped,
     setPortraitsFlipped,
     getPortraitFlipDebugState: () => ({ enabled: portraitsFlipped, trackedTextureCount: trackedPortraitTextures.size }),
   };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', wirePortraitFlipSetting, { once: true });
-  } else {
-    wirePortraitFlipSetting();
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', wirePortraitFlipSetting, { once: true });
+    } else {
+      wirePortraitFlipSetting();
+    }
   }
 })();
 
