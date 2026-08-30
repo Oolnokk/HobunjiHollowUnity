@@ -12979,6 +12979,296 @@ animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.41 patch installed: fixed authored shoulder perches bypass the legacy all-species scan, preventing both perch replacement and the resulting posterior-rule reset.');
 
+// -----------------------------------------------------------------------------
+// V15.42 exposes the creature species + size-class visual Y correction as an
+// explicit Rigging control. It edits the existing species profile transform
+// applied by applyCreatureSizeClass(), so preview/export keep one source of truth.
+// Zero leaves the existing automatic/base creature placement uncorrected.
+// -----------------------------------------------------------------------------
+function creatureGroundOffsetEntryV1542(actor, sizeClass) {
+  if (actor?.source?.type !== 'creature') return null;
+  const sizeKey = normalizeCreatureSizeClass(sizeClass); // Used to select this species' persisted Small/Medium/Large transform entry.
+  return creatureSizeProfileEntry(actor, sizeKey);
+}
+
+function creatureGroundOffsetV1542(actor, sizeClass) {
+  const entry = creatureGroundOffsetEntryV1542(actor, sizeClass); // Supplies the canonical persisted size-class transform used by preview/export.
+  const offset = Number(entry?.transform?.position?.y); // Reads the signed Y correction already supported by the creature transform profile.
+  return Number.isFinite(offset) ? offset : 0;
+}
+
+function setCreatureGroundOffsetV1542(actor, sizeClass, value) {
+  const sizeKey = normalizeCreatureSizeClass(sizeClass); // Selects the exact species + size-class profile being edited.
+  const entry = creatureGroundOffsetEntryV1542(actor, sizeKey); // Mutated so the normal creature-size application path immediately consumes the edit.
+  if (!entry) return 0;
+  const fallbackScale = CREATURE_SIZE_CLASS_INFO[sizeKey]?.defaultScale ?? 1; // Preserves this class' existing scale if older/imported transform data is incomplete.
+  entry.transform = normalizeTransformSnapshot(entry.transform, fallbackScale);
+  const offset = Number(value); // Sanitizes mobile number input before it enters the saved profile.
+  entry.transform.position.y = Number.isFinite(offset) ? offset : 0;
+  return entry.transform.position.y;
+}
+
+function ensureCreatureGroundReferenceV1543() {
+  const THREE = state.three.THREE;
+  const rigRoot = animationAuthor.modeRoots?.rig;
+  if (!THREE || !rigRoot) return null;
+  let group = rigRoot.getObjectByName('CreatureGroundReferenceV1543');
+  if (group) {
+    group.visible = true;
+    return group;
+  }
+  group = new THREE.Group(); // Local-only preview reference; it is never exported with the creature.
+  group.name = 'CreatureGroundReferenceV1543';
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.8, 2.8), // Broad enough to judge paw/foot contact without filling the whole scene.
+    new THREE.MeshBasicMaterial({ color: 0x6ba9ff, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  plane.name = 'CreatureGroundReferencePlaneV1543';
+  plane.rotation.x = -Math.PI / 2;
+  plane.renderOrder = -1;
+  group.add(plane);
+  const localGrid = new THREE.GridHelper(2.8, 14, 0x9bc6ff, 0x496b92); // Makes height/contact legible even when the translucent fill overlaps the sprite.
+  localGrid.name = 'CreatureGroundReferenceGridV1543';
+  localGrid.position.y = 0.002;
+  group.add(localGrid);
+  rigRoot.add(group);
+  return group;
+}
+
+function hideCreatureGroundReferenceV1543() {
+  const group = animationAuthor.modeRoots?.rig?.getObjectByName?.('CreatureGroundReferenceV1543');
+  if (group) group.visible = false;
+  syncAnimationAuthorFloorGridV1538(); // Restore the normal Rigging floor for NPCs and other modes.
+}
+
+function syncCreatureGroundReferenceV1543(actor, sizeClass) {
+  if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'creature' || !actor.visualOffset) {
+    hideCreatureGroundReferenceV1543();
+    return null;
+  }
+  const THREE = state.three.THREE;
+  const rigRoot = animationAuthor.modeRoots?.rig;
+  const group = ensureCreatureGroundReferenceV1543();
+  if (!THREE || !rigRoot || !group) return null;
+  actor.visualOffset.updateMatrixWorld(true);
+  const visualWorld = new THREE.Vector3(); // Fixed animal preview origin after suppressing only its saved Y correction.
+  actor.visualOffset.getWorldPosition(visualWorld);
+  const offset = creatureGroundOffsetV1542(actor, sizeClass);
+  const groundWorldY = visualWorld.y - offset; // The authored value is the full distance from this fixed creature origin down to its floor reference.
+  const groundLocal = visualWorld.clone();
+  rigRoot.worldToLocal(groundLocal);
+  group.position.set(groundLocal.x, groundLocal.y - offset, groundLocal.z);
+  group.updateMatrixWorld(true);
+  if (state.three.grid) {
+    state.three.grid.position.y = groundWorldY; // Existing scene grid follows the dedicated reference plane instead of contradicting it.
+    state.three.grid.updateMatrixWorld?.(true);
+  }
+  return groundWorldY;
+}
+
+function previewCreatureGroundOffsetV1542(actor, sizeClass) {
+  const sizeKey = normalizeCreatureSizeClass(sizeClass); // Keeps preview on the row the user is editing.
+  applyCreatureSizeClass(actor, sizeKey, { announce: false, render: false });
+  actor.visualOffset.position.y = 0; // Keep the animal stationary while the floor reference visualizes the authored floor-to-origin distance.
+  actor.visualOffset.updateMatrixWorld(true);
+  animationAuthor.selectionBox?.update();
+  syncCreatureGroundReferenceV1543(actor, sizeKey);
+}
+
+const baseRenderAttachmentRigInspectorV1542 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  const result = baseRenderAttachmentRigInspectorV1542(); // Retains every existing Rigging control before adding manual ground corrections.
+  const actor = selectedAnimationActor(); // Supplies the selected creature whose species-shared size profiles are being authored.
+  const section = $('maaCreaturePlaneScaleRigSection'); // Existing species-shared Small/Medium/Large card group receives the new fields.
+  if (actor?.source?.type !== 'creature' || !section) {
+    hideCreatureGroundReferenceV1543();
+    return result;
+  }
+  if (!section.querySelector('[data-maa-rig-ground-offset]')) {
+
+  section.querySelectorAll('.maaCreatureSizeCard').forEach(card => {
+    const sizeControl = card.querySelector('[data-maa-rig-preview-size], [data-maa-rig-plane-scale-class]'); // Identifies which size class this existing card edits.
+    const sizeClass = normalizeCreatureSizeClass(sizeControl?.dataset.maaRigPreviewSize || sizeControl?.dataset.maaRigPlaneScaleClass); // Maps the card to its persisted size transform.
+    const offset = creatureGroundOffsetV1542(actor, sizeClass); // Seeds the input from the same transform Y applied by applyCreatureSizeClass().
+    card.insertAdjacentHTML('beforeend', `<div class="maaField" style="margin-top:8px">
+      <label>Ground Y offset</label>
+      <div class="maaRow">
+        <input type="number" step="0.01" value="${offset.toFixed(3)}" data-maa-rig-ground-offset="${sizeClass}" aria-label="${escapeHtml(CREATURE_SIZE_CLASS_INFO[sizeClass]?.label || sizeClass)} ground Y offset">
+        <button type="button" class="secondary" data-maa-rig-ground-reset="${sizeClass}">Auto / 0</button>
+      </div>
+      <span class="maaSmall maaMuted">The animal stays fixed while the blue ground plane moves. This value is the full floor-to-creature-origin distance used instead of automatic half-height grounding; 0 keeps Auto.</span>
+    </div>`);
+  });
+
+  section.querySelectorAll('[data-maa-rig-ground-offset]').forEach(input => input.addEventListener('change', event => {
+    const sizeClass = normalizeCreatureSizeClass(event.currentTarget.dataset.maaRigGroundOffset); // Selects the size profile edited by this field.
+    const typedOffset = event.currentTarget.valueAsNumber; // NaN while blank/malformed, unlike Number('') which incorrectly becomes zero.
+    if (!Number.isFinite(typedOffset)) {
+      event.currentTarget.value = creatureGroundOffsetV1542(actor, sizeClass).toFixed(3);
+      setStatus('Ground offset must be a number.', 'warn');
+      return;
+    }
+    const savedOffset = setCreatureGroundOffsetV1542(actor, sizeClass, typedOffset); // Writes the existing profile transform consumed by applyCreatureSizeClass().
+    event.currentTarget.value = Number(savedOffset).toFixed(3);
+    previewCreatureGroundOffsetV1542(actor, sizeClass);
+    setAnimationRecentChange(`Set ${actor.label || actor.source?.kind || 'creature'} ${sizeClass} ground Y offset to ${Number(savedOffset).toFixed(3)}.`);
+    setStatus(`Ground offset saved for ${CREATURE_SIZE_CLASS_INFO[sizeClass]?.label || sizeClass}.`, 'good');
+  }));
+
+  section.querySelectorAll('[data-maa-rig-ground-reset]').forEach(button => button.addEventListener('click', event => {
+    const sizeClass = normalizeCreatureSizeClass(event.currentTarget.dataset.maaRigGroundReset); // Selects the size profile being returned to its uncorrected Y.
+    setCreatureGroundOffsetV1542(actor, sizeClass, 0);
+    const input = section.querySelector(`[data-maa-rig-ground-offset="${sizeClass}"]`); // Keeps the visible value synchronized with the reset profile.
+    if (input) input.value = '0.000';
+    previewCreatureGroundOffsetV1542(actor, sizeClass);
+    setAnimationRecentChange(`Reset ${actor.label || actor.source?.kind || 'creature'} ${sizeClass} ground Y offset to 0.`);
+    setStatus(`Ground offset reset for ${CREATURE_SIZE_CLASS_INFO[sizeClass]?.label || sizeClass}.`, 'good');
+  }));
+  }
+
+  previewCreatureGroundOffsetV1542(actor, actor.creatureSizeClass); // Reassert fixed-animal/moving-ground visualization after rerenders and size switches.
+  return result;
+};
+
+const baseSetAnimationAuthorModeV1543 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode) {
+  const result = await baseSetAnimationAuthorModeV1543(mode); // Keeps all prior mode-root and V15.38 floor behavior.
+  if (animationAuthor.mode !== 'rig') hideCreatureGroundReferenceV1543();
+  return result;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1542 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1542(); // Preserves all existing initialization while updating the visible tool version.
+  document.title = 'Hobunji Animation Author V15.43';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.43 adds a dedicated moving ground plane and grid to creature ground-offset rigging: the animal stays fixed while species-shared Small/Medium/Large transform Y offsets are previewed as inverse ground movement.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.43 patch installed: creature ground-offset rigging keeps the animal fixed and moves a dedicated ground-reference plane tied to the canonical size-class transform Y.');
+
+// -----------------------------------------------------------------------------
+// V15.44 makes creature ground offsets part of the attachment-rig profile
+// itself. Earlier V15.42/V15.43 revisions edited creatureTransformProfiles,
+// which meant Rig-mode exports silently dropped the authored values.
+// -----------------------------------------------------------------------------
+const CREATURE_GROUND_OFFSET_CLASSES_V1544 = ['large', 'medium', 'small']; // Shared by normalization, export, import, and live Rig edits.
+
+function normalizeCreatureGroundOffsetsV1544(value = {}) {
+  const out = {}; // Stable species profile payload written to attachment-rig JSON.
+  for (const sizeClass of CREATURE_GROUND_OFFSET_CLASSES_V1544) {
+    const number = Number(value?.[sizeClass]);
+    out[sizeClass] = Number.isFinite(number) ? number : 0;
+  }
+  return out;
+}
+
+function ensureCreatureRigGroundOffsetsV1544(kind) {
+  const profile = animationAuthor.attachmentRigProfiles?.creatures?.[kind]; // Canonical creature rig profile used by export/import/runtime data.
+  if (!profile) return null;
+  if (!profile.groundOffsets || typeof profile.groundOffsets !== 'object') {
+    const legacy = animationAuthor.creatureTransformProfiles?.[kind]?.classes || {}; // Recovers live V15.42/V15.43 edits when upgrading without reauthoring.
+    profile.groundOffsets = normalizeCreatureGroundOffsetsV1544(Object.fromEntries(
+      CREATURE_GROUND_OFFSET_CLASSES_V1544.map(sizeClass => [sizeClass, legacy?.[sizeClass]?.transform?.position?.y]),
+    ));
+  } else {
+    profile.groundOffsets = normalizeCreatureGroundOffsetsV1544(profile.groundOffsets);
+  }
+  return profile.groundOffsets;
+}
+
+function syncCreatureTransformGroundOffsetsFromRigV1544(kind) {
+  const offsets = ensureCreatureRigGroundOffsetsV1544(kind); // Keeps the older transform table synchronized for any preview code still reading it.
+  if (!offsets) return;
+  const transformProfile = ensureCreatureTransformProfile(kind);
+  for (const sizeClass of CREATURE_GROUND_OFFSET_CLASSES_V1544) {
+    const entry = transformProfile.classes[sizeClass];
+    entry.transform = normalizeTransformSnapshot(entry.transform, CREATURE_SIZE_CLASS_INFO[sizeClass]?.defaultScale ?? 1);
+    entry.transform.position.y = offsets[sizeClass];
+  }
+}
+
+const baseNormalizedRigProfileLibraryV1544 = normalizedRigProfileLibrary;
+normalizedRigProfileLibrary = function(value = {}) {
+  const output = baseNormalizedRigProfileLibraryV1544(value); // Preserves all previous rig migrations first.
+  for (const [kind, profile] of Object.entries(output.creatures || {})) {
+    const source = value?.creatures?.[kind] || {};
+    if (source.groundOffsets) profile.groundOffsets = normalizeCreatureGroundOffsetsV1544(source.groundOffsets);
+  }
+  return output;
+};
+
+const baseCreatureGroundOffsetV1544 = creatureGroundOffsetV1542;
+creatureGroundOffsetV1542 = function(actor, sizeClass) {
+  if (actor?.source?.type === 'creature') {
+    const offsets = ensureCreatureRigGroundOffsetsV1544(actor.source.kind); // Rig JSON is canonical from V15.44 onward.
+    const sizeKey = normalizeCreatureSizeClass(sizeClass);
+    const value = Number(offsets?.[sizeKey]);
+    if (Number.isFinite(value)) return value;
+  }
+  return baseCreatureGroundOffsetV1544(actor, sizeClass);
+};
+
+const baseSetCreatureGroundOffsetV1544 = setCreatureGroundOffsetV1542;
+setCreatureGroundOffsetV1542 = function(actor, sizeClass, value) {
+  const saved = baseSetCreatureGroundOffsetV1544(actor, sizeClass, value); // Retains backward-compatible transform-table synchronization.
+  if (actor?.source?.type === 'creature') {
+    const sizeKey = normalizeCreatureSizeClass(sizeClass);
+    const offsets = ensureCreatureRigGroundOffsetsV1544(actor.source.kind);
+    if (offsets) offsets[sizeKey] = saved;
+  }
+  return saved;
+};
+
+const baseSerializeAttachmentRigLibraryV1544 = serializeAttachmentRigLibrary;
+serializeAttachmentRigLibrary = function() {
+  for (const kind of Object.keys(animationAuthor.attachmentRigProfiles?.creatures || {})) ensureCreatureRigGroundOffsetsV1544(kind); // Migrates live pre-V15.44 edits before cloning the export payload.
+  const data = baseSerializeAttachmentRigLibraryV1544();
+  data.schema = animationAuthor.attachmentRigSchema;
+  data.creatureGroundOffsetSemantics = {
+    profileField: 'profiles.creatures.<kind>.groundOffsets.<small|medium|large>',
+    coordinateSpace: 'world/gameplay Y correction added after automatic sprite grounding',
+    runtimeUnit: 'world units',
+    preview: 'animal remains fixed while the ground-reference plane moves by the inverse offset',
+  };
+  for (const [kind, profile] of Object.entries(data.profiles?.creatures || {})) {
+    profile.groundOffsets = normalizeCreatureGroundOffsetsV1544(animationAuthor.attachmentRigProfiles?.creatures?.[kind]?.groundOffsets);
+  }
+  return data;
+};
+
+const baseImportAttachmentRigLibraryV1544 = importAttachmentRigLibrary;
+importAttachmentRigLibrary = function(data) {
+  const result = baseImportAttachmentRigLibraryV1544(data);
+  for (const kind of Object.keys(animationAuthor.attachmentRigProfiles?.creatures || {})) syncCreatureTransformGroundOffsetsFromRigV1544(kind); // Restores imported authored offsets into every existing preview path.
+  for (const actor of animationAuthor.actors) {
+    if (actor.source?.type === 'creature') applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
+  }
+  renderAllAnimationUi();
+  scheduleAnimationProjectSave();
+  return serializeAttachmentRigLibrary();
+};
+
+animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v10';
+COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v10');
+for (const kind of Object.keys(animationAuthor.attachmentRigProfiles?.creatures || {})) syncCreatureTransformGroundOffsetsFromRigV1544(kind);
+
+const basePrepareMultiAvatarAnimationAuthorV1544 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1544();
+  document.title = 'Hobunji Animation Author V15.44';
+  return result;
+};
+
+animationAuthor.recentChange = 'V15.44 stores creature Small/Medium/Large ground offsets in attachment-rig profiles so Rig exports/imports preserve them instead of silently dropping V15.42/V15.43 edits.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.44 patch installed: creature ground offsets are canonical attachment-rig data and survive Rig export/import.');
+
+
+
 prepareGameplayBackdropHost();
 prepareMultiAvatarAnimationAuthor();
 buildTransformEditor('attachmentTransformFields', 'attachment');
