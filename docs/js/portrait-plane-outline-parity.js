@@ -61,9 +61,22 @@
     checkbox.addEventListener('change', event => setMirrorShoulderPerchWithPortrait(event.target.checked));
   }
 
+  function applyDefaultShoulderPetFrontXray() {
+    const checkbox = global.document?.getElementById?.('settingDisableShoulderFrontXray');
+    if (!checkbox || checkbox.dataset.hobunjiDefaultApplied === '1') return;
+    checkbox.dataset.hobunjiDefaultApplied = '1';
+    checkbox.checked = true; // Default presentation: the front character sprite occludes the shoulder pet instead of allowing the pet to X-ray through it.
+    checkbox.dispatchEvent(new global.Event('change', { bubbles: true })); // game.js owns the actual shoulder-pet layering state; drive its existing listener rather than duplicating that state here.
+  }
+
+  function installShoulderPetPresentationDefaults() {
+    installShoulderPerchMirrorSetting();
+    applyDefaultShoulderPetFrontXray();
+  }
+
   if (global.document) {
-    if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', installShoulderPerchMirrorSetting, { once: true });
-    else installShoulderPerchMirrorSetting();
+    if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', installShoulderPetPresentationDefaults, { once: true });
+    else installShoulderPetPresentationDefaults();
   }
 
   // The shared source-pixel resolver in png-plane-avatar.js is also a render-parity
@@ -303,6 +316,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         skinnedPixelCpuParity: !!avatarApi.__hobunjiSkinnedPixelCpuParityInstalled,
         mirrorShoulderPerchWithPortrait,
+        frontShoulderPetXrayDisabledByDefault: true,
       };
     },
   });
