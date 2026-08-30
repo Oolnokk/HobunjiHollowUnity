@@ -281,17 +281,21 @@
     /* ── Full wilderness map (menu pane) ─────────────────────────────── */
     #mpMap { padding: 14px; }
     .wmap-layout {
-      display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+      display: grid; grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
       gap: 16px; align-items: start;
     }
     .wmap-column { min-width: 0; display: flex; flex-direction: column; }
-    .wmap-canvas-wrap { display: flex; justify-content: center; }
+    .wmap-map-column {
+      box-sizing: border-box; padding: 10px; border-radius: 14px;
+      border: 1px solid var(--border-bright); background: rgba(0,0,0,0.16);
+    }
+    .wmap-canvas-wrap { display: flex; width: 100%; justify-content: center; }
     #wildernessMapCanvas {
-      width: min(100%, 410px); height: auto; aspect-ratio: 1;
+      display: block; width: min(100%, 410px); height: auto; aspect-ratio: 1;
       max-width: 100%; border-radius: 12px; border: 1px solid var(--border-bright);
       background: #0c1a12; cursor: crosshair; touch-action: manipulation;
     }
-    .wmap-zone-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
+    .wmap-zone-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-start; margin-bottom: 10px; }
     .wmap-zone-tab {
       font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px;
       border-radius: 999px; border: 1px solid var(--border-bright);
