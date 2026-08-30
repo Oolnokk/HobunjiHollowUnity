@@ -21,7 +21,13 @@
     chatter: Object.freeze({
       intervalMs: 180,
       volume: 0.24,
-      earshotTiles: 8,
+      // Roughly a wilderness chunk's length (see wilderness-chunks.js's
+      // CHUNK_TILES=16) — a real jungle carries distant calls much farther
+      // than the old close-range earshot; audio-system.js's linear falloff
+      // plus animal-voice-independent-playback.js's distance-scaled reverb
+      // send (see creatureAudioSpatial) do the rest of the "far away and
+      // echoey" work.
+      earshotTiles: 16,
       tailMs: 320,
       initialDelayMinS: 4,
       initialDelayMaxS: 10,
@@ -38,7 +44,10 @@
     warning: Object.freeze({
       intervalMs: 420,
       volume: 0.94,
-      earshotTiles: 12,
+      // See chatter's earshotTiles comment — warning stays the farthest-
+      // reaching call, same relative ordering as before (warning > growl >
+      // chatter), just all three now scaled up to jungle range.
+      earshotTiles: 18,
       tailMs: 500,
       utterances: Object.freeze([
         Object.freeze({ tempo: 1, pitchSemitones: 0 }),
@@ -51,7 +60,8 @@
     growl: Object.freeze({
       intervalMs: 0,
       volume: 0.82,
-      earshotTiles: 10,
+      // See chatter's earshotTiles comment.
+      earshotTiles: 16,
       tailMs: 900,
       utterances: Object.freeze([Object.freeze({ tempo: 1, pitchSemitones: 0 })]),
       textEachUtterance: false,

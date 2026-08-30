@@ -116,6 +116,11 @@
       // them it actually catches in its cone, not only the local player.
       for (const p of deps.players || [deps.player]) out.push({ isPlayer: true, ref: p });
       for (const comp of deps.companionObjects) {
+        // A shoulder pet rides on the player's own body, not a separate
+        // ground position — never a legitimate independent target for a
+        // leap/charge cone (see combat-drenkirra-pellet.js's gatherTargets
+        // for the same exclusion and reasoning).
+        if (comp.stableRole === 'shoulderPet') continue;
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
     }

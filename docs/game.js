@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 423976)
-... 647325 bytes omitted ...
+Warning: truncated output (original token count: 428865)
+... 666882 bytes omitted ...
 
     (() => {
       'use strict';
@@ -218,7 +218,7 @@ Warning: truncated output (original token count: 423976)
         if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') window.WildlifeDebugPanel.render();
+        if (id === 'wildlife') { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); }
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -816,6 +816,9 @@ Warning: truncated output (original token count: 423976)
       const PLAYER_KNOCKBACK_PX_S = 600;
       const COMPANION_BITE_KNOCKBACK_PX_S = 560;
       const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
+      const PRONE_THROW_DUR_S = 0.34; // Drives the footing-break displacement channel consumed by prone player/creature updates.
+      const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
+      const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
         if (target.onBranch) {
@@ -846,6 +849,31 @@ Warning: truncated output (original token count: 423976)
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
         if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+      }
+
+      function startProneThrow(entity, isPlayer, facingAngle, direction) {
+        let vx = Number(entity.knockbackVX) || 0;
+        let vy = Number(entity.knockbackVY) || 0;
+        const minSpeed = isPlayer ? PRONE_THROW_PLAYER_MIN_PX_S : PRONE_THROW_CREATURE_MIN_PX_S;
+        const existingSpeed = Math.hypot(vx, vy);
+        if (existingSpeed > 1e-6) {
+          const speed = Math.max(existingSpeed, minSpeed);
+          vx = vx / existingSpeed * speed;
+          vy = vy / existingSpeed * speed;
+        } else {
+          // Reconstruct the attack bearing from the classified hit pole when
+          // a damage source has no conventional knockback vector.
+          const attackerOffset = direction === 'right' ? Math.PI / 2
+            : direction === 'left' ? -Math.PI / 2
+            : direction === 'back' ? Math.PI
+            : 0;
+          const awayAngle = (Number(facingAngle) || 0) + attackerOffset + Math.PI;
+          vx = Math.cos(awayAngle) * minSpeed;
+          vy = Math.sin(awayAngle) * minSpeed;
+        }
+        entity.proneThrowT = PRONE_THROW_DUR_S;
+        entity.proneThrowVX = vx;
+        entity.proneThrowVY = vy;
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -911,18 +939,23 @@ Warning: truncated output (original token count: 423976)
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
-        if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
+        if (entity.footing <= 0) {
+          startProneThrow(entity, isPlayer, facingAngle, direction);
+          enterProneIfFootingDepleted(entity, isPlayer, direction);
+          return;
+        }
 
         const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
         const lossRange = 1 - maxDurationAtFootingFrac;
         const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
         const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
-        if (isPlayer) {
-          const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
-          const durationMultiplier = clip?.durationSeconds > 0 ? durationS / clip.durationSeconds : 1;
-          window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
-        }
+        const visualMinDurationS = Math.max(0, Number(staggerCfg.visualMinDurationSeconds) || 0);
+        const visualDurationS = Math.max(durationS, visualMinDurationS);
+        const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
+        const durationMultiplier = clip?.durationSeconds > 0 ? visualDurationS / clip.durationSeconds : 1;
+        if (isPlayer) window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
+        else window.ImpactRagdollPlayback?.triggerCreature(entity, 'impact', direction, { durationSeconds: visualDurationS });
         window.Combat?.beginStagger(entity, direction, durationS);
       }
 
@@ -963,19 +996,20 @@ Warning: truncated output (original token count: 423976)
       // does it automatically the instant its Footing reaches full — see
       // updateHostiles' own `if (c.prone)` branch, which calls
       // beginCreatureSomersaultRecovery below once c.footing >= c.maxFooting.
-      // No bespoke ragdoll-fall visual exists for arbitrary creature rigs the
-      // way ImpactRagdollPlayback provides for the player (billboard sprite +
-      // procedural legs only) — a prone creature just holds still (see that
-      // `if (c.prone)` branch pre-empting its whole AI dispatch) until it
-      // springs back up.
+      // Creature planes use the same authored clips through
+      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
+      // channels remain player-only. Both kinds use a dedicated prone-throw
+      // displacement so compatibility adapters can still clear stale ordinary
+      // knockback without erasing the intentional knockdown launch.
       function enterProneIfFootingDepleted(entity, isPlayer, direction) {
         if (entity.footing > 0 || entity.prone) return;
         entity.prone = true;
-        // Creatures/bandits need nothing further here — damageCreature
-        // already cancelled any in-progress bandit action before calling
-        // applyHitStagger, and updateHostiles' `if (c.prone)` branch takes
-        // over from here (see beginCreatureSomersaultRecovery above).
-        if (!isPlayer) return;
+        // damageCreature already cancelled any in-progress attack; the
+        // creature playback holds its final breakThrow frame until recovery.
+        if (!isPlayer) {
+          window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
+          return;
+        }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
@@ -995,6 +1029,19 @@ Warning: truncated output (original token count: 423976)
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
         c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+      }
+
+      function advanceCreatureProneThrow(c, dt) {
+        if (!(c.proneThrowT > 0)) return false;
+        c.proneThrowT = Math.max(0, c.proneThrowT - dt);
+        const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
+        const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
+        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+        c.x = swept.x; c.y = swept.y;
+        if (swept.blockedX) c.proneThrowVX = 0;
+        if (swept.blockedY) c.proneThrowVY = 0;
+        if (c.proneThrowT <= 0) { c.proneThrowVX = 0; c.proneThrowVY = 0; }
+        return true;
       }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
@@ -3922,7 +3969,7 @@ Warning: truncated output (original token count: 423976)
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
-        for (const child of avatarRef.group.children) {
+        for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child.material) continue;
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
@@ -3936,7 +3983,1301 @@ Warning: truncated output (original token count: 423976)
       // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
-      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 se…142152 tokens truncated…ture) {
+      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
+
+      // Scans a species' idle sprite (cached per URL, so only the first
+      // creature of each species actually pays for it) for how far down its
+      // fully opaque pixels extend. All these sprites are nominally
+      // 1375×600, but if the art itself doesn't reach the canvas's bottom
+      // edge (transparent padding), anchoring on the raw rectangle leaves
+      // the visible creature hovering above the ground/its own shadow.
+      // Using alpha 255 deliberately ignores antialiased fringe pixels that
+      // would otherwise make the apparent foot line vary with faint padding.
+      function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
+        const cached = _creatureGroundAnchorCache.get(spriteUrl);
+        if (typeof cached === 'number') { onReady(cached); return; }
+        if (cached instanceof Set) { cached.add(onReady); return; }
+        const waiters = new Set([onReady]);
+        _creatureGroundAnchorCache.set(spriteUrl, waiters);
+        const finish = (ratio) => {
+          _creatureGroundAnchorCache.set(spriteUrl, ratio);
+          waiters.forEach(fn => fn(ratio));
+        };
+        const img = new Image();
+        img.onload = () => {
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
+          finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
+        };
+        img.onerror = () => finish(1);
+        img.src = spriteUrl;
+      }
+
+      // The prism (avatarRef.group — see updateCreatureMesh's "Prism (group)
+      // tracks the raw aim angle..." comment) keeps its true, unpadded size:
+      // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
+      // modelHeight define it, which is what places it correctly at surfY
+      // and is what any future hitbox/collision use of that size would
+      // expect. The correction belongs on the PLANE meshes themselves
+      // (children of the prism), not on the prism's own placement: shifting
+      // them down by the padding's share of modelHeight moves the art's
+      // real opaque bottom onto the prism's actual floor without changing
+      // the prism's own footprint at all. bottomRatio=1 (no padding) gives
+      // an offset of 0 — the plane stays exactly where it started.
+      function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
+        return -modelHeight * (1 - bottomRatio);
+      }
+
+      function makeCreatureEntity(creatureKey, x, y, opts = {}) {
+        const def = CREATURE_DB[creatureKey];
+        if (!def) return null;
+        const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
+        const targetScene = optScene || getActiveScene();
+        const targetGrid  = optGrid  || getActiveGrid();
+        const gridCols = optCols || getActiveCols();
+        const gridRows = optRows || getActiveRows();
+        const modelWidth = def.modelWidth;
+        // New creature art is not required to use the legacy 1375×600 canvas.
+        // Definitions with a different source canvas provide its width/height
+        // ratio so the avatar plane preserves the uploaded sprite's aspect.
+        const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
+        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, opts.genotype); // Applies Animation Author size-class values in-world.
+        const halfH = modelHeight * sizeScale.y / 2; // Keeps the scaled sprite's feet on the terrain.
+        const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
+          modelWidth, modelHeight,
+          name: creatureKey + '_' + idUniq,
+          creatureId: creatureKey,
+          headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
+        });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Animal planes face along group Z, so visible width cannot use group X.
+        // Skip the species-differentiation tint for genotype-bearing
+        // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
+        // replaced by a genotype-composited texture and def.tint would
+        // multiply over it, muddying the actual bred color (see the
+        // matching genotype check in updateCreatureMesh's per-tick tint).
+        if (def.tint && def.tint !== 0xffffff && !opts.genotype) {
+          for (const child of avatarRef.group.children) {
+            if (child.material) child.material.color.setHex(def.tint);
+          }
+        }
+        if (opts.genotype) {
+          const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
+          const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
+          window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
+        }
+        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
+        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
+        const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
+        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        _markPngPlane(avatarRef.group);
+        targetScene.add(avatarRef.group);
+
+        // Separate top-level object (not parented under avatarRef.group) so
+        // it stays flat on the ground and unaffected by the body's own
+        // squash (pounce crouch) or the death ragdoll's flip rotation —
+        // same reasoning as the player's own playerGroundShadow.
+        const groundShadow = makeCharacterGroundShadow(creatureKey + '_ground_shadow');
+        const shadowRadii = creatureGroundShadowRadii(def, sizeScale.x);
+        groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
+        groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
+        targetScene.add(groundShadow);
+
+        const creature = {
+          id: creatureKey + '_' + idUniq,
+          creatureKey, def, avatarRef, groundShadow,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
+          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
+          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
+          isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
+          name: def.label,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          ...restOpts,
+        };
+        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        // Shifts the plane meshes (not the prism/group itself — see
+        // creaturePlaneGroundOffset) down once the idle sprite's real
+        // opaque bottom edge is known, so the art's actual feet sit on the
+        // prism's floor instead of on the raw sprite rectangle's edge.
+        // Fires synchronously if this species' sprite was already scanned
+        // by an earlier creature.
+        resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
+        window.ResourceSystem?.initEntity(creature);
+        return creature;
+      }
+
+      function despawnCreature(c) {
+        (c.scene || scene).remove(c.avatarRef.group);
+        c.avatarRef.dispose();
+        if (c.groundShadow) {
+          (c.scene || scene).remove(c.groundShadow);
+          c.groundShadow.geometry.dispose();
+          c.groundShadow.material.dispose();
+        }
+        if (c._banditToolHolder) {
+          (c.scene || scene).remove(c._banditToolHolder);
+          c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          c._banditToolHolder = null;
+        }
+        if (c._banditRangedToolHolder) {
+          (c.scene || scene).remove(c._banditRangedToolHolder);
+          c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          c._banditRangedToolHolder = null;
+        }
+        if (c._banditTrailMesh) {
+          (c.scene || scene).remove(c._banditTrailMesh);
+          c._banditTrailMesh.geometry.dispose();
+          c._banditTrailMesh.material.dispose();
+          c._banditTrailMesh = null;
+        }
+        window.ResourceRings?.disposeRingHud(c);
+      }
+
+      // ── Loot & Shop config (docs/config/loot/loot-pools.json,
+      // docs/config/shops/shop-stock.json) ────────────────────────────
+      // Single source of truth for every drop table and shop's stock,
+      // authored via docs/tools/loot-shop-editor/. Fetched once at startup
+      // alongside every other config load; every consumer below only runs
+      // in response to a later gameplay event (a creature dying, a chest
+      // spawning, a shop menu opening), so by the time any of them actually
+      // read _lootPools/_shopStock the fetch has long since resolved — same
+      // assumption docs/game.js's other cached config loaders make (see
+      // loadBanditGangConfig).
+      let _lootPools = {};
+      let _shopStock = {};
+      let _lootShopConfigPromise = null;
+      function loadLootShopConfig() {
+        if (_lootShopConfigPromise) return _lootShopConfigPromise;
+        // Routed through window.LocalDBOverrides.loadDatabase() (see
+        // docs/js/local-db-overrides.js) so the onboarding "Database Source"
+        // toggle can swap in a locally-saved loot-shop-editor edit of either
+        // file without touching the repo copy — falls back to a direct fetch
+        // if that module somehow isn't loaded.
+        const loadOne = (id, path) => (window.LocalDBOverrides ? window.LocalDBOverrides.loadDatabase(id) : fetch(path).then(r => r.ok ? r.json() : null)).catch(() => null);
+        _lootShopConfigPromise = Promise.all([
+          loadOne('lootPools', 'config/loot/loot-pools.json'),
+          loadOne('shopStock', 'config/shops/shop-stock.json'),
+        ]).then(([lootData, shopData]) => {
+          _lootPools = lootData?.pools || {};
+          if (shopData?.shops) { _shopStock = shopData.shops; _applyLoadedShopStock(); }
+        });
+        return _lootShopConfigPromise;
+      }
+      loadLootShopConfig();
+
+      // The subset of the dialogue system's shared condition axes (see
+      // docs/js/condition-registry.js) that make sense for loot/shop gating
+      // outside of an NPC conversation — no relationship/encounter/station
+      // concept here, so those axes are simply never supplied/checked.
+      function _lootShopWorldState() {
+        return {
+          weekdays: window.CalendarSystem.currentWeekdayName(),
+          seasons: window.CalendarSystem.currentSeason().name,
+          weather: calendar.weather,
+          timesOfDay: window.Fishing.timeOfDay(),
+          maps: currentArea,
+          playerSpecies: _playerData?.appearance?.speciesId || '',
+        };
+      }
+
+      // Rolls a docs/config/loot/loot-pools.json pool by id: every entry is
+      // independently checked against its conditions and its own `chance`
+      // (default 1 = always, matching every migrated creature/bandit table),
+      // then contributes a `min..max` quantity (or a `min..max` in steps of
+      // `step`, for discrete-increment rolls like the treasure chest's gold).
+      function rollLootPool(poolId) {
+        const pool = _lootPools[poolId];
+        if (!pool) return {};
+        const world = _lootShopWorldState();
+        const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
+        const gained = {};
+        for (const entry of eligible) {
+          if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
+          const min = entry.min || 0, max = entry.max != null ? entry.max : min;
+          let qty;
+          if (entry.step) {
+            const steps = Math.floor((max - min) / entry.step) + 1;
+            qty = min + Math.floor(rnd() * steps) * entry.step;
+          } else {
+            qty = min + Math.floor(rnd() * (max - min + 1));
+          }
+          if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
+        }
+        return gained;
+      }
+
+      // Shared 1-5 star quality roll — fish, harvested crops, and butchered
+      // meat all use this. Weighted toward the middle (3 stars most common)
+      // rather than a flat 20% each, so it doesn't feel like a coin flip;
+      // otherwise deliberately simple/random for now, no per-item tuning.
+      function rollItemStars(skillKey) {
+        return window.SkillSystem?.rollQuality(skillKey) || 3;
+      }
+      function starRatingText(stars) {
+        return window.SkillSystem?.starRatingText(stars) || '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      }
+
+      // Settled corpses expose the same getButtons()/onAction() shape as
+      // farm world objects (see makeSellCrate) so the existing action-bar
+      // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
+      // no special-casing. Looting is what actually despawns the sprite.
+      function makeCorpseWorldObject(c) {
+        // Bandits are butchered by nobody — they get looted instead, including
+        // a guaranteed drop of everything they were wearing. Same
+        // getButtons()/onAction() shape, so getCorpseObjectAt below and the
+        // action bar are unaware of the difference.
+        if (c.isBandit) return window.BanditCamps.makeCorpseWorldObject(c);
+        return {
+          id: 'corpse_' + c.id,
+          type: 'creature_corpse',
+          promptRoot: c.avatarRef?.group || null,
+          getButtons() {
+            return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+            const gained = rollLootPool(c.def.lootPool);
+            const parts = [];
+            Object.entries(gained).forEach(([key, qty]) => {
+              inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+              // Meat gets a quality roll same as fish/crops; hides and other
+              // butchering byproducts don't.
+              const meatStars = /meat/i.test(key) ? rollItemStars('combat') : null;
+              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
+              parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
+            });
+            const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
+            if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+            corpseObjects.delete(c);
+            despawnCreature(c);
+            return {
+              ok: true,
+              message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
+            };
+          },
+        };
+      }
+
+      // Zone-aware corpse lookup — getWorldObjectAt only otherwise covers
+      // farm/interior, but corpses can settle in any area a creature dies in.
+      function getCorpseObjectAt(col, row) {
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
+        }
+        return null;
+      }
+
+      // The action arch can be clicked a frame after the reticle has shifted
+      // off the corpse tile (especially in shoulder cam). Keep corpse loot
+      // tied to the same nearby interaction target instead of dropping it on
+      // a stale "No object here" result.
+      function getCorpseObjectForAction(action, col, row) {
+        const exact = getCorpseObjectAt(col, row);
+        if (exact || action !== 'obj_loot_corpse') return exact;
+        let best = null, bestDist = Infinity;
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y);
+          const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
+          if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
+          best = c;
+          bestDist = dist;
+        }
+        return best ? makeCorpseWorldObject(best) : null;
+      }
+
+      // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
+      // through the resource-afflictions system (bleeding/bruising/wounded
+      // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
+      // of a plain health subtraction. See docs/js/combat/resource-system.js.
+      // A captain's Counter Shield guard window (see updateBanditGuardWindow/
+      // fireBanditCounterRiposte, defined with the rest of the Bandit Gangs
+      // ability AI) intercepts here, mirroring how the player's OWN Counter
+      // Shield intercepts via window.Combat.setPlayerDamageInterceptor —
+      // this is the mirror-image (a creature's incoming hit) rather than the
+      // player's own (an outgoing one), so it lives on the damage-dealing
+      // side instead. Reduces the hit rather than fully no-selling it (a
+      // guarding captain still visibly flinches) and fires a real riposte on
+      // its own short cooldown so it can't fire on every single frame the
+      // window happens to be open.
+      const BANDIT_COUNTER_COOLDOWN_S = 0.6;
+      function banditTryGuard(c, amount, targetPlayer) {
+        if (!c.isBandit || !(c._banditGuardUntil > performance.now())) return amount;
+        window.AudioSystem?.playCounterShieldBlockSfx(c.x, c.y, c.areaId);
+        const t = performance.now() / 1000;
+        if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
+          c._banditLastCounterAt = t;
+          window.BanditCombat.fireCounterRiposte(c, c.def, targetPlayer);
+        }
+        return amount * (1 - window.BanditCombat.GUARD_DAMAGE_ABSORB);
+      }
+
+      let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
+      function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        // Player melee must overlap the target vertically as well as pass its
+        // existing top-down cone/range test. Ranged projectiles already run
+        // their own swept 3D Box3 collision and deliberately bypass this.
+        const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
+        if (!dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+          const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
+          if (reach && !reach.reachable) {
+            lastMeleeHeightBlock = {
+              at: Date.now(),
+              target: c.id || c.name || c.def?.id || 'hostile',
+              verticalGap: Number(reach.verticalGap.toFixed(3)),
+              allowance: reach.allowance,
+              playerOnBranch: !!player.onBranch,
+              targetOnBranch: !!c.onBranch,
+            };
+            window.__farmLog?.(`[combat] melee height blocked target=${lastMeleeHeightBlock.target} gap=${lastMeleeHeightBlock.verticalGap}`, 'combat');
+            return false;
+          }
+        }
+        // Only the player currently ever calls damageCreature (see
+        // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
+        // combat-counter-shield.js) -- safe to assume `player` is the guarded
+        // captain's riposte target without needing a passed-in attacker.
+        amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+        amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+        amount = banditTryGuard(c, amount, player);
+        window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+        const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
+        resourceDamage.footing *= impactMultiplier;
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
+        else c.health = Math.max(0, c.health - resourceDamage.health);
+        c.hitFlashT = 0.25;
+        spawnCreatureHitSpark(c);
+        if (c.health <= 0) {
+          hostileObjects.delete(c);
+          companionObjects.delete(c);
+          // A killed wild creature is the starting source of Motes of
+          // Prowess — spent on ability-upgrade choices (see combat-
+          // progression.js). Not awarded for a downed companion.
+          if (!c.isCompanion) {
+            awardMotesOfProwess(MOTES_PER_KILL);
+            window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+          }
+          window.CreatureDeath.begin(c, fromX, fromY);
+          return;
+        }
+        // Every attack staggers its target — outright cancels whatever the
+        // creature was mid-attack on (a telegraphed bite, a named attack
+        // like Pounce) rather than just pausing it through the knockback
+        // freeze below and letting it resume where it left off once knockback
+        // decays.
+        window.Combat?.telegraph?.cancel(c);
+        window.Combat?.animalAttacks?.cancel(c);
+        // Getting hit breaks a bandit's in-progress ability the same way it
+        // cancels any other mid-attack state above, rather than letting a
+        // combo silently resume its step count once it recovers.
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        // Referenced by wildlife-territorial.js's own attackedDuringWarning
+        // check (an already-attacked creature escalates straight to
+        // fighting even from outside its proximity trigger) — that check
+        // has been silently dead since territorial.js shipped, since
+        // nothing was ever setting this field.
+        c.lastAttackReceivedAt = performance.now();
+        // A passive creature (drenkirra, uumkaoii-wild, etc. — hostile:false,
+        // so it never picks up player aggro at all, see updateHostiles'
+        // aggro-pickup check) had no reaction to being attacked whatsoever
+        // before this: knockback/stagger applied below, then it carried on
+        // with whatever it was already doing — no flee, no fight-back.
+        // Reuses the exact 'fleeing-low-health' state wildlife-vs-wildlife
+        // skirmishes already use (see wildlife-spawn.js's
+        // applyWildlifeSkirmishDamage) — beelines home ignoring aggro/prey
+        // detection, then starts a re-aggro cooldown once settled. Excludes
+        // companions (an incidental hit on a passive-type follower
+        // shouldn't make it bolt) and a creature wildlife-territorial.js
+        // already has actively defending its nest — attacking a territorial
+        // animal mid-fight should never make it flee instead; it's
+        // supposed to protect its home, not bail the moment it takes a hit.
+        const territorialPhase = c._territorialBehavior?.phase;
+        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+          // A drenkirra mid-forage or asleep is pinned to a branch —
+          // clear that (see wildlife-cloud-forest-behavior.js's
+          // interruptForFlee) before the state flip below, or the
+          // branch-pin's own per-frame early-continue in updateHostiles
+          // keeps re-snapping it right back to that spot forever, never
+          // actually reaching the movement this state is supposed to
+          // trigger. A no-op for anything not currently on a branch.
+          window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
+          c.state = 'fleeing-low-health';
+          c.targetCreature = null;
+        }
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
+        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
+      }
+
+      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
+        if (performance.now() < player.invulnUntil) return;
+        amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        // Lets a held defensive ability (Counter Shield) absorb the hit and
+        // riposte instead of applying damage normally — only one hold
+        // ability can be active at a time, so this is a single settable slot.
+        if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
+        _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        player._nestTakeActive = false;
+        window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
+        else player.health = Math.max(0, player.health - resourceDamage.health);
+        if (player.health > 0) {
+          // Every attack staggers its target — same interrupt-plus-knockback
+          // rule as damageCreature above, mirrored onto whatever combo/quick-
+          // attack/charged-breaker strike the player was mid-windup on.
+          window.Combat?.cancelAllStaged?.();
+          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+          applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
+        }
+        if (player.health <= 0) respawnPlayer();
+      }
+
+      // Closest Root Totem (see wilderness-map-generator.js's
+      // placeRootTotems) to a given world position, within one zone only —
+      // totems don't offer a way to reach a different zone's terrain from
+      // where the player actually died, so a death is always recovered
+      // within its own zone or (if that zone has none, or the player wasn't
+      // in a wilderness zone at all) falls back to the farmhouse. Returns
+      // the totem's pathAnchor tile ({x,y}) or null.
+      function nearestRootTotemFor(zoneId, worldX, worldY) {
+        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
+        if (!totems || !totems.length) return null;
+        const px = worldX / TILE, py = worldY / TILE;
+        let best = null, bestDist = Infinity;
+        for (const t of totems) {
+          const anchor = t.pathAnchor || t;
+          const d = Math.hypot(anchor.x - px, anchor.y - py);
+          if (d < bestDist) { bestDist = d; best = anchor; }
+        }
+        return best;
+      }
+
+      function respawnPlayer() {
+        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        if (totem) {
+          player.x = (totem.x + 0.5) * TILE;
+          player.y = (totem.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          player.health = Math.round(player.maxHealth * 0.5);
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('You awaken at the nearest Root Totem...', false);
+          return;
+        }
+        if (currentArea !== 'farm') _returnToFarmMeshes();
+        player.x = COLS * TILE * 0.5;
+        player.y = ROWS * TILE * 0.72;
+        player.vx = 0; player.vy = 0;
+        // Full health/stamina here specifically (unlike the Root Totem
+        // branch above, which stays a 50%-health lesser convenience) --
+        // dying with no totem nearby already means losing all the ground
+        // you'd covered back to the farmhouse; topping off on top of that
+        // punishes twice over.
+        player.health = player.maxHealth;
+        player.stamina = player.maxStamina;
+        player.invulnUntil = performance.now() + 1000;
+        _snapCameraTarget();
+        showToast('You black out and stumble back to the farmhouse...', false);
+      }
+
+      // Continuous angle+range cone test (not tile based) shared by player
+      // weapon swings, companion bites, and hostile bites.
+      function inCone(fromX, fromY, facingAngle, toX, toY, rangePx, halfConeRad) {
+        const dx = toX - fromX, dy = toY - fromY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > rangePx) return false;
+        if (dist < 1) return true;
+        const angTo = Math.atan2(dy, dx);
+        return Math.abs(angleDiff(angTo, facingAngle)) <= halfConeRad;
+      }
+
+      // 'cut' is the narrow precise poke (tags as a Sharp hit — bleeding +
+      // wounded stamina); 'slash' is the wide heavy sweep (tags as Blunt —
+      // bruising + winded stamina, and consumes the target's own Bruised
+      // Health for bonus damage). See docs/js/combat/resource-system.js.
+      function resolveWeaponHit(action) {
+        const abil = weaponAbility(action);
+        if (!abil) return { hits: 0, message: '' };
+        window.ResourceSystem?.spendStamina(player, abil.staminaCost, abil.name || action);
+        window.AudioSystem?.playWeaponSlashSfx();
+        let hits = 0;
+        let lastName = '';
+        const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
+        const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
+        for (const c of hostileObjects) {
+          if (c.health <= 0) continue;
+          if (c.areaId !== currentArea) continue;
+          if (c._denHidden) continue; // Tucked out of sight in its den — not actually there to hit.
+          if (!window.Combat?.meleeHit?.(player, c, {
+            rangePx: abil.rangePx,
+            halfConeRad: abil.halfConeRad,
+            yaw: player.angle,
+            pitch: currentPlayerMeleeAimPitch(),
+          })) continue;
+          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
+          window.AudioSystem?.playWeaponHitSfx(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
+          hits++;
+          lastName = c.def.label;
+        }
+        if (hits <= 0) return { hits: 0, message: '' };
+        const verb = action === 'slash' ? 'Slashed' : 'Cut';
+        return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
+      }
+
+      // Player-chosen override from swapAutoTarget(), preferred over the
+      // nearest-hostile default until it dies, leaves range/area, or the
+      // player swaps again. Cleared automatically once invalid.
+      let manualAutoTarget = null;
+      // Melee-only auto-target toggle (see updateMeleeAutoTarget below) —
+      // an opt-in aim assist the player switches on/off themselves (Shift-
+      // tap desktop, right-stick click controller, the arch's 6th mobile
+      // button), unlike the old always-on lock this replaced. Forced back
+      // off the instant a melee weapon isn't actually out (see
+      // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
+      let meleeAutoTargetOn = false;
+      let meleeAutoTargetFreeAim = false; // Mouse movement releases the lock without turning the targeting toggle off.
+      const MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD = 0.48; // Small 3D radius around the centered reticle used for reacquisition.
+      const DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX = 2; // Ignore sub-pixel noise, but any real desktop mouse movement breaks the lock.
+
+      // Find a hostile whose 3D portrait hitbox is close enough to the centered
+      // reticle. Expanding the same hitbox used by projectiles keeps reacquisition
+      // forgiving without making a target behind the player eligible.
+      function desktopAutoTargetNearReticle(maxDistanceWorld) {
+        const ray = currentPlayerInteractionRay();
+        if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
+          const candidates = Array.from(hostileObjects)
+            .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden)
+            .map(c => {
+              const hitbox = window.RangedWeapons.actorHitbox(c);
+              return hitbox?.box ? {
+                type: 'hostile',
+                id: c.id,
+                data: c,
+                box: hitbox.box.clone().expandByScalar(MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD),
+              } : null;
+            })
+            .filter(Boolean);
+          const focus = window.RangedWeapons.focusCandidates(candidates, maxDistanceWorld / TILE);
+          if (focus?.candidate?.data) return focus.candidate.data;
+        }
+        // Fallback for a not-yet-initialized renderer: use a small ground-space
+        // cone around the current aim bearing rather than nearest hostile.
+        const aim = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+          : controllerLookActive ? controllerLookAngle
+          : (isDesktop && mouseLookActive) ? mouseLookAngle
+          : player.angle;
+        const radiusPx = MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD * TILE;
+        let best = null, bestDist = maxDistanceWorld;
+        const fx = Math.cos(aim), fy = Math.sin(aim);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const along = dx * fx + dy * fy;
+          if (along < 0 || along > bestDist) continue;
+          const lateral = Math.abs(dx * fy - dy * fx);
+          if (lateral > radiusPx) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist < bestDist) { best = c; bestDist = dist; }
+        }
+        return best;
+      }
+
+      // Nearest live hostile in the player's current area within lock-on range, or
+      // the player's manually-swapped target if still valid, or null.
+      // Desktop melee only acquires while the targeting toggle is on. Once
+      // mouse-look releases a lock, it waits for the reticle to pass close to
+      // another hostile before reacquiring.
+      function findAutoTarget() {
+        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeActive && !rangedActive) {
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          return null;
+        }
+        if (meleeActive && isDesktop && !meleeAutoTargetOn) {
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          r…122152 tokens truncated…EventListener('pointercancel', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            _iPtId = null;
+            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
+            if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+            _clearArc(); _iHeld = false; _iMoved = false;
+          });
+        }
+
+        // Utility menu button: sixth/new outer-ring control, replacing the
+        // removed put-away button's old slot (see the CSS angle comment on
+        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
+        // above — it only ever does anything while held, exactly like the
+        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // mirrors their hold-then-drag-to-select pattern but skips their
+        // "what does a plain tap do" branch entirely.
+        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
+        if (btnUtilityMenu) {
+          let _uPtId = null, _uHeld = false, _uTimer = null;
+          btnUtilityMenu.addEventListener('pointerdown', ev => {
+            if (_uPtId !== null) return;
+            _uPtId = ev.pointerId; _uHeld = false;
+            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
+            ev.preventDefault();
+          });
+          btnUtilityMenu.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
+          });
+          btnUtilityMenu.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            if (_arcOpen === 'entries:utilities') _arcUp();
+            _uHeld = false;
+          });
+          btnUtilityMenu.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _uPtId) return;
+            _uPtId = null;
+            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
+            _clearArc(); _uHeld = false;
+          });
+        }
+      }
+
+      // ── Action bar update ──────────────────────────────────
+      // ── Dynamic action stack ────────────────────────────────────────
+      // Computes the full list of buttons to show, then rebuilds the DOM rows.
+      // Buttons are packed into rows of 1, 2, 1, 2... (hex packing).
+      // Each button: { icon, label, action, style, allowed }
+
+      // Climb targets are pure data (branchesByArea holds positions, not a
+      // per-branch mesh handle — trees are batched into merged chunk
+      // geometry), so the climb-tree prompt needs its own positioned anchor
+      // rather than the reticle-tile fallback other buttons share.
+      const _climbPromptAnchor = new THREE.Object3D();
+      _climbPromptAnchor.name = 'climb_prompt_anchor';
+
+      function computeActionButtons() {
+        // Sitting overrides every other action — Stand is the only way out,
+        // same tier as fishing/dialogue below.
+        if (sitInteraction) {
+          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+        }
+        // Fishing gets its own arc buttons instead of the harpoon's normal
+        // "Fish" one (which would just call beginFishingCast() again and
+        // silently restart the round) — the bottom-center #actionPrompt
+        // (see renderFishingOverlay) mirrors these as an info display
+        // (status text/panic bar/desktop key label), but the actual
+        // thumb-reachable tap target on touch is the arc, same as every
+        // other tool action. Nothing shows before 'bite' (no bite yet to
+        // react to), and nothing shows during 'caught' (the victory view
+        // has its own Continue button).
+        if (window.Fishing?.state?.active) {
+          const fm = window.Fishing.state;
+          if (fm.phase !== 'bite' && fm.phase !== 'active') return [];
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          const icon = attackActionIconHTML('harpoon', 'fish', '🎣');
+          return [
+            { icon, label: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon', action: 'fish_primary', style: 'primary', allowed: true },
+            { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
+          ];
+        }
+        // Music minigame overlay has its own full-screen controls (see
+        // js/music-minigame.js) and the close button lives in the overlay
+        // itself — no action-bar buttons underneath it.
+        if (window.MusicMinigame?.state?.active) return [];
+        // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
+        if (nearbyNpcWalker && !farmEditMode) {
+          const btns = [npcDialogueButton()];
+          if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
+          if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
+          const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
+          if (swigOffer) btns.push(swigOffer);
+          return btns;
+        }
+
+        // Interior: exit button near any door's exit threshold + interact button for interior world objects
+        if (currentArea === 'interior') {
+          const reticle  = getReticleTile();
+          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row);
+          const btns     = [];
+          if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
+          // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
+          // the farm scene's own coordinate space (see its declaration), so
+          // reticle coords while standing in the interior were being checked
+          // against farm-placed objects at those same numeric coordinates.
+          const iObj = getInteriorInteractableAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: iObj.interactIcon || '🔔', label: iObj.interactLabel || 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          return btns;
+        }
+
+        // Town: spot transitions take priority (require explicit input); otherwise
+        // fall through below so tools/weapons remain usable in town.
+        if (currentArea === 'town' && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'building' ? '🚪' : '🏘';
+          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+        }
+
+        // Building interior: spot transitions require explicit input
+        if (_isBuildingArea(currentArea)) {
+          if (_pendingSpotTransition) {
+            const t = _pendingSpotTransition;
+            const icon = t.target === 'exit_building' ? '🚪' : '🪜';
+            const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
+            return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          const nest = currentAimedNest();
+          if (nest) {
+            const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
+          }
+          // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
+          // the weapon/tool combo buttons still need to populate the action
+          // bar here, same as farm/zone (below), even though every other
+          // building interior deliberately shows none. World objects, crops,
+          // and furniture placement don't exist in a cavern, so this skips
+          // straight to the tool-actions block instead of falling through
+          // the farm/zone branch wholesale.
+          if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
+            const cavernReticle = getReticleTile();
+            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernBtns = [];
+            (toolActions[activeTool] || []).forEach((action, i) => {
+              const [fallbackIcon] = actionLabels[action];
+              const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+              const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
+              cavernBtns.push({
+                icon, label: contextualActionLabel(action, cavernTile),
+                action, style: i === 0 ? 'primary' : 'secondary', allowed,
+              });
+            });
+            return cavernBtns;
+          }
+          const bReticle = getReticleTile();
+          const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
+          if (bInteractable) return bInteractable.getButtons();
+          // Building interiors return early above and never reach the
+          // farm/zone/town item-context block further down (it also relies
+          // on a reticle/tile pair this branch never computes) — without
+          // this, held-item actions like eating or playing a Kurraya
+          // silently had no button anywhere indoors, not just in the inn.
+          // Mirrors the same three checks in that block, in the same
+          // priority order; the plant/seed part below them doesn't apply
+          // indoors so isn't duplicated here.
+          if (heldMode === 'item') {
+            const heldItem = getActiveInventoryItem();
+            const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+            if (flaskActions.length) return flaskActions;
+            const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+            if (consumeAction) return [consumeAction];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+          }
+          return [];
+        }
+
+        const reticle = getReticleTile();
+
+        // Farm/zone: show spot transition button (house entrance, town exit, etc.)
+        if ((currentArea === 'farm' || _isZoneArea(currentArea)) && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'interior' ? '🏠' : t.target === 'town' ? '🏘' : '🚪';
+          const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
+          const btnsSpot = [];
+          btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
+          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
+          return btnsSpot;
+        }
+
+        // A branch nest claims Action 1 only while its 3D volume is under
+        // the centered reticle and its Nestmother is no longer guarding it.
+        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        if (zoneNest) {
+          const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+          return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
+        }
+
+        // Bandit tents are runtime props rather than worldObjects, so expose
+        // their context action explicitly. Pointer/keyboard holds still feed
+        // the shared actionHeldDown flag consumed by BanditCamps.
+        const banditTentAction = _isZoneArea(currentArea)
+          ? window.BanditCamps?.getNearbyTentAction?.()
+          : null;
+        if (banditTentAction) return [banditTentAction];
+
+        // A placed wilderness campfire, same runtime-prop pattern as bandit
+        // tents above — walking up to it puts Save/Cook/Brew each on their
+        // own action-bar slot (Return to Camp lives on the utilities wheel
+        // instead — see the 'c' hold-key handling further down).
+        const campfireActions = _isZoneArea(currentArea)
+          ? window.WildernessCampfire?.getNearbyActions?.()
+          : null;
+        if (campfireActions?.length) return campfireActions;
+
+        // Climbing is still triggered by a forward dodge (see
+        // performContextAction) so an attack/item press never grabs a
+        // nearby trunk by accident — but a facing climb target also gets a
+        // listed prompt here purely for discoverability, since the dodge
+        // trigger itself is otherwise silent/undiscoverable.
+        const tile    = getActiveGrid()[reticle.row][reticle.col];
+        const btns    = [];
+
+        if (_isZoneArea(currentArea) && !player.climbing) {
+          const climbTarget = window.ClimbSystem?.getClimbTarget?.();
+          if (climbTarget && (climbTarget.type === 'branch' || climbTarget.type === 'branchJumpDown')) {
+            const branch = climbTarget.branch;
+            const anchorX = branch ? (branch.baseX + branch.tipX) / 2 : player.x;
+            const anchorY = branch ? (branch.baseY + branch.tipY) / 2 : player.y;
+            const anchorWorldY = branch
+              ? Math.max(branch.baseWorldY ?? 0, branch.tipWorldY ?? 0) + 0.4
+              : (activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 1.2);
+            _climbPromptAnchor.position.set(anchorX / TILE, anchorWorldY, anchorY / TILE);
+            btns.push({
+              icon: climbTarget.type === 'branchJumpDown' ? '🪂' : '🧗',
+              label: climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree',
+              action: 'climb_branch', style: 'secondary', allowed: true,
+              worldInteraction: true, promptRoot: _climbPromptAnchor,
+            });
+          }
+        }
+
+        // 0. World object at reticle — its buttons take priority. Town has
+        // no worldObjects of its own (see its "farm-scene-only" comment
+        // above) — its furniture interactables (sittable benches, etc.)
+        // live in _buildingInteractables instead, same as building interiors.
+        const obj = currentArea === 'town'
+          ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
+          : getWorldObjectAt(reticle.col, reticle.row);
+        if (obj) {
+          const objBtns = obj.getButtons(reticle);
+          objBtns.forEach(b => btns.push(b));
+        }
+
+        // 0b. Harvest, same priority tier as a world object (a ready crop
+        // should behave exactly like picking a wild herb/berry: available
+        // as Action 1 regardless of what's in your hand, not just while an
+        // inventory item happens to be selected) — previously this only
+        // ever appeared down in the item-mode-only section below, so aiming
+        // at a ready crop while holding a tool showed no pick button at all.
+        if (tile.crop) {
+          const data = cropData[tile.crop];
+          btns.push({
+            icon: tile.cropReady ? data.emoji : '🌱',
+            label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
+            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            allowed: tile.cropReady,
+          });
+        }
+
+        // 1. Tool's own actions (suppressed in item mode)
+        if (heldMode === 'tool') {
+          const actions = toolActions[activeTool] || [];
+          actions.forEach((action, i) => {
+            const [fallbackIcon] = actionLabels[action];
+            const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+            const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            btns.push({
+              icon, label: contextualActionLabel(action, tile),
+              action, style: i === 0 ? 'primary' : 'secondary', allowed,
+            });
+          });
+        }
+
+        // 2+3. Item context actions — only in item mode
+        if (heldMode !== 'item') return btns;
+
+        // A selected consumable is Item Action 1. Its configured binding owns
+        // consumption; raw Space/Enter/Interact keys have no special behavior.
+        const heldItem = getActiveInventoryItem();
+        const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
+        if (flaskActions.length) flaskActions.slice().reverse().forEach(action => btns.unshift(action));
+        const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+        if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
+
+        // 2. Context: Plant button if selected item is a seed and tile can accept it
+        const item = getActiveInventoryItem();
+        if (item && item.seedFor) {
+          const cropName  = item.seedFor;
+          const plantAct  = 'plant_' + cropName;
+          const count     = inventory[item.key] || 0;
+          const canPlant  = count > 0 && canPlantCropOnTile(cropName, tile);
+          btns.push({
+            icon: item.icon, label: count > 0 ? `Plant (${count})` : 'No seeds',
+            action: plantAct, style: 'plant', allowed: canPlant,
+          });
+        }
+
+        if (item) {
+          const furnitureKey = getFurnitureKeyByItemKey(item.key);
+          if (furnitureKey) {
+            const count = inventory[item.key] || 0;
+            btns.push({
+              icon: item.icon,
+              label: count > 0 ? `Place (${count})` : 'No furniture',
+              action: 'place_' + furnitureKey,
+              style: 'plant',
+              allowed: count > 0 && canPlaceFurnitureAt(reticle.col, reticle.row),
+            });
+          }
+          const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
+          if (decorKey && !DECORATIVE_FURNITURE_DEFS[decorKey]?.customPlace) {
+            const def = DECORATIVE_FURNITURE_DEFS[decorKey];
+            const count = inventory[item.key] || 0;
+            const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
+            btns.push({
+              icon: item.icon,
+              label: count > 0 ? `Place (${count})` : 'No furniture',
+              action: 'place_decor_' + decorKey,
+              style: 'plant',
+              allowed: count > 0 && areaOk && canPlaceDecorativeFurnitureAt(reticle.col, reticle.row),
+            });
+          }
+        }
+
+        return btns;
+      }
+
+      // Fallback anchor for interactibles without their own Object3D. It is
+      // moved to the aimed tile before the world-space list is synchronized.
+      const _worldInteractionPromptAnchor = new THREE.Object3D(); // Used by refreshActionBar for non-mesh world objects.
+      _worldInteractionPromptAnchor.name = 'world_interaction_prompt_anchor';
+
+      // Track last state to avoid rebuilding the stack every frame
+      let _lastBarKey = '';
+
+      function refreshActionBar(stacks = getInventoryStackItems()) {
+        window.DevSpawner.refreshEditorButtonVisibility();
+        window.FurniturePlacer?.refreshVisibility();
+        const reticle = getReticleTile();
+        const tile    = getActiveTileAt(reticle.col, reticle.row);
+
+        // Was farm-only (world objects didn't exist elsewhere) — now
+        // unconditional so a lootable corpse's identity in any area (zones
+        // included) still invalidates the cache and rebuilds its button.
+        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
+        const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
+        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
+          : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
+        // Consumable counts must invalidate the cached action after the last item is used.
+        const selectedItem = getActiveInventoryItem(stacks);
+        const selectedItemKey = selectedItem?.key || '';
+        const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
+        const btns = computeActionButtons();
+        // Every action supplied by an aimed world object is a world
+        // interaction even if its id predates the obj_* naming convention.
+        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const isWorldInteraction = button => button?.worldInteraction
+          || button?.contextualHeldItem
+          || objectActionIds.has(button?.action)
+          || button?.action === npcDialogueAction()
+          || button?.action === generalStoreAction()
+          || button?.action === carpenterAction()
+          || button?.action === 'use_spot'
+          || button?.action === 'nest_take'
+          || button?.action === 'bandit_tent_interact'
+          || button?.action === 'climb_branch'
+          || button?.action?.startsWith('obj_');
+        const interactionButton = btns.find(isWorldInteraction) || null;
+        if (interactionButton) {
+          _worldInteractionPromptAnchor.position.set(
+            reticle.col + 0.5,
+            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            reticle.row + 0.5,
+          );
+        }
+        const interactionRoot = interactionButton?.promptRoot
+          || nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
+        const promptKeys = promptActionIds.map((actionId, index) =>
+          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
+        window.WorldPopupText?.syncInteractionPrompts?.({
+          buttons: btns,
+          root: interactionRoot,
+          enabled: !menuOpen && !dialogueOpen && !paused,
+          scene: getActiveScene(),
+          promptKeys,
+          showInputHints: true,
+          isWorldInteraction,
+        });
+        // Dynamic providers (including the asynchronously loaded consumable
+        // bridge) can change the resolved arch without changing tile/item state.
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
+        // window.Fishing?.state?.phase (not just .active) must be in this key:
+        // computeActionButtons() returns different button sets across the
+        // cast/waiting/bite/active/caught sequence (empty until 'bite', the
+        // fish_primary/fish_cancel pair from 'bite' onward), but that whole
+        // sequence usually doesn't touch anything else the key tracks (same
+        // tile, same tool, same reticle) — keying on just .active would've
+        // caught the very first transition into fishing but then never
+        // rebuilt again for the rest of the round, since .active stays true
+        // throughout. Phase changes every step, so it always forces a rebuild.
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
+        const needsRebuild = key !== _lastBarKey;
+        _lastBarKey = key;
+
+        // Update activeAction even without DOM rebuild. climb_branch
+        // (pushed first in computeActionButtons purely to feed the 3D
+        // floating world-space prompt over a climbable branch — see its
+        // own comment) is excluded outright here, not just deprioritized:
+        // climbing is only ever supposed to trigger from a forward dodge
+        // (see performContextAction), never from Action 1/a tool press —
+        // an earlier "prefer non-secondary, fall back to secondary only if
+        // it's the sole allowed action" version of this still let a lone
+        // climb target win Action 1 whenever nothing else was interactable
+        // (e.g. no tool equipped), which is exactly the case a player
+        // facing a tree is most likely to be in.
+        const climbBtn = btns.find(b => b.action === 'climb_branch');
+        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
+        if (first) activeAction = first.action;
+        // The dodge button is climbing's only real trigger, so it's the
+        // one that should visually say so — swaps to the climb/climb-down
+        // icon+label while a target's in reach, back to the plain dodge
+        // icon otherwise.
+        if (dodgeBtn) {
+          const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
+          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
+          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+        }
+
+        if (!needsRebuild) return;
+
+        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // climb_branch is excluded from every arch slot below for the same
+        // reason it's excluded from activeAction above — it still stays in
+        // the full btns array so the 3D world-space prompt keeps working.
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
+          || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
+        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
+        const itemBtns = nonClimbBtns.filter(isItemButton);
+
+        const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
+
+        function applyAbt(elId, b, originalIdx) {
+          const el = document.getElementById(elId);
+          if (!el) return;
+          if (!b) { el.classList.add('abt-hidden'); return; }
+          el.classList.remove('abt-hidden');
+          el.classList.toggle('blocked', !b.allowed);
+          el.dataset.action = b.action;
+          const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
+            ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
+          const swigBadge = b.swigFraction
+            ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
+          el.innerHTML = keyBadge +
+            `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
+            `<span class="abt-label">${b.label}</span>`;
+          if (!el._abtDragInit) {
+            el._abtDragInit = true;
+            let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
+            let _drag = false, _rtimer = null, _socket = null;
+            let _chargeFiredOnPress = false;
+            let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
+            let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            const DRAG_THRESH = 10;
+            // Legacy behavior: holding+dragging an action button like a stick used to
+            // keep re-firing the action every 120ms for as long as it stayed pushed off
+            // center. Disabled per design (the single immediate fire-on-threshold-cross
+            // below still happens) — kept here, not deleted, in case it's wanted back.
+            const ABT_DRAG_REPEAT_FIRE = false;
+            const _stack = document.getElementById('actionStack');
+
+            function _abtFire() {
+              const act = el.dataset.action;
+              if (!act || el.classList.contains('abt-hidden')) return;
+              activeAction = act;
+              // Navigation/interaction actions always fire; tool actions respect swing cooldown.
+              // fish_primary/fish_cancel bypass it too — spearfishing has never
+              // used the swing-timer system (see fireFishingBridge's own note on
+              // this), so gating the arc button behind it here would just mean
+              // a stray leftover toolSwingT from whatever was equipped before
+              // switching to the harpoon could silently eat the tap. climb is the
+              // same story: it's pure traversal, not a tool swing, so a leftover
+              // toolSwingT from whatever was equipped before walking up to a
+              // cliff shouldn't be able to eat the tap either.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              // Same reasoning again for every item-mode action (place_campfire_kit,
+              // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
+              // tool swings either, so a leftover toolSwingT from whatever tool was
+              // out before switching to item mode — which updateToolMesh never
+              // decays while heldMode === 'item' (it early-returns before reaching
+              // that logic) — would otherwise silently eat every item-mode tap on
+              // mobile until the player switched back to a tool and let the stale
+              // timer run out. Desktop's direct pointerdown→useActiveAction() click
+              // path never had this gate at all, which is why this only ever
+              // surfaced as "the button doesn't work" on touch.
+              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
+            }
+
+            // Weapon tool-action buttons (cut/slash) route taps through the
+            // loadout's ability slots instead of firing the swing directly —
+            // every other button keeps using _abtFire() unchanged.
+            function _weaponSlotFor(act) {
+              if (activeTool !== 'weapon' || !window.Combat?.input) return null;
+              if (act === toolActions.weapon[0]) return 1;
+              if (act === toolActions.weapon[1]) return 2;
+              return null;
+            }
+            function _resolveFire() {
+              const slot = _weaponSlotFor(el.dataset.action);
+              if (slot) { window.Combat.input.fireTap(slot); return; }
+              _abtFire();
+            }
+
+            el.addEventListener('pointerdown', ev => {
+              if (_ptId !== null) return;
+              _ptId = ev.pointerId;
+              // See handleJoystickPointerDown's comment.
+              try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
+              const rect = el.getBoundingClientRect();
+              _cx = rect.left + rect.width / 2;
+              _cy = rect.top + rect.height / 2;
+              _sockR = rect.width * 0.70;
+              _drag = false;
+              _socket = document.createElement('div');
+              _socket.className = 'abt-socket';
+              _socket.style.left   = _cx + 'px';
+              _socket.style.top    = _cy + 'px';
+              _socket.style.width  = (rect.width * 2.2) + 'px';
+              _socket.style.height = (rect.width * 2.2) + 'px';
+              document.body.appendChild(_socket);
+              el.style.transition = 'none';
+              ev.preventDefault();
+              // Hold-to-dig/fill must start on press (not release) so the charge
+              // can run for its full duration while the button stays held.
+              const act = el.dataset.action;
+              _flaskGesture = act === 'alchemy_flask_primary';
+              _flaskCanceled = false;
+              if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
+              if (act === 'ammo_select' || act === 'potion_select') {
+                _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
+                window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
+                _selectorArcOpen = true; // These actions have no tap behavior to preserve, so show their choices as soon as the held input begins.
+                if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
+                else window._desktopSelectionArc?.openPotions();
+              }
+              _chargeFiredOnPress = Boolean(act && !el.classList.contains('abt-hidden') && wouldStartCharge(activeTool, act));
+              if (_chargeFiredOnPress) {
+                activeAction = act;
+                actionHeldDown = true;
+                _abtFire();
+              } else {
+                actionHeldDown = true;
+                _pressSlot = _weaponSlotFor(act);
+                if (_pressSlot) { tryAutoEngageMeleeTarget(); window.Combat.input.pressStart(_pressSlot); }
+              }
+            });
+
+            el.addEventListener('pointermove', ev => {
+              if (ev.pointerId !== _ptId) return;
+              const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+              const dist = Math.hypot(dx, dy);
+              const r = Math.min(dist, _sockR);
+              const nx = dist > 0.5 ? dx / dist * r : 0;
+              const ny = dist > 0.5 ? dy / dist * r : 0;
+              el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              if (_flaskGesture && window.AlchemyFlasks?.aiming) {
+                window.AlchemyFlasks.setTargetFromVector(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
+                const cancelButton = [...document.querySelectorAll('[data-action="alchemy_flask_cancel"]')][0]; // Current Item Action 2 cancel region.
+                const cancelRect = cancelButton?.getBoundingClientRect(); // Used for continuous drag-over cancellation.
+                if (cancelRect && ev.clientX >= cancelRect.left && ev.clientX <= cancelRect.right && ev.clientY >= cancelRect.top && ev.clientY <= cancelRect.bottom) {
+                  cancelButton.classList.add('flask-cancel-hover');
+                  window.AlchemyFlasks.cancelAim();
+                  _flaskCanceled = true;
+                }
+                return;
+              }
+              if (_selectorKind) {
+                if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
+                return;
+              }
+              // With a weapon equipped, action buttons are tap/hold only — dragging
+              // must never act like a directional stick, otherwise a thumb wobbling
+              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
+              // fires a tap instead. Farm tools still use drag-to-aim as before.
+              if (activeTool === 'weapon') return;
+              if (dist > DRAG_THRESH) {
+                const ang = Math.atan2(dy, dx);
+                facingAngle = ang;
+                lastMoveAngle = ang;
+                player.angle = ang;
+                // Actually retarget the reticle (getReticleTile() reads
+                // targetAimAngle, not facingAngle/player.angle — see its
+                // declaration) so this drag genuinely aims farm-tool actions
+                // like axe chop / pick mine at a specific tile on mobile,
+                // instead of only rotating the player's visual facing while
+                // the reticle stays wherever the movement joystick last
+                // pointed it.
+                targetAimAngle = ang;
+                if (!_drag) {
+                  _drag = true;
+                  _stack.classList.add('drag-active');
+                  // Aiming takes over firing from here — disarm the tap/hold
+                  // timer so release doesn't also fire/end an ability.
+                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
+                  _resolveFire();
+                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                }
+              }
+            });
+
+            function _abtUp(ev) {
+              if (ev.pointerId !== _ptId) return;
+              _ptId = null;
+              actionHeldDown = false;
+              if (_selectorHoldTimer) { clearTimeout(_selectorHoldTimer); _selectorHoldTimer = null; }
+              if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
+              _stack.classList.remove('drag-active');
+              if (_socket) { _socket.remove(); _socket = null; }
+              el.style.transition = 'transform 0.14s ease-out';
+              el.style.transform  = 'translate(50%, 50%)';
+              setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
+              if (_selectorKind) {
+                if (_selectorArcOpen) {
+                  if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
+                  else window._desktopSelectionArc?.releaseSelection();
+                }
+              } else if (_flaskGesture) {
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
@@ -3960,11 +5301,12 @@ Warning: truncated output (original token count: 423976)
 
         if (heldMode === 'item') {
           // Item mode: all actions spread across all 5 arch positions
-          applyAbt('btnAction1',    btns[0], 0);
-          applyAbt('btnAction2',    btns[1], 1);
-          applyAbt('btnAction3',    btns[2], 2);
-          applyAbt('btnItemAction1', btns[3], 3);
-          applyAbt('btnItemAction2', btns[4], 4);
+          // (climb_branch excluded — see nonClimbBtns above)
+          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
+          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
+          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
+          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
+          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
         } else {
           applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
           applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
@@ -6417,7 +7759,7 @@ Warning: truncated output (original token count: 423976)
         },
         getSplashEntities: (area, x, y, radiusPx) => {
           const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
-          return entities.filter(entity => entity && entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx);
+          return entities.filter(entity => entity && !entity._denHidden && (entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx));
         },
         spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
           const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.
@@ -6694,6 +8036,18 @@ Warning: truncated output (original token count: 423976)
         esc,
         _zoneLayouts,
         hostileObjects,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
+      });
+
+      window.WildlifeBehaviorMap?.init({
+        TILE,
+        TileType,
+        player,
+        hostileObjects,
+        zoneLayouts: _zoneLayouts,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
       });
 
       window.ShippingPanel?.init({
@@ -6864,6 +8218,12 @@ Warning: truncated output (original token count: 423976)
         DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
         makeDecorativeFurnitureMesh,
+        // Used by js/wildlife-cloud-forest-behavior.js for its gar-wolf
+        // shift/LOD player-distance checks and its game-hour-scheduled
+        // fruit respawn/eating timers — no other WildlifeSpawn consumer
+        // needs either today.
+        player,
+        calendar,
       });
 
       window.CavernGenerator?.init({

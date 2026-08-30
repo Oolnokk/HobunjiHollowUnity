@@ -229,6 +229,117 @@
     return String(authored || '').trim() || firstNameWord(target?.name);
   }
 
+  // Off-screen follow tuning for chatheads directed at the player: how far
+  // into the frustum a point must sit to count as "on camera" again, how
+  // close to the true edge the off-screen indicator is pinned, and how fast
+  // the displayed position/scale eases toward wherever it currently belongs.
+  const EDGE_ON_SCREEN_MARGIN = 0.92;
+  const EDGE_PIN_MARGIN = 0.86;
+  const EDGE_MIN_MARGIN = 0.22; // floor so a long text bubble can't invert/collapse the pin margin
+  const EDGE_LERP_SPEED = 7;
+  // Fixed camera-relative depth for the off-screen "locked" spot — deliberately
+  // NOT tied to the speaker's real distance. A constant depth (with the
+  // bubble's own world-space size already fixed) makes its on-screen size and
+  // position fully deterministic, like a real screen-space HUD icon, and the
+  // easing of world position from the true anchor's own depth down to this
+  // fixed one is what reads as the bubble collapsing out of 3D into a flat
+  // 2D marker (and expanding back out of it when the speaker returns to view).
+  const EDGE_LOCK_DEPTH = 3;
+  const EDGE_SCALE = 0.6; // how much smaller the whole chathead+text bubble renders while pinned off-screen
+
+  // Reports whether `anchor` is inside the camera's frustum (with margin);
+  // when it isn't, also hands back the camera-relative vector to it so the
+  // caller can work out which screen edge is closest without projecting twice.
+  function cameraVisibility(anchor, camera) {
+    const THREE = state.deps.THREE;
+    const toAnchor = anchor.clone().sub(camera.position);
+    const forward = camera.getWorldDirection(new THREE.Vector3());
+    if (toAnchor.dot(forward) > 0.1) {
+      const ndc = anchor.clone().project(camera);
+      if (Math.abs(ndc.x) <= EDGE_ON_SCREEN_MARGIN && Math.abs(ndc.y) <= EDGE_ON_SCREEN_MARGIN && ndc.z < 1) {
+        return { onScreen: true };
+      }
+    }
+    return { onScreen: false, toAnchor };
+  }
+
+  // Persistent HUD chrome the screen-locked marker must never sit under.
+  // Measured live (rather than hand-guessed as fixed margins) so it tracks
+  // the game's actual responsive layout and only reserves space for pieces
+  // that are currently laid out and visible. Every piece of this game's
+  // persistent chrome sits in a horizontal band pinned to the top or bottom
+  // of the screen (never a left/right column), so exclusion is modeled as
+  // two bands rather than a general per-edge inset — that avoids a wide,
+  // short top element (like the status bar) getting misread as needing its
+  // whole column blocked all the way down the screen.
+  const UI_SAFE_SELECTORS = ['#statusBar', '#navigationCompass', '#buffBar', '#minimapWidget', '#menuBtn', '#farmEditBtn', '#devSpawnBtn', '#actionPrompt'];
+  const UI_SAFE_REFRESH_MS = 400;
+  let _uiSafeBox = null;
+
+  // Unions the top-band and bottom-band footprint of every currently-visible
+  // chrome element into one measurement, cached briefly since
+  // getBoundingClientRect forces layout and this chrome barely ever moves
+  // frame-to-frame.
+  function uiSafeNdcBox(now) {
+    if (_uiSafeBox && now - _uiSafeBox.atMs < UI_SAFE_REFRESH_MS) return _uiSafeBox;
+    const vh = window.innerHeight;
+    let topSafePx = 0, bottomSafePx = vh;
+    for (const selector of UI_SAFE_SELECTORS) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || parseFloat(style.opacity || '1') < 0.05) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      // Whichever half of the screen this element's center falls in is the
+      // band it's reserving; only that band's boundary needs to move.
+      if ((rect.top + rect.bottom) / 2 < vh / 2) topSafePx = Math.max(topSafePx, rect.bottom);
+      else bottomSafePx = Math.min(bottomSafePx, rect.top);
+    }
+    const pad = 0.02; // small breathing room past the measured chrome, in NDC
+    _uiSafeBox = {
+      atMs: now,
+      top: 1 - 2 * (topSafePx / vh) - pad,
+      bottom: -1 + 2 * ((vh - bottomSafePx) / vh) + pad,
+      left: -1 + pad,
+      right: 1 - pad,
+    };
+    return _uiSafeBox;
+  }
+
+  // Finds the screen-locked point closest to the direction the camera would
+  // need to turn to actually see the speaker. Sits at a fixed depth (see
+  // EDGE_LOCK_DEPTH) so its screen position and size are fully deterministic,
+  // inset first by the bubble's own half-width/half-height (at its off-screen
+  // render scale) so the whole bubble — chathead included — stays inside the
+  // frustum, then clamped again against the game's actual HUD chrome so nothing
+  // ever renders underneath it.
+  function screenEdgePoint(camera, toAnchor, bubbleHalfWidth, bubbleHalfHeight, now) {
+    const THREE = state.deps.THREE;
+    const localDir = toAnchor.clone().normalize().applyQuaternion(camera.quaternion.clone().invert());
+    const yaw = Math.atan2(localDir.x, -localDir.z);
+    const pitch = Math.atan2(localDir.y, -localDir.z);
+    const halfVFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+    const halfHFov = Math.atan(Math.tan(halfVFov) * camera.aspect);
+    const depth = EDGE_LOCK_DEPTH;
+    const angularHalfWidth = (bubbleHalfWidth * EDGE_SCALE / depth) / Math.tan(halfHFov);
+    const angularHalfHeight = (bubbleHalfHeight * EDGE_SCALE / depth) / Math.tan(halfVFov);
+    const marginX = Math.max(EDGE_MIN_MARGIN, EDGE_PIN_MARGIN - angularHalfWidth);
+    const marginY = Math.max(EDGE_MIN_MARGIN, EDGE_PIN_MARGIN - angularHalfHeight);
+    const sxRaw = yaw / halfHFov;
+    const syRaw = pitch / halfVFov;
+    const pinScale = Math.min(marginX / Math.max(Math.abs(sxRaw), 1e-6), marginY / Math.max(Math.abs(syRaw), 1e-6));
+    let sx = sxRaw * pinScale;
+    let sy = syRaw * pinScale;
+    const safe = uiSafeNdcBox(now);
+    const safeMinX = safe.left + angularHalfWidth, safeMaxX = safe.right - angularHalfWidth;
+    const safeMinY = safe.bottom + angularHalfHeight, safeMaxY = safe.top - angularHalfHeight;
+    if (safeMaxX >= safeMinX) sx = THREE.MathUtils.clamp(sx, safeMinX, safeMaxX);
+    if (safeMaxY >= safeMinY) sy = THREE.MathUtils.clamp(sy, safeMinY, safeMaxY);
+    const local = new THREE.Vector3(sx * Math.tan(halfHFov) * depth, sy * Math.tan(halfVFov) * depth, -depth);
+    return local.applyMatrix4(camera.matrixWorld);
+  }
+
   function anchorFor(root) {
     const THREE = state.deps?.THREE;
     if (!THREE || !root) return null;
@@ -420,6 +531,14 @@
       faceTarget: options.faceTarget || null,
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
+      directedAtPlayer: options.directedAtPlayer === true,
+      // Bubble's own half-width/half-height in world units (the chathead
+      // included), so the off-screen edge follow can inset by the bubble's
+      // actual footprint instead of just its center pivot.
+      bubbleHalfWidth: totalWidth / 2,
+      bubbleHalfHeight: Math.max(state.settings.textWorldHeight, headWidth) / 2,
+      displayPos: null,
+      displayScale: 1,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -439,6 +558,8 @@
   function updateActive(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
+    const dt = state.lastActiveUpdateAt != null ? Math.min(0.1, Math.max(0, (now - state.lastActiveUpdateAt) / 1000)) : 0;
+    state.lastActiveUpdateAt = now;
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       const progress = (now - event.startedAt) / event.durationMs;
@@ -453,7 +574,30 @@
         ? event.revealAtMs.filter(revealAt => revealAt <= elapsedMs).length
         : event.textPart.text.length;
       if (visibleChars !== event.visibleChars) drawText(event, event.textPart.text.slice(0, visibleChars));
-      event.group.position.copy(anchor);
+      if (event.directedAtPlayer) {
+        // Ambient speech aimed at the player stays reachable even when the
+        // speaker is off-screen: it shrinks and eases into a fixed,
+        // screen-locked spot on whichever edge is closest to them (fully
+        // clear of the HUD, chathead included), then eases back out to full
+        // size at its true position above their head the moment that
+        // position re-enters view.
+        const visibility = cameraVisibility(anchor, camera);
+        const targetScale = visibility.onScreen ? 1 : EDGE_SCALE;
+        const targetPos = visibility.onScreen ? anchor
+          : screenEdgePoint(camera, visibility.toAnchor, event.bubbleHalfWidth, event.bubbleHalfHeight, now);
+        if (!event.displayPos) {
+          event.displayPos = targetPos.clone();
+          event.displayScale = targetScale;
+        } else {
+          const alpha = dt > 0 ? 1 - Math.exp(-EDGE_LERP_SPEED * dt) : 1;
+          event.displayPos.lerp(targetPos, alpha);
+          event.displayScale += (targetScale - event.displayScale) * alpha;
+        }
+        event.group.position.copy(event.displayPos);
+        event.group.scale.setScalar(event.displayScale);
+      } else {
+        event.group.position.copy(anchor);
+      }
       event.group.quaternion.copy(camera.quaternion);
       if (event.faceWalker && event.faceTarget) {
         const targetPosition = event.faceTarget.root?.position || event.faceTarget;
@@ -529,6 +673,7 @@
       profile: walker.profile,
       mode: 'chathead',
       greeting: true,
+      directedAtPlayer: targetId === 'player',
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
     });
@@ -622,6 +767,7 @@
       mode: 'chathead',
       durationMs: state.settings.durationMs,
       tone: response.accepted ? 'accept' : 'refuse',
+      directedAtPlayer: true,
       faceWalker: walker,
       faceTarget: player || null,
     });

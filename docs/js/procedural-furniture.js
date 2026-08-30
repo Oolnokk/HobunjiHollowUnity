@@ -397,6 +397,22 @@
     box(0, .42, .1, .9, .16, .55, 1.4, { color: 0xb35a2a }),
   ];
 
+function campfireRecipe() {
+    const parts = [
+      cyl(0, .12, 0, .16, .92, .16, .82, { rz: 90, ry: 45, segments: 8, color: 0x5b321b }),
+      cyl(0, .14, 0, .16, .92, .16, .70, { rz: 90, ry: -45, segments: 8, color: 0x6f3c1f }),
+    ];
+    for (let i = 0; i < 9; i++) {
+      const a = i * Math.PI * 2 / 9;
+      parts.push(cyl(Math.cos(a) * .42, .09, Math.sin(a) * .42, .23, .18, .23, 1, {
+        segments: 7,
+        color: i % 2 ? 0x68635a : 0x777168,
+      }));
+    }
+    return parts;
+  }
+  CATALOG.campfire = campfireRecipe();
+
   CATALOG.loom = [
     leg(-.3, -.85, 1.6, .12, .8), leg(.3, -.85, 1.6, .12, .8),
     leg(-.3, .85, 1.6, .12, .8), leg(.3, .85, 1.6, .12, .8),

@@ -1176,6 +1176,7 @@
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
       combatLoadout:     { ...(char.combatLoadout  || {}) },
       abilityProgression: { ...(char.abilityProgression || {}) },
+      combatTechniqueUnlocks: [...(char.combatTechniqueUnlocks || [])],
       equipmentSlots:    { ...(char.equipmentSlots || {}) },
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
@@ -1527,6 +1528,7 @@
         })(),
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
+        combatTechniqueUnlocks: [],
         perkRanks:        {},
         stats:            makeDefaultStats(),
         stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
@@ -1549,6 +1551,7 @@
       playerData.isWorldOwner   = true;
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
+      playerData.combatTechniqueUnlocks = [...(newChar.combatTechniqueUnlocks || [])];
       playerData.skillLevels    = newChar.skillLevels;
       playerData.skillExperience = newChar.skillExperience;
       playerData.stats          = newChar.stats;
@@ -1620,6 +1623,7 @@
       if (c.activeCompanionId === undefined) c.activeCompanionId = null;
       if (c.activeMountId === undefined) c.activeMountId = null;
       if (c.activeShoulderPetId === undefined) c.activeShoulderPetId = null;
+      if (!Array.isArray(c.combatTechniqueUnlocks)) c.combatTechniqueUnlocks = [];
       delete c.npcFavor; // moved to world.members[charId].npcRelationships
     });
     (meta.worlds || []).forEach(w => {
@@ -1702,6 +1706,7 @@
           gearInventory:    makeDefaultGear(),
           skillLevels:      makeDefaultSkills(),
           skillExperience:  {},
+          combatTechniqueUnlocks: Array.isArray(saved.combatTechniqueUnlocks) ? [...saved.combatTechniqueUnlocks] : [],
           stats:            makeDefaultStats(),
           createdAt:        Date.now(),
           lastPlayed:       Date.now(),
