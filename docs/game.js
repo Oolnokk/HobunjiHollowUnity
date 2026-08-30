@@ -5289,49 +5289,25 @@
       const STAGE_BACKUP_S = 2;
       const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
       const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
-      // Default head-yaw turn budget for a creature with no custom-authored
-      // head rig (see png-plane-avatar.js's DEFAULT_LIMITS, which caps an
-      // unauthored rig's own minDeg/maxDeg — and therefore updateHeadYaw's
-      // internal clamp — at exactly this same ±30°). Used both as
-      // _updateCreatureHeadLookAtWorldPoint's ordinary chase-correction
-      // budget (a deliberately modest nudge, not an anatomy claim) and as
-      // creatureHeadYawLimitDeg's fallback before an avatar's real rig has
-      // mounted yet.
+      // Default head-yaw turn budget for _updateCreatureHeadLookAtWorldPoint's
+      // ordinary chase-correction (a deliberately modest nudge, not an
+      // anatomy claim — see png-plane-avatar.js's DEFAULT_LIMITS, which caps
+      // an unauthored rig's own minDeg/maxDeg, and therefore updateHeadYaw's
+      // internal clamp, at exactly this same ±30° for any species with no
+      // custom-authored head rig).
       const CREATURE_HEAD_YAW_LIMIT_DEG = 30;
-
-      // The actual "how far can this specific creature turn its head off
-      // its own body" figure, straight from its authored head rig (the
-      // Animal Head Rig Author tool's minDeg/maxDeg — reused as the yaw
-      // range too, see png-plane-avatar.js's own yawLimitDeg) — falling
-      // back to the same default any unauthored rig uses. This is the real
-      // per-species anatomical budget evasiveOrbit checks against to decide
-      // whether a sidestep can plausibly keep eye contact on the target, as
-      // opposed to CREATURE_HEAD_YAW_LIMIT_DEG's own deliberately tighter
-      // ordinary-chase tuning value above.
-      function creatureHeadYawLimitDeg(c) {
-        const rig = c.avatarRef?.headRig?.rig;
-        if (!rig) return CREATURE_HEAD_YAW_LIMIT_DEG;
-        const limit = Math.max(Math.abs(Number(rig.minDeg) || 0), Math.abs(Number(rig.maxDeg) || 0));
-        return limit > 0 ? limit : CREATURE_HEAD_YAW_LIMIT_DEG;
-      }
 
       // evasiveOrbit's own sidestep geometry (see below: an 0.8-weighted
       // tangent blended with a 0.2-weighted radial component) needs roughly
       // 76-104° of head correction to keep eye contact with the target from
       // a body actually facing its movement — nowhere near
-      // creatureHeadYawLimitDeg's own default (no species currently has a
-      // custom-authored head rig wider than that ±30° "modest nudge" tuning
-      // value), which would leave the fallback-to-facing-target case always
-      // winning and no sidestep ever visible at all. This is a deliberately
-      // generous floor specific to this one combat behavior — not a claim
-      // about ordinary chase's much smaller correction — so a genuinely
-      // wider custom-authored rig (Math.max below) still isn't clamped down
-      // to it, and only the extreme backing-off case (~104°) still falls
-      // back to facing the target outright.
-      const EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG = 85;
-      function evasiveOrbitHeadYawLimitDeg(c) {
-        return Math.max(creatureHeadYawLimitDeg(c), EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG);
-      }
+      // CREATURE_HEAD_YAW_LIMIT_DEG's own tighter ordinary-chase tuning
+      // value, which would leave the fallback-to-facing-target case always
+      // winning and no sidestep ever visible at all. 80° is a firm ceiling
+      // per explicit design direction — the closing-in case (~76°) still
+      // gets a genuine sidestep, while the extreme backing-off case (~104°)
+      // still falls back to facing the target outright.
+      const EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG = 80;
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
@@ -5422,7 +5398,7 @@
           // the target instead — reads as backpedaling/strafing backward
           // rather than a body no head could actually keep up with.
           const yawNeededDeg = Math.abs(angleDiff(towardAngle, blendAngle)) * 180 / Math.PI;
-          const bodyAngle = yawNeededDeg <= evasiveOrbitHeadYawLimitDeg(c) ? blendAngle : towardAngle;
+          const bodyAngle = yawNeededDeg <= EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG ? blendAngle : towardAngle;
           return { aimAngle: bodyAngle, moving };
         }
 
@@ -5849,12 +5825,12 @@
               : null;
             // evasiveOrbit's own body-facing decision (see
             // updateCreatureBehaviorStage) already checked whether this
-            // creature's real per-species head range reaches the target
-            // from wherever its body ends up — reuse that same wider
-            // budget here so the visual head yaw isn't separately capped
-            // back down to the tighter ordinary-chase default underneath it.
+            // wider budget reaches the target from wherever the body ends
+            // up — reuse the same figure here so the visual head yaw isn't
+            // separately capped back down to the tighter ordinary-chase
+            // default underneath it.
             const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
-            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? evasiveOrbitHeadYawLimitDeg(c) : undefined);
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
             else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
@@ -6166,10 +6142,10 @@
         // even once the body looks "close enough," reading as not locked
         // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
         // yawLimitDeg defaults to the ordinary-chase budget — evasiveOrbit's
-        // caller below passes the creature's real creatureHeadYawLimitDeg
-        // instead, since a sidestep only ever gets a body facing its
-        // movement direction (rather than the target) when that wider,
-        // per-species-authored turn is enough to still reach the target.
+        // caller below passes EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG instead,
+        // since a sidestep only ever gets a body facing its movement
+        // direction (rather than the target) when that wider turn is
+        // enough to still reach the target.
         _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt, yawLimitDeg);
       }
 
