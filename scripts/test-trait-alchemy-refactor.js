@@ -9,6 +9,7 @@ const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 
 global.CustomEvent = class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
 global.document = { getElementById: () => null, querySelector: () => null, dispatchEvent: () => {}, addEventListener: () => {} };
+global.addEventListener = () => {}; // Browser load-hook stand-in used by alchemy-flasks.js's optional UI bootstraps.
 global.window = { SCRATCHBONES_CONFIG: { game: { combat: { resourceSystem: {} } } } };
 require(path.join(root, 'docs/js/combat/resource-system.js'));
 
@@ -121,12 +122,16 @@ assert.strictEqual(player.footing, 45, 'Rush must immediately apply its Footing 
 
 // A small Three.js stand-in exercises consumption, cancel, deterministic
 // travel, self-splash, and ResourceSystem application without a browser.
-class Vec { set(x, y, z) { this.x = x; this.y = y; this.z = z; } setScalar(v) { this.scalar = v; } }
-class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; this.position = new Vec(); this.rotation = new Vec(); this.scale = new Vec(); this.parent = null; } }
-class Geometry { dispose() {} }
+class Vec { set(x, y, z) { this.x = x; this.y = y; this.z = z; } setScalar(v) { this.scalar = v; } copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; } }
+class Object3D { constructor() { this.position = new Vec(); this.rotation = new Vec(); this.scale = new Vec(); this.parent = null; this.children = []; this.visible = true; } add(child) { child.parent = this; this.children.push(child); } }
+class Group extends Object3D {}
+class Mesh extends Object3D { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
+class Points extends Mesh {}
+class Geometry { constructor() { this.attributes = {}; } setAttribute(key, value) { this.attributes[key] = value; } dispose() {} }
+class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.needsUpdate = false; } }
 class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
 const scene = { add(mesh) { mesh.parent = this; }, remove(mesh) { mesh.parent = null; } };
-window.THREE = { Mesh, RingGeometry: Geometry, SphereGeometry: Geometry, MeshBasicMaterial: Material, DoubleSide: 2 };
+window.THREE = { Group, Mesh, Points, BufferGeometry:Geometry, BufferAttribute, PointsMaterial:Material, RingGeometry: Geometry, SphereGeometry: Geometry, MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending:2 };
 require(path.join(root, 'docs/js/alchemy-flasks.js'));
 const flaskKey = A.ensureRecipeItemDef('venomFlask', 0);
 inventory[flaskKey] = 3;
@@ -134,11 +139,16 @@ let heldKey = flaskKey;
 const victim = { health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100 };
 R.initEntity(victim);
 let impactCount = 0;
+let shoulderView = false; // Switches the harness between legacy cursor aim and centered shoulder-ray aim.
+const flaskSfxCues = []; // Captures semantic audio placeholders without requiring AudioSystem or media files.
 window.AlchemyFlasks.init({
   THREE: window.THREE, TILE:64, inventory, getPlayer:() => player, getCurrentArea:() => 'farm', getActiveScene:() => scene,
-  getAimAngle:() => 0, getGroundY:() => 0, getSelectedItemKey:() => heldKey,
+  getAimAngle:() => 0, getGroundY:() => 0, getGroundYAtWorld:() => 0, getSelectedItemKey:() => heldKey,
+  isShoulderView:() => shoulderView,
+  getPlayerInteractionRay:() => ({ origin:{x:0,y:5,z:-2}, direction:{x:0,y:-0.2,z:1} }),
   getHeldWorldPosition:() => ({x:player.x / 64 || 0,y:1,z:player.y / 64 || 0}),
   getSplashEntities:() => [player, victim], spawnImpactPresentation:() => { impactCount++; },
+  emitSfxCue:cue => flaskSfxCues.push(cue.cueId),
   clampInventoryStack:key => { if (inventory[key] <= 0) delete inventory[key]; }, refreshItemScroll:()=>{}, refreshActionBar:()=>{}, saveMemberWorldData:()=>{},
 });
 player.x = 0; player.y = 0;
@@ -146,6 +156,11 @@ assert.ok(window.AlchemyFlasks.beginAim(), 'first action must enter aim');
 assert.strictEqual(inventory[flaskKey], 3, 'entering aim must consume nothing');
 assert.ok(window.AlchemyFlasks.cancelAim(), 'cancel must exit aim');
 assert.strictEqual(inventory[flaskKey], 3, 'cancel must consume zero flasks');
+shoulderView = true;
+window.AlchemyFlasks.beginAim();
+assert.ok(Math.abs(window.AlchemyFlasks.diagnostics().target.y - 14 * 64) < 0.001, 'shoulder aim must follow the centered interaction ray out to the extended clamp');
+window.AlchemyFlasks.cancelAim();
+shoulderView = false;
 window.AlchemyFlasks.beginAim();
 window.AlchemyFlasks.setTarget(128, 0);
 window.AlchemyFlasks.confirmThrow();
@@ -155,6 +170,7 @@ window.AlchemyFlasks.update(.5);
 assert.strictEqual(impactCount, 1, 'impact presentation must occur once without owning gameplay resolution');
 assert.ok(R.getAffliction(player, 'poisonedHealth') > 0 && R.getAffliction(victim, 'poisonedHealth') > 0, 'splash must affect valid nearby entities including the thrower through ResourceSystem');
 assert.strictEqual(window.AlchemyFlasks.diagnostics().lastImpact.radiusTiles, A.RECIPE_DEFS.venomFlask.splashRadius, 'splash must use the recipe radius');
+assert.ok(flaskSfxCues.includes('flask_throw_release') && flaskSfxCues.includes('flask_impact'), 'release and impact must emit decoupled semantic SFX placeholders');
 
 // Breeding resolves normal genetics first, then applies one clamped pending
 // class shift and consumes both parent modifiers.
@@ -169,13 +185,13 @@ let worldLivestock = [
   { id:'a', kind:'uumkaoii', name:'A', genotype:{sizeClass:'small',coat:'blue'}, pendingOffspringSizeShift:1 },
   { id:'b', kind:'uumkaoii', name:'B', genotype:{sizeClass:'large',coat:'red'}, pendingOffspringSizeShift:1 },
 ];
-let pairs = [{ parentA:{source:'world',id:'a'}, parentB:{source:'world',id:'b'}, readyDay:1 }];
+let pairs = [{ parentA:{source:'world',id:'a'}, parentB:{source:'world',id:'b'}, startedDay:0, progress:.99 }];
 window.FarmAnimals.init({
   calendar:{day:1}, loadWorldLivestock:() => worldLivestock, saveWorldLivestock:list => { worldLivestock = list; },
   _loadWorldBreedingPairs:() => pairs, _saveWorldBreedingPairs:value => { pairs = value; }, LIVESTOCK_RESOURCE_DEFS:{},
   showToast:()=>{},
 });
-window.FarmAnimals.tickBreeding();
+window.FarmAnimals.tickBreedingProgress(1);
 assert.strictEqual(worldLivestock[2].genotype.sizeClass, 'large', 'matching parental Gigantism must apply one class step');
 assert.strictEqual(worldLivestock[2].genotype.coat, 'blue', 'existing genetics must remain intact');
 assert.strictEqual(worldLivestock[0].pendingOffspringSizeShift, 0, 'parent A modifier must be consumed');
@@ -186,8 +202,8 @@ worldLivestock = [
   { id:'c', kind:'uumkaoii', genotype:{sizeClass:'medium',coat:'green'}, pendingOffspringSizeShift:1 },
   { id:'d', kind:'uumkaoii', genotype:{sizeClass:'medium',coat:'gold'}, pendingOffspringSizeShift:-1 },
 ];
-pairs = [{ parentA:{source:'world',id:'c'}, parentB:{source:'world',id:'d'}, readyDay:1 }];
-window.FarmAnimals.tickBreeding();
+pairs = [{ parentA:{source:'world',id:'c'}, parentB:{source:'world',id:'d'}, startedDay:0, progress:.99 }];
+window.FarmAnimals.tickBreedingProgress(1);
 assert.strictEqual(worldLivestock[2].genotype.sizeClass, 'medium', 'opposing parental modifiers must cancel');
 
 const game = read('docs/game.js');
