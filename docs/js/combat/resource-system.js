@@ -100,6 +100,9 @@
       desc: "Ticks as Health damage over time; does not recover on its own."
     }
   };
+  const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
+    .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
+    .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
 
   // Baseline afflictions a creature's plain attackTag applies (see game.js's
   // CREATURE_DB attackTag field — gar-wolves 'sharp', dabinggi-hounds
@@ -492,11 +495,7 @@
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
     const amount = cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt;
-    for (const [id, def] of Object.entries(AFFLICTIONS)) {
-      if (!def.recovers) continue;
-      if (id === "bleedingHealth" || id === "poisonedHealth" || id === "congealedHealth") continue;
-      if (getAffliction(entity, id) > 0) removeAffliction(entity, id, amount);
-    }
+    for (const id of RECOVERING_AFFLICTIONS) if (getAffliction(entity, id) > 0) removeAffliction(entity, id, amount);
   }
 
   function maybeTriggerPuke(entity, dt, cfg) {

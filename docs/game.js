@@ -4555,6 +4555,9 @@
       // nearest-hostile default until it dies, leaves range/area, or the
       // player swaps again. Cleared automatically once invalid.
       let manualAutoTarget = null;
+      let gameFrameSerial = 0; // Identifies the current animation frame for shared auto-target and profiler work.
+      let autoTargetCacheFrame = -1; // Prevents every hostile resource ring from repeating the same target search in one frame.
+      let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
       // Melee-only auto-target toggle (see updateMeleeAutoTarget below) —
       // an opt-in aim assist the player switches on/off themselves (Shift-
       // tap desktop, right-stick click controller, the arch's 6th mobile
@@ -4614,7 +4617,7 @@
       // Desktop melee only acquires while the targeting toggle is on. Once
       // mouse-look releases a lock, it waits for the reticle to pass close to
       // another hostile before reacquiring.
-      function findAutoTarget() {
+      function computeAutoTarget() {
         const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (!meleeActive && !rangedActive) {
@@ -4654,6 +4657,17 @@
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      function invalidateAutoTargetCache() {
+        autoTargetCacheFrame = -1;
+      }
+
+      function findAutoTarget() {
+        if (autoTargetCacheFrame === gameFrameSerial) return autoTargetCacheValue;
+        autoTargetCacheValue = computeAutoTarget();
+        autoTargetCacheFrame = gameFrameSerial;
+        return autoTargetCacheValue;
       }
 
       // Where a ranged shot currently flies, in the flat XY logical-angle
@@ -4755,6 +4769,7 @@
         if (!best) return false;
         manualAutoTarget = best;
         meleeAutoTargetFreeAim = false;
+        invalidateAutoTargetCache();
         return true;
       }
 
@@ -4802,6 +4817,7 @@
         if (!candidate) return;
         manualAutoTarget = candidate;
         meleeAutoTargetOn = true;
+        invalidateAutoTargetCache();
       }
 
       // Cycles melee auto-target's current lock among every hostile within
@@ -4824,6 +4840,7 @@
         idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
         manualAutoTarget = candidates[idx].c;
         meleeAutoTargetFreeAim = false;
+        invalidateAutoTargetCache();
       }
 
       // Drives melee auto-target's actual aim, once per frame (see its call
@@ -5086,9 +5103,14 @@
         c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
-        grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
-        grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
-        grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        if (c._wildlifeVisualLodJustWoke) {
+          grp.position.set(tx, ty, tz);
+          c._wildlifeVisualLodJustWoke = false;
+        } else {
+          grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
+          grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
+          grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        }
         // Bob animation when moving — mirrors the player's own effort-based
         // move bob (updateMovement): amplitude ramps from the calm-walking
         // baseline up to the full-effort peak as speed approaches this
@@ -5462,10 +5484,70 @@
         return { aimAngle: towardAngle, moving: false };
       }
 
+      const CREATURE_RESOURCE_TICK_INTERVAL_S = 0.1; // Used to update non-player resources at 10 Hz while preserving accumulated elapsed time.
+      const FAR_CREATURE_RESOURCE_TICK_INTERVAL_S = 0.5; // Used by visually sleeping wildlife that cannot currently affect the player.
+      const WILDLIFE_VISUAL_LOD_HIDE_TILES = 28; // Used to remove calm, distant wildlife from scene rendering and visual-rig updates.
+      const WILDLIFE_VISUAL_LOD_SHOW_TILES = 24; // Used as the nearer wake boundary so wildlife does not flicker at one distance.
+      const FAR_WILDLIFE_AI_TICK_INTERVAL_S = 0.2; // Used to advance calm hidden wildlife at 5 Hz with accumulated time instead of every render frame.
+      const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
+      const currentHostilesFrame = []; // Reused rather than allocated for every updateHostiles frame.
+      const grazingPreyByPatchFrame = new Map(); // Reuses per-patch prey buckets while the player remains in one area.
+      const EMPTY_GRAZING_PREY = Object.freeze([]); // Avoids allocating an empty fallback list for predators without a matching herbivore patch.
+      let grazingPreyIndexArea = null; // Clears retained patch buckets when the active area changes.
+
+      function tickCreatureResources(c, dt, far = false) {
+        const interval = far ? FAR_CREATURE_RESOURCE_TICK_INTERVAL_S : CREATURE_RESOURCE_TICK_INTERVAL_S; // Selects the active or distant maintenance cadence.
+        const step = Math.max(0, Number(dt) || 0); // Accumulates real elapsed simulation time between resource-system calls.
+        if (!Number.isFinite(c._resourceTickRemainingS)) c._resourceTickRemainingS = rnd() * interval;
+        c._resourceTickRemainingS = Math.min(c._resourceTickRemainingS, interval) - step;
+        c._resourceTickElapsedS = (c._resourceTickElapsedS || 0) + step;
+        if (c._resourceTickRemainingS > 0) return;
+        const elapsed = Math.min(0.75, c._resourceTickElapsedS); // Bounds recovery catch-up after stalls or background-tab pauses.
+        c._resourceTickElapsedS = 0;
+        c._resourceTickRemainingS = interval;
+        const opts = c._resourceTickOptions || (c._resourceTickOptions = { staminaRegenPerSec: c.maxStamina * 0.25 }); // Reuses the mutable options object instead of allocating one per tick.
+        opts.staminaRegenPerSec = c.maxStamina * 0.25;
+        window.ResourceSystem?.tick(c, elapsed, opts);
+      }
+
+      function wildlifeVisualLodCanHide(c) {
+        if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
+        if (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
+        if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
+        return true;
+      }
+
+      function updateWildlifeVisualLod(c, distanceTiles) {
+        const eligible = wildlifeVisualLodCanHide(c); // Keeps combatants, companions, and active movement states fully simulated and rendered.
+        const shouldHide = eligible && (c._wildlifeVisualLodHidden // Applies the separate wake threshold as LOD hysteresis.
+          ? distanceTiles > WILDLIFE_VISUAL_LOD_SHOW_TILES
+          : distanceTiles >= WILDLIFE_VISUAL_LOD_HIDE_TILES);
+        if (shouldHide === !!c._wildlifeVisualLodHidden) return shouldHide;
+        c._wildlifeVisualLodHidden = shouldHide;
+        if (c.avatarRef?.group) c.avatarRef.group.visible = !shouldHide && !c._denHidden;
+        if (c.groundShadow) c.groundShadow.visible = !shouldHide;
+        if (c._ringHud) c._ringHud.visible = !shouldHide;
+        if (!shouldHide) c._wildlifeVisualLodJustWoke = true;
+        return shouldHide;
+      }
+
       function updateHostiles(dt) {
+        currentHostilesFrame.length = 0;
+        if (grazingPreyIndexArea !== currentArea) {
+          grazingPreyIndexArea = currentArea;
+          grazingPreyByPatchFrame.clear();
+        } else {
+          for (const patchPrey of grazingPreyByPatchFrame.values()) patchPrey.length = 0;
+        }
         for (const c of hostileObjects) {
-          if (c.health <= 0) continue;
-          if (c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          currentHostilesFrame.push(c);
+          if (c.def?.diet !== 'herbivore' || c.state !== 'at-station-grazing') continue;
+          const patchPrey = grazingPreyByPatchFrame.get(c.grazingPatchId) || []; // Narrows predator scans to grazing herbivores at their linked patch.
+          patchPrey.push(c);
+          grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
+        }
+        for (const c of currentHostilesFrame) {
           // Tucked inside its den for the off-shift/overnight branch below
           // (see the denKey settle branch) — frozen and invisible rather
           // than idling in the open, so no AI/vocalization/stamina tick
@@ -5477,10 +5559,20 @@
             c._denHidden = false;
             if (c.avatarRef?.group) c.avatarRef.group.visible = true;
           }
-          window.AnimalVocalizations?.tickCreature?.(c, dt);
+          const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
+          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
+          let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
+          if (initiallyLodSleeping) {
+            c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
+            if (c._farWildlifeAiAccumS < FAR_WILDLIFE_AI_TICK_INTERVAL_S) continue;
+            entityDt = Math.min(0.6, c._farWildlifeAiAccumS);
+            c._farWildlifeAiAccumS = 0;
+          } else {
+            c._farWildlifeAiAccumS = 0;
+          }
+          window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
 
           // Aggro/chase locks onto whichever player is nearest at the moment
           // it's acquired (see nearestPlayer) rather than the single global
@@ -5492,16 +5584,18 @@
           // flicker between equally-near players every frame.
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
-          if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
+          if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
           // parks a drenkirra on a branch to forage/sleep, outside the
           // player-facing defend hop above — same "skip ordinary ground AI
           // entirely this frame" escape hatch, gated on its own per-creature
           // marker so it never touches the Nestmother's branch-defend flow.
-          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, dt)) continue;
+          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
+          tickCreatureResources(c, entityDt, visuallyLodSleeping);
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
@@ -5556,13 +5650,18 @@
           const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
             && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
           if (predatorAvailable) {
-            for (const prey of hostileObjects) {
-              if (prey === c || prey.health <= 0 || prey.areaId !== c.areaId) continue;
-              if (prey.def?.diet !== 'herbivore' || prey.state !== 'at-station-grazing') continue;
-              if (prey.grazingPatchId !== c.linkedPatchId) continue;
-              if (Math.hypot(prey.x - c.x, prey.y - c.y) > PATROL_SIGHT_RANGE_PX) continue;
-              c.state = 'patrol-chase'; c.targetCreature = prey;
-              break;
+            if (!Number.isFinite(c._predatorSightT)) c._predatorSightT = rnd() * PREDATOR_SIGHT_INTERVAL_S;
+            c._predatorSightT -= entityDt;
+            if (c._predatorSightT <= 0) {
+              c._predatorSightT = PREDATOR_SIGHT_INTERVAL_S;
+              for (const prey of (grazingPreyByPatchFrame.get(c.linkedPatchId) || EMPTY_GRAZING_PREY)) {
+                if (prey === c || prey.health <= 0) continue;
+                const preyDx = prey.x - c.x, preyDy = prey.y - c.y; // Feeds allocation-free box and squared-radius sight checks.
+                if (Math.abs(preyDx) > PATROL_SIGHT_RANGE_PX || Math.abs(preyDy) > PATROL_SIGHT_RANGE_PX) continue;
+                if (preyDx * preyDx + preyDy * preyDy > PATROL_SIGHT_RANGE_PX * PATROL_SIGHT_RANGE_PX) continue;
+                c.state = 'patrol-chase'; c.targetCreature = prey;
+                break;
+              }
             }
           }
           // Leaving chase mid-windup (player broke the leash) abandons the
@@ -5574,7 +5673,7 @@
             clearCreatureStage(c);
             if (c.isBandit) {
               c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
-              window.BanditCombat?.restNeckLook?.(c, dt);
+              window.BanditCombat?.restNeckLook?.(c, entityDt);
             }
           }
 
@@ -5584,7 +5683,7 @@
             // cleanup adapters and moves through the same swept terrain test
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
-            advanceCreatureProneThrow(c, dt);
+            advanceCreatureProneThrow(c, entityDt);
             if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
@@ -5592,8 +5691,8 @@
             // the player's own knockback/dodge/lunge and the pounce/guard-
             // charge leaps below) so a hard shove can't punch a creature
             // through a cliff face, water, or the map edge.
-            c.knockbackT = Math.max(0, c.knockbackT - dt);
-            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            c.knockbackT = Math.max(0, c.knockbackT - entityDt);
+            const nkx = c.x + c.knockbackVX * entityDt, nky = c.y + c.knockbackVY * entityDt;
             const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX) c.knockbackVX = 0;
@@ -5607,7 +5706,7 @@
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
+              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
               if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
             }
           } else if (c.state === 'patrol-chase') {
@@ -5626,7 +5725,7 @@
                 c.state = 'return'; c.targetCreature = null;
               } else {
                 aimAngle = Math.atan2(pdy, pdx);
-                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, dt);
+                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
                 const triggerRangePx = def.attackRangePx || TILE * 0.85;
                 if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
                   c.attackCooldownT = def.attackCooldownS || 1.0;
@@ -5642,29 +5741,29 @@
               // see updateBanditCombatAI, defined with the rest of the
               // Bandit Gangs section) instead of the plain bite-telegraph/
               // behaviorStage machinery below, which stays wildlife-only.
-              const result = window.BanditCombat.updateCombatAI(c, dt, targetPlayer, distToPlayer);
+              const result = window.BanditCombat.updateCombatAI(c, entityDt, targetPlayer, distToPlayer);
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else if (c.retreatT > 0) {
               // Jump back after landing a bite, keeping eyes on the player.
-              c.retreatT = Math.max(0, c.retreatT - dt);
+              c.retreatT = Math.max(0, c.retreatT - entityDt);
               const awayAng = Math.atan2(-dyp, -dxp);
-              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, entityDt);
             } else if (window.Combat?.telegraph?.isBusy(c)) {
               // Stand and wind up — the tell (game.js's tint) is the
               // player's cue to step out of attackRangePx before the strike
               // frame's range check below fires.
-              window.Combat.telegraph.update(c, dt);
+              window.Combat.telegraph.update(c, entityDt);
             } else if (window.Combat?.animalAttacks?.isBusy(c)) {
               // Modular named attack (e.g. Pounce) owns position, facing,
               // scale, and sprite frame for its full duration.
-              window.Combat.animalAttacks.update(c, dt);
+              window.Combat.animalAttacks.update(c, entityDt);
               aimAngle = c.facing;
             } else if (def.behaviorStages) {
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
-              const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
+              const result = updateCreatureBehaviorStage(c, entityDt, targetPlayer, def, (dist) => {
                 // Drenkirra's 'pounce' behaviorStage entry actually resolves to
                 // the Caustic Pellet ranged attack (see combat-drenkirra-pellet.js's
                 // attacks.start override) — gating it by the same short melee
@@ -5687,7 +5786,7 @@
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else {
-              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
+              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, entityDt);
               // Pounce-capable creatures commit once the target enters their
               // forward aim collider (always pointed straight at the target
               // via aimAngle above) rather than the bite's short flat range.
@@ -5739,7 +5838,7 @@
               }
             }
           } else if (c.state === 'return') {
-            moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+            moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
           } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
             // Denned pack, off the clock — head for the den's own mouth
@@ -5755,7 +5854,7 @@
             const denX = c.denEntranceX ?? c.homeX, denY = c.denEntranceY ?? c.homeY;
             const distFromDenMouth = Math.hypot(c.x - denX, c.y - denY);
             if (distFromDenMouth > DEN_SETTLE_RADIUS_PX) {
-              moving = travelCreatureToward(c, denX, denY, def.moveSpeed, dt);
+              moving = travelCreatureToward(c, denX, denY, def.moveSpeed, entityDt);
               if (moving) aimAngle = Math.atan2(denY - c.y, denX - c.x);
             } else {
               c.x = denX; c.y = denY;
@@ -5780,12 +5879,12 @@
               const distToWater = Math.hypot(c.x - wx, c.y - wy);
               if (distToWater > DEN_SETTLE_RADIUS_PX) {
                 c.state = 'traveling-to-drink';
-                moving = travelCreatureToward(c, wx, wy, def.moveSpeed, dt);
+                moving = travelCreatureToward(c, wx, wy, def.moveSpeed, entityDt);
                 if (moving) aimAngle = Math.atan2(wy - c.y, wx - c.x);
               } else {
                 c.state = 'drinking';
                 aimAngle = idleCreatureAimAngle(c.groupRot);
-                c._drinkT = (c._drinkT || 0) + dt;
+                c._drinkT = (c._drinkT || 0) + entityDt;
                 if (c._drinkT >= WILDLIFE_DRINK_DURATION_S) {
                   c._drinkT = 0;
                   c.nextDrinkHour = nowHours + WILDLIFE_DRINK_INTERVAL_HOURS;
@@ -5798,7 +5897,7 @@
                 const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
                 if (distToStation > DEN_SETTLE_RADIUS_PX) {
                   c.state = 'scheduled-travel-to-station';
-                  moving = travelCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                  moving = travelCreatureToward(c, stationX, stationY, def.moveSpeed, entityDt);
                   if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
                 } else {
                   c.state = 'at-station-grazing';
@@ -5806,7 +5905,7 @@
                 }
               } else {
                 const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-                moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+                moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
                 aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
               }
             }
@@ -5825,14 +5924,14 @@
               c.patrolIndex = ((c.patrolIndex || 0) + 1) % c.patrolPoints.length;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = travelCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
+              moving = travelCreatureToward(c, targetX, targetY, def.moveSpeed, entityDt);
               if (moving) aimAngle = Math.atan2(targetY - c.y, targetX - c.x);
             }
           } else {
             // Pack creatures roam a wider territory around their den by day
             // than the tight loiter radius everything else uses.
             const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+            moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
             // specific direction to look, so settle broadside to the camera.
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
@@ -5858,10 +5957,10 @@
               && !window.Combat?.telegraph?.isBusy(c)
               && !window.Combat?.animalAttacks?.isBusy(c);
             if (canLook) {
-              const faceAimAngle = _updateCreatureLookAtFace(c, targetPlayer, dt);
+              const faceAimAngle = _updateCreatureLookAtFace(c, targetPlayer, entityDt);
               if (!moving) aimAngle = faceAimAngle;
             } else {
-              _restoreCompanionHead(c, dt);
+              _restoreCompanionHead(c, entityDt);
             }
           } else if (!c.isBandit) {
             // A genuinely hostile animal creature: nod its head (the
@@ -5882,8 +5981,8 @@
             // separately capped back down to the tighter ordinary-chase
             // default underneath it.
             const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
-            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
-            else _restoreCompanionHead(c, dt);
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, entityDt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
+            else _restoreCompanionHead(c, entityDt);
           }
           c.facing = aimAngle;
           // Grehlr foraging (js/wildlife-grehlr-foraging.js) — deliberately
@@ -5891,7 +5990,7 @@
           // its eating-dip/fishing-lookdown head pitch wins this frame's
           // interpolation target instead of being immediately smoothed back
           // to rest by that block's own unconditional _restoreCompanionHead.
-          window.HobunjiGrehlrForaging?.applyForagingPose?.(c, dt);
+          window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -5908,7 +6007,9 @@
             c._prevAiState = c.state;
           }
 
-          updateCreatureMesh(c, dt, aimAngle);
+          const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
+          if (skipDistantVisualUpdate) continue;
+          updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
           // swing, updateBanditToolMesh leans the avatar body's own rotation
           // into the same bodyYaw the weapon uses (see its own comment),
@@ -5918,11 +6019,11 @@
           // same frame, since it always hard-sets grp.rotation.y from
           // c.groupRot. Also lets feetY read this frame's fresh avatar Y
           // position instead of last frame's.
-          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
+          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, entityDt); }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, entityDt, moving);
         }
       }
 
@@ -6913,7 +7014,7 @@
 
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
+          tickCreatureResources(c, dt);
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
@@ -23047,6 +23148,7 @@
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
+        gameFrameSerial++;
 
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
@@ -23083,7 +23185,9 @@
           pollControllerInput();
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
           window.WildernessChunks?.update(dt);
+          window.PerfProfiler?.end(wildernessChunkPerf);
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
@@ -23110,12 +23214,16 @@
             window.BanditCamps.updateCompanionPerception(dt);
             window.BanditCamps.updateCampBanners(dt);
             window.WildlifeSpawn.updateHostileSpawning(dt);
+            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
             updateHostiles(dt);
+            window.PerfProfiler?.end(hostilePerf);
             window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
             // Ordinary building interiors still have no wild spawns; this
             // branch only keeps any authored interior hostile/corpse active.
+            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
             updateHostiles(dt);
+            window.PerfProfiler?.end(hostilePerf);
             window.CreatureDeath.updateCorpses(dt);
           }
 
@@ -23287,7 +23395,9 @@
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
+          const npcPerf = window.PerfProfiler?.begin('npc walkers'); // Measures cross-area schedule updates plus current-area portrait-life scheduling.
           updateNpcWalkers(dt);
+          window.PerfProfiler?.end(npcPerf);
           window.NpcDrinkInteraction?.update?.(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
@@ -23309,7 +23419,9 @@
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateCombatConeTrail();
           updateChargeAction();
+          const combatPerf = window.PerfProfiler?.begin('combat'); // Measures the modular player/projectile combat update separately from hostile AI.
           window.Combat?.update(dt);
+          window.PerfProfiler?.end(combatPerf);
           updateReticleMesh();
         }
         window.RangedWeapons?.update(dt);

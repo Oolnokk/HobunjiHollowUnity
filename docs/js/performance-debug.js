@@ -164,7 +164,8 @@
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
     const totalGeom = geom.reduce((sum, pair) => sum + pair[1], 0);
     const topGeom = geom[0];
-    const subsystem = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg)[0];
+    const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 5); // Shows enough timed systems on mobile to distinguish hostile, render-adjacent, NPC, combat, and streaming costs.
+    const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
       : 'not scanned yet';
@@ -174,7 +175,10 @@
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
-      subsystem ? `Top timed subsystem: ${subsystem[0]} ${subsystem[1].avg.toFixed(2)} ms` : 'Timed subsystems: none instrumented',
+      subsystems.length
+        ? `Timed:\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms`).join('\n')}`
+        : 'Timed subsystems: none instrumented',
+      wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
     ].join('\n');
   }

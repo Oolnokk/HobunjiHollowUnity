@@ -152,17 +152,27 @@
   function snapshot() {
     let total = 0;
     let sleeping = 0;
+    let totalWildlife = 0; // Reports non-bandit wildlife retained in the logical simulation.
+    let visuallySleepingWildlife = 0; // Reports wildlife currently omitted from rendering/visual-rig work by game.js.
     if (deps?.hostileObjects) {
       for (const c of deps.hostileObjects) {
-        if (!c?.isBandit || c.health <= 0) continue;
-        total++;
-        if (isSleeping(c)) sleeping++;
+        if (!c || c.health <= 0) continue;
+        if (c.isBandit) {
+          total++;
+          if (isSleeping(c)) sleeping++;
+        } else {
+          totalWildlife++;
+          if (c._wildlifeVisualLodHidden) visuallySleepingWildlife++;
+        }
       }
     }
     return {
       totalBandits: total,
       sleepingBandits: sleeping,
       activeBandits: total - sleeping,
+      totalWildlife,
+      visuallySleepingWildlife,
+      visuallyActiveWildlife: totalWildlife - visuallySleepingWildlife,
       sleepTransitions,
       wakeTransitions,
       wakeRadiusTiles: BANDIT_WAKE_RADIUS_TILES,
