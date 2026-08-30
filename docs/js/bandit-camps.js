@@ -640,7 +640,7 @@
     rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
       || window.BanditCombat.randomName?.('captain')
       || 'Bandit Captain';
-    const initialGuardCount = Math.min(2, rec.reserveByRank.grunt);
+    const initialGuardCount = Math.min(3, rec.reserveByRank.grunt);
     let initialGuards = 0;
     for (let i = 0; i < initialGuardCount; i++) {
       const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true);
