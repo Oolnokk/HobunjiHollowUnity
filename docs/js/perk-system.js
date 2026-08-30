@@ -1,11 +1,24 @@
 (() => {
   'use strict';
 
-  // Perk trees for Combat, Alchemy, Foraging, and Fishing. Each skill earns
-  // POINTS_PER_LEVEL perk points per level (see SkillSystem.level, MAX_LEVEL
-  // 20), spent on ranks within that same skill's own tree — a Fishing point
-  // can only buy a Fishing perk, etc. Every perk's actual gameplay effect is
-  // read directly by the system it affects (combat/resource-system.js,
+  // Perk trees for Combat, Alchemy, Foraging, and Fishing. Point entitlement
+  // is derived from the current tree itself rather than stored as a separate
+  // balance: at max skill level, a character can buy about half of that
+  // tree's total purchasable ranks. The entitlement is distributed across
+  // the skill's 20 levels, so adding/removing perk ranks automatically changes
+  // how many points that skill awards over its level curve. Because earned
+  // points are derived from current skill level, existing characters also
+  // receive any newly-earned points automatically when a tree grows — no save
+  // migration or one-time grant is required.
+  //
+  // This is intentionally a bridge while the smaller trees are built out.
+  // Combat currently has 80 purchasable ranks, so its 50% target is 40 points
+  // at level 20 — exactly 2 per level. The intended end state is for the other
+  // trees to grow to similar breadth, naturally converging on that same pacing.
+  //
+  // Points are spent only within that same skill's tree — a Fishing point can
+  // only buy a Fishing perk, etc. Every perk's actual gameplay effect is read
+  // directly by the system it affects (combat/resource-system.js,
   // combat-progression.js, alchemy-system.js, reagent-plants.js,
   // fishing-minigame.js, fishing-events.js, cooking-system.js/game.js's
   // campfire flow, skill-system.js) via rank(skillKey, perkId) — this module
@@ -18,7 +31,7 @@
   // see canAllocateTier()/tierLocked() and TIER_THRESHOLDS below. Once
   // unlocked a perk stays allocatable even if points are later refunded
   // out of an earlier tier.
-  const POINTS_PER_LEVEL = 2;
+  const TEMP_TARGET_TREE_FRACTION = 0.5; // Used to derive current max-level perk entitlement from the total number of ranks that can actually be purchased.
 
   // Indexed by tier-2 (tier 1 is always unlocked, so it has no threshold):
   // tier 2 needs TIER_THRESHOLDS[skillKey][0] points already spent in the
@@ -97,7 +110,30 @@
 
   function rank(skillKey, perkId) { return ranks[skillKey]?.[perkId] || 0; }
 
-  function pointsEarned(skillKey) { return (window.SkillSystem?.level?.(skillKey) || 0) * POINTS_PER_LEVEL; }
+  function totalRankCapacity(skillKey) {
+    return (TREES[skillKey] || []).reduce((sum, perk) => sum + Math.max(0, Math.floor(Number(perk.maxRank) || 0)), 0);
+  }
+
+  function maxPointsForSkill(skillKey) {
+    return Math.ceil(totalRankCapacity(skillKey) * TEMP_TARGET_TREE_FRACTION);
+  }
+
+  function pointEntitlementAtLevel(skillKey, level) {
+    const maxLevel = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Used to distribute this tree's current max-point entitlement across the full skill progression.
+    const safeLevel = Math.max(0, Math.min(maxLevel, Math.floor(Number(level) || 0))); // Used to keep entitlement queries inside the real skill-level range.
+    const maxPoints = maxPointsForSkill(skillKey); // Used so any tree-data change immediately alters both future and retroactive point entitlement.
+    return Math.min(maxPoints, Math.round((safeLevel / maxLevel) * maxPoints));
+  }
+
+  function pointsEarned(skillKey) {
+    return pointEntitlementAtLevel(skillKey, window.SkillSystem?.level?.(skillKey) || 0);
+  }
+
+  function pointsGrantedAtLevel(skillKey, level) {
+    const safeLevel = Math.max(0, Math.floor(Number(level) || 0)); // Used to report the exact number of perk points a particular skill level contributes under the current tree shape.
+    if (!safeLevel) return 0;
+    return Math.max(0, pointEntitlementAtLevel(skillKey, safeLevel) - pointEntitlementAtLevel(skillKey, safeLevel - 1));
+  }
 
   function pointsSpent(skillKey) { return Object.values(ranks[skillKey] || {}).reduce((sum, r) => sum + r, 0); }
 
@@ -221,7 +257,8 @@
   window.PerkSystem = {
     TREES,
     init, restore, serialize,
-    rank, pointsEarned, pointsSpent, pointsAvailable,
+    rank, totalRankCapacity, maxPointsForSkill, pointEntitlementAtLevel, pointsGrantedAtLevel,
+    pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
     render,
