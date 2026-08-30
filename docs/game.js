@@ -6876,11 +6876,34 @@
       // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
       const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
+      const SHOULDER_PET_STENCIL_BIT = 1; // Marks shoulder-pet pixels so explicit body-face overlays cannot redraw elsewhere.
+      const PLAYER_FRONT_STENCIL_BIT = 2; // Marks visible front-face pixels that must block the back-face pet overlay.
+      const PLAYER_BACK_STENCIL_BIT = 4; // Marks visible back-face pixels that must block the front-face pet overlay.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
         if (!material || material.depthWrite === depthWrite) return;
         material.depthWrite = depthWrite;
+        material.needsUpdate = true;
+      }
+      function _setShoulderPetStencilWriter(material, active, stencilBit) {
+        if (!material) return;
+        const changed = material.stencilWrite !== active
+          || (active && (
+            material.stencilRef !== stencilBit
+            || material.stencilWriteMask !== stencilBit
+            || material.stencilFunc !== THREE.AlwaysStencilFunc
+            || material.stencilZPass !== THREE.ReplaceStencilOp
+          ));
+        if (!changed) return;
+        material.stencilWrite = active;
+        material.stencilRef = stencilBit;
+        material.stencilWriteMask = stencilBit;
+        material.stencilFunc = THREE.AlwaysStencilFunc;
+        material.stencilFuncMask = 0xff;
+        material.stencilFail = THREE.KeepStencilOp;
+        material.stencilZFail = THREE.KeepStencilOp;
+        material.stencilZPass = THREE.ReplaceStencilOp;
         material.needsUpdate = true;
       }
       function updatePetLayering(active, pet) {
@@ -6891,6 +6914,7 @@
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
             _setLayerDepthWrite(m, true);
+            _setShoulderPetStencilWriter(m, false, SHOULDER_PET_STENCIL_BIT);
           }
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
             if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
@@ -6900,10 +6924,15 @@
         _petLayeringPet = active ? pet : null;
         _setLayerDepthWrite(_playerAvatarFrontMaterial, !active || s_disableShoulderFrontXray);
         _setLayerDepthWrite(_playerAvatarBackMaterial, !active || s_disableShoulderBackXray);
+        _setShoulderPetStencilWriter(_playerAvatarFrontMaterial, active, PLAYER_FRONT_STENCIL_BIT);
+        _setShoulderPetStencilWriter(_playerAvatarBackMaterial, active, PLAYER_BACK_STENCIL_BIT);
         if (_playerShoulderXrayFrontMesh) _playerShoulderXrayFrontMesh.visible = !!active && s_frontSpriteXrayThroughShoulderPet;
         if (_playerShoulderXrayBackMesh) _playerShoulderXrayBackMesh.visible = !!active && s_backSpriteXrayThroughShoulderPet;
         const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) _setLayerDepthWrite(m, !active);
+        for (const m of petMats) {
+          _setLayerDepthWrite(m, !active);
+          _setShoulderPetStencilWriter(m, active, SHOULDER_PET_STENCIL_BIT);
+        }
         if (active && pet) {
           for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
             if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
@@ -14697,6 +14726,15 @@
           }
           overlayMaterial.depthWrite = false;
           overlayMaterial.depthTest = true; // World geometry still occludes the explicit X-ray overlay.
+          const oppositeBodyStencilBit = facingBack ? PLAYER_FRONT_STENCIL_BIT : PLAYER_BACK_STENCIL_BIT; // Prevents this overlay from crossing the other character face.
+          overlayMaterial.stencilWrite = true;
+          overlayMaterial.stencilRef = SHOULDER_PET_STENCIL_BIT;
+          overlayMaterial.stencilWriteMask = 0;
+          overlayMaterial.stencilFunc = THREE.EqualStencilFunc;
+          overlayMaterial.stencilFuncMask = SHOULDER_PET_STENCIL_BIT | oppositeBodyStencilBit;
+          overlayMaterial.stencilFail = THREE.KeepStencilOp;
+          overlayMaterial.stencilZFail = THREE.KeepStencilOp;
+          overlayMaterial.stencilZPass = THREE.KeepStencilOp;
           overlayMaterial.name = `player_avatar_${facingBack ? 'back' : 'front'}_shoulder_pet_xray_material`;
           const overlayGeometry = sourceMesh.geometry.clone(); // Face-only geometry owned by this overlay.
           let overlayMesh;
