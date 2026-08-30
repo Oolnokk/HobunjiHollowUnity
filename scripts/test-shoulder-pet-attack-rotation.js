@@ -27,8 +27,14 @@ assert.match(gameSource,
   /const oppositeBodyStencilBit = facingBack \? PLAYER_FRONT_STENCIL_BIT : PLAYER_BACK_STENCIL_BIT;[\s\S]{0,700}stencilFuncMask = SHOULDER_PET_STENCIL_BIT \| oppositeBodyStencilBit/,
   'each explicit face overlay is limited to pet pixels not occupied by the opposite character face');
 assert.match(gameSource,
-  /_setShoulderPetStencilWriter\(_playerAvatarFrontMaterial, active, PLAYER_FRONT_STENCIL_BIT\)[\s\S]{0,700}_setShoulderPetStencilWriter\(m, active, SHOULDER_PET_STENCIL_BIT\)/,
+  /_setShoulderPetStencilWriter\(_playerAvatarFrontMaterial, active, PLAYER_FRONT_STENCIL_BIT\)[\s\S]{0,1100}_setShoulderPetStencilWriter\(m, active, SHOULDER_PET_STENCIL_BIT\)/,
   'the player faces and attached pet populate independent stencil bits while shoulder layering is active');
+assert.match(gameSource,
+  /function _shoulderPetXrayFaceIsVisible\(mesh\)[\s\S]{0,500}_shoulderPetXrayCameraLocal\.z \* localNormalZ > 0\.0001/,
+  'explicit face overlays are disabled from edge-on and reverse camera views');
+assert.match(gameSource,
+  /overlayMaterial\.side = THREE\.FrontSide[\s\S]{0,2400}shoulderPetXrayLocalNormalZ = _skinnedBodyPlane && facingBack \? -1 : 1/,
+  'overlay culling and local face-normal metadata cover both skinned and rigid portrait paths');
 assert.match(gameSource,
   /settingDisableShoulderFrontXray[\s\S]{0,900}settingDisableShoulderBackXray/,
   'front and back shoulder x-ray controls remain independently wired');
