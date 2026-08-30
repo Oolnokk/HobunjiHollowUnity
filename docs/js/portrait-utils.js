@@ -595,6 +595,33 @@ function _imageForTint(img, sourceKey, tint) {
   return img;
 }
 
+// Behind-view layers that need to cancel the later whole-canvas mirror (see
+// _cloneBehindLayer) carry a negative sx. Doing that via a canvas transform
+// (translate+scale) at the call site breaks as soon as the draw goes through
+// _drawPortraitLayerTriangle, which calls ctx.setTransform() -- an ABSOLUTE
+// assignment that silently discards whatever transform was active, so the
+// flip vanished and the layer's already-off-center "flipped" position (meant
+// to be interpreted post-translate) got used as an absolute canvas position
+// instead, sending it halfway off the portrait. Pre-flipping the pixel
+// content itself sidesteps that entirely: everything downstream keeps using
+// plain, always-positive positioning math.
+const _flippedImageCache = new WeakMap();
+function _getFlippedImage(img) {
+  let flipped = _flippedImageCache.get(img);
+  if (flipped) return flipped;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const fctx = canvas.getContext('2d');
+  fctx.translate(w, 0);
+  fctx.scale(-1, 1);
+  fctx.drawImage(img, 0, 0, w, h);
+  _flippedImageCache.set(img, canvas);
+  return canvas;
+}
+
 // Canonical body-sprite tint path. renderProfile, procedural hands, rocks, and
 // cliffs all call this same helper so species tint-mode selection and per-pixel
 // recoloring cannot diverge between 2D character art and 3D surface textures.
@@ -753,20 +780,15 @@ function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
-  const drawImg = _imageForTint(img, sourceKey, tint);
+  // A negative sx (a behind-view layer pre-flipped to cancel the later
+  // whole-canvas mirror; see _cloneBehindLayer) is handled by pre-flipping the
+  // pixel content via _getFlippedImage, not a canvas transform -- see its
+  // comment for why a translate+scale here breaks as soon as a caller further
+  // down (e.g. the mesh-warp path) calls ctx.setTransform.
+  let drawImg = _imageForTint(img, sourceKey, tint);
+  if (sx < 0) drawImg = _getFlippedImage(drawImg);
   ctx.filter = 'none';
-  if (sx < 0) {
-    // ctx.drawImage does not mirror on a negative destination width -- unlike
-    // the intentional whole-canvas flip elsewhere (png-plane-avatar.js's
-    // drawVariantCanvas), which uses this same translate+scale technique --
-    // so a negative sx (a behind-view layer pre-flipped to cancel that later
-    // canvas-wide mirror; see _cloneBehindLayer) needs an explicit transform.
-    ctx.translate(cx, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(drawImg, -w / 2, cy - h / 2, w, h);
-  } else {
-    ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
-  }
+  ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
   ctx.restore();
 }
 
@@ -851,20 +873,21 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
-  // See drawPortraitLayer's identical translate+scale flip: ctx.drawImage does
-  // not mirror on a negative destination width, so a negative sx (a behind-view
-  // layer pre-flipped in _cloneBehindLayer) needs an explicit transform here too.
-  // This path is the one hood/overwear/torso layers actually take (they're drawn
-  // via drawBreathingLayers, not drawEmoteLayers), so it needs the same fix.
-  const flip = sx < 0;
-  const layerX = flip ? -w / 2 : cx - w / 2;
+  const layerX = cx - w / 2;
   const layerY = cy - h / 2;
-  const drawImg = _imageForTint(img, sourceKey, tint);
+  // See drawPortraitLayer's identical pre-flip: a negative sx (a behind-view
+  // layer pre-flipped in _cloneBehindLayer) is handled by flipping the pixel
+  // content itself via _getFlippedImage, not a canvas transform -- a transform
+  // here would get silently discarded by _drawPortraitLayerWarped's use of
+  // ctx.setTransform below. This path is the one hood/overwear/torso layers
+  // actually take (they're drawn via drawBreathingLayers, not drawEmoteLayers),
+  // so it needs the same fix.
+  let drawImg = _imageForTint(img, sourceKey, tint);
+  if (sx < 0) drawImg = _getFlippedImage(drawImg);
 
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
-  ctx.save();
-  if (flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); }
   if (!breathingPts && !staticDeform) {
+    ctx.save();
     ctx.filter = 'none';
     ctx.drawImage(drawImg, layerX, layerY, w, h);
     ctx.restore();
@@ -887,6 +910,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
     ]);
   }
 
+  ctx.save();
   ctx.filter = 'none';
   _drawPortraitLayerWarped(ctx, drawImg, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
   ctx.restore();
@@ -1467,15 +1491,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
-      // See drawPortraitLayer's identical translate+scale flip.
-      const flip = sx < 0;
-      const layerX = flip ? -w / 2 : cx - w / 2;
+      // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
       ctx.save();
-      if (flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); }
       ctx.globalAlpha = opacity;
-      const drawImg = _imageForTint(img, sourceKey, tint);
+      let drawImg = _imageForTint(img, sourceKey, tint);
+      if (sx < 0) drawImg = _getFlippedImage(drawImg);
       ctx.filter = 'none';
-      _drawPortraitLayerWarped(ctx, drawImg, layerX, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
       ctx.restore();
     } else if (opacity < 1) {
       ctx.save();
