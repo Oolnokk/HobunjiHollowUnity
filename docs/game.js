@@ -4062,7 +4062,9 @@
         // ratio so the avatar plane preserves the uploaded sprite's aspect.
         const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
         const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, opts.genotype); // Applies Animation Author size-class values in-world.
-        const halfH = modelHeight * sizeScale.y / 2; // Keeps the scaled sprite's feet on the terrain.
+        const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(creatureKey, opts.genotype); // Optional absolute floor-to-origin lift measured in Rigging; null means keep automatic half-height placement.
+        const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
+        const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
@@ -4091,7 +4093,7 @@
         const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
-        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        avatarRef.group.position.set(x / TILE, surfY + groundLift, y / TILE);
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
 
@@ -4110,6 +4112,7 @@
           creatureKey, def, avatarRef, groundShadow,
           x, y, vx: 0, vy: 0,
           halfHeight: halfH,
+          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
           visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
           visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
           visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
@@ -5126,7 +5129,7 @@
         const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
         c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY + meleeLeapY;
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + (c.groundLift ?? c.halfHeight) * scaleY + meleeLeapY;
         if (c._wildlifeVisualLodJustWoke) {
           grp.position.set(tx, ty, tz);
           c._wildlifeVisualLodJustWoke = false;
@@ -22204,7 +22207,7 @@
           // in updateCompanions) — no separate avatarHeight/2 term belongs
           // here, same as playerToolBaseY's own usage elsewhere.
           mountSeatLift = (saddleY != null && posteriorY != null)
-            ? (mountRideEntity.halfHeight + saddleY) - posteriorY
+            ? ((mountRideEntity.groundLift ?? mountRideEntity.halfHeight) + saddleY) - posteriorY
             : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
         }
 
@@ -29117,7 +29120,7 @@
         if (entity.kind === 'creature') {
           const c = entity.creature;
           c.x = st.c * TILE; c.y = st.r * TILE;
-          c.avatarRef.group.position.set(st.c + 0.5, surfY + c.halfHeight, st.r + 0.5);
+          c.avatarRef.group.position.set(st.c + 0.5, surfY + (c.groundLift ?? c.halfHeight), st.r + 0.5);
           c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
           // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
           // real tick (see below) starts an angleDiff of exactly 0 instead

@@ -236,7 +236,7 @@
       return false;
     }
 
-    const riderSeatOffsetY = (Number(seatLift) || 0) - (Number(m.halfHeight) || 0); // Converts the existing floor-relative seat lift into a carrier-center-relative offset.
+    const riderSeatOffsetY = (Number(seatLift) || 0) - (Number(m.groundLift ?? m.halfHeight) || 0); // Converts floor-relative seat lift to carrier-center-relative space using the authored terrain baseline when present.
     const targetY = carrierPosition.y + riderSeatOffsetY; // Keeps the posterior/saddle alignment attached to the mount's rendered vertical lerp too.
     mountRenderSync.active = true;
     mountRenderSync.beforeXzDriftTiles = Math.hypot(riderMesh.position.x - carrierPosition.x, riderMesh.position.z - carrierPosition.z);
@@ -270,7 +270,7 @@
     const col = deps.clamp(Math.floor(m.x / deps.TILE), 0, m.areaCols - 1);
     const row = deps.clamp(Math.floor(m.y / deps.TILE), 0, m.areaRows - 1);
     const surfY = m.areaGrid[row]?.[col] ? deps.tileSurfaceYInArea(m.areaGrid[row][col], m.areaId) : 0;
-    m.avatarRef.group.position.set(m.x / deps.TILE, surfY + m.halfHeight * (m.scaleY ?? 1), m.y / deps.TILE);
+    m.avatarRef.group.position.set(m.x / deps.TILE, surfY + (m.groundLift ?? m.halfHeight) * (m.scaleY ?? 1), m.y / deps.TILE);
     newScene.add(m.avatarRef.group);
     if (m.groundShadow) {
       m.groundShadow.position.set(m.x / deps.TILE, surfY + deps.characterGroundShadowSurfaceOffset(), m.y / deps.TILE);
