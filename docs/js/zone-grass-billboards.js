@@ -194,7 +194,9 @@
     for (const patch of richPatches) {
       for (const t of patch.tiles) {
         if (t.x < range.colStart || t.x >= range.colEnd || t.y < range.rowStart || t.y >= range.rowEnd) continue;
-        const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * deps.PLATEAU_UNIT;
+        const liveTile = zGrid?.[t.y]?.[t.x]; // Used to suppress stale rich-patch grass after runtime terrain edits.
+        if (!liveTile || ![deps.TileType.GRASS, deps.TileType.SHRUB, deps.TileType.WEEDS].includes(liveTile.type)) continue;
+        const tierY = (liveTile.elevTier || 0) * deps.PLATEAU_UNIT;
         tiles.push({
           col: t.x,
           row: t.y,

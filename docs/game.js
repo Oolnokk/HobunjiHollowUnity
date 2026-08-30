@@ -9121,7 +9121,7 @@
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
               tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid, { includeCutWalls: true });
             const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -9262,6 +9262,10 @@
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
           mesh.userData.wildernessChunkOwnsGeometry = true;
+          if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
+            mesh.userData.wildernessGlobalPathGround = true;
+            pathNet.bindGlobalGroundMesh?.(mesh);
+          }
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
           meshes.push(mesh);
@@ -9396,7 +9400,7 @@
         // once and keep it outside streamed chunks. Ordinary floor tiles,
         // removable rocks, trees, ramps, water and grass are built by the
         // 16x16 chunk factory below.
-        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Reused by every chunk for seam-safe path exclusions.
+        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Initial route apron; info.pathNet below becomes its runtime-mutable owner.
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
           includeTiles: false,
           includeGlobalPath: true,
@@ -9455,7 +9459,7 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null };
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
@@ -9470,7 +9474,7 @@
             bounds,
             includeGlobalPath: false,
             resetState: false,
-            pathNet: zonePathNet,
+            pathNet: info.pathNet,
           }); // Chunk-owned ground, rocks and vegetation.
           const featureMeshes = [
             ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
@@ -11462,11 +11466,24 @@
             // override), must NOT stomp the ring/interior staking already written
             // above — only default to flat grass if no caller has touched this
             // world cell yet.
+            const isCarvedPlateauOverride = t => !!(t?.plateau && CARVED_TILE_TYPES.has(t.type)); // Used below so authored/generated cuts survive the plateau footprint fold.
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
               const key = `${c + offsetC},${r + offsetR}`;
-              if (!t || t.plateau) {
+              if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
                 if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+                continue;
+              }
+              if (isCarvedPlateauOverride(t)) {
+                // Generated waterways retain their plateau group so they still
+                // participate in the mesa footprint. They are also real surface
+                // overrides, though: discarding their type here turns the mesa's
+                // continuous grass lid back on over rivers, waterfalls, and dug
+                // holes. Preserve the already-staked tier/ring flags and replace
+                // only the surface type; buildPlateauMesa then omits this cell's
+                // lid while _buildZoneFloorMeshes supplies its carved geometry.
+                const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false };
+                outTiles.set(key, { ...staked, type: t.type });
                 continue;
               }
               let type = t.type || 'grass';
@@ -12713,12 +12730,20 @@
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
         if (zi.chunkController && window.WildernessChunks) {
+          // The route network's grass apron is zone-wide, but its index ranges
+          // are recorded per tile when it is first built. Toggle only this
+          // edited tile's handful of triangles instead of regenerating the
+          // entire route heightfield (which previously froze large wilderness
+          // maps for several seconds). Filling/smoothing restores the original
+          // indices through the same path.
+          const routeApronUpdated = zi.pathNet?.refreshTile?.(col, row) || false; // Reported in the mobile-visible debug log below.
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
-          window.WildernessChunks.rebuildZone(mapId, col, row);
+          const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
           rebuildZoneMesaMeshes(mapId);
           window.WildTreasure.syncZoneInteractivity(mapId);
+          debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
           return;
         }
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
@@ -18990,10 +19015,14 @@
         const CELLS = 6, STEP = 1 / CELLS;
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
-        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
+        // The path mesh owns a broad grass apron around the route, so every
+        // surface with its own relief/water geometry must punch through that
+        // apron too. Reuse the mesa-lid carve set to keep waterfalls (formerly
+        // omitted here) in parity with rivers/streams/trenches/raised beds;
+        // ramps and paddies likewise own their complete surface.
+        const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
-        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
 
         // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
         // average their path-membership so the mask starts as a clean 0 /
@@ -19082,10 +19111,10 @@
           for (let ci = 0; ci < GW-1; ci++) {
             const tci = Math.min(bw-1, Math.floor(ci / CELLS));
             const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
-            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
             const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
-            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+            const target = isPath ? pathIdx : grassIdx;
+            target.push(v00, v01, v11, v00, v11, v10);
           }
 
         const vertCount = GW * GH;
@@ -19103,12 +19132,69 @@
           return g;
         };
 
-        return {
+        const network = {
           pathGeo: makeGeo(pathIdx),
           grassGeo: makeGeo(grassIdx),
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
           isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+          globalGroundMesh: null,
+          globalGroundGeometry: null,
+          originalGroundIndex: null,
+          renderedTileIndexRanges: new Map(),
+          bindGlobalGroundMesh(mesh) {
+            this.globalGroundMesh = mesh;
+            // TerrainRenderChunks replaces and spatially reorders large
+            // terrain index buffers immediately before their first render.
+            // Bind only after that handoff, so runtime digs edit the index
+            // buffer the GPU-facing child meshes actually share.
+            mesh.userData.onTerrainGeometryReady = geometry => this.bindRenderedGroundGeometry(geometry);
+            if (!window.TerrainRenderChunks?.installed) this.bindRenderedGroundGeometry(mesh.geometry);
+          },
+          bindRenderedGroundGeometry(geometry) {
+            const position = geometry?.getAttribute?.('position');
+            const indexAttr = geometry?.index;
+            if (!position || !indexAttr) return false;
+            const ranges = new Map(); // Maps a world tile to triangle starts in the final rendered index order.
+            for (let offset = 0; offset + 2 < indexAttr.count; offset += 3) {
+              const a = indexAttr.getX(offset), b = indexAttr.getX(offset + 1), c = indexAttr.getX(offset + 2);
+              const tileC = Math.floor((position.getX(a) + position.getX(b) + position.getX(c)) / 3);
+              const tileR = Math.floor((position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3);
+              if (tileC < minC || tileC > maxC || tileR < minR || tileR > maxR) continue;
+              const key = `${tileC},${tileR}`;
+              let starts = ranges.get(key);
+              if (!starts) ranges.set(key, starts = []);
+              starts.push(offset);
+            }
+            this.globalGroundGeometry = geometry;
+            this.originalGroundIndex = indexAttr.array.slice();
+            this.renderedTileIndexRanges = ranges;
+            // Collapse authored/generated basins before the first real draw.
+            // Their original triangles remain available for fill/redig.
+            for (const key of ranges.keys()) {
+              const [c, r] = key.split(',').map(Number);
+              if (EXCLUDED.has(srcGrid[r]?.[c]?.type)) this.refreshTile(c, r);
+            }
+            return true;
+          },
+          refreshTile(c, r) {
+            const indexAttr = this.globalGroundGeometry?.index;
+            const original = this.originalGroundIndex;
+            const starts = this.renderedTileIndexRanges.get(`${c},${r}`);
+            if (!indexAttr || !original || !starts) return false;
+            const excluded = EXCLUDED.has(srcGrid[r]?.[c]?.type);
+            for (const offset of starts) {
+              if (excluded) {
+                const collapsedVertex = original[offset];
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = collapsedVertex;
+              } else {
+                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = original[offset + i];
+              }
+            }
+            indexAttr.needsUpdate = true;
+            return true;
+          },
         };
+        return network;
       }
 
       // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
@@ -19499,7 +19585,7 @@
       //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
       //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
       //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
-      function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
+      function buildTerrainTileGeo(col, row, type, srcGrid = grid, options = {}) {
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
         // Trench is a dug pit meant to mirror the raised bed's wide flat top
@@ -19514,26 +19600,23 @@
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
         // A dug TRENCH is a deliberate, hand-cut square pit — full depth to
-        // every edge, not a natural waterway that should taper into its
-        // banks. Force every side/diagonal "open" for it regardless of the
-        // actual neighbor, so a lone dug tile still reads as a real cut
-        // square instead of shrinking to a small dirt patch surrounded by
-        // grass sloping down to it (the old behavior, shared with RIVER/
-        // STREAM/WATERFALL, which DO still want that natural blend/taper).
-        // Adjacent trench tiles were already "open" toward each other via
-        // sameWaterway (a === b) — this only changes trench-vs-non-trench
-        // edges, i.e. a chain's outer boundary and any isolated tile.
+        // every edge. Wilderness waterways opt into the same basin profile
+        // through includeCutWalls, while town waterways retain their softer
+        // bank blend. Adjacent basin cells omit their internal walls below,
+        // leaving one continuous bottom with walls only along the outer bank.
         const isTrench = type === TileType.TRENCH;
-        const openN = isTrench || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
-        const openS = isTrench || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
-        const openW = isTrench || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
-        const openE = isTrench || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
+        const isCutWaterBasin = options.includeCutWalls && WATERWAY_TYPES.has(type); // Gives wilderness water the same full-depth basin treatment as its trenches.
+        const isCutBasin = isTrench || isCutWaterBasin;
+        const openN = isCutBasin || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
+        const openS = isCutBasin || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
+        const openW = isCutBasin || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
+        const openE = isCutBasin || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
 
         // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = isTrench || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
-        const diagNE = isTrench || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
-        const diagSW = isTrench || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
-        const diagSE = isTrench || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
+        const diagNW = isCutBasin || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
+        const diagNE = isCutBasin || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
+        const diagSW = isCutBasin || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
+        const diagSE = isCutBasin || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -19582,6 +19665,45 @@
             uvs.push(col + vi * STEP, row + vj * STEP);
           }
 
+        // Farm ground uses individual box slabs, whose exposed side faces
+        // naturally wall an adjacent trench. Wilderness route/mesa surfaces
+        // are top-only heightfields, so removing their grass quad would expose
+        // an empty vertical gap around the trench. Add segmented dirt cut walls
+        // to the trench geometry itself for that renderer. Ordered samples keep
+        // each quad front-facing toward the surrounding ground and share edge
+        // vertices so normals remain smooth along the wall.
+        const wallIdx = [];
+        if (isDepression && options.includeCutWalls) {
+          const sharesBasin = neighborType => isTrench
+            ? neighborType === TileType.TRENCH
+            : WATERWAY_TYPES.has(neighborType);
+          const appendWall = (samples, horizontal) => {
+            const first = positions.length / 3;
+            for (let i = 0; i < samples.length; i++) {
+              const { vi, vj } = samples[i];
+              const x = vi * STEP - 0.5, z = vj * STEP - 0.5;
+              const worldX = col + vi * STEP, worldZ = row + vj * STEP;
+              const bottomY = Y[vj * VERTS + vi];
+              const topY = seamDisp(worldX, worldZ);
+              const along = horizontal ? worldX : worldZ;
+              positions.push(x, topY, z, x, bottomY, z);
+              uvs.push(along, topY, along, bottomY);
+            }
+            for (let i = 0; i < samples.length - 1; i++) {
+              const top0 = first + i * 2, bottom0 = top0 + 1;
+              const top1 = top0 + 2, bottom1 = top0 + 3;
+              // Faces point into the basin, where the camera sees them from
+              // above. The opposite winding points out into the surrounding
+              // solid ground and gets removed by normal backface culling.
+              wallIdx.push(top0, bottom1, bottom0, top0, top1, bottom1);
+            }
+          };
+          if (!sharesBasin(srcGrid[row - 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
+          if (!sharesBasin(srcGrid[row + 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
+          if (!sharesBasin(srcGrid[row]?.[col - 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
+          if (!sharesBasin(srcGrid[row]?.[col + 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
+        }
+
         // Split cells: dirt where significantly depressed (trench) or elevated (raised);
         // grass on flat edge cells that blend back to ground level.
         const DIRT_THRESH = 0.05;
@@ -19599,6 +19721,7 @@
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
         const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+        dirtIdx.push(...wallIdx);
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
