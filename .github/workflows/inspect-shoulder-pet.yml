@@ -23,5 +23,7 @@ jobs:
           node scripts/test-shoulder-pet-attack-rotation.js
           git diff --check
           git add docs/js/png-plane-avatar.js docs/game.js scripts/test-shoulder-pet-attack-rotation.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Pin shoulder pets to live authored shoulder pixels"
           git push origin HEAD:fix/shoulder-pet-follow-authored-pixel
