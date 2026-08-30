@@ -5387,7 +5387,22 @@
 
         if (stageName === 'evasiveOrbit') {
           const orbitRadiusPx = def.attackRangePx * EVASIVE_ORBIT_RADIUS_MUL;
-          const radialSign = dist > orbitRadiusPx ? 1 : -1; // 1: close the gap, -1: back off
+          // The 20%-weighted radial pull below is exactly what keeps this
+          // orbit settled right at orbitRadiusPx, so a single shared
+          // threshold here flips sign almost every frame as dist hovers
+          // around that boundary — and since the body-facing decision
+          // further down depends on radialSign through blendAngle, every
+          // flip snapped the whole body between two very different
+          // orientations, reading as a violent see-saw. Sticky/hysteresis
+          // state (only flips once dist clearly crosses OUT of a dead zone
+          // around the boundary, not just past it) is the same anti-chatter
+          // shape LEASH_REENTER_FRAC already uses above for the identical
+          // "settled right on its own threshold" problem.
+          const EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC = 0.15;
+          if (st.radialSign === undefined) st.radialSign = dist > orbitRadiusPx ? 1 : -1;
+          if (st.radialSign > 0 && dist < orbitRadiusPx * (1 - EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = -1;
+          else if (st.radialSign < 0 && dist > orbitRadiusPx * (1 + EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = 1;
+          const radialSign = st.radialSign; // 1: close the gap, -1: back off
           const tangentAngle = towardAngle + st.orbitSign * Math.PI / 2;
           const blendAngle = Math.atan2(
             Math.sin(tangentAngle) * 0.8 + Math.sin(towardAngle) * radialSign * 0.2,
