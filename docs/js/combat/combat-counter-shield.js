@@ -35,6 +35,31 @@
 
   function now() { return performance.now() / 1000; }
 
+  function findPlayerToolHolder(deps) {
+    const scene = deps?.getActiveScene?.(); // Authoritative live scene already supplied to Combat.init by game.js.
+    if (!scene?.children) return null;
+    for (const child of scene.children) {
+      if (!child || child.name === 'banditToolHolder') continue; // Bandit weapons use an explicit name; never let an enemy satisfy the player lookup.
+      if (child.children?.some(mesh => !!mesh?.userData?.toolPlane)) return child; // The player's existing toolHolder directly owns the active makeToolPlaneMesh group.
+    }
+    return null;
+  }
+
+  // game.js currently injects getActiveScene into Combat but not the otherwise
+  // closure-private player toolHolder. Install that missing getter at the
+  // Combat.init boundary so every heavy-attack presentation path can reuse
+  // the same live holder updateToolMesh already animates.
+  const previousCombatInit = window.Combat.init; // Preserves any earlier init wrapper while adding only the missing presentation dependency.
+  if (typeof previousCombatInit === 'function') {
+    window.Combat.init = function initWithPlayerToolHolder(injectedDeps) {
+      if (injectedDeps && typeof injectedDeps.toolHolder !== 'function') {
+        injectedDeps.toolHolder = () => findPlayerToolHolder(injectedDeps);
+        injectedDeps.toolHolderDebugSource = 'active-scene-toolPlane-scan';
+      }
+      return previousCombatInit(injectedDeps);
+    };
+  }
+
   function register() {
     let active = false;
     let lastCounterAt = -99;
@@ -91,11 +116,15 @@
     function getPresentationSnapshot() {
       const heavyEntries = window.Combat.heavyTelegraphVisuals?.snapshot?.() || []; // Reads the shared renderer's live player-side attachment/visibility state.
       const heavyRenderer = heavyEntries.find(entry => entry.actor === 'player') || null; // Narrows the shared renderer snapshot to Counter Shield's player entry.
+      const holder = window.Combat.deps?.toolHolder?.() || null; // Resolves the exact same holder the heavy renderer will attach to this frame.
       return {
         active,
         sceneBridged: presentationSceneBridged,
         sceneReady: presentationSceneReady,
-        holderReady: !!window.Combat.deps?.toolHolder?.(),
+        holderReady: !!holder,
+        holderSource: window.Combat.deps?.toolHolderDebugSource || 'combat-init',
+        holderName: holder?.name || null,
+        holderChildren: holder?.children?.length ?? 0,
         heavyRenderer,
       };
     }
@@ -260,6 +289,7 @@
     window.Combat.counterShieldPlayerPresentation = {
       snapshot: getPresentationSnapshot,
       logSnapshot: (reason = 'manual') => logPresentationSnapshot(reason, true),
+      resolveToolHolder: () => window.Combat.deps?.toolHolder?.() || null,
     };
   }
 
