@@ -97,12 +97,29 @@
   // wildlife-spawn.js's private functions. Range-capped, unlike the
   // original: a forage roll should only ever consider genuinely nearby
   // water, not the globally closest tile across a 200x200 zone.
-  function nearestWaterTile(zoneId, col, row) {
+  //
+  // _waterTileCache holds just the RIVER/STREAM subset per zone (usually a
+  // thin ribbon, a tiny fraction of the zone) so a forage roll never walks
+  // every tile in a large zone (up to tens of thousands) just to find the
+  // handful that are actually water. Keyed off the zone's own tiles array
+  // reference, not zoneId alone — a Tothal Shift regenerates a zone under
+  // a brand-new tiles array (see game.js's _zoneLayouts.set), so a stale
+  // reference is exactly what invalidates this automatically.
+  const _waterTileCache = new Map(); // zoneId -> { tilesRef, waterTiles }
+  function waterTilesFor(zoneId) {
     const tiles = deps.zoneLayouts.get(zoneId)?.tiles;
     if (!tiles?.length) return null;
+    const cached = _waterTileCache.get(zoneId);
+    if (cached && cached.tilesRef === tiles) return cached.waterTiles;
+    const waterTiles = tiles.filter(t => t.type === deps.TileType.RIVER || t.type === deps.TileType.STREAM);
+    _waterTileCache.set(zoneId, { tilesRef: tiles, waterTiles });
+    return waterTiles;
+  }
+  function nearestWaterTile(zoneId, col, row) {
+    const waterTiles = waterTilesFor(zoneId);
+    if (!waterTiles?.length) return null;
     let best = null, bestD = WATER_SEARCH_RANGE_TILES;
-    for (const t of tiles) {
-      if (t.type !== deps.TileType.RIVER && t.type !== deps.TileType.STREAM) continue;
+    for (const t of waterTiles) {
       const d = Math.hypot(t.c - col, t.r - row);
       if (d < bestD) { bestD = d; best = { x: t.c, y: t.r }; }
     }
