@@ -25,7 +25,12 @@
   let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
 
   const FIELD_COLOR = 0x75d9ff;
-  const FIELD_RADIUS = 0.724;
+  const GLOW_LAYERS = [
+    { scale: 1.025, opacity: 0.72, pulse: 0.05 },
+    { scale: 1.065, opacity: 0.44, pulse: 0.08 },
+    { scale: 1.125, opacity: 0.25, pulse: 0.11 },
+    { scale: 1.205, opacity: 0.12, pulse: 0.15 },
+  ];
 
   function now() { return performance.now() / 1000; }
 
@@ -77,195 +82,7 @@
     window.__farmLog?.('[heavy-telegraph] iterable hostile collection compatibility tick installed.', 'info', 'combat');
   }
 
-  let cachedArchIconKey = '';
-  let cachedArchIconTexture = null;
-  let pendingArchIconKey = '';
   const silhouetteByHolder = new Map();
-
-  function liveCounterShieldButton() {
-    const labeled = Array.from(document.querySelectorAll('.abt-label'))
-      .find(label => /counter\s*shield/i.test(label.textContent || ''))
-      ?.closest('button');
-    return labeled || document.getElementById('btnAction2') || null;
-  }
-
-  function cssBackgroundUrl(el) {
-    if (!el || typeof getComputedStyle !== 'function') return '';
-    const value = getComputedStyle(el).backgroundImage || '';
-    const match = value.match(/url\((?:"|')?(.*?)(?:"|')?\)/i);
-    return match?.[1] || '';
-  }
-
-  function resolveArchIconDescriptor() {
-    const button = liveCounterShieldButton();
-    if (button) {
-      const iconEl = button.querySelector('.abt-icon') || button;
-      const img = (iconEl.matches?.('img') ? iconEl : iconEl.querySelector?.('img'))
-        || button.querySelector('img');
-      const src = img?.currentSrc || img?.src || img?.getAttribute?.('src') || '';
-      if (src) return { key: `image:${src}`, kind: 'image', value: src };
-
-      const styledCandidates = [iconEl, ...Array.from(button.querySelectorAll('*'))];
-      for (const candidate of styledCandidates) {
-        const bg = cssBackgroundUrl(candidate);
-        if (bg) return { key: `image:${bg}`, kind: 'image', value: bg };
-      }
-
-      const svg = (iconEl.matches?.('svg') ? iconEl : iconEl.querySelector?.('svg'))
-        || button.querySelector('svg');
-      if (svg) {
-        const markup = new XMLSerializer().serializeToString(svg);
-        return { key: `svg:${markup}`, kind: 'svg', value: markup };
-      }
-
-      if (iconEl !== button) {
-        const clone = iconEl.cloneNode(true);
-        clone.querySelectorAll?.('.alcohol-swig-badge,.abt-key,.abt-label').forEach(node => node.remove());
-        const text = (clone.textContent || '').trim();
-        if (text) return { key: `glyph:${text}`, kind: 'glyph', value: text };
-      }
-    }
-
-    const authored = window.Combat.abilities?.get?.('counterShield')?.icon;
-    if (authored) {
-      const text = String(authored);
-      if (/^(?:https?:|data:|\.?\/)/i.test(text)) return { key: `image:${text}`, kind: 'image', value: text };
-      return { key: `glyph:${text}`, kind: 'glyph', value: text };
-    }
-    return { key: 'glyph:🛡️', kind: 'glyph', value: '🛡️' };
-  }
-
-  function prepareTexture(texture) {
-    if (!texture) return texture;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    if ('encoding' in texture && THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
-    texture.needsUpdate = true;
-    return texture;
-  }
-
-  function makeGlyphTexture(glyph) {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 256, 256);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 152px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
-    ctx.shadowColor = 'rgba(117,217,255,.95)';
-    ctx.shadowBlur = 18;
-    ctx.globalAlpha = 0.94;
-    ctx.fillText(glyph || '🛡️', 128, 132);
-    return prepareTexture(new THREE.CanvasTexture(canvas));
-  }
-
-  function installArchTexture(key, texture) {
-    if (!texture || key !== pendingArchIconKey) {
-      texture?.dispose?.();
-      return;
-    }
-    const old = cachedArchIconTexture;
-    cachedArchIconKey = key;
-    cachedArchIconTexture = prepareTexture(texture);
-    pendingArchIconKey = '';
-    if (old && old !== cachedArchIconTexture) old.dispose?.();
-  }
-
-  function ensureArchIconTexture() {
-    const descriptor = resolveArchIconDescriptor();
-    if (descriptor.key === cachedArchIconKey && cachedArchIconTexture) return cachedArchIconTexture;
-    if (descriptor.key === pendingArchIconKey) return cachedArchIconTexture;
-
-    if (descriptor.kind === 'glyph') {
-      pendingArchIconKey = descriptor.key;
-      installArchTexture(descriptor.key, makeGlyphTexture(descriptor.value));
-      return cachedArchIconTexture;
-    }
-
-    let src = descriptor.value;
-    if (descriptor.kind === 'svg') {
-      src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(descriptor.value)}`;
-    }
-    pendingArchIconKey = descriptor.key;
-    new THREE.TextureLoader().load(
-      src,
-      texture => installArchTexture(descriptor.key, texture),
-      undefined,
-      () => {
-        if (pendingArchIconKey !== descriptor.key) return;
-        pendingArchIconKey = 'glyph:🛡️';
-        installArchTexture('glyph:🛡️', makeGlyphTexture('🛡️'));
-      },
-    );
-    return cachedArchIconTexture;
-  }
-
-  function makeProjectionHemisphereGeometry(radius, rows = 14, columns = 24) {
-    const vertices = [];
-    const uvs = [];
-    const indices = [];
-    for (let row = 0; row <= rows; row++) {
-      const v = row / rows;
-      const elevation = -Math.PI / 2 + Math.PI * v;
-      const cosElevation = Math.cos(elevation);
-      for (let column = 0; column <= columns; column++) {
-        const u = column / columns;
-        const azimuth = -Math.PI / 2 + Math.PI * u;
-        vertices.push(
-          radius * cosElevation * Math.cos(azimuth),
-          radius * Math.sin(elevation),
-          radius * cosElevation * Math.sin(azimuth),
-        );
-        uvs.push(u, v);
-      }
-    }
-    for (let row = 0; row < rows; row++) {
-      for (let column = 0; column < columns; column++) {
-        const a = row * (columns + 1) + column;
-        const b = a + columns + 1;
-        indices.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    return geometry;
-  }
-
-  const archProjectionGeometry = makeProjectionHemisphereGeometry(FIELD_RADIUS);
-
-  function ensureFieldArchProjection(fieldGroup) {
-    if (fieldGroup.userData?.icon) fieldGroup.userData.icon.visible = false;
-    let projection = fieldGroup.children.find(child => child?.userData?.counterShieldArchProjection);
-    if (!projection) {
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.56,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.NormalBlending,
-        map: ensureArchIconTexture(),
-      });
-      projection = new THREE.Mesh(archProjectionGeometry, material);
-      projection.name = 'counter-shield-arch-icon-projection';
-      projection.userData.counterShieldArchProjection = true;
-      projection.scale.setScalar(1.018);
-      projection.renderOrder = 20;
-      fieldGroup.add(projection);
-    }
-    const texture = ensureArchIconTexture();
-    if (texture && projection.material.map !== texture) {
-      projection.material.map = texture;
-      projection.material.needsUpdate = true;
-    }
-    projection.visible = fieldGroup.visible;
-    projection.material.opacity = 0.52 + Math.sin(performance.now() / 1000 * 4.2) * 0.055;
-    return projection;
-  }
 
   function toolPlaneSources(holder) {
     const roots = (holder?.children || []).filter(child =>
@@ -353,18 +170,17 @@
     const layers = [];
     sources.forEach((source, sourceIndex) => {
       const texture = sourceTexture(source);
-      [
-        { scale: 1.035, opacity: 0.52 },
-        { scale: 1.085, opacity: 0.20 },
-      ].forEach((spec, layerIndex) => {
+      GLOW_LAYERS.forEach((spec, layerIndex) => {
         const material = makeSilhouetteMaterial(texture, spec.opacity);
         const mesh = new THREE.Mesh(source.geometry, material);
         mesh.name = 'counter-shield-weapon-silhouette-glow';
         mesh.userData.counterShieldSilhouetteGlow = true;
         mesh.userData.baseOpacity = spec.opacity;
         mesh.userData.baseScaleFactor = spec.scale;
-        mesh.userData.phase = sourceIndex * 0.53 + layerIndex * 1.17;
-        mesh.renderOrder = Math.max(20, Number(source.renderOrder) + 12 + layerIndex);
+        mesh.userData.pulseAmount = spec.pulse;
+        mesh.userData.layerIndex = layerIndex;
+        mesh.userData.phase = sourceIndex * 0.47 + layerIndex * 0.91;
+        mesh.renderOrder = Number(source.renderOrder || 0) - 8 - layerIndex;
         source.parent?.add(mesh);
         layers.push({ source, mesh });
       });
@@ -393,16 +209,15 @@
       if (mesh.parent !== source.parent) source.parent.add(mesh);
       mesh.position.copy(source.position);
       mesh.quaternion.copy(source.quaternion);
-      mesh.scale.copy(source.scale).multiplyScalar(
-        mesh.userData.baseScaleFactor * (1 + Math.sin(timeS * 5.0 + mesh.userData.phase) * 0.025)
-      );
+      const pulse = 1 + Math.sin(timeS * 5.2 + mesh.userData.phase) * mesh.userData.pulseAmount;
+      mesh.scale.copy(source.scale).multiplyScalar(mesh.userData.baseScaleFactor * pulse);
+      mesh.renderOrder = Number(source.renderOrder || 0) - 8 - Number(mesh.userData.layerIndex || 0);
       mesh.visible = source.visible !== false;
+      const opacityPulse = 0.90 + Math.sin(timeS * 4.8 + mesh.userData.phase) * 0.10;
       if (mesh.material.uniforms?.glowOpacity) {
-        mesh.material.uniforms.glowOpacity.value =
-          mesh.userData.baseOpacity * (0.90 + Math.sin(timeS * 4.6 + mesh.userData.phase) * 0.10);
+        mesh.material.uniforms.glowOpacity.value = mesh.userData.baseOpacity * opacityPulse;
       } else {
-        mesh.material.opacity =
-          mesh.userData.baseOpacity * (0.90 + Math.sin(timeS * 4.6 + mesh.userData.phase) * 0.10);
+        mesh.material.opacity = mesh.userData.baseOpacity * opacityPulse;
       }
     }
     return entry;
@@ -416,9 +231,24 @@
     return found;
   }
 
+  function hideCounterShieldFields(scene) {
+    let hidden = 0;
+    scene?.traverse?.(obj => {
+      if (obj?.name !== 'counter-shield-field') return;
+      if (obj.visible !== false) hidden++;
+      obj.visible = false;
+    });
+    return hidden;
+  }
+
   function syncAuthoredCounterShieldVisuals() {
     const scene = window.Combat.deps?.getActiveScene?.();
     if (!scene?.isScene) return;
+
+    // Counter Shield is intentionally weapon-only now. The shared renderer may
+    // still own a field object for compatibility with enemy/player state, but
+    // that object and every old icon/projection child remain fully hidden.
+    hideCounterShieldFields(scene);
 
     const visibleGlowGroups = collectNamedVisible(scene, 'counter-shield-weapon-glow');
     const liveHolders = new Set();
@@ -436,26 +266,27 @@
       disposeSilhouetteEntry(entry);
       silhouetteByHolder.delete(holder);
     }
-
-    const visibleFields = collectNamedVisible(scene, 'counter-shield-field');
-    for (const field of visibleFields) ensureFieldArchProjection(field);
   }
 
   function authoredVisualSnapshot() {
     const scene = window.Combat.deps?.getActiveScene?.();
-    const fields = collectNamedVisible(scene, 'counter-shield-field');
-    let projectionCount = 0;
-    for (const field of fields) {
-      projectionCount += field.children.filter(child => child?.userData?.counterShieldArchProjection).length;
-    }
+    let fieldObjects = 0;
+    let visibleFieldObjects = 0;
+    scene?.traverse?.(obj => {
+      if (obj?.name !== 'counter-shield-field') return;
+      fieldObjects++;
+      if (obj.visible !== false) visibleFieldObjects++;
+    });
     let glowMeshCount = 0;
     for (const entry of silhouetteByHolder.values()) glowMeshCount += entry.layers.length;
     return {
-      archIconKey: cachedArchIconKey || pendingArchIconKey || null,
-      archTextureReady: !!cachedArchIconTexture,
-      curvedProjectionCount: projectionCount,
+      presentation: 'weapon-glow-only',
+      fieldObjects,
+      visibleFieldObjects,
       silhouetteHolders: silhouetteByHolder.size,
       silhouetteGlowMeshes: glowMeshCount,
+      glowLayersPerWeaponMesh: GLOW_LAYERS.length,
+      glowLayering: 'beneath-weapon',
     };
   }
 
