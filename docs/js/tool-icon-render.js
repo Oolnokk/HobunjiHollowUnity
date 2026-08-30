@@ -125,7 +125,7 @@
 (() => {
   'use strict';
   if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
-  const src = 'js/item-arch-sticky-category-heading.js?v=20260830c'; // Used to cache-bust the mobile continuity + Potion Select parity adapter independently.
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830d'; // Used to cache-bust the mobile continuity + Potion Select parity adapter independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
     return;
