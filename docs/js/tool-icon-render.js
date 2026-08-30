@@ -96,3 +96,22 @@
   script.onerror = () => window.__farmLog?.('[action-arch-slot-colors] module failed to load', 'error');
   document.head.appendChild(script);
 })();
+
+// Item-selection category colors are a separate presentation layer. They read
+// the existing ITEM_DEFS.cat metadata injected into other item systems and only
+// decorate the transient item arc; tool/action selection behavior stays intact.
+(() => {
+  'use strict';
+  if (window.ItemArchCategoryColors?.installed || document.querySelector('script[data-item-arch-category-colors]')) return;
+  const src = 'js/item-arch-category-colors.js?v=20260830a'; // Used to cache-bust the category-color presentation module independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-category-colors="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load the category-color module when this bootstrap runs after parsing.
+  script.dataset.itemArchCategoryColors = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-category-colors] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
