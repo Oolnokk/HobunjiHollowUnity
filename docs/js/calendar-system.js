@@ -61,6 +61,8 @@
   let _timePassageLock = null; // CharacterActionLocks handle held while the open modal/transition owns player input.
   let _passagePreviewTimer = 0; // Interval id used to keep the modal's current-time line live while open.
   let _syncingSeatedWait = false; // MutationObserver recursion guard while injecting Action 2's seated Wait button.
+  let _seatedWaitPointerId = null; // Mouse pointer currently armed to open seated Wait on release.
+  let _seatedWaitContextMenuTimer = 0; // Clears the short browser-context-menu suppression window after a seated right-click.
   const _interceptedDesktopHolds = { // Used to preserve E/Q tap-vs-hold selection behavior while Sleep/Wait intercept those keys.
     e: { down: false, held: false, timer: 0, kind: 'sleep', arc: 'tool' },
     q: { down: false, held: false, timer: 0, kind: 'wait', arc: 'item' },
@@ -77,6 +79,7 @@
     installNaturalTimeScale();
     bindMonthNav();
     installTimePassageRuntime();
+    debugLog('Sleep/Wait tap actions trigger on input release; hold selectors remain press-driven');
     debugLog(`calendar epoch ready: game day 1 = Waxingheat 1, ${FIRST_AOT_YEAR} AoT; Firstrise 1 begins each civil year`);
     debugLog(`Tothal cycle ${yearNumber()} = ${aotYearNumber()} AoT; deterministic y${yearNumber()} seed preserved`);
     debugLog(`natural clock target: ${TARGET_DAY_LENGTH_SECONDS}s per represented day (${NATURAL_TIME_WRITE_SCALE.toFixed(3)}x previous clock rate)`);
@@ -741,6 +744,9 @@
       state.held = false;
       state.timer = 0;
     }
+    _seatedWaitPointerId = null;
+    if (_seatedWaitContextMenuTimer) clearTimeout(_seatedWaitContextMenuTimer);
+    _seatedWaitContextMenuTimer = 0;
   }
 
   function installActionInterceptors() {
@@ -754,7 +760,7 @@
       if (!wantsWait && !wantsSleep) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.type === 'pointerdown') openTimePassage(wantsSleep ? 'sleep' : 'wait');
+      if (event.type === 'pointerup') openTimePassage(wantsSleep ? 'sleep' : 'wait');
     };
     document.addEventListener('pointerdown', interceptActionPointer, true);
     document.addEventListener('pointerup', interceptActionPointer, true);
@@ -805,13 +811,41 @@
 
     window.addEventListener('blur', cancelInterceptedDesktopHolds);
 
-    // Right mouse is the desktop equivalent of Action 2. While seated it
-    // should open Wait just like Q and the injected mobile Action 2 button.
+    // Right mouse is the desktop equivalent of Action 2. Arm on press but
+    // open Wait only on release, matching every non-hold action. Keeping the
+    // original page beneath the pointer until release also prevents the
+    // browser's contextmenu event from landing on the newly opened backdrop.
     window.addEventListener('pointerdown', event => {
-      if (event.button !== 2 || !isSeatedReady() || _timePassageUi?.backdrop.classList.contains('open')) return;
+      if (event.button !== 2 || event.pointerType !== 'mouse' || !isSeatedReady() || _timePassageUi?.backdrop.classList.contains('open')) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      openTimePassage('wait');
+      _seatedWaitPointerId = event.pointerId;
+      if (_seatedWaitContextMenuTimer) clearTimeout(_seatedWaitContextMenuTimer);
+      _seatedWaitContextMenuTimer = 0;
+    }, true);
+
+    window.addEventListener('pointerup', event => {
+      if (event.button !== 2 || event.pointerId !== _seatedWaitPointerId) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      _seatedWaitPointerId = null;
+      if (isSeatedReady() && !_timePassageUi?.backdrop.classList.contains('open')) openTimePassage('wait');
+      _seatedWaitContextMenuTimer = setTimeout(() => { _seatedWaitContextMenuTimer = 0; }, 1000);
+    }, true);
+
+    window.addEventListener('pointercancel', event => {
+      if (event.pointerId === _seatedWaitPointerId) _seatedWaitPointerId = null;
+    }, true);
+
+    // Some browsers dispatch contextmenu after pointerup. Suppress it in the
+    // complete seated right-click window, including just after the Wait modal
+    // has replaced the canvas beneath the pointer.
+    window.addEventListener('contextmenu', event => {
+      if (_seatedWaitPointerId === null && !_seatedWaitContextMenuTimer) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (_seatedWaitContextMenuTimer) clearTimeout(_seatedWaitContextMenuTimer);
+      _seatedWaitContextMenuTimer = 0;
     }, true);
   }
 
