@@ -371,16 +371,21 @@
     updatePlayerHeavyFire();
   };
 
-  // Mobile-friendly debug seam; unlike the scene objects themselves this is
-  // read-only and safe to copy from an in-game debug report.
-  window.Combat.chargedBreakerPlayerTelegraph = {
+  // Shared player-side heavy telegraph service. Accelerating Flurry loads
+  // immediately after this module and reuses these same particles/colors
+  // instead of maintaining a second copy of the visual recipe.
+  const playerHeavyTelegraphApi = {
+    start: startPlayerHeavyFire,
+    stop: stopPlayerHeavyFire,
     snapshot: () => ({
       active: playerHeavyFireActive,
       afflictionIds: playerHeavyAfflictionIds.slice(),
       holderReady: !!playerHeavyFireHolder,
       groupVisible: !!playerHeavyFireGroup?.visible,
     }),
-  };
+  }; // Used by Charged Breaker itself, Flurry, and mobile-friendly debugging.
+  window.Combat.playerHeavyTelegraph = playerHeavyTelegraphApi;
+  window.Combat.chargedBreakerPlayerTelegraph = playerHeavyTelegraphApi; // Backward-compatible debug alias from the first player-heavy implementation.
 
   // Read-only data export for game.js's bandit AI — see combat-combo.js's
   // matching comment. A bandit's own charged breaker fires at a fixed
