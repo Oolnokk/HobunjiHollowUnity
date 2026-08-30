@@ -6184,6 +6184,8 @@
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
+          perchWorldPosition: perchWorldPosition.clone(),
+          gripWorldOffset: gripWorldOffset.clone(),
           rotationFrameWorldQuaternion: selectedRotationQuaternion,
           perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
           rotationSource: resolvedRotationSource,
@@ -7251,21 +7253,32 @@
           : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
         group.position.copy(localPosition);
         group.quaternion.copy(localQuaternion);
-        // updateCreatureMesh authored the inner planes against c.groupRot,
-        // but the selected attachment frame can now replace the root's full
-        // pitch/yaw/roll in this later pass. The onBeforeRender compensation
-        // in png-plane-avatar.js owns the exact world-facing plane matrix;
-        // this Euler write remains the first-frame/legacy fallback.
-        const finalGroupRotY = new THREE.Euler().setFromQuaternion(localQuaternion, 'YXZ').y; // Supplies the legacy plane fallback with the new attachment root's local yaw.
-        const billboardWorldYaw = Number.isFinite(c.pngRot) ? c.pngRot : (Number.isFinite(c.groupRot) ? c.groupRot : finalGroupRotY); // Preserves the camera-relative plane yaw chosen by updateCreatureMesh.
-        const planeDelta = billboardWorldYaw - finalGroupRotY; // Cancels the final attachment-group yaw in the legacy plane fallback.
-        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
-        if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
-        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final live-surface pin.
+        // The selected root transform is now authoritative for both placement
+        // and rendering. Restore normal matrix inheritance and only retain the
+        // canonical mirrored face rotations; png-plane-avatar's render hook
+        // recognizes the marker below and no longer replaces this orientation.
+        const setCanonicalPlaneRotation = (plane, y) => {
+          if (!plane) return;
+          plane.matrixAutoUpdate = true;
+          plane.rotation.set(0, y, 0);
+          plane.updateMatrix();
+          plane.matrixWorldNeedsUpdate = true;
+        };
+        setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
+        setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
+        const alignedGripWorldPosition = finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Reconstructs the authored grip point from the exact transform used to place the pet.
+        const gripPerchError = finalTransform.perchWorldPosition
+          ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
+          : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
+        group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
           recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
           rotationSource: finalTransform.rotationSource,
           positionSource: finalTransform.perchPositionSource,
           expectedWorldPosition: finalTransform.worldPosition.toArray(),
+          authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
+          alignedGripWorldPosition: alignedGripWorldPosition.toArray(),
+          gripPerchError,
+          authoritativeRootTransform: true,
           requestedRotationSource: finalTransform.requestedRotationSource,
           rotationSourceInverted: finalTransform.rotationSourceInverted,
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
