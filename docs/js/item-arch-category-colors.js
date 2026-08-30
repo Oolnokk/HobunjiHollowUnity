@@ -185,8 +185,6 @@
     observer.observe(document.body, {
       subtree: true,
       childList: true,
-      attributes: true,
-      attributeFilter: ['class'],
     });
     window.addEventListener('hobunjiPlayerReady', queueRefresh);
   }
@@ -203,12 +201,15 @@
     installed: true,
     colors: CATEGORY_STYLES,
     refresh: queueRefresh,
-    debugSnapshot: () => ({
-      ready: Boolean(itemDeps.ITEM_DEFS && itemDeps.inventoryItems),
-      observing: Boolean(observer),
-      visibleSlots: lastSnapshot.map(entry => ({ ...entry })),
-      categories: Object.fromEntries(Object.entries(CATEGORY_STYLES).map(([key, value]) => [key, { ...value }])),
-    }),
+    debugSnapshot: () => {
+      colorItemSlots();
+      return {
+        ready: Boolean(itemDeps.ITEM_DEFS && itemDeps.inventoryItems),
+        observing: Boolean(observer),
+        visibleSlots: lastSnapshot.map(entry => ({ ...entry })),
+        categories: Object.fromEntries(Object.entries(CATEGORY_STYLES).map(([key, value]) => [key, { ...value }])),
+      };
+    },
   };
 
   bootstrap();
