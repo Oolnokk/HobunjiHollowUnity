@@ -518,6 +518,14 @@
     registerBranch,
     removeBranchesInBounds,
     debugBranchesFor: (mapId) => (branchesByArea.get(mapId) || []).slice(),
+    // Ground height at a world point, in the same THREE-unit convention as
+    // branch.baseWorldY/tipWorldY — used by wildlife-cloud-forest-
+    // behavior.js to tell how far a given branch actually sits above its
+    // own local terrain (each tree's single climbable branch attaches at
+    // a fixed ~42% up ITS OWN trunk, so a short-generated tree's branch
+    // can end up barely above the ground despite being architecturally
+    // "a branch").
+    groundYAt: (wx, wy) => deps?.worldSurfaceY?.(wx, wy) ?? 0,
     get debug() {
       return {
         playerClimbing: !!deps?.player?.climbing,
@@ -786,7 +794,23 @@
 
   system.updateBranchDefender = (entity, dt, targetPlayer) => {
     if (!deps || !entity || entity.health <= 0 || entity.areaId !== currentArea()) return false;
-    if (entity.onBranch && !entity._branchDefense) return false;
+    if (entity.onBranch && !entity._branchDefense) {
+      // A finished branch-defend climb never had its own way back down —
+      // once wildlife-territorial.js escalates this creature past its
+      // warning-stage hiss into a real 'fight' (see beginFight, and the
+      // nest-wide alert broadcast that can put a creature into 'fight'
+      // without it ever having climbed here itself), it needs genuine
+      // ground pursuit: game.js's normal chase movement (updateHostiles)
+      // fights constrainEntityToBranch's every-frame branch-line clamp
+      // forever otherwise, silently freezing the creature in place near
+      // its nest tree — state churns as 'chase' but it never actually
+      // moves, reads as stuck/unresponsive, and the eventual first real
+      // position sync reads as a sudden teleport.
+      if (entity._territorialBehavior?.phase === 'fight') {
+        entity.onBranch = null; entity.branchT = 0; entity.branchSurfaceY = 0;
+      }
+      return false;
+    }
     if (entity._branchDefense) {
       const state = entity._branchDefense;
       state.t = Math.min(1, state.t + Math.max(0, Number(dt) || 0) / 0.78);
@@ -809,6 +833,11 @@
     if (!isDrenkirra(entity)) return false;
     const nestKey = entity.nestTreeKey;
     if (!nestKey) return false;
+    // A creature already in real 'fight' combat (as opposed to still just
+    // warning) needs to keep chasing on the ground — never start (or
+    // restart) a branch-defend climb out from under that, or it re-freezes
+    // the same way the release above exists to prevent.
+    if (entity._territorialBehavior?.phase === 'fight') return false;
     const branch = branchList(currentArea()).find(item => !item.felled && item.nest?.id === nestKey);
     const nest = branch?.nest;
     const player = targetPlayer || deps.player;

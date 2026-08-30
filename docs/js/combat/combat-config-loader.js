@@ -103,6 +103,8 @@
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
+    ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
+    ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
   ];
 
   function loadModule(src, alreadyLoaded) {

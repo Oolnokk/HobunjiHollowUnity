@@ -16,6 +16,7 @@
   let territorialSpecies = new Set(DEFAULT_SPECIES); // Used to identify wild actors whose player encounter is warning-first instead of predator/prey aggro.
   let deps = null; // Captured from WildlifeSpawn.init and used by the per-frame territorial pre-pass.
   let patchedApi = null; // Stores the intercepted WildlifeSpawn API once its later script assigns window.WildlifeSpawn.
+  const NEST_ALERT_GRACE_MS = 3000; // Used to protect a nest-alert-woken sibling from its own fight-leash disengage check until it's had a chance to close distance toward the actual threat.
   const BEHAVIOR_STEP_S = 0.1; // Territorial perception/escalation only needs a 10 Hz logic tick; game.js still aims/moves active chase states every rendered frame.
   const DEBUG_STEP_S = 0.5; // Mobile diagnostics are human-readable state, not simulation, so 2 Hz avoids DOM churn on the global wildlife hot path.
   const ROSTER_STEP_S = 0.25; // Rebuilds the small territorial-only candidate list at 4 Hz instead of scanning every hostile on every logic tick.
@@ -99,6 +100,18 @@
   }
 
   function beginWarning(creature, state, player) {
+    // A sleeping/eating drenkirra is pinned to a branch (onBranch +
+    // _cfForage) — game.js's updateHostiles skips a branch-pinned
+    // creature's entire per-frame state machine every tick via its own
+    // early-out, re-snapping it back to the exact same spot regardless of
+    // what creature.state says. Setting state='chase' below without also
+    // clearing that pin would leave it stuck there forever, still marked
+    // st:chase/terr:warning but never actually moving — confirmed live via
+    // a Pixel Probe report. wildlife-cloud-forest-behavior.js's
+    // interruptForFlee does the same "come down from the branch" cleanup
+    // damageCreature's own flee-on-attack path already relies on; a no-op
+    // for anything not currently on a branch.
+    window.HobunjiCloudForestWildlife?.interruptForFlee?.(creature);
     state.phase = 'warning';
     state.elapsedS = 0;
     state.anchorX = creature.x;
@@ -122,14 +135,50 @@
     utterWarning(creature);
   }
 
-  function beginFight(creature, state, player, reason) {
+  function beginFight(creature, state, player, reason, isNestAlert = false) {
+    // See beginWarning's identical call — beginFight can also be reached
+    // directly (e.g. a nest-wide alert waking a sibling straight into
+    // fight, skipping the warning phase), so it needs the same guard
+    // rather than assuming beginWarning already ran first.
+    window.HobunjiCloudForestWildlife?.interruptForFlee?.(creature);
     state.phase = 'fight';
     state.elapsedS = 0;
     restoreTransientOverrides(creature);
     creature.def.leashRangePx = tuning.FIGHT_LEASH_TILES * deps.TILE; // Used as the short territory-centered chase leash instead of ordinary predator pursuit distance.
     creature.state = 'chase';
     creature.targetPlayer = player;
+    // A sibling woken straight into 'fight' by a nest alert can easily
+    // start out well outside FIGHT_LEASH_TILES of the actual threat (it's
+    // reacting to a threat near a DIFFERENT part of the nest, not one
+    // right next to it) — without this grace window, updateCreature's own
+    // very next distance-to-player check (same tick, once the roster loop
+    // reaches this creature's own turn) reads that gap as "kited too far
+    // from home" and immediately disengages it again, before it ever
+    // takes a single step toward the fight it was just woken for.
+    state.nestAlertGraceUntil = isNestAlert ? performance.now() + NEST_ALERT_GRACE_MS : 0;
     window.__farmLog?.(`[wildlife] ${creature.creatureKey} (${creature.id}) territorial warning escalated: ${reason}.`, 'wildlife');
+    // A threat that's provoked one nest member into real combat has been
+    // detected by the nest, not just by that one individual — every other
+    // living creature sharing the same nestTreeKey (ground guards AND
+    // sleepers on other branches, who may be nowhere near their own
+    // WARNING_RANGE_TILES of the threat) wakes and joins the fight
+    // directly, skipping their own warning phase. isNestAlert marks a
+    // sibling woken this way so it doesn't re-broadcast to the same group
+    // a second time.
+    if (!isNestAlert) alertNestSiblings(creature, player);
+  }
+
+  function alertNestSiblings(creature, player) {
+    const nestKey = creature.nestTreeKey;
+    if (!nestKey || !deps?.hostileObjects) return;
+    for (const sibling of deps.hostileObjects) {
+      if (sibling === creature || sibling.health <= 0) continue;
+      if (sibling.nestTreeKey !== nestKey || sibling.areaId !== creature.areaId) continue;
+      if (!isTerritorial(sibling)) continue;
+      const siblingState = ensureState(sibling);
+      if (siblingState.phase === 'fight') continue; // already fighting (or already woken this same broadcast)
+      beginFight(sibling, siblingState, player, `nest under attack (${creature.creatureKey} engaged)`, true);
+    }
   }
 
   function beginDisengage(creature, state) {
@@ -197,7 +246,8 @@
 
     if (state.phase === 'fight') {
       const distanceFromAnchor = Math.hypot(creature.x - state.anchorX, creature.y - state.anchorY); // Used to prevent a territorial animal itself from being kited far away from where it stood its ground.
-      if (distance > fightLeashPx || distanceFromAnchor > fightLeashPx || creature.state === 'return') {
+      const inNestAlertGrace = performance.now() < (state.nestAlertGraceUntil || 0); // Used to keep a nest-alert-woken sibling from being disengaged for starting outside its own fight leash, before it's had a chance to close the distance.
+      if ((!inNestAlertGrace && distance > fightLeashPx) || distanceFromAnchor > fightLeashPx || creature.state === 'return') {
         beginDisengage(creature, state);
         return;
       }
@@ -317,22 +367,46 @@
   // This module is loaded by combat-config-loader before wildlife-spawn.js's
   // normal script tag. Intercept that later global assignment once, patch its
   // narrow init/update boundary, then restore a normal writable property.
+  //
+  // Several other files (wildlife-cloud-forest-behavior.js,
+  // wildlife-grehlr-foraging.js) install this exact same kind of trap for
+  // the same reason. A naive `else` branch that unconditionally calls
+  // Object.defineProperty would silently clobber whichever of those
+  // traps got here first — only one property descriptor can occupy
+  // window.WildlifeSpawn at a time, so the earlier trap's setter would
+  // simply never fire, and that module's deps/init hook would stay
+  // uninitialized forever. Chain onto an existing trap's setter instead
+  // of replacing it, so every module patched this way still applies once
+  // the real assignment lands, regardless of load order.
   if (window.WildlifeSpawn) {
     patchWildlifeSpawn(window.WildlifeSpawn);
   } else {
-    Object.defineProperty(window, 'WildlifeSpawn', {
-      configurable: true,
-      get() { return undefined; },
-      set(value) {
-        const patched = patchWildlifeSpawn(value); // Used as the API stored after wildlife-spawn.js assigns its namespace.
-        Object.defineProperty(window, 'WildlifeSpawn', {
-          configurable: true,
-          enumerable: true,
-          writable: true,
-          value: patched,
-        });
-      },
-    });
+    const existingTrap = Object.getOwnPropertyDescriptor(window, 'WildlifeSpawn');
+    if (existingTrap && typeof existingTrap.set === 'function') {
+      const chainedSet = existingTrap.set;
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get: existingTrap.get,
+        set(value) {
+          chainedSet.call(window, value);
+          patchWildlifeSpawn(window.WildlifeSpawn);
+        },
+      });
+    } else {
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        get() { return undefined; },
+        set(value) {
+          const patched = patchWildlifeSpawn(value); // Used as the API stored after wildlife-spawn.js assigns its namespace.
+          Object.defineProperty(window, 'WildlifeSpawn', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: patched,
+          });
+        },
+      });
+    }
   }
 
   window.HobunjiTerritorialWildlife = {

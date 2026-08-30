@@ -215,7 +215,7 @@
         if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') window.WildlifeDebugPanel.render();
+        if (id === 'wildlife') { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); }
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -4397,6 +4397,39 @@
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        // Referenced by wildlife-territorial.js's own attackedDuringWarning
+        // check (an already-attacked creature escalates straight to
+        // fighting even from outside its proximity trigger) — that check
+        // has been silently dead since territorial.js shipped, since
+        // nothing was ever setting this field.
+        c.lastAttackReceivedAt = performance.now();
+        // A passive creature (drenkirra, uumkaoii-wild, etc. — hostile:false,
+        // so it never picks up player aggro at all, see updateHostiles'
+        // aggro-pickup check) had no reaction to being attacked whatsoever
+        // before this: knockback/stagger applied below, then it carried on
+        // with whatever it was already doing — no flee, no fight-back.
+        // Reuses the exact 'fleeing-low-health' state wildlife-vs-wildlife
+        // skirmishes already use (see wildlife-spawn.js's
+        // applyWildlifeSkirmishDamage) — beelines home ignoring aggro/prey
+        // detection, then starts a re-aggro cooldown once settled. Excludes
+        // companions (an incidental hit on a passive-type follower
+        // shouldn't make it bolt) and a creature wildlife-territorial.js
+        // already has actively defending its nest — attacking a territorial
+        // animal mid-fight should never make it flee instead; it's
+        // supposed to protect its home, not bail the moment it takes a hit.
+        const territorialPhase = c._territorialBehavior?.phase;
+        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+          // A drenkirra mid-forage or asleep is pinned to a branch —
+          // clear that (see wildlife-cloud-forest-behavior.js's
+          // interruptForFlee) before the state flip below, or the
+          // branch-pin's own per-frame early-continue in updateHostiles
+          // keeps re-snapping it right back to that spot forever, never
+          // actually reaching the movement this state is supposed to
+          // trigger. A no-op for anything not currently on a branch.
+          window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
+          c.state = 'fleeing-low-health';
+          c.targetCreature = null;
+        }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
@@ -4501,6 +4534,7 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          if (c._denHidden) continue; // Tucked out of sight in its den — not actually there to hit.
           if (!window.Combat?.meleeHit?.(player, c, {
             rangePx: abil.rangePx,
             halfConeRad: abil.halfConeRad,
@@ -4539,7 +4573,7 @@
         const ray = currentPlayerInteractionRay();
         if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
           const candidates = Array.from(hostileObjects)
-            .filter(c => c.health > 0 && c.areaId === currentArea)
+            .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden)
             .map(c => {
               const hitbox = window.RangedWeapons.actorHitbox(c);
               return hitbox?.box ? {
@@ -4563,7 +4597,7 @@
         let best = null, bestDist = maxDistanceWorld;
         const fx = Math.cos(aim), fy = Math.sin(aim);
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const along = dx * fx + dy * fy;
           if (along < 0 || along > bestDist) continue;
@@ -4615,7 +4649,7 @@
         }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
@@ -4710,7 +4744,7 @@
           : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
@@ -4747,7 +4781,7 @@
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > bestDist) continue;
@@ -4781,7 +4815,7 @@
         if (!meleeAutoTargetOn || !meleeWeaponOut()) return;
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         const candidates = Array.from(hostileObjects)
-          .filter(c => c.health > 0 && c.areaId === currentArea && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
+          .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
           .map(c => ({ c, angle: Math.atan2(c.y - player.y, c.x - player.x) }))
           .sort((a, b) => a.angle - b.angle);
         if (!candidates.length) return;
@@ -5199,7 +5233,14 @@
         // blink state into the readiness/retry bookkeeping below so a
         // blink toggle forces a re-apply even though the underlying
         // idle/run frame key hasn't changed.
-        const blinkShut = genotypeKind ? (window.CreatureBlink?.isShut(c, performance.now()) || false) : false;
+        // A sleeping drenkirra (js/wildlife-cloud-forest-behavior.js's
+        // beginGoToSleep/_cfDrenkirra.mode) should stay eyes-shut the whole
+        // time it's asleep, not keep cycling open/closed on the normal
+        // ambient blink timer — CreatureBlink has no notion of sleep, so
+        // short-circuit it here instead of teaching a shared, per-instance
+        // timer about one species' mode field.
+        const asleep = c._cfDrenkirra?.mode === 'sleeping';
+        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -5305,6 +5346,25 @@
       const STAGE_BACKUP_S = 2;
       const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
       const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
+      // Default head-yaw turn budget for _updateCreatureHeadLookAtWorldPoint's
+      // ordinary chase-correction (a deliberately modest nudge, not an
+      // anatomy claim — see png-plane-avatar.js's DEFAULT_LIMITS, which caps
+      // an unauthored rig's own minDeg/maxDeg, and therefore updateHeadYaw's
+      // internal clamp, at exactly this same ±30° for any species with no
+      // custom-authored head rig).
+      const CREATURE_HEAD_YAW_LIMIT_DEG = 30;
+
+      // evasiveOrbit's own sidestep geometry (see below: an 0.8-weighted
+      // tangent blended with a 0.2-weighted radial component) needs roughly
+      // 76-104° of head correction to keep eye contact with the target from
+      // a body actually facing its movement — nowhere near
+      // CREATURE_HEAD_YAW_LIMIT_DEG's own tighter ordinary-chase tuning
+      // value, which would leave the fallback-to-facing-target case always
+      // winning and no sidestep ever visible at all. 80° is a firm ceiling
+      // per explicit design direction — the closing-in case (~76°) still
+      // gets a genuine sidestep, while the extreme backing-off case (~104°)
+      // still falls back to facing the target outright.
+      const EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG = 80;
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
@@ -5360,7 +5420,22 @@
 
         if (stageName === 'evasiveOrbit') {
           const orbitRadiusPx = def.attackRangePx * EVASIVE_ORBIT_RADIUS_MUL;
-          const radialSign = dist > orbitRadiusPx ? 1 : -1; // 1: close the gap, -1: back off
+          // The 20%-weighted radial pull below is exactly what keeps this
+          // orbit settled right at orbitRadiusPx, so a single shared
+          // threshold here flips sign almost every frame as dist hovers
+          // around that boundary — and since the body-facing decision
+          // further down depends on radialSign through blendAngle, every
+          // flip snapped the whole body between two very different
+          // orientations, reading as a violent see-saw. Sticky/hysteresis
+          // state (only flips once dist clearly crosses OUT of a dead zone
+          // around the boundary, not just past it) is the same anti-chatter
+          // shape LEASH_REENTER_FRAC already uses above for the identical
+          // "settled right on its own threshold" problem.
+          const EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC = 0.15;
+          if (st.radialSign === undefined) st.radialSign = dist > orbitRadiusPx ? 1 : -1;
+          if (st.radialSign > 0 && dist < orbitRadiusPx * (1 - EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = -1;
+          else if (st.radialSign < 0 && dist > orbitRadiusPx * (1 + EVASIVE_ORBIT_RADIUS_HYSTERESIS_FRAC)) st.radialSign = 1;
+          const radialSign = st.radialSign; // 1: close the gap, -1: back off
           const tangentAngle = towardAngle + st.orbitSign * Math.PI / 2;
           const blendAngle = Math.atan2(
             Math.sin(tangentAngle) * 0.8 + Math.sin(towardAngle) * radialSign * 0.2,
@@ -5369,7 +5444,19 @@
           const moveX = c.x + Math.cos(blendAngle) * TILE, moveY = c.y + Math.sin(blendAngle) * TILE;
           const moving = moveCreatureToward(c, moveX, moveY, def.chaseSpeed * 0.85, dt);
           if (st.t >= STAGE_MAX_DURATION_S.evasiveOrbit) beginCreatureBackup(st);
-          return { aimAngle: towardAngle, moving };
+          // Body normally turns to face the direction it's actually
+          // sidestepping in, same as any other moving creature — the head
+          // (see _updateCreatureHeadLookAtCombatTarget, which reads c.facing
+          // as its baseline) independently tracks the target on top of that
+          // within its own yaw budget. Movement itself (moveX/moveY above)
+          // never changes; only which way is a real neck twist away from
+          // the target decides whether the body ALSO gets to face that way.
+          // When it isn't, keep the body (and so the head, trivially) facing
+          // the target instead — reads as backpedaling/strafing backward
+          // rather than a body no head could actually keep up with.
+          const yawNeededDeg = Math.abs(angleDiff(towardAngle, blendAngle)) * 180 / Math.PI;
+          const bodyAngle = yawNeededDeg <= EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG ? blendAngle : towardAngle;
+          return { aimAngle: bodyAngle, moving };
         }
 
         return { aimAngle: towardAngle, moving: false };
@@ -5379,6 +5466,17 @@
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          // Tucked inside its den for the off-shift/overnight branch below
+          // (see the denKey settle branch) — frozen and invisible rather
+          // than idling in the open, so no AI/vocalization/stamina tick
+          // runs for it until its shift or the day resumes, at which point
+          // it steps back out from exactly the mouth tile it went in at.
+          if (c._denHidden) {
+            const stillOff = c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c));
+            if (stillOff) continue;
+            c._denHidden = false;
+            if (c.avatarRef?.group) c.avatarRef.group.visible = true;
+          }
           window.AnimalVocalizations?.tickCreature?.(c, dt);
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
@@ -5395,6 +5493,12 @@
           if (c.state !== 'chase') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, dt, targetPlayer)) continue;
+          // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
+          // parks a drenkirra on a branch to forage/sleep, outside the
+          // player-facing defend hop above — same "skip ordinary ground AI
+          // entirely this frame" escape hatch, gated on its own per-creature
+          // marker so it never touches the Nestmother's branch-defend flow.
+          if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, dt)) continue;
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
@@ -5637,15 +5741,26 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.denKey && window.Music?.isNightTime()) {
-            // Denned pack, off the clock — head back to the den and settle
-            // there instead of continuing to wander (see spawnPackAtDen for
-            // homeX/homeY = the den's own anchor point).
-            const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-            if (distFromDen > DEN_SETTLE_RADIUS_PX) {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
-              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
+            // Denned pack, off the clock — head for the den's own mouth
+            // tile (denEntranceX/Y, set at spawn from the den's
+            // mouthAnchor — see spawnPackAtDen) rather than just the
+            // footprint center (homeX/Y), and disappear once there instead
+            // of idling in the open, so it actually reads as "went inside"
+            // rather than "stopped walking near the den." isPackOffShift
+            // extends this beyond true night for cloud-forest gar-wolf packs,
+            // which only hunt during their two dawn/dusk shifts (see
+            // js/wildlife-cloud-forest-behavior.js) and rest the whole
+            // rest of the day, not just after dark.
+            const denX = c.denEntranceX ?? c.homeX, denY = c.denEntranceY ?? c.homeY;
+            const distFromDenMouth = Math.hypot(c.x - denX, c.y - denY);
+            if (distFromDenMouth > DEN_SETTLE_RADIUS_PX) {
+              moving = travelCreatureToward(c, denX, denY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(denY - c.y, denX - c.x);
             } else {
+              c.x = denX; c.y = denY;
+              c._denHidden = true;
+              if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
           } else if (def.diet === 'herbivore') {
@@ -5727,7 +5842,15 @@
           // the character's face. If they are settled (grazing/drinking or
           // paused between wander legs), their body also squares to that
           // face target; combat, fleeing, and patrol movement retain priority.
-          if (def.hostile === false) {
+          // A territorially warning/fighting drenkirra (see
+          // wildlife-territorial.js) is genuinely engaged in combat despite
+          // its own def.hostile: false (that flag only governs ordinary
+          // aggro pickup) — route it through the same combat head-look
+          // system as any other fighting creature below instead of the
+          // livestock glance-at-the-player branch, which only ever nods
+          // (pitch) and has no yaw tracking at all.
+          const territorialActive = c._territorialBehavior?.phase === 'warning' || c._territorialBehavior?.phase === 'fight';
+          if (def.hostile === false && !territorialActive) {
             const canLook = livestockLookCandidate
               && !c.prone
               && c.state !== 'return'
@@ -5752,10 +5875,23 @@
             const combatTarget = c.state === 'patrol-chase' ? c.targetCreature
               : c.state === 'chase' ? c.targetPlayer
               : null;
-            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt);
+            // evasiveOrbit's own body-facing decision (see
+            // updateCreatureBehaviorStage) already checked whether this
+            // wider budget reaches the target from wherever the body ends
+            // up — reuse the same figure here so the visual head yaw isn't
+            // separately capped back down to the tighter ordinary-chase
+            // default underneath it.
+            const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
             else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
+          // Grehlr foraging (js/wildlife-grehlr-foraging.js) — deliberately
+          // placed after the livestock-look/combat-head-nod block above so
+          // its eating-dip/fishing-lookdown head pitch wins this frame's
+          // interpolation target instead of being immediately smoothed back
+          // to rest by that block's own unconditional _restoreCompanionHead.
+          window.HobunjiGrehlrForaging?.applyForagingPose?.(c, dt);
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -5914,7 +6050,7 @@
       const TREASURE_HINT_RANGE_PX = TILE * 9;
       const TREASURE_ANNOUNCE_S = 3.2; // Holds the companion player-facing for the full overhead treasure utterance and alert bark.
       const TREASURE_MARK_ARRIVAL_PX = TILE * 0.55; // Switches the lead into its stationary marking pose near the buried tile center.
-      const TREASURE_MARK_HEAD_DEG = -10; // Drives authored animal head rigs downward while indicating the dig spot.
+      const TREASURE_MARK_HEAD_DEG = 10; // Drives authored animal head rigs downward while indicating the dig spot (this rig's own convention is negative degrees = up, positive = down — see png-plane-avatar.js's applyDegrees).
       const LIVESTOCK_LOOK_RANGE_PX = TILE * 3.75; // Passive livestock notice the player at a short, readable approach distance.
       const PLAYER_FACE_HEIGHT_RATIO = 0.76; // Face target measured from the player's floor to the authored portrait height.
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
@@ -5965,6 +6101,13 @@
 
       function _restoreCompanionHead(c, dt) {
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        // Every "stop looking at X" caller below needs the yaw axis eased
+        // back to center too, not just the pitch/nod — without this, a head
+        // that had turned to track a combat target or an idle scan focus
+        // stayed frozen at that last yaw forever the instant its caller
+        // switched to this shared rest path instead, since nothing else
+        // here ever drove it back down.
+        if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
         if (c) c._lookAtDebug = null;
       }
 
@@ -6003,7 +6146,11 @@
         const horizontalPx = Math.hypot(dx, dy);
         const aimAngle = horizontalPx > 1 ? Math.atan2(dy, dx) : (c.facing || 0);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
-        const pitchDeg = Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        // Negated — this rig's own convention is negative degrees = up,
+        // positive = down (confirmed via the vocalization head-nod, see
+        // png-plane-avatar.js's applyDegrees), the opposite of what a
+        // plain atan2 of the vertical delta gives.
+        const pitchDeg = -Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
@@ -6045,10 +6192,9 @@
       // _updateCreatureLookAtFace's math exactly, just generalized to any
       // combat target (player or another creature) via
       // _combatTargetHeadWorld instead of always assuming the player.
-      function _updateCreatureHeadLookAtCombatTarget(c, target, dt) {
+      function _updateCreatureHeadLookAtCombatTarget(c, target, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
         if (!target) {
-          _restoreCompanionHead(c, dt);
-          if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+          _restoreCompanionHead(c, dt); // Also eases yaw back to center — see its own comment.
           return;
         }
         // Yaw here corrects for the gap between the target's exact bearing
@@ -6060,7 +6206,12 @@
         // head can visibly undershoot exactly where the target's face is
         // even once the body looks "close enough," reading as not locked
         // on at all. (Handled inside _updateCreatureHeadLookAtWorldPoint.)
-        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt);
+        // yawLimitDeg defaults to the ordinary-chase budget — evasiveOrbit's
+        // caller below passes EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG instead,
+        // since a sidestep only ever gets a body facing its movement
+        // direction (rather than the target) when that wider turn is
+        // enough to still reach the target.
+        _updateCreatureHeadLookAtWorldPoint(c, _combatTargetHeadWorld(target), dt, yawLimitDeg);
       }
 
       // The shared "aim my head at this exact world point" core both
@@ -6070,17 +6221,26 @@
       // with no entity behind it at all. Pulled out of
       // _updateCreatureHeadLookAtCombatTarget so both share the exact same
       // pitch+yaw+debug-ray math instead of a hand copy.
-      function _updateCreatureHeadLookAtWorldPoint(c, head, dt) {
+      function _updateCreatureHeadLookAtWorldPoint(c, head, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
         const dx = head.x - c.x, dy = head.y - c.y;
         const horizontalPx = Math.hypot(dx, dy);
         const horizontalWorld = Math.max(0.15, horizontalPx / TILE);
-        const pitchDeg = Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
+        // Negated — see _updateCreatureLookAtFace's identical fix above.
+        const pitchDeg = -Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, head.x, head.y, head.worldY);
         if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
           const rawBearing = Math.atan2(dy, dx);
           const residualRad = angleDiff(rawBearing, c.facing || 0);
-          const yawDeg = Math.max(-30, Math.min(30, residualRad * 180 / Math.PI));
+          // Negated — the head bone's local yaw is composed underneath the
+          // group's own rotation.y, which is itself -aimAngle (see
+          // rawTargetRotY above updateCreatureMesh's plane rotation). A
+          // residual computed in this function's plain world-angle
+          // convention (atan2(dy,dx), same as c.facing/aimAngle) turns the
+          // WRONG way once applied as-is to that already-negated local
+          // frame — reported in real gameplay as a gar-wolf's head visibly
+          // turning away from the player instead of toward it.
+          const yawDeg = -Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
           c.avatarRef.updateHeadYaw(yawDeg, dt);
         }
       }
@@ -6761,6 +6921,7 @@
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
+            if (h._denHidden) continue;
             // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
             // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
             // fight — companions should ignore them, not treat them as prey.
@@ -8322,7 +8483,7 @@
       function isHostileInLungeCone(hitTest) {
         if (!hitTest) return false;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           if (window.Combat?.meleeHit?.(player, c, {
             rangePx: hitTest.rangePx,
             halfConeRad: hitTest.halfConeRad,
@@ -13286,6 +13447,7 @@
               || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
         if (currentArea !== 'farm') return null;
@@ -14533,7 +14695,18 @@
       function isAnimalDenCollisionTile(col, row, area) {
         for (const den of (_zoneLayouts.get(area)?.dens || [])) {
           if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+          const w = den.w || 1, h = den.h || 1;
+          if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
+          // Doorway gap carved into the south wall, mirroring the mesh's own
+          // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
+          // zone-den-totem-features.js). Without this the footprint box was
+          // fully solid with no way through it at all — mouthAnchor alone
+          // never punched a hole here since it's defined as the tile just
+          // OUTSIDE the footprint, not a tile inside it.
+          const mouthColStart = den.x + Math.floor(w * 0.3);
+          const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
+          if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
+          return true;
         }
         return false;
       }
@@ -22519,7 +22692,7 @@
 
       // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
       // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
-      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => { window.WildlifeDebugPanel.render(); window.WildlifeBehaviorMap?.render(); });
       document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
         await checkTothalShift(true);
         window.WildlifeDebugPanel.render();
@@ -24434,17 +24607,41 @@
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
-        // Update activeAction even without DOM rebuild
-        const first = btns.find(b => b.allowed) || btns[0];
+        // Update activeAction even without DOM rebuild. climb_branch
+        // (pushed first in computeActionButtons purely to feed the 3D
+        // floating world-space prompt over a climbable branch — see its
+        // own comment) is excluded outright here, not just deprioritized:
+        // climbing is only ever supposed to trigger from a forward dodge
+        // (see performContextAction), never from Action 1/a tool press —
+        // an earlier "prefer non-secondary, fall back to secondary only if
+        // it's the sole allowed action" version of this still let a lone
+        // climb target win Action 1 whenever nothing else was interactable
+        // (e.g. no tool equipped), which is exactly the case a player
+        // facing a tree is most likely to be in.
+        const climbBtn = btns.find(b => b.action === 'climb_branch');
+        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
+        // The dodge button is climbing's only real trigger, so it's the
+        // one that should visually say so — swaps to the climb/climb-down
+        // icon+label while a target's in reach, back to the plain dodge
+        // icon otherwise.
+        if (dodgeBtn) {
+          const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
+          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
+          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+        }
 
         if (!needsRebuild) return;
 
-        // Split tool actions from item-owned consume/plant/place/harvest actions.
+        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // climb_branch is excluded from every arch slot below for the same
+        // reason it's excluded from activeAction above — it still stays in
+        // the full btns array so the 3D world-space prompt keeps working.
         const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
-        const toolBtns = btns.filter(b => !isItemButton(b));
-        const itemBtns = btns.filter(isItemButton);
+        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
+        const itemBtns = nonClimbBtns.filter(isItemButton);
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -24657,11 +24854,12 @@
 
         if (heldMode === 'item') {
           // Item mode: all actions spread across all 5 arch positions
-          applyAbt('btnAction1',    btns[0], 0);
-          applyAbt('btnAction2',    btns[1], 1);
-          applyAbt('btnAction3',    btns[2], 2);
-          applyAbt('btnItemAction1', btns[3], 3);
-          applyAbt('btnItemAction2', btns[4], 4);
+          // (climb_branch excluded — see nonClimbBtns above)
+          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
+          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
+          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
+          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
+          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
         } else {
           applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
           applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
@@ -27114,7 +27312,7 @@
         },
         getSplashEntities: (area, x, y, radiusPx) => {
           const entities = [player, ...hostileObjects, ...companionObjects]; // Used to retain self-splash and existing combat entities.
-          return entities.filter(entity => entity && entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx);
+          return entities.filter(entity => entity && !entity._denHidden && (entity.areaId !== undefined ? entity.areaId === area && Math.hypot(entity.x - x, entity.y - y) <= radiusPx : entity === player && currentArea === area && Math.hypot(player.x - x, player.y - y) <= radiusPx));
         },
         spawnImpactPresentation: ({ x, y, radiusTiles, definition }) => {
           const color = definition.particleColors?.[0] || '#55ff82'; // Used to keep impact presentation recipe-authored.
@@ -27391,6 +27589,18 @@
         esc,
         _zoneLayouts,
         hostileObjects,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
+      });
+
+      window.WildlifeBehaviorMap?.init({
+        TILE,
+        TileType,
+        player,
+        hostileObjects,
+        zoneLayouts: _zoneLayouts,
+        getCurrentArea: () => currentArea,
+        _isZoneArea,
       });
 
       window.ShippingPanel?.init({
@@ -27561,6 +27771,12 @@
         DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
         makeDecorativeFurnitureMesh,
+        // Used by js/wildlife-cloud-forest-behavior.js for its gar-wolf
+        // shift/LOD player-distance checks and its game-hour-scheduled
+        // fruit respawn/eating timers — no other WildlifeSpawn consumer
+        // needs either today.
+        player,
+        calendar,
       });
 
       window.CavernGenerator?.init({

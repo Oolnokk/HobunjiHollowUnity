@@ -182,6 +182,11 @@
       if (targetIsUsable(creature, player)) targets.push(player);
     }
     for (const companion of deps.companionObjects || []) {
+      // A shoulder pet rides on the player's own body, not a separate
+      // ground position — never a legitimate independent target for this
+      // cone (see combat-drenkirra-pellet.js's gatherTargets for the same
+      // exclusion and reasoning).
+      if (companion.stableRole === 'shoulderPet') continue;
       if (targetIsUsable(creature, companion)) targets.push(companion);
     }
     return targets;

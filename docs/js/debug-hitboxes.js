@@ -35,6 +35,31 @@
     return point ? { x: Number(point.x) || 0, y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
   }
 
+  // AI-state fields for a hostile/companion actor, folded into the Pixel
+  // Probe's "3D hitboxes" line — added because diagnosing "this creature
+  // isn't reacting" from the hitbox/rendering report alone kept dead-ending
+  // in a round trip asking for a separate console dump of exactly this.
+  // Every field is per-system and optional (each wildlife schedule module
+  // stamps its own marker on the creature, see wildlife-territorial.js's
+  // _territorialBehavior, wildlife-cloud-forest-behavior.js's _cfDrenkirra/
+  // _cfGarWolf, wildlife-grehlr-foraging.js's _grehlrForage), so only the
+  // ones actually present on this actor are included.
+  function _actorAiDebug(actor) {
+    if (!actor || actor === deps?.player) return {};
+    const out = {};
+    if (actor.state) out.state = actor.state;
+    if (actor.def && actor.def.hostile === false) out.passive = true;
+    const terr = actor._territorialBehavior;
+    if (terr) out.territorial = { phase: terr.phase, elapsedS: Number((terr.elapsedS || 0).toFixed(1)) };
+    if (actor._cfDrenkirra) out.cfMode = actor._cfDrenkirra.mode;
+    if (actor._cfGarWolf) out.garWolfOffShift = !!actor._cfGarWolf.overlayed;
+    if (actor._grehlrForage) out.grehlrMode = actor._grehlrForage.mode;
+    if (actor.nestTreeKey) out.nestTreeKey = actor.nestTreeKey;
+    if (actor.denKey) out.denKey = actor.denKey;
+    if (actor._denHidden) out.denHidden = true;
+    return out;
+  }
+
   // Called only after the shared camera ray wins nearest-target arbitration.
   function noteInteractionFocus(focus) {
     if (!focus?.point || !focus?.candidate) return;
@@ -259,13 +284,15 @@
     for (const c of deps?.companionObjects || []) if (c.health > 0 && c.areaId === deps.getCurrentArea()) actors.push({ label: c.id || c.name || c.def?.id || 'companion', actor: c });
     return actors.map(({ label, actor }) => {
       const hitbox = _actorHitbox(actor);
+      const ai = _actorAiDebug(actor);
       return hitbox ? {
         label,
         min: _plainPoint(hitbox.box.min),
         max: _plainPoint(hitbox.box.max),
         onBranch: !!actor?.onBranch,
         climbing: !!actor?.climbing,
-      } : { label, missing: true };
+        ...ai,
+      } : { label, missing: true, ...ai };
     });
   }
 

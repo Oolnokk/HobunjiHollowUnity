@@ -279,14 +279,28 @@
     // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
     // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
     const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
+    // Where an off-shift/overnight pack member actually walks to and
+    // disappears from (see game.js's updateHostiles denKey settle branch)
+    // — the den's own doorway tile, not its footprint center, so it reads
+    // as "went inside" instead of "stopped in the open near the den."
+    // Falls back to the footprint center for the rare den with no
+    // generated mouthAnchor, same fallback the dev teleport tools use.
+    const denEntranceX = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : homeX;
+    const denEntranceY = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : homeY;
     const count = DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
     const zoneData = deps.zoneLayouts.get(zoneId);
     let spawned = 0;
+    // Scatter radius must clear the footprint's own half-diagonal (den.x/y
+    // is the top-left tile, footprint is den.w x den.h) or a spawn angle
+    // pointed at a corner lands the creature inside the den's solid rock
+    // volume (see isAnimalDenCollisionTile) with every neighboring tile
+    // blocked too — stuck on the footprint with nowhere to step.
+    const footprintClearance = deps.TILE * Math.hypot((den.w || 1) * 0.5, (den.h || 1) * 0.5) + deps.TILE * 0.3;
     for (let i = 0; i < count; i++) {
       const angle = deps.rnd() * Math.PI * 2;
-      const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
+      const dist = footprintClearance + deps.rnd() * deps.TILE * 1.6;
       const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-      const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
+      const opts = { homeX, homeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
       assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -369,15 +383,17 @@
   const pendingNestTreeRespawn = new Set();
   const nestTreeLastKnownAlive = new Map();
   const NEST_TREE_ZONE_ID = 'map_southern_cloud_forest';
-  // A HARD CAP on how many nest trees a zone can ever have, not a fraction
-  // of however many climbable branches happen to exist — a dense shadewood
-  // forest can easily carry hundreds of registered branches (see
+  // The UPPER BOUND on how many nest trees a zone can ever have, not a
+  // fraction of however many climbable branches happen to exist — a dense
+  // shadewood forest can easily carry hundreds of registered branches (see
   // foliage-generator.js's climbBranchChance, rolled per shared tree shape,
   // so it's common for most trees in the zone to have one), and spawning a
   // full pack + Nestmother at every one of them independently blew up
   // hostileObjects into the hundreds the moment the zone loaded — the cause
-  // of the severe slowdown entering this zone. Capped to roughly the same
-  // scale a zone's normal den count already runs at.
+  // of the severe slowdown entering this zone. eligibleNestBranches further
+  // clamps this down to the zone's own actual den count so nests end up
+  // about as common as gar-wolf dens, not just nominally capped at the
+  // same number.
   const NEST_TREE_MAX_PER_ZONE = 5;
   const NEST_PACK_SIZE_MIN = 2;
   const NEST_PACK_SIZE_MAX = 4;
@@ -419,12 +435,23 @@
     const branches = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(branch => !branch.felled);
     let selected = _nestTreeSelectionCache.get(zoneId);
     if (!selected) {
+      // Nest trees should be about as common as gar-wolf dens in this same
+      // zone — a flat NEST_TREE_MAX_PER_ZONE cap regardless of how many
+      // dens the terrain generator actually managed to place (placeAnimalDens'
+      // border/elevation constraints routinely place fewer than its own
+      // nominal target) made nests noticeably outnumber dens in practice
+      // even though both nominally capped at "5". Falls back to the flat
+      // cap only if this zone somehow has no den data at all (e.g. an
+      // authored fallback layout — see game.js's other _zoneLayouts.set
+      // call site, which always sets dens: []).
+      const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
+      const maxNestTrees = Math.max(1, Math.min(NEST_TREE_MAX_PER_ZONE, denCount || NEST_TREE_MAX_PER_ZONE));
       const scored = branches.map(branch => {
         const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${branch.col}_${branch.row}`);
         return { branch, key: branchTileKey(branch), score: rng ? rng() : deps.rnd() };
       });
       scored.sort((a, b) => a.score - b.score);
-      selected = scored.slice(0, NEST_TREE_MAX_PER_ZONE)
+      selected = scored.slice(0, maxNestTrees)
         .map(({ key, branch }) => ({ key, branch }));
       _nestTreeSelectionCache.set(zoneId, selected);
     }
@@ -490,7 +517,10 @@
       const angle = deps.rnd() * Math.PI * 2;
       const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
       const x = branch.baseX + Math.cos(angle) * dist, y = branch.baseY + Math.sin(angle) * dist;
-      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key };
+      // Same nestGenotype the Nestmother above got — guards should carry
+      // her colors/patterns, not spawn plain (makeCreatureEntity only
+      // recolors a creature when opts.genotype is present).
+      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key, genotype: nestGenotype };
       assignWildlifeStation(opts, zoneData, branch.baseX, branch.baseY, true);
       const creature = deps.makeCreatureEntity('drenkirra', x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -582,6 +612,22 @@
     _zoneEntryAnimalLogPending = mapId;
   }
 
+  // Debug/verification readout for "nest trees should be about as common
+  // as gar-wolf dens" (see eligibleNestBranches' den-count clamp above) —
+  // surfaced in the 🧬 Wildlife dev tab (js/wildlife-debug-panel.js) so
+  // that claim is checkable against a live zone/seed instead of taken on
+  // faith. nestTreeCap is the already-den-clamped resolved count for this
+  // zone this session (<= NEST_TREE_MAX_PER_ZONE), not the flat constant.
+  function denNestCensus(zoneId) {
+    const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
+    const selectedNestBranches = eligibleNestBranches(zoneId);
+    let nestTreesAlive = 0;
+    for (const branch of selectedNestBranches) {
+      if (isNestTreeAlive(nestTreeKeyFor(zoneId, branch))) nestTreesAlive++;
+    }
+    return { denCount, nestTreeCap: selectedNestBranches.length, nestTreesAlive };
+  }
+
   window.WildlifeSpawn = {
     init,
     applyWildlifeSkirmishDamage,
@@ -595,6 +641,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
+    denNestCensus,
     // Also clears pendingNestTreeRespawn — a wiped nest tree waits for the
     // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
     // so it rides the same day-advance call sites as den respawn instead of

@@ -318,7 +318,11 @@
     const targetWorldY = Number(target.worldY);
     if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
       const horizontal = Math.max(0.15, distance);
-      const pitchDeg = Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
+      // Negated — this rig's own convention is negative degrees = up,
+      // positive = down (confirmed via the vocalization head-nod, see
+      // png-plane-avatar.js's applyDegrees), the opposite of what a plain
+      // atan2 of the vertical delta gives.
+      const pitchDeg = -Math.atan2(targetWorldY - _farmAnimalHeadWorldY(animal), horizontal) * 180 / Math.PI;
       animal.avatarRef.updateHeadRotation(pitchDeg, dt);
       // Feeds the "Show Interaction Raycast" debug overlay (docs/js/debug-hitboxes.js) —
       // already in Three.js world (tile) units, unlike game.js's own

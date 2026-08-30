@@ -866,9 +866,27 @@
     if (chunkAudit) lines.push(`Chunk residency audit: ${chunkAudit.ok ? 'PASS' : `FAIL ${chunkAudit.issues.length}`} active=${chunkAudit.activeArea || '(none)'}`);
     const hitboxDebug = window.__hitboxDebug?.snapshot?.(); // Mobile-readable elevation proof for the Show Hitboxes overlay.
     if (hitboxDebug?.actors?.length) {
+      // AI-state suffixes (state/passive/territorial/cfMode/...) — see
+      // debug-hitboxes.js's _actorAiDebug — added so "why isn't this
+      // creature reacting" is answerable straight from a copied probe
+      // report instead of a follow-up round trip for a separate console
+      // dump of the same creature's schedule-AI markers.
+      const aiSuffix = actor => {
+        let s = '';
+        if (actor.state) s += `/st:${actor.state}`;
+        if (actor.passive) s += '/passive';
+        if (actor.territorial) s += `/terr:${actor.territorial.phase}${actor.territorial.phase === 'warning' ? `@${actor.territorial.elapsedS}s` : ''}`;
+        if (actor.cfMode) s += `/cf:${actor.cfMode}`;
+        if (actor.garWolfOffShift) s += '/offshift';
+        if (actor.grehlrMode) s += `/gf:${actor.grehlrMode}`;
+        if (actor.denHidden) s += '/denhidden';
+        if (actor.nestTreeKey) s += `/nest:${actor.nestTreeKey}`;
+        if (actor.denKey) s += `/den:${actor.denKey}`;
+        return s;
+      };
       const actorState = hitboxDebug.actors.map(actor => actor.missing
-        ? `${actor.label}=missing`
-        : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}`).join(' ');
+        ? `${actor.label}=missing${aiSuffix(actor)}`
+        : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}${aiSuffix(actor)}`).join(' ');
       lines.push(`3D hitboxes: ${actorState}`);
     }
     const interactionRay = hitboxDebug?.interactionRay;

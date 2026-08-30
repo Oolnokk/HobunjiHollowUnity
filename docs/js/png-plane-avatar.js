@@ -1112,6 +1112,15 @@
     const applyDegrees = degrees => {
       const composedDeg = clamp(degrees + state.additiveDeg, rig.minDeg, rig.maxDeg); // Keeps additive nods inside the authored neck's safe range.
       state.appliedDeg = composedDeg;
+      // This rig's own actual convention (confirmed via the vocalization
+      // head-nod, animal-vocalizations.js's VOCAL_NOD_UP_DEG = -10 through
+      // an always-non-negative envelope, i.e. always a negative
+      // additiveDeg, and it visibly nods UP) is negative degrees = up,
+      // positive = down. The look-at-player pitch callers in game.js and
+      // grehlr's own authored eating/fishing pitch constants were written
+      // assuming the opposite, so they render backwards — fixed at each of
+      // those call sites instead of here, since flipping the sign in this
+      // shared function would also flip the nod, which is correct as-is.
       front.headBone.rotation.z = composedDeg * RAD;
       back.headBone.rotation.z = -composedDeg * RAD;
       return composedDeg;
