@@ -53,6 +53,13 @@
   pointer-events: auto;
 }
 
+/* In-flow elements (most menu containers): no move, just a single
+   resize handle — left/top are meaningless for position:static. */
+.ui-editor-select-box.resizable .ui-editor-handle[data-handle="se"] {
+  display: block;
+  pointer-events: auto;
+}
+
 .ui-editor-handle[data-handle="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
 .ui-editor-handle[data-handle="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
 .ui-editor-handle[data-handle="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }

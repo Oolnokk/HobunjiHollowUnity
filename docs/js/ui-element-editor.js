@@ -156,6 +156,13 @@
         if (props[key] != null && props[key] !== '') decls.push(`${cssProp}: ${props[key]} !important`);
       }
       if (props.borderColor) decls.push('border-style: solid !important');
+      if (props.width != null || props.height != null) {
+        // A flex child ignores an explicit width/height by default —
+        // flex-grow/shrink resize it anyway, and its implicit
+        // min-width/height:auto (based on content) blocks shrinking
+        // below that. Force both off so an explicit size actually holds.
+        decls.push('flex: 0 0 auto !important', 'min-width: 0 !important', 'min-height: 0 !important');
+      }
       if (props.translateX != null || props.translateY != null) {
         decls.push(`transform: translate(${props.translateX || '0px'}, ${props.translateY || '0px'}) !important`);
       }
@@ -199,8 +206,42 @@
     }
   }
 
+  // The game's own "menu readability" system (inventory-ui.js) boosts any
+  // menu text it measures below 11px by writing an INLINE
+  // `style="font-size: 11px !important"` (and, for washed-out gray text,
+  // an inline `color !important` too). An inline !important declaration
+  // always wins over a stylesheet !important rule regardless of selector
+  // specificity, so a leftover boost from before we touched the element
+  // silently defeats our own font-size/color override — and that system
+  // only re-checks an element when its class/aria-state fingerprint
+  // changes, which our override doesn't touch, so the stale boost never
+  // clears on its own. Strip it whenever we're about to override the
+  // same property, so ours can actually take effect; on the readability
+  // system's next pass it just measures our (safely-above-minimum) size
+  // and leaves it alone.
+  function clearReadabilityOverride(selector, props) {
+    if (props.fontSize == null && props.color == null) return;
+    let matches;
+    try { matches = document.querySelectorAll(selector); } catch { return; }
+    matches.forEach(elm => {
+      if (!elm.dataset) return;
+      if (props.fontSize != null && elm.dataset.menuFontFloor === '1') {
+        elm.style.removeProperty('font-size');
+        delete elm.dataset.menuFontFloor;
+      }
+      if (props.color != null && elm.dataset.menuGrayText === '1') {
+        elm.style.removeProperty('color');
+        delete elm.dataset.menuGrayText;
+      }
+      delete elm.dataset.menuReadabilityState;
+    });
+  }
+
   function applyAll() {
     styleTag.textContent = buildCss(overrides.elements);
+    for (const [selector, props] of Object.entries(overrides.elements)) {
+      clearReadabilityOverride(selector, props);
+    }
     applyTextOverrides();
     updateObserverState();
   }
@@ -324,7 +365,8 @@
       container.appendChild(row);
     });
 
-    if (isFloating(el)) {
+    {
+      const floating = isFloating(el);
       const relRow = document.createElement('div');
       relRow.className = 'ui-editor-field-row';
       const relLabel = document.createElement('label'); relLabel.className = 'ui-editor-field-label'; relLabel.textContent = 'Scale to Screen (%)';
@@ -343,9 +385,36 @@
 
       const hint = document.createElement('div');
       hint.className = 'ui-editor-drag-hint';
-      hint.textContent = 'Drag the yellow outline to move it. Drag a corner handle to resize. "Scale to Screen" stores position/size as a % of the screen so it holds up across resolutions; unchecked stores fixed pixels.';
+      hint.textContent = floating
+        ? 'Drag the yellow outline to move it. Drag a corner handle to resize. "Scale to Screen" stores position/size as a % of the screen so it holds up across resolutions; unchecked stores fixed pixels.'
+        : 'This element sits in normal page flow, so only its bottom-right handle resizes it (there\'s no "move" — repositioning something in flow needs its layout context, not just coordinates). "Scale to Screen" stores its size as a % of the screen; unchecked stores fixed pixels.';
       container.appendChild(hint);
     }
+
+    if (el.children.length > 0) {
+      const label = document.createElement('div');
+      label.className = 'ui-editor-drag-hint';
+      label.textContent = 'Children Typography — Text Color and Outline Color above already cascade to every element inside this container (CSS inheritance); set them here instead of on each child. Font size doesn\'t inherit that way in this game\'s CSS, so scale it explicitly:';
+      container.appendChild(label);
+
+      const scaleRow = document.createElement('div');
+      scaleRow.className = 'ui-editor-field-row';
+      const scaleLabel = document.createElement('label'); scaleLabel.className = 'ui-editor-field-label'; scaleLabel.textContent = 'Text Scale (%)';
+      const scaleInput = document.createElement('input');
+      scaleInput.type = 'number'; scaleInput.min = 10; scaleInput.max = 400; scaleInput.step = 5; scaleInput.placeholder = '100';
+      const scaleBtn = document.createElement('button');
+      scaleBtn.type = 'button'; scaleBtn.className = 'ui-editor-clear-btn'; scaleBtn.title = 'Apply to all text inside';
+      scaleBtn.textContent = '✓';
+      scaleBtn.addEventListener('click', () => {
+        const val = parseFloat(scaleInput.value);
+        if (!val || val <= 0) return;
+        applyChildTextScale(el, val);
+        renderFields(el, selector);
+      });
+      scaleRow.appendChild(scaleLabel); scaleRow.appendChild(scaleInput); scaleRow.appendChild(scaleBtn);
+      container.appendChild(scaleRow);
+    }
+
     updateDraggability();
   }
 
@@ -353,6 +422,42 @@
     if (!selectedEl || !selectedEl.parentElement) return;
     if (selectedEl.parentElement === document.documentElement) return;
     selectElement(selectedEl.parentElement);
+  }
+
+  // Scale every leaf text element inside a container proportionally.
+  // Color and -webkit-text-stroke-* are CSS-inherited, so setting them on
+  // the container already cascades to every child for free — but this
+  // codebase sets font-size in fixed px almost everywhere, which is NOT
+  // scaled by an ancestor's font-size, so there's no shortcut for size:
+  // each leaf's own current computed size has to be read and re-written,
+  // scaled. Leaves sharing an identical base size under the same class
+  // (e.g. many identical inventory-slot labels) get ONE class-wide
+  // override instead of one per element, to avoid flooding the config.
+  function applyChildTextScale(containerEl, scalePercent) {
+    const scale = scalePercent / 100;
+    if (!scale || scale <= 0) return;
+    const leaves = Array.from(containerEl.querySelectorAll('*')).filter(node =>
+      node.children.length === 0 &&
+      (node.textContent || '').trim().length > 0 &&
+      !(node.closest && node.closest('#uiEditorRoot'))
+    );
+    const groups = new Map();
+    leaves.forEach(node => {
+      const key = getStableSelector(node, true);
+      const size = parseFloat(getComputedStyle(node).fontSize);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ node, size });
+    });
+    groups.forEach((items, classSelector) => {
+      const uniformSize = items.every(i => Math.round(i.size) === Math.round(items[0].size)) ? items[0].size : null;
+      if (uniformSize != null) {
+        setOverrideProp(classSelector, 'fontSize', Math.round(uniformSize * scale) + 'px');
+      } else {
+        items.forEach(({ node, size }) => {
+          setOverrideProp(getStableSelector(node, false), 'fontSize', Math.round(size * scale) + 'px');
+        });
+      }
+    });
   }
 
   function getSelectableChildren(el) {
@@ -452,13 +557,21 @@
     rafHandle = requestAnimationFrame(tick);
   }
 
-  // ── drag-to-move / drag-to-resize (floating elements only) ──────────
+  // ── drag-to-move / drag-to-resize ─────────────────────────────────────
+  // Floating (fixed/absolute/sticky) elements get full move + 4-corner
+  // resize, since left/top actually do something for them. Elements left
+  // in normal document flow (most containers inside the menu) can still
+  // be resized — via the bottom-right handle only, since left/top are
+  // meaningless for position:static and moving the top-left corner would
+  // have nothing to visually anchor against.
   let dragState = null;
 
   function updateDraggability() {
     if (!selectBox) return;
-    const on = mode === 'expanded' && !!selectedEl && isFloating(selectedEl);
-    selectBox.classList.toggle('draggable', on);
+    const active = mode === 'expanded' && !!selectedEl;
+    const floating = active && isFloating(selectedEl);
+    selectBox.classList.toggle('draggable', floating);
+    selectBox.classList.toggle('resizable', active && !floating);
   }
 
   function toStoredUnit(px, axis, relative) {
@@ -468,8 +581,10 @@
   }
 
   function onSelectBoxPointerDown(e) {
-    if (!(mode === 'expanded' && selectedEl && isFloating(selectedEl))) return;
+    if (!(mode === 'expanded' && selectedEl)) return;
     const handle = e.target.closest('.ui-editor-handle');
+    const floating = isFloating(selectedEl);
+    if (!floating && (!handle || handle.dataset.handle !== 'se')) return;
     startDrag(handle ? handle.dataset.handle : 'move', e);
   }
 
@@ -496,6 +611,7 @@
 
   function onDragMove(e) {
     if (!dragState || !selectedEl) return;
+    const floating = isFloating(selectedEl);
     const ov = overrides.elements[selectedSelector] || {};
     const lockAspect = !!ov.lockAspect;
     const dx = (e.clientX - dragState.startX) / dragState.scaleX;
@@ -516,8 +632,10 @@
       }
       width = Math.max(4, width); height = Math.max(4, height);
     }
-    selectedEl.style.setProperty('left', left + 'px', 'important');
-    selectedEl.style.setProperty('top', top + 'px', 'important');
+    if (floating) {
+      selectedEl.style.setProperty('left', left + 'px', 'important');
+      selectedEl.style.setProperty('top', top + 'px', 'important');
+    }
     if (dragState.kind !== 'move') {
       selectedEl.style.setProperty('width', width + 'px', 'important');
       selectedEl.style.setProperty('height', height + 'px', 'important');
@@ -529,12 +647,15 @@
     window.removeEventListener('pointermove', onDragMove);
     if (!dragState || !selectedEl) { dragState = null; return; }
     const el = selectedEl, selector = selectedSelector;
+    const floating = isFloating(el);
     const ov = overrides.elements[selector] || {};
     const relative = !!ov.relative;
     const { lastLeft, lastTop, lastWidth, lastHeight, kind } = dragState;
     if (lastLeft != null) {
-      setOverrideProp(selector, 'left', toStoredUnit(lastLeft, 'x', relative));
-      setOverrideProp(selector, 'top', toStoredUnit(lastTop, 'y', relative));
+      if (floating) {
+        setOverrideProp(selector, 'left', toStoredUnit(lastLeft, 'x', relative));
+        setOverrideProp(selector, 'top', toStoredUnit(lastTop, 'y', relative));
+      }
       if (kind !== 'move') {
         setOverrideProp(selector, 'width', toStoredUnit(lastWidth, 'x', relative));
         setOverrideProp(selector, 'height', toStoredUnit(lastHeight, 'y', relative));
