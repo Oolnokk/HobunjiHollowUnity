@@ -1,6 +1,7 @@
 {
   "slot": "hat",
   "hoodLayering": "under",
+  "specialHeadwearRules": false,
   "tags": [
     "material:cloth",
     "hood-layer:under"
