@@ -69,7 +69,7 @@
       posteriorRule,
       anchors: {
         posterior: identityAnchor([0, 0, 0]),
-        shoulderPerch: identityAnchor(perch),
+        shoulderPerch: { ...identityAnchor(perch), sourcePixel: { ...shoulderPerchRule.sourcePixel } }, // Keeps the runtime anchor and its authored portrait landmark in the same object consumed by playerAttachmentAnchor().
         leftHandShoulder: identityAnchor(left),
         rightHandShoulder: identityAnchor(right),
       },
