@@ -312,38 +312,55 @@
     },
   };
 
-  // One request-giver at a time gets a fresh 'announced' request — called
+  // Builds and persists one 'announced' request for a specific giver —
+  // shared by the per-giver daily roll and the end-of-pass guarantee below.
+  function _announceRequestFor(npcRec, day) {
+    const npcId = npcRec.id;
+    const giver = REQUEST_GIVERS[npcId];
+    if (giver.combat) {
+      deps.setQuestStatus(_makeTaskId(), 'announced', {
+        kind: 'request', npcId, npcName: npcRec.name || 'the Watch', domain: 'combat',
+        items: [], tier: 0, postedDay: day, timerDays: giver.timerDays, deadlineDay: day + giver.timerDays, bonusMultiplier: 1,
+      });
+      return true;
+    }
+    const rolled = giver.roll();
+    if (!rolled.items?.length) return false;
+    deps.setQuestStatus(_makeTaskId(), 'announced', {
+      kind: 'request', npcId, npcName: npcRec.name || 'A neighbor', domain: 'mixed',
+      items: rolled.items, rewardGold: baseReward(rolled.items), rewardFriendship: TASK_FRIENDSHIP_REWARD.request,
+      bonusMultiplier: REQUEST_BONUS_MULTIPLIER, tier: 2, postedDay: day,
+      timerDays: rolled.timerDays, deadlineDay: day + rolled.timerDays,
+    });
+    return true;
+  }
+
+  // One or more request-givers get a fresh 'announced' request — called
   // from the day-rollover hooks and once on world load, same cadence the
   // old board notice used. Each eligible giver independently rolls a
   // modest daily chance so they don't all light up at once, and a giver
   // already holding an unresolved request (announced/offered/available)
-  // is skipped until it's turned in or declined.
+  // or one they already resolved today is skipped. If that leaves the
+  // whole town with nobody to talk to, one of the still-eligible givers is
+  // forced to have something anyway — word around town shouldn't ever go
+  // completely quiet for a full day.
   const REQUEST_DAILY_CHANCE = 0.35;
   function maybeRefreshRequestPostings() {
     const day = deps.calendar.day;
+    let anyActive = false;
+    const stillEligible = [];
     for (const npcId of Object.keys(REQUEST_GIVERS)) {
       const npcRec = deps.npcWalkers.find(w => w.rec?.id === npcId)?.rec;
       if (!npcRec) continue; // not spawned yet — try again next call
-      if (findNpcTask(npcId, 'request', ['announced', 'offered', 'available'])) continue;
+      if (findNpcTask(npcId, 'request', ['announced', 'offered', 'available'])) { anyActive = true; continue; }
       if (findNpcTask(npcId, 'request', ['declined', 'completed'], true)) continue; // already resolved one today
+      stillEligible.push(npcRec);
       if (Math.random() > REQUEST_DAILY_CHANCE) continue;
-      const giver = REQUEST_GIVERS[npcId];
-      if (giver.combat) {
-        deps.setQuestStatus(_makeTaskId(), 'announced', {
-          kind: 'request', npcId, npcName: npcRec.name || 'the Watch', domain: 'combat',
-          items: [], tier: 0, postedDay: day, timerDays: giver.timerDays, deadlineDay: day + giver.timerDays, bonusMultiplier: 1,
-        });
-        continue;
-      }
-      const rolled = giver.roll();
-      if (!rolled.items?.length) continue;
-      const id = _makeTaskId();
-      deps.setQuestStatus(id, 'announced', {
-        kind: 'request', npcId, npcName: npcRec.name || 'A neighbor', domain: 'mixed',
-        items: rolled.items, rewardGold: baseReward(rolled.items), rewardFriendship: TASK_FRIENDSHIP_REWARD.request,
-        bonusMultiplier: REQUEST_BONUS_MULTIPLIER, tier: 2, postedDay: day,
-        timerDays: rolled.timerDays, deadlineDay: day + rolled.timerDays,
-      });
+      if (_announceRequestFor(npcRec, day)) anyActive = true;
+    }
+    if (!anyActive && stillEligible.length) {
+      const forced = stillEligible[Math.floor(Math.random() * stillEligible.length)];
+      _announceRequestFor(forced, day);
     }
   }
 
