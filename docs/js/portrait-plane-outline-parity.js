@@ -23,6 +23,116 @@
   const avatarApi = global.PNGPlaneAvatar;
   if (!THREE || !avatarApi?.buildSinglePlaneAvatarModel || avatarApi.buildSinglePlaneAvatarModel.__hobunjiPortraitOutlineParityWrapped) return;
 
+  // The shared source-pixel resolver in png-plane-avatar.js is also a render-parity
+  // path: it must reproduce the SkinnedMesh shader's deformation on the CPU before
+  // converting the result to world space. The old implementation multiplied a
+  // local portrait point by bone.matrixWorld * boneInverse and then called
+  // localToWorld() on that already-world-transformed result, effectively applying
+  // the player's world transform twice. That is why a shoulder perch near the
+  // player could resolve tens of world units away. Reproduce Three.js r128's
+  // actual skinning sequence instead: bindMatrix -> weighted bone matrices ->
+  // bindMatrixInverse -> mesh localToWorld.
+  function installSkinnedPixelCpuParity() {
+    if (avatarApi.__hobunjiSkinnedPixelCpuParityInstalled) return;
+
+    function resolvePosition(avatarRoot, sourcePixel) {
+      const portraitRoot = avatarApi.resolveSkinnedPortraitRoot?.(avatarRoot) || avatarRoot;
+      const rig = portraitRoot?.userData?.neckRig;
+      const skinnedPlane = rig?.skinnedPlane;
+      const skeleton = skinnedPlane?.skeleton;
+      if (!rig?.available || !skinnedPlane?.isSkinnedMesh || !skeleton?.bones?.length) return null;
+
+      const sourceCanvas = portraitRoot.userData?.sourceCanvas;
+      const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
+      const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
+      const modelWidth = Number(portraitRoot.userData?.portraitModelWidth);
+      const modelHeight = Number(portraitRoot.userData?.portraitModelHeight);
+      const pixelX = Number(sourcePixel?.x);
+      const pixelY = Number(sourcePixel?.y);
+      if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
+        || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
+
+      const renderedPixelX = avatarApi.getPortraitsFlipped?.() ? pixelWidth - pixelX : pixelX;
+      const localPoint = new THREE.Vector3(
+        -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
+        modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
+        0,
+      );
+      const blendHeight = Math.max(
+        modelHeight * .012,
+        Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
+      );
+      const neckY = Number(rig.neckLocal?.y) || 0;
+      const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
+      const headWeight = t * t * (3 - 2 * t);
+
+      // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
+      // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
+      // exactly as the renderer does before evaluating the skinning shader.
+      portraitRoot.updateMatrixWorld?.(true);
+      skinnedPlane.updateMatrixWorld?.(true);
+      skeleton.update?.();
+
+      const bindPoint = localPoint.clone().applyMatrix4(skinnedPlane.bindMatrix);
+      const deformed = new THREE.Vector3();
+      const bonePoint = new THREE.Vector3();
+      const boneMatrix = new THREE.Matrix4();
+      const weights = [1 - headWeight, headWeight];
+      for (let i = 0; i < Math.min(2, skeleton.bones.length); i++) {
+        const weight = weights[i] || 0;
+        if (!weight) continue;
+        if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
+          boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
+        } else {
+          const bone = skeleton.bones[i];
+          const boneInverse = skeleton.boneInverses?.[i];
+          if (!bone || !boneInverse) continue;
+          bone.updateWorldMatrix?.(true, false);
+          boneMatrix.multiplyMatrices(bone.matrixWorld, boneInverse);
+        }
+        bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
+        deformed.addScaledVector(bonePoint, weight);
+      }
+      deformed.applyMatrix4(skinnedPlane.bindMatrixInverse);
+      return skinnedPlane.localToWorld(deformed);
+    }
+
+    function resolveFrame(avatarRoot, sourcePixel) {
+      const center = resolvePosition(avatarRoot, sourcePixel);
+      if (!center) return null;
+      const pixelX = Number(sourcePixel?.x);
+      const pixelY = Number(sourcePixel?.y);
+      if (![pixelX, pixelY].every(Number.isFinite)) return null;
+      const left = resolvePosition(avatarRoot, { x: pixelX - 1, y: pixelY });
+      const right = resolvePosition(avatarRoot, { x: pixelX + 1, y: pixelY });
+      const down = resolvePosition(avatarRoot, { x: pixelX, y: pixelY + 1 });
+      const up = resolvePosition(avatarRoot, { x: pixelX, y: pixelY - 1 });
+      if (!left || !right || !down || !up) return null;
+
+      const tangent = right.clone().sub(left);
+      const vertical = up.clone().sub(down);
+      if (tangent.lengthSq() < 1e-10 || vertical.lengthSq() < 1e-10) return null;
+      tangent.normalize();
+      vertical.addScaledVector(tangent, -vertical.dot(tangent));
+      if (vertical.lengthSq() < 1e-10) return null;
+      vertical.normalize();
+      const normal = tangent.clone().cross(vertical).normalize();
+      const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+      return {
+        position: center,
+        quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+        tangent,
+        vertical,
+        normal,
+      };
+    }
+
+    avatarApi.resolveSkinnedPixelWorldPosition = resolvePosition;
+    avatarApi.resolveSkinnedPixelWorldFrame = resolveFrame;
+    avatarApi.__hobunjiSkinnedPixelCpuParityInstalled = true;
+  }
+  installSkinnedPixelCpuParity();
+
   const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4; // Mirrors game.js's own _markPngPlane/_renderPngPlaneOutlineOccluderDepth constant.
   const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->depth-replay sequence without accepting old frames.
   const RESCAN_INTERVAL_MS = 100; // game.js's own _markPngPlane call (which enables the layer bit below) runs synchronously right after build, but poll briefly in case that ordering ever changes.
@@ -143,6 +253,7 @@
         lockedDepthDraws,
         missedDepthSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        skinnedPixelCpuParity: !!avatarApi.__hobunjiSkinnedPixelCpuParityInstalled,
       };
     },
   });
