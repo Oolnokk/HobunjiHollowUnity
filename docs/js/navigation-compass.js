@@ -63,14 +63,14 @@
     return { heading: Number.isFinite(playerHeading) ? playerHeading : 0, source: 'player-fallback' };
   }
 
-  function questTargets() {
-    return window.ProceduralTasks?.compassTargets?.() || [];
-  }
-
   function collectTargets(areaId) {
     const targets = [];
     let offAreaQuestTargets = 0; // Used to tell mobile diagnostics why an active quest has no current bearing marker.
-    for (const target of questTargets()) {
+    // One combined read per frame — see ProceduralTasks.allCompassTargets,
+    // which caches the expensive quest-history scan and only re-resolves
+    // live NPC positions here.
+    const questTargets = window.ProceduralTasks?.allCompassTargets?.() || { active: [], pending: [] };
+    for (const target of questTargets.active) {
       if (target.areaId !== areaId) { offAreaQuestTargets++; continue; }
       targets.push({ ...target, source: 'quest', symbol: '◆', color: '#f9e28a', priority: 0 });
     }
@@ -78,7 +78,7 @@
     // '!' instead of the gold diamond — same visual language an Elder
     // Scrolls-style compass uses to flag "this person wants to talk to you"
     // before you've ever opened their dialogue.
-    for (const target of window.ProceduralTasks?.pendingRequestCompassTargets?.() || []) {
+    for (const target of questTargets.pending) {
       if (target.areaId !== areaId) { offAreaQuestTargets++; continue; }
       targets.push({ ...target, source: 'pending-request', symbol: '!', color: '#c9a0ff', priority: 0 });
     }

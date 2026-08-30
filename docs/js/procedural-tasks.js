@@ -350,10 +350,16 @@
   // The purple ambient call-over line for an NPC currently sitting on an
   // 'announced' request — consumed by ambient-dialogue.js so it can
   // override that NPC's ordinary greeting the next time the player walks
-  // up, in place of a random line from the normal greeting pool.
+  // up, in place of a random line from the normal greeting pool. This is
+  // called for every NPC in the area several times a second, so it bails
+  // before touching questProgress at all unless the NPC is actually one of
+  // the handful of named quest-givers — findNpcTask's Object.entries scan
+  // over the whole (ever-growing, never-pruned) quest history is real cost
+  // that every other NPC in town has no reason to pay every tick.
   function pendingRequestGreetingLine(npcId) {
-    const pending = findNpcTask(npcId, 'request', ['announced']);
-    if (!pending) return null;
+    if (!REQUEST_GIVERS[npcId]) return null;
+    _refreshCandidatesIfNeeded(); // Same hourly-cached candidate set the compass '!' marker reads — see below.
+    if (!_candidateCache.pendingByNpc.some(c => c.npcId === npcId)) return null;
     return REQUEST_GIVERS[npcId]?.callOver(playerNickname()) || null;
   }
 
@@ -425,49 +431,67 @@
   // Active requests/favors point back to their requesting NPC. Pending
   // (not-yet-answered) requests get their own purple '!' marker so the
   // compass can flag a quest-giver before the player has ever talked to
-  // them. The compass consumes the walker's live scheduled area/position
-  // so it never maintains a second, stale copy of NPC navigation state.
-  function compassTargets() {
-    const byNpc = new Map(); // Used to collapse multiple active requests/favors for the same NPC into one compass marker.
+  // them.
+  //
+  // Which NPCs currently have an active/pending task at all is the
+  // expensive half of this (an Object.entries scan of the whole,
+  // ever-growing questProgress history — every completed/declined task
+  // stays in it for the rest of the save). That set changes only when a
+  // task is announced/accepted/declined/completed, so it's cached and
+  // only rescanned on the in-game clock's hourly tick rather than on every
+  // compass-render frame. Each NPC's actual col/row is resolved fresh
+  // every call against the live npcWalkers array (a handful of cheap
+  // lookups, not the full scan) so the marker still tracks their real
+  // walking position between rescans.
+  let _candidateCache = { hourKey: null, activeByNpc: [], pendingByNpc: [] };
+  function _refreshCandidatesIfNeeded() {
+    const hourKey = `${deps.calendar.day}:${Math.floor((deps.calendar.time01 || 0) * 24)}`;
+    if (_candidateCache.hourKey === hourKey) return;
+    const activeByNpc = new Map(); // Used to collapse multiple active requests/favors for the same NPC into one compass marker.
+    const pendingByNpc = [];
     for (const [id, state] of Object.entries(deps?.getQuestProgress?.() || {})) {
       const task = state?.progress;
-      if (state?.status !== 'available' || !['request', 'favor'].includes(task?.kind) || !task.npcId) continue;
-      const walker = deps.npcWalkers.find(candidate => candidate.rec?.id === task.npcId);
-      if (!walker?.root?.position) continue;
-      const existing = byNpc.get(task.npcId);
-      byNpc.set(task.npcId, {
-        id: existing?.id || `quest:${id}`,
-        taskIds: [...(existing?.taskIds || []), id],
-        npcId: task.npcId,
-        label: `Quest: ${task.npcName || walker.rec?.name || task.npcId}`,
-        areaId: walker.area || walker.root?._pendingBuildingAdd || (walker.root?._pendingTownAdd ? 'town' : ''),
-        col: walker.root.position.x,
-        row: walker.root.position.z,
-      });
+      if (!task?.npcId) continue;
+      if (state.status === 'available' && ['request', 'favor'].includes(task.kind)) {
+        const existing = activeByNpc.get(task.npcId);
+        activeByNpc.set(task.npcId, {
+          id: existing?.id || `quest:${id}`,
+          taskIds: [...(existing?.taskIds || []), id],
+          npcId: task.npcId,
+          npcName: task.npcName,
+        });
+      } else if (['announced', 'offered'].includes(state.status) && task.kind === 'request') {
+        pendingByNpc.push({ id: `pending-request:${id}`, npcId: task.npcId, npcName: task.npcName });
+      }
     }
-    return [...byNpc.values()];
+    _candidateCache = { hourKey, activeByNpc: [...activeByNpc.values()], pendingByNpc };
   }
-
-  // Purple '!' markers for named quest-givers currently sitting on an
-  // 'announced' or 'offered' request the player hasn't resolved yet.
-  function pendingRequestCompassTargets() {
-    const targets = [];
-    for (const [id, state] of Object.entries(deps?.getQuestProgress?.() || {})) {
-      const task = state?.progress;
-      if (!['announced', 'offered'].includes(state?.status) || task?.kind !== 'request' || !task.npcId) continue;
-      const walker = deps.npcWalkers.find(candidate => candidate.rec?.id === task.npcId);
-      if (!walker?.root?.position) continue;
-      targets.push({
-        id: `pending-request:${id}`,
-        npcId: task.npcId,
-        label: `${task.npcName || walker.rec?.name || task.npcId} has a request`,
-        areaId: walker.area || walker.root?._pendingBuildingAdd || (walker.root?._pendingTownAdd ? 'town' : ''),
-        col: walker.root.position.x,
-        row: walker.root.position.z,
-      });
-    }
-    return targets;
+  function _resolveLive(candidate, labelFn) {
+    const walker = deps.npcWalkers.find(w => w.rec?.id === candidate.npcId);
+    if (!walker?.root?.position) return null;
+    return {
+      ...candidate,
+      label: labelFn(candidate, walker),
+      areaId: walker.area || walker.root?._pendingBuildingAdd || (walker.root?._pendingTownAdd ? 'town' : ''),
+      col: walker.root.position.x,
+      row: walker.root.position.z,
+    };
   }
+  function _scanCompassTargets() {
+    _refreshCandidatesIfNeeded();
+    const active = _candidateCache.activeByNpc
+      .map(c => _resolveLive(c, (c, w) => `Quest: ${c.npcName || w.rec?.name || c.npcId}`))
+      .filter(Boolean);
+    const pending = _candidateCache.pendingByNpc
+      .map(c => _resolveLive(c, (c, w) => `${c.npcName || w.rec?.name || c.npcId} has a request`))
+      .filter(Boolean);
+    return { active, pending };
+  }
+  // navigation-compass.js reads both buckets from a single scan per frame
+  // via allCompassTargets(); these two remain only for anything else still
+  // calling the old split accessors.
+  function compassTargets() { return _scanCompassTargets().active; }
+  function pendingRequestCompassTargets() { return _scanCompassTargets().pending; }
 
   // Turning a task in only ever happens by talking to the specific NPC
   // who posted/asked it — see openNpcDialogue's turn-in offer and the
@@ -518,6 +542,7 @@
     getTurnInReadyTaskForNpc,
     compassTargets,
     pendingRequestCompassTargets,
+    allCompassTargets: _scanCompassTargets,
     turnInTask,
   };
 })();
