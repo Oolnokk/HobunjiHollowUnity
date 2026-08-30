@@ -38,12 +38,54 @@
   function register() {
     let active = false;
     let lastCounterAt = -99;
+    let presentationSceneBackup = null; // Restored when Counter Shield ends so the scene bridge never becomes persistent player state.
+    let presentationSceneHadOwn = false; // Remembers whether player.scene existed before this hold for exact cleanup semantics.
+    let presentationSceneBridged = false; // Used by the player Counter Shield debug snapshot and cleanup path.
+    let presentationSceneReady = false; // Records whether the latest active-scene lookup succeeded for mobile debugging.
     // Set whenever a riposte fires, to the moment its full cosmetic swing
     // (windup+strike+post-strike hold+return-tail — mirrors game.js's
     // triggerWeaponSwingVisual math) will have finished; onHoldUpdate uses
     // it to bring the guard stance back up afterward without cutting the
     // riposte's own animation short.
     let reassertBlockAt = -1;
+
+    function resolvePlayerPresentationScene(deps) {
+      const activeScene = deps.getActiveScene?.(); // Same authoritative current-scene accessor used by the combat render helpers.
+      if (activeScene?.isScene) return activeScene;
+      let node = deps.toolHolder?.() || null; // Fallback for builds where the active-scene adapter is not injected yet.
+      while (node?.parent) node = node.parent;
+      return node?.isScene ? node : null;
+    }
+
+    function bridgePlayerPresentationScene(deps) {
+      const scene = resolvePlayerPresentationScene(deps);
+      presentationSceneReady = !!scene;
+      if (!scene || !deps.player) return false;
+      if (!presentationSceneBridged) {
+        presentationSceneHadOwn = Object.prototype.hasOwnProperty.call(deps.player, 'scene');
+        presentationSceneBackup = deps.player.scene;
+        presentationSceneBridged = true;
+      }
+      // Player actors normally do not retain a scene reference, while the
+      // shared heavy-telegraph renderer accepts actor.scene as its reliable
+      // world-space field parent. Keep that presentation-only bridge current
+      // while held so the glow + hemisphere can resolve even across area swaps.
+      deps.player.scene = scene;
+      return true;
+    }
+
+    function restorePlayerPresentationScene(deps) {
+      if (!presentationSceneBridged || !deps?.player) {
+        presentationSceneReady = false;
+        return;
+      }
+      if (presentationSceneHadOwn) deps.player.scene = presentationSceneBackup;
+      else delete deps.player.scene;
+      presentationSceneBackup = null;
+      presentationSceneHadOwn = false;
+      presentationSceneBridged = false;
+      presentationSceneReady = false;
+    }
 
     function raiseBlockPose(deps) {
       deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
@@ -136,9 +178,11 @@
     function onHoldStart() {
       const deps = window.Combat.deps;
       if (deps.player.stamina <= MIN_STAMINA_TO_RAISE) {
+        restorePlayerPresentationScene(deps);
         deps.showToast('Counter Shield failed: no stamina.', false);
         return;
       }
+      bridgePlayerPresentationScene(deps);
       active = true;
       reassertBlockAt = -1;
       window.Combat.setPlayerDamageInterceptor(tryAbsorb);
@@ -149,11 +193,13 @@
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
+      bridgePlayerPresentationScene(deps);
       const drainMul = 1 + (window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')?.stats.drainMul || 0);
       window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt), 'Counter Shield (holding)');
       if (deps.player.stamina <= 0) {
         active = false;
         window.Combat.setPlayerDamageInterceptor(null);
+        restorePlayerPresentationScene(deps);
         deps.showToast('Counter Shield dropped: stamina empty.', false);
         return;
       }
@@ -167,9 +213,11 @@
       if (!active) return;
       active = false;
       reassertBlockAt = -1;
-      window.Combat.deps.cancelWeaponSwingHold();
+      const deps = window.Combat.deps;
+      deps.cancelWeaponSwingHold();
       window.Combat.setPlayerDamageInterceptor(null);
-      window.Combat.deps.showToast('Counter Shield lowered.', false);
+      restorePlayerPresentationScene(deps);
+      deps.showToast('Counter Shield lowered.', false);
     }
 
     window.Combat.abilities.register('counterShield', {
@@ -181,6 +229,16 @@
       onHoldEnd,
       isActive: () => active,
     });
+
+    window.Combat.counterShieldPlayerPresentation = {
+      snapshot: () => ({
+        active,
+        sceneBridged: presentationSceneBridged,
+        sceneReady: presentationSceneReady,
+        holderReady: !!window.Combat.deps?.toolHolder?.(),
+        heavyRenderer: window.Combat.heavyTelegraphVisuals?.snapshot?.().find?.(entry => entry.actor === 'player') || null,
+      }),
+    };
   }
 
   register();
