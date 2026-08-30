@@ -6810,7 +6810,7 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (!child.isMesh || !child.material || child.name.includes('hat_xray') || child.name.includes('shoulder_pet_xray')) return;
+          if (!child.isMesh || !child.material || child.name.includes('hat_xray')) return;
           // A neck-rigged portrait is one SkinnedMesh with separate front/back
           // materials in an array; rigid fallback portraits still expose one
           // material per mesh. Flatten both shapes for the depth arbiter.
@@ -6864,22 +6864,14 @@
         }
       }
 
-      // Shoulder-pet-vs-player layering: fixed, NOT distance-based. A
-      // shoulder pet is always glued to the same authored offset near the
-      // player's head/shoulder (see the shoulderPet branch below), so a
-      // per-frame distance comparison between nearly identical points only
-      // creates flicker. Keep depth testing enabled (terrain and buildings
-      // can still occlude the pet), but disable depth writes on both portrait
-      // faces and draw the pet after both faces and hat overlays.
+      // Shoulder-pet-vs-player layering uses whole-sprite draw order, not
+      // intersecting depth surfaces. Both cutouts keep depth testing against
+      // the world, but stop writing depth against each other while attached.
       const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
-      // Keep the back portrait above the front portrait. The pet is
-      // intentionally above this value in both camera directions.
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
-      const SHOULDER_PET_PLANE_RENDER_ORDER = PLAYER_BACK_PLANE_RENDER_ORDER + 2;
-      const SHOULDER_PET_STENCIL_BIT = 1; // Marks shoulder-pet pixels so explicit body-face overlays cannot redraw elsewhere.
-      const PLAYER_FRONT_STENCIL_BIT = 2; // Marks visible front-face pixels that must block the back-face pet overlay.
-      const PLAYER_BACK_STENCIL_BIT = 4; // Marks visible back-face pixels that must block the front-face pet overlay.
-      const _shoulderPetXrayCameraLocal = new THREE.Vector3(); // Reused by the per-frame front/back visibility test below.
+      const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
+      const PLAYER_OVER_SHOULDER_PET_RENDER_ORDER = 8;
+      const _shoulderPetLayerCameraLocal = new THREE.Vector3(); // Reused to choose the currently camera-visible character face.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -6887,73 +6879,59 @@
         material.depthWrite = depthWrite;
         material.needsUpdate = true;
       }
-      function _setShoulderPetStencilWriter(material, active, stencilBit) {
-        if (!material) return;
-        const changed = material.stencilWrite !== active
-          || (active && (
-            material.stencilRef !== stencilBit
-            || material.stencilWriteMask !== stencilBit
-            || material.stencilFunc !== THREE.AlwaysStencilFunc
-            || material.stencilZPass !== THREE.ReplaceStencilOp
-          ));
-        if (!changed) return;
-        material.stencilWrite = active;
-        material.stencilRef = stencilBit;
-        material.stencilWriteMask = stencilBit;
-        material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilFuncMask = 0xff;
-        material.stencilFail = THREE.KeepStencilOp;
-        material.stencilZFail = THREE.KeepStencilOp;
-        material.stencilZPass = THREE.ReplaceStencilOp;
-        material.needsUpdate = true;
+      function _cameraSeesPlayerFrontFace() {
+        if (!_playerAvatarFrontMesh) return true;
+        _playerAvatarFrontMesh.updateWorldMatrix(true, false);
+        _shoulderPetLayerCameraLocal.copy(camera.position);
+        _playerAvatarFrontMesh.worldToLocal(_shoulderPetLayerCameraLocal);
+        return _shoulderPetLayerCameraLocal.z >= 0;
       }
-      function _shoulderPetXrayFaceIsVisible(mesh) {
-        if (!mesh) return false;
-        mesh.updateWorldMatrix(true, false);
-        _shoulderPetXrayCameraLocal.copy(camera.position);
-        mesh.worldToLocal(_shoulderPetXrayCameraLocal);
-        const localNormalZ = Number(mesh.userData.shoulderPetXrayLocalNormalZ) || 1;
-        return _shoulderPetXrayCameraLocal.z * localNormalZ > 0.0001;
+      function _restorePlayerBodyRenderOrder() {
+        if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        if (_playerAvatarBackMesh && _playerAvatarBackMesh !== _playerAvatarFrontMesh) {
+          _playerAvatarBackMesh.renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        }
+      }
+      function _setPlayerBodyRenderOrder(renderOrder) {
+        if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = renderOrder;
+        if (_playerAvatarBackMesh && _playerAvatarBackMesh !== _playerAvatarFrontMesh) {
+          _playerAvatarBackMesh.renderOrder = renderOrder;
+        }
       }
       function updatePetLayering(active, pet) {
-        // A previously-arbitrated pet (deactivated, or swapped for a
-        // different creature) needs its own planes restored to normal —
-        // otherwise a former shoulder pet demoted to a plain wandering
-        // companion would be stuck permanently unable to write depth.
+        // Restore a detached/swapped pet before assigning the active pair.
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
             _setLayerDepthWrite(m, true);
-            _setShoulderPetStencilWriter(m, false, SHOULDER_PET_STENCIL_BIT);
           }
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
             if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
           }
         }
+
         _petLayeringActive = active;
         _petLayeringPet = active ? pet : null;
-        _setLayerDepthWrite(_playerAvatarFrontMaterial, !active || s_disableShoulderFrontXray);
-        _setLayerDepthWrite(_playerAvatarBackMaterial, !active || s_disableShoulderBackXray);
-        _setShoulderPetStencilWriter(_playerAvatarFrontMaterial, active, PLAYER_FRONT_STENCIL_BIT);
-        _setShoulderPetStencilWriter(_playerAvatarBackMaterial, active, PLAYER_BACK_STENCIL_BIT);
-        if (_playerShoulderXrayFrontMesh) {
-          _playerShoulderXrayFrontMesh.visible = !!active
-            && s_frontSpriteXrayThroughShoulderPet
-            && _shoulderPetXrayFaceIsVisible(_playerShoulderXrayFrontMesh);
+        _setLayerDepthWrite(_playerAvatarFrontMaterial, !active);
+        _setLayerDepthWrite(_playerAvatarBackMaterial, !active);
+
+        if (!active || !pet) {
+          _restorePlayerBodyRenderOrder();
+          return;
         }
-        if (_playerShoulderXrayBackMesh) {
-          _playerShoulderXrayBackMesh.visible = !!active
-            && s_backSpriteXrayThroughShoulderPet
-            && _shoulderPetXrayFaceIsVisible(_playerShoulderXrayBackMesh);
+
+        const frontVisible = _cameraSeesPlayerFrontFace();
+        const playerDrawsOnTop = frontVisible
+          ? (s_disableShoulderFrontXray || s_frontSpriteXrayThroughShoulderPet)
+          : (s_disableShoulderBackXray || s_backSpriteXrayThroughShoulderPet);
+        _setPlayerBodyRenderOrder(
+          playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
+        );
+
+        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) {
+          _setLayerDepthWrite(m, false);
         }
-        const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
-        for (const m of petMats) {
-          _setLayerDepthWrite(m, !active);
-          _setShoulderPetStencilWriter(m, active, SHOULDER_PET_STENCIL_BIT);
-        }
-        if (active && pet) {
-          for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
-            if (mesh && mesh.renderOrder !== SHOULDER_PET_PLANE_RENDER_ORDER) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
-          }
+        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
+          if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
         }
       }
 
@@ -8806,8 +8784,8 @@
       // attached pet's depth pass without affecting ordinary world occlusion.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
-      let _playerShoulderXrayFrontMesh = null; // Face-only overlay shown after the pet when front-sprite X-ray is enabled.
-      let _playerShoulderXrayBackMesh = null; // Face-only overlay shown after the pet when back-sprite X-ray is enabled.
+      let _playerAvatarFrontMesh = null; // Real front portrait carrier reordered against the shoulder pet by updatePetLayering.
+      let _playerAvatarBackMesh = null; // Real back portrait carrier; shared with the front reference on skinned avatars.
       // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
       // cleared in refreshPlayerAvatar (the only place the avatar's mesh
       // hierarchy is rebuilt), so a stable hierarchy isn't re-traversed
@@ -14673,8 +14651,8 @@
         _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
-        _playerShoulderXrayFrontMesh = null;
-        _playerShoulderXrayBackMesh = null;
+        _playerAvatarFrontMesh = null;
+        _playerAvatarBackMesh = null;
         // The old front/back materials this pointed at are about to be
         // disposed by removePlayerAvatarChildren below, and a brand new
         // pair (default depthWrite:true) is coming — force updatePetLayering
@@ -14731,63 +14709,12 @@
         _playerAvatarBackMaterial = _skinnedBodyMaterials?.[1] || _bodyAssembly?.children?.[1]?.material || null;
         if (_skinnedBodyPlane) _skinnedBodyPlane.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
         else if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
-        const buildShoulderPetBodyXrayOverlay = facingBack => {
-          const materialIndex = facingBack ? 1 : 0; // Selects the requested face from the shared skinned body or rigid fallback pair.
-          const sourceMesh = _skinnedBodyPlane || _bodyAssembly?.children?.[materialIndex];
-          const sourceMaterial = facingBack ? _playerAvatarBackMaterial : _playerAvatarFrontMaterial;
-          if (!sourceMesh?.geometry || !sourceMaterial) return null;
-          const overlayMaterial = sourceMaterial.clone(); // Independent depth/render state for this face-only shoulder-pet overlay.
-          if (sourceMaterial.map) {
-            overlayMaterial.map = sourceMaterial.map.clone(); // Avoids shared-texture disposal when the avatar is rebuilt.
-            overlayMaterial.map.needsUpdate = true;
-          }
-          overlayMaterial.depthWrite = false;
-          overlayMaterial.depthTest = true; // World geometry still occludes the explicit X-ray overlay.
-          overlayMaterial.side = THREE.FrontSide; // Never render the duplicate face through its reverse winding.
-          const oppositeBodyStencilBit = facingBack ? PLAYER_FRONT_STENCIL_BIT : PLAYER_BACK_STENCIL_BIT; // Prevents this overlay from crossing the other character face.
-          overlayMaterial.stencilWrite = true;
-          overlayMaterial.stencilRef = SHOULDER_PET_STENCIL_BIT;
-          overlayMaterial.stencilWriteMask = 0;
-          overlayMaterial.stencilFunc = THREE.EqualStencilFunc;
-          overlayMaterial.stencilFuncMask = SHOULDER_PET_STENCIL_BIT | oppositeBodyStencilBit;
-          overlayMaterial.stencilFail = THREE.KeepStencilOp;
-          overlayMaterial.stencilZFail = THREE.KeepStencilOp;
-          overlayMaterial.stencilZPass = THREE.KeepStencilOp;
-          overlayMaterial.name = `player_avatar_${facingBack ? 'back' : 'front'}_shoulder_pet_xray_material`;
-          const overlayGeometry = sourceMesh.geometry.clone(); // Face-only geometry owned by this overlay.
-          let overlayMesh;
-          if (_skinnedBodyPlane) {
-            const sourceGroup = sourceMesh.geometry.groups[materialIndex];
-            if (!sourceGroup) {
-              overlayGeometry.dispose();
-              overlayMaterial.map?.dispose();
-              overlayMaterial.dispose();
-              return null;
-            }
-            overlayGeometry.clearGroups();
-            overlayGeometry.addGroup(sourceGroup.start, sourceGroup.count, 0);
-            overlayMaterial.skinning = true;
-            overlayMesh = new THREE.SkinnedMesh(overlayGeometry, overlayMaterial);
-            overlayMesh.position.copy(sourceMesh.position);
-            overlayMesh.quaternion.copy(sourceMesh.quaternion);
-            overlayMesh.scale.copy(sourceMesh.scale);
-            overlayMesh.bind(sourceMesh.skeleton, sourceMesh.bindMatrix);
-          } else {
-            overlayMesh = new THREE.Mesh(overlayGeometry, overlayMaterial);
-            overlayMesh.position.copy(sourceMesh.position);
-            overlayMesh.quaternion.copy(sourceMesh.quaternion);
-            overlayMesh.scale.copy(sourceMesh.scale);
-          }
-          overlayMesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_shoulder_pet_xray_plane`;
-          overlayMesh.userData.shoulderPetXrayLocalNormalZ = _skinnedBodyPlane && facingBack ? -1 : 1;
-          overlayMesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER + 1;
-          overlayMesh.frustumCulled = false;
-          overlayMesh.visible = false;
-          _bodyAssembly.add(overlayMesh);
-          return overlayMesh;
-        };
-        _playerShoulderXrayFrontMesh = buildShoulderPetBodyXrayOverlay(false);
-        _playerShoulderXrayBackMesh = buildShoulderPetBodyXrayOverlay(true);
+        _playerAvatarFrontMesh = _skinnedBodyPlane || _bodyAssembly?.children?.[0] || null;
+        _playerAvatarBackMesh = _skinnedBodyPlane || _bodyAssembly?.children?.[1] || null;
+        if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        if (_playerAvatarBackMesh && _playerAvatarBackMesh !== _playerAvatarFrontMesh) {
+          _playerAvatarBackMesh.renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        }
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
