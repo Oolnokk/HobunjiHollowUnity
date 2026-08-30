@@ -39,7 +39,27 @@
     },
   }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
 
-  window.HeldActionAnimations = Object.freeze({ drink, throwFlask });
+  // Counter Shield is authored here rather than privately in combat-counter-shield.js
+  // so the runtime and Attack Animation Editor operate on the same guard pose.
+  // Roll 180 turns the flat weapon PNG around in its own plane, making the weapon
+  // point in the opposite direction without changing the guard's world-space aim.
+  const counterShield = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Counter Shield',
+    style: 'sweep',
+    durationS: 0.24,
+    windupFrac: 0.50,
+    strikeFrac: 1.00,
+    holdFrac: 1.00,
+    poses: {
+      neutral: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, roll: 180, bodyYaw: 0 },
+      windup: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20 },
+      strike: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20 },
+    },
+  };
+
+  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
@@ -52,6 +72,78 @@
     : (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
+
+  // The Attack Animation Editor's main logic is an ES module, so its local anim /
+  // TOOL_PRESETS state is deliberately not global. Install Counter Shield through
+  // the editor's public DOM controls after that module has initialized: dispatching
+  // the same input/change events as a user keeps its internal animation state,
+  // gizmos, JSON export, hands, timeline, and viewport all synchronized.
+  if (isAttackEditor) {
+    const installCounterShieldEditorPreset = () => {
+      const presetSelect = document.getElementById('presetSelect');
+      const loadPresetBtn = document.getElementById('loadPresetBtn');
+      if (!presetSelect || !loadPresetBtn || presetSelect.querySelector('option[value="counter_shield_shared"]')) return;
+
+      const option = document.createElement('option');
+      option.value = 'counter_shield_shared';
+      option.textContent = 'Counter Shield — Guard Hold';
+      presetSelect.appendChild(option);
+
+      const setControl = (id, value, eventName = 'input') => {
+        const el = document.getElementById(id);
+        if (!el || value == null) return;
+        el.value = String(value);
+        el.dispatchEvent(new Event(eventName, { bubbles: true }));
+      };
+
+      const applyCounterShield = () => {
+        const a = window.HeldActionAnimations?.counterShield;
+        if (!a) return;
+        setControl('animName', a.name, 'input');
+        setControl('animStyle', a.style, 'change');
+        setControl('playbackSequence', 'attack', 'change');
+        setControl('durationS', a.durationS, 'input');
+        setControl('windupFrac', Math.min(0.90, a.windupFrac), 'input');
+        // The editor slider intentionally tops out below 1 so a visible return
+        // segment always exists. Runtime Counter Shield still holds at strike.
+        setControl('strikeFrac', Math.min(0.98, a.strikeFrac), 'input');
+        setControl('holdFrac', Math.min(0.99, a.holdFrac), 'input');
+
+        for (const phase of ['neutral', 'windup', 'strike']) {
+          const pose = a.poses?.[phase] || {};
+          for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
+            setControl(`${phase}_${key}`, pose[key], 'input');
+          }
+        }
+
+        // Pose inputs scrub/pause by design; restart after bulk-loading so the
+        // user immediately sees Counter Shield animate, then can scrub any pose.
+        document.getElementById('resetPreviewBtn')?.click();
+        const playPause = document.getElementById('playPauseBtn');
+        if (playPause && /Play/i.test(playPause.textContent || '')) playPause.click();
+      };
+
+      loadPresetBtn.addEventListener('click', () => {
+        if (presetSelect.value === 'counter_shield_shared') applyCounterShield();
+      }, true);
+
+      // The stats selector already contains Counter Shield. Selecting it now also
+      // loads the matching animation, fixing the previous stats-only dead end.
+      document.getElementById('statSlotSelect')?.addEventListener('change', event => {
+        const selected = event.currentTarget?.selectedOptions?.[0];
+        if (!/Counter Shield/i.test(selected?.textContent || '')) return;
+        presetSelect.value = 'counter_shield_shared';
+        applyCounterShield();
+      });
+    };
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', () => setTimeout(installCounterShieldEditorPreset, 0), { once: true });
+    } else {
+      setTimeout(installCounterShieldEditorPreset, 0);
+    }
+  }
+
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260821e', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
