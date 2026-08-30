@@ -36,6 +36,7 @@
     let active = false;
     let count = 0;
     let nextStrikeAt = -99;
+    let heavyTelegraphSerial = 0; // Keeps an older Flurry strike from hiding the shared fire after a newer strike has already begun.
 
     function speedMul() {
       return active ? Math.min(MOVE_SPEED_MUL_MAX, MOVE_SPEED_MUL_BASE + count * MOVE_SPEED_MUL_PER_STRIKE) : 1;
@@ -78,6 +79,11 @@
       const strikeIndex = count + 1;
       const dmgType = deps.currentWeaponDamageType(); // Keeps flurry afflictions and impact audio tied to the equipped weapon material.
       const impactSize = strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large'; // Grows with the flurry without consuming the heavy-only huge tier.
+      const thisHeavyTelegraph = ++heavyTelegraphSerial; // Identifies this exact windup+strike window against overlapping rapid Flurry stages.
+      window.Combat.playerHeavyTelegraph?.start?.(effects.afflictions);
+      const finishHeavyTelegraph = () => { // Stops the shared flame only if no newer Flurry strike has superseded this one.
+        if (thisHeavyTelegraph === heavyTelegraphSerial) window.Combat.playerHeavyTelegraph?.stop?.();
+      };
 
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
@@ -114,6 +120,8 @@
             deps.awardWeaponMasteryXp();
           }
         },
+        onComplete: finishHeavyTelegraph,
+        onCancel: finishHeavyTelegraph,
       });
 
       count += 1;
@@ -147,6 +155,83 @@
   }
 
   register();
+
+  // Charged Breaker owns the shared player-heavy fire group and Flurry reuses it.
+  // Originally its Points layers had a fixed renderOrder of 4, which did not
+  // guarantee that they stayed below every weapon PNG. Enforce the relationship
+  // against the live tool-plane render order every frame instead: all flame layers
+  // paint immediately before the weapon, so opaque weapon pixels cover the fire
+  // while flames remain visible around the weapon silhouette.
+  function belongsToLiveToolPlane(obj, holder) {
+    let node = obj;
+    while (node && node !== holder) {
+      if (node.userData?.toolPlane) return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
+  function liveWeaponRenderOrder(holder) {
+    let order = null;
+    holder?.traverse?.(obj => {
+      if (!obj || obj.name === 'player-heavy-attack-fire-telegraph' || obj.userData?.playerHeavyFire) return;
+      if (!(obj.isMesh || obj.isSprite || obj.isPoints)) return;
+      if (!belongsToLiveToolPlane(obj, holder)) return;
+      const candidate = Number(obj.renderOrder);
+      if (!Number.isFinite(candidate)) return;
+      order = order == null ? candidate : Math.min(order, candidate);
+    });
+    return order ?? 0;
+  }
+
+  function enforcePlayerHeavyFireBelowWeapon() {
+    const holder = window.Combat.deps?.toolHolder?.() || null;
+    if (!holder) return null;
+    const fireGroup = holder.children?.find(child => child?.name === 'player-heavy-attack-fire-telegraph') || null;
+    if (!fireGroup) return null;
+    const weaponRenderOrder = liveWeaponRenderOrder(holder);
+    const fireRenderOrder = weaponRenderOrder - 0.01;
+    let layerCount = 0;
+    fireGroup.traverse?.(obj => {
+      if (!obj?.userData?.playerHeavyFire) return;
+      const data = obj.userData.playerHeavyFire;
+      // Tiny sub-offsets preserve deterministic ordering between additive flame
+      // layers while keeping every one of them beneath the weapon sprite.
+      obj.renderOrder = fireRenderOrder
+        - Number(data.layerIndex || 0) * 0.0001
+        - Number(data.colorIndex || 0) * 0.00001;
+      layerCount++;
+    });
+    fireGroup.userData.weaponRenderOrder = weaponRenderOrder;
+    fireGroup.userData.fireRenderOrder = fireRenderOrder;
+    fireGroup.userData.layering = 'beneath-weapon';
+    fireGroup.userData.layerCount = layerCount;
+    return { weaponRenderOrder, fireRenderOrder, layerCount };
+  }
+
+  if (!window.Combat._playerHeavyFireUnderWeaponInstalled) {
+    const previousCombatUpdate = window.Combat.update;
+    window.Combat.update = function playerHeavyFireUnderWeaponUpdate(dt) {
+      const result = previousCombatUpdate(dt);
+      enforcePlayerHeavyFireBelowWeapon();
+      return result;
+    };
+    window.Combat._playerHeavyFireUnderWeaponInstalled = true;
+
+    const heavyApi = window.Combat.playerHeavyTelegraph;
+    if (heavyApi && typeof heavyApi.snapshot === 'function') {
+      const previousSnapshot = heavyApi.snapshot;
+      heavyApi.snapshot = () => ({
+        ...previousSnapshot(),
+        layering: 'beneath-weapon',
+        ...(enforcePlayerHeavyFireBelowWeapon() || {
+          weaponRenderOrder: null,
+          fireRenderOrder: null,
+          layerCount: 0,
+        }),
+      });
+    }
+  }
 
   // Read-only data export — no bandit currently uses flurry (see the module
   // header), kept for parity with the other abilities' exports and in case

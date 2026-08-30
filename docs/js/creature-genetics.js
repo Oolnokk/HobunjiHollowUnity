@@ -268,6 +268,15 @@
       y: Number.isFinite(y) && y > 0 ? y : 1,
     };
   }
+  function creatureGroundOffset(kind, genotypeOrSizeClass) {
+    const sizeClass = typeof genotypeOrSizeClass === 'string'
+      ? normalizeCreatureSizeClass(genotypeOrSizeClass)
+      : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
+    const profileKind = GENOTYPE_SPECIES_ALIAS[kind] || kind; // Den-mother/alpha/wild variants share their base species' ground calibration.
+    const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
+    return Number.isFinite(authored) && authored > 0 ? authored : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
+  }
+
   function applyCreatureBillboardScale(group, sizeScale, heightMultiplier = 1) {
     if (!group?.scale?.set) return false;
     const visibleWidthScale = Number(sizeScale?.x); // Used on group Z because each animal plane is rotated ±90° inside the group.
@@ -541,6 +550,7 @@
     stableEntryRole,
     creatureSizeClass,
     creatureSizeScale,
+    creatureGroundOffset,
     applyCreatureBillboardScale,
     creatureBreathScaleY,
     creatureSizeTrait,

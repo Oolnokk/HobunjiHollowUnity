@@ -486,7 +486,9 @@
     const ANIMAL_W = 1.275;
     const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
     const sizeScale = window.CreatureGenetics.creatureSizeScale('uumkaoii', genotype); // Uses the Animation Author's class-specific proportions.
-    const halfH = ANIMAL_H * sizeScale.y / 2; // Grounds the visibly scaled farm animal.
+    const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset('uumkaoii', genotype); // Optional absolute floor-to-origin lift measured in Rigging.
+    const halfH = ANIMAL_H * sizeScale.y / 2; // Existing automatic baseline and physical half-height.
+    const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Manual values replace automatic half-height placement instead of stacking with it.
 
     const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
@@ -501,7 +503,7 @@
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
-    avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+    avatarRef.group.position.set(col + 0.5, initSurfY + groundLift, row + 0.5);
     avatarRef.group.rotation.y = Math.PI / 2; // start facing east
     deps._markPngPlane(avatarRef.group);
     deps.scene.add(avatarRef.group);
@@ -533,8 +535,8 @@
       col, row, targetCol: col, targetRow: row,
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
-      wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
+      wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
+      halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -569,7 +571,7 @@
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
-        const ty = tile ? deps.tileSurfaceY(tile.type) + this.halfHeight : this.wy;
+        const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
         this.wx += (tx - this.wx) * sp;
         this.wz += (tz - this.wz) * sp;
@@ -615,7 +617,9 @@
     const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
     const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
     const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotype); // Uses the Animation Author's class-specific proportions.
-    const halfH = ANIMAL_H * sizeScale.y / 2; // Grounds the visibly scaled farm animal.
+    const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(kind, genotype); // Optional absolute floor-to-origin lift measured in Rigging.
+    const halfH = ANIMAL_H * sizeScale.y / 2; // Existing automatic baseline and physical half-height.
+    const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Manual values replace automatic half-height placement instead of stacking with it.
     const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
 
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
@@ -630,7 +634,7 @@
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
-    avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+    avatarRef.group.position.set(col + 0.5, initSurfY + groundLift, row + 0.5);
     avatarRef.group.rotation.y = Math.PI / 2; // start facing east
     deps._markPngPlane(avatarRef.group);
     deps.scene.add(avatarRef.group);
@@ -658,8 +662,8 @@
       col, row, targetCol: col, targetRow: row,
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
-      wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-      halfHeight: halfH, modelHeight: ANIMAL_H, avatarRef,
+      wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
+      halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -680,7 +684,7 @@
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
-        const ty = tile ? deps.tileSurfaceY(tile.type) + this.halfHeight : this.wy;
+        const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
         this.wx += (tx - this.wx) * sp;
         this.wz += (tz - this.wz) * sp;

@@ -32,6 +32,14 @@
   }); // Restores the calibrated floor-relative posterior heights that the compact v9 export accidentally serialized as zero; used while constructing every character profile below.
   const creatureRecords = [["drenkirra",[0,0.09289353489875796,0.02],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],["grehlr",[0,0.12393333333333335,0],"highest-opaque-pixel-along-idle-sprite-midline",-5,[1499.5,843.5],0,[0.01,-0.3719770036140037,0],[[1,1],[0.5,0.5],[0.2,0.2]],2],["gar-wolf",[0,0.14184834174882754,0.2761841625577698],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],["dabinggi-hound",[0,0.12212625800404886,0.6091387381509006],"highest-opaque-pixel-along-idle-sprite-midline",-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],["uumkaoii",[0,0.26595632314682005,0.02],"built-in-approved-rig-json-v1524",null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null]]; // Creature transforms stay on the v9 baseline; shoulderGrip tuples are refreshed from the supplied 2026-08-28 export.
 
+  const creatureGroundOffsets = Object.freeze({
+    drenkirra: Object.freeze({ large: 0.79, medium: 0.40, small: 0.17 }),
+    grehlr: Object.freeze({ large: 0.50, medium: 0.26, small: 0.10 }),
+    'gar-wolf': Object.freeze({ large: 0.50, medium: 0.33, small: 0.11 }),
+    'dabinggi-hound': Object.freeze({ large: 0.50, medium: 0.27, small: 0.09 }),
+    uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }),
+  }); // Authored v10 Small/Medium/Large floor-to-creature-origin distances; 0 means use the automatic half-height terrain baseline.
+
   const characters = {}; // Runtime character profile map keyed "<species>::<gender>".
   for (const [key, heightPercentOffset, exportedHeightPercentFromFloor, perch, left, right, pixel, portraitModelHeight, placement, portraitScale, handScale, footScale, armLength, derivedHandDefault] of characterRecords) {
     const [species, gender] = key.split('::');
@@ -110,6 +118,7 @@
       saddleRule,
       shoulderGripRule: { source: 'authored-attachpointsv1', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 4, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false },
       sizeScales,
+      groundOffsets: { ...(creatureGroundOffsets[kind] || { large: 0, medium: 0, small: 0 }) }, // Supplies runtime/editor terrain corrections for this species' three size classes.
       sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds', authoredDefaultVersion: 6, authoredFixed: true },
       shoulderGripRotationDefaultVersion: 2,
       creatureShoulderGripDefaultVersion: 4,
@@ -137,6 +146,11 @@
       uumkaoii: { x: 0, y: -0.5363283597840667, z: -0.012886930890300352 },
     },
     creatureShoulderGripDefaultRuleVersion: 4,
+    creatureGroundOffsetSemantics: {
+      profileField: 'profiles.creatures.<kind>.groundOffsets.<small|medium|large>',
+      coordinateSpace: 'absolute world/gameplay floor-to-creature-origin lift replacing automatic half-height terrain placement',
+      runtimeUnit: 'world units',
+    }, // Mirrors the Animation Author v10 export contract consumed by CreatureGenetics.creatureGroundOffset().
     creatureSizeScaleSemantics: {
       profileField: 'profiles.creatures.<kind>.sizeScales.<small|medium|large>.{x,y}',
       axes: 'png-plane-local-x-y',

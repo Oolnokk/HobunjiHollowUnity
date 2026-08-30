@@ -595,6 +595,33 @@ function _imageForTint(img, sourceKey, tint) {
   return img;
 }
 
+// Behind-view layers that need to cancel the later whole-canvas mirror (see
+// _cloneBehindLayer) carry a negative sx. Doing that via a canvas transform
+// (translate+scale) at the call site breaks as soon as the draw goes through
+// _drawPortraitLayerTriangle, which calls ctx.setTransform() -- an ABSOLUTE
+// assignment that silently discards whatever transform was active, so the
+// flip vanished and the layer's already-off-center "flipped" position (meant
+// to be interpreted post-translate) got used as an absolute canvas position
+// instead, sending it halfway off the portrait. Pre-flipping the pixel
+// content itself sidesteps that entirely: everything downstream keeps using
+// plain, always-positive positioning math.
+const _flippedImageCache = new WeakMap();
+function _getFlippedImage(img) {
+  let flipped = _flippedImageCache.get(img);
+  if (flipped) return flipped;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const fctx = canvas.getContext('2d');
+  fctx.translate(w, 0);
+  fctx.scale(-1, 1);
+  fctx.drawImage(img, 0, 0, w, h);
+  _flippedImageCache.set(img, canvas);
+  return canvas;
+}
+
 // Canonical body-sprite tint path. renderProfile, procedural hands, rocks, and
 // cliffs all call this same helper so species tint-mode selection and per-pixel
 // recoloring cannot diverge between 2D character art and 3D surface textures.
@@ -749,11 +776,17 @@ window.getBodyTintedCanvas = getBodyTintedCanvas;
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
-  const drawImg = _imageForTint(img, sourceKey, tint);
+  // A negative sx (a behind-view layer pre-flipped to cancel the later
+  // whole-canvas mirror; see _cloneBehindLayer) is handled by pre-flipping the
+  // pixel content via _getFlippedImage, not a canvas transform -- see its
+  // comment for why a translate+scale here breaks as soon as a caller further
+  // down (e.g. the mesh-warp path) calls ctx.setTransform.
+  let drawImg = _imageForTint(img, sourceKey, tint);
+  if (sx < 0) drawImg = _getFlippedImage(drawImg);
   ctx.filter = 'none';
   ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
   ctx.restore();
@@ -837,12 +870,20 @@ function _buildNeutralGrid(cols, rows) {
 function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   const layerX = cx - w / 2;
   const layerY = cy - h / 2;
-  const drawImg = _imageForTint(img, sourceKey, tint);
+  // See drawPortraitLayer's identical pre-flip: a negative sx (a behind-view
+  // layer pre-flipped in _cloneBehindLayer) is handled by flipping the pixel
+  // content itself via _getFlippedImage, not a canvas transform -- a transform
+  // here would get silently discarded by _drawPortraitLayerWarped's use of
+  // ctx.setTransform below. This path is the one hood/overwear/torso layers
+  // actually take (they're drawn via drawBreathingLayers, not drawEmoteLayers),
+  // so it needs the same fix.
+  let drawImg = _imageForTint(img, sourceKey, tint);
+  if (sx < 0) drawImg = _getFlippedImage(drawImg);
 
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
   if (!breathingPts && !staticDeform) {
@@ -1113,9 +1154,34 @@ function _getBehindLayerUrl(layer, group, gender) {
   return layer.url;
 }
 
+// Every layer drawn into the behind canvas gets mirrored a second time when
+// the whole canvas is flipped afterwards (buildTextureSet's flipX in
+// png-plane-avatar.js) to build the back-facing plane texture. Left
+// uncompensated that flip mirrors each layer's own silhouette relative to how
+// it looks on the front -- an asymmetric hair tuft curls the wrong way, a
+// knot points the wrong way, a head's own asymmetric features face the wrong
+// way -- whether or not the layer got dedicated back-view art. Negating sx
+// pre-flips just the sprite content so the two flips cancel out and
+// front/back silhouettes match. This has to apply uniformly to every layer
+// drawn behind -- cosmetics AND the base head/arms/torso -- or the ones that
+// get it end up consistent with the front while the ones that don't (the
+// head, previously) stick out as the one thing still mirrored.
+// Cosmetic and body layers alike carry a fixed xformPreset:'B' (see
+// _extractLayersFromParts) that resolveXform reads *instead of* the layer's
+// own ax/ay/sx/sy whenever it's set, so the negated sx has to be baked into
+// explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
+function _behindFlippedLayer(layer) {
+  const preset = layer.xformPreset ? getPortraitXformPreset(layer.xformPreset) : {
+    ax: layer.ax ?? 0, ay: layer.ay ?? 0, sx: layer.sx ?? 1, sy: layer.sy ?? 1,
+  };
+  return { ...layer, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
+}
+
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
-  return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
+  const url = _getBehindLayerUrl(layer, group, gender);
+  if (!url) return { ...layer, url };
+  return _behindFlippedLayer({ ...layer, url });
 }
 
 // A layer's paletteColorKey normally selects a sub-slot of its OWN group's
@@ -1316,6 +1382,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
+    // The base body (arms/torso) needs the same pre-flip as every cosmetic
+    // above -- these aren't cosmetics so there's no dedicated back art to look
+    // up, just the orientation compensation via _behindFlippedLayer directly.
+    const flipBehindLayers = (layerList) => {
+      for (const entry of layerList) entry.layer = _behindFlippedLayer(entry.layer);
+    };
+    [baseLeftArmLayers, baseTorsoLayers, baseRightArmLayers].forEach(flipBehindLayers);
   }
   const isSnowgogglesLayer = ({ group }) => _textMatchesAny([group?.id, group?.originalId].filter(Boolean).join(' '), ['snowgoggles']);
   const behindSnowgogglesLayers = renderBehindView
@@ -1428,12 +1501,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (emoteDeformedPts) {
       const { ax, ay, sx, sy } = xform;
       const h = PORTRAIT_L * sy;
-      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
+      // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
       ctx.save();
       ctx.globalAlpha = opacity;
-      const drawImg = _imageForTint(img, sourceKey, tint);
+      let drawImg = _imageForTint(img, sourceKey, tint);
+      if (sx < 0) drawImg = _getFlippedImage(drawImg);
       ctx.filter = 'none';
       _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
       ctx.restore();
@@ -1488,7 +1563,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       baseLeftArm:   () => drawBreathingLayers(baseLeftArmLayers),
       baseTorso:     () => drawBreathingLayers(baseTorsoLayers),
       baseRightArm:  () => drawBreathingLayers(baseRightArmLayers),
-      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); } },
+      // Same pre-flip as every other behind-view layer (see _behindFlippedLayer)
+      // -- otherwise the head is the one thing still mirrored relative to the
+      // front while hair/hood/cosmetics and the arms/torso are not.
+      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl); } },
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
@@ -1497,6 +1575,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
       hairBack:      () => drawEmoteLayers(preBackLayers),
+      // Front-fringe hairstyles with no authored `pos:'back'` layer (e.g. Long
+      // Tufted Hair) have no dedicated back art, so — same fallback as any other
+      // undecorated layer — draw the front sprite here and let the behind
+      // canvas's whole-image mirror (buildTextureSet's flipX) turn it into a
+      // plausible rear silhouette instead of leaving the back of the head bald.
+      frontHair:     () => drawEmoteLayers(frontHairLayers),
     };
     for (const key of (renderOptions?.behindLayerOrder || renderProfile.defaultBehindLayerOrder)) {
       _behindDraw[key]?.();
@@ -2765,7 +2849,7 @@ window.getPortraitXformPreset = getPortraitXformPreset;
 renderProfile.defaultBehindLayerOrder = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
-  'head',
+  'head', 'frontHair',
   'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
   'snowgoggles',
   'hairBack',
