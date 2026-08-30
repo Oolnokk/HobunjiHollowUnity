@@ -172,7 +172,15 @@
       window.Combat.deps.showToast('Counter Shield lowered.', false);
     }
 
-    window.Combat.abilities.register('counterShield', { label: 'Counter Shield', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('counterShield', {
+      label: 'Counter Shield',
+      slotFamily: 'hold',
+      category: 'defensiveHold',
+      onHoldStart,
+      onHoldUpdate,
+      onHoldEnd,
+      isActive: () => active,
+    });
   }
 
   register();
