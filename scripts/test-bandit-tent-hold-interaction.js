@@ -43,5 +43,21 @@ assert(
   game.includes('window.BanditCamps?.interruptTentHold();'),
   'player damage interrupts a tent hold',
 );
+assert(
+  banditCamps.includes('function aimedBanditTent(zoneId)'),
+  'tent interaction has a centered-aim focus resolver',
+);
+assert(
+  banditCamps.includes("type: 'bandit-tent'"),
+  'tent focus participates in world interaction ray arbitration',
+);
+assert(
+  banditCamps.includes('focusedHostile?.(24)'),
+  'a nearer hostile keeps combat priority over tent interaction',
+);
+assert(
+  banditCamps.includes("if (!ray || !window.RangedWeapons?.focusCandidates) return null;"),
+  'tent interaction does not fall back to proximity without a view ray',
+);
 
-console.log('bandit tent hold interaction contracts: 9 checks passed');
+console.log('bandit tent hold interaction contracts: 12 checks passed');
