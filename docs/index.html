@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260826categories1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260829combatsfx2"></script>
+  <script src="config/scratchbones-config.js?v=20260828impact1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260826compass1">
@@ -109,15 +109,15 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260829combatsfx1"></script>
-  <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
-       runtime playback onto the player's existing procedural-leg-animation.js
-       rig. Must load after that module (see the "Procedural leg/foot
-       animation" script above) and after resource-system.js/combat-core.js. -->
-  <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260828animalvoices1"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260828animalvoices1"></script>
+  <script src="js/combat/combat-core.js?v=20260825melee3"></script>
+  <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
+       playback onto the player's procedural rig and quarter-turned body-only
+       animal planes. Must load after the procedural leg module and after
+       resource-system.js/combat-core.js. -->
+  <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
@@ -1975,7 +1975,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260829charview2"></script>
+  <script src="js/pixel-probe.js?v=20260828impact1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2045,6 +2045,13 @@
           equippedCosmetics: base.equippedCosmetics || [],
           appliedDyes: base.appliedDyes || {},
         });
+      } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
+    })();
+  </script>
+  <script src="game.js?v=20260828impactthrow1"></script>
+  <script>
+    // Inventory Gear / Pack sub-tab toggle
+    (function () {
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
