@@ -18,6 +18,12 @@ assert.match(gameSource,
   /if \(s_invertShoulderPetRotationSource\) selectedRotationQuaternion\.invert\(\);/,
   'the inversion toggle inverses whichever rotation frame is selected');
 assert.match(gameSource,
+  /if \(!s_cancelShoulderPetRotationalOffset\) worldQuaternion\.multiply\(perchQuaternion\)\.multiply\(inverseGripQuaternion\)/,
+  'the rotational-offset checkbox can omit only the authored perch and inverse-grip corrections');
+assert.match(gameSource,
+  /buildShoulderPetBodyXrayOverlay[\s\S]{0,3200}SHOULDER_PET_PLANE_RENDER_ORDER \+ 1/,
+  'face-only player overlays can explicitly render after the shoulder pet while retaining world depth');
+assert.match(gameSource,
   /settingDisableShoulderFrontXray[\s\S]{0,900}settingDisableShoulderBackXray/,
   'front and back shoulder x-ray controls remain independently wired');
 assert.match(gameSource,
