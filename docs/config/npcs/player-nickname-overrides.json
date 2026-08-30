@@ -1,15 +1,15 @@
 {
   "schema": "hobunji_player_nickname_overrides.v1",
-  "note": "Focused replacements for player-address entries that read like name puns, occupation labels, or generic generated filler. Entry IDs, conditions, and pool behavior remain owned by the starter NPC database.",
+  "note": "Focused replacements for player-address entries that read like name puns, occupation labels, or generic generated filler. Weak generic forms of address resolve to the player's actual character name; entry IDs, conditions, and pool behavior remain owned by the starter NPC database.",
   "replacements": {
-    "pe_takua_nickname_2": "neighbor",
-    "pe_tooth_nickname_2": "neighbor",
-    "pe_hammerhead_nickname_2": "neighbor",
-    "pe_bowstring_nickname_2": "friend",
-    "pe_bird_bone_nickname_2": "neighbor",
-    "pe_khazud_nickname_2": "neighbor",
-    "pe_khazud_nickname_3": "friend",
-    "pe_dzibim_nickname_1": "friend",
-    "pe_dzahiri_nickname_2": "friend"
+    "pe_takua_nickname_2": "{{playerName}}",
+    "pe_tooth_nickname_2": "{{playerName}}",
+    "pe_hammerhead_nickname_2": "{{playerName}}",
+    "pe_bowstring_nickname_2": "{{playerName}}",
+    "pe_bird_bone_nickname_2": "{{playerName}}",
+    "pe_khazud_nickname_2": "{{playerName}}",
+    "pe_khazud_nickname_3": "{{playerName}}",
+    "pe_dzibim_nickname_1": "{{playerName}}",
+    "pe_dzahiri_nickname_2": "{{playerName}}"
   }
 }
