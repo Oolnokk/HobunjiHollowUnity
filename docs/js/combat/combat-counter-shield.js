@@ -42,6 +42,7 @@
     let presentationSceneHadOwn = false; // Remembers whether player.scene existed before this hold for exact cleanup semantics.
     let presentationSceneBridged = false; // Used by the player Counter Shield debug snapshot and cleanup path.
     let presentationSceneReady = false; // Records whether the latest active-scene lookup succeeded for mobile debugging.
+    let lastPresentationLogSignature = ''; // Used to suppress identical per-frame Counter Shield VFX debug entries.
     // Set whenever a riposte fires, to the moment its full cosmetic swing
     // (windup+strike+post-strike hold+return-tail — mirrors game.js's
     // triggerWeaponSwingVisual math) will have finished; onHoldUpdate uses
@@ -85,6 +86,27 @@
       presentationSceneHadOwn = false;
       presentationSceneBridged = false;
       presentationSceneReady = false;
+    }
+
+    function getPresentationSnapshot() {
+      const heavyEntries = window.Combat.heavyTelegraphVisuals?.snapshot?.() || []; // Reads the shared renderer's live player-side attachment/visibility state.
+      const heavyRenderer = heavyEntries.find(entry => entry.actor === 'player') || null; // Narrows the shared renderer snapshot to Counter Shield's player entry.
+      return {
+        active,
+        sceneBridged: presentationSceneBridged,
+        sceneReady: presentationSceneReady,
+        holderReady: !!window.Combat.deps?.toolHolder?.(),
+        heavyRenderer,
+      };
+    }
+
+    function logPresentationSnapshot(reason, force = false) {
+      const snapshot = getPresentationSnapshot(); // Full mobile-friendly state written into the game's debug log when it meaningfully changes.
+      const signature = JSON.stringify(snapshot); // Stable comparison payload used to prevent a held stance from logging every frame.
+      if (!force && signature === lastPresentationLogSignature) return snapshot;
+      lastPresentationLogSignature = signature;
+      window.__farmLog?.(`[counter-shield-vfx] ${reason} ${signature}`, 'info', 'combat');
+      return snapshot;
     }
 
     function raiseBlockPose(deps) {
@@ -179,6 +201,7 @@
       const deps = window.Combat.deps;
       if (deps.player.stamina <= MIN_STAMINA_TO_RAISE) {
         restorePlayerPresentationScene(deps);
+        logPresentationSnapshot('raise-failed', true);
         deps.showToast('Counter Shield failed: no stamina.', false);
         return;
       }
@@ -186,21 +209,23 @@
       active = true;
       reassertBlockAt = -1;
       window.Combat.setPlayerDamageInterceptor(tryAbsorb);
-      window.__farmLog?.(`[counter-shield-vfx] raised active=true holder=${!!deps.toolHolder?.()} scene=${presentationSceneReady}`, 'combat');
       deps.showToast('Counter Shield raised: blocks and counters on contact.', true);
       raiseBlockPose(deps);
+      logPresentationSnapshot('raised', true);
     }
 
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
       bridgePlayerPresentationScene(deps);
+      logPresentationSnapshot('state-change');
       const drainMul = 1 + (window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')?.stats.drainMul || 0);
       window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt), 'Counter Shield (holding)');
       if (deps.player.stamina <= 0) {
         active = false;
         window.Combat.setPlayerDamageInterceptor(null);
         restorePlayerPresentationScene(deps);
+        logPresentationSnapshot('dropped-empty', true);
         deps.showToast('Counter Shield dropped: stamina empty.', false);
         return;
       }
@@ -218,6 +243,7 @@
       deps.cancelWeaponSwingHold();
       window.Combat.setPlayerDamageInterceptor(null);
       restorePlayerPresentationScene(deps);
+      logPresentationSnapshot('lowered', true);
       deps.showToast('Counter Shield lowered.', false);
     }
 
@@ -232,17 +258,8 @@
     });
 
     window.Combat.counterShieldPlayerPresentation = {
-      snapshot: () => {
-        const heavyEntries = window.Combat.heavyTelegraphVisuals?.snapshot?.() || [];
-        const heavyRenderer = heavyEntries.find(entry => entry.actor === 'player') || null;
-        return {
-          active,
-          sceneBridged: presentationSceneBridged,
-          sceneReady: presentationSceneReady,
-          holderReady: !!window.Combat.deps?.toolHolder?.(),
-          heavyRenderer,
-        };
-      },
+      snapshot: getPresentationSnapshot,
+      logSnapshot: (reason = 'manual') => logPresentationSnapshot(reason, true),
     };
   }
 
