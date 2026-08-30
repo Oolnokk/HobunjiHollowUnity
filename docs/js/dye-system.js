@@ -14,9 +14,9 @@
   // reassigned wholesale on every player load (see game.js's
   // spawnPlayerAvatar), so it's threaded through as a getter — a plain
   // reference captured at init() time would go stale the moment game.js
-  // swaps in a freshly loaded save. The redye panel UI and the mystery-dye
-  // unlock flow stay in game.js, which consumes this module's catalog/
-  // ownership API instead of touching gearInventory.dyeCollection directly.
+  // swaps in a freshly loaded save. EquipmentPanel owns the redye UI and
+  // consumes this module's catalog/ownership API instead of touching
+  // gearInventory.dyeCollection directly.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -28,7 +28,7 @@
   }
   // Trims a catalog entry down to the {h,s,v,hex,dyeId,label} shape
   // clothing items store on colorA/colorB (see makeClothingItem in
-  // onboarding.js and game.js's makeClothingGearEntry).
+  // onboarding.js and EquipmentPanel's makeClothingGearEntry).
   function toClothingColor(dye) {
     if (!dye) return null;
     return { ...(dye.color || {}), hex: dye.hex, dyeId: dye.id, label: dye.label };
@@ -52,10 +52,11 @@
     deps.saveGearInventory();
     return true;
   }
-  function ownedByHue() {
+  function ownedByHue(articleDyeIds = []) {
+    const localDyeIds = new Set(Array.isArray(articleDyeIds) ? articleDyeIds : []); // Used only to add this article's learned shades to the redye picker.
     const groups = new Map();
     for (const dye of getCatalog()) {
-      if (!owns(dye.id)) continue;
+      if (!owns(dye.id) && !localDyeIds.has(dye.id)) continue;
       const groupKey = dye.neutral ? 'neutral' : dye.hueFamilyId;
       const groupLabel = dye.neutral ? 'Neutral' : dye.hueFamily;
       if (!groups.has(groupKey)) groups.set(groupKey, { id: groupKey, label: groupLabel, dyes: [] });
