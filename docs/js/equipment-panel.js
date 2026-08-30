@@ -15,6 +15,7 @@
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
   const CLOTHING_SLOTS = ['hat', 'hood', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot.
+  const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -134,6 +135,37 @@
     deps.buildInventoryGrid(); buildEquipmentSlots(); deps.clearInventoryDetail();
   }
 
+  function stripClothingDyePrefix(label) {
+    const text = String(label || '').trim();
+    if (!text) return '';
+    const dyeLabels = (window.DyeSystem?.getCatalog?.() || [])
+      .map(dye => String(dye?.label || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length); // Longest first so compound shade names win before shorter prefixes.
+    for (const first of dyeLabels) {
+      const pairPrefix = first + ' & ';
+      if (text.startsWith(pairPrefix)) {
+        const afterFirst = text.slice(pairPrefix.length);
+        for (const second of dyeLabels) {
+          const secondPrefix = second + ' ';
+          if (afterFirst.startsWith(secondPrefix)) return afterFirst.slice(secondPrefix.length).trim();
+        }
+      }
+      const singlePrefix = first + ' ';
+      if (text.startsWith(singlePrefix)) return text.slice(singlePrefix.length).trim();
+    }
+    return text;
+  }
+
+  function clothingArticleLabel(item) {
+    const configured = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [])
+      .find(entry => entry?.id === item?.cosmeticId)?.label;
+    if (configured) return String(configured);
+    const fromBase = stripClothingDyePrefix(item?.baseLabel);
+    if (fromBase) return fromBase;
+    return stripClothingDyePrefix(item?.label) || 'Clothing';
+  }
+
   function makeClothingGearEntry(item) {
     if (!item) return null;
     const entry = { // Used as the persistent canonical gear record for one clothing article.
@@ -141,7 +173,7 @@
       cosmeticId: item.cosmeticId,
       slot: item.slot,
       label: item.label,
-      baseLabel: item.baseLabel || item.label,
+      baseLabel: clothingArticleLabel(item),
       colorA: item.colorA,
       colorB: item.colorB,
       articleDyeIds: Array.isArray(item.articleDyeIds) ? [...item.articleDyeIds] : [],
@@ -198,6 +230,11 @@
     const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
 
     for (const item of sourceItems) {
+      const articleLabel = clothingArticleLabel(item); // Used to clean stale dye prefixes from legacy baseLabel fields while migrating.
+      if (articleLabel && item.baseLabel !== articleLabel) {
+        item.baseLabel = articleLabel;
+        changed = true;
+      }
       if (ensureArticleDyeIds(item)) changed = true;
       if (!item?.cosmeticId) continue;
       if (!groupsByCosmeticId.has(item.cosmeticId)) groupsByCosmeticId.set(item.cosmeticId, []);
@@ -294,14 +331,41 @@
     return window.SCRATCHBONES_CONFIG?.game?.inventory?.clothingSprites?.[cosmeticId] || null;
   }
 
+  function clothingIconTintValue(item) {
+    const rawHex = item?.colorA?.hex || window.DyeSystem?.getById?.(item?.colorA?.dyeId)?.hex || '';
+    const match = String(rawHex).trim().match(/^#?([0-9a-fA-F]{6})$/);
+    return match ? parseInt(match[1], 16) : null;
+  }
+
+  function tintClothingIcon(img, sprite, item) {
+    const tintValue = clothingIconTintValue(item);
+    const recolor = window.SpriteRecolor?.getRecoloredCanvas;
+    if (!img || !sprite || tintValue == null || typeof recolor !== 'function') return;
+    const cacheKey = `${sprite}|${tintValue.toString(16).padStart(6, '0')}`; // Used to distinguish each article sprite/current primary dye combination.
+    const renderToken = `${cacheKey}|${Math.random().toString(36).slice(2, 8)}`; // Used to prevent a late async recolor from overwriting a reused DOM image.
+    img.dataset.clothingTintToken = renderToken;
+    const cachedUrl = clothingIconTintUrlCache.get(cacheKey);
+    if (cachedUrl) {
+      img.src = cachedUrl;
+      return;
+    }
+    recolor(sprite, tintValue, 'direct').then(canvas => {
+      if (!canvas) return;
+      const dataUrl = canvas.toDataURL('image/png');
+      clothingIconTintUrlCache.set(cacheKey, dataUrl);
+      if (img.dataset.clothingTintToken === renderToken) img.src = dataUrl;
+    }).catch(() => { /* Keep the authored source sprite if recoloring fails. */ });
+  }
+
   function renderClothingIcon(parent, item, className = 'ies-cloth-sprite') {
     const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
     if (sprite) {
       const img = document.createElement('img');
       img.src = sprite;
       img.className = className;
-      img.alt = item?.label || 'Clothing';
+      img.alt = clothingArticleLabel(item);
       parent.appendChild(img);
+      tintClothingIcon(img, sprite, item);
       return img;
     }
     const icon = document.createElement('span');
@@ -316,7 +380,8 @@
     if (!iconEl) return;
     const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
     if (sprite) {
-      iconEl.innerHTML = '<img class="ii-cloth-sprite" src="' + deps.esc(sprite) + '" alt="' + deps.esc(item?.label || 'Clothing') + '">';
+      iconEl.innerHTML = '';
+      renderClothingIcon(iconEl, item, 'ii-cloth-sprite');
     } else {
       iconEl.textContent = '👘';
     }
@@ -341,8 +406,13 @@
       if (!worn.uid) {
         gearInventory.clothing[slot] = wornEntry;
         changed = true;
-      } else if (ensureArticleDyeIds(worn)) {
-        changed = true;
+      } else {
+        const articleLabel = clothingArticleLabel(worn); // Used to clean stale dye prefixes from older equipped-only records too.
+        if (articleLabel && worn.baseLabel !== articleLabel) {
+          worn.baseLabel = articleLabel;
+          changed = true;
+        }
+        if (ensureArticleDyeIds(worn)) changed = true;
       }
       const storedWorn = gearInventory.clothing[slot]; // Used to seed the owned collection from older saves that only stored equipped clothing.
       const hasItem = gearInventory.clothingItems.some(item => item.uid === storedWorn.uid);
@@ -378,7 +448,7 @@
     deps.saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
     deps.refreshPlayerAvatar();
     if (existingItem) {
-      const articleLabel = existingItem.baseLabel || item.baseLabel || existingItem.label; // Used for duplicate-transfer feedback without baking the current dye into the article name.
+      const articleLabel = clothingArticleLabel(existingItem); // Used for duplicate-transfer feedback without baking the current dye into the article name.
       if (learnedDyeCount > 0) {
         deps.showToast(`${articleLabel}: added ${learnedDyeCount} new redye ${learnedDyeCount === 1 ? 'shade' : 'shades'}.`, true);
       } else {
@@ -526,7 +596,7 @@
     gearInventory.clothing[item.slot] = item;
     deps.saveGearInventory();
     deps.refreshPlayerAvatar();
-    deps.showToast(item.label + ' equipped!', true);
+    deps.showToast(clothingArticleLabel(item) + ' equipped!', true);
     buildEquipmentSlots();
     selectGearClothing(item.slot, item);
   }
@@ -539,7 +609,7 @@
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     setInventoryDetailClothingIcon(item);
-    set('iiName',  item.label);
+    set('iiName',  clothingArticleLabel(item));
     set('iiPrice', 'Permanent gear — not sellable');
     set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
@@ -604,6 +674,7 @@
     const originalColorA = item.colorA ? { ...item.colorA } : null;
     const originalColorB = item.colorB ? { ...item.colorB } : null;
     const originalLabel = item.label;
+    const articleLabel = clothingArticleLabel(item);
     let activeSubslot = 'A';
     let pendingDyeIdA = item.colorA?.dyeId || null;
     let pendingDyeIdB = item.colorB?.dyeId || null;
@@ -635,7 +706,7 @@
       }
       const label = document.createElement('span');
       label.className = 'dye-preview-label';
-      label.textContent = dyeLbl ? (dyeLbl + ' ' + (item.baseLabel || originalLabel)) : 'Pick a dye below';
+      label.textContent = dyeLbl ? (dyeLbl + ' ' + articleLabel) : 'Pick a dye below';
       previewEl.appendChild(label);
       if (isWorn()) deps.refreshPlayerAvatar();
     }
@@ -681,7 +752,7 @@
       }
     }
 
-    titleEl.textContent = 'Redye — ' + (item.baseLabel || originalLabel);
+    titleEl.textContent = 'Redye — ' + articleLabel;
     renderSubslots();
     renderGroups();
     applyPreview();
@@ -701,11 +772,13 @@
       const dyeA = window.DyeSystem.getById(pendingDyeIdA);
       const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
       const dyeLbl = hasSecondary && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-      item.label = dyeLbl + ' ' + (item.baseLabel || originalLabel);
+      item.label = dyeLbl + ' ' + articleLabel;
+      item.baseLabel = articleLabel;
       deps.saveGearInventory();
       if (isWorn()) deps.refreshPlayerAvatar();
-      deps.showToast('Redyed ' + item.label + '!', true);
+      deps.showToast('Redyed ' + articleLabel + '!', true);
       closeRedyePanel();
+      buildEquipmentSlots(); // Rebuild immediately so the gear icon takes on the newly selected primary dye.
       selectGearClothing(slot, item);
     };
   }
@@ -824,11 +897,12 @@
       const item = gearInventory?.clothing?.[slot];
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
-      cell.setAttribute('title', slot + (item ? ': ' + item.label : ' (empty)'));
+      const articleLabel = item ? clothingArticleLabel(item) : '';
+      cell.setAttribute('title', slot + (item ? ': ' + articleLabel : ' (empty)'));
       if (item) {
         renderClothingIcon(cell, item);
         const nameEl = document.createElement('span');
-        nameEl.className = 'ies-cloth-name'; nameEl.textContent = item.label;
+        nameEl.className = 'ies-cloth-name'; nameEl.textContent = articleLabel;
         cell.appendChild(nameEl);
       }
       const lbl = document.createElement('span');
@@ -850,9 +924,10 @@
       ownedClothRow.className = 'inv-equip-row inv-owned-clothing-row';
       for (const item of ownedClothing) {
         const worn = gearInventory?.clothing?.[item.slot]?.uid === item.uid;
+        const articleLabel = clothingArticleLabel(item);
         const cell = document.createElement('div');
         cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
-        cell.setAttribute('title', item.label + (worn ? ' — currently worn' : ' — click to equip'));
+        cell.setAttribute('title', articleLabel + (worn ? ' — currently worn' : ' — click to equip'));
         const ownedIcon = renderClothingIcon(cell, item);
         // Owned clothing art should dominate the tile; the normal clothing sprite is too conservative here.
         ownedIcon.style.width = 'calc(2.3 * var(--inv-row))';
@@ -861,7 +936,7 @@
         ownedIcon.style.maxHeight = '82%';
         const nameEl = document.createElement('span');
         nameEl.className = 'gear-owned-clothing-name';
-        nameEl.textContent = item.label;
+        nameEl.textContent = articleLabel;
         nameEl.style.fontSize = 'var(--inv-font-xs, 11px)';
         nameEl.style.lineHeight = '1.08';
         nameEl.style.maxWidth = 'calc(100% - 4px)';
