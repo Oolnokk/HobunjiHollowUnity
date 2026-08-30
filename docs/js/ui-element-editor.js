@@ -355,6 +355,50 @@
     selectElement(selectedEl.parentElement);
   }
 
+  function getSelectableChildren(el) {
+    if (!el) return [];
+    return Array.from(el.children).filter(c => c.id !== 'uiEditorRoot');
+  }
+
+  function describeChild(el) {
+    let label = el.tagName.toLowerCase();
+    if (el.id) label += '#' + el.id;
+    const cls = Array.from(el.classList || []).filter(c => c && !c.startsWith('ui-editor'));
+    if (cls.length) label += '.' + cls.join('.');
+    if (el.children.length === 0) {
+      const text = (el.textContent || '').trim();
+      if (text) label += ' "' + (text.length > 24 ? text.slice(0, 24) + '…' : text) + '"';
+    } else {
+      label += ` (${el.children.length} child${el.children.length === 1 ? '' : 'ren'})`;
+    }
+    return label;
+  }
+
+  function updateChildrenRow() {
+    const row = document.getElementById('uiEditorChildrenRow');
+    const select = document.getElementById('uiEditorChildrenSelect');
+    if (!row || !select) return;
+    const kids = getSelectableChildren(selectedEl);
+    row.hidden = kids.length === 0;
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = ''; placeholder.textContent = `Select a child… (${kids.length})`;
+    select.appendChild(placeholder);
+    kids.forEach((child, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = describeChild(child);
+      select.appendChild(o);
+    });
+  }
+
+  function onChildSelected(value) {
+    if (value === '' || !selectedEl) return;
+    const kids = getSelectableChildren(selectedEl);
+    const child = kids[Number(value)];
+    if (child) selectElement(child);
+  }
+
   function updateSelectedPathDisplay() {
     const pathEl = document.getElementById('uiEditorSelectedPath');
     if (pathEl) pathEl.textContent = selectedSelector;
@@ -384,6 +428,7 @@
     selectedSelector = instanceSelector;
     updateSelectedPathDisplay();
     updateTargetRow();
+    updateChildrenRow();
     renderFields(el, selectedSelector);
     setMode('expanded');
   }
@@ -666,6 +711,12 @@
             <button type="button" id="uiEditorParentBtn" class="settings-small-btn" title="Select this element's parent — useful for containers with no exposed area of their own, like a panel whose header/content fill it edge to edge">Parent ↑</button>
             <button type="button" id="uiEditorResetElBtn" class="settings-small-btn">Reset This</button>
           </div>
+          <div class="ui-editor-field-row" id="uiEditorChildrenRow" hidden title="Jump straight to one of this element's direct children instead of picking it by hand — handy for children with no exposed area of their own, buried behind siblings, or fiddly to click precisely">
+            <label class="ui-editor-field-label">Children</label>
+            <select id="uiEditorChildrenSelect">
+              <option value="">Select a child…</option>
+            </select>
+          </div>
           <div class="ui-editor-fields" id="uiEditorFields"></div>
         </div>
       </div>
@@ -681,6 +732,7 @@
 
     root.querySelector('#uiEditorTabHead').addEventListener('click', onTabHeadClick);
     root.querySelector('#uiEditorTargetMode').addEventListener('change', (e) => onTargetModeChange(e.target.value));
+    root.querySelector('#uiEditorChildrenSelect').addEventListener('change', (e) => onChildSelected(e.target.value));
     root.querySelector('#uiEditorPickAgainBtn').addEventListener('click', (e) => { e.stopPropagation(); setMode('picking'); });
     root.querySelector('#uiEditorParentBtn').addEventListener('click', (e) => { e.stopPropagation(); selectParent(); });
     root.querySelector('#uiEditorResetElBtn').addEventListener('click', (e) => {
