@@ -101,3 +101,5 @@ test_path.write_text(test.replace(old_test, new_test, 1))
 print("guarded shoulder-pet patch applied")
 
 # Guarded source-patch script; exercised by the branch workflow.
+
+# Final verification trigger.
