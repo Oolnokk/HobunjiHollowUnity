@@ -5315,6 +5315,24 @@
         return limit > 0 ? limit : CREATURE_HEAD_YAW_LIMIT_DEG;
       }
 
+      // evasiveOrbit's own sidestep geometry (see below: an 0.8-weighted
+      // tangent blended with a 0.2-weighted radial component) needs roughly
+      // 76-104° of head correction to keep eye contact with the target from
+      // a body actually facing its movement — nowhere near
+      // creatureHeadYawLimitDeg's own default (no species currently has a
+      // custom-authored head rig wider than that ±30° "modest nudge" tuning
+      // value), which would leave the fallback-to-facing-target case always
+      // winning and no sidestep ever visible at all. This is a deliberately
+      // generous floor specific to this one combat behavior — not a claim
+      // about ordinary chase's much smaller correction — so a genuinely
+      // wider custom-authored rig (Math.max below) still isn't clamped down
+      // to it, and only the extreme backing-off case (~104°) still falls
+      // back to facing the target outright.
+      const EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG = 85;
+      function evasiveOrbitHeadYawLimitDeg(c) {
+        return Math.max(creatureHeadYawLimitDeg(c), EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG);
+      }
+
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
           c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: rnd() < 0.5 ? -1 : 1 };
@@ -5389,7 +5407,7 @@
           // the target instead — reads as backpedaling/strafing backward
           // rather than a body no head could actually keep up with.
           const yawNeededDeg = Math.abs(angleDiff(towardAngle, blendAngle)) * 180 / Math.PI;
-          const bodyAngle = yawNeededDeg <= creatureHeadYawLimitDeg(c) ? blendAngle : towardAngle;
+          const bodyAngle = yawNeededDeg <= evasiveOrbitHeadYawLimitDeg(c) ? blendAngle : towardAngle;
           return { aimAngle: bodyAngle, moving };
         }
 
@@ -5781,7 +5799,15 @@
           // the character's face. If they are settled (grazing/drinking or
           // paused between wander legs), their body also squares to that
           // face target; combat, fleeing, and patrol movement retain priority.
-          if (def.hostile === false) {
+          // A territorially warning/fighting drenkirra (see
+          // wildlife-territorial.js) is genuinely engaged in combat despite
+          // its own def.hostile: false (that flag only governs ordinary
+          // aggro pickup) — route it through the same combat head-look
+          // system as any other fighting creature below instead of the
+          // livestock glance-at-the-player branch, which only ever nods
+          // (pitch) and has no yaw tracking at all.
+          const territorialActive = c._territorialBehavior?.phase === 'warning' || c._territorialBehavior?.phase === 'fight';
+          if (def.hostile === false && !territorialActive) {
             const canLook = livestockLookCandidate
               && !c.prone
               && c.state !== 'return'
@@ -5813,7 +5839,7 @@
             // budget here so the visual head yaw isn't separately capped
             // back down to the tighter ordinary-chase default underneath it.
             const evasiveOrbitActive = c._stage?.mode === 'active' && c._stage.stages[c._stage.idx] === 'evasiveOrbit';
-            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? creatureHeadYawLimitDeg(c) : undefined);
+            if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, dt, evasiveOrbitActive ? evasiveOrbitHeadYawLimitDeg(c) : undefined);
             else _restoreCompanionHead(c, dt);
           }
           c.facing = aimAngle;
@@ -6019,6 +6045,13 @@
 
       function _restoreCompanionHead(c, dt) {
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c), dt);
+        // Every "stop looking at X" caller below needs the yaw axis eased
+        // back to center too, not just the pitch/nod — without this, a head
+        // that had turned to track a combat target or an idle scan focus
+        // stayed frozen at that last yaw forever the instant its caller
+        // switched to this shared rest path instead, since nothing else
+        // here ever drove it back down.
+        if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
         if (c) c._lookAtDebug = null;
       }
 
@@ -6105,8 +6138,7 @@
       // _combatTargetHeadWorld instead of always assuming the player.
       function _updateCreatureHeadLookAtCombatTarget(c, target, dt, yawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG) {
         if (!target) {
-          _restoreCompanionHead(c, dt);
-          if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+          _restoreCompanionHead(c, dt); // Also eases yaw back to center — see its own comment.
           return;
         }
         // Yaw here corrects for the gap between the target's exact bearing
