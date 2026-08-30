@@ -17480,8 +17480,17 @@
       // different subset of back-facing cards each time the view changes.
       function _markOutline(obj) {
         if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
-        if (obj.isMesh) { if (!obj.userData.noOutline) obj.layers.enable(1); return; }
-        obj.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); });
+        // PNG planes already contain their authored outline ink. Never enroll
+        // them (or a parent group containing them) in the inverted-hull shell
+        // pass, which is reserved for volumetric 3D geometry.
+        if (obj.userData?.isPngPlane === true) return;
+        if (obj.isMesh) {
+          if (!obj.userData.noOutline && obj.userData.isPngPlane !== true) obj.layers.enable(1);
+          return;
+        }
+        obj.traverse(child => {
+          if (child.isMesh && !child.userData.noOutline && child.userData.isPngPlane !== true) child.layers.enable(1);
+        });
       }
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
@@ -17586,7 +17595,14 @@
         if (!obj) return;
         obj.userData.isPngPlane = true;
         obj.traverse(child => {
-          if (child.isMesh) child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          if (!child.isMesh) return;
+          // PNG art supplies its own outline. Disable the shell layer on the
+          // mesh itself, while retaining layer 4 for depth-only occlusion of
+          // genuine 3D outlines behind the sprite.
+          child.userData.isPngPlane = true;
+          child.userData.noOutline = true;
+          child.layers.disable(1);
+          child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
         });
       }
 
@@ -20516,6 +20532,7 @@
         // from whichever anim is actually playing rather than baked in per-item here — see
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
+        _markPngPlane(g);
         return g;
       }
 
@@ -20634,6 +20651,7 @@
         plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
+        _markPngPlane(plane);
         if (def.spriteIcon && window.SpriteRecolor) {
           window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor ?? 0xFFFFFF, def.spriteMode || 'direct')
             .then(canvas => {
