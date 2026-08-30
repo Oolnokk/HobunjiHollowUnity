@@ -116,3 +116,22 @@
   script.onerror = () => window.__farmLog?.('[item-arch-category-colors] module failed to load', 'error');
   document.head.appendChild(script);
 })();
+
+// Mobile edge-scroll continuity is layered after the base item-category module:
+// while a scroll sentinel is active, keep the last real item's curved category
+// heading visible until the thumb reaches another real item slot.
+(() => {
+  'use strict';
+  if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
+  const src = 'js/item-arch-sticky-category-heading.js?v=20260830a'; // Used to cache-bust the mobile edge-sentinel heading adapter independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load after the base category module when parsing has already completed.
+  script.dataset.itemArchStickyCategoryHeading = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[item-arch-sticky-category-heading] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
