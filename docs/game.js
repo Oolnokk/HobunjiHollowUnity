@@ -10681,10 +10681,9 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        // forceEyesOpen: this bakes one static texture at spawn and never
-        // re-renders it, so an unlucky blink-timing roll here would leave
-        // the NPC's world model with its eyes shut forever (see
-        // renderProfile's forceEyesOpen handling in portrait-utils.js).
+        // Keep the spawn bake eyes-open. The live portrait loop below owns
+        // blink timing after this initial texture has been attached, avoiding
+        // a closed-eye flash while the walker is still being assembled.
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
@@ -11278,9 +11277,9 @@
       // with the breathing composer (see runAnimation's own breathTimer just
       // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
       // blinks/breathes and shows each NPC's own authored restingExpression
-      // — the WORLD-space walking avatar never did, since makeNpcWalker/
-      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
-      // at spawn/gear-change and never touch it again. This applies that
+      // — the WORLD-space walking avatar previously did not. makeNpcWalker/
+      // refreshPlayerAvatar still create a deterministic eyes-open spawn or
+      // gear-change bake; this loop takes ownership afterward and applies the
       // same periodic-recompose idea (the identical cheap
       // refreshSinglePlaneAvatarModel texture-only path runAnimation already
       // uses, not a full geometry rebuild) to both NPC walkers and the
@@ -11302,10 +11301,10 @@
         walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
         if (walker._portraitLifeT < cfg.intervalS) return;
         walker._portraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const composer = window.portraitBreathingComposer || null;
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
-        if (!walker._portraitLifeExpressionSet) {
+        if (composer && !walker._portraitLifeExpressionSet) {
           // The NPC's own authored default expression (rec.restingExpression
           // — see dialogue-content.js's _npcRestingExpression, now shared via
           // window.DialogueContent.npcRestingExpression) applies here too, so
@@ -11317,9 +11316,9 @@
         }
         if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
         walker._portraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
-          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-        }).then(() => {
+        const liveRenderOptions = { seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs };
+        if (composer) liveRenderOptions.breathingComposer = composer; // Blinking remains available when the optional breathing composer is absent.
+        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, liveRenderOptions).then(() => {
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
         }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
       }
@@ -11333,13 +11332,13 @@
         _playerPortraitLifeT += dt;
         if (_playerPortraitLifeT < cfg.intervalS) return;
         _playerPortraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const composer = window.portraitBreathingComposer || null;
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
         _playerPortraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
-          breathingComposer: composer, seatId: 'player',
-        }).then(() => {
+        const liveRenderOptions = { seatId: 'player' };
+        if (composer) liveRenderOptions.breathingComposer = composer; // Blinking does not depend on breathing initialization succeeding.
+        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, liveRenderOptions).then(() => {
           if (generation !== playerAvatarRefreshGeneration) return;
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
         }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
@@ -14598,11 +14597,8 @@
           forceEyesOpen: true,
           breathingComposer: freezePlayerAvatarPortraitComposer(Date.now()),
         }; // Shared by the full and hatless renders below so cold-cache load time cannot leak hood/poncho deformation into the hat-only overlay.
-        // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
-        // this bakes one static texture and never re-renders it, so an
-        // unlucky blink-timing roll here would leave the player's own world
-        // model stuck with its eyes shut until the next gear/cosmetic change
-        // happens to trigger a fresh bake.
+        // Keep the gear-change bake eyes-open. The live portrait loop takes
+        // over blink timing once this rebuilt avatar has been attached.
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.

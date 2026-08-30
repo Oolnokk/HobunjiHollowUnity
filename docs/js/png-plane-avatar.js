@@ -831,6 +831,36 @@
     drawVariantCanvas(root.userData.frontTexture.image, nextSource);
     root.userData.frontTexture.needsUpdate = true;
 
+    // Headwear-facing shaders keep companion canvases beside the ordinary
+    // front map. Refresh those in place too, otherwise the base face blinks
+    // while a stale eyes-open Fine Hood/hat map remains visible over it.
+    const companionSources = [
+      ['hobunjiFineHoodTrimlessTexture', '__hobunjiFineHoodTrimlessCanvas'],
+      ['hobunjiFrontHatlessTexture', '__hobunjiFrontHatlessCanvas'],
+    ];
+    const refreshedCompanionTextures = new Set();
+    root.traverse?.(child => {
+      const materials = child?.material
+        ? (Array.isArray(child.material) ? child.material : [child.material])
+        : [];
+      for (const material of materials) {
+        for (const [textureKey, canvasKey] of companionSources) {
+          const texture = material?.userData?.[textureKey];
+          const companionCanvas = nextSource?.[canvasKey];
+          if (!texture?.image || !companionCanvas || refreshedCompanionTextures.has(texture)) continue;
+          drawVariantCanvas(texture.image, companionCanvas);
+          texture.needsUpdate = true;
+          refreshedCompanionTextures.add(texture);
+        }
+      }
+    });
+    // Kept on the avatar root so mobile diagnostics can confirm the lightweight
+    // texture-only refresh path without requiring a desktop console.
+    root.userData.livePortraitRefresh = {
+      companionTextureCount: refreshedCompanionTextures.size,
+      refreshedAtMs: Date.now(),
+    };
+
     const nextBack = options.backCanvas || options.backImage || root.userData.backCanvas;
     if (nextBack && root.userData.backTexture) {
       root.userData.backCanvas = nextBack;

@@ -7,6 +7,8 @@ const fs = require('node:fs');
 const read = path => fs.readFileSync(path, 'utf8');
 const fineHood = read('docs/js/fine-hood-trim-head-facing.js');
 const hats = read('docs/js/front-hat-head-facing.js');
+const portraitUtils = read('docs/js/portrait-utils.js');
+const pngAvatar = read('docs/js/png-plane-avatar.js');
 const loader = read('docs/js/combat/combat-config-loader.js');
 const game = read('docs/game.js');
 const basicHeadband = JSON.parse(read('docs/config/cosmetics/basic_headband.json'));
@@ -28,6 +30,11 @@ assert.ok(loader.includes('js/front-hat-head-facing.js'), 'front hat facing adap
 assert.match(game, /freezePlayerAvatarPortraitComposer\(Date\.now\(\)\)/, 'player avatar rebuild freezes one portrait deformation sample');
 assert.match(game, /renderProfileToCanvas\(hatlessFrontCanvas, hatlessProfile, staticRenderOptions\)/, 'hatless xray source reuses the full portrait deformation sample');
 assert.match(game, /renderProfileToCanvas\(hatlessBackCanvas, hatlessProfile, \{ \.\.\.staticRenderOptions, portraitView: 'behind' \}\)/, 'rear hatless xray source reuses the same deformation sample');
+assert.match(portraitUtils, /const blinkIdentity = renderOptions\?\.blinkId \?\? seatId;/, 'player and NPC seats receive independent blink identities');
+assert.match(portraitUtils, /shouldRenderBlink\(headUrl, nowMs, blinkIdentity\)/, 'live portrait renders advance their own blink clock');
+assert.match(pngAvatar, /'hobunjiFineHoodTrimlessTexture', '__hobunjiFineHoodTrimlessCanvas'/, 'live refresh updates the Fine Hood companion face texture');
+assert.match(pngAvatar, /'hobunjiFrontHatlessTexture', '__hobunjiFrontHatlessCanvas'/, 'live refresh updates the front-hat companion face texture');
+assert.match(game, /if \(composer\) liveRenderOptions\.breathingComposer = composer;/, 'world blinking remains active without the optional breathing composer');
 
 const headLayers = json => Object.keys(json?.parts?.head?.layers || {});
 assert.deepEqual(headLayers(basicHeadband), ['front'], 'Basic Headband is authored front-only');
