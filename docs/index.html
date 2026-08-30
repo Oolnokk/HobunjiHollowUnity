@@ -30,10 +30,10 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260817d"></script>
+  <script src="js/portrait-utils.js?v=20260830flip2"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260829merge1"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
+  <script src="js/png-plane-avatar.js?v=20260830flip2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -157,7 +157,7 @@
   <script src="js/bounty-board.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260830unlocksave3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260830portraitflip2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -1600,6 +1600,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
           </label>
+          <label class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
+            <div class="settings-label">
+              <div class="settings-name">Flip PNG Character Portraits Sideways</div>
+              <div class="settings-desc">Developer comparison toggle; flipped is the default presentation for both front and back PNG-plane character portraits</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingFlipPngPortraits"><span class="toggle-slider"></span></span>
+          </label>
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Disable Shoulder-Pet Hat X-Ray</div>
@@ -2109,7 +2116,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260829charviewcursor1"></script>
+  <script src="game.js?v=20260830portraitflip2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

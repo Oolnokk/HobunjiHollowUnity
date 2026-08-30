@@ -143,6 +143,7 @@
       const trimlessTexture = new THREE.CanvasTexture(trimlessCanvas);
       if ('colorSpace' in trimlessTexture && THREE.SRGBColorSpace) trimlessTexture.colorSpace = THREE.SRGBColorSpace;
       trimlessTexture.needsUpdate = true;
+      api.trackPortraitTexture?.(THREE, trimlessTexture, 'front');
       const facingUniform = { value: 1 };
       const previousOnBeforeCompile = material.onBeforeCompile;
       const previousProgramKey = typeof material.customProgramCacheKey === 'function'
