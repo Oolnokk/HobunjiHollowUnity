@@ -1102,9 +1102,9 @@ function _textMatchesAny(text, needles) {
   return (needles || []).some(needle => value.includes(String(needle || '').toLowerCase().replace(/_/g, '-')));
 }
 
-function _getBehindLayerReplacement(layer, group, gender) {
+function _getBehindLayerUrl(layer, group, gender) {
   const rules = _pngPlaneBehindViewConfig().layerReplacements || [];
-  if (!layer || !Array.isArray(rules)) return { url: layer?.url || null, dedicated: false };
+  if (!layer || !Array.isArray(rules)) return layer?.url || null;
   const idText = [group?.id, group?.originalId].filter(Boolean).join(' ');
   for (const rule of rules) {
     if (rule.hairSlot && group?.hairSlot !== rule.hairSlot) continue;
@@ -1114,37 +1114,34 @@ function _getBehindLayerReplacement(layer, group, gender) {
     // no behind-view equivalent at all (e.g. a hood's face-opening trim, or a
     // facial-feature overlay that isn't visible from the back of the head) and
     // should simply not be drawn, rather than falling back to its front-view art.
-    if (rule.hide) return { url: null, dedicated: false };
+    if (rule.hide) return null;
     if (rule.genderUrls) {
       const genderKey = _portraitGenderKey(gender);
-      const url = rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
-      return { url, dedicated: url !== layer.url };
+      return rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
     }
-    const url = rule.url || layer.url;
-    return { url, dedicated: url !== layer.url };
+    return rule.url || layer.url;
   }
-  return { url: layer.url, dedicated: false };
-}
-
-function _getBehindLayerUrl(layer, group, gender) {
-  return _getBehindLayerReplacement(layer, group, gender).url;
+  return layer.url;
 }
 
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
-  const { url, dedicated } = _getBehindLayerReplacement(layer, group, gender);
-  if (!dedicated) return { ...layer, url };
-  // A dedicated behind-view asset (from layerReplacements, e.g. splayedknot-behind.png)
-  // is authored to already look correct as the final rear-view image. But every
-  // behind canvas is mirrored as a whole afterwards (buildTextureSet's flipX in
-  // png-plane-avatar.js) to turn plain front art into a plausible rear silhouette
-  // for layers with no dedicated back art. Without compensation that later mirror
-  // would flip a dedicated asset a second time, undoing its authored orientation
-  // (the splayed-knot "flipped the wrong way" bug). Negating sx pre-flips just this
-  // layer so the two flips cancel out -- but every cosmetic layer carries a fixed
-  // xformPreset:'B' (see _extractLayersFromParts) that resolveXform reads *instead
-  // of* the layer's own ax/ay/sx/sy whenever it's set, so the negated sx has to be
-  // baked into explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
+  const url = _getBehindLayerUrl(layer, group, gender);
+  if (!url) return { ...layer, url };
+  // Every layer drawn into the behind canvas gets mirrored a second time when
+  // the whole canvas is flipped afterwards (buildTextureSet's flipX in
+  // png-plane-avatar.js) to build the back-facing plane texture. Left
+  // uncompensated that flip mirrors each cosmetic's own silhouette relative to
+  // how it looks on the front -- an asymmetric hair tuft curls the wrong way,
+  // a knot points the wrong way -- whether or not the layer got dedicated
+  // back-view art above. Negating sx here pre-flips just the sprite content so
+  // the two flips cancel out and front/back silhouettes match (this is what
+  // made the splayed-knot fix look right; the same compensation belongs on
+  // every layer, not just that one).
+  // Every cosmetic layer carries a fixed xformPreset:'B' (see
+  // _extractLayersFromParts) that resolveXform reads *instead of* the layer's
+  // own ax/ay/sx/sy whenever it's set, so the negated sx has to be baked into
+  // explicit ax/ay/sx/sy fields with xformPreset cleared, or it's ignored.
   const preset = layer.xformPreset ? getPortraitXformPreset(layer.xformPreset) : {
     ax: layer.ax ?? 0, ay: layer.ay ?? 0, sx: layer.sx ?? 1, sy: layer.sy ?? 1,
   };
