@@ -142,6 +142,60 @@
     } else {
       setTimeout(installCounterShieldEditorPreset, 0);
     }
+  } else if (!isAnimationAuthor) {
+    // Counter Shield's combat module predates the shared held-action library and
+    // still owns a private fallback BLOCK_POSE. Once all synchronous combat scripts
+    // have registered their abilities, wrap only Counter Shield's hold callbacks and
+    // substitute this shared authored pose at the triggerWeaponHoldVisual boundary.
+    // No combat timing/damage/stamina code is replaced; only the visual pose payload.
+    const installCounterShieldRuntimePoseBridge = () => {
+      const ability = window.Combat?.abilities?.get?.('counterShield');
+      if (!ability || ability._sharedHeldActionPoseBridge) return false;
+      const methodNames = ['onHoldStart', 'onHoldUpdate'];
+      for (const methodName of methodNames) {
+        const originalMethod = ability[methodName];
+        if (typeof originalMethod !== 'function') continue;
+        ability[methodName] = function sharedCounterShieldPoseCallback(...args) {
+          const deps = window.Combat?.deps;
+          const originalHoldVisual = deps?.triggerWeaponHoldVisual;
+          const authored = window.HeldActionAnimations?.counterShield;
+          if (!authored?.poses || typeof originalHoldVisual !== 'function') {
+            return originalMethod.apply(this, args);
+          }
+          deps.triggerWeaponHoldVisual = function sharedCounterShieldHoldVisual(_durationS, options = {}) {
+            return originalHoldVisual.call(this, authored.durationS || _durationS, {
+              ...options,
+              anim: authored.style || options.anim || 'sweep',
+              pose: authored.poses,
+              windupFrac: authored.windupFrac ?? options.windupFrac,
+              strikeFrac: authored.strikeFrac ?? options.strikeFrac,
+            });
+          };
+          try {
+            return originalMethod.apply(this, args);
+          } finally {
+            deps.triggerWeaponHoldVisual = originalHoldVisual;
+          }
+        };
+      }
+      ability._sharedHeldActionPoseBridge = true;
+      window.__farmLog?.('[counter-shield] shared Attack Editor guard pose bridge installed.', 'info', 'combat');
+      return true;
+    };
+
+    const installWhenReady = () => {
+      if (installCounterShieldRuntimePoseBridge()) return;
+      let attempts = 0;
+      const retry = setInterval(() => {
+        attempts++;
+        if (installCounterShieldRuntimePoseBridge() || attempts >= 40) clearInterval(retry);
+      }, 50);
+    };
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', installWhenReady, { once: true });
+    } else {
+      setTimeout(installWhenReady, 0);
+    }
   }
 
   const handScripts = [
