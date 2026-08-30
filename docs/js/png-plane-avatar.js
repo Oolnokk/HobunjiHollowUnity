@@ -4,6 +4,14 @@
 (function () {
   'use strict';
 
+  const PORTRAIT_FLIP_STORAGE_KEY = 'hobunjiPngPortraitsFlipped'; // Persists the player-facing horizontal portrait setting across sessions.
+  const trackedPortraitTextures = new Set(); // Lets the Settings toggle update already-spawned front/back character planes immediately.
+  let portraitsFlipped = true; // New/default character presentation; Dev Mode can expose the opt-out checkbox below.
+  try {
+    const savedPortraitFlip = localStorage.getItem(PORTRAIT_FLIP_STORAGE_KEY); // Preserves an explicit older choice while treating a missing key as the new flipped default.
+    if (savedPortraitFlip !== null) portraitsFlipped = savedPortraitFlip !== '0';
+  } catch {}
+
   function cfg() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
   }
@@ -73,12 +81,54 @@
   // PNG surface API rather than an independently maintained plane-only copy.
   window.HobunjiPngPlaneUnlit = spritePngSurface || window.HobunjiPngPlaneUnlit;
 
+  function applyPortraitTextureFlip(texture) {
+    const state = texture?.userData?.hobunjiPortraitFlip; // Stores the authored UV transform that this toggle mirrors/restores.
+    if (!state) return;
+    texture.repeat.x = portraitsFlipped ? -state.baseRepeatX : state.baseRepeatX;
+    texture.offset.x = portraitsFlipped ? state.baseOffsetX + state.baseRepeatX : state.baseOffsetX;
+    texture.needsUpdate = true;
+    state.flipped = portraitsFlipped;
+  }
+
+  function trackPortraitTexture(THREE, texture, face) {
+    if (!texture) return texture;
+    texture.userData = texture.userData || {};
+    texture.userData.hobunjiPortraitFlip = {
+      face,
+      baseRepeatX: texture.repeat.x,
+      baseOffsetX: texture.offset.x,
+      flipped: false,
+    }; // Preserves each authored texture's original UV transform when the setting is turned back off.
+    texture.wrapS = THREE.RepeatWrapping;
+    trackedPortraitTextures.add(texture);
+    texture.addEventListener?.('dispose', () => trackedPortraitTextures.delete(texture));
+    applyPortraitTextureFlip(texture);
+    return texture;
+  }
+
+  function setPortraitsFlipped(enabled, options = {}) {
+    portraitsFlipped = !!enabled;
+    for (const texture of trackedPortraitTextures) applyPortraitTextureFlip(texture);
+    if (options.persist !== false) {
+      try { localStorage.setItem(PORTRAIT_FLIP_STORAGE_KEY, portraitsFlipped ? '1' : '0'); } catch {}
+    }
+    return portraitsFlipped;
+  }
+
+  function wirePortraitFlipSetting() {
+    const checkbox = document.getElementById('settingFlipPngPortraits'); // Owns the player-facing control without coupling the renderer to game.js startup order.
+    if (!checkbox || checkbox.dataset.pngPortraitFlipWired === '1') return;
+    checkbox.dataset.pngPortraitFlipWired = '1';
+    checkbox.checked = portraitsFlipped;
+    checkbox.addEventListener('change', event => setPortraitsFlipped(event.target.checked));
+  }
+
   function buildTextureSet(THREE, image, backImage) {
     const rearSource = backImage || image;
     const rearOptions = backImage ? { flipX: true } : { flipX: true, blackSilhouette: true };
     return {
-      frontOriginal: makeTextureFromCanvas(THREE, makeVariantCanvas(image), 'npc_avatar_front_texture'),
-      backForOriginal: makeTextureFromCanvas(THREE, makeVariantCanvas(rearSource, rearOptions), backImage ? 'npc_avatar_back_assembled_texture' : 'npc_avatar_back_silhouette_texture'),
+      frontOriginal: trackPortraitTexture(THREE, makeTextureFromCanvas(THREE, makeVariantCanvas(image), 'npc_avatar_front_texture'), 'front'),
+      backForOriginal: trackPortraitTexture(THREE, makeTextureFromCanvas(THREE, makeVariantCanvas(rearSource, rearOptions), backImage ? 'npc_avatar_back_assembled_texture' : 'npc_avatar_back_silhouette_texture'), 'back'),
     };
   }
 
@@ -965,6 +1015,7 @@
   }
 
   window.PNGPlaneAvatar = {
+    PORTRAIT_FLIP_STORAGE_KEY,
     makeVariantCanvas,
     refreshSinglePlaneAvatarModel,
     buildAnimalPlaneAvatarModel,
@@ -979,7 +1030,18 @@
     upgradePlaneToAutoNeckSkin,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,
+    trackPortraitTexture,
+    getPortraitsFlipped: () => portraitsFlipped,
+    setPortraitsFlipped,
+    getPortraitFlipDebugState: () => ({ enabled: portraitsFlipped, trackedTextureCount: trackedPortraitTextures.size }),
   };
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', wirePortraitFlipSetting, { once: true });
+    } else {
+      wirePortraitFlipSetting();
+    }
+  }
 })();
 
 // Optional painted-weight head rig for side-view animal planes.

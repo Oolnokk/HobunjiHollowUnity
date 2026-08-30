@@ -14540,7 +14540,7 @@
         try {
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
-          if (!hasHat || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+          if (!hasHat || hat.specialHeadwearRules === false || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
           const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
@@ -14581,6 +14581,7 @@
             const texture = new THREE.CanvasTexture(canvas);
             texture.colorSpace = THREE.SRGBColorSpace;
             texture.needsUpdate = true;
+            window.PNGPlaneAvatar.trackPortraitTexture?.(THREE, texture, facingBack ? 'back' : 'front');
             const material = new THREE.MeshBasicMaterial({
               map: texture, transparent: true, alphaTest: alphaTest ?? 0.01,
               side: THREE.FrontSide, depthWrite: true, depthTest: true,
@@ -22980,10 +22981,19 @@
         try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
       });
       const settingDevModeEl = document.getElementById('settingDevMode');
+      const settingFlipPngPortraitsRow = document.getElementById('settingFlipPngPortraitsRow'); // Dev-only home for comparing the legacy portrait orientation.
+      const updateDevOnlySettingVisibility = () => {
+        if (settingFlipPngPortraitsRow) {
+          settingFlipPngPortraitsRow.hidden = !s_devMode;
+          settingFlipPngPortraitsRow.style.display = s_devMode ? '' : 'none';
+        }
+      }; // Keeps the portrait comparison out of ordinary player settings while preserving the diagnostic.
       settingDevModeEl.checked = s_devMode;
+      updateDevOnlySettingVisibility();
       settingDevModeEl.addEventListener('change', e => {
         s_devMode = e.target.checked;
         try { localStorage.setItem(DEV_MODE_STORAGE_KEY, s_devMode ? '1' : '0'); } catch {}
+        updateDevOnlySettingVisibility();
         // Takes effect the next time a tool's item-info panel is opened
         // (selectGearTool/selectEquipSlot both read s_devMode fresh) rather
         // than needing to track/re-render whichever panel might currently
