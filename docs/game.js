@@ -3964,7 +3964,6 @@
       // moment and nothing else ever bumped the counter again).
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
@@ -6792,7 +6791,6 @@
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
-            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.prone) {
