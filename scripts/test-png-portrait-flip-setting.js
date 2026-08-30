@@ -36,6 +36,10 @@ assert.match(avatarSource, /texture\.repeat\.x = portraitsFlipped \? -state\.bas
   'horizontal mirroring uses UVs instead of a negative mesh scale that could reverse face culling');
 assert.match(avatarSource, /texture\.offset\.x = portraitsFlipped \? state\.baseOffsetX \+ state\.baseRepeatX : state\.baseOffsetX/,
   'mirrored UVs retain the full portrait rather than sampling outside its image');
+assert.match(avatarSource, /const renderedPixelX = portraitsFlipped \? pixelWidth - pixelX : pixelX/,
+  'authored portrait landmarks mirror horizontally with the rendered portrait');
+assert.match(avatarSource, /-modelWidth \/ 2 \+ \(renderedPixelX \/ pixelWidth\) \* modelWidth/,
+  'skinned source-pixel world placement uses the rendered portrait X coordinate');
 assert.match(avatarSource, /for \(const texture of trackedPortraitTextures\) applyPortraitTextureFlip\(texture\)/,
   'changing the setting updates already-spawned PNG character portraits immediately');
 assert.match(avatarSource, /localStorage\.setItem\(PORTRAIT_FLIP_STORAGE_KEY, portraitsFlipped \? '1' : '0'\)/,
