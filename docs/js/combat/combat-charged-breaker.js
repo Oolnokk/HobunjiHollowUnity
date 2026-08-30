@@ -52,6 +52,168 @@
   function now() { return performance.now() / 1000; }
   function lerp(a, b, t) { return a + (b - a) * t; }
 
+  // Player Charged Breaker uses the same three-layer additive flame recipe
+  // as combat-enemy-telegraph.js's enemy heavy tell. Keeping the specs and
+  // ResourceRings color lookup identical makes player/enemy heavies read as
+  // the same combat language while this module's own authoritative hold /
+  // fizzle / release lifecycle decides exactly when the player's version is
+  // visible.
+  const PLAYER_HEAVY_FIRE_LAYER_SPECS = [
+    { count: 12, size: 0.12, opacity: 0.58, rise: 0.78, radius: 0.10, speed: 1.55 },
+    { count: 9, size: 0.19, opacity: 0.27, rise: 0.92, radius: 0.15, speed: 1.18 },
+    { count: 6, size: 0.065, opacity: 0.82, rise: 1.04, radius: 0.18, speed: 1.95 },
+  ]; // Used to construct the player's layered weapon-fire particles.
+  const PLAYER_HEAVY_FIRE_NEUTRAL_COLOR = 0xffc85a; // Used when an unleveled heavy has no affliction color yet.
+  const PLAYER_HEAVY_FIRE_MAX_COLORS = 4; // Caps color layers to the same ceiling as enemy heavy telegraphs.
+  let playerHeavyFireGroup = null; // Reused Three.js group attached to the player's live weapon holder.
+  let playerHeavyFireHolder = null; // Tracks holder replacement/reparenting after equipment/avatar rebuilds.
+  let playerHeavyFireActive = false; // Controls whether the per-frame particle animation should be visible.
+  let playerHeavyAfflictionIds = []; // Exposed in the mobile-friendly snapshot and used to detect color-set changes.
+  let playerHeavyParticleTexture = null; // Lazily created shared soft-alpha map for all player heavy particles.
+
+  function makePlayerHeavyParticleTexture() {
+    const canvas = document.createElement('canvas'); // Supplies the same soft radial alpha falloff used by enemy heavy flames.
+    canvas.width = canvas.height = 32;
+    const ctx = canvas.getContext('2d'); // Draws the texture once; particle motion happens in Three.js afterward.
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16); // Creates a hot center fading cleanly to transparent.
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.28, 'rgba(255,255,255,.9)');
+    gradient.addColorStop(0.68, 'rgba(255,255,255,.32)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    const texture = new THREE.CanvasTexture(canvas); // Shared by every PointsMaterial in the player's heavy fire group.
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    return texture;
+  }
+
+  function playerHeavyTrailColor(id) {
+    const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Reads the exact palette already used by weapon trails/resource rings.
+    if (raw == null) return PLAYER_HEAVY_FIRE_NEUTRAL_COLOR;
+    const neonize = window.ResourceRings?.neonizeColor; // Applies the same vivid-not-white transform as weapon trails.
+    return typeof neonize === 'function' ? neonize(raw) : raw;
+  }
+
+  function playerHeavyAfflictionsForBonuses(bonuses) {
+    const entries = Object.entries(bonuses || {}).filter(([, mul]) => Number(mul) > 0); // Keeps only afflictions this pending hit can actually apply.
+    entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+    return entries.slice(0, PLAYER_HEAVY_FIRE_MAX_COLORS).map(([id]) => id);
+  }
+
+  function makePlayerHeavyFireLayer(color, spec, colorIndex, layerIndex) {
+    const positions = new Float32Array(spec.count * 3); // Mutated in place every frame for this flame/spark layer.
+    const geometry = new THREE.BufferGeometry(); // Owns the dynamic position buffer for this one layer.
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    if (!playerHeavyParticleTexture) playerHeavyParticleTexture = makePlayerHeavyParticleTexture();
+    const material = new THREE.PointsMaterial({ // Matches the enemy heavy tell's additive unlit particle treatment.
+      color,
+      size: spec.size,
+      map: playerHeavyParticleTexture,
+      transparent: true,
+      opacity: spec.opacity,
+      alphaTest: 0.015,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    const points = new THREE.Points(geometry, material); // Lives under toolHolder so every lick follows the player's real weapon swing.
+    points.frustumCulled = false;
+    points.renderOrder = 4;
+    const seeds = Array.from({ length: spec.count }, (_, pointIndex) => { // Stable deterministic phases prevent visible per-frame random teleporting.
+      const n = (pointIndex + 1) * 12.9898 + (colorIndex + 1) * 78.233 + (layerIndex + 1) * 37.719; // Separates every particle/color/layer path.
+      const fract = value => value - Math.floor(value); // Converts the deterministic sine samples into repeatable 0..1 seeds.
+      return {
+        phase: fract(Math.sin(n) * 43758.5453),
+        angle: fract(Math.sin(n * 1.71) * 15731.743) * Math.PI * 2,
+        radius: (0.25 + fract(Math.sin(n * 2.13) * 24634.634) * 0.75) * spec.radius,
+        wobble: 1.4 + fract(Math.sin(n * 3.07) * 56445.234) * 2.2,
+        speed: spec.speed * (0.82 + fract(Math.sin(n * 4.11) * 12415.873) * 0.36),
+      };
+    });
+    points.userData.playerHeavyFire = { spec, seeds, positions, layerIndex, colorIndex };
+    return points;
+  }
+
+  function disposePlayerHeavyFireGroup() {
+    if (!playerHeavyFireGroup) return;
+    for (const points of playerHeavyFireGroup.children) { // Releases per-layer geometry/material while retaining the one shared texture.
+      points.geometry?.dispose?.();
+      points.material?.dispose?.();
+    }
+    playerHeavyFireGroup.parent?.remove(playerHeavyFireGroup);
+    playerHeavyFireGroup = null;
+    playerHeavyFireHolder = null;
+  }
+
+  function ensurePlayerHeavyFireGroup(afflictionBonuses) {
+    const ids = playerHeavyAfflictionsForBonuses(afflictionBonuses); // Determines the exact trail-matched colors for this Charged Breaker.
+    const signature = (ids.length ? ids : [null]).join('|'); // Used to reuse the particle group when the pending affliction set is unchanged.
+    const currentSignature = playerHeavyFireGroup?.userData.afflictionSignature || null; // Avoids rebuilding geometry every time the attack is held.
+    if (!playerHeavyFireGroup || currentSignature !== signature) {
+      disposePlayerHeavyFireGroup();
+      const group = new THREE.Group(); // Collects every color/layer under one weapon-relative transform.
+      group.name = 'player-heavy-attack-fire-telegraph';
+      const colorIds = ids.length ? ids : [null]; // Gives a plain heavy a neutral gold fire tell even without upgrade afflictions.
+      colorIds.forEach((id, colorIndex) => {
+        const color = id ? playerHeavyTrailColor(id) : PLAYER_HEAVY_FIRE_NEUTRAL_COLOR; // Matches the existing weapon-trail palette.
+        PLAYER_HEAVY_FIRE_LAYER_SPECS.forEach((spec, layerIndex) => group.add(makePlayerHeavyFireLayer(color, spec, colorIndex, layerIndex)));
+      });
+      group.userData.afflictionSignature = signature;
+      group.visible = false;
+      playerHeavyFireGroup = group;
+    }
+    playerHeavyAfflictionIds = ids.slice();
+    const holder = window.Combat.deps?.toolHolder?.() || null; // Uses the same moving holder as the player's visible weapon mesh.
+    if (holder && playerHeavyFireHolder !== holder) {
+      playerHeavyFireGroup.parent?.remove(playerHeavyFireGroup);
+      holder.add(playerHeavyFireGroup);
+      playerHeavyFireHolder = holder;
+    }
+    return !!holder;
+  }
+
+  function startPlayerHeavyFire(afflictionBonuses) {
+    playerHeavyFireActive = true;
+    ensurePlayerHeavyFireGroup(afflictionBonuses);
+    if (playerHeavyFireGroup) playerHeavyFireGroup.visible = true;
+  }
+
+  function stopPlayerHeavyFire() {
+    playerHeavyFireActive = false;
+    if (playerHeavyFireGroup) playerHeavyFireGroup.visible = false;
+  }
+
+  function updatePlayerHeavyFire() {
+    if (!playerHeavyFireActive || !playerHeavyFireGroup) return;
+    const holder = window.Combat.deps?.toolHolder?.() || null; // Reparents after any runtime weapon/avatar holder rebuild during the tell.
+    if (!holder) { playerHeavyFireGroup.visible = false; return; }
+    if (playerHeavyFireHolder !== holder) {
+      playerHeavyFireGroup.parent?.remove(playerHeavyFireGroup);
+      holder.add(playerHeavyFireGroup);
+      playerHeavyFireHolder = holder;
+    }
+    playerHeavyFireGroup.visible = true;
+    const timeS = now(); // Drives only cosmetic rise/wobble/pulse animation; gameplay timing remains in Charged Breaker below.
+    for (const points of playerHeavyFireGroup.children) {
+      const data = points.userData.playerHeavyFire; // Supplies this layer's stable seeds and dynamic position buffer.
+      if (!data) continue;
+      const colorOffset = data.colorIndex * 0.07; // Interleaves multiple affliction colors instead of stacking identical paths.
+      for (let i = 0; i < data.seeds.length; i++) {
+        const seed = data.seeds[i]; // Drives one particle's repeatable licking/rising path.
+        const life = (timeS * seed.speed + seed.phase + colorOffset) % 1; // Loops its upward travel independently of neighboring particles.
+        const envelope = 1 - life * 0.62; // Narrows the plume toward its upper tip.
+        const angle = seed.angle + Math.sin(timeS * seed.wobble + seed.phase * 6.28) * 0.52; // Adds side-to-side flame lick without random jitter.
+        const base = i * 3; // Indexes this particle's xyz triplet in the shared Float32Array.
+        data.positions[base] = Math.cos(angle) * seed.radius * envelope + Math.sin(timeS * 4.1 + i) * 0.018;
+        data.positions[base + 1] = -0.30 + life * data.spec.rise + Math.sin(timeS * 5.7 + seed.phase * 8) * 0.025;
+        data.positions[base + 2] = Math.sin(angle) * seed.radius * envelope + Math.cos(timeS * 3.6 + i * 0.7) * 0.018;
+      }
+      points.geometry.attributes.position.needsUpdate = true;
+      points.material.opacity = data.spec.opacity * (0.84 + Math.sin(timeS * 8 + data.layerIndex * 1.7) * 0.12);
+    }
+  }
+
   function register() {
     let startedAt = -1;
 
@@ -62,6 +224,7 @@
       // how long it's charged for — safe to read here at raise time rather
       // than waiting for release.
       const effects = window.CombatProgression?.getEffects(window.Combat.deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
+      startPlayerHeavyFire(effects.afflictions);
       // Power attack — reuses the shared sweep pose (same one combo's
       // Cleave/Backhand steps use) instead of the vertical chop, but wound
       // back farther and scaled up via power so the finisher still reads as
@@ -94,8 +257,9 @@
       // combat-core.js's cancelAllStaged, called from damagePlayer), so this
       // only matters for the rare case of releasing in the same instant a
       // new stagger begins.
-      if (window.Combat.isStaggered(deps.player)) { deps.cancelWeaponSwingHold(); return; }
+      if (window.Combat.isStaggered(deps.player)) { stopPlayerHeavyFire(); deps.cancelWeaponSwingHold(); return; }
       if (held < MIN_READY_S) {
+        stopPlayerHeavyFire();
         deps.cancelWeaponSwingHold();
         deps.showToast(forced
           ? 'Charged Breaker fizzled: stamina ran out before it was ready.'
@@ -108,6 +272,7 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled breaker
       // deals plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
+      startPlayerHeavyFire(effects.afflictions);
       // Never refuses for lack of stamina once it's ready to release —
       // overspending pushes into Exhausted instead of fizzling the slam
       // (see resource-system.js's spendStamina). Exhausted's reduced speed
@@ -175,6 +340,8 @@
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },
+        onComplete: stopPlayerHeavyFire,
+        onCancel: stopPlayerHeavyFire,
       });
     }
 
@@ -195,6 +362,25 @@
   }
 
   register();
+
+  // Ticks after combat-input's own wrapper, so a newly-entered hold or a
+  // forced stamina release updates the player's telegraph on that same frame.
+  const previousCombatUpdate = window.Combat.update; // Preserves the existing core/input/enemy-telegraph update chain.
+  window.Combat.update = function chargedBreakerPlayerTelegraphUpdate(dt) {
+    previousCombatUpdate(dt);
+    updatePlayerHeavyFire();
+  };
+
+  // Mobile-friendly debug seam; unlike the scene objects themselves this is
+  // read-only and safe to copy from an in-game debug report.
+  window.Combat.chargedBreakerPlayerTelegraph = {
+    snapshot: () => ({
+      active: playerHeavyFireActive,
+      afflictionIds: playerHeavyAfflictionIds.slice(),
+      holderReady: !!playerHeavyFireHolder,
+      groupVisible: !!playerHeavyFireGroup?.visible,
+    }),
+  };
 
   // Read-only data export for game.js's bandit AI — see combat-combo.js's
   // matching comment. A bandit's own charged breaker fires at a fixed
