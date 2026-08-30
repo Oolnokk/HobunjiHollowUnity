@@ -447,6 +447,139 @@
     }
   }
 
+
+  // ── Simple hydra camp sequence ────────────────────────────────────
+  // One exterior guard is active at a time. Each non-captain death can
+  // produce one delayed replacement; the captain is reserved for the end.
+  const SIMPLE_HYDRA_DELAY_S = 5;
+  const SIMPLE_HYDRA_DEFAULT_BURN_S = 8;
+
+  function simpleHydraPoint(rec) {
+    const tents = rec.props.filter(o => o.type === 'tent' && !o.destroyed);
+    const tent = tents.length ? tents[Math.floor(deps.rnd() * tents.length)] : null;
+    if (!tent) return { x: rec.homeX, y: rec.homeY };
+    const center = banditTentCenterPx(tent);
+    const angle = deps.rnd() * Math.PI * 2;
+    return {
+      x: center.x + Math.cos(angle) * deps.TILE * 0.45,
+      y: center.y + Math.sin(angle) * deps.TILE * 0.45,
+    };
+  }
+
+  function simpleHydraRank(rec) {
+    const choices = [];
+    if ((rec.reserveByRank.lieutenant || 0) > 0) choices.push('lieutenant');
+    if ((rec.reserveByRank.grunt || 0) > 0) choices.push('grunt');
+    return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
+  }
+
+  async function spawnSimpleHydraBandit(rec, rank, nameOverride) {
+    if (rec.zoneId !== deps.getCurrentArea()) return null;
+    const point = simpleHydraPoint(rec);
+    const c = await window.BanditCombat.makeEntity(rec.cfg, rank, rec.tier, point.x, point.y, {
+      zoneId: rec.zoneId,
+      extra: {
+        homeX: rec.homeX,
+        homeY: rec.homeY,
+        banditCampInstanceId: rec.instance.id,
+        state: 'idle',
+      },
+      nameOverride,
+    });
+    if (!c) return null;
+    deps.hostileObjects.add(c);
+    rec.gangIds.add(c.id);
+    rec.activeRanksById.set(c.id, rank);
+    rec.reserveByRank[rank] = Math.max(0, (rec.reserveByRank[rank] || 0) - 1);
+    if (rank === 'captain') rec.captainName = c.name || rec.captainName;
+    return c;
+  }
+
+  function simpleHydraAllTentsBurning(rec) {
+    const tents = rec.props.filter(o => o.type === 'tent');
+    return tents.length > 0 && tents.every(o => o.burning || o.destroyed);
+  }
+
+  async function updateSimpleHydra(dt) {
+    const zoneId = deps.getCurrentArea();
+    if (!deps.isZoneArea(zoneId)) return;
+    const recs = _banditCampInstances.get(zoneId) || [];
+    if (!recs.length) return;
+    const liveById = new Map();
+    for (const c of deps.hostileObjects) {
+      if (c.banditCampInstanceId && c.health > 0) liveById.set(c.id, c);
+    }
+
+    for (const rec of recs) {
+      if (!rec.activeRanksById) continue;
+      let nonCaptainDeaths = 0;
+      for (const [id, rank] of [...rec.activeRanksById]) {
+        if (liveById.has(id)) continue;
+        rec.activeRanksById.delete(id);
+        if (rank !== 'captain') nonCaptainDeaths++;
+      }
+      if (nonCaptainDeaths && !rec.reinforcementPending
+          && simpleHydraRank(rec)) {
+        rec.reinforcementPending = true;
+        rec.reinforcementTimer = Math.max(
+          0,
+          Number(rec.cfg?.campLifecycle?.simpleHydraDelaySeconds ?? SIMPLE_HYDRA_DELAY_S),
+        );
+        window.__farmLog?.(
+          '[bandits] simple hydra: ' + nonCaptainDeaths
+            + ' non-captain death(s); one tent replacement queued.',
+          'wildlife',
+        );
+      }
+
+      if (rec.reinforcementPending) {
+        rec.reinforcementTimer -= dt;
+        if (rec.reinforcementTimer <= 0) {
+          const rank = simpleHydraRank(rec);
+          if (rank) {
+            const c = await spawnSimpleHydraBandit(rec, rank);
+            if (c) {
+              rec.reinforcementPending = false;
+              window.__farmLog?.(
+                '[bandits] simple hydra: ' + rank + ' emerged from a tent.',
+                'wildlife',
+              );
+            } else {
+              rec.reinforcementTimer = 1;
+            }
+          } else {
+            rec.reinforcementPending = false;
+          }
+        }
+      }
+
+      const livingNonCaptains = [...rec.activeRanksById.values()]
+        .filter(rank => rank !== 'captain').length;
+      const captainReady = !rec.captainSpawned
+        && !rec.captainSpawnInFlight
+        && (rec.reserveByRank.captain || 0) > 0
+        && !rec.reinforcementPending
+        && (simpleHydraAllTentsBurning(rec)
+          || ((rec.reserveByRank.grunt || 0) === 0
+            && (rec.reserveByRank.lieutenant || 0) === 0
+            && livingNonCaptains === 0));
+      if (captainReady) {
+        rec.captainSpawnInFlight = true;
+        const c = await spawnSimpleHydraBandit(rec, 'captain', rec.captainName);
+        if (c) {
+          rec.captainSpawned = true;
+          window.__farmLog?.(
+            '[bandits] simple hydra: captain emerged from the camp.',
+            'wildlife',
+          );
+        } else {
+          rec.captainSpawnInFlight = false;
+        }
+        rec.captainSpawnInFlight = false;
+      }
+    }
+  }
+
   async function spawnBanditCamp(zoneId, localeDef, cfg) {
     const view = _banditZoneView(zoneId);
     if (!view) return null;
@@ -474,8 +607,16 @@
     const pinThisCamp = bountyPin && !alreadyHasPinnedCaptain;
     const tier = pinThisCamp ? bountyPin.tier : banditTierForSite(cfg, view, instance.site);
     const rec = {
-      zoneId, instance, tier, gangIds: new Set(),
+      zoneId, instance, tier, cfg, gangIds: new Set(),
       props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
+      homeX: (instance.site.x + instance.site.w / 2) * deps.TILE,
+      homeY: (instance.site.y + instance.site.h / 2) * deps.TILE,
+      reserveByRank: { grunt: 0, lieutenant: 0, captain: 0 },
+      activeRanksById: new Map(),
+      reinforcementPending: false,
+      reinforcementTimer: 0,
+      captainSpawned: false,
+      captainSpawnInFlight: false,
     };
     const tracked = _banditCampInstances.get(zoneId) || [];
     tracked.push(rec);
@@ -485,31 +626,29 @@
     const comp = cfg?.gangComposition || {};
     const grunts = (comp.gruntsMin ?? 3) + Math.floor(deps.rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
     const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
-    const roster = [
-      ...Array(grunts).fill('grunt'),
-      ...Array(lieutenants).fill('lieutenant'),
-      ...Array(comp.captains ?? 1).fill('captain'),
-    ];
-    const homeX = (instance.site.x + instance.site.w / 2) * deps.TILE;
-    const homeY = (instance.site.y + instance.site.h / 2) * deps.TILE;
-    let spawned = 0;
-    for (const rank of roster) {
-      if (zoneId !== deps.getCurrentArea()) break;
-      const angle = deps.rnd() * Math.PI * 2;
-      const dist = deps.TILE * (1.0 + deps.rnd() * 2.6);
-      const c = await window.BanditCombat.makeEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
-        zoneId,
-        extra: { homeX, homeY, banditCampInstanceId: instance.id, state: 'idle' },
-        nameOverride: (pinThisCamp && rank === 'captain') ? bountyPin.captainName : undefined,
-      });
-      if (!c) continue;
-      deps.hostileObjects.add(c);
-      rec.gangIds.add(c.id);
-      spawned++;
-      if (rank === 'captain' && !rec.captainName) rec.captainName = c.name;
+    rec.reserveByRank.grunt = grunts;
+    rec.reserveByRank.lieutenant = lieutenants;
+    rec.reserveByRank.captain = Math.max(0, Number(comp.captains ?? 1));
+    rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
+      || window.BanditCombat.randomName?.('captain')
+      || 'Bandit Captain';
+    const first = await spawnSimpleHydraBandit(
+      rec,
+      'grunt',
+    );
+    if (!first) {
+      window.__farmLog?.('[bandits] simple hydra: initial guard could not spawn.', 'warn');
     }
-    window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
-    if (spawned > 0 && zoneId === deps.getCurrentArea()) deps.showToast('Smoke on the wind — a bandit camp is nearby.', false);
+    const total = grunts + lieutenants + rec.reserveByRank.captain;
+    window.__farmLog?.(
+      '[bandits] zone "' + zoneId + '": camp ' + instance.id
+        + ' staged with one exterior guard; ' + Math.max(0, total - 1)
+        + ' supporting bandit(s) remain in the simple tent sequence.',
+      'wildlife',
+    );
+    if (first && zoneId === deps.getCurrentArea()) {
+      deps.showToast('Smoke on the wind — a bandit camp is nearby.', false);
+    }
     return instance;
   }
 
@@ -663,6 +802,7 @@
 
   function updateBanditTentInteraction(dt) {
     updateBanditFireEffects(dt);
+    updateSimpleHydra(dt);
     const zoneIdForBurn = deps.getCurrentArea();
     if (deps.isZoneArea(zoneIdForBurn)) {
       for (const tent of _banditZoneTents(zoneIdForBurn)) {

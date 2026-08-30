@@ -134,7 +134,8 @@
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
     "maxCampsPerZone": 2,
     "tentsCountTowardClear": true,
-    "tentBurnSeconds": 8
+    "tentBurnSeconds": 8,
+    "simpleHydraDelaySeconds": 5
   },
   "statMultiplierByRankAndTier": {
     "_comment": "Rank multiplier for [1-star, 2-star, 3-star, 4-star] camps, applied before the ordinary per-tier bonus. The 1-star captain has about 4.5x a grunt's raw health/damage and 2.45x a lieutenant's, comparable to the effective boss-vs-fodder gap produced by Skyrim bandit chiefs' higher health, equipment and perks. The gap tapers at high stars so veteran lieutenants remain meaningful.",
