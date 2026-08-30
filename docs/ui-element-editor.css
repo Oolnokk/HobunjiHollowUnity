@@ -1,0 +1,220 @@
+/* ── UI Element Editor ─────────────────────────────────────────────────
+   Styles for docs/js/ui-element-editor.js. Kept in its own file (like
+   cooking-ui.css / onboarding.css) rather than bolted onto the already
+   sprawling style.css. Highest z-index in the project on purpose — this
+   has to sit above every menu, HUD element and overlay it might target. */
+
+.ui-editor-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999990;
+}
+
+.ui-editor-box {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid;
+  border-radius: 3px;
+  box-sizing: border-box;
+  display: none;
+}
+
+.ui-editor-hover-box {
+  border-color: #6aa7ff;
+  background: rgba(106, 167, 255, 0.12);
+  transition: left .05s linear, top .05s linear, width .05s linear, height .05s linear;
+}
+
+.ui-editor-select-box {
+  border-color: var(--accent, #f9e28a);
+  background: rgba(249, 226, 138, 0.08);
+  z-index: 999991;
+}
+
+.ui-editor-select-box.draggable {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.ui-editor-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--accent, #f9e28a);
+  border: 2px solid #16210f;
+  border-radius: 3px;
+  display: none;
+  pointer-events: none;
+}
+
+.ui-editor-select-box.draggable .ui-editor-handle {
+  display: block;
+  pointer-events: auto;
+}
+
+/* In-flow elements (most menu containers): no move, just a single
+   resize handle — left/top are meaningless for position:static. */
+.ui-editor-select-box.resizable .ui-editor-handle[data-handle="se"] {
+  display: block;
+  pointer-events: auto;
+}
+
+.ui-editor-handle[data-handle="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
+.ui-editor-handle[data-handle="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
+.ui-editor-handle[data-handle="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.ui-editor-handle[data-handle="sw"] { bottom: -7px; left: -7px; cursor: nesw-resize; }
+
+.ui-editor-tab {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  pointer-events: auto;
+  z-index: 999999;
+  background: var(--glass-2, rgba(14, 30, 22, 0.96));
+  border: 1px solid var(--border-bright, rgba(255, 255, 255, .22));
+  border-radius: 10px;
+  overflow: hidden;
+  width: 92px;
+  max-width: calc(100vw - 20px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  font-family: 'Pixelify Sans', 'DM Mono', monospace;
+  color: var(--text, #f0ffe6);
+  transition: width .12s ease;
+}
+
+.ui-editor-tab.expanded { width: 300px; }
+.ui-editor-tab.picking { border-color: var(--accent, #f9e28a); }
+
+.ui-editor-tab-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.ui-editor-tab.picking .ui-editor-tab-head { color: var(--accent, #f9e28a); }
+.ui-editor-tab-icon { font-size: 13px; flex-shrink: 0; }
+.ui-editor-tab-label { overflow: hidden; text-overflow: ellipsis; }
+
+.ui-editor-tab-body {
+  padding: 0 10px 10px;
+  max-height: 74vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ui-editor-selected-path {
+  font-size: 10px;
+  color: var(--muted, #8aad8f);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--border, rgba(255, 255, 255, .13));
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.ui-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ui-editor-toolbar .settings-small-btn { flex: 1 1 auto; padding: 5px 6px; }
+
+.ui-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-editor-field-row {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-editor-field-label {
+  font-size: 10px;
+  color: var(--muted, #8aad8f);
+}
+
+.ui-editor-field-row input[type="text"],
+.ui-editor-field-row input[type="number"],
+.ui-editor-field-row select,
+.ui-editor-field-row textarea {
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--text, #f0ffe6);
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--border-bright, rgba(255, 255, 255, .22));
+  width: 100%;
+  grid-column: 2;
+}
+
+.ui-editor-field-row textarea {
+  grid-column: 2 / span 2;
+  resize: vertical;
+}
+
+.ui-editor-field-row input[type="color"] {
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-bright, rgba(255, 255, 255, .22));
+  background: none;
+  grid-column: 2;
+}
+
+.ui-editor-field-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  grid-column: 2;
+  justify-self: start;
+}
+
+.ui-editor-clear-btn {
+  grid-column: 3;
+  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-bright, rgba(255, 255, 255, .22));
+  background: rgba(255, 255, 255, .06);
+  color: var(--muted, #8aad8f);
+  cursor: pointer;
+}
+
+.ui-editor-drag-hint {
+  font-size: 10px;
+  color: var(--muted, #8aad8f);
+  line-height: 1.4;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, .13));
+}
+
+/* Cursor feedback while armed to pick a target element */
+body.ui-editor-picking,
+body.ui-editor-picking * {
+  cursor: crosshair !important;
+}
+
+/* Some HUD chrome is deliberately pointer-events:none so clicks fall
+   through to the 3D world beneath it (e.g. the status pill showing
+   time/weather/gold) — which also makes it invisible to elementFromPoint
+   hit-testing. Force everything hit-testable while actively picking so
+   click-through elements can still be selected; the editor's own overlay
+   keeps whatever pointer-events it already declares. */
+body.ui-editor-picking *:not(#uiEditorRoot):not(#uiEditorRoot *) {
+  pointer-events: auto !important;
+}

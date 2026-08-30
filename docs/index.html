@@ -21,6 +21,7 @@
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260830mapwaypoint3">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
+  <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -535,7 +536,7 @@
     <div class="sb-div"></div>
     <span class="sb-water" id="spWater">💧 0%</span>
     <div class="sb-div"></div>
-    <span class="sb-gold" id="spGold">💰 0g</span>
+    <span class="sb-gold" id="spGold"><span class="sb-gold-icon">💰</span> <span class="sb-gold-amount" id="spGoldAmount">0</span><span class="sb-gold-suffix">g</span></span>
   </div>
 
   <div id="navigationCompass" role="navigation" aria-label="Navigation compass">
@@ -779,7 +780,7 @@
       <div class="mp-pane active inv-mode-pack" id="mpInventory">
 
         <!-- Wallet: x:1/54 y:1/28 w:13 h:2 -->
-        <div class="inv-wallet">💰 <span id="invWalletDisplay">0g</span></div>
+        <div class="inv-wallet"><span class="inv-wallet-icon">💰</span> <span class="inv-wallet-amount" id="invWalletAmount">0</span><span class="inv-wallet-suffix">g</span></div>
 
         <!-- Gear / Pack sub-tab toggle: x:15/54 y:1/28 w:20 h:2 -->
         <div class="inv-sub-tabs">
@@ -1547,6 +1548,30 @@
             </div>
           </div>
           <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">UI Edit Mode</div>
+              <div class="settings-desc">Floating box (top-left) to select and restyle any on-screen UI element — font size, colors, borders, spacing, position/size, visibility, even its text</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingUiEditMode"><span class="toggle-slider"></span></span>
+          </label>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Export UI Settings</div>
+              <div class="settings-desc">Download your UI Edit Mode changes as JSON — full config or a diff against the game's defaults</div>
+            </div>
+            <div style="display:flex; gap:6px; align-self:center">
+              <button type="button" id="uiEditorExportJsonBtn" class="settings-small-btn">Full JSON</button>
+              <button type="button" id="uiEditorExportDiffBtn" class="settings-small-btn">Export Diff</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Reset UI Edits</div>
+              <div class="settings-desc">Clear every element override made in UI Edit Mode this session</div>
+            </div>
+            <button type="button" id="uiEditorResetAllBtn" class="settings-small-btn">Reset All</button>
+          </div>
           <div class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Editor Hub</div>
@@ -2085,6 +2110,7 @@
     })();
   </script>
   <script src="game.js?v=20260829charviewcursor1"></script>
+  <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
