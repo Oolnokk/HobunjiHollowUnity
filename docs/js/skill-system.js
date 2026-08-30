@@ -170,7 +170,8 @@
     const beforeLevel = level(skillKey); // Used to detect level-ups before mutating XP.
     experience[skillKey] += gain;
     const afterLevel = level(skillKey); // Used for level-up messaging after the grant.
-    deps?.queueSkillXp?.(`+${gain} ${SKILLS[skillKey].label} XP`);
+    if (deps?.queueSkillXp) deps.queueSkillXp(`+${gain} ${SKILLS[skillKey].label} XP`);
+    else window.WorldPopupText?.queueReward?.('skillXp', `+${gain} ${SKILLS[skillKey].label} XP`);
     if (afterLevel > beforeLevel) deps?.showToast?.(`${SKILLS[skillKey].icon} ${SKILLS[skillKey].label} reached level ${afterLevel}!`, true);
     deps?.debugLog?.(`[skills] ${SKILLS[skillKey].label} +${gain}${reason ? ` (${reason})` : ''}; level ${afterLevel}`);
     persist(true);
