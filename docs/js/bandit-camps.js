@@ -732,9 +732,33 @@
   function banditTentNearPx() { return deps.TILE * 1.7; }
   let _banditTentHoldT = 0;
   let _banditTentHoldId = null;
-  const _tentActionHudEl = document.getElementById('tentActionHud');
-  const _tentActionLabelEl = document.getElementById('tentActionLabel');
-  const _tentActionFillEl = document.getElementById('tentActionFill');
+  let _banditTentHoldInterrupted = false; // Prevents a damaging hit from auto-restarting the same still-held interaction; cleared on release.
+  let _tentActionHudEl = null;
+  let _tentActionLabelEl = null;
+  let _tentActionFillEl = null;
+
+  // This module loads in <head>, before index.html creates the HUD nodes.
+  // Resolve them lazily on first use instead of permanently caching null.
+  function ensureTentActionHud() {
+    _tentActionHudEl ||= document.getElementById('tentActionHud');
+    _tentActionLabelEl ||= document.getElementById('tentActionLabel');
+    _tentActionFillEl ||= document.getElementById('tentActionFill');
+  }
+
+  function hideTentActionHud() {
+    ensureTentActionHud();
+    _tentActionHudEl?.classList.remove('visible');
+    _tentActionHudEl?.setAttribute('aria-hidden', 'true');
+    if (_tentActionFillEl) _tentActionFillEl.style.width = '0%';
+  }
+
+  function showTentActionHud(label, percent) {
+    ensureTentActionHud();
+    if (_tentActionLabelEl) _tentActionLabelEl.textContent = label;
+    if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, Math.max(0, percent)) + '%';
+    _tentActionHudEl?.setAttribute('aria-hidden', 'false');
+    _tentActionHudEl?.classList.add('visible');
+  }
 
   function nearestBanditTent(zoneId) {
     let best = null, bestDist = Infinity;
@@ -823,26 +847,30 @@
     const tent = deps.isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
     // Match Drenkirra nest-taking: only the aimed context action may advance
     // the hold, and releasing or changing actions cancels its progress.
+    const actionHeldDown = deps.getActionHeldDown();
+    if (!actionHeldDown) _banditTentHoldInterrupted = false;
     const looting = !!tent?.interactable?.lootable;
     const interacting = !!tent
       && deps.getActiveAction() === 'bandit_tent_interact'
-      && deps.getActionHeldDown();
+      && actionHeldDown
+      && !_banditTentHoldInterrupted;
     if (!interacting) {
       if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
-      if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
+      hideTentActionHud();
       return;
     }
     if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
     const holdS = Number(tent.interactable?.holdSeconds) > 0
       ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
     _banditTentHoldT += dt;
-    if (_tentActionLabelEl) _tentActionLabelEl.textContent = looting ? 'Looting Tent...' : 'Burning Tent...';
-    if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, (_banditTentHoldT / holdS) * 100) + '%';
-    _tentActionHudEl?.classList.add('visible');
+    showTentActionHud(
+      looting ? 'Looting Tent...' : 'Burning Tent...',
+      (_banditTentHoldT / holdS) * 100,
+    );
     if (_banditTentHoldT < holdS) return;
     _banditTentHoldT = 0;
     _banditTentHoldId = null;
-    _tentActionHudEl?.classList.remove('visible');
+    hideTentActionHud();
     if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
   }
@@ -944,9 +972,22 @@
     makeCorpseWorldObject: makeBanditCorpseWorldObject,
     markZoneEntered: (zoneId) => _banditZoneEntryPending.add(zoneId),
     interruptTentHold: () => {
+      const wasHolding = _banditTentHoldId !== null
+        || (deps?.getActiveAction?.() === 'bandit_tent_interact' && deps?.getActionHeldDown?.());
       _banditTentHoldT = 0;
       _banditTentHoldId = null;
-      _tentActionHudEl?.classList.remove('visible');
+      _banditTentHoldInterrupted = !!wasHolding;
+      hideTentActionHud();
+    },
+    get tentInteractionDebug() {
+      ensureTentActionHud();
+      return {
+        holdSeconds: _banditTentHoldT,
+        tentId: _banditTentHoldId,
+        interrupted: _banditTentHoldInterrupted,
+        hudReady: !!(_tentActionHudEl && _tentActionLabelEl && _tentActionFillEl),
+        hudVisible: !!_tentActionHudEl?.classList.contains('visible'),
+      };
     },
     get campInstances() { return _banditCampInstances; },
     get perceivedThreats() { return _perceivedThreats; },
