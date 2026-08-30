@@ -63,11 +63,17 @@
 
   function npcDialogueTypewriterConfig() {
     const cfg = npcDialogueTextConfig().typewriter || {};
+    // Keep malformed or unbounded authored values from turning one dialogue
+    // into an accidentally glacial typewriter sequence.
+    const finiteClamped = (value, fallback, min, max) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+    };
     return {
       enabled: cfg.enabled !== false,
-      msPerChar: Math.max(1, Number(cfg.msPerChar) || 22),
-      punctuationPauseMs: Math.max(0, Number(cfg.punctuationPauseMs) || 120),
-      whitespacePauseMs: Math.max(0, Number(cfg.whitespacePauseMs) || 0)
+      msPerChar: finiteClamped(cfg.msPerChar, 22, 1, 250),
+      punctuationPauseMs: finiteClamped(cfg.punctuationPauseMs, 120, 0, 2000),
+      whitespacePauseMs: finiteClamped(cfg.whitespacePauseMs, 0, 0, 250)
     };
   }
 
@@ -459,14 +465,30 @@
     _npcDialogueTypeText = resolvedText;
     _npcDialogueTypeIndex = 0;
     _npcDialogueTextEl.textContent = '';
+    // Schedule against one monotonic clock instead of adding each timer's
+    // actual delay to the next one. Mobile timer jitter can otherwise make
+    // every subsequent letter inherit the previous timer's lateness, which
+    // is why a normal line can occasionally become extremely slow.
+    let nextRevealAt = performance.now() + cfg.msPerChar;
     const tick = () => {
       if (!deps.getDialogueOpen() || !_npcDialogueTypeText) return;
-      const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
-      _npcDialogueTextEl.textContent += char;
-      _playNpcDialogueLetterSfx(char);
-      if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) { stopNpcDialogueTypewriter(false); return; }
-      const delay = /[.!?,;:]/.test(char) ? cfg.punctuationPauseMs : /\s/.test(char) ? cfg.whitespacePauseMs : cfg.msPerChar;
-      _npcDialogueTypeTimer = setTimeout(tick, delay);
+      const now = performance.now();
+      // A delayed timer should catch up to its intended timeline rather than
+      // shifting the rest of the sentence slower and slower.
+      while (_npcDialogueTypeIndex < _npcDialogueTypeText.length && nextRevealAt <= now + 1) {
+        const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
+        _npcDialogueTextEl.textContent += char;
+        _playNpcDialogueLetterSfx(char);
+        const extraPause = /[.!?,;:]/.test(char)
+          ? cfg.punctuationPauseMs
+          : /\s/.test(char) ? cfg.whitespacePauseMs : 0;
+        nextRevealAt += cfg.msPerChar + extraPause;
+      }
+      if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) {
+        stopNpcDialogueTypewriter(false);
+        return;
+      }
+      _npcDialogueTypeTimer = setTimeout(tick, Math.max(0, nextRevealAt - performance.now()));
     };
     _npcDialogueTypeTimer = setTimeout(tick, cfg.msPerChar);
   }
