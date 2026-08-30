@@ -17,4 +17,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rg -n -C 80 "shoulderPetFaceRelativeTransform|shoulderPerchRule|shoulderPetMeshPin|_shoulderPet" docs/game.js docs/js docs/config scripts | head -240
+          grep -n -C 80 -E "shoulderPetFaceRelativeTransform|shoulderPerchRule|shoulderPetMeshPin|_shoulderPet" docs/game.js docs/js/* docs/config/* scripts/* | head -240 || true
