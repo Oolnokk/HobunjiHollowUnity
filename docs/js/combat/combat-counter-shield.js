@@ -231,13 +231,17 @@
     });
 
     window.Combat.counterShieldPlayerPresentation = {
-      snapshot: () => ({
-        active,
-        sceneBridged: presentationSceneBridged,
-        sceneReady: presentationSceneReady,
-        holderReady: !!window.Combat.deps?.toolHolder?.(),
-        heavyRenderer: window.Combat.heavyTelegraphVisuals?.snapshot?.().find?.(entry => entry.actor === 'player') || null,
-      }),
+      snapshot: () => {
+        const heavyEntries = window.Combat.heavyTelegraphVisuals?.snapshot?.() || [];
+        const heavyRenderer = heavyEntries.find(entry => entry.actor === 'player') || null;
+        return {
+          active,
+          sceneBridged: presentationSceneBridged,
+          sceneReady: presentationSceneReady,
+          holderReady: !!window.Combat.deps?.toolHolder?.(),
+          heavyRenderer,
+        };
+      },
     };
   }
 
