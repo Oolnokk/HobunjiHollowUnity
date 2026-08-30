@@ -12,9 +12,7 @@
 
   const previewApi = global.NpcAvatarPreview;
   const avatarApi = global.PNGPlaneAvatar;
-  if (!previewApi?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
-  if (previewApi.renderProfileToCanvas.__hobunjiArmCloudAlphaWrapped) return;
-
+  const MASK_Y_SCALE_MULTIPLIER = 0.5; // Applied to both the canonical portrait cloud mask and the arm-only copy below.
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
@@ -22,6 +20,28 @@
   const imageCache = new Map();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
+
+  function scaleMaskY(xform) {
+    if (!xform || typeof xform !== 'object') return xform;
+    const sy = Number(xform.sy);
+    return { ...xform, sy: (Number.isFinite(sy) ? sy : 1) * MASK_Y_SCALE_MULTIPLIER };
+  }
+
+  // portrait-utils.js owns the normal full-portrait mask. Its classic-script
+  // function binding is writable through window, so wrapping it here keeps the
+  // authored per-species transform but halves only the cloud's vertical scale.
+  // The arm-only alpha-map path below uses the same multiplier explicitly.
+  const originalApplyPortraitOpacityMask = global.applyPortraitOpacityMask;
+  if (typeof originalApplyPortraitOpacityMask === 'function' && !originalApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled) {
+    const scaledApplyPortraitOpacityMask = function portraitCloudMaskYScaled(ctx, image, xform) {
+      return originalApplyPortraitOpacityMask(ctx, image, scaleMaskY(xform));
+    };
+    scaledApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled = true;
+    global.applyPortraitOpacityMask = scaledApplyPortraitOpacityMask;
+  }
+
+  if (!previewApi?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
+  if (previewApi.renderProfileToCanvas.__hobunjiArmCloudAlphaWrapped) return;
 
   function resolveAssetPath(path) {
     const raw = String(path || '');
@@ -109,7 +129,7 @@
     }
 
     // Keep only the pixels where that arm coverage intersects the higher cloud.
-    const maskXform = xformFor(maskLayer);
+    const maskXform = scaleMaskY(xformFor(maskLayer));
     const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
     maskXform.ax += Number.isFinite(configuredOffset) ? configuredOffset : DEFAULT_AX_OFFSET;
     ictx.save();
@@ -200,6 +220,7 @@
 
   global.PortraitArmCloudMask = {
     mode: 'png-plane-alpha-map',
+    get maskYScaleMultiplier() { return MASK_Y_SCALE_MULTIPLIER; },
     get defaultAxOffset() { return DEFAULT_AX_OFFSET; },
     get configuredAxOffset() {
       const value = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
