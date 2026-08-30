@@ -77,6 +77,14 @@
   styleTag.id = 'uiEditorOverrideStyle';
   (document.head || document.documentElement).appendChild(styleTag);
 
+  // The game's own aim-mode code can re-request pointer lock on its own
+  // (e.g. a click into the 3D viewport while picking) — immediately kick
+  // it back out for as long as we're trying to pick, since a locked
+  // pointer means frozen MouseEvent.clientX/clientY and picking breaks.
+  document.addEventListener('pointerlockchange', () => {
+    if (mode === 'picking' && document.pointerLockElement) document.exitPointerLock();
+  });
+
   // ── persistence (session-only: cleared when the game/tab is closed) ──
   function deepClone(obj) { return JSON.parse(JSON.stringify(obj || {})); }
 
@@ -496,6 +504,11 @@
   // ── mode state machine ──────────────────────────────────────────────
   function setMode(newMode) {
     mode = newMode;
+    // The game's character-view aim mode holds the pointer locked to the
+    // 3D viewport, which freezes MouseEvent.clientX/clientY at 0 — fatal
+    // for elementFromPoint-based picking. Release it so real cursor
+    // coordinates come back; there's nothing to aim at while picking anyway.
+    if (mode === 'picking' && document.pointerLockElement) document.exitPointerLock();
     if (tabBody) tabBody.hidden = mode !== 'expanded';
     if (tabEl) {
       tabEl.classList.toggle('picking', mode === 'picking');
