@@ -24739,6 +24739,10 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              // Continuous world interactions use the same press-time selected
+              // action contract as Drenkirra nests, so their frame timers can
+              // begin immediately instead of waiting for pointer release.
+              if (act === 'nest_take' || act === 'bandit_tent_interact') activeAction = act;
               _flaskGesture = act === 'alchemy_flask_primary';
               _flaskCanceled = false;
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
@@ -26088,7 +26092,9 @@
           if (isDesktop) {
             if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
               desktopTentInteractHeld = true;
+              activeAction = 'bandit_tent_interact';
               actionHeldDown = true;
+              useActiveAction();
               return;
             }
             startDesktopHoldKey('e', event);
@@ -28350,6 +28356,7 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
+        getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getPackClothing: () => packClothing,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
