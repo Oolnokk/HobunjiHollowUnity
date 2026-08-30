@@ -6791,7 +6791,6 @@
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
-            && !window.Combat?.telegraph?.isBusy(c)) _restoreCompanionHead(c, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
           if (c.prone) {
