@@ -790,26 +790,50 @@
     };
   }
 
+  function resolveSkinnedPortraitRoot(avatarRoot) {
+    const hasUsablePortraitRig = candidate => {
+      const rig = candidate?.userData?.neckRig;
+      const skinnedPlane = rig?.skinnedPlane;
+      const sourceCanvas = candidate?.userData?.sourceCanvas;
+      return !!(
+        rig?.available
+        && skinnedPlane?.isSkinnedMesh
+        && skinnedPlane?.skeleton?.bones?.length
+        && sourceCanvas
+        && Number.isFinite(Number(candidate?.userData?.portraitModelWidth))
+        && Number.isFinite(Number(candidate?.userData?.portraitModelHeight))
+      );
+    }; // Defines the exact avatar instance data required by the authored source-pixel skinning path.
+    if (hasUsablePortraitRig(avatarRoot)) return avatarRoot;
+    let resolved = null;
+    avatarRoot?.traverse?.(candidate => {
+      if (!resolved && candidate !== avatarRoot && hasUsablePortraitRig(candidate)) resolved = candidate;
+    }); // Player attachment callers often hold the outer player root while the PNG avatar group carrying neckRig lives below it.
+    return resolved;
+  }
+
   // Resolves an authored source-pixel coordinate through the same live torso/head
   // skinning used by the portrait SkinnedMesh. This remains avatar-instance
   // data so species-level cached anchors cannot be reused for a different pose.
   function resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel) {
-    const rig = avatarRoot?.userData?.neckRig;
-    const skinnedPlane = rig?.skinnedPlane;
-    const skeleton = skinnedPlane?.skeleton;
-    if (!rig?.available || !skinnedPlane?.isSkinnedMesh || !skeleton?.bones?.length) return null;
-    const sourceCanvas = avatarRoot.userData?.sourceCanvas;
+    const portraitRoot = resolveSkinnedPortraitRoot(avatarRoot);
+    if (!portraitRoot) return null;
+    const rig = portraitRoot.userData.neckRig;
+    const skinnedPlane = rig.skinnedPlane;
+    const skeleton = skinnedPlane.skeleton;
+    const sourceCanvas = portraitRoot.userData.sourceCanvas;
     const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
     const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
-    const modelWidth = Number(avatarRoot.userData?.portraitModelWidth);
-    const modelHeight = Number(avatarRoot.userData?.portraitModelHeight);
+    const modelWidth = Number(portraitRoot.userData?.portraitModelWidth);
+    const modelHeight = Number(portraitRoot.userData?.portraitModelHeight);
     const pixelX = Number(sourcePixel?.x);
     const pixelY = Number(sourcePixel?.y);
     if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
+    const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
     const localPoint = new THREE.Vector3(
-      -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth,
+      -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
       0,
     );
@@ -821,7 +845,7 @@
     const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
     const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
 
-    avatarRoot.updateWorldMatrix?.(true, false);
+    portraitRoot.updateWorldMatrix?.(true, false);
     skinnedPlane.updateWorldMatrix?.(true, false);
     const deformed = new THREE.Vector3();
     const bonePoint = new THREE.Vector3();
@@ -1028,6 +1052,7 @@
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
+    resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,
     trackPortraitTexture,
