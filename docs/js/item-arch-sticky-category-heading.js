@@ -183,6 +183,7 @@
   }
 
   function mutationTouchesArc(mutation) {
+    if (mutation.target?.nodeType === 1 && mutation.target.closest?.('.arc-slot')) return true;
     const nodes = [...mutation.addedNodes, ...mutation.removedNodes]; // Used to ignore unrelated HUD/body changes while still following recycled item-wheel slots.
     return nodes.some(node => node?.nodeType === 1
       && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot')));
