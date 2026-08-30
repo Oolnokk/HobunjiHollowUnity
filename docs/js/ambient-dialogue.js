@@ -235,10 +235,12 @@
   // the displayed position eases toward wherever it currently belongs.
   const EDGE_ON_SCREEN_MARGIN = 0.92;
   const EDGE_PIN_MARGIN = 0.86;
+  const EDGE_MIN_MARGIN = 0.22; // floor so a long text bubble can't invert/collapse the pin margin
   const EDGE_LERP_SPEED = 7;
   const EDGE_FALLBACK_DEPTH = 4;
   const EDGE_MIN_DEPTH = 2;
   const EDGE_MAX_DEPTH = 10;
+  const EDGE_SCALE = 0.6; // how much smaller the whole chathead+text bubble renders while pinned off-screen
 
   // Reports whether `anchor` is inside the camera's frustum (with margin);
   // when it isn't, also hands back the camera-relative vector to it so the
@@ -259,20 +261,27 @@
 
   // Finds the point on the near side of the frustum, at roughly the
   // speaker's own depth, that sits on the screen edge closest to the
-  // direction the camera would need to turn to actually see them.
-  function screenEdgePoint(camera, toAnchor, viewZ) {
+  // direction the camera would need to turn to actually see them. The pin
+  // margin is inset by the bubble's own half-width/half-height (at its
+  // off-screen render scale) so the whole bubble — chathead included —
+  // lands inside the frustum, not just its center pivot.
+  function screenEdgePoint(camera, toAnchor, viewZ, bubbleHalfWidth, bubbleHalfHeight) {
     const THREE = state.deps.THREE;
     const localDir = toAnchor.clone().normalize().applyQuaternion(camera.quaternion.clone().invert());
     const yaw = Math.atan2(localDir.x, -localDir.z);
     const pitch = Math.atan2(localDir.y, -localDir.z);
     const halfVFov = THREE.MathUtils.degToRad(camera.fov) / 2;
     const halfHFov = Math.atan(Math.tan(halfVFov) * camera.aspect);
+    const depth = THREE.MathUtils.clamp(viewZ > 0.1 ? viewZ : EDGE_FALLBACK_DEPTH, EDGE_MIN_DEPTH, EDGE_MAX_DEPTH);
+    const angularHalfWidth = (bubbleHalfWidth * EDGE_SCALE / depth) / Math.tan(halfHFov);
+    const angularHalfHeight = (bubbleHalfHeight * EDGE_SCALE / depth) / Math.tan(halfVFov);
+    const marginX = Math.max(EDGE_MIN_MARGIN, EDGE_PIN_MARGIN - angularHalfWidth);
+    const marginY = Math.max(EDGE_MIN_MARGIN, EDGE_PIN_MARGIN - angularHalfHeight);
     const sxRaw = yaw / halfHFov;
     const syRaw = pitch / halfVFov;
-    const scale = EDGE_PIN_MARGIN / Math.max(Math.abs(sxRaw), Math.abs(syRaw), 1e-6);
+    const scale = Math.min(marginX / Math.max(Math.abs(sxRaw), 1e-6), marginY / Math.max(Math.abs(syRaw), 1e-6));
     const sx = sxRaw * scale;
     const sy = syRaw * scale;
-    const depth = THREE.MathUtils.clamp(viewZ > 0.1 ? viewZ : EDGE_FALLBACK_DEPTH, EDGE_MIN_DEPTH, EDGE_MAX_DEPTH);
     const local = new THREE.Vector3(sx * Math.tan(halfHFov) * depth, sy * Math.tan(halfVFov) * depth, -depth);
     return local.applyMatrix4(camera.matrixWorld);
   }
@@ -469,7 +478,13 @@
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
       directedAtPlayer: options.directedAtPlayer === true,
+      // Bubble's own half-width/half-height in world units (the chathead
+      // included), so the off-screen edge follow can inset by the bubble's
+      // actual footprint instead of just its center pivot.
+      bubbleHalfWidth: totalWidth / 2,
+      bubbleHalfHeight: Math.max(state.settings.textWorldHeight, headWidth) / 2,
       displayPos: null,
+      displayScale: 1,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -507,14 +522,24 @@
       if (visibleChars !== event.visibleChars) drawText(event, event.textPart.text.slice(0, visibleChars));
       if (event.directedAtPlayer) {
         // Ambient speech aimed at the player stays reachable even when the
-        // speaker is off-screen: it eases to whichever screen edge is
-        // closest to them, then eases back to its true position above their
-        // head the moment that position re-enters view.
+        // speaker is off-screen: it shrinks and eases to whichever screen
+        // edge is closest to them (fully inside the frustum, chathead
+        // included), then eases back to full size at its true position
+        // above their head the moment that position re-enters view.
         const visibility = cameraVisibility(anchor, camera);
-        const targetPos = visibility.onScreen ? anchor : screenEdgePoint(camera, visibility.toAnchor, visibility.viewZ);
-        if (!event.displayPos) event.displayPos = targetPos.clone();
-        else event.displayPos.lerp(targetPos, dt > 0 ? 1 - Math.exp(-EDGE_LERP_SPEED * dt) : 1);
+        const targetScale = visibility.onScreen ? 1 : EDGE_SCALE;
+        const targetPos = visibility.onScreen ? anchor
+          : screenEdgePoint(camera, visibility.toAnchor, visibility.viewZ, event.bubbleHalfWidth, event.bubbleHalfHeight);
+        if (!event.displayPos) {
+          event.displayPos = targetPos.clone();
+          event.displayScale = targetScale;
+        } else {
+          const alpha = dt > 0 ? 1 - Math.exp(-EDGE_LERP_SPEED * dt) : 1;
+          event.displayPos.lerp(targetPos, alpha);
+          event.displayScale += (targetScale - event.displayScale) * alpha;
+        }
         event.group.position.copy(event.displayPos);
+        event.group.scale.setScalar(event.displayScale);
       } else {
         event.group.position.copy(anchor);
       }
