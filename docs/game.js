@@ -5220,6 +5220,16 @@
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
+        // The body plane cannot enter its camera-facing dead zone, but the
+        // authored head can still finish the look. Feed only the angle the
+        // visible plane withheld into local head yaw; the existing yaw
+        // smoothing then makes the dead zone feel like elastic neck slack.
+        if (Number.isFinite(c._headLookWorldBearing) && typeof c.avatarRef?.updateHeadYaw === 'function') {
+          const exactLookRotY = -c._headLookWorldBearing + Math.PI / 2; // Converts the stored world bearing into updateCreatureMesh's group-rotation convention.
+          const headYawDeg = window.PerpRotation.headYawForDeadzone(exactLookRotY, c.pngRot, c._headLookYawLimitDeg); // Used immediately below as the dead-zone compensation yaw.
+          c.avatarRef.updateHeadYaw(headYawDeg, dt);
+          if (c.perpState?.pixelProbeDebug) c.perpState.pixelProbeDebug.headYawDeg = headYawDeg;
+        }
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
@@ -6268,6 +6278,10 @@
         // switched to this shared rest path instead, since nothing else
         // here ever drove it back down.
         if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
+        if (c) {
+          c._headLookWorldBearing = null;
+          c._headLookYawLimitDeg = null;
+        }
         if (c) c._lookAtDebug = null;
       }
 
@@ -6312,6 +6326,8 @@
         // plain atan2 of the vertical delta gives.
         const pitchDeg = -Math.atan2(target.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
+        c._headLookWorldBearing = aimAngle;
+        c._headLookYawLimitDeg = CREATURE_HEAD_YAW_LIMIT_DEG;
         _setLookAtDebug(c, target.x, target.y, target.worldY);
         return aimAngle;
       }
@@ -6389,19 +6405,9 @@
         const pitchDeg = -Math.atan2(head.worldY - _creatureHeadWorldY(c), horizontalWorld) * 180 / Math.PI;
         _updateCompanionHeadRotation(c, pitchDeg, dt);
         _setLookAtDebug(c, head.x, head.y, head.worldY);
-        if (horizontalPx > 1 && typeof c.avatarRef?.updateHeadYaw === 'function') {
-          const rawBearing = Math.atan2(dy, dx);
-          const residualRad = angleDiff(rawBearing, c.facing || 0);
-          // Negated — the head bone's local yaw is composed underneath the
-          // group's own rotation.y, which is itself -aimAngle (see
-          // rawTargetRotY above updateCreatureMesh's plane rotation). A
-          // residual computed in this function's plain world-angle
-          // convention (atan2(dy,dx), same as c.facing/aimAngle) turns the
-          // WRONG way once applied as-is to that already-negated local
-          // frame — reported in real gameplay as a gar-wolf's head visibly
-          // turning away from the player instead of toward it.
-          const yawDeg = -Math.max(-yawLimitDeg, Math.min(yawLimitDeg, residualRad * 180 / Math.PI));
-          c.avatarRef.updateHeadYaw(yawDeg, dt);
+        if (horizontalPx > 1) {
+          c._headLookWorldBearing = Math.atan2(dy, dx);
+          c._headLookYawLimitDeg = yawLimitDeg;
         }
       }
 

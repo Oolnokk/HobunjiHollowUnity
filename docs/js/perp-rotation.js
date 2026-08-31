@@ -106,6 +106,17 @@
     return current + deps.angleDiff(effectiveTarget, current) * Math.max(0, lerp);
   }
 
+  // Converts the rotation withheld by a PNG plane's camera-facing dead zone
+  // into local head yaw. rawTarget is the exact world-space rotation the
+  // animal wants; renderedTarget is where its visible body plane actually
+  // stopped. The neck therefore absorbs only their signed difference, and
+  // naturally returns to center as soon as the body can follow again.
+  function headYawForDeadzone(rawTarget, renderedTarget, maxDegrees = Infinity) {
+    const residualDegrees = deps.angleDiff(rawTarget, renderedTarget) * 180 / Math.PI; // Drives the head bone with the body's withheld world-space turn.
+    const finiteLimit = Number.isFinite(Number(maxDegrees)) ? Math.max(0, Number(maxDegrees)) : Infinity; // Caps combat/behavior-specific anatomy below.
+    return Math.max(-finiteLimit, Math.min(finiteLimit, residualDegrees));
+  }
+
   // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
   // updateCreatureMesh's pngRot step (game.js) has been rewritten a few
   // times while this gets tuned by feel, and all three attempts are kept
@@ -227,6 +238,7 @@
     init,
     perpClamp,
     clampedRotation,
+    headYawForDeadzone,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,

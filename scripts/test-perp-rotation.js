@@ -49,4 +49,11 @@ for (const jitterDeg of [1, -1, 0.5, -2.5]) {
   assert.equal(result.snapTo, null, `reverse center jitter ${jitterDeg}deg cannot restart the snap loop`);
 }
 
+assert.ok(Math.abs(api.headYawForDeadzone(deg(20), deg(5), 30) - 15) < 1e-9,
+  'head yaw absorbs the signed rotation withheld by the visible body');
+assert.equal(api.headYawForDeadzone(deg(-40), deg(5), 30), -30,
+  'head yaw respects the behavior-specific anatomical limit');
+assert.ok(Math.abs(api.headYawForDeadzone(deg(-179), deg(179), 30) - 2) < 1e-9,
+  'head yaw uses wrapped angle math across the -180/180 boundary');
+
 console.log('Perpendicular rotation center-hysteresis checks passed.');

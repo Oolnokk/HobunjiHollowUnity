@@ -332,7 +332,9 @@
         target: { x: Number(target.x), y: targetWorldY, z: targetZ },
       };
     }
-    return -Math.atan2(dz, dx) + Math.PI / 2;
+    const faceTargetRot = -Math.atan2(dz, dx) + Math.PI / 2; // Stored below so the head can absorb rotation withheld by the body dead zone.
+    animal._headLookTargetRot = faceTargetRot;
+    return faceTargetRot;
   }
 
   function _restoreFarmAnimalHead(animal, dt) {
@@ -341,6 +343,16 @@
     if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
       animal.avatarRef.updateHeadRotation(Number.isFinite(restDeg) ? restDeg : 0, dt);
     }
+    animal._headLookTargetRot = null;
+    if (typeof animal.avatarRef?.updateHeadYaw === 'function') animal.avatarRef.updateHeadYaw(0, dt);
+  }
+
+  function _applyFarmAnimalDeadzoneHeadYaw(animal, dt) {
+    if (!Number.isFinite(animal._headLookTargetRot) || typeof animal.avatarRef?.updateHeadYaw !== 'function') return;
+    const yawLimitDeg = Math.max(Math.abs(Number(animal.avatarRef.headRig?.rig?.minDeg) || 0), Math.abs(Number(animal.avatarRef.headRig?.rig?.maxDeg) || 0)) || Infinity; // Reuses the authored neck range for the compensation below.
+    const headYawDeg = window.PerpRotation.headYawForDeadzone(animal._headLookTargetRot, animal.groupRot, yawLimitDeg); // Used immediately below to finish the look the body clamp withheld.
+    animal.avatarRef.updateHeadYaw(headYawDeg, dt);
+    if (animal.perpState?.pixelProbeDebug) animal.perpState.pixelProbeDebug.headYawDeg = headYawDeg;
   }
 
   function _farmAnimalLookTarget(animal, dt, idle) {
@@ -589,6 +601,7 @@
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
         this.avatarRef.group.rotation.y = this.groupRot;
+        _applyFarmAnimalDeadzoneHeadYaw(this, dt);
       },
       reset() {
         deps.scene.remove(avatarRef.group);
@@ -700,6 +713,7 @@
         if (snapTo !== null) this.groupRot = effectiveTarget;
         else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
         this.avatarRef.group.rotation.y = this.groupRot;
+        _applyFarmAnimalDeadzoneHeadYaw(this, dt);
       },
       reset() {
         deps.scene.remove(avatarRef.group);
