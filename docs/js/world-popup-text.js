@@ -10,9 +10,10 @@
   const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
   const CENTERED_LIST_SCALE = 0.25; // Interaction, reward, and progression lists render at one quarter of their former world-space size.
-  const INTERACTION_LIST_SCALE = 0.5; // Used to restore readable world-prompt scale without enlarging rewards or progression text.
+  const INTERACTION_LIST_SCALE = 0.25; // Keeps connector words at the former physical prompt size while segment fonts add emphasis selectively.
   const INTERACTION_VERB_COLOR = '#FFFFFF'; // Used for the enlarged, deliberately uncoded verb in every interaction row.
-  const INTERACTION_DETAIL_COLOR = '#DCE7E1'; // Used for non-verb label words so the verb remains the clearest instruction.
+  const INTERACTION_OBJECT_COLOR = '#FFB86C'; // Used for object/context words so the target is distinct from the verb and input hint.
+  const INTERACTION_CONNECTOR_COLOR = '#B8C5C0'; // Used for grammatical glue such as “to,” “the,” and “of.”
   const INTERACTION_INPUT_FALLBACK_COLOR = '#B8C5C0'; // Used only for inputs that have no authored action-arch color.
   const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
@@ -170,10 +171,10 @@
     const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
     const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
     const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
-    const inputFontPx = 78; // Used to make the rebound key/button prompt immediately readable.
-    const verbFontPx = 88; // Used for the leading action word and the action after a “to” connector.
-    const detailFontPx = 54; // Used for object/context words without competing with the action.
-    const connectorFontPx = 30; // Used for small grammatical glue such as “to,” “the,” and “of.”
+    const inputFontPx = 90; // Used to make the rebound key/button prompt modestly larger than the former baseline.
+    const verbFontPx = 98; // Used for the leading action word and the action after a “to” connector.
+    const detailFontPx = 88; // Used for object/context words, just below the input and verb emphasis.
+    const connectorFontPx = 78; // Used to preserve the former prompt size for grammatical glue such as “to.”
     const gapPx = 18; // Used to separate the input from the label while keeping the row compact.
     const wordGapPx = 9; // Used between label words so connector words remain visually attached but subordinate.
     const verbAfterToIndex = words[1]?.toLowerCase() === 'to' ? 2 : -1; // Used for labels such as “Hold to Take Egg,” where Take is the real action verb.
@@ -188,7 +189,7 @@
       return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
     }, 0);
     canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
-    canvas.height = 128;
+    canvas.height = 112;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
@@ -209,7 +210,7 @@
       if (index) x += wordGapPx;
       const isConnector = INTERACTION_CONNECTORS.has(word.toLowerCase());
       const isVerb = index === 0 || index === verbAfterToIndex;
-      drawSegment(word, isConnector ? connectorFontPx : (isVerb ? verbFontPx : detailFontPx), isVerb ? INTERACTION_VERB_COLOR : INTERACTION_DETAIL_COLOR);
+      drawSegment(word, isConnector ? connectorFontPx : (isVerb ? verbFontPx : detailFontPx), isVerb ? INTERACTION_VERB_COLOR : isConnector ? INTERACTION_CONNECTOR_COLOR : INTERACTION_OBJECT_COLOR);
     });
     const texture = new THREE.CanvasTexture(canvas); // Used as the billboard's live sRGB text texture.
     texture.colorSpace = THREE.SRGBColorSpace;
