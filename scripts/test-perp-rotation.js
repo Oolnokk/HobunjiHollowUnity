@@ -16,11 +16,19 @@ function angleDiff(target, current) {
 
 const api = window.PerpRotation; // Shared clamp API exercised by player, NPC, and livestock facing.
 api.init({ angleDiff });
+assert.equal(api.CREATURE_PLANE_ROT_MODE, 'halt',
+  'animals halt at a dead-zone edge instead of flipping through a camera-facing angle');
 
 const deg = value => value * Math.PI / 180;
 const center = Math.PI / 2; // One camera-relative edge-on orientation used throughout this test.
 const deadRadius = deg(40); // Matches the player dead-zone radius configured above.
 const state = {};
+
+const animalCenter = 0; // A side-view animal looking straight toward the default camera.
+const animalDeadRadius = api.CREATURE_PERP_DEAD_RAD;
+const animalResult = api.perpClamp({}, animalCenter, [animalCenter, Math.PI], animalDeadRadius);
+assert.equal(Math.abs(angleDiff(animalResult.effectiveTarget, animalCenter)), animalDeadRadius,
+  'a direct camera-facing animal target is pushed exactly to the global animal dead-zone edge');
 
 let result = api.perpClamp(state, center - deg(10), [center, -center], deadRadius);
 assert.equal(result.effectiveTarget, center - deadRadius, 'initial approach chooses the negative edge');
