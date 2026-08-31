@@ -310,9 +310,12 @@
       combat: true,
       callOver: nick => `Ah, ${nick}.`,
       ask: (task, nick) => {
+        return `Ah, ${nick}. Would you be interested in taking in a bounty for me? As you might have noticed, this town has only two watchmen, me and Oddclaw, and Hobunji Hollow is the only civilized settlement within hundreds of miles. But if I let these bounties build up, the Empire might think they have to send in reinforcements, and to be honest I'd rather be understaffed than have them going around and locking up my neighbors for victimless crimes.`;
+      },
+      accept: (task, nick) => {
         const experienced = task.experienced;
         const pronoun = task.captainGender === 'female' ? 'her' : task.captainGender === 'male' ? 'him' : 'them';
-        return `Ah, ${nick}. Would you be interested in taking in a bounty for me? As you might have noticed, this town has only two watchmen, me and Oddclaw, and Hobunji Hollow is the only civilized settlement within hundreds of miles. But if I let these bounties build up, the Empire might think they have to send in reinforcements, and to be honest I'd rather be understaffed than have them going around and locking up my neighbors for victimless crimes. Great. Since you're ${experienced ? 'not a stranger to the process' : 'new'}, I'll send you after one of the ${experienced ? 'more' : 'less'} dangerous gangs in the area. Head into the ${task.zoneLabel} and track down ${task.captainName}'s camp. Kill ${pronoun}, burn the tents and come back. Then we can strike that one off the list.`;
+        return `Great. Since you're ${experienced ? 'not a stranger to the process' : 'new'}, I'll send you after one of the ${experienced ? 'more' : 'less'} dangerous gangs in the area. Head into the ${task.zoneLabel} and track down ${task.captainName}'s camp. Kill ${pronoun}, burn the tents and come back. Then we can strike that one off the list.`;
       },
     },
   };
@@ -428,6 +431,12 @@
     setTaskStatus(taskId, 'available', {});
     deps.showToast(`📋 Took on ${task.npcName}'s request.`, true);
     return { ok: true, message: 'Request added to your log.' };
+  }
+
+  function requestAcceptanceLine(taskId) {
+    const task = deps.getQuestProgress()[taskId]?.progress;
+    const giver = task && REQUEST_GIVERS[task.npcId];
+    return giver?.accept?.(task, playerNickname()) || '';
   }
 
   function declineRequest(taskId) {
@@ -574,6 +583,7 @@
     pendingRequestGreetingLine,
     maybeProposeRequest,
     acceptRequest,
+    requestAcceptanceLine,
     declineRequest,
     getTurnInReadyTaskForNpc,
     compassTargets,

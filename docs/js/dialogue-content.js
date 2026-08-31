@@ -365,7 +365,15 @@
             deps.setQuestStatus(act.taskId, 'declined', {});
           } else if (act.type === 'acceptRequest') {
             const res = window.ProceduralTasks.acceptRequest(act.taskId);
-            if (!res.ok) deps.showToast(res.message, false);
+            if (!res.ok) {
+              deps.showToast(res.message, false);
+            } else {
+              const acceptanceLine = window.ProceduralTasks.requestAcceptanceLine?.(act.taskId);
+              if (acceptanceLine) {
+                renderDlgNode({ type: 'line', text: acceptanceLine });
+                skipNav = true;
+              }
+            }
           } else if (act.type === 'declineRequest') {
             window.ProceduralTasks.declineRequest(act.taskId);
           } else if (act.type === 'turnInTask') {
