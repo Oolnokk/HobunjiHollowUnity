@@ -20,8 +20,18 @@ assert.match(
 );
 assert.match(
   game,
-  /window\.addEventListener\('pointerup', finishDesktopMouseAction\)[\s\S]*?window\.addEventListener\('mouseup', finishDesktopMouseAction\)/,
-  'Pointer Events and Pointer Lock mouse releases share the same release path',
+  /window\.addEventListener\('pointerup', finishDesktopMouseAction, true\)[\s\S]*?window\.addEventListener\('mouseup', finishDesktopMouseAction, true\)/,
+  'Pointer Events and Pointer Lock mouse releases are captured before UI handlers can swallow them',
+);
+assert.match(
+  game,
+  /window\.addEventListener\('contextmenu',[\s\S]*?desktopWeaponPointerSlots\.has\(2\)[\s\S]*?finishDesktopMouseAction\(e\)/,
+  'a completed right-click context gesture also releases its owned combat hold',
+);
+assert.match(
+  game,
+  /desktopWeaponPointerSlots\.has\(2\) && \(Number\(e\.buttons\) & 2\) === 0[\s\S]*?finishDesktopMouseAction\(\{ button: 2, pointerType: 'mouse' \}\)/,
+  'the live mouse button bitmask repairs a missing right-button release event',
 );
 assert.match(
   combatInput,
@@ -35,8 +45,8 @@ assert.match(
 );
 assert.match(
   index,
-  /combat-input\.js\?v=20260831heavyhold1[\s\S]*?game\.js\?v=20260831heavyhold1/,
+  /combat-input\.js\?v=20260831heavyhold2[\s\S]*?game\.js\?v=20260831heavyhold2/,
   'both changed browser modules are cache-invalidated together',
 );
 
-console.log('heavy-hold release ownership contracts: 6 checks passed');
+console.log('heavy-hold release ownership contracts: 8 checks passed');

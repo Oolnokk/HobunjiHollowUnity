@@ -26945,8 +26945,17 @@
         if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
       }
-      window.addEventListener('pointerup', finishDesktopMouseAction);
-      window.addEventListener('mouseup', finishDesktopMouseAction);
+      // Capture release before action-arch/backdrop handlers can consume a
+      // moved right-click gesture. `contextmenu` is Chromium/Opera's final
+      // event for some right-drags even when their ordinary up event is lost.
+      window.addEventListener('pointerup', finishDesktopMouseAction, true);
+      window.addEventListener('mouseup', finishDesktopMouseAction, true);
+      window.addEventListener('auxclick', finishDesktopMouseAction, true);
+      window.addEventListener('contextmenu', (e) => {
+        if (!isDesktop || !desktopWeaponPointerSlots.has(2)) return;
+        e.preventDefault();
+        if ((Number(e.buttons) & 2) === 0) finishDesktopMouseAction(e);
+      }, true);
       window.addEventListener('pointercancel', (e) => {
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
@@ -26955,11 +26964,20 @@
           if (slot === 1) actionHeldDown = false;
           window.Combat?.input?.abortPress?.(slot);
         }
-      });
+      }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A missing right-button up can still be proven by the buttons
+          // bitmask on the next real mouse event. End the owned hold before
+          // camera-look or aiming gets a chance to use that event.
+          if (desktopWeaponPointerSlots.has(2) && (Number(e.buttons) & 2) === 0) {
+            finishDesktopMouseAction({ button: 2, pointerType: 'mouse' });
+          }
+          if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
+            finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
+          }
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns
