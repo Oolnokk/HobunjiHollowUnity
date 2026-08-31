@@ -47,28 +47,18 @@ index = replace_once(
 )
 index_path.write_text(index)
 
-parity_path = Path("docs/js/portrait-plane-outline-parity.js")
-parity = parity_path.read_text()
-parity = replace_once(
-    parity,
-    "    return (rotationSourceSelect?.value === 'head') ? 'head' : 'pixel';",
-    "    return (rotationSourceSelect?.value === 'pixel') ? 'pixel' : 'head';",
-    "portrait parity rotation-source fallback",
-)
-parity_path.write_text(parity)
-
 test_path = Path("scripts/test-shoulder-pet-attack-rotation.js")
 test = test_path.read_text()
 test = replace_once(
     test,
     "const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the final-transform shoulder-pet pinning order.\n",
-    "const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the final-transform shoulder-pet pinning order.\nconst indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the Settings UI default shown on fresh sessions.\nconst paritySource = fs.readFileSync('docs/js/portrait-plane-outline-parity.js', 'utf8'); // Guards the runtime parity fallback when no explicit source is selected.\n",
+    "const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the final-transform shoulder-pet pinning order.\nconst indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the Settings UI default shown on fresh sessions.\n",
     "test source declarations",
 )
 test = replace_once(
     test,
     "for (const source of ['pixel', 'body', 'head', 'world']) {\n  assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);\n}\n",
-    "for (const source of ['pixel', 'body', 'head', 'world']) {\n  assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);\n}\nassert.match(gameSource,\n  /let s_shoulderPetRotationSource = 'head';/,\n  'fresh gameplay state defaults shoulder-pet rotation to head/neck');\nassert.match(gameSource,\n  /String\\(e\\.target\\.value \\|\\| 'head'\\)[\\s\\S]{0,240}\\? requestedSource : 'head';/,\n  'empty or invalid shoulder-pet rotation settings fall back to head/neck');\nassert.match(indexSource,\n  /<option value=\"head\" selected>Head \\/ Neck \\(default\\)<\\/option>/,\n  'the Settings dropdown presents head/neck as the default');\nassert.match(paritySource,\n  /return \\(rotationSourceSelect\\?\\.value === 'pixel'\\) \\? 'pixel' : 'head';/,\n  'the portrait parity controller defaults to head/neck while preserving explicit pixel mode');\n",
+    "for (const source of ['pixel', 'body', 'head', 'world']) {\n  assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);\n}\nassert.match(gameSource,\n  /let s_shoulderPetRotationSource = 'head';/,\n  'fresh gameplay state defaults shoulder-pet rotation to head/neck');\nassert.match(gameSource,\n  /String\\(e\\.target\\.value \\|\\| 'head'\\)[\\s\\S]{0,240}\\? requestedSource : 'head';/,\n  'empty or invalid shoulder-pet rotation settings fall back to head/neck');\nassert.match(indexSource,\n  /<option value=\"head\" selected>Head \\/ Neck \\(default\\)<\\/option>/,\n  'the Settings dropdown presents head/neck as the default');\n",
     "default-source regression assertions",
 )
 test_path.write_text(test)
