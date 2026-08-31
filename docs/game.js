@@ -24986,14 +24986,21 @@
           || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
-        const promptKeys = promptActionIds.map((actionId, index) =>
-          actionPromptGlyph(actionId, lastInputDevice === 'touch' ? `Action ${index + 1}` : ''));
+        const promptInputs = btns.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
+          const actionId = button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`); // Used to show Climb against its real Dodge binding instead of Action 1.
+          const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
+          return {
+            actionId,
+            label: actionPromptGlyph(actionId, touchLabel),
+            color: actionPromptColor(actionId),
+          };
+        });
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
           scene: getActiveScene(),
-          promptKeys,
+          promptInputs,
           showInputHints: true,
           isWorldInteraction,
         });
@@ -26053,6 +26060,9 @@
         if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
         if (lastInputDevice === 'touch') return touchIcon || '👆';
         return buttonLabel(inputBindings.desktop[actionId]);
+      }
+      function actionPromptColor(actionId) {
+        return window.ActionArchSlotColors?.inputColors?.[actionId] || '#B8C5C0';
       }
       function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
         buildActionPromptDom();

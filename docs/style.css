@@ -888,7 +888,9 @@
       bottom: calc(   sin(135deg)*var(--ar0));
       transform: translate(50%, 50%);
       width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
-      border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
+      color: var(--dodge-input-color, #A78BFA);
+      border-color: color-mix(in srgb, var(--dodge-input-color, #A78BFA) 58%, transparent);
+      background: color-mix(in srgb, var(--dodge-input-color, #A78BFA) 12%, transparent);
       display: flex;
     }
     button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }

@@ -10,6 +10,12 @@
   const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
   const CENTERED_LIST_SCALE = 0.25; // Interaction, reward, and progression lists render at one quarter of their former world-space size.
+  const INTERACTION_LIST_SCALE = 0.25; // Keeps connector words at the former physical prompt size while segment fonts add emphasis selectively.
+  const INTERACTION_VERB_COLOR = '#FFFFFF'; // Used for the enlarged, deliberately uncoded verb in every interaction row.
+  const INTERACTION_OBJECT_COLOR = '#FFB86C'; // Used for object/context words so the target is distinct from the verb and input hint.
+  const INTERACTION_CONNECTOR_COLOR = '#B8C5C0'; // Used for grammatical glue such as “to,” “the,” and “of.”
+  const INTERACTION_INPUT_FALLBACK_COLOR = '#B8C5C0'; // Used only for inputs that have no authored action-arch color.
+  const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
@@ -150,6 +156,67 @@
     const geometry = new THREE.PlaneGeometry(aspect, 1);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
+    plane.scale.setScalar(size);
+    plane.renderOrder = 1200;
+    plane.frustumCulled = false;
+    plane.userData.isBillboard = true;
+    return { plane, geometry, material, texture, width: aspect * size, height: size };
+  }
+
+  function makeInteractionPlane(prompt, layout) {
+    const THREE = state.deps.THREE; // Used to turn the segmented canvas into the normal billboard plane.
+    const size = layout.worldHeight; // Used to preserve the authored interaction-list world height.
+    const canvas = document.createElement('canvas'); // Used as the texture backing for the mixed-size, mixed-color row.
+    const ctx = canvas.getContext('2d'); // Used to measure and paint each independently styled text segment.
+    const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
+    const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
+    const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
+    const mainFontPx = 98; // Used for every meaningful word, including the input hint, verb, and object/context words.
+    const connectorFontPx = 78; // Used to preserve the former prompt size for grammatical glue such as “to.”
+    const gapPx = 34; // Used to leave a clearly visible extra space between the input prompt and its action text.
+    const wordGapPx = 22; // Used between label words so zone labels such as “To Town” cannot visually collapse.
+    const verbAfterToIndex = words[1]?.toLowerCase() === 'to' ? 2 : -1; // Used for labels such as “Hold to Take Egg,” where Take is the real action verb.
+    const textWidth = (text, fontPx) => { // Used to size the canvas tightly enough for long rebound input names.
+      if (!text) return 0;
+      ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+      return ctx.measureText(text).width;
+    };
+    const inputWidth = textWidth(inputHint, mainFontPx); // Used in the row's exact texture width.
+    const labelWidth = words.reduce((total, word, index) => { // Used to size the canvas for mixed-size label tokens.
+      const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : mainFontPx;
+      return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
+    }, 0);
+    canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
+    canvas.height = 112;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    let x = 14; // Tracks the next segment's left edge while painting the row.
+    const drawSegment = (text, fontPx, color) => { // Used to give every segment the same strong dark readability outline.
+      if (!text) return;
+      ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(15,10,8,.94)';
+      ctx.strokeText(text, x, canvas.height / 2);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, canvas.height / 2);
+      x += ctx.measureText(text).width;
+    };
+    drawSegment(inputHint, mainFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
+    if (inputHint) x += gapPx;
+    words.forEach((word, index) => { // Used to keep connector words small while emphasizing each actual action verb.
+      if (index) x += wordGapPx;
+      const isConnector = INTERACTION_CONNECTORS.has(word.toLowerCase());
+      const isVerb = !isConnector && (index === 0 || index === verbAfterToIndex);
+      drawSegment(word, isConnector ? connectorFontPx : mainFontPx, isVerb ? INTERACTION_VERB_COLOR : isConnector ? INTERACTION_CONNECTOR_COLOR : INTERACTION_OBJECT_COLOR);
+    });
+    const texture = new THREE.CanvasTexture(canvas); // Used as the billboard's live sRGB text texture.
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    const aspect = canvas.width / canvas.height; // Used to prevent horizontal stretching of mixed-size text.
+    const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the row's camera-facing surface.
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Used to keep prompts readable through their target.
+    const plane = new THREE.Mesh(geometry, material); // Added to the active scene by setInteractionPrompts.
     plane.scale.setScalar(size);
     plane.renderOrder = 1200;
     plane.frustumCulled = false;
@@ -306,22 +373,29 @@
   function setInteractionPrompts(root, prompts, options = {}) {
     const entries = (prompts || []).filter(prompt => prompt && prompt.allowed !== false)
       .slice(0, state.settings.centeredFiveRow.maxRows)
-      .map(prompt => ({ text: String(prompt.text || prompt.label || '').trim(), action: prompt.action || '' }))
-      .filter(prompt => prompt.text);
+      .map(prompt => ({
+        text: String(prompt.text || prompt.label || '').trim(),
+        label: String(prompt.label || prompt.text || '').trim(),
+        action: prompt.action || '',
+        inputActionId: prompt.inputActionId || '',
+        inputHint: String(prompt.inputHint || '').trim(),
+        inputColor: prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR,
+      }))
+      .filter(prompt => prompt.label);
     if (!root || !entries.length) {
       clearInteractionPrompts();
       return [];
     }
-    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.text}`).join('|')}`;
+    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputColor}:${entry.label}`).join('|')}`;
     if (signature === state.interactionSignature) return interactionListFor(root).map(event => event.sequence);
     clearInteractionPrompts();
     state.interactionSignature = signature;
     const cfg = state.settings.centeredFiveRow;
-    const interactionCfg = { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE };
+    const interactionCfg = { ...cfg, worldHeight: cfg.worldHeight * INTERACTION_LIST_SCALE };
     const scene = options.scene || state.deps?.getActiveScene?.();
     if (!scene) return [];
     return entries.map((entry, listSlot) => {
-      const parts = makePlane(entry.text, 'interaction', interactionCfg);
+      const parts = makeInteractionPlane(entry, interactionCfg);
       const event = {
         ...entry, ...parts, root, scene, kind: 'interaction', mode: 'centeredFiveRow',
         interactionPrompt: true, sequence: state.sequence++, listSlot,
@@ -388,12 +462,20 @@
       return [];
     }
     const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
+    const promptInputs = Array.isArray(options.promptInputs) ? options.promptInputs : []; // Preferred structured hints carry semantic action IDs and arch-matched colors.
     const prompts = worldInteractions.map(button => {
       const slot = buttons.indexOf(button);
-      const keyHint = options.showInputHints !== false && slot >= 0
-        ? `${promptKeys[slot] || `Action ${slot + 1}`}  `
+      const promptInput = promptInputs[slot] || null; // Supplies the binding label, semantic action, and matching color for this exact list row.
+      const keyHint = options.showInputHints !== false && slot >= 0 // Used as the colored leading segment, including rebound keys/buttons.
+        ? String(promptInput?.label || promptKeys[slot] || `Action ${slot + 1}`)
         : '';
-      return { ...button, text: `${keyHint}${button.label}` };
+      return {
+        ...button,
+        text: `${keyHint}${keyHint ? '  ' : ''}${button.label}`,
+        inputActionId: promptInput?.actionId || '',
+        inputHint: keyHint,
+        inputColor: promptInput?.color || INTERACTION_INPUT_FALLBACK_COLOR,
+      };
     });
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
   }
@@ -540,6 +622,14 @@
     setAimLabel, clearAimLabel,
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
+    debugSnapshot: () => ({
+      interactionSignature: state.interactionSignature,
+      interactionRows: state.active.filter(event => event.interactionPrompt).map(event => ({
+        action: event.action, inputActionId: event.inputActionId, inputHint: event.inputHint,
+        inputColor: event.inputColor, label: event.label,
+      })),
+      interactionVerbColor: INTERACTION_VERB_COLOR,
+    }),
   };
   window.WorldPopupText = api;
 })();
