@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the final-transform shoulder-pet pinning order.
+const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the Settings UI default shown on fresh sessions.
 assert.match(gameSource,
   /updateShoulderPetMeshPin\(\);/,
   'the gameplay loop still re-pins shoulder pets');
@@ -14,6 +15,15 @@ assert.match(gameSource,
 for (const source of ['pixel', 'body', 'head', 'world']) {
   assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);
 }
+assert.match(gameSource,
+  /let s_shoulderPetRotationSource = 'head';/,
+  'fresh gameplay state defaults shoulder-pet rotation to head/neck');
+assert.match(gameSource,
+  /String\(e\.target\.value \|\| 'head'\)[\s\S]{0,240}\? requestedSource : 'head';/,
+  'empty or invalid shoulder-pet rotation settings fall back to head/neck');
+assert.match(indexSource,
+  /<option value="head" selected>Head \/ Neck \(default\)<\/option>/,
+  'the Settings dropdown presents head/neck as the default');
 assert.match(gameSource,
   /if \(s_invertShoulderPetRotationSource\) selectedRotationQuaternion\.invert\(\);/,
   'the inversion toggle inverses whichever rotation frame is selected');
