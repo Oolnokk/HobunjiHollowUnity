@@ -35,7 +35,7 @@ index_path = Path("docs/index.html")
 index = index_path.read_text()
 index = replace_once(
     index,
-    '<option value="pixel" selected>Skinned Shoulder Pixel (default)</option>',
+    '<option value="pixel" selected>Skinned Shoulder Pixel</option>',
     '<option value="pixel">Skinned Shoulder Pixel</option>',
     "settings pixel option",
 )
