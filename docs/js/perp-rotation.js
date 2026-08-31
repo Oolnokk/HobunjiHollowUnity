@@ -42,6 +42,7 @@
   // flip fire a spurious snapTo while the model was stably locked near
   // the near perp, producing rapid alternation between two rotations.
   function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
+    state.cameraPerpsRad = perps.slice(); // Lets purely visual child-plane rotations reuse the exact live camera-relative forbidden angles.
     if (!state.perpSides) state.perpSides = perps.map(() => null);
     if (!state.locked) state.locked = perps.map(() => false);
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
@@ -127,12 +128,7 @@
   //   'snap' — newest: alternates between the dead zone's two edges with
   //            a hard cut (no interpolation) via creatureSnapSwayTarget,
   //            instead of sweeping/lerping between them.
-  // Halt is the global default: when an animal's authored/AI facing would
-  // point its side-view card straight into or away from the camera, hold the
-  // rendered plane at the nearest safe edge instead of repeatedly flipping
-  // between both edges. The animal's logical facing and prism still track the
-  // true target, so combat, movement, and interaction rays remain unchanged.
-  const CREATURE_PLANE_ROT_MODE = 'halt'; // 'sway' | 'halt' | 'snap'
+  const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
 
   // Oscillation angular speed shared by the 'sway' and 'snap' modes below
   // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
@@ -156,6 +152,7 @@
   // converge to rawTarget as nearestAbs approaches deadRad), so unlike
   // perpClamp it needs no entry/exit hysteresis to avoid flicker.
   function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
+    state.cameraPerpsRad = perps.slice(); // Published for the interior animal head planes; gameplay facing remains raw.
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
     for (let i = 0; i < perps.length; i++) {
       const dT = deps.angleDiff(rawTarget, perps[i]);
@@ -194,6 +191,7 @@
   // holds at whichever edge it's nearest, instead of visibly flip-flopping
   // in place with no motion to sell the "swap side" as a stride change.
   function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
+    state.cameraPerpsRad = perps.slice(); // Published for the interior animal head planes; gameplay facing remains raw.
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
     for (let i = 0; i < perps.length; i++) {
       const dT = deps.angleDiff(rawTarget, perps[i]);

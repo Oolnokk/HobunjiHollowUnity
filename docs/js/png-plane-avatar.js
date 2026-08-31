@@ -1353,12 +1353,50 @@
       return state.currentDeg;
     };
 
+    let cachedAnimalOwner = null; // Avoids rescanning the live creature arrays on every visual head-yaw frame after the owner is resolved.
+    const wrappedAngleDelta = (target, current) => {
+      let delta = target - current;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      return delta;
+    };
+    const animalOwner = () => {
+      if (cachedAnimalOwner?.avatarRef === avatarRef) return cachedAnimalOwner;
+      const combatDeps = window.Combat?.deps;
+      const creatures = [...(combatDeps?.hostileObjects || []), ...(combatDeps?.companionObjects || [])];
+      cachedAnimalOwner = creatures.find(creature => creature?.avatarRef === avatarRef) || null;
+      return cachedAnimalOwner;
+    };
+    const cameraSafeVisualYawDeg = requestedYawDeg => {
+      const owner = animalOwner();
+      const bodyRot = Number(owner?.pngRot);
+      const bodyState = owner?.perpState;
+      const cameraPerps = bodyState?.cameraPerpsRad || bodyState?.pixelProbeDebug?.cameraPerpsRad;
+      const rotationApi = window.PerpRotation;
+      if (!owner || !Number.isFinite(bodyRot) || !Array.isArray(cameraPerps) || !cameraPerps.length || !rotationApi?.perpClamp) {
+        return requestedYawDeg;
+      }
+      const visualState = owner.headVisualPerpState || (owner.headVisualPerpState = {}); // Holds the interior head planes on one deadzone edge without affecting AI/raycast state.
+      if (!visualState.perpSides || visualState.perpSides.length !== cameraPerps.length) {
+        const currentVisualRot = bodyRot + state.currentYawDeg * RAD;
+        visualState.perpSides = cameraPerps.map(center => wrappedAngleDelta(currentVisualRot, center) >= 0 ? 1 : -1);
+        visualState.locked = cameraPerps.map(() => false);
+      }
+      const rawVisualRot = bodyRot + requestedYawDeg * RAD;
+      const clamped = rotationApi.perpClamp(visualState, rawVisualRot, cameraPerps, rotationApi.CREATURE_PERP_DEAD_RAD);
+      const safeYawDeg = wrappedAngleDelta(clamped.effectiveTarget, bodyRot) / RAD;
+      owner._headDeadzoneDebug = { rawVisualRot, effectiveVisualRot: clamped.effectiveTarget, requestedYawDeg, safeYawDeg }; // Mobile-accessible visual diagnostics; never consumed by gameplay.
+      return safeYawDeg;
+    };
+
     avatarRef.updateHeadYaw = (degrees, deltaSeconds) => {
-      const target = clamp(finite(degrees, 0), -yawLimitDeg, yawLimitDeg); // Smoothed yaw target, same turn-speed budget as the pitch axis.
+      const requestedTarget = clamp(finite(degrees, 0), -yawLimitDeg, yawLimitDeg);
+      const target = clamp(cameraSafeVisualYawDeg(requestedTarget), -yawLimitDeg, yawLimitDeg); // Only the rendered interior head planes are deadzone-clamped; the caller's ray/AI target is untouched.
       const delta = Math.max(0, finite(deltaSeconds, 0));
       const step = rig.turnSpeedDeg * delta;
       const diff = target - state.currentYawDeg;
       state.currentYawDeg += clamp(diff, -step, step);
+      state.requestedYawDeg = requestedTarget;
       state.targetYawDeg = target;
       applyYawDegrees(state.currentYawDeg);
       return state.currentYawDeg;

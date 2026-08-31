@@ -33,7 +33,7 @@
   <script src="js/portrait-utils.js?v=20260830flip2"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
-  <script src="js/png-plane-avatar.js?v=20260830flip2"></script>
+  <script src="js/png-plane-avatar.js?v=20260831headdeadzone1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -304,7 +304,7 @@
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20260831cameraavoid1"></script>
+  <script src="js/perp-rotation.js?v=20260831headdeadzone1"></script>
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
