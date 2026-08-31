@@ -7721,7 +7721,7 @@
       function defaultWorldMemberState() {
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
-          alcoholBottleSwigs: {}, npcAlcoholState: {},
+          alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {},
           alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
           joinedAt: Date.now(),
         };
@@ -7814,6 +7814,7 @@
           member.questProgress    = { ...questProgress };
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
+          member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
@@ -11080,6 +11081,15 @@
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
             this.currentScheduleTarget = target || null;
+            // Wardrobe reroll: fires once per sleeping period, the instant
+            // this NPC's schedule activity transitions INTO "sleeping" (not
+            // every frame they stay asleep) — see js/npc-wardrobe.js's
+            // rerollForSleep for what it actually changes.
+            const scheduleActivity = target?.activity || '';
+            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
+              window.NpcWardrobe?.rerollForSleep?.(rec?.id);
+            }
+            this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
@@ -13964,6 +13974,16 @@
         };
       });
 
+      // Item traits (window.ItemTraits, see js/item-traits.js) — a live
+      // getItemDefs() closure means it's safe to init before later systems
+      // (cooking, fish, alcohol) finish extending ITEM_DEFS below; traits
+      // are computed on demand, never snapshotted.
+      window.ItemTraits?.init({
+        getItemDefs: () => ITEM_DEFS,
+        getInventory: () => inventory,
+        getGearInventory: () => gearInventory,
+      });
+
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
         // Used by inventory rendering and item scroll after furniture orders are delivered.
         if (!inventoryItems.some(item => item.key === def.itemKey)) {
@@ -14274,6 +14294,35 @@
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
         return stacks[activeItemIndex];
+      }
+
+      // Manual hold — lets the player designate something as their "held"
+      // item for interaction purposes (gifting, see js/npc-gifting.js) even
+      // when it isn't wheel-selectable. Clothing is the main case: it never
+      // enters inventory/inventoryItems (see gearInventory.clothingItems in
+      // js/equipment-panel.js), so there's no wheel slot to select it from.
+      // Set from the Equipment panel's clothing detail view ("Hold" button,
+      // see selectGearClothing in js/equipment-panel.js). Explicit only:
+      // switching the item wheel does not clear it, and it does not clear
+      // itself — the player (or a successful gift) clears it back to "let
+      // the wheel decide" via clearManualHeldItem.
+      let manualHeldItem = null; // { kind: 'clothing', uid } | null
+      function setManualHeldItem(item) { manualHeldItem = item || null; refreshActionBar(); }
+      function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
+      function getManualHeldItem() { return manualHeldItem; }
+
+      // The one accessor gifting (and anything else that wants "whatever
+      // the player is currently offering up") should call — resolves the
+      // manual hold first, falling back to the ordinary wheel selection.
+      function getHeldGiftItem() {
+        if (manualHeldItem?.kind === 'clothing') {
+          const item = (gearInventory?.clothingItems || []).find(c => c.uid === manualHeldItem.uid);
+          if (item) return { kind: 'clothing', instance: item };
+          manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
+        }
+        const active = getActiveInventoryItem();
+        if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
+        return null;
       }
 
       function clampInventoryStack(key) {
@@ -16800,6 +16849,15 @@
         if (activeAction === 'npc_offer_alcohol_swig') {
           window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
+          return;
+        }
+        if (activeAction === 'npc_offer_gift') {
+          window.NpcGifting?.offerGift?.(nearbyNpcWalker);
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'npc_open_wardrobe') {
+          window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
           return;
         }
         // The frame update owns the five-second aimed nest hold; do not let
@@ -24710,6 +24768,23 @@
           if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
           const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
           if (swigOffer) btns.push(swigOffer);
+          const giftOffer = window.NpcGifting?.getNpcGiftOfferAction?.(nearbyNpcWalker);
+          if (giftOffer) btns.push(giftOffer);
+          // Wardrobe: only reachable while actually standing in that NPC's
+          // own home interior (currentArea === 'map_i_' + homeId — the same
+          // area-id convention loadBuildingScene/_isBuildingArea use), so
+          // it reads as "go through their things at home" rather than a
+          // button that follows them everywhere.
+          if (nearbyNpcWalker.rec?.homeId && currentArea === 'map_i_' + nearbyNpcWalker.rec.homeId && window.NpcWardrobe) {
+            btns.push({
+              icon: '👗',
+              label: `${nearbyNpcWalker.rec.name || 'Their'}'s Wardrobe`,
+              action: 'npc_open_wardrobe',
+              style: 'secondary',
+              allowed: true,
+              worldInteraction: true,
+            });
+          }
           return btns;
         }
 
@@ -25131,7 +25206,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -28076,6 +28151,38 @@
           invSelectedKey = null;
           document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
         },
+        setManualHeldItem,
+        clearManualHeldItem,
+        getManualHeldItem,
+      });
+
+      // NPC gifting (window.NpcGifting, see js/npc-gifting.js) — reads
+      // reactions from each NPC's gifts.{loved,liked,disliked,hated} trait
+      // lists; clothing acceptance specifically is further gated by
+      // window.NpcWardrobe (js/npc-wardrobe.js), initialized just below.
+      window.NpcGifting?.init({
+        getItemDefs: () => ITEM_DEFS,
+        getHeldGiftItem,
+        clearManualHeldItem,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        refreshPlayerAvatar,
+        inventory,
+        clampInventoryStack,
+        showToast,
+        refreshItemScroll,
+        buildInventoryGrid,
+        buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
+        refreshActionBar,
+        saveMemberWorldData,
+      });
+
+      window.NpcWardrobe?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        showToast,
+        saveMemberWorldData,
+        npcWalkers,
       });
 
       window.WhistleEquip?.init({
@@ -28983,6 +29090,7 @@
         if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
+        window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);

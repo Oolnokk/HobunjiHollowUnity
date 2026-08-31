@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hobunji Item Database Editor</title>
+<style>
+:root{
+  --bg:#07101a;--panel:#111b28;--panel2:#0c141e;--text:#edf4ff;--muted:#9fb2cc;
+  --line:#26384f;--acc:#6aa7ff;--good:#34d399;--warn:#fbbf24;--bad:#fb7185;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);
+  border-radius:11px;padding:7px 11px;font-weight:750;cursor:pointer}
+button.secondary{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.good{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.danger{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.14);color:var(--bad)}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.small{padding:4px 8px;font-size:11px;border-radius:8px}
+input,select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+  border-radius:9px;color:var(--text);padding:6px 9px;outline:none}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
+  text-transform:uppercase;letter-spacing:.3px}
+
+#app{height:100%;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-shrink:0;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel),var(--panel2))}
+#topbar h1{margin:0;font-size:14px;color:var(--acc);letter-spacing:.5px;white-space:nowrap}
+.spacer{flex:1}
+#tabbar{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);flex-shrink:0}
+.tab{border:1px solid var(--line);background:transparent;border-radius:9px 9px 0 0;
+  padding:8px 16px;color:var(--muted);font-weight:700}
+.tab.active{background:var(--panel2);color:var(--text);border-bottom-color:var(--panel2)}
+#workspace{flex:1;min-height:0;display:flex}
+.pane{display:none;flex:1;min-height:0}
+.pane.active{display:flex}
+
+#sidebar{width:270px;min-width:210px;display:flex;flex-direction:column;flex-shrink:0;
+  border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));overflow:hidden}
+.paneHead{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.paneHead input{width:100%}
+#itemList{flex:1;overflow-y:auto}
+.idRow{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.idRow:hover{background:rgba(255,255,255,.04)}
+.idRow.active{background:rgba(106,167,255,.14)}
+.idRow .idIcon{width:18px;text-align:center}
+.idRow .idLabel{flex:1;font-size:12.5px}
+.idRow .idKey{font-size:9.5px;color:var(--muted);display:block}
+.idRow .idBadge{font-size:9px;color:var(--muted)}
+
+.detail{flex:1;min-height:0;overflow-y:auto;padding:16px 20px}
+h2.secTitle{font-size:13px;color:var(--acc);margin:18px 0 8px;letter-spacing:.3px}
+h2.secTitle:first-child{margin-top:0}
+.itemHead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.itemHead .bigIcon{font-size:26px}
+.itemHead h3{margin:0;font-size:17px}
+.itemHead .itemKey{color:var(--muted);font-size:11px}
+.groupBlock{margin-bottom:14px}
+.groupLabel{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px}
+.chipList{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 6px 4px 10px;
+  border-radius:999px;border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.14);
+  color:var(--text);white-space:nowrap}
+.chip.auto{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:var(--muted)}
+.chip .chipX{width:15px;height:15px;padding:0;border:none;background:transparent;color:var(--muted);
+  font-size:12px;line-height:1;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.chip .chipX:hover{background:rgba(255,255,255,.14);color:var(--text)}
+.addTraitRow{display:flex;gap:6px;margin-top:8px}
+.addTraitRow select{flex:1}
+.typeOverrideRow{display:flex;align-items:center;gap:8px;margin-top:4px}
+.iMuted{color:var(--muted);font-size:11px;line-height:1.5}
+.vocabRow{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:10px}
+.vocabRow .field{display:flex;flex-direction:column;gap:2px}
+.vocabRow input,.vocabRow select{width:150px}
+.vocabRow .field.wide input{width:220px}
+#log{flex-shrink:0;border-top:1px solid var(--line);background:#000;color:#7fd88a;
+  font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:4px 10px;max-height:70px;overflow-y:auto;white-space:pre-wrap}
+</style>
+<script src="../../js/panel-ui.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>🏷️ Item Database Editor</h1>
+    <div class="spacer"></div>
+    <button class="secondary small" id="loadBtn">Reload from server</button>
+    <button class="secondary small" id="copyBtn">Copy JSON</button>
+    <button class="good small" id="downloadBtn">Download JSON</button>
+    <button class="secondary small" id="saveOverrideBtn">💾 Save as Local Override</button>
+    <button class="secondary small" id="clearOverrideBtn">🗑 Clear Local Override</button>
+    <span id="overrideStatus" style="font-size:11px;color:var(--muted);margin-left:6px"></span>
+  </div>
+  <div id="tabbar">
+    <button class="tab active" data-tab="items">Items</button>
+    <button class="tab" data-tab="vocab">Trait Vocabulary</button>
+  </div>
+  <div id="workspace">
+    <div class="pane active" id="paneItems">
+      <div id="sidebar">
+        <div class="paneHead">
+          <input id="searchBox" placeholder="Search items…">
+        </div>
+        <div id="itemList"></div>
+      </div>
+      <div id="itemDetail" class="detail"></div>
+    </div>
+    <div class="pane" id="paneVocab">
+      <div id="vocabDetail" class="detail" style="flex:1"></div>
+    </div>
+  </div>
+  <pre id="log">loading…</pre>
+</div>
+
+<script src="../../js/local-db-overrides.js"></script>
+<script>
+'use strict';
+function log(msg){ const el = document.getElementById('log'); el.textContent = (el.textContent === 'loading…' ? '' : el.textContent + '\n') + msg; el.scrollTop = el.scrollHeight; }
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function $(id){ return document.getElementById(id); }
+
+// Items whose key starts with "cosmetic:" (see scripts/generate-item-index.js)
+// are clothing articles keyed by cosmeticId in config/cosmetics/index.json —
+// item-traits.json itself stores them under the bare id (no prefix), because
+// that's what a worn/held clothing instance's `instance.cosmeticId` resolves
+// to at runtime (js/item-traits.js's lookupManualEntry). The prefix only
+// exists here to keep the item list unambiguous.
+function trueDataKey(itemKey) { return itemKey.startsWith('cosmetic:') ? itemKey.slice('cosmetic:'.length) : itemKey; }
+
+let itemIndex = {};
+let traitsData = { traitDefs: {}, items: {} };
+let state = { selectedKey: null, activeTab: 'items', search: '' };
+
+const GROUP_ORDER = ['type', 'purpose', 'hue', 'saturation', 'value', 'other'];
+const GROUP_LABELS = { type: 'Type', purpose: 'Purpose', hue: 'Hue', saturation: 'Saturation', value: 'Value', other: 'Other' };
+
+async function loadAll() {
+  try {
+    // window.LocalDBOverrides.loadDatabase() fetches its repoPath relative
+    // to the page it's called from (it assumes docs/index.html, the only
+    // caller it originally had) — this tool lives two directories deeper,
+    // so an override is read directly out of localStorage instead (no
+    // fetch involved) and only the ordinary repo copy goes through a
+    // tool-relative fetch, same as loot-shop-editor does.
+    const overridden = window.LocalDBOverrides?.getSourceMode() === 'local' ? window.LocalDBOverrides.getOverride('itemTraits') : null;
+    const [indexJson, traitsJson] = await Promise.all([
+      fetch('../../config/items/item-index.json').then(r => r.json()),
+      overridden ? Promise.resolve(overridden) : fetch('../../config/items/item-traits.json').then(r => r.json()),
+    ]);
+    itemIndex = indexJson;
+    traitsData = traitsJson || { traitDefs: {}, items: {} };
+    traitsData.traitDefs = traitsData.traitDefs || {};
+    traitsData.items = traitsData.items || {};
+    state.selectedKey = Object.keys(itemIndex)[0] || null;
+    log('Loaded ' + Object.keys(itemIndex).length + ' items and ' + Object.keys(traitsData.traitDefs).length + ' trait defs.'
+      + ' Run `node scripts/generate-item-index.js` after adding items to game.js to refresh the item list.');
+  } catch (e) {
+    log('Load failed: ' + e.message);
+  }
+  renderAll();
+}
+
+function renderAll() { renderTabs(); renderItemList(); renderItemDetail(); renderVocab(); }
+
+function renderTabs() {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.activeTab));
+  $('paneItems').classList.toggle('active', state.activeTab === 'items');
+  $('paneVocab').classList.toggle('active', state.activeTab === 'vocab');
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { state.activeTab = b.dataset.tab; renderTabs(); }));
+
+function itemsMatchingSearch() {
+  const q = state.search.trim().toLowerCase();
+  const keys = Object.keys(itemIndex).sort((a, b) => (itemIndex[a].label || a).localeCompare(itemIndex[b].label || b));
+  if (!q) return keys;
+  return keys.filter(k => k.toLowerCase().includes(q) || (itemIndex[k].label || '').toLowerCase().includes(q));
+}
+
+function renderItemList() {
+  const list = $('itemList');
+  const keys = itemsMatchingSearch();
+  list.innerHTML = keys.map(key => {
+    const it = itemIndex[key];
+    const manualCount = (traitsData.items[trueDataKey(key)]?.traits || []).length;
+    return `<div class="idRow${key === state.selectedKey ? ' active' : ''}" data-key="${esc(key)}">
+      <span class="idIcon">${it.icon || '▫️'}</span>
+      <span class="idLabel">${esc(it.label || key)}<span class="idKey">${esc(key)}</span></span>
+      <span class="idBadge">${manualCount ? manualCount + ' trait' + (manualCount === 1 ? '' : 's') : ''}</span>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.idRow').forEach(row => row.addEventListener('click', () => {
+    state.selectedKey = row.dataset.key; renderItemList(); renderItemDetail();
+  }));
+}
+$('searchBox').addEventListener('input', e => { state.search = e.target.value; renderItemList(); });
+
+// Mirrors js/item-traits.js's deriveTypeTrait fallback closely enough for
+// authoring purposes: the tool has no live ITEM_DEFS/category system to call
+// into, so an item's automatic type trait is approximated from item-index's
+// `cat` field (itself lifted straight from ITEM_DEFS at generation time).
+function autoTypeTrait(itemKey) {
+  const cat = itemIndex[itemKey]?.cat;
+  return (cat && traitsData.traitDefs[cat]) ? cat : 'other';
+}
+
+function traitOptionsForGroup(group) {
+  return Object.entries(traitsData.traitDefs)
+    .filter(([, def]) => (def.group || 'other') === group)
+    .sort((a, b) => (a[1].label || a[0]).localeCompare(b[1].label || b[0]));
+}
+
+function renderItemDetail() {
+  const el = $('itemDetail');
+  const key = state.selectedKey;
+  if (!key) { el.innerHTML = '<p class="iMuted">Select an item.</p>'; return; }
+  const it = itemIndex[key];
+  const dataKey = trueDataKey(key);
+  const entry = traitsData.items[dataKey] || {};
+  const manualTraits = entry.traits || [];
+  const typeOverride = entry.typeOverride || '';
+  const effectiveType = typeOverride || autoTypeTrait(key);
+
+  el.innerHTML = `
+    <div class="itemHead"><span class="bigIcon">${it.icon || '▫️'}</span>
+      <div><h3>${esc(it.label || key)}</h3><span class="itemKey">${esc(dataKey)}${it.cat ? ' · ' + esc(it.cat) : ''}</span></div>
+    </div>
+    <p class="iMuted">Base type, purpose and (for clothing) hue/saturation/value traits are computed automatically at
+      runtime from game systems already in place — this panel only edits the hand-curated additions/overrides layer
+      (config/items/item-traits.json). A clothing item's actual hue/saturation/value depends on how it's dyed, so
+      those are never editable here.</p>
+
+    <div class="groupBlock">
+      <div class="groupLabel">Base Type (shown first, always present)</div>
+      <div class="chipList">
+        <span class="chip auto">${esc(traitsData.traitDefs[effectiveType]?.label || effectiveType)}${typeOverride ? '' : ' (auto)'}</span>
+      </div>
+      <div class="typeOverrideRow">
+        <label style="margin:0">Override:</label>
+        <select id="typeOverrideSel">
+          <option value="">— auto (${esc(autoTypeTrait(key))}) —</option>
+          ${traitOptionsForGroup('type').map(([id, def]) => `<option value="${esc(id)}"${id === typeOverride ? ' selected' : ''}>${esc(def.label)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    ${['purpose', 'other'].map(group => `
+      <div class="groupBlock">
+        <div class="groupLabel">${GROUP_LABELS[group]}</div>
+        <div class="chipList" data-group="${group}">
+          ${manualTraits.filter(t => (traitsData.traitDefs[t]?.group || 'other') === group).map(t =>
+            `<span class="chip">${esc(traitsData.traitDefs[t]?.label || t)}<button class="chipX" data-trait="${esc(t)}" type="button">×</button></span>`).join('')}
+        </div>
+        <div class="addTraitRow">
+          <select class="addTraitSel" data-group="${group}">
+            <option value="">+ Add ${GROUP_LABELS[group].toLowerCase()} trait…</option>
+            ${traitOptionsForGroup(group).filter(([id]) => !manualTraits.includes(id)).map(([id, def]) => `<option value="${esc(id)}">${esc(def.label)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    `).join('')}
+
+    <div class="groupBlock">
+      <div class="groupLabel">Hue / Saturation / Value (clothing only — computed per dyed instance, not editable here)</div>
+      <p class="iMuted">See js/item-traits.js: hueTraitsFor/colorTraitsForHsv derive these live from colorA/colorB on
+        the specific worn or held article.</p>
+    </div>
+  `;
+
+  el.querySelector('#typeOverrideSel').addEventListener('change', e => {
+    setEntry(dataKey, entry2 => { entry2.typeOverride = e.target.value || null; if (!entry2.typeOverride) delete entry2.typeOverride; });
+    renderItemDetail(); renderItemList();
+  });
+  el.querySelectorAll('.chipX').forEach(btn => btn.addEventListener('click', () => {
+    setEntry(dataKey, entry2 => { entry2.traits = (entry2.traits || []).filter(t => t !== btn.dataset.trait); });
+    renderItemDetail(); renderItemList();
+  }));
+  el.querySelectorAll('.addTraitSel').forEach(sel => sel.addEventListener('change', () => {
+    if (!sel.value) return;
+    setEntry(dataKey, entry2 => { entry2.traits = [...(entry2.traits || []), sel.value]; });
+    renderItemDetail(); renderItemList();
+  }));
+}
+
+function setEntry(dataKey, mutate) {
+  const entry = traitsData.items[dataKey] || (traitsData.items[dataKey] = {});
+  mutate(entry);
+  if (!entry.traits?.length) delete entry.traits;
+  if (!entry.typeOverride) delete entry.typeOverride;
+  if (!Object.keys(entry).length) delete traitsData.items[dataKey];
+}
+
+// ─── Trait vocabulary tab ───────────────────────────────────────────────
+function renderVocab() {
+  const el = $('vocabDetail');
+  const ids = Object.keys(traitsData.traitDefs).sort((a, b) => {
+    const ga = traitsData.traitDefs[a].group || 'other', gb = traitsData.traitDefs[b].group || 'other';
+    if (ga !== gb) return GROUP_ORDER.indexOf(ga) - GROUP_ORDER.indexOf(gb);
+    return (traitsData.traitDefs[a].label || a).localeCompare(traitsData.traitDefs[b].label || b);
+  });
+  el.innerHTML = `
+    <h2 class="secTitle">Trait Vocabulary</h2>
+    <p class="iMuted">Every trait an item can carry, grouped. "Type" and "hue/saturation/value" groups are meant to
+      stay a closed, stable set (renaming one changes what every item wearing it means) — "purpose" is the group
+      meant to grow as new item concepts are added.</p>
+    <div id="vocabList"></div>
+    <div class="vocabRow" style="margin-top:14px">
+      <div class="field"><label>New trait id</label><input id="newTraitId" placeholder="e.g. festive"></div>
+      <div class="field wide"><label>Label</label><input id="newTraitLabel" placeholder="e.g. Festive"></div>
+      <div class="field"><label>Group</label>
+        <select id="newTraitGroup">${GROUP_ORDER.map(g => `<option value="${g}">${GROUP_LABELS[g]}</option>`).join('')}</select>
+      </div>
+      <button class="good small" id="addTraitDefBtn">+ Add Trait</button>
+    </div>
+  `;
+  $('vocabList').innerHTML = ids.map(id => {
+    const def = traitsData.traitDefs[id];
+    return `<div class="vocabRow">
+      <div class="field"><label>ID</label><input value="${esc(id)}" disabled></div>
+      <div class="field wide"><label>Label</label><input class="vLabel" data-id="${esc(id)}" value="${esc(def.label || '')}"></div>
+      <div class="field"><label>Group</label>
+        <select class="vGroup" data-id="${esc(id)}">${GROUP_ORDER.map(g => `<option value="${g}"${g === (def.group || 'other') ? ' selected' : ''}>${GROUP_LABELS[g]}</option>`).join('')}</select>
+      </div>
+      <button class="danger small vDelete" data-id="${esc(id)}" type="button">Delete</button>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.vLabel').forEach(inp => inp.addEventListener('input', e => {
+    traitsData.traitDefs[e.target.dataset.id].label = e.target.value;
+  }));
+  el.querySelectorAll('.vGroup').forEach(sel => sel.addEventListener('change', e => {
+    traitsData.traitDefs[e.target.dataset.id].group = e.target.value;
+    renderVocab();
+  }));
+  el.querySelectorAll('.vDelete').forEach(btn => btn.addEventListener('click', () => {
+    delete traitsData.traitDefs[btn.dataset.id];
+    renderVocab(); renderItemDetail();
+  }));
+  el.querySelector('#addTraitDefBtn').addEventListener('click', () => {
+    const id = $('newTraitId').value.trim().replace(/[^a-zA-Z0-9]/g, '');
+    const label = $('newTraitLabel').value.trim();
+    if (!id || traitsData.traitDefs[id]) { log('Trait id missing or already exists.'); return; }
+    traitsData.traitDefs[id] = { label: label || id, group: $('newTraitGroup').value };
+    renderVocab(); renderItemDetail(); log('Added trait "' + id + '".');
+  });
+}
+
+// ─── Top bar actions ────────────────────────────────────────────────────
+function activeDbId() { return 'itemTraits'; }
+function refreshOverrideStatus() {
+  const el = $('overrideStatus');
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'Local override system unavailable.'; return; }
+  const status = ldb.listStatuses().find(s => s.id === activeDbId());
+  el.textContent = status?.hasOverride ? `Override saved ${new Date(status.savedAt).toLocaleString()}` : 'No local override saved.';
+}
+$('loadBtn').addEventListener('click', loadAll);
+$('copyBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText(JSON.stringify(traitsData, null, 2)).then(() => log('Copied item-traits.json to clipboard.'));
+});
+$('downloadBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(traitsData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'item-traits.json'; a.click();
+  URL.revokeObjectURL(a.href);
+  log('Downloaded item-traits.json — drop it into docs/config/items/ to apply.');
+});
+$('saveOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { log('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride(activeDbId(), traitsData);
+  log('Saved item traits as a local override.');
+  refreshOverrideStatus();
+});
+$('clearOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride(activeDbId());
+  log('Cleared the local item traits override.');
+  refreshOverrideStatus();
+});
+
+loadAll();
+</script>
+<script>
+PanelUI.makeResizableEdge(document.getElementById('sidebar'), {
+  edge: 'right',
+  storageKey: 'hobunji_item_database_editor_sidebar_width_v1'
+});
+</script>
+</body>
+</html>
