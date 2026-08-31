@@ -127,7 +127,12 @@
   //   'snap' — newest: alternates between the dead zone's two edges with
   //            a hard cut (no interpolation) via creatureSnapSwayTarget,
   //            instead of sweeping/lerping between them.
-  const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
+  // Halt is the global default: when an animal's authored/AI facing would
+  // point its side-view card straight into or away from the camera, hold the
+  // rendered plane at the nearest safe edge instead of repeatedly flipping
+  // between both edges. The animal's logical facing and prism still track the
+  // true target, so combat, movement, and interaction rays remain unchanged.
+  const CREATURE_PLANE_ROT_MODE = 'halt'; // 'sway' | 'halt' | 'snap'
 
   // Oscillation angular speed shared by the 'sway' and 'snap' modes below
   // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
