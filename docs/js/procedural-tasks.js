@@ -38,6 +38,11 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function setTaskStatus(taskId, status, progressPatch) {
+    deps.setQuestStatus(taskId, status, progressPatch);
+    invalidateCompassTargets();
+  }
+
   const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
 
   // Friendship tiers ride the existing (previously unused) per-NPC favor
@@ -194,7 +199,7 @@
       domain, items: [{ itemKey, qty }], rewardGold, rewardFriendship, tier, postedDay: deps.calendar.day,
       deadlineDay: null, bonusMultiplier: 1,
     };
-    deps.setQuestStatus(id, 'offered', task);
+    setTaskStatus(id, 'offered', task);
     return { id, ...task };
   }
 
@@ -305,9 +310,12 @@
       combat: true,
       callOver: nick => `Ah, ${nick}.`,
       ask: (task, nick) => {
+        return `Ah, ${nick}. Would you be interested in taking in a bounty for me? As you might have noticed, this town has only two watchmen, me and Oddclaw, and Hobunji Hollow is the only civilized settlement within hundreds of miles. But if I let these bounties build up, the Empire might think they have to send in reinforcements, and to be honest I'd rather be understaffed than have them going around and locking up my neighbors for victimless crimes.`;
+      },
+      accept: (task, nick) => {
         const experienced = task.experienced;
         const pronoun = task.captainGender === 'female' ? 'her' : task.captainGender === 'male' ? 'him' : 'them';
-        return `Ah, ${nick}. Would you be interested in taking in a bounty for me? As you might have noticed, this town has only two watchmen, me and Oddclaw, and Hobunji Hollow is the only civilized settlement within hundreds of miles. But if I let these bounties build up, the Empire might think they have to send in reinforcements, and to be honest I'd rather be understaffed than have them going around and locking up my neighbors for victimless crimes. Great. Since you're ${experienced ? 'not a stranger to the process' : 'new'}, I'll send you after one of the ${experienced ? 'more' : 'less'} dangerous gangs in the area. Head into the ${task.zoneLabel} and track down ${task.captainName}'s camp. Kill ${pronoun}, burn the tents and come back. Then we can strike that one off the list.`;
+        return `Great. Since you're ${experienced ? 'not a stranger to the process' : 'new'}, I'll send you after one of the ${experienced ? 'more' : 'less'} dangerous gangs in the area. Head into the ${task.zoneLabel} and track down ${task.captainName}'s camp. Kill ${pronoun}, burn the tents and come back. Then we can strike that one off the list.`;
       },
     },
   };
@@ -318,7 +326,7 @@
     const npcId = npcRec.id;
     const giver = REQUEST_GIVERS[npcId];
     if (giver.combat) {
-      deps.setQuestStatus(_makeTaskId(), 'announced', {
+      setTaskStatus(_makeTaskId(), 'announced', {
         kind: 'request', npcId, npcName: npcRec.name || 'the Watch', domain: 'combat',
         items: [], tier: 0, postedDay: day, timerDays: giver.timerDays, deadlineDay: day + giver.timerDays, bonusMultiplier: 1,
       });
@@ -326,7 +334,7 @@
     }
     const rolled = giver.roll();
     if (!rolled.items?.length) return false;
-    deps.setQuestStatus(_makeTaskId(), 'announced', {
+    setTaskStatus(_makeTaskId(), 'announced', {
       kind: 'request', npcId, npcName: npcRec.name || 'A neighbor', domain: 'mixed',
       items: rolled.items, rewardGold: baseReward(rolled.items), rewardFriendship: TASK_FRIENDSHIP_REWARD.request,
       bonusMultiplier: REQUEST_BONUS_MULTIPLIER, tier: 2, postedDay: day,
@@ -403,7 +411,7 @@
         patch = { ...reservation, experienced };
         pending = { ...pending, ...patch };
       }
-      deps.setQuestStatus(pending.id, 'offered', patch);
+      setTaskStatus(pending.id, 'offered', patch);
     } else if (giver.combat && pending.bountyTaskId == null) {
       return null; // an 'offered' combat request without a reserved bounty is a stale save — let it quietly drop
     }
@@ -417,12 +425,18 @@
     const giver = REQUEST_GIVERS[task.npcId];
     if (giver?.combat) {
       window.BountyBoard?.take(task.bountyTaskId);
-      deps.setQuestStatus(taskId, 'completed', {});
+      setTaskStatus(taskId, 'completed', {});
       return { ok: true, message: 'Bounty accepted.' };
     }
-    deps.setQuestStatus(taskId, 'available', {});
+    setTaskStatus(taskId, 'available', {});
     deps.showToast(`📋 Took on ${task.npcName}'s request.`, true);
     return { ok: true, message: 'Request added to your log.' };
+  }
+
+  function requestAcceptanceLine(taskId) {
+    const task = deps.getQuestProgress()[taskId]?.progress;
+    const giver = task && REQUEST_GIVERS[task.npcId];
+    return giver?.accept?.(task, playerNickname()) || '';
   }
 
   function declineRequest(taskId) {
@@ -430,7 +444,7 @@
     const task = st?.progress;
     const giver = task && REQUEST_GIVERS[task.npcId];
     if (giver?.combat && task.bountyTaskId != null) window.BountyBoard?.cancelPosting?.(task.bountyTaskId);
-    deps.setQuestStatus(taskId, 'declined', {});
+    setTaskStatus(taskId, 'declined', {});
   }
 
   // The first quest log entry (request or favor) attributed to this NPC
@@ -461,6 +475,11 @@
   // lookups, not the full scan) so the marker still tracks their real
   // walking position between rescans.
   let _candidateCache = { hourKey: null, activeByNpc: [], pendingByNpc: [] };
+  let _candidateCacheInvalidations = 0; // Reported by the mobile Pixel Probe so stale quest-marker reports can be diagnosed without a console.
+  function invalidateCompassTargets() {
+    _candidateCache.hourKey = null;
+    _candidateCacheInvalidations++;
+  }
   function _refreshCandidatesIfNeeded() {
     const hourKey = `${deps.calendar.day}:${Math.floor((deps.calendar.time01 || 0) * 24)}`;
     if (_candidateCache.hourKey === hourKey) return;
@@ -510,6 +529,15 @@
   function compassTargets() { return _scanCompassTargets().active; }
   function pendingRequestCompassTargets() { return _scanCompassTargets().pending; }
 
+  function compassDebugSnapshot() {
+    return {
+      hourKey: _candidateCache.hourKey,
+      invalidations: _candidateCacheInvalidations,
+      active: _candidateCache.activeByNpc.map(candidate => ({ ...candidate, taskIds: [...candidate.taskIds] })),
+      pending: _candidateCache.pendingByNpc.map(candidate => ({ ...candidate })),
+    };
+  }
+
   // Turning a task in only ever happens by talking to the specific NPC
   // who posted/asked it — see openNpcDialogue's turn-in offer and the
   // 'turnInTask' dialogue-choice action. A request delivered by its
@@ -530,7 +558,7 @@
     const paidGold = onTime ? Math.round(task.rewardGold * (task.bonusMultiplier || 1)) : task.rewardGold;
     deps.inventory.gold = (deps.inventory.gold || 0) + paidGold;
     window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
-    deps.setQuestStatus(taskId, 'completed', {});
+    setTaskStatus(taskId, 'completed', {});
     const bonusNote = onTime && task.bonusMultiplier > 1 ? ' (on-time bonus!)' : '';
     deps.showToast(`✅ Task complete! +${paidGold}g${bonusNote}, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
     return { ok: true, message: 'Task turned in.' };
@@ -555,11 +583,14 @@
     pendingRequestGreetingLine,
     maybeProposeRequest,
     acceptRequest,
+    requestAcceptanceLine,
     declineRequest,
     getTurnInReadyTaskForNpc,
     compassTargets,
     pendingRequestCompassTargets,
     allCompassTargets: _scanCompassTargets,
+    invalidateCompassTargets,
+    compassDebugSnapshot,
     turnInTask,
   };
 })();

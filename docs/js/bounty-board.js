@@ -373,6 +373,22 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   const EASY_BOUNTY_TIERS = Object.freeze([0, 1]);
   const HARD_BOUNTY_TIERS = Object.freeze([2, 3]);
   async function reserveForRequest(experienced) {
+    // If the board already has a takeable posting, Spearhead should offer
+    // that exact bounty instead of trying to invent a second target. The
+    // generator intentionally excludes zones with existing bounties, which
+    // previously made his request fail whenever the board's posting was the
+    // only unclaimed camp in the world.
+    const existingPosting = getCurrentBountyPosting();
+    if (existingPosting) {
+      return {
+        bountyTaskId: existingPosting.id,
+        zoneId: existingPosting.zoneId,
+        zoneLabel: deps.WMAP_ZONE_LABELS[existingPosting.zoneId] || existingPosting.zoneId,
+        tier: existingPosting.tier,
+        captainName: existingPosting.captainName,
+        captainGender: existingPosting.captainGender,
+      };
+    }
     const cfg = await _loadBanditGangConfig();
     const posting = generateBountyTask(cfg, experienced ? HARD_BOUNTY_TIERS : EASY_BOUNTY_TIERS);
     if (!posting) return null;
