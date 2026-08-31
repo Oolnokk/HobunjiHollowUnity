@@ -30,3 +30,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Default shoulder-pet rotation to head/neck"
           git push origin HEAD:fix/default-shoulder-pet-head-neck
+# Existing-workflow trigger commit; remove this workflow after the guarded patch succeeds.
