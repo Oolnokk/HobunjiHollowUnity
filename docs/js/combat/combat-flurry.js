@@ -12,7 +12,7 @@
   let FIRST_STRIKE_DELAY_S = 0.38;
   let COST_BASE = 5, COST_PER_STRIKE = 1.5;
   let DAMAGE_MUL_BASE = 0.43, DAMAGE_MUL_PER_STRIKE = 0.17; // ~6/14 base, +2.4/14 per strike
-  // x1.5 on top of the global knockback-base doubling — flurry is one of the
+  // x1.5 on top of the shared knockback baseline — flurry is one of the
   // four attacks called out for an extra "even more" bump, and this curve is
   // also how its knockback keeps growing alongside its own attack speed.
   let KNOCKBACK_MUL_BASE = 0.255, KNOCKBACK_MUL_PER_STRIKE = 0.054;

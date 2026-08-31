@@ -3,8 +3,8 @@
   "note": "Single source of truth for every attack's tunable numbers - player weapon abilities, combo/quick-attack/charged-breaker/flurry/counter-shield tuning, ranged weapon tuning, creature named-attack constants (pounce/guard charge/Grehlr burrow/Grehlr stink spray/Caustic Pellet), territorial creature behavior tuning, per-species creature attack stats, and the bandit baseline melee bite. Authored via docs/tools/attack-animation-editor/ (Stats tab). Pose/timing animation data is a SEPARATE concern authored by the same tool's existing pose editor and is not duplicated here. Angles are authored in degrees and ranges in tiles for readability; game.js/combat-*.js convert to radians/pixels at load time using the same TILE constant weaponAbility() already uses.",
 
   "weaponAbilities": {
-    "cut":   { "damage": 6,  "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720,  "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
-    "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
+    "cut":   { "damage": 6,  "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 360,  "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
+    "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
   },
 
   "combo": {
@@ -68,11 +68,11 @@
   "creatureAttacks": {
     "pounce": {
       "WINDUP_S": 0.5, "UNCROUCH_S": 0.1, "CROUCH_SCALE_Y": 0.55,
-      "LEAP_SPEED_PX_S": 480, "KNOCKBACK_PX_S": 640,
+      "LEAP_SPEED_PX_S": 480, "KNOCKBACK_PX_S": 320,
       "STAMINA_COST_MAX_FRACTION": 0.4, "STAMINA_COST_MIN": 18
     },
     "guardCharge": {
-      "DURATION_S": 0.12, "KNOCKBACK_PX_S": 900,
+      "DURATION_S": 0.12, "KNOCKBACK_PX_S": 450,
       "TARGET_ANGLE_WEIGHT": 0.55, "AWAY_FROM_MASTER_WEIGHT": 0.45
     },
     "grehlrBurrow": {
@@ -87,7 +87,7 @@
       "MIN_RADIUS_TILES": 1.7,
       "MODEL_RADIUS_MULTIPLIER": 0.62,
       "DAMAGE_MULTIPLIER": 2.5,
-      "KNOCKBACK_PX_S": 980,
+      "KNOCKBACK_PX_S": 490,
       "SELF_FOOTING_DRAIN_FRACTION": 0.8,
       "SELF_STAMINA_DRAIN_FRACTION": 0.9,
       "TRAIL_PARTICLES_PER_S": 32,
@@ -130,7 +130,7 @@
       "PROJECTILE_RADIUS_PX": 8,
       "PROJECTILE_PLANE_SIZE": 0.18,
       "DAMAGE_MULTIPLIER": 0.3,
-      "KNOCKBACK_PX_S": 160,
+      "KNOCKBACK_PX_S": 80,
       "CORRODED_HEALTH_MULTIPLIER": 2.5
     }
   },
@@ -138,13 +138,13 @@
   "rangedWeapons": {
     "crossbow": {
       "projectileCount": 1, "spreadDeg": 0, "damage": 16, "speedPxS": 720,
-      "rangeTiles": 9, "projectileRadiusPx": 7, "knockbackPxS": 260,
+      "rangeTiles": 9, "projectileRadiusPx": 7, "knockbackPxS": 130,
       "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
       "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 10
     },
     "scatterbow": {
       "projectileCount": 6, "spreadDeg": 28, "damage": 5, "speedPxS": 650,
-      "rangeTiles": 6.5, "projectileRadiusPx": 4, "knockbackPxS": 110,
+      "rangeTiles": 6.5, "projectileRadiusPx": 4, "knockbackPxS": 55,
       "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
       "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 14
     }

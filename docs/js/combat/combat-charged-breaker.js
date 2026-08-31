@@ -28,7 +28,7 @@
   // (see combat-combo.js). Scaled further by comboStreak.multiplier() at
   // release time, below.
   let DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
-  // x1.5 on top of the global knockback-base doubling — charged breaker is
+  // x1.5 on top of the shared knockback baseline — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
   let KNOCKBACK_MUL_MIN = 1.275, KNOCKBACK_MUL_MAX = 2.4;
   let RANGE_MUL_MIN = 1.4, RANGE_MUL_MAX = 1.9;

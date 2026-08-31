@@ -97,7 +97,7 @@
     crossbow: {
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
-      rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 260,
+      rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 130,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
       staminaCost: 10,
@@ -107,7 +107,7 @@
     scatterbow: {
       label: 'Scatterbow', projectileSprite: 'assets/toolsprites/arrow_short.png',
       projectileCount: 6, spreadDeg: 28, damage: 5, speedPxS: 650,
-      rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 110,
+      rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 55,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
       staminaCost: 14,

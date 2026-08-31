@@ -301,8 +301,8 @@ window.SCRATCHBONES_CONFIG = {
       // mobs evaporating in one combo — and leaving headroom under the
       // player's ceiling for tougher threats to come later underground.
       "weaponAbilities": {
-        "cut": { "damage": 6, "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
-        "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
+        "cut": { "damage": 6, "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 360, "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
       "resourceSystem": {
