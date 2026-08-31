@@ -22677,7 +22677,7 @@
       let s_disableHatXray = false;
       let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
-      let s_shoulderPetRotationSource = 'pixel'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
+      let s_shoulderPetRotationSource = 'head'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
       let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
       let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
       let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
@@ -22735,8 +22735,8 @@
         updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
-        const requestedSource = String(e.target.value || 'pixel'); // Used here to reject stale or manually-edited DOM values.
-        s_shoulderPetRotationSource = ['pixel', 'body', 'head', 'world'].includes(requestedSource) ? requestedSource : 'pixel';
+        const requestedSource = String(e.target.value || 'head'); // Used here to reject stale or manually-edited DOM values.
+        s_shoulderPetRotationSource = ['pixel', 'body', 'head', 'world'].includes(requestedSource) ? requestedSource : 'head';
       });
       document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
         s_invertShoulderPetRotationSource = e.target.checked;
