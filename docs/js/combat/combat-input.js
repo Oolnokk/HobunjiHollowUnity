@@ -150,6 +150,21 @@
     emitState(slotIndex, 'press-cancel');
   }
 
+  // Ends an already-started hold, but never turns a canceled pending press
+  // into a tap. Used when the browser loses ownership of the physical input.
+  function abortPress(slotIndex) {
+    const s = slots[slotIndex];
+    if (!s || !s.down) return;
+    if (s.holding) endHold(slotIndex);
+    s.down = false;
+    s.holding = false;
+    emitState(slotIndex, 'press-abort');
+  }
+
+  function abortAllPresses() {
+    for (const slotIndex of [1, 2]) abortPress(slotIndex);
+  }
+
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
     for (const slotIndex of [1, 2]) {
@@ -172,6 +187,8 @@
     pressStart,
     pressEnd,
     cancelPress,
+    abortPress,
+    abortAllPresses,
     fireTap,
     getState,
     update,
@@ -184,4 +201,10 @@
     _coreUpdate(dt);
     update(dt);
   };
+
+  // A lost release must not leave a defensive stance or charging heavy alive.
+  window.addEventListener('blur', abortAllPresses);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) abortAllPresses();
+  });
 })();

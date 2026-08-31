@@ -26886,6 +26886,7 @@
       // Combat.input so the loadout's 4 ability slots can claim them.
       // Every other tool keeps its previous click behavior unchanged: left
       // click = primary action, right click = secondary action.
+      const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse press with the combat slot released below.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
@@ -26899,8 +26900,14 @@
               return;
             }
             tryAutoEngageMeleeTarget();
-            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
-            else if (e.button === 2) { window.Combat.input.pressStart(2); }
+            if (e.button === 0) {
+              desktopWeaponPointerSlots.set(e.button, 1);
+              actionHeldDown = true;
+              window.Combat.input.pressStart(1);
+            } else if (e.button === 2) {
+              desktopWeaponPointerSlots.set(e.button, 2);
+              window.Combat.input.pressStart(2);
+            }
             return;
           }
           if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
@@ -26914,10 +26921,20 @@
           }
         });
       }
-      window.addEventListener('pointerup', (e) => {
-        if (e.pointerType !== 'mouse') return;
+      function finishDesktopMouseAction(e) {
+        // Pointer Lock can report the physical release as a MouseEvent (with
+        // no pointerType), so accept both forms and rely on press ownership.
+        if (!isDesktop) return;
+        if (e.pointerType && e.pointerType !== 'mouse') return;
         if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
           if (e.button === 0) actionHeldDown = false;
+          return;
+        }
+        const ownedSlot = desktopWeaponPointerSlots.get(e.button);
+        if (ownedSlot) {
+          desktopWeaponPointerSlots.delete(e.button);
+          if (ownedSlot === 1) actionHeldDown = false;
+          window.Combat?.input?.pressEnd(ownedSlot);
           return;
         }
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
@@ -26927,6 +26944,17 @@
         }
         if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
+      }
+      window.addEventListener('pointerup', finishDesktopMouseAction);
+      window.addEventListener('mouseup', finishDesktopMouseAction);
+      window.addEventListener('pointercancel', (e) => {
+        if (!isDesktop) return;
+        if (e.pointerType && e.pointerType !== 'mouse') return;
+        for (const [button, slot] of desktopWeaponPointerSlots) {
+          desktopWeaponPointerSlots.delete(button);
+          if (slot === 1) actionHeldDown = false;
+          window.Combat?.input?.abortPress?.(slot);
+        }
       });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
