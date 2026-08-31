@@ -10173,6 +10173,26 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
       function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+      function smithyButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.smithyButton || {};
+      }
+      function smithyAction() { return smithyButtonConfig().action || 'open_smithy'; }
+      function isSmithyNpcInBronzeworks(walker) {
+        const cfg = smithyButtonConfig();
+        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
+        return currentArea === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');
+      }
+      function smithyButton() {
+        const cfg = smithyButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '🔨',
+          label: name ? `${cfg.label || 'Smithy'}: ${name}` : (cfg.label || 'Smithy'),
+          action: smithyAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
       function generalStoreButtonConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
       }
@@ -16809,6 +16829,11 @@
         }
         if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
+        }
+        if (activeAction === smithyAction()) {
+          if (nearbyNpcWalker && isSmithyNpcInBronzeworks(nearbyNpcWalker) && !farmEditMode) { openMenu('metalCraftShop'); return; }
+          showToast(smithyButtonConfig().noTargetMessage || 'The smithy is not available right now.', false);
+          return;
         }
         if (activeAction === carpenterAction()) {
           if (nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('carpenterShop'); return; }
@@ -24678,6 +24703,9 @@
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
+          // Smithy is deliberately inserted directly after Talk so it is
+          // always Action 2 when either Bronzeworks smith is being faced.
+          if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
           if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
           if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
           const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
@@ -24952,7 +24980,8 @@
         const obj = getWorldObjectAt(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
-        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
+        const nearbyNpcShopKey = nearbyNpcWalker && isSmithyNpcInBronzeworks(nearbyNpcWalker) ? smithyAction()
+          : nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
         // Consumable counts must invalidate the cached action after the last item is used.
         const selectedItem = getActiveInventoryItem(stacks);
@@ -24966,6 +24995,7 @@
           || button?.contextualHeldItem
           || objectActionIds.has(button?.action)
           || button?.action === npcDialogueAction()
+          || button?.action === smithyAction()
           || button?.action === generalStoreAction()
           || button?.action === carpenterAction()
           || button?.action === 'use_spot'
@@ -25101,7 +25131,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -26224,7 +26254,12 @@
           }
           if (isSelectorAction) return;
         }
-        if (actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged') {
+        // Only claim Action 2 for ammo selection when Ammo is actually what
+        // the second physical slot displays. World-context actions (including
+        // the Bronzeworks Smithy) replace that slot and must remain usable
+        // even while the ranged tool is equipped.
+        if ((actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged'
+          && actionButtonForPhysicalSlot(2)?.action === 'ammo_select') || rangedAmmoAction2Press.down) {
           if (phase === 'release') {
             if (!rangedAmmoAction2Press.down) return;
             rangedAmmoAction2Press.down = false;

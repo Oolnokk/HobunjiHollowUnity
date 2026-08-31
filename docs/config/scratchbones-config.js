@@ -365,6 +365,15 @@ window.SCRATCHBONES_CONFIG = {
         "style": "primary",
         "noTargetMessage": "No one nearby to talk to."
       },
+      "smithyButton": {
+        "icon": "🔨",
+        "label": "Smithy",
+        "action": "open_smithy",
+        "style": "primary",
+        "npcIds": ["kzubug", "sloomi"],
+        "areaId": "map_i_smithy",
+        "noTargetMessage": "Find Kzubug or Sloomi inside the Bronzeworks to use the smithy."
+      },
       "generalStoreButton": {
         "icon": "🛒",
         "label": "Shop",
