@@ -10,9 +10,11 @@
   const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
   const CENTERED_LIST_SCALE = 0.25; // Interaction, reward, and progression lists render at one quarter of their former world-space size.
+  const INTERACTION_LIST_SCALE = 0.5; // Used to restore readable world-prompt scale without enlarging rewards or progression text.
   const INTERACTION_VERB_COLOR = '#FFFFFF'; // Used for the enlarged, deliberately uncoded verb in every interaction row.
   const INTERACTION_DETAIL_COLOR = '#DCE7E1'; // Used for non-verb label words so the verb remains the clearest instruction.
   const INTERACTION_INPUT_FALLBACK_COLOR = '#B8C5C0'; // Used only for inputs that have no authored action-arch color.
+  const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
@@ -167,23 +169,26 @@
     const ctx = canvas.getContext('2d'); // Used to measure and paint each independently styled text segment.
     const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
     const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
-    const labelMatch = label.match(/^(\S+)(?:\s+(.*))?$/); // Used to treat the leading instruction word as the verb.
-    const verb = labelMatch?.[1] || label; // Used for the large, white instruction segment.
-    const detail = labelMatch?.[2] || ''; // Used for the smaller object/context words after the verb.
-    const inputFontPx = 48; // Used to keep the color-coded binding subordinate to the instruction.
-    const verbFontPx = 76; // Used to make the verb unmistakably larger than every other word.
-    const detailFontPx = 52; // Used for the remaining label words.
-    const gapPx = 20; // Used to separate input, verb, and detail without punctuation.
+    const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
+    const inputFontPx = 78; // Used to make the rebound key/button prompt immediately readable.
+    const verbFontPx = 88; // Used for the leading action word and the action after a “to” connector.
+    const detailFontPx = 54; // Used for object/context words without competing with the action.
+    const connectorFontPx = 30; // Used for small grammatical glue such as “to,” “the,” and “of.”
+    const gapPx = 18; // Used to separate the input from the label while keeping the row compact.
+    const wordGapPx = 9; // Used between label words so connector words remain visually attached but subordinate.
+    const verbAfterToIndex = words[1]?.toLowerCase() === 'to' ? 2 : -1; // Used for labels such as “Hold to Take Egg,” where Take is the real action verb.
     const textWidth = (text, fontPx) => { // Used to size the canvas tightly enough for long rebound input names.
       if (!text) return 0;
       ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
       return ctx.measureText(text).width;
     };
     const inputWidth = textWidth(inputHint, inputFontPx); // Used in the row's exact texture width.
-    const verbWidth = textWidth(verb, verbFontPx); // Used in the row's exact texture width.
-    const detailWidth = textWidth(detail, detailFontPx); // Used in the row's exact texture width.
-    canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + verbWidth + (detail ? gapPx * 0.65 : 0) + detailWidth));
-    canvas.height = 112;
+    const labelWidth = words.reduce((total, word, index) => { // Used to size the canvas for mixed-size label tokens.
+      const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : (index === 0 || index === verbAfterToIndex ? verbFontPx : detailFontPx);
+      return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
+    }, 0);
+    canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
+    canvas.height = 128;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
@@ -200,9 +205,12 @@
     };
     drawSegment(inputHint, inputFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
     if (inputHint) x += gapPx;
-    drawSegment(verb, verbFontPx, INTERACTION_VERB_COLOR);
-    if (detail) x += gapPx * 0.65;
-    drawSegment(detail, detailFontPx, INTERACTION_DETAIL_COLOR);
+    words.forEach((word, index) => { // Used to keep connector words small while emphasizing each actual action verb.
+      if (index) x += wordGapPx;
+      const isConnector = INTERACTION_CONNECTORS.has(word.toLowerCase());
+      const isVerb = index === 0 || index === verbAfterToIndex;
+      drawSegment(word, isConnector ? connectorFontPx : (isVerb ? verbFontPx : detailFontPx), isVerb ? INTERACTION_VERB_COLOR : INTERACTION_DETAIL_COLOR);
+    });
     const texture = new THREE.CanvasTexture(canvas); // Used as the billboard's live sRGB text texture.
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
@@ -384,7 +392,7 @@
     clearInteractionPrompts();
     state.interactionSignature = signature;
     const cfg = state.settings.centeredFiveRow;
-    const interactionCfg = { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE };
+    const interactionCfg = { ...cfg, worldHeight: cfg.worldHeight * INTERACTION_LIST_SCALE };
     const scene = options.scene || state.deps?.getActiveScene?.();
     if (!scene) return [];
     return entries.map((entry, listSlot) => {

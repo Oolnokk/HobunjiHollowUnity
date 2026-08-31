@@ -17,7 +17,11 @@ assert(game.includes("button.action === 'climb_branch' ? 'dodge'"), 'climb promp
 assert(game.includes('promptInputs,'), 'world prompt synchronization receives structured input hints');
 assert(popup.includes('makeInteractionPlane'), 'interaction rows use segmented canvas rendering');
 assert(popup.includes('INTERACTION_VERB_COLOR'), 'interaction verbs have a dedicated uncoded emphasis color');
-assert(popup.includes('const verbFontPx = 76'), 'interaction verbs render larger than input and detail text');
+assert(popup.includes('const inputFontPx = 78'), 'interaction inputs render at a readable scale');
+assert(popup.includes('const verbFontPx = 88'), 'interaction verbs render larger than detail text');
+assert(popup.includes('const connectorFontPx = 30'), 'connector words render much smaller than actionable words');
+assert(popup.includes('INTERACTION_LIST_SCALE = 0.5'), 'interaction rows use a readable scale independent of reward lists');
+assert(popup.includes('verbAfterToIndex'), 'labels such as Hold to Take Egg emphasize the actual action verb');
 assert(popup.includes('inputActionId: promptInput?.actionId'), 'interaction debug data preserves the semantic input ID');
 
 console.log('interaction prompt color contracts: 9 checks passed');
