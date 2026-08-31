@@ -24,6 +24,76 @@
 
 'use strict';
 
+// Shared by dialogue text, portrait yaps, and ambient speech so all three use
+// the same reveal boundaries. Text is grouped by syllable nuclei, while the
+// vowels inside each nucleus remain separate audio/mouth pulses.
+function buildDialogueSpeechUnits(text) {
+  const source = String(text || '');
+  const units = [];
+  const wordPattern = /[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff'\u2019]+|[^A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff'\u2019]+/g;
+  const vowelPattern = /[aeiou\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f2\u00f3\u00f4\u00f5\u00f6\u00f9\u00fa\u00fb\u00fc]/i;
+  const diphthongs = new Set(['ai','ao','au','ei','eu','oi','ou','ea','ee','oo','ay','ey','ow','oy','ia','ie','io','iu']);
+  const tokens = source.match(wordPattern) || [];
+
+  for (const token of tokens) {
+    if (!/^[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff'\u2019]+$/.test(token)) {
+      if (units.length) units[units.length - 1].text += token;
+      else units.push({ text: token, vowel: null });
+      continue;
+    }
+
+    if (![...token].some(char => vowelPattern.test(char))) {
+      units.push({ text: token, vowel: null });
+      continue;
+    }
+
+    let start = 0;
+    for (let index = 0; index < token.length; index++) {
+      if (!vowelPattern.test(token[index])) continue;
+      const pair = token.slice(index, index + 2).toLowerCase();
+      const nucleusLength = diphthongs.has(pair) ? 2 : 1;
+      const vowels = [...token.slice(index, index + nucleusLength)].filter(char => vowelPattern.test(char));
+      units.push({ text: token.slice(start, index + nucleusLength), vowel: vowels[0] || null, vowels });
+      index += nucleusLength - 1;
+      start = index + 1;
+    }
+    if (start < token.length) units[units.length - 1].text += token.slice(start);
+  }
+  return units;
+}
+
+function buildDialogueSpeechSchedule(text, opts = {}) {
+  const legacyMsPerChar = Math.max(1, Number(opts.msPerChar) || 22);
+  const configuredSyllablesPerSecond = Number(opts.syllablesPerSecond);
+  const msPerSyllable = configuredSyllablesPerSecond > 0
+    ? 1000 / configuredSyllablesPerSecond
+    : Math.max(1, Number(opts.msPerSyllable) || legacyMsPerChar * 5);
+  const punctuationPauseMs = Math.max(0, Number(opts.punctuationPauseMs) || 0);
+  const whitespacePauseMs = Math.max(0, Number(opts.whitespacePauseMs) || 0);
+  let revealAtMs = msPerSyllable;
+  return buildDialogueSpeechUnits(text).map(unit => {
+    const vowels = unit.vowels || (unit.vowel ? [unit.vowel] : []);
+    const pulseStepMs = vowels.length > 1 ? msPerSyllable / vowels.length : 0;
+    const scheduled = {
+      ...unit,
+      vowels,
+      revealAtMs,
+      pulseOffsetsMs: vowels.map((_, index) => index * pulseStepMs),
+    };
+    const punctuationCount = (unit.text.match(/[.!?,;:\u2026]/g) || []).length;
+    const whitespaceCount = (unit.text.match(/\s/g) || []).length;
+    revealAtMs += msPerSyllable
+      + punctuationCount * punctuationPauseMs
+      + whitespaceCount * whitespacePauseMs;
+    return scheduled;
+  });
+}
+
+window.DialogueSpeechCadence = Object.freeze({
+  buildUnits: buildDialogueSpeechUnits,
+  buildSchedule: buildDialogueSpeechSchedule,
+});
+
 // ── Neutral 4×6 control points (reused by emote animation definitions) ────
 const _N4x6 = [
   [0,0],[0.333333,0],[0.666667,0],[1,0],
@@ -286,6 +356,14 @@ class BreathingComposer {
     });
   }
 
+  /** Public one-pulse lip-sync hook used by the syllable reveal timer. */
+  triggerYap(seatId, opts = {}) {
+    if (!this.enabled) return;
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.yap || {};
+    const flashMs = Math.max(50, Number(opts.flashMs ?? cfg.flashMs ?? 120));
+    this._setYapExpression(seatId, flashMs);
+  }
+
   /**
    * Set the persistent default/resting expression for a seat.
    * This is returned when no timed expression is active or after one expires.
@@ -379,46 +457,23 @@ class BreathingComposer {
 
   /**
    * Schedule a sequence of momentary 'yap' mouth flashes to simulate lip-sync for a chat message.
-   * The number of flashes equals the vowel/diphthong count; spacing is determined by spaces
-   * (spaceDelayMs each) and terminal punctuation (pauseDelayMs each).
+   * The number of flashes equals the written-vowel count and uses the same
+   * syllable-shaped chunks as visible dialogue text.
    */
   scheduleYapSequence(seatId, text, opts = {}) {
     if (!this.enabled) return;
-    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.yap || {};
-    const flashMs     = Math.max(50,  Number(opts.flashMs      ?? cfg.flashMs      ?? 120));
-    const spaceDelayMs = Math.max(0,  Number(opts.spaceDelayMs ?? cfg.spaceDelayMs ?? 60));
-    const pauseDelayMs = Math.max(0,  Number(opts.pauseDelayMs ?? cfg.pauseDelayMs ?? 250));
-
-    const DIPHTHONGS = new Set(['ai','ao','au','ei','eu','oi','ou','ea','ee','oo','ay','ey','ow','oy','ia','ie','io','iu']);
-    const VOWELS     = new Set('aeiou');
-    const lower      = String(text || '').toLowerCase();
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewriter || {};
+    const yapCfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.yap || {};
+    const flashMs = Math.max(50, Number(opts.flashMs ?? yapCfg.flashMs ?? 120));
     const seatIdStr  = String(seatId ?? '');
-    let t = 0;
-    let i = 0;
-
-    while (i < lower.length) {
-      const ch = lower[i];
-      if (ch === ' ' || ch === '\t') {
-        t += spaceDelayMs;
-        i++;
-      } else if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
-        t += pauseDelayMs;
-        i++;
-      } else {
-        const two = lower.slice(i, i + 2);
-        if (DIPHTHONGS.has(two)) {
-          const schedT = t;
-          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
-          t += flashMs;
-          i += 2;
-        } else if (VOWELS.has(ch)) {
-          const schedT = t;
-          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
-          t += flashMs;
-          i++;
-        } else {
-          i++;
-        }
+    const cadence = buildDialogueSpeechSchedule(text, {
+      ...cfg,
+      punctuationPauseMs: opts.pauseDelayMs ?? cfg.punctuationPauseMs,
+      whitespacePauseMs: opts.spaceDelayMs ?? cfg.whitespacePauseMs,
+    });
+    for (const unit of cadence) {
+      for (const pulseOffsetMs of unit.pulseOffsetsMs) {
+        setTimeout(() => this._setYapExpression(seatIdStr, flashMs), unit.revealAtMs + pulseOffsetMs);
       }
     }
   }

@@ -136,12 +136,13 @@ window.SCRATCHBONES_CONFIG = {
         "typewriter": {
           "enabled": true,
           "msPerChar": 22,
+          "syllablesPerSecond": 6,
           "punctuationPauseMs": 120,
           "whitespacePauseMs": 0
         }
       },
       "portrait": {
-        "maxFps": 12,
+        "maxFps": 30,
         "yap": {
           "flashMs": 120,
           "spaceDelayMs": 60,
