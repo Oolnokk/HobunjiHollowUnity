@@ -87,8 +87,7 @@
     // handling in onTap below — barely outdamages Backhand Swing on its own
     // (1.35 vs 1.25); its actual payoff scales with comboStreak.multiplier(),
     // built by landing steps 1-2 first (see combat-combo-streak.js). Keeps
-    // an extra x1.5 knockback bump (2.4) on top of the global knockback-base
-    // doubling, same as charged breaker/riposte/flurry — knockback isn't
+    // an extra x1.5 knockback bump (2.4) on top of the shared knockback baseline, same as charged breaker/riposte/flurry — knockback isn't
     // part of the streak scaling, just damage/lunge.
     { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];

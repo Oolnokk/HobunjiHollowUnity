@@ -85,7 +85,7 @@
   let POUNCE_UNCROUCH_S = 0.1;
   let POUNCE_CROUCH_SCALE_Y = 0.55;
   let POUNCE_LEAP_SPEED_PX_S = 480;
-  let POUNCE_KNOCKBACK_PX_S = 640;
+  let POUNCE_KNOCKBACK_PX_S = 320;
   let POUNCE_STAMINA_COST_MAX_FRACTION = 0.4; // Pounce total cost scales with the creature's own stamina pool.
   let POUNCE_STAMINA_COST_MIN = 18; // Keeps ordinary 30–40 Stamina animals meaningfully above their old 12–14 generic attack cost.
 
@@ -243,7 +243,7 @@
 
   // ── Guard Charge ────────────────────────────────────────────────────
   let GUARD_CHARGE_DURATION_S = 0.12;
-  let GUARD_CHARGE_KNOCKBACK_PX_S = 900;
+  let GUARD_CHARGE_KNOCKBACK_PX_S = 450;
   let GUARD_CHARGE_TARGET_ANGLE_WEIGHT = 0.55;
   let GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT = 0.45;
 

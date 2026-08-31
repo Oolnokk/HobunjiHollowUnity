@@ -834,9 +834,9 @@
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
       const KNOCKBACK_DUR_S = 0.18;
-      const PLAYER_KNOCKBACK_PX_S = 600;
-      const COMPANION_BITE_KNOCKBACK_PX_S = 560;
-      const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
+      const PLAYER_KNOCKBACK_PX_S = 300;
+      const COMPANION_BITE_KNOCKBACK_PX_S = 280;
+      const HOSTILE_BITE_KNOCKBACK_PX_S = 240;
       const PRONE_THROW_DUR_S = 0.34; // Drives the footing-break displacement channel consumed by prone player/creature updates.
       const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
