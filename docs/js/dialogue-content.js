@@ -37,9 +37,11 @@
   let _dlgSeqStack  = [];    // [{seqNodeId, depthRemaining}]
   let _dialogueLines     = [];
   let _dialogueLineIdx   = 0;
-  let _npcDialogueTypeTimer = null;
+  let _npcDialogueTypeTimers = [];
+  let _npcDialogueSequenceId = 0;
   let _npcDialogueTypeText  = '';
   let _npcDialogueTypeIndex = 0;
+  let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
 
@@ -72,6 +74,7 @@
     return {
       enabled: cfg.enabled !== false,
       msPerChar: finiteClamped(cfg.msPerChar, 22, 1, 250),
+      syllablesPerSecond: finiteClamped(cfg.syllablesPerSecond, 6, 1, 20),
       punctuationPauseMs: finiteClamped(cfg.punctuationPauseMs, 120, 0, 2000),
       whitespacePauseMs: finiteClamped(cfg.whitespacePauseMs, 0, 0, 250)
     };
@@ -457,11 +460,13 @@
   }
 
   function stopNpcDialogueTypewriter(showFullText = false) {
-    if (_npcDialogueTypeTimer) clearTimeout(_npcDialogueTypeTimer);
-    _npcDialogueTypeTimer = null;
+    _npcDialogueSequenceId++;
+    for (const timer of _npcDialogueTypeTimers) clearTimeout(timer);
+    _npcDialogueTypeTimers = [];
     if (showFullText && _npcDialogueTypeText) _npcDialogueTextEl.textContent = _npcDialogueTypeText;
     _npcDialogueTypeText = '';
     _npcDialogueTypeIndex = 0;
+    _npcDialogueTypeUnits = [];
   }
 
   function _setNpcDialogueText(text, node = null) {
@@ -469,36 +474,46 @@
     stopNpcDialogueTypewriter(false);
     _applyNpcDialogueLinePresentation(resolvedText, node);
     const cfg = npcDialogueTypewriterConfig();
-    if (!cfg.enabled) { _npcDialogueTextEl.textContent = resolvedText; return; }
+    if (!cfg.enabled) {
+      _npcDialogueTextEl.textContent = resolvedText;
+      window.portraitBreathingComposer?.scheduleYapSequence(
+        dialogueSeatId(), resolvedText, npcDialoguePortraitConfig().yap || {}
+      );
+      return;
+    }
     _npcDialogueTypeText = resolvedText;
     _npcDialogueTypeIndex = 0;
+    _npcDialogueTypeUnits = window.DialogueSpeechCadence?.buildSchedule(resolvedText, cfg)
+      || [...resolvedText].map((char, index) => ({ text: char, vowel: /[aeiou]/i.test(char) ? char : null, vowels: /[aeiou]/i.test(char) ? [char] : [], revealAtMs: index * 50 + 50, pulseOffsetsMs: [0] }));
     _npcDialogueTextEl.textContent = '';
-    // Schedule against one monotonic clock instead of adding each timer's
-    // actual delay to the next one. Mobile timer jitter can otherwise make
-    // every subsequent letter inherit the previous timer's lateness, which
-    // is why a normal line can occasionally become extremely slow.
-    let nextRevealAt = performance.now() + cfg.msPerChar;
-    const tick = () => {
-      if (!deps.getDialogueOpen() || !_npcDialogueTypeText) return;
-      const now = performance.now();
-      // A delayed timer should catch up to its intended timeline rather than
-      // shifting the rest of the sentence slower and slower.
-      while (_npcDialogueTypeIndex < _npcDialogueTypeText.length && nextRevealAt <= now + 1) {
-        const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
-        _npcDialogueTextEl.textContent += char;
-        _playNpcDialogueLetterSfx(char);
-        const extraPause = /[.!?,;:]/.test(char)
-          ? cfg.punctuationPauseMs
-          : /\s/.test(char) ? cfg.whitespacePauseMs : 0;
-        nextRevealAt += cfg.msPerChar + extraPause;
+    const sequenceId = _npcDialogueSequenceId;
+    for (const unit of _npcDialogueTypeUnits) {
+      _npcDialogueTypeTimers.push(setTimeout(() => {
+        if (sequenceId !== _npcDialogueSequenceId || !deps.getDialogueOpen()) return;
+        _npcDialogueTextEl.textContent += unit.text;
+        _npcDialogueTypeIndex++;
+      }, unit.revealAtMs));
+      for (let index = 0; index < unit.vowels.length; index++) {
+        const pulseAtMs = unit.revealAtMs + (unit.pulseOffsetsMs[index] || 0);
+        _npcDialogueTypeTimers.push(setTimeout(() => {
+          if (sequenceId !== _npcDialogueSequenceId || !deps.getDialogueOpen()) return;
+          _playNpcDialogueLetterSfx(unit.vowels[index]);
+          window.portraitBreathingComposer?.triggerYap(
+            dialogueSeatId(), npcDialoguePortraitConfig().yap || {}
+          );
+        }, pulseAtMs));
       }
-      if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) {
-        stopNpcDialogueTypewriter(false);
-        return;
-      }
-      _npcDialogueTypeTimer = setTimeout(tick, Math.max(0, nextRevealAt - performance.now()));
-    };
-    _npcDialogueTypeTimer = setTimeout(tick, cfg.msPerChar);
+    }
+    const finalUnit = _npcDialogueTypeUnits[_npcDialogueTypeUnits.length - 1];
+    const finalPulseOffset = Math.max(0, ...(finalUnit?.pulseOffsetsMs || [0]));
+    const completeAtMs = (finalUnit?.revealAtMs || 0) + finalPulseOffset + 1;
+    _npcDialogueTypeTimers.push(setTimeout(() => {
+      if (sequenceId !== _npcDialogueSequenceId) return;
+      _npcDialogueTypeText = '';
+      _npcDialogueTypeIndex = 0;
+      _npcDialogueTypeUnits = [];
+      _npcDialogueTypeTimers = [];
+    }, completeAtMs));
   }
 
   function _applyNpcDialogueLinePresentation(text, node = null) {
@@ -511,7 +526,6 @@
     } else {
       window.portraitBreathingComposer.clearExpression(seatId);
     }
-    window.portraitBreathingComposer.scheduleYapSequence(seatId, text || '', npcDialoguePortraitConfig().yap || {});
   }
 
   async function _renderNpcDialoguePortrait() {
@@ -708,6 +722,7 @@
     // scripted talk/choice stages instead of an authored dialogueTree.
     setNpcDialogueText: _setNpcDialogueText,
     fitDlgOptionLabel: _fitDlgOptionLabel,
+    playSpeechTick: _playNpcDialogueLetterSfx,
     npcDlgState: _npcDlgState,
     npcBaseDispositions: _npcBaseDispositions,
   };

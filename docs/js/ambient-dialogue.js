@@ -445,15 +445,7 @@
   function revealSchedule(text) {
     const cfg = window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewriter || {};
     if (cfg.enabled === false) return [];
-    const charMs = Math.max(1, Number(cfg.msPerChar) || 22);
-    const punctuationMs = Math.max(0, Number(cfg.punctuationPauseMs) || 120);
-    const whitespaceMs = Math.max(0, Number(cfg.whitespacePauseMs) || 0);
-    let elapsed = charMs;
-    return [...text].map(char => {
-      const revealAt = elapsed;
-      elapsed += /[.!?,;:]/.test(char) ? punctuationMs : /\s/.test(char) ? whitespaceMs : charMs;
-      return revealAt;
-    });
+    return window.DialogueSpeechCadence?.buildSchedule(text, cfg) || [];
   }
 
   function disposePart(part) {
@@ -464,6 +456,7 @@
   }
 
   function dispose(event) {
+    for (const timer of event.cadenceTimers || []) clearTimeout(timer);
     event.group.parent?.remove(event.group);
     disposePart(event.textPart);
     if (event.headPart) disposePart(event.headPart);
@@ -473,7 +466,8 @@
     if (!event.headPart || !event.profile || event.headPart.busy || (!force && now < event.headPart.nextFrameAt)) return;
     const source = event.headSource || (event.headSource = Object.assign(document.createElement('canvas'), { width: 200, height: 200 }));
     event.headPart.busy = true;
-    event.headPart.nextFrameAt = now + 110;
+    const portraitFps = Math.max(1, Number(window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.portrait?.maxFps) || 30);
+    event.headPart.nextFrameAt = now + 1000 / portraitFps;
     state.renderQueue = state.renderQueue.then(async () => {
       await window.NpcAvatarPreview?.renderProfileToCanvas(source, event.chatheadProfile || event.profile, {
         seatId: event.seatId,
@@ -542,13 +536,33 @@
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
-      revealAtMs: revealSchedule(message), // Used by updateActive() to match ordinary NPC dialogue timing and cumulative text reveal.
+      revealSchedule: revealSchedule(message), // Shared syllable cadence keeps text and mouth pulses synchronized.
+      cadenceTimers: [],
       visibleChars: -1,
     };
     state.active.push(event);
     drawText(event, '');
+    if (!event.revealSchedule.length) {
+      drawText(event, message);
+    } else {
+      let visibleText = '';
+      for (const unit of event.revealSchedule) {
+        event.cadenceTimers.push(setTimeout(() => {
+          if (!state.active.includes(event)) return;
+          visibleText += unit.text;
+          drawText(event, visibleText);
+        }, unit.revealAtMs));
+        for (let index = 0; index < unit.vowels.length; index++) {
+          const pulseAtMs = unit.revealAtMs + (unit.pulseOffsetsMs[index] || 0);
+          event.cadenceTimers.push(setTimeout(() => {
+            if (!state.active.includes(event)) return;
+            window.DialogueContent?.playSpeechTick?.(unit.vowels[index], event.profile);
+            if (event.headPart) window.portraitBreathingComposer?.triggerYap(event.seatId);
+          }, pulseAtMs));
+        }
+      }
+    }
     if (headPart) {
-      window.portraitBreathingComposer?.scheduleYapSequence(event.seatId, message);
       renderChathead(event, now, true);
     }
     window.dispatchEvent(new CustomEvent('hobunji-ambient-dialogue', { detail: { speakerId: options.speakerId || null, text: message, mode, tone: event.tone } }));
@@ -569,11 +583,6 @@
         state.active.splice(index, 1);
         continue;
       }
-      const elapsedMs = now - event.startedAt;
-      const visibleChars = event.revealAtMs.length
-        ? event.revealAtMs.filter(revealAt => revealAt <= elapsedMs).length
-        : event.textPart.text.length;
-      if (visibleChars !== event.visibleChars) drawText(event, event.textPart.text.slice(0, visibleChars));
       if (event.directedAtPlayer) {
         // Ambient speech aimed at the player stays reachable even when the
         // speaker is off-screen: it shrinks and eases into a fixed,
