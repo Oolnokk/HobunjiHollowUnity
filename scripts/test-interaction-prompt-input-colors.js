@@ -17,10 +17,11 @@ assert(game.includes("button.action === 'climb_branch' ? 'dodge'"), 'climb promp
 assert(game.includes('promptInputs,'), 'world prompt synchronization receives structured input hints');
 assert(popup.includes('makeInteractionPlane'), 'interaction rows use segmented canvas rendering');
 assert(popup.includes('INTERACTION_VERB_COLOR'), 'interaction verbs have a dedicated uncoded emphasis color');
-assert(popup.includes('const inputFontPx = 90'), 'interaction inputs render modestly larger than the former baseline');
-assert(popup.includes('const verbFontPx = 98'), 'interaction verbs render larger than object text');
-assert(popup.includes('const detailFontPx = 88'), 'interaction object words render larger than connector text');
+assert(popup.includes('const mainFontPx = 98'), 'interaction inputs, verbs, and object words share the larger font');
 assert(popup.includes('const connectorFontPx = 78'), 'connector words retain the former prompt size');
+assert(popup.includes('const gapPx = 34'), 'interaction inputs have an extra separating space');
+assert(popup.includes('const wordGapPx = 22'), 'zone entrance words have a visible separating space');
+assert(!popup.includes('detailFontPx') && !popup.includes('verbFontPx') && !popup.includes('inputFontPx'), 'interaction rows use exactly two font sizes');
 assert(popup.includes('INTERACTION_LIST_SCALE = 0.25'), 'interaction rows preserve the former physical baseline');
 assert(popup.includes('INTERACTION_OBJECT_COLOR'), 'interaction object words use a separate color');
 assert(popup.includes('verbAfterToIndex'), 'labels such as Hold to Take Egg emphasize the actual action verb');

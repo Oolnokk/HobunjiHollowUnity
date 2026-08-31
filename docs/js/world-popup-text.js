@@ -171,21 +171,19 @@
     const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
     const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
     const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
-    const inputFontPx = 90; // Used to make the rebound key/button prompt modestly larger than the former baseline.
-    const verbFontPx = 98; // Used for the leading action word and the action after a “to” connector.
-    const detailFontPx = 88; // Used for object/context words, just below the input and verb emphasis.
+    const mainFontPx = 98; // Used for every meaningful word, including the input hint, verb, and object/context words.
     const connectorFontPx = 78; // Used to preserve the former prompt size for grammatical glue such as “to.”
-    const gapPx = 18; // Used to separate the input from the label while keeping the row compact.
-    const wordGapPx = 9; // Used between label words so connector words remain visually attached but subordinate.
+    const gapPx = 34; // Used to leave a clearly visible extra space between the input prompt and its action text.
+    const wordGapPx = 22; // Used between label words so zone labels such as “To Town” cannot visually collapse.
     const verbAfterToIndex = words[1]?.toLowerCase() === 'to' ? 2 : -1; // Used for labels such as “Hold to Take Egg,” where Take is the real action verb.
     const textWidth = (text, fontPx) => { // Used to size the canvas tightly enough for long rebound input names.
       if (!text) return 0;
       ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
       return ctx.measureText(text).width;
     };
-    const inputWidth = textWidth(inputHint, inputFontPx); // Used in the row's exact texture width.
+    const inputWidth = textWidth(inputHint, mainFontPx); // Used in the row's exact texture width.
     const labelWidth = words.reduce((total, word, index) => { // Used to size the canvas for mixed-size label tokens.
-      const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : (index === 0 || index === verbAfterToIndex ? verbFontPx : detailFontPx);
+      const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : mainFontPx;
       return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
     }, 0);
     canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
@@ -204,13 +202,13 @@
       ctx.fillText(text, x, canvas.height / 2);
       x += ctx.measureText(text).width;
     };
-    drawSegment(inputHint, inputFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
+    drawSegment(inputHint, mainFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
     if (inputHint) x += gapPx;
     words.forEach((word, index) => { // Used to keep connector words small while emphasizing each actual action verb.
       if (index) x += wordGapPx;
       const isConnector = INTERACTION_CONNECTORS.has(word.toLowerCase());
-      const isVerb = index === 0 || index === verbAfterToIndex;
-      drawSegment(word, isConnector ? connectorFontPx : (isVerb ? verbFontPx : detailFontPx), isVerb ? INTERACTION_VERB_COLOR : isConnector ? INTERACTION_CONNECTOR_COLOR : INTERACTION_OBJECT_COLOR);
+      const isVerb = !isConnector && (index === 0 || index === verbAfterToIndex);
+      drawSegment(word, isConnector ? connectorFontPx : mainFontPx, isVerb ? INTERACTION_VERB_COLOR : isConnector ? INTERACTION_CONNECTOR_COLOR : INTERACTION_OBJECT_COLOR);
     });
     const texture = new THREE.CanvasTexture(canvas); // Used as the billboard's live sRGB text texture.
     texture.colorSpace = THREE.SRGBColorSpace;
