@@ -246,7 +246,7 @@
        via init(), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.ProceduralTasks.init(...) during its own setup. -->
-  <script src="js/procedural-tasks.js?v=20260826compass1"></script>
+  <script src="js/procedural-tasks.js?v=20260831questcache1"></script>
   <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2097,7 +2097,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260828impact1"></script>
+  <script src="js/pixel-probe.js?v=20260831questcache1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2170,7 +2170,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260830portraitflip2"></script>
+  <script src="game.js?v=20260831questcache1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

@@ -863,6 +863,11 @@
       const offAreaWaypoint = compassDebug.offAreaWaypoint ? ` offAreaWaypoint=${compassDebug.offAreaWaypoint.label}@${compassDebug.offAreaWaypoint.zoneId}` : '';
       lines.push(`Compass: ${compassDebug.visible ? 'visible' : 'hidden'} heading=${compassDebug.headingDeg}° markers=${compassDebug.markers.length} offAreaQuests=${compassDebug.offAreaQuestTargets}${offAreaWaypoint}${markerText ? ' ' + markerText : ''}`);
     }
+    const questCompassDebug = window.ProceduralTasks?.compassDebugSnapshot?.(); // Confirms marker candidates were rebuilt after a quest status change on mobile.
+    if (questCompassDebug) {
+      const pending = questCompassDebug.pending.map(candidate => `${candidate.npcId}/${candidate.id}`).join(',') || 'none';
+      lines.push(`Quest compass cache: hour=${questCompassDebug.hourKey ?? 'invalid'} invalidations=${questCompassDebug.invalidations} active=${questCompassDebug.active.length} pending=${pending}`);
+    }
     const wildernessMapDebug = window.WildernessMap?.getDebug?.(); // Exposes the saved waypoint and active Map-tab region without requiring desktop devtools.
     if (wildernessMapDebug) {
       const waypoint = wildernessMapDebug.waypoint;
