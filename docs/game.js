@@ -26886,6 +26886,7 @@
       // Combat.input so the loadout's 4 ability slots can claim them.
       // Every other tool keeps its previous click behavior unchanged: left
       // click = primary action, right click = secondary action.
+      const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse press with the combat slot released below.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
@@ -26899,8 +26900,14 @@
               return;
             }
             tryAutoEngageMeleeTarget();
-            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
-            else if (e.button === 2) { window.Combat.input.pressStart(2); }
+            if (e.button === 0) {
+              desktopWeaponPointerSlots.set(e.button, 1);
+              actionHeldDown = true;
+              window.Combat.input.pressStart(1);
+            } else if (e.button === 2) {
+              desktopWeaponPointerSlots.set(e.button, 2);
+              window.Combat.input.pressStart(2);
+            }
             return;
           }
           if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
@@ -26914,10 +26921,20 @@
           }
         });
       }
-      window.addEventListener('pointerup', (e) => {
-        if (e.pointerType !== 'mouse') return;
+      function finishDesktopMouseAction(e) {
+        // Pointer Lock can report the physical release as a MouseEvent (with
+        // no pointerType), so accept both forms and rely on press ownership.
+        if (!isDesktop) return;
+        if (e.pointerType && e.pointerType !== 'mouse') return;
         if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
           if (e.button === 0) actionHeldDown = false;
+          return;
+        }
+        const ownedSlot = desktopWeaponPointerSlots.get(e.button);
+        if (ownedSlot) {
+          desktopWeaponPointerSlots.delete(e.button);
+          if (ownedSlot === 1) actionHeldDown = false;
+          window.Combat?.input?.pressEnd(ownedSlot);
           return;
         }
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
@@ -26927,11 +26944,40 @@
         }
         if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
-      });
+      }
+      // Capture release before action-arch/backdrop handlers can consume a
+      // moved right-click gesture. `contextmenu` is Chromium/Opera's final
+      // event for some right-drags even when their ordinary up event is lost.
+      window.addEventListener('pointerup', finishDesktopMouseAction, true);
+      window.addEventListener('mouseup', finishDesktopMouseAction, true);
+      window.addEventListener('auxclick', finishDesktopMouseAction, true);
+      window.addEventListener('contextmenu', (e) => {
+        if (!isDesktop || !desktopWeaponPointerSlots.has(2)) return;
+        e.preventDefault();
+        if ((Number(e.buttons) & 2) === 0) finishDesktopMouseAction(e);
+      }, true);
+      window.addEventListener('pointercancel', (e) => {
+        if (!isDesktop) return;
+        if (e.pointerType && e.pointerType !== 'mouse') return;
+        for (const [button, slot] of desktopWeaponPointerSlots) {
+          desktopWeaponPointerSlots.delete(button);
+          if (slot === 1) actionHeldDown = false;
+          window.Combat?.input?.abortPress?.(slot);
+        }
+      }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // A missing right-button up can still be proven by the buttons
+          // bitmask on the next real mouse event. End the owned hold before
+          // camera-look or aiming gets a chance to use that event.
+          if (desktopWeaponPointerSlots.has(2) && (Number(e.buttons) & 2) === 0) {
+            finishDesktopMouseAction({ button: 2, pointerType: 'mouse' });
+          }
+          if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
+            finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
+          }
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns
