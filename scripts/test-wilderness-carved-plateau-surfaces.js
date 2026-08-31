@@ -77,11 +77,15 @@ assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
+assert.match(gameSource, /const isExcludedCell[\s\S]{0,240}!!tile\?\.incline \|\| EXCLUDED\.has\(tile\?\.type\)/,
+  'the route grass apron must not cover a plateau incline/cliff-face cell');
+assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
+  'load-time and runtime route-apron exclusions must share the complete-cell predicate');
 assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
   'the route grass apron must index the final rendered geometry for surgical runtime hole updates');
 assert.doesNotMatch(gameSource, /if \(isExcluded\(tci, tcj\)\) continue/,
   'route geometry must reserve restorable triangles even for tiles carved when the zone first loads');
-assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}EXCLUDED\.has\(srcGrid\[r\]\?\.\[c\]\?\.type\)\) this\.refreshTile\(c, r\)/,
+assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}this\.isExcludedTile\(c, r\)\) this\.refreshTile\(c, r\)/,
   'initially carved route tiles must be collapsed before the first rendered frame');
 assert.match(terrainChunkSource, /notifyTerrainGeometryReady\(scene\)[\s\S]{0,1800}notifyTerrainGeometryReady\(scene\)/,
   'the terrain renderer must return the post-jigsaw, post-spatial-split geometry to runtime terrain owners');
@@ -155,6 +159,7 @@ const buildPathNetworkGeo = eval(`(${pathFunctionMatch[1]})`); // Executes repos
 const liveGrid = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => ({ type: TileType.GRASS, elevTier: 0 })));
 liveGrid[3][3].type = TileType.PATH;
 liveGrid[2][2].type = TileType.TRENCH;
+liveGrid[2][3].incline = true;
 const pathNetwork = buildPathNetworkGeo(liveGrid, 7, 7);
 const mergedPosition = [];
 const mergedIndex = [];
@@ -174,17 +179,23 @@ pathNetwork.bindGlobalGroundMesh(renderedMesh);
 renderedMesh.userData.onTerrainGeometryReady(renderedGeometry);
 const trenchStarts = pathNetwork.renderedTileIndexRanges.get('2,2');
 assert.equal(trenchStarts?.length, 72, 'one final rendered route-apron tile must retain all 72 triangles');
-const tileIsCollapsed = () => trenchStarts.every(offset => {
+const tileIsCollapsed = starts => starts.every(offset => {
   const a = renderedGeometry.index.array[offset];
   return renderedGeometry.index.array[offset + 1] === a && renderedGeometry.index.array[offset + 2] === a;
 });
-assert(tileIsCollapsed(), 'an initially carved tile must be absent after the final geometry handoff');
+assert(tileIsCollapsed(trenchStarts), 'an initially carved tile must be absent after the final geometry handoff');
+const inclineStarts = pathNetwork.renderedTileIndexRanges.get('3,2');
+assert.equal(inclineStarts?.length, 72, 'one plateau incline tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(inclineStarts), 'a plateau incline must have no flat grass apron intersecting its cliff skin');
 liveGrid[2][2].type = TileType.GRASS;
 assert(pathNetwork.refreshTile(2, 2), 'filling must find the final rendered tile ranges');
-assert(!tileIsCollapsed(), 'filling must restore the route-apron surface');
+assert(!tileIsCollapsed(trenchStarts), 'filling must restore the route-apron surface');
 liveGrid[2][2].type = TileType.TRENCH;
 assert(pathNetwork.refreshTile(2, 2), 'redigging must find the final rendered tile ranges');
-assert(tileIsCollapsed(), 'redigging must remove the restored surface again');
+assert(tileIsCollapsed(trenchStarts), 'redigging must remove the restored surface again');
+liveGrid[2][3].incline = false;
+assert(pathNetwork.refreshTile(3, 2), 'flattening an incline must find the final rendered tile ranges');
+assert(!tileIsCollapsed(inclineStarts), 'flattening an incline must restore its route-apron surface');
 
 // Execute the real basin builder too. Wilderness water must be full depth at
 // its shoreline and must add vertical wall triangles, while the town call

@@ -19276,7 +19276,17 @@
         // omitted here) in parity with rivers/streams/trenches/raised beds;
         // ramps and paddies likewise own their complete surface.
         const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
-        const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
+        const cellAt      = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]; // Used by the apron mask and runtime hole refresh to inspect the complete terrain cell.
+        const cellType    = (ci, cj) => cellAt(ci, cj)?.type;
+        // Plateau incline cells are the mesa's actual sloped cliff skin. A
+        // flat path-apron quad over one intersects that skin and shows grass
+        // through its stone face, even though the ordinary zone-floor loop
+        // correctly leaves skipFloor cells to the mesa. Flat plateau tops
+        // remain eligible so authored paths can still cross them normally.
+        const isExcludedCell = (ci, cj) => {
+          const tile = cellAt(ci, cj);
+          return !!tile?.incline || EXCLUDED.has(tile?.type);
+        };
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
 
         // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
@@ -19391,7 +19401,7 @@
           pathGeo: makeGeo(pathIdx),
           grassGeo: makeGeo(grassIdx),
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
-          isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+          isExcludedTile: (c, r) => isExcludedCell(c - minC, r - minR),
           globalGroundMesh: null,
           globalGroundGeometry: null,
           originalGroundIndex: null,
@@ -19427,7 +19437,7 @@
             // Their original triangles remain available for fill/redig.
             for (const key of ranges.keys()) {
               const [c, r] = key.split(',').map(Number);
-              if (EXCLUDED.has(srcGrid[r]?.[c]?.type)) this.refreshTile(c, r);
+              if (this.isExcludedTile(c, r)) this.refreshTile(c, r);
             }
             return true;
           },
@@ -19436,7 +19446,7 @@
             const original = this.originalGroundIndex;
             const starts = this.renderedTileIndexRanges.get(`${c},${r}`);
             if (!indexAttr || !original || !starts) return false;
-            const excluded = EXCLUDED.has(srcGrid[r]?.[c]?.type);
+            const excluded = this.isExcludedTile(c, r);
             for (const offset of starts) {
               if (excluded) {
                 const collapsedVertex = original[offset];
