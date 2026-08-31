@@ -84,7 +84,7 @@
 (() => {
   'use strict';
   if (window.ActionArchSlotColors?.installed || document.querySelector('script[data-action-arch-slot-colors]')) return;
-  const src = 'js/action-arch-slot-colors.js?v=20260823c';
+  const src = 'js/action-arch-slot-colors.js?v=20260831a';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-slot-colors="1" src="${src}"><\/script>`);
     return;
