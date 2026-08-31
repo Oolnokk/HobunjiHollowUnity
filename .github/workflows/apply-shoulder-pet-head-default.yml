@@ -24,10 +24,10 @@ jobs:
           python3 scripts/apply-shoulder-pet-head-default.py
           node scripts/test-shoulder-pet-attack-rotation.js
           git diff --check
-          git add docs/game.js docs/index.html docs/js/portrait-plane-outline-parity.js scripts/test-shoulder-pet-attack-rotation.js
+          git add docs/game.js docs/index.html scripts/test-shoulder-pet-attack-rotation.js
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Default shoulder-pet rotation to head/neck"
           git push origin HEAD:fix/default-shoulder-pet-head-neck
-# Retry after aligning the guarded patch with the current Settings markup.
+# Retry with the current runtime ownership: game.js + Settings markup only.
