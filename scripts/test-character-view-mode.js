@@ -15,7 +15,7 @@ assert.match(game, /if \(characterViewMode\.enabled\) \{[\s\S]*facingAngle = cha
 assert.match(game, /else if \(characterViewMode\.enabled\) \{[\s\S]*playerFacing = characterViewMode\.lockedPlayerFacing;[\s\S]*playerMesh\.rotation\.y = playerFacing;/, 'camera-relative billboard rotation stays pinned while viewing');
 assert.match(game, /playerNeckJoint\.rotation\.x = characterViewMode\.lockedNeckX;[\s\S]*playerNeckJoint\.rotation\.y = characterViewMode\.lockedNeckY;/, 'the neck remains pinned while viewing');
 assert.match(pixelProbe, /Character View: \$\{characterView\.enabled \? 'ON' : 'off'\}/, 'Pixel Probe includes mobile-copyable character-view state');
-assert.match(index, /game\.js\?v=20260829charviewcursor1/, 'the game script cache is invalidated');
-assert.match(index, /pixel-probe\.js\?v=20260829charview2/, 'the updated mobile diagnostic is cache-invalidated');
+assert.match(index, /game\.js\?v=20260901input2/, 'the game script cache is invalidated');
+assert.match(index, /pixel-probe\.js\?v=20260831questcache1/, 'the updated mobile diagnostic is cache-invalidated');
 
 console.log('Character view mode checks passed.');

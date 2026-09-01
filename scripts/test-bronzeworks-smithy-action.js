@@ -22,9 +22,9 @@ assert.match(game, /activeTool === 'ranged'[\s\S]{0,100}actionButtonForPhysicalS
   'ranged ammo selection cannot intercept Smithy when Smithy occupies Action 2');
 assert.match(game, /const isNavAction = act === npcDialogueAction\(\) \|\| act === smithyAction\(\)/,
   'a stale tool cooldown cannot swallow a Smithy action-arch press');
-assert.match(index, /config\/scratchbones-config\.js\?v=20260831smithy1/,
+assert.match(index, /config\/scratchbones-config\.js\?v=20260901input2/,
   'the Smithy action configuration is cache-busted');
-assert.match(index, /game\.js\?v=20260831smithy1/,
+assert.match(index, /game\.js\?v=20260901input2/,
   'the Smithy runtime is cache-busted');
 
 console.log('Bronzeworks Smithy action contracts: 9 checks passed');

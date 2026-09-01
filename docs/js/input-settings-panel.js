@@ -8,7 +8,6 @@
   // stay in game.js — this only renders/edits the settings UI that
   // configures what those handlers look up.
   let deps = null;
-  const ACTION_BUTTON_IDS = new Set(['action1', 'action2', 'action3', 'action4', 'action5']); // Used to give the five visible gameplay buttons player-facing names in Settings.
   const RUNTIME_HELPER_SCRIPTS = [ // Loaded only after game.js reaches this panel's init(), so helper requests cannot race core boot scripts such as water-system.js.
     'js/combat/quick-attack-bonus-indicator.js',
     'js/combat/ranged-hud-reticle.js',
@@ -151,14 +150,14 @@
   }
 
   function actionDisplayLabel(action) {
-    if (!action?.id || !ACTION_BUTTON_IDS.has(action.id)) return action?.label || action?.id || '';
+    if (!/^action\d+$/.test(action?.id || '')) return action?.label || action?.id || '';
     const slot = Number(action.id.slice('action'.length)); // Used to name the exact visible action-button slot the player is rebinding.
     return `Action Button ${slot}`;
   }
 
   function notifyBindingChanged(device, actionId) {
     if (!device || !actionId) return;
-    const binding = deps?.inputBindings?.[device]?.[actionId] || null; // Used by the HUD/action router to refresh the displayed badge immediately after a Settings remap.
+    const binding = [...(deps?.inputBindings?.[device]?.[actionId] || [])]; // Used by the HUD/action router to refresh the displayed badges immediately after a Settings remap.
     window.dispatchEvent(new CustomEvent('hobunji-input-bindings-changed', {
       detail: { device, actionId, binding },
     }));
@@ -169,7 +168,41 @@
     notifyBindingChanged(device, actionId);
   }
 
+  let cancelActiveBindingListener = null; // Used to guarantee that only the most recently opened desktop slot can hear the next keyboard/mouse input.
+  function currentSlots(device, actionId) {
+    const bindings = deps.inputBindings[device][actionId]; // Used as the mutable configured slot array for one action/device pair.
+    if (Array.isArray(bindings)) return bindings;
+    deps.inputBindings[device][actionId] = Array.from({ length: deps.INPUT_DEFAULTS.bindingSlots }, (_, index) => index === 0 ? bindings || null : null);
+    return deps.inputBindings[device][actionId];
+  }
+  function renderConflictSummary() {
+    const warning = document.getElementById('controlsConflictWarning');
+    if (!warning) return;
+    const conflicts = [];
+    for (const device of ['desktop', 'controller']) {
+      const owners = new Map(); // Used to group every shared physical input with the distinct actions it will trigger.
+      for (const action of deps.INPUT_DEFAULTS.actions) for (const code of new Set(currentSlots(device, action.id).filter(Boolean))) {
+        if (!owners.has(code)) owners.set(code, []);
+        owners.get(code).push(actionDisplayLabel(action));
+      }
+      for (const [code, actions] of owners) if (actions.length > 1) conflicts.push(`${device === 'desktop' ? 'Desktop' : 'Controller'} ${deps.buttonLabel(code)}: ${actions.join(' + ')}`);
+    }
+    warning.hidden = conflicts.length === 0;
+    warning.textContent = conflicts.length ? `Binding conflicts (all listed actions will trigger): ${conflicts.join(' · ')}` : '';
+  }
+  function beginDesktopBindingListen(control, actionId, slotIndex) {
+    cancelActiveBindingListener?.();
+    control.classList.add('is-listening'); control.textContent = 'Press key/mouse…';
+    let settled = false; // Used so a near-simultaneous keyboard/mouse event can commit only the first input received.
+    const cleanup = () => { window.removeEventListener('keydown', onKeyDown, true); window.removeEventListener('pointerdown', onPointerDown, true); control.classList.remove('is-listening'); cancelActiveBindingListener = null; };
+    const commit = code => { if (settled) return; settled = true; currentSlots('desktop', actionId)[slotIndex] = code; cleanup(); saveBindingChange('desktop', actionId); renderInputSettings(); };
+    const onKeyDown = event => { event.preventDefault(); event.stopImmediatePropagation(); commit(event.code); };
+    const onPointerDown = event => { if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return; event.preventDefault(); event.stopImmediatePropagation(); commit(`Mouse${event.button}`); };
+    cancelActiveBindingListener = cleanup;
+    window.addEventListener('keydown', onKeyDown, true); window.addEventListener('pointerdown', onPointerDown, true);
+  }
   function renderInputSettings() {
+    cancelActiveBindingListener?.();
     const desktopEl = document.getElementById('desktopInputBindings');
     const controllerEl = document.getElementById('controllerInputBindings');
     const shiftsEl = document.getElementById('modeShiftList');
@@ -178,52 +211,31 @@
       el.innerHTML = '';
       for (const action of deps.INPUT_DEFAULTS.actions) {
         const row = document.createElement('div'); row.className = 'input-binding-row';
-        if (ACTION_BUTTON_IDS.has(action.id)) {
-          row.classList.add('action-button-binding');
-          row.dataset.actionSlot = action.id.slice('action'.length); // Used for inspection/debugging and future Settings styling without inferring from label text.
-          row.title = 'Controls the matching visible gameplay action button.';
-        }
-        row.innerHTML = `<span class="settings-name">${actionDisplayLabel(action)}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${deps.buttonLabel(deps.inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
-        const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
-        if (device === 'controller') {
-          control.add(new Option('Unbound', ''));
-          deps.CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(deps.buttonLabel(code), code)));
-          control.value = deps.inputBindings.controller[action.id] || '';
-          control.addEventListener('change', () => {
-            const conflict = deps.bindingConflict(device, control.value, action.id);
-            if (conflict) {
-              warn.textContent = conflict;
-              control.value = deps.inputBindings.controller[action.id] || '';
-            } else {
-              deps.inputBindings.controller[action.id] = control.value || null;
-              warn.textContent = '';
-              saveBindingChange(device, action.id);
-            }
-          });
-        } else {
-          control.addEventListener('click', () => {
-            control.classList.add('is-listening');
-            control.textContent = 'Press input…';
-            const once = ev => {
-              ev.preventDefault();
-              const code = ev.code;
-              const conflict = deps.bindingConflict(device, code, action.id);
-              if (conflict) warn.textContent = conflict;
-              else {
-                deps.inputBindings[device][action.id] = code;
-                warn.textContent = '';
-                saveBindingChange(device, action.id);
-                renderInputSettings();
-              }
-              window.removeEventListener('keydown', once, true);
-            };
-            window.addEventListener('keydown', once, true);
-          });
-        }
-        el.appendChild(row);
+        if (/^action\d+$/.test(action.id)) { row.classList.add('action-button-binding'); row.dataset.actionSlot = action.id.slice('action'.length); row.title = 'Controls the matching visible gameplay action button.'; }
+        const label = document.createElement('span'); label.className = 'settings-name'; label.textContent = actionDisplayLabel(action);
+        const controls = document.createElement('div'); controls.className = 'input-binding-controls';
+        currentSlots(device, action.id).forEach((binding, slotIndex) => {
+          if (device === 'controller') {
+            const select = document.createElement('select'); select.className = 'settings-select'; select.setAttribute('aria-label', `${actionDisplayLabel(action)} binding ${slotIndex + 1}`);
+            select.add(new Option(`Slot ${slotIndex + 1}: Unbound`, '')); deps.CONTROLLER_INPUT_OPTIONS.forEach(code => select.add(new Option(deps.buttonLabel(code), code))); select.value = binding || '';
+            select.addEventListener('change', () => { currentSlots(device, action.id)[slotIndex] = select.value || null; saveBindingChange(device, action.id); renderInputSettings(); });
+            controls.appendChild(select);
+          } else {
+            const slot = document.createElement('div'); slot.className = 'input-bind-slot';
+            const bindButton = document.createElement('button'); bindButton.type = 'button'; bindButton.className = 'input-bind-btn'; bindButton.textContent = deps.buttonLabel(binding); bindButton.title = `Binding ${slotIndex + 1}: ${deps.buttonLabel(binding)}`; bindButton.addEventListener('click', () => beginDesktopBindingListen(bindButton, action.id, slotIndex));
+            const clearButton = document.createElement('button'); clearButton.type = 'button'; clearButton.className = 'input-bind-btn input-bind-clear'; clearButton.textContent = '×'; clearButton.title = `Clear binding ${slotIndex + 1}`; clearButton.disabled = !binding; clearButton.addEventListener('click', () => { currentSlots(device, action.id)[slotIndex] = null; saveBindingChange(device, action.id); renderInputSettings(); });
+            slot.append(bindButton, clearButton); controls.appendChild(slot);
+          }
+        });
+        row.append(label, controls); el.appendChild(row);
       }
     }
-    renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
+    renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller'); renderConflictSummary();
+    const resetButton = document.getElementById('resetInputBindingsBtn');
+    if (resetButton && resetButton.dataset.inputResetWired !== '1') {
+      resetButton.dataset.inputResetWired = '1';
+      resetButton.addEventListener('click', () => { deps.resetInputBindings(); for (const device of ['desktop', 'controller']) for (const action of deps.INPUT_DEFAULTS.actions) notifyBindingChanged(device, action.id); const status = document.getElementById('inputBindingStatus'); if (status) { status.hidden = false; status.textContent = 'Controls restored to defaults.'; } renderInputSettings(); });
+    }
     if (shiftsEl) {
       shiftsEl.innerHTML = '';
       deps.inputBindings.modeShifts.forEach((shift, idx) => {

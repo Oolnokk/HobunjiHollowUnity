@@ -48,8 +48,8 @@ assert.match(game, /\^action\(\\d\+\)\$[\s\S]*?runActionButtonAtSlot/,
   'configurable action bindings continue to route by semantic slot');
 assert.match(game, /function runInteractAction\(\)[\s\S]*?action === 'consume_held_item'[\s\S]*?!isItemAction\(b\.action\)/,
   'Interact excludes consume, plant, place, and harvest item actions');
-assert.match(game, /if \(key === 'e' && isDesktop\)[\s\S]*?if \(!wasHeld\) runInteractAction\(\);/,
-  'a desktop E tap uses world Interact after the tool-wheel hold check');
+assert.match(game, /if \(actionId === 'interact'\)[\s\S]{0,350}?runInteractAction\(\)/,
+  'the configured desktop Interact action routes to world interaction');
 assert.match(pixelProbe, /Mobile action arch:/,
   'Pixel Probe reports all mobile action-arch slots without desktop devtools');
 
@@ -66,7 +66,7 @@ for (const [, seedKey, cropKey] of seedEntries) {
 }
 
 for (let slot = 1; slot <= 5; slot++) {
-  const binding = new RegExp(`\\{\\s*"id":\\s*"action${slot}"[^\\n]*"desktop":\\s*"[^"]+"[^\\n]*"controller":\\s*"[^"]+"[^\\n]*\\}`); // Used to verify each mobile-visible semantic slot remains reachable from keyboard and controller.
+  const binding = new RegExp(`\\{\\s*"id":\\s*"action${slot}"[^\\n]*"desktop":\\s*\\[[^\\]]*"[^\\]]*\\][^\\n]*"controller":\\s*\\[[^\\]]*"[^\\]]*\\][^\\n]*\\}`); // Used to verify each mobile-visible semantic slot remains reachable from keyboard and controller.
   assert.match(controls, binding, `action${slot} has both desktop and controller bindings`);
 }
 
