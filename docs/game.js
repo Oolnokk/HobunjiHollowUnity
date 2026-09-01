@@ -27418,6 +27418,7 @@
 
       window.DialogueContent?.init({
         calendar,
+        getNpcRecords: () => npcWalkers.map(w => w.rec).filter(Boolean), // Used by adjustNpcFavor's household/workplace spillover.
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         getDialogueOpen: () => dialogueOpen,
