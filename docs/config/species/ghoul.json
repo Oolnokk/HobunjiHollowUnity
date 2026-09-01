@@ -11,7 +11,7 @@
     "appearanceCosmetics": false
   },
   "male": {
-    "headSprite": "fightersprites/mao-ao-f/ghoul_head_f.png",
+    "headSprite": "fightersprites/mao-ao-m/head_ghoul_m.png",
     "headUrLayers": [],
     "exclusiveSlotCosmetics": {
       "eyes": ["none"],
