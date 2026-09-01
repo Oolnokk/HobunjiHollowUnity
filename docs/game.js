@@ -9249,10 +9249,10 @@
           // see the paved brick surface registered below, which is meant to
           // simply overlay ordinary ground rather than sit on a separately-
           // colored "path" patch (same treatment as the town path). The tiny
-          // anti-z-fighting lift needed over mesa lids is now baked only into
-          // flat plateau-top vertices by buildPathNetworkGeo; globally lifting
-          // this mesh made lower grass float through cliff faces at grazing
-          // camera angles.
+          // Mesa-owned cells supply their own continuous lid/skin and are
+          // removed from this route mesh by buildPathNetworkGeo. Keeping the
+          // duplicate grass sheet off the complete mesa footprint prevents it
+          // from intersecting a neighboring cliff face at grazing angles.
           _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP, 0);
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
@@ -19280,14 +19280,13 @@
         const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
         const cellAt      = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]; // Used by the apron mask and runtime hole refresh to inspect the complete terrain cell.
         const cellType    = (ci, cj) => cellAt(ci, cj)?.type;
-        // Plateau incline cells are the mesa's actual sloped cliff skin. A
-        // flat path-apron quad over one intersects that skin and shows grass
-        // through its stone face, even though the ordinary zone-floor loop
-        // correctly leaves skipFloor cells to the mesa. Flat plateau tops
-        // remain eligible so authored paths can still cross them normally.
+        // Every skipFloor cell is already rendered by the mesa's continuous
+        // lid/skin. The route's separate grass sheet is redundant there and
+        // can intersect a nearby cliff even when the triangle itself belongs
+        // to a flat top. Paved path bricks remain free to cross the mesa lid.
         const isExcludedCell = (ci, cj) => {
           const tile = cellAt(ci, cj);
-          return !!tile?.incline || !!tile?.mesaCliffFace || EXCLUDED.has(tile?.type);
+          return !!tile?.skipFloor || !!tile?.incline || !!tile?.mesaCliffFace || EXCLUDED.has(tile?.type);
         };
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
 
@@ -19348,7 +19347,6 @@
         };
         const smooth = t => t * t * (3 - 2 * t);
         const PATH_DY = -0.05; // shallow — a worn groove, not a trench
-        const PATH_MESA_LIFT = 0.004; // Used only on flat skipFloor plateau tops that overlap a mesa lid.
 
         // Y[] stays tier-independent (local worn-groove height only) since
         // PATH_THRESH below is tuned against it — positions[] is what
@@ -19367,12 +19365,11 @@
             const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
             const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
             const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
-            const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Used to lift only vertices that actually overlap a flat mesa lid.
+            const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Supplies the absolute terrain tier for this route vertex.
             const tierY = (ownerTile?.elevTier || 0) * PLATEAU_UNIT;
-            const mesaLift = ownerTile?.skipFloor && !ownerTile?.incline ? PATH_MESA_LIFT : 0; // Prevents cliff-edge grass from inheriting the plateau-only offset.
             const k = gj*GW+gi;
             Y[k] = localY;
-            positions[k*3] = vx; positions[k*3+1] = tierY + localY + mesaLift; positions[k*3+2] = vz;
+            positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
           }
 
         const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask

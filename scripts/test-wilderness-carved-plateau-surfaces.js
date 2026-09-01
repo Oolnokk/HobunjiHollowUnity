@@ -78,18 +78,16 @@ assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
-assert.match(gameSource, /const isExcludedCell[\s\S]{0,280}!!tile\?\.incline \|\| !!tile\?\.mesaCliffFace \|\| EXCLUDED\.has\(tile\?\.type\)/,
-  'the route grass apron must not cover metadata inclines or geometry-confirmed cliff-face cells');
+assert.match(gameSource, /const isExcludedCell[\s\S]{0,320}!!tile\?\.skipFloor \|\| !!tile\?\.incline \|\| !!tile\?\.mesaCliffFace \|\| EXCLUDED\.has\(tile\?\.type\)/,
+  'the route grass apron must not cover any mesa-owned, incline, or geometry-confirmed cliff-face cell');
 assert.match(mesaSource, /if \(steep\)[\s\S]{0,360}ownerTile\.mesaCliffFace = true/,
   'the rendered mesa must tag every tile that actually emits a steep stone quad');
 assert.match(gameSource, /delete tile\.mesaCliffFace[\s\S]{0,700}buildPlateauMesa/,
   'mesa rebuilds must replace stale geometry-derived cliff ownership tags');
 assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
   'load-time and runtime route-apron exclusions must share the complete-cell predicate');
-assert.match(gameSource, /const PATH_MESA_LIFT = 0\.004[\s\S]{0,4200}ownerTile\?\.skipFloor && !ownerTile\?\.incline \? PATH_MESA_LIFT : 0/,
-  'the route grass apron anti-z-fighting lift must apply only over flat mesa lids, never cliff boundaries');
-assert.doesNotMatch(gameSource, /NORMAL_TOP \+ PATH_Z_FIGHT_LIFT/,
-  'the entire route grass mesh must not be lifted through neighboring cliff faces');
+assert.doesNotMatch(gameSource, /PATH_(?:MESA|Z_FIGHT)_LIFT/,
+  'the route grass mesh must not use a vertical lift that can expose it through neighboring cliff faces');
 assert.match(gameSource, /mesh\.name = 'zone_path_ground'/,
   'mobile Pixel Probe reports must identify the global path grass mesh directly');
 assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
@@ -176,19 +174,6 @@ liveGrid[2][4].mesaCliffFace = true;
 liveGrid[2][4].skipFloor = true;
 liveGrid[3][4].skipFloor = true;
 const pathNetwork = buildPathNetworkGeo(liveGrid, 7, 7);
-const noMesaLiftGrid = liveGrid.map(row => row.map(tile => ({ ...tile, skipFloor: false }))); // Baseline used to isolate the plateau-only 0.004 vertex lift.
-const noMesaLiftNetwork = buildPathNetworkGeo(noMesaLiftGrid, 7, 7);
-const vertexYAt = (network, x, z) => {
-  const position = (network.pathGeo || network.grassGeo).getAttribute('position');
-  for (let i = 0; i < position.count; i++) {
-    if (Math.abs(position.array[i * 3] - x) < 1e-6 && Math.abs(position.array[i * 3 + 2] - z) < 1e-6) return position.array[i * 3 + 1];
-  }
-  assert.fail(`missing route-apron vertex at ${x},${z}`);
-};
-assert(Math.abs(vertexYAt(pathNetwork, 4.5, 3.5) - vertexYAt(noMesaLiftNetwork, 4.5, 3.5) - 0.004) < 1e-6,
-  'a flat plateau-top route vertex must retain the mesa anti-z-fighting lift');
-assert(Math.abs(vertexYAt(pathNetwork, 3.5, 2.5) - vertexYAt(noMesaLiftNetwork, 3.5, 2.5)) < 1e-6,
-  'an incline/cliff route vertex must remain at its real seam height without the mesa lift');
 const mergedPosition = [];
 const mergedIndex = [];
 let vertexBase = 0;
@@ -218,6 +203,9 @@ assert(tileIsCollapsed(inclineStarts), 'a plateau incline must have no flat gras
 const renderedCliffStarts = pathNetwork.renderedTileIndexRanges.get('4,2');
 assert.equal(renderedCliffStarts?.length, 72, 'one geometry-confirmed cliff tile must retain all 72 restorable apron triangles');
 assert(tileIsCollapsed(renderedCliffStarts), 'a rendered steep mesa tile must have no path grass intersecting its cliff skin');
+const mesaTopStarts = pathNetwork.renderedTileIndexRanges.get('4,3');
+assert.equal(mesaTopStarts?.length, 72, 'one flat mesa-top tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(mesaTopStarts), 'a flat mesa top must use its own lid instead of a duplicate route-grass sheet');
 liveGrid[2][2].type = TileType.GRASS;
 assert(pathNetwork.refreshTile(2, 2), 'filling must find the final rendered tile ranges');
 assert(!tileIsCollapsed(trenchStarts), 'filling must restore the route-apron surface');
@@ -225,11 +213,20 @@ liveGrid[2][2].type = TileType.TRENCH;
 assert(pathNetwork.refreshTile(2, 2), 'redigging must find the final rendered tile ranges');
 assert(tileIsCollapsed(trenchStarts), 'redigging must remove the restored surface again');
 liveGrid[2][3].incline = false;
-assert(pathNetwork.refreshTile(3, 2), 'flattening an incline must find the final rendered tile ranges');
-assert(!tileIsCollapsed(inclineStarts), 'flattening an incline must restore its route-apron surface');
+assert(pathNetwork.refreshTile(3, 2), 'removing only the incline flag must find the final rendered tile ranges');
+assert(tileIsCollapsed(inclineStarts), 'a mesa-owned tile must stay clear after only its incline flag is removed');
+liveGrid[2][3].skipFloor = false;
+assert(pathNetwork.refreshTile(3, 2), 'removing the incline mesa ownership must find the final rendered tile ranges');
+assert(!tileIsCollapsed(inclineStarts), 'removing all incline mesa ownership must restore its route-apron surface');
 delete liveGrid[2][4].mesaCliffFace;
 assert(pathNetwork.refreshTile(4, 2), 'removing stale rendered-cliff ownership must find the final tile ranges');
-assert(!tileIsCollapsed(renderedCliffStarts), 'a mesa rebuild that removes a steep face must restore its route-apron surface');
+assert(tileIsCollapsed(renderedCliffStarts), 'a mesa-owned tile must remain clear even when its steep-face tag is removed');
+liveGrid[2][4].skipFloor = false;
+assert(pathNetwork.refreshTile(4, 2), 'removing mesa ownership must find the final tile ranges');
+assert(!tileIsCollapsed(renderedCliffStarts), 'a mesa rebuild that removes all ownership must restore its route-apron surface');
+liveGrid[3][4].skipFloor = false;
+assert(pathNetwork.refreshTile(4, 3), 'flattening a former mesa top must find the final tile ranges');
+assert(!tileIsCollapsed(mesaTopStarts), 'a former mesa top must restore its route-apron surface');
 
 // Execute the real basin builder too. Wilderness water must be full depth at
 // its shoreline and must add vertical wall triangles, while the town call
