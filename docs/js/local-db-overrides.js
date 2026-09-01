@@ -48,6 +48,7 @@
     { id: 'lootPools',     label: 'Loot Pools',          repoPath: 'config/loot/loot-pools.json' },
     { id: 'shopStock',     label: 'Shop Stock',          repoPath: 'config/shops/shop-stock.json' },
     { id: 'npcDatabase',   label: 'NPC Database',        repoPath: 'config/npcs/hobunji-starter-npc-database.json' },
+    { id: 'itemTraits',    label: 'Item Traits',         repoPath: 'config/items/item-traits.json' },
     { id: 'townWorkspace', label: 'Town / Map Data',     repoPath: 'config/town-workspace-v1.json' },
     { id: 'locales',       label: 'Locales',             repoPath: 'config/locales/index.json' },
   ];

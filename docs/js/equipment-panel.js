@@ -585,6 +585,14 @@
           deps.saveMemberWorldData();
         });
       }
+      // Giftable straight from the pack too — see getHeldGiftItem in
+      // game.js, which checks packClothing as well as gear.
+      const heldNow = deps.getManualHeldItem?.();
+      const isHeld = heldNow?.kind === 'clothing' && heldNow?.uid === uid;
+      mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'secondary', () => {
+        deps.setManualHeldItem?.(isHeld ? null : { kind: 'clothing', uid });
+        selectPackClothingItem(uid);
+      });
     }
   }
 
@@ -642,6 +650,21 @@
       redyeBtn.textContent = '🎨 Redye';
       redyeBtn.onclick = () => openRedyePanel(slot, item);
       actEl.appendChild(redyeBtn);
+
+      // Clothing never enters the item wheel (see getHeldGiftItem in
+      // game.js), so this is the only way to hold a piece of it out for an
+      // interaction like gifting — worn or not, equip status is unrelated
+      // to whether it's currently "held".
+      const heldNow = deps.getManualHeldItem?.();
+      const isHeld = heldNow?.kind === 'clothing' && heldNow?.uid === item.uid;
+      const holdBtn = document.createElement('button');
+      holdBtn.className = 'ii-btn' + (isHeld ? '' : ' secondary');
+      holdBtn.textContent = isHeld ? '✋ Holding — Stop' : '✋ Hold';
+      holdBtn.onclick = () => {
+        deps.setManualHeldItem?.(isHeld ? null : { kind: 'clothing', uid: item.uid });
+        selectGearClothing(slot, item);
+      };
+      actEl.appendChild(holdBtn);
     }
   }
 

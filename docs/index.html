@@ -96,6 +96,10 @@
        toggled from the onboarding save-select screen. Loaded before anything
        that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
   <script src="js/local-db-overrides.js?v=20260727a"></script>
+  <!-- Item trait vocabulary/computation (window.ItemTraits) — see
+       docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
+       exists; consumed by npc-gifting.js and tools/item-database-editor. -->
+  <script src="js/item-traits.js?v=20260831a"></script>
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->

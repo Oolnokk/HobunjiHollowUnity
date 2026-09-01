@@ -243,11 +243,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["reagent"],
+                        "liked": ["hueBlue","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -796,11 +796,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["crop"],
+                        "liked": ["hueYellow","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -1301,11 +1301,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["crop"],
+                        "liked": ["hueGreen","hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -1792,11 +1792,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["crop"],
+                        "liked": ["hueYellow","muted","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -2276,11 +2276,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["sweet"],
+                        "liked": ["hueOrange","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -2737,11 +2737,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueOrange","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -3240,11 +3240,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueGreen","hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -3933,11 +3933,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueOrange","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -4637,11 +4637,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueGreen","hueBlue","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -5100,7 +5100,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["mineral"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -5571,11 +5571,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["mineral"],
+                        "liked": ["hueYellow","muted","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -6070,11 +6070,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueOrange","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -6567,11 +6567,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueGreen","hueBlue","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -7007,11 +7007,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["medicine"],
+                        "liked": ["hueOrange","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -7521,11 +7521,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueOrange","hueYellow","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -8052,11 +8052,11 @@
                         }
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueGreen","hueBlue","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -8548,11 +8548,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["reagent"],
+                        "liked": ["hueYellow","hueGreen","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet","hueRed"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -9111,11 +9111,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["reagent"],
+                        "liked": ["hueIndigo","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueOrange","hueYellow"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -9710,11 +9710,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["wood"],
+                        "liked": ["hueYellow","hueGreen","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet","hueRed"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -10202,11 +10202,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["wood"],
+                        "liked": ["hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -10676,11 +10676,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["wood"],
+                        "liked": ["hueIndigo","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueOrange","hueYellow"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -11138,7 +11138,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["medicine"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -11631,11 +11631,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["crop"],
+                        "liked": ["hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -12126,11 +12126,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["valuable"],
+                        "liked": ["hueOrange","hot","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueBlue","hueIndigo"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -12654,11 +12654,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["valuable"],
+                        "liked": ["hueYellow","hueGreen","muted","dark"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueIndigo","hueViolet","hueRed"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -13169,11 +13169,11 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
-                        "liked": [],
+                        "loved": ["food"],
+                        "liked": ["hueGreen","hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["muted"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -13659,7 +13659,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["mineral"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -14108,7 +14108,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["reagent"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -14554,7 +14554,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["valuable"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -14996,7 +14996,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["animalProduct"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -15456,7 +15456,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["wood"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -15904,7 +15904,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["crop"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -16359,7 +16359,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["food"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -16812,7 +16812,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["fish"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -17265,7 +17265,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["reagent"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -17718,7 +17718,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["valuable"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -18170,7 +18170,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["valuable"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -18623,7 +18623,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["valuable"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],
@@ -19076,7 +19076,7 @@
                         "friendshipUnlocks": []
                   },
                   "gifts": {
-                        "loved": [],
+                        "loved": ["valuable"],
                         "liked": [],
                         "neutral": [],
                         "disliked": [],

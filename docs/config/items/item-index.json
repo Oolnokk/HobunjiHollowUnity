@@ -1,0 +1,1382 @@
+{
+  "alphaGarWolfHide": {
+    "key": "alphaGarWolfHide",
+    "label": "Alpha Gar-wolf Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "alphaGarWolfMeat": {
+    "key": "alphaGarWolfMeat",
+    "label": "Alpha Gar-wolf Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "arsenic": {
+    "key": "arsenic",
+    "label": "Arsenic",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "banditScrapMetal": {
+    "key": "banditScrapMetal",
+    "label": "Bandit Scrap Metal",
+    "icon": "🔩",
+    "cat": "material"
+  },
+  "banditTreasureToken": {
+    "key": "banditTreasureToken",
+    "label": "Bandit Treasure Token",
+    "icon": "🪙",
+    "cat": "material"
+  },
+  "blackberries": {
+    "key": "blackberries",
+    "label": "Blackberries",
+    "icon": "⚫",
+    "cat": "crop"
+  },
+  "blackberryJam": {
+    "key": "blackberryJam",
+    "label": "Blackberry Jam",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "blackberrySeeds": {
+    "key": "blackberrySeeds",
+    "label": "Blackberry Seeds",
+    "icon": "⚫",
+    "cat": "seed"
+  },
+  "blackMustard": {
+    "key": "blackMustard",
+    "label": "Black Mustard",
+    "icon": "⚫",
+    "cat": "crop"
+  },
+  "blackMustardPaste": {
+    "key": "blackMustardPaste",
+    "label": "Black Mustard Paste",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "blackMustardSeed": {
+    "key": "blackMustardSeed",
+    "label": "Black Mustard Seed",
+    "icon": "⚫",
+    "cat": "seed"
+  },
+  "blueberries": {
+    "key": "blueberries",
+    "label": "Blueberries",
+    "icon": "🫐",
+    "cat": "crop"
+  },
+  "blueberryJam": {
+    "key": "blueberryJam",
+    "label": "Blueberry Jam",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "blueberrySeeds": {
+    "key": "blueberrySeeds",
+    "label": "Blueberry Seeds",
+    "icon": "🫐",
+    "cat": "seed"
+  },
+  "blueDew": {
+    "key": "blueDew",
+    "label": "Blue Uumkao'ii Dew",
+    "icon": "🔵",
+    "cat": "material"
+  },
+  "blueDewCurds": {
+    "key": "blueDewCurds",
+    "label": "Blue Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "blueDewMilk": {
+    "key": "blueDewMilk",
+    "label": "Blue Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "bronzehoe": {
+    "key": "bronzehoe",
+    "label": "Bronze Hoe",
+    "icon": "🪓",
+    "cat": "tool"
+  },
+  "caveGlass": {
+    "key": "caveGlass",
+    "label": "Cave Glass",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "cliffMollusk": {
+    "key": "cliffMollusk",
+    "label": "Cliff Mollusk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "cloudFish": {
+    "key": "cloudFish",
+    "label": "Cloud-Flood Fish",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "cloudHerbs": {
+    "key": "cloudHerbs",
+    "label": "Cloud Herbs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "cosmetic:anuri_hood": {
+    "key": "cosmetic:anuri_hood",
+    "label": "Anuri Hood",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:anuri_poncho": {
+    "key": "cosmetic:anuri_poncho",
+    "label": "Anuri Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Engh-sho_F::engh_hairdefault-front": {
+    "key": "cosmetic:appearance::Engh-sho_F::engh_hairdefault-front",
+    "label": "Engh Hairdefault Front",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Engh-sho_F::engh_snowgoggles": {
+    "key": "cosmetic:appearance::Engh-sho_F::engh_snowgoggles",
+    "label": "Engh Snowgoggles",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Engh-sho_M::engh_hairdefault-front": {
+    "key": "cosmetic:appearance::Engh-sho_M::engh_hairdefault-front",
+    "label": "Engh Hairdefault Front",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Engh-sho_M::engh_snowgoggles": {
+    "key": "cosmetic:appearance::Engh-sho_M::engh_snowgoggles",
+    "label": "Engh Snowgoggles",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::hat::basic_headband": {
+    "key": "cosmetic:appearance::hat::basic_headband",
+    "label": "Basic Headband",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::hat::leather_headband": {
+    "key": "cosmetic:appearance::hat::leather_headband",
+    "label": "Leather Headband",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::hat::riverlandskasa_low": {
+    "key": "cosmetic:appearance::hat::riverlandskasa_low",
+    "label": "Riverlandskasa Low",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::hat::riverlandskasa_tight": {
+    "key": "cosmetic:appearance::hat::riverlandskasa_tight",
+    "label": "Riverlandskasa Tight",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::hat::riverlandskasa_wide": {
+    "key": "cosmetic:appearance::hat::riverlandskasa_wide",
+    "label": "Riverlandskasa Wide",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_bowlkasa": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_bowlkasa",
+    "label": "Kenk Bowlkasa",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_braid-L_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_braid-L_f",
+    "label": "Kenk Braid L F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_braid-R_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_braid-R_f",
+    "label": "Kenk Braid R F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_braidcluster-R_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_braidcluster-R_f",
+    "label": "Kenk Braidcluster R F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_eyedisks": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_eyedisks",
+    "label": "Kenk Eyedisks",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_longponytail_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_longponytail_f",
+    "label": "Kenk Longponytail F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_riverlandskasa_low": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_riverlandskasa_low",
+    "label": "Kenk Riverlandskasa Low",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_riverlandskasa_wide": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_riverlandskasa_wide",
+    "label": "Kenk Riverlandskasa Wide",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_shirtbeard_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_shirtbeard_f",
+    "label": "Kenk Shirtbeard F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_splayedknot_high_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_splayedknot_high_f",
+    "label": "Kenk Splayedknot High F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_F::kenk_splayedknot_low_f": {
+    "key": "cosmetic:appearance::Kenkari_F::kenk_splayedknot_low_f",
+    "label": "Kenk Splayedknot Low F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_bowlkasa": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_bowlkasa",
+    "label": "Kenk Bowlkasa",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_braid-L_m": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_braid-L_m",
+    "label": "Kenk Braid L M",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_braid-R_m": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_braid-R_m",
+    "label": "Kenk Braid R M",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_braidcluster-R_m": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_braidcluster-R_m",
+    "label": "Kenk Braidcluster R M",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_eyedisks": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_eyedisks",
+    "label": "Kenk Eyedisks",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_forwardtuft_long": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_forwardtuft_long",
+    "label": "Kenk Forwardtuft Long",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_fowardtuft": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_fowardtuft",
+    "label": "Kenk Fowardtuft",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_riverlandskasa_low": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_riverlandskasa_low",
+    "label": "Kenk Riverlandskasa Low",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_riverlandskasa_wide": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_riverlandskasa_wide",
+    "label": "Kenk Riverlandskasa Wide",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_shirtbeard": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_shirtbeard",
+    "label": "Kenk Shirtbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_splayedknot_high_m": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_splayedknot_high_m",
+    "label": "Kenk Splayedknot High M",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_splayedknot_low_m": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_splayedknot_low_m",
+    "label": "Kenk Splayedknot Low M",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_wildbeard": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_wildbeard",
+    "label": "Kenk Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_braid-L": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_braid-L",
+    "label": "Mao Ao Braid L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_braid-R": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_braid-R",
+    "label": "Mao Ao Braid R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_braidcluster-R": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_braidcluster-R",
+    "label": "Mao Ao Braidcluster R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eye_L": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eye_L",
+    "label": "Mao Ao Circled Eye L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eye_R": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eye_R",
+    "label": "Mao Ao Circled Eye R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eyes": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eyes",
+    "label": "Mao Ao Circled Eyes",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eyes_f": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_circled_eyes_f",
+    "label": "Mao Ao Circled Eyes F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_forwardtuft_long": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+    "label": "Mao Ao Forwardtuft Long",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_forwardtuft_short": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+    "label": "Mao Ao Forwardtuft Short",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_long_ponytail": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_long_ponytail",
+    "label": "Mao Ao Long Ponytail",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_shoulder_length_drape": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
+    "label": "Mao Ao Shoulder Length Drape",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_splayedknot_medium": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+    "label": "Mao Ao Splayedknot Medium",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_tuft": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_tuft",
+    "label": "Mao Ao Tuft",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_F::mao-ao_wildbeard": {
+    "key": "cosmetic:appearance::Mao-ao_F::mao-ao_wildbeard",
+    "label": "Mao Ao Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_braid-L": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_braid-L",
+    "label": "Mao Ao Braid L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_braid-R": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_braid-R",
+    "label": "Mao Ao Braid R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_braidcluster-R": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_braidcluster-R",
+    "label": "Mao Ao Braidcluster R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eye_L": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eye_L",
+    "label": "Mao Ao Circled Eye L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eye_R": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eye_R",
+    "label": "Mao Ao Circled Eye R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eyes": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eyes",
+    "label": "Mao Ao Circled Eyes",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eyes_f": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_circled_eyes_f",
+    "label": "Mao Ao Circled Eyes F",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_forwardtuft_long": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+    "label": "Mao Ao Forwardtuft Long",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_forwardtuft_short": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+    "label": "Mao Ao Forwardtuft Short",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_long_ponytail": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_long_ponytail",
+    "label": "Mao Ao Long Ponytail",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_shoulder_length_drape": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+    "label": "Mao Ao Shoulder Length Drape",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_splayedknot_medium": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+    "label": "Mao Ao Splayedknot Medium",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_tuft": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_tuft",
+    "label": "Mao Ao Tuft",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_wildbeard": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_wildbeard",
+    "label": "Mao Ao Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mashtzarr_M::mashtz_wildbeard": {
+    "key": "cosmetic:appearance::Mashtzarr_M::mashtz_wildbeard",
+    "label": "Mashtz Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_F::rakakoan_ragged_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_F::rakakoan_ragged_eyepatch",
+    "label": "Rakakoan Ragged Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_F::rakakoan_woven_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_F::rakakoan_woven_eyepatch",
+    "label": "Rakakoan Woven Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_F::rakakoan_wrapped_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_F::rakakoan_wrapped_eyepatch",
+    "label": "Rakakoan Wrapped Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_M::rakakoan_ragged_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_M::rakakoan_ragged_eyepatch",
+    "label": "Rakakoan Ragged Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_M::rakakoan_woven_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_M::rakakoan_woven_eyepatch",
+    "label": "Rakakoan Woven Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Rakakoan_M::rakakoan_wrapped_eyepatch": {
+    "key": "cosmetic:appearance::Rakakoan_M::rakakoan_wrapped_eyepatch",
+    "label": "Rakakoan Wrapped Eyepatch",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_braid-L": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_braid-L",
+    "label": "Tl Braid L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_braid-R": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_braid-R",
+    "label": "Tl Braid R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_braidcluster-R": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_braidcluster-R",
+    "label": "Tl Braidcluster R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_forwardtuft_long": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_forwardtuft_long",
+    "label": "Tl Forwardtuft Long",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_forwardtuft_short": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_forwardtuft_short",
+    "label": "Tl Forwardtuft Short",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_longponytail": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_longponytail",
+    "label": "Tl Longponytail",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_shoulder_drape": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_shoulder_drape",
+    "label": "Tl Shoulder Drape",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_F::tl_splayedknot": {
+    "key": "cosmetic:appearance::Tletingan_F::tl_splayedknot",
+    "label": "Tl Splayedknot",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_braid-L": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_braid-L",
+    "label": "Tl Braid L",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_braid-R": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_braid-R",
+    "label": "Tl Braid R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_braidcluster-R": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_braidcluster-R",
+    "label": "Tl Braidcluster R",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_forwardtuft_long": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_forwardtuft_long",
+    "label": "Tl Forwardtuft Long",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_forwardtuft_short": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_forwardtuft_short",
+    "label": "Tl Forwardtuft Short",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_longponytail": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_longponytail",
+    "label": "Tl Longponytail",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_splayedknot": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_splayedknot",
+    "label": "Tl Splayedknot",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_wildbeard": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_wildbeard",
+    "label": "Tl Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:bandolier1": {
+    "key": "cosmetic:bandolier1",
+    "label": "Bandolier1",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:basic_pants": {
+    "key": "cosmetic:basic_pants",
+    "label": "Basic Pants",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:bronze_armbands": {
+    "key": "cosmetic:bronze_armbands",
+    "label": "Bronze Armbands",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:bronze_footbands": {
+    "key": "cosmetic:bronze_footbands",
+    "label": "Bronze Footbands",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:citywatch_helmet": {
+    "key": "cosmetic:citywatch_helmet",
+    "label": "Citywatch Helmet",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:facewrap": {
+    "key": "cosmetic:facewrap",
+    "label": "Facewrap",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:fine_hood": {
+    "key": "cosmetic:fine_hood",
+    "label": "Fine Hood",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:fine_poncho": {
+    "key": "cosmetic:fine_poncho",
+    "label": "Fine Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:layered_travel_cloak": {
+    "key": "cosmetic:layered_travel_cloak",
+    "label": "Layered Travel Cloak",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:rough_cloth_poncho": {
+    "key": "cosmetic:rough_cloth_poncho",
+    "label": "Rough Cloth Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:rugged_poncho": {
+    "key": "cosmetic:rugged_poncho",
+    "label": "Rugged Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:simple_poncho": {
+    "key": "cosmetic:simple_poncho",
+    "label": "Simple Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:tankan_bodywrap": {
+    "key": "cosmetic:tankan_bodywrap",
+    "label": "Tankan Bodywrap",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:tankan_tunic": {
+    "key": "cosmetic:tankan_tunic",
+    "label": "Tankan Tunic",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "crossbow": {
+    "key": "crossbow",
+    "label": "Crossbow",
+    "icon": "🏹",
+    "cat": "tool"
+  },
+  "crownedPineNutOil": {
+    "key": "crownedPineNutOil",
+    "label": "Crowned Pine Nut Oil",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "crownedPineNuts": {
+    "key": "crownedPineNuts",
+    "label": "Crowned Pine Nuts",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "dabinggiHoundEgg": {
+    "key": "dabinggiHoundEgg",
+    "label": "Dabinggi-hound Egg",
+    "icon": "🥚",
+    "cat": "livestock"
+  },
+  "dabinggiHoundHide": {
+    "key": "dabinggiHoundHide",
+    "label": "Dabinggi-hound Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "dabinggiHoundMeat": {
+    "key": "dabinggiHoundMeat",
+    "label": "Dabinggi-hound Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "dabinggiHoundVenom": {
+    "key": "dabinggiHoundVenom",
+    "label": "Dabinggi-hound Venom",
+    "icon": "🧪",
+    "cat": "material"
+  },
+  "denaturedStinkOil": {
+    "key": "denaturedStinkOil",
+    "label": "Denatured Stink Oil",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "drenkirraEgg": {
+    "key": "drenkirraEgg",
+    "label": "Drenkirra Egg",
+    "icon": "🥚",
+    "cat": "material"
+  },
+  "drenkirraEggs": {
+    "key": "drenkirraEggs",
+    "label": "Drenkirra Eggs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "drenkirraHide": {
+    "key": "drenkirraHide",
+    "label": "Drenkirra Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "drenkirraMayonnaise": {
+    "key": "drenkirraMayonnaise",
+    "label": "Drenkirra Mayonnaise",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "drenkirraMeat": {
+    "key": "drenkirraMeat",
+    "label": "Drenkirra Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "drySeasonSpice": {
+    "key": "drySeasonSpice",
+    "label": "Dry-Season Spice",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "fertileDrenkirraEgg": {
+    "key": "fertileDrenkirraEgg",
+    "label": "Fertile Drenkirra Egg",
+    "icon": "🥚",
+    "cat": "livestock"
+  },
+  "fishingmace": {
+    "key": "fishingmace",
+    "label": "Fishing Mace",
+    "icon": "🎣",
+    "cat": "tool"
+  },
+  "fishingspear": {
+    "key": "fishingspear",
+    "label": "Fishing Spear",
+    "icon": "🎣",
+    "cat": "tool"
+  },
+  "fishSauce": {
+    "key": "fishSauce",
+    "label": "Fish Sauce",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "garlink": {
+    "key": "garlink",
+    "label": "Garlink",
+    "icon": "🧄",
+    "cat": "crop"
+  },
+  "garlinkSeeds": {
+    "key": "garlinkSeeds",
+    "label": "Garlink Seeds",
+    "icon": "🧄",
+    "cat": "seed"
+  },
+  "garWolfBaby": {
+    "key": "garWolfBaby",
+    "label": "Gar-wolf Pup",
+    "icon": "🐾",
+    "cat": "livestock"
+  },
+  "garWolfHide": {
+    "key": "garWolfHide",
+    "label": "Gar-wolf Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "garWolfMeat": {
+    "key": "garWolfMeat",
+    "label": "Gar-wolf Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "grassSeeds": {
+    "key": "grassSeeds",
+    "label": "Grass Seeds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "greenBread": {
+    "key": "greenBread",
+    "label": "Green Bread",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "greenDew": {
+    "key": "greenDew",
+    "label": "Green Uumkao'ii Dew",
+    "icon": "🟢",
+    "cat": "material"
+  },
+  "greenDewCurds": {
+    "key": "greenDewCurds",
+    "label": "Green Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "greenDewMilk": {
+    "key": "greenDewMilk",
+    "label": "Green Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "greenMustard": {
+    "key": "greenMustard",
+    "label": "Green Mustard",
+    "icon": "🥬",
+    "cat": "crop"
+  },
+  "greenMustardPaste": {
+    "key": "greenMustardPaste",
+    "label": "Green Mustard Paste",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "greenMustardSeed": {
+    "key": "greenMustardSeed",
+    "label": "Green Mustard Seed",
+    "icon": "🥬",
+    "cat": "seed"
+  },
+  "grehlrBaby": {
+    "key": "grehlrBaby",
+    "label": "Grehlr Baby",
+    "icon": "🐾",
+    "cat": "livestock"
+  },
+  "grehlrHide": {
+    "key": "grehlrHide",
+    "label": "Grehlr Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "grehlrMeat": {
+    "key": "grehlrMeat",
+    "label": "Grehlr Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "grehlrStinkOil": {
+    "key": "grehlrStinkOil",
+    "label": "Grehlr Stink Oil",
+    "icon": "🦨",
+    "cat": "material"
+  },
+  "hatchet": {
+    "key": "hatchet",
+    "label": "Hatchet",
+    "icon": "🪓",
+    "cat": "tool"
+  },
+  "heftroot": {
+    "key": "heftroot",
+    "label": "Heftroot",
+    "icon": "🟡",
+    "cat": "crop"
+  },
+  "heftrootFlour": {
+    "key": "heftrootFlour",
+    "label": "Heftroot Flour",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "heftrootSeeds": {
+    "key": "heftrootSeeds",
+    "label": "Heftroot Seeds",
+    "icon": "🟡",
+    "cat": "seed"
+  },
+  "impureCopper": {
+    "key": "impureCopper",
+    "label": "Impure Copper",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "localNuts": {
+    "key": "localNuts",
+    "label": "Local Nuts",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "meatFodder": {
+    "key": "meatFodder",
+    "label": "Meat Fodder",
+    "icon": "🍖",
+    "cat": "material"
+  },
+  "mireHerbs": {
+    "key": "mireHerbs",
+    "label": "Mire Herbs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "mixedBerryJam": {
+    "key": "mixedBerryJam",
+    "label": "Mixed Berry Jam",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "mulch": {
+    "key": "mulch",
+    "label": "Mulch",
+    "icon": "🍂",
+    "cat": "material"
+  },
+  "nazgrakuEggs": {
+    "key": "nazgrakuEggs",
+    "label": "Nazgraku Eggs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nazgrakuMayonnaise": {
+    "key": "nazgrakuMayonnaise",
+    "label": "Nazgraku Mayonnaise",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nazgrakuMeat": {
+    "key": "nazgrakuMeat",
+    "label": "Nazgraku Meat",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "needlegrain": {
+    "key": "needlegrain",
+    "label": "Needlegrain",
+    "icon": "🌾",
+    "cat": "crop"
+  },
+  "needlegrainFlour": {
+    "key": "needlegrainFlour",
+    "label": "Needlegrain Flour",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "needlegrainSeeds": {
+    "key": "needlegrainSeeds",
+    "label": "Needlegrain Seeds",
+    "icon": "🌾",
+    "cat": "seed"
+  },
+  "nelkEggs": {
+    "key": "nelkEggs",
+    "label": "Nelk Eggs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nelkMayonnaise": {
+    "key": "nelkMayonnaise",
+    "label": "Nelk Mayonnaise",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nelkMeat": {
+    "key": "nelkMeat",
+    "label": "Nelk Meat",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nutButter": {
+    "key": "nutButter",
+    "label": "Nut Butter",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "nutOil": {
+    "key": "nutOil",
+    "label": "Nut Oil",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "ongyums": {
+    "key": "ongyums",
+    "label": "Ongyums",
+    "icon": "🧅",
+    "cat": "crop"
+  },
+  "ongyumsSeeds": {
+    "key": "ongyumsSeeds",
+    "label": "Ongyums Seeds",
+    "icon": "🧅",
+    "cat": "seed"
+  },
+  "orangeDew": {
+    "key": "orangeDew",
+    "label": "Orange Uumkao'ii Dew",
+    "icon": "🟠",
+    "cat": "material"
+  },
+  "orangeDewCurds": {
+    "key": "orangeDewCurds",
+    "label": "Orange Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "orangeDewMilk": {
+    "key": "orangeDewMilk",
+    "label": "Orange Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "pebble": {
+    "key": "pebble",
+    "label": "Pebble",
+    "icon": "🔘",
+    "cat": "material"
+  },
+  "pickshovel": {
+    "key": "pickshovel",
+    "label": "Pick-Shovel",
+    "icon": "⛏️",
+    "cat": "tool"
+  },
+  "pineLog": {
+    "key": "pineLog",
+    "label": "Pine Log",
+    "icon": "🪵",
+    "cat": "material"
+  },
+  "puktukMeat": {
+    "key": "puktukMeat",
+    "label": "Puktuk Meat",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "puktukMilk": {
+    "key": "puktukMilk",
+    "label": "Puktuk Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "puktukWool": {
+    "key": "puktukWool",
+    "label": "Puktuk Wool",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "purpleDew": {
+    "key": "purpleDew",
+    "label": "Purple Uumkao'ii Dew",
+    "icon": "🟣",
+    "cat": "material"
+  },
+  "purpleDewCurds": {
+    "key": "purpleDewCurds",
+    "label": "Purple Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "purpleDewMilk": {
+    "key": "purpleDewMilk",
+    "label": "Purple Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "redberries": {
+    "key": "redberries",
+    "label": "Redberries",
+    "icon": "🍓",
+    "cat": "crop"
+  },
+  "redberryJam": {
+    "key": "redberryJam",
+    "label": "Redberry Jam",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "redberrySeeds": {
+    "key": "redberrySeeds",
+    "label": "Redberry Seeds",
+    "icon": "🍓",
+    "cat": "seed"
+  },
+  "redDew": {
+    "key": "redDew",
+    "label": "Red Uumkao'ii Dew",
+    "icon": "🔴",
+    "cat": "material"
+  },
+  "redDewCurds": {
+    "key": "redDewCurds",
+    "label": "Red Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "redDewMilk": {
+    "key": "redDewMilk",
+    "label": "Red Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "riverFish": {
+    "key": "riverFish",
+    "label": "Northern River Fish",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "roughTin": {
+    "key": "roughTin",
+    "label": "Rough Tin",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "scatterbow": {
+    "key": "scatterbow",
+    "label": "Scatterbow",
+    "icon": "🏹",
+    "cat": "tool"
+  },
+  "shadewoodLog": {
+    "key": "shadewoodLog",
+    "label": "Shadewood Log",
+    "icon": "🪵",
+    "cat": "material"
+  },
+  "shadewoodNutOil": {
+    "key": "shadewoodNutOil",
+    "label": "Shadewood Nut Oil",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "shadewoodNuts": {
+    "key": "shadewoodNuts",
+    "label": "Shadewood Nuts",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "smokedMeat": {
+    "key": "smokedMeat",
+    "label": "Smoked Meat",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "stone": {
+    "key": "stone",
+    "label": "Stone",
+    "icon": "🪨",
+    "cat": "material"
+  },
+  "travelSpice": {
+    "key": "travelSpice",
+    "label": "Trader-Sloth Spice",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiButter": {
+    "key": "uumkaoiiButter",
+    "label": "Uumkao’ii Butter",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiCheese": {
+    "key": "uumkaoiiCheese",
+    "label": "Uumkao’ii Cheese",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiCrate": {
+    "key": "uumkaoiiCrate",
+    "label": "Uumkao'ii Crate",
+    "icon": "🦆",
+    "cat": "livestock"
+  },
+  "uumkaoiiEgg": {
+    "key": "uumkaoiiEgg",
+    "label": "Uumkao'ii Egg",
+    "icon": "🥚",
+    "cat": "livestock"
+  },
+  "uumkaoiiEggs": {
+    "key": "uumkaoiiEggs",
+    "label": "Uumkao’ii Eggs",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiMayonnaise": {
+    "key": "uumkaoiiMayonnaise",
+    "label": "Uumkao’ii Mayonnaise",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiMeat": {
+    "key": "uumkaoiiMeat",
+    "label": "Uumkao'ii Meat",
+    "icon": "🥩",
+    "cat": "material"
+  },
+  "uumkaoiiWhiteDewCurds": {
+    "key": "uumkaoiiWhiteDewCurds",
+    "label": "White Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "uumkaoiiWhiteDewMilk": {
+    "key": "uumkaoiiWhiteDewMilk",
+    "label": "White Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "voorgAssMeat": {
+    "key": "voorgAssMeat",
+    "label": "Voorg-Ass Meat",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "voorgAssMilk": {
+    "key": "voorgAssMilk",
+    "label": "Voorg-Ass Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "whiteberries": {
+    "key": "whiteberries",
+    "label": "Whiteberries",
+    "icon": "⚪",
+    "cat": "crop"
+  },
+  "whiteberryJelly": {
+    "key": "whiteberryJelly",
+    "label": "Whiteberry Jelly",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "whiteberrySeeds": {
+    "key": "whiteberrySeeds",
+    "label": "Whiteberry Seeds",
+    "icon": "⚪",
+    "cat": "seed"
+  },
+  "whiteDew": {
+    "key": "whiteDew",
+    "label": "White Uumkao'ii Dew",
+    "icon": "⚪",
+    "cat": "material"
+  },
+  "yellowberries": {
+    "key": "yellowberries",
+    "label": "Yellowberries",
+    "icon": "🟡",
+    "cat": "crop"
+  },
+  "yellowberryJam": {
+    "key": "yellowberryJam",
+    "label": "Yellowberry Jam",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "yellowberrySeeds": {
+    "key": "yellowberrySeeds",
+    "label": "Yellowberry Seeds",
+    "icon": "🟡",
+    "cat": "seed"
+  },
+  "yellowBread": {
+    "key": "yellowBread",
+    "label": "Yellow Bread",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "yellowDew": {
+    "key": "yellowDew",
+    "label": "Yellow Uumkao’ii Dew",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "yellowDewCurds": {
+    "key": "yellowDewCurds",
+    "label": "Yellow Uumkao’ii Curds",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "yellowDewMilk": {
+    "key": "yellowDewMilk",
+    "label": "Yellow Uumkao’ii Milk",
+    "icon": "",
+    "cat": "ingredient"
+  },
+  "zinc": {
+    "key": "zinc",
+    "label": "Zinc",
+    "icon": "",
+    "cat": "ingredient"
+  }
+}
