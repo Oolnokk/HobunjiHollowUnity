@@ -81,6 +81,12 @@ assert.match(gameSource, /const isExcludedCell[\s\S]{0,240}!!tile\?\.incline \|\
   'the route grass apron must not cover a plateau incline/cliff-face cell');
 assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
   'load-time and runtime route-apron exclusions must share the complete-cell predicate');
+assert.match(gameSource, /const PATH_MESA_LIFT = 0\.004[\s\S]{0,4200}ownerTile\?\.skipFloor && !ownerTile\?\.incline \? PATH_MESA_LIFT : 0/,
+  'the route grass apron anti-z-fighting lift must apply only over flat mesa lids, never cliff boundaries');
+assert.doesNotMatch(gameSource, /NORMAL_TOP \+ PATH_Z_FIGHT_LIFT/,
+  'the entire route grass mesh must not be lifted through neighboring cliff faces');
+assert.match(gameSource, /mesh\.name = 'zone_path_ground'/,
+  'mobile Pixel Probe reports must identify the global path grass mesh directly');
 assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
   'the route grass apron must index the final rendered geometry for surgical runtime hole updates');
 assert.doesNotMatch(gameSource, /if \(isExcluded\(tci, tcj\)\) continue/,
@@ -160,7 +166,22 @@ const liveGrid = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () =>
 liveGrid[3][3].type = TileType.PATH;
 liveGrid[2][2].type = TileType.TRENCH;
 liveGrid[2][3].incline = true;
+liveGrid[2][3].skipFloor = true;
+liveGrid[3][4].skipFloor = true;
 const pathNetwork = buildPathNetworkGeo(liveGrid, 7, 7);
+const noMesaLiftGrid = liveGrid.map(row => row.map(tile => ({ ...tile, skipFloor: false }))); // Baseline used to isolate the plateau-only 0.004 vertex lift.
+const noMesaLiftNetwork = buildPathNetworkGeo(noMesaLiftGrid, 7, 7);
+const vertexYAt = (network, x, z) => {
+  const position = (network.pathGeo || network.grassGeo).getAttribute('position');
+  for (let i = 0; i < position.count; i++) {
+    if (Math.abs(position.array[i * 3] - x) < 1e-6 && Math.abs(position.array[i * 3 + 2] - z) < 1e-6) return position.array[i * 3 + 1];
+  }
+  assert.fail(`missing route-apron vertex at ${x},${z}`);
+};
+assert(Math.abs(vertexYAt(pathNetwork, 4.5, 3.5) - vertexYAt(noMesaLiftNetwork, 4.5, 3.5) - 0.004) < 1e-6,
+  'a flat plateau-top route vertex must retain the mesa anti-z-fighting lift');
+assert(Math.abs(vertexYAt(pathNetwork, 3.5, 2.5) - vertexYAt(noMesaLiftNetwork, 3.5, 2.5)) < 1e-6,
+  'an incline/cliff route vertex must remain at its real seam height without the mesa lift');
 const mergedPosition = [];
 const mergedIndex = [];
 let vertexBase = 0;

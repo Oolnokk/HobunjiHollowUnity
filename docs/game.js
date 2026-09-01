@@ -9245,17 +9245,16 @@
 
         const pathNet = options.pathNet || buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
         if (includeGlobalPath && pathNet) {
-          // Tiny lift above the plateau mesa lid (which shares this exact
-          // tier height wherever a path crosses a plateau — see
-          // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
-          // don't z-fight; small enough to read as flush, not floating.
-          const PATH_Z_FIGHT_LIFT = 0.004;
           // Regular ground (grass) covers the path's own footprint too —
           // see the paved brick surface registered below, which is meant to
           // simply overlay ordinary ground rather than sit on a separately-
-          // colored "path" patch (same treatment as the town path).
-          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
-          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
+          // colored "path" patch (same treatment as the town path). The tiny
+          // anti-z-fighting lift needed over mesa lids is now baked only into
+          // flat plateau-top vertices by buildPathNetworkGeo; globally lifting
+          // this mesh made lower grass float through cliff faces at grazing
+          // camera angles.
+          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
         // Paved brick surface over this zone's path, if it has one — same
@@ -9465,6 +9464,7 @@
           mesh.receiveShadow = true;
           mesh.userData.wildernessChunkOwnsGeometry = true;
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
+            mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
             mesh.userData.wildernessGlobalPathGround = true;
             pathNet.bindGlobalGroundMesh?.(mesh);
           }
@@ -19346,6 +19346,7 @@
         };
         const smooth = t => t * t * (3 - 2 * t);
         const PATH_DY = -0.05; // shallow — a worn groove, not a trench
+        const PATH_MESA_LIFT = 0.004; // Used only on flat skipFloor plateau tops that overlap a mesa lid.
 
         // Y[] stays tier-independent (local worn-groove height only) since
         // PATH_THRESH below is tuned against it — positions[] is what
@@ -19364,10 +19365,12 @@
             const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
             const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
             const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
-            const tierY = (srcGrid[minR + tcj]?.[minC + tci]?.elevTier || 0) * PLATEAU_UNIT;
+            const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Used to lift only vertices that actually overlap a flat mesa lid.
+            const tierY = (ownerTile?.elevTier || 0) * PLATEAU_UNIT;
+            const mesaLift = ownerTile?.skipFloor && !ownerTile?.incline ? PATH_MESA_LIFT : 0; // Prevents cliff-edge grass from inheriting the plateau-only offset.
             const k = gj*GW+gi;
             Y[k] = localY;
-            positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
+            positions[k*3] = vx; positions[k*3+1] = tierY + localY + mesaLift; positions[k*3+2] = vz;
           }
 
         const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
