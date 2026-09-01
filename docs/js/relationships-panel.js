@@ -10,6 +10,33 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Per-NPC chathead icon — the same head-cropped image ambient dialogue
+  // shows floating above them in the world (see js/ambient-dialogue.js's
+  // renderChatheadImage/buildChatheadProfile), rendered once onto an
+  // offscreen canvas and cached as a data URL so re-opening/re-rendering
+  // this tab doesn't redo the render for every NPC every time.
+  const chatheadCache = new Map(); // npcId -> data URL ('' once resolved-but-unavailable, null while in flight)
+
+  function ensureChathead(npcId, profile) {
+    if (chatheadCache.has(npcId) || !profile || !window.AmbientDialogue?.renderChatheadImage) return;
+    chatheadCache.set(npcId, null);
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    window.AmbientDialogue.renderChatheadImage(canvas, profile, { seatId: npcId })
+      .then(ok => {
+        chatheadCache.set(npcId, ok ? canvas.toDataURL() : '');
+        renderRelationshipsPanel(); // Refresh now that this one NPC's chathead is ready.
+      })
+      .catch(() => chatheadCache.set(npcId, ''));
+  }
+
+  function chatheadIconHtml(npcId) {
+    const cached = chatheadCache.get(npcId);
+    return cached
+      ? `<img class="sh-icon npc-chathead" src="${cached}" alt="">`
+      : `<div class="sh-icon">💬</div>`;
+  }
+
   function renderRelationshipsPanel() {
     const list = document.getElementById('relationshipsList');
     if (!list) return;
@@ -21,15 +48,19 @@
       return;
     }
     knownIds
-      .map(npcId => ({ npcId, rec: deps.npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...window.ProceduralTasks.friendshipTierProgress(npcId) }))
+      .map(npcId => {
+        const walker = deps.npcWalkers.find(w => w.rec?.id === npcId);
+        return { npcId, rec: walker?.rec, profile: walker?.profile, ...window.ProceduralTasks.friendshipTierProgress(npcId) };
+      })
       .sort((a, b) => b.favor - a.favor)
-      .forEach(({ npcId, rec, tier, favor, next }) => {
+      .forEach(({ npcId, rec, profile, tier, favor, next }) => {
+        ensureChathead(npcId, profile);
         const name = rec?.name || npcId;
         const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
         const row = document.createElement('div');
         row.className = 'shop-row';
         row.innerHTML = `
-          <div class="sh-icon">💬</div>
+          ${chatheadIconHtml(npcId)}
           <div class="sh-info">
             <div class="sh-name">${deps.esc(name)} — Friendship Tier ${tier}</div>
             <div class="sh-desc">${favor} favor (${progressNote})</div>

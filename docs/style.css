@@ -698,6 +698,10 @@
       margin-bottom: 6px;
     }
     .shop-row .sh-icon { font-size: 20px; }
+    .shop-row .sh-icon.npc-chathead {
+      width: 34px; height: 34px; border-radius: 50%; object-fit: cover;
+      flex-shrink: 0; background: rgba(255,255,255,0.06);
+    }
     .shop-row .sh-info { flex: 1; }
     .shop-row .sh-name { font-size: 12px; color: var(--text); }
     .shop-row .sh-desc { font-size: 10px; color: var(--muted); margin-top: 1px; }

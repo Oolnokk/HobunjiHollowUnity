@@ -462,6 +462,26 @@
     if (event.headPart) disposePart(event.headPart);
   }
 
+  // Crops sourceCanvas down to its visible-pixel bounding box (padded) and
+  // scales that into a square drawn onto targetContext — the composite step
+  // shared by the world chathead bubble (renderChathead, below) and any 2D
+  // DOM chathead icon (renderChatheadImage, exported — see its own use in
+  // js/relationships-panel.js). Returns the bounds actually used.
+  function compositeChatheadSquare(sourceCanvas, targetContext, size, padding = 7) {
+    targetContext.clearRect(0, 0, size, size);
+    targetContext.imageSmoothingEnabled = false;
+    const bounds = portraitBounds(sourceCanvas);
+    const sourceSize = sourceCanvas.width;
+    const sx = Math.max(0, bounds.x - padding), sy = Math.max(0, bounds.y - padding);
+    const sw = Math.min(sourceSize - sx, bounds.width + padding * 2);
+    const sh = Math.min(sourceSize - sy, bounds.height + padding * 2);
+    const drawableSize = size * 0.96;
+    const scale = Math.min(drawableSize / sw, drawableSize / sh);
+    const dw = sw * scale, dh = sh * scale;
+    targetContext.drawImage(sourceCanvas, sx, sy, sw, sh, (size - dw) / 2, (size - dh) / 2, dw, dh);
+    return bounds;
+  }
+
   function renderChathead(event, now, force = false) {
     if (!event.headPart || !event.profile || event.headPart.busy || (!force && now < event.headPart.nextFrameAt)) return;
     const source = event.headSource || (event.headSource = Object.assign(document.createElement('canvas'), { width: 200, height: 200 }));
@@ -474,23 +494,32 @@
         breathingComposer: window.portraitBreathingComposer || null,
       });
       if (!state.active.includes(event)) return;
-      const context = event.headPart.canvas.getContext('2d');
-      context.clearRect(0, 0, 200, 200);
-      context.imageSmoothingEnabled = false;
       // Fit every visible head/head-cosmetic pixel into the square; torso, arms,
       // and body cosmetics were omitted from the render-only profile above.
-      const bounds = portraitBounds(source);
-      const padding = 7;
-      const sx = Math.max(0, bounds.x - padding), sy = Math.max(0, bounds.y - padding);
-      const sw = Math.min(200 - sx, bounds.width + padding * 2);
-      const sh = Math.min(200 - sy, bounds.height + padding * 2);
-      const scale = Math.min(192 / sw, 192 / sh);
-      const dw = sw * scale, dh = sh * scale;
-      context.drawImage(source, sx, sy, sw, sh, (200 - dw) / 2, (200 - dh) / 2, dw, dh);
+      const bounds = compositeChatheadSquare(source, event.headPart.canvas.getContext('2d'), 200);
       event.headPart.plane.userData.portraitBounds = { ...bounds }; // Mobile Pixel Probe/debug inspection hook.
       event.headPart.texture.needsUpdate = true;
     }).catch(error => state.deps?.debugLog?.(`[ambient-dialogue] chathead render failed: ${error?.message || error}`, 'warn'))
       .finally(() => { event.headPart.busy = false; });
+  }
+
+  // Renders the same head-cropped chathead image ambient dialogue shows
+  // above an NPC's head, but onto an arbitrary 2D DOM <canvas> instead of a
+  // 3D world plane — for UI lists that want an NPC's chathead as their row
+  // icon (see js/relationships-panel.js). One-shot, not on the ambient
+  // render queue/FPS throttle (those exist to spread cost across many
+  // simultaneously-talking NPCs in the world; a UI list renders a handful
+  // of icons once each). Resolves true on success, false if there was
+  // nothing to render.
+  async function renderChatheadImage(targetCanvas, profile, options = {}) {
+    if (!targetCanvas || !profile || !window.NpcAvatarPreview?.renderProfileToCanvas) return false;
+    const source = Object.assign(document.createElement('canvas'), { width: 200, height: 200 });
+    await window.NpcAvatarPreview.renderProfileToCanvas(source, buildChatheadProfile(profile), {
+      seatId: options.seatId,
+      forceEyesOpen: true,
+    });
+    compositeChatheadSquare(source, targetCanvas.getContext('2d'), targetCanvas.width || 200);
+    return true;
   }
 
   function show(root, text, options = {}) {
@@ -828,6 +857,7 @@
     clear,
     loadSettings,
     resolveTargetName,
+    renderChatheadImage,
   };
   window.AmbientDialogue = api;
 })();
