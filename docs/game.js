@@ -1665,6 +1665,15 @@
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
         fishingspear: { label: 'Fishing Spear', icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', baseSprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+        // Weapon-only shapes receive the mastery policy's 2x pure-combat XP multiplier
+        // because they expose no ordinary tool slot. weaponIdleClass is deliberately
+        // independent of animStyle/comboStyle so authored rest poses do not dictate attacks.
+        bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
+        plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
+        dagger:       { label: 'Dagger',        icon: '🗡️', baseSprite: 'assets/toolsprites/dagger.png',             slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light' },
+        kylie:        { label: 'Kylie',         icon: '🗡️', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
       };
       // Every shape is unlocked from the start — "you unlock all the current
       // ones by default" — this is just the set Sloomi/Kzubug's crafting
@@ -1689,8 +1698,10 @@
             sprite: shape.baseSprite,
             slots: shape.slots,
             animStyle: shape.animStyle,
+            comboStyle: shape.comboStyle,
             dmgType: shape.dmgType,
             spinning: shape.spinning,
+            weaponIdleClass: shape.weaponIdleClass,
             shapeKey, metalKey,
             itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
           };
@@ -1700,11 +1711,13 @@
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
       // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
       // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
-      // Combo. No weapon equipped falls back to the swing combo, same as the
-      // legacy 'slash' action's own default.
+      // Combo. A definition may explicitly override that coupling with
+      // comboStyle (the dagger-sword does), while older definitions keep using
+      // animStyle. No weapon equipped falls back to the swing combo, same as
+      // the legacy 'slash' action's own default.
       function currentComboAbilityId() {
         const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
-        return def?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+        return (def?.comboStyle || def?.animStyle) === 'thrust' ? 'pokeCombo' : 'swingCombo';
       }
 
       // Drives which flavor of affliction options every weapon-tool ability

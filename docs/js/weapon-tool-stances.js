@@ -117,6 +117,7 @@
   }
 
   function weaponIdleClass(itemKey, def) {
+    if (def?.weaponIdleClass === 'heavy' || def?.weaponIdleClass === 'light') return def.weaponIdleClass;
     const shape = shapeFor(itemKey, def);
     if (shape === 'hoe' || shape === 'hatchet') return 'heavy';
     if (shape === 'fishingmace' || shape === 'fishingspear' || shape === 'pickshovel') return 'light';
