@@ -667,11 +667,17 @@ $('gizmoPhase').addEventListener('change', () => {
 // shape, and it's obvious which end is the tool's business end.
 const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
-  hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',         animStyle: 'sweep'  },
-  pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',   animStyle: 'thrust' },
-  bronzehoe:    { label: 'Bronze Hoe (chop)',     sprite: '../../assets/toolsprites/hoe_bronzehoe.png',       animStyle: 'chop'   },
-  fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png',animStyle: 'sweep'  },
-  fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png', animStyle: 'sweep'  },
+  hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',    animStyle: 'thrust', usesWeaponStanceBasis: true },
+  bronzehoe:    { label: 'Bronze Hoe (chop)',     sprite: '../../assets/toolsprites/hoe_bronzehoe.png',        animStyle: 'chop',   usesWeaponStanceBasis: true },
+  fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png', animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png',  animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  bshuakauitl:  { label: "B'shuakauitl (sweep)", sprite: "../../assets/toolsprites/b'shuakauitl.png",         animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  daggerSword:  { label: 'Dagger-Sword (sweep)',  sprite: '../../assets/toolsprites/dagger-sword_sweep.png',   animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  plainsSword:  { label: 'Plains-Sword (sweep)',  sprite: '../../assets/toolsprites/plains-sword.png',         animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  dagger:       { label: 'Dagger (thrust)',       sprite: '../../assets/toolsprites/dagger.png',               animStyle: 'thrust', usesWeaponStanceBasis: true },
+  kylie:        { label: 'Kylie (sweep)',         sprite: '../../assets/toolsprites/kylie.png',                animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  warCleaver:   { label: 'War-Cleaver (sweep)',   sprite: '../../assets/toolsprites/war-cleaver.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
   crossbow:     { label: 'Crossbow (unloaded)',    sprite: '../../assets/toolsprites/ranged_crossbow.png',      animStyle: 'ranged' },
   crossbowLoaded:{ label: 'Crossbow (loaded)',     sprite: '../../assets/toolsprites/ranged_crossbow_loaded.png',animStyle: 'ranged' },
@@ -1116,7 +1122,7 @@ function applyPoseToRig(pose) {
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
     // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
     // their attack transitions no longer appear 90° off in this editor.
-    const weaponSlotSprite = ['hatchet', 'pickshovel', 'bronzehoe', 'fishingspear', 'fishingmace'].includes(currentToolKey);
+    const weaponSlotSprite = TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis === true;
     let neutralWeight = 0;
     if (weaponSlotSprite && anim.style === 'sweep') {
       if (previewT <= anim.windupFrac) neutralWeight = anim.windupFrac > 0.000001 ? 1 - previewT / anim.windupFrac : 0;
@@ -1363,6 +1369,22 @@ $('scrubStrikeBtn').onclick = () => scrubToPhase('strike');
 
 let previewT = 0;
 let playing = true;
+
+// Stable bridge for editor extensions. Grip authoring no longer needs to know
+// about this module's private scene layout or duplicate its weapon/tool rules.
+window.HobunjiAttackEditorToolContext = Object.freeze({
+  THREE,
+  renderer,
+  camera,
+  get toolHolder() { return toolHolder; },
+  get toolPlaneMesh() { return toolPlaneMesh; },
+  get toolKey() { return currentToolKey; },
+  focusNeutral() {
+    scrubToPhase('neutral');
+    applyPoseToRig(anim.poses.neutral);
+  },
+});
+window.dispatchEvent(new CustomEvent('hobunji-attack-editor-tool-context-ready'));
 $('playPauseBtn').onclick = () => {
   playing = !playing;
   $('playPauseBtn').textContent = playing ? '⏸ Pause' : '▶ Play';

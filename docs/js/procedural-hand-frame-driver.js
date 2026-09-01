@@ -1,7 +1,7 @@
-// Direct tool-to-hand frame driver.
+// Direct held-item-to-hand frame driver.
 //
-// No arm solver participates. The right hand follows the toolHolder's authored
-// primary grip frame directly. If the active tool has an enabled secondary grip
+// No arm solver participates. The right hand follows the held item's authored
+// primary grip frame directly. If the active item has an enabled secondary grip
 // in hand-tool-grips.js, the left hand follows that frame; otherwise it receives
 // the procedural locomotion fallback. Free hands breathe subtly at idle and swing
 // while walking. Attachment ownership always wins per side, so fallback motion
@@ -258,7 +258,7 @@
   // WeaponToolStances.lastHolderMatrixWorld() hands back the matrixWorld
   // actually baked this frame so hands read the same transform the tool
   // rendered with, without calling a recomputing accessor on toolHolder.
-  function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
+  function toolSocketWorld(record, toolHolder, gripFrame = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
     const bakedWorldMatrix = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
@@ -281,14 +281,14 @@
       quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
     }
     quaternion.multiply(visualBasis.quaternion);
-    if (secondaryGrip) {
-      const p = secondaryGrip.position || {};
+    if (gripFrame) {
+      const p = gripFrame.position || {};
       const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
         .applyQuaternion(visualBasis.quaternion);
       if (bakedWorldMatrix) localOffset.applyMatrix4(bakedWorldMatrix);
       else toolHolder.localToWorld(localOffset);
       position = localOffset;
-      quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
+      quaternion.multiply(quaternionFromDeg(record, gripFrame.rotationDeg || {}));
     } else if (!bakedWorldMatrix) {
       position = toolHolder.getWorldPosition(new Vector3());
     }
@@ -408,7 +408,8 @@
     syncing = true;
     try {
       const toolKey = currentToolKey();
-      const primary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder));
+      const primaryGrip = toolGrips.primaryGripForTool(toolKey);
+      const primary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder, primaryGrip));
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion);
       ensureFallbackState(record).owners.right = 'primary-grip';
 
@@ -433,6 +434,7 @@
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
+        primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,
         secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
         authoredHandTransform: primary.authored,
@@ -545,6 +547,7 @@
         handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
           || profiles.handTransformForSpecies?.(record.speciesId)
           || null,
+        primaryGrip: toolGrips.primaryGripForTool(record.lastToolKey),
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
         hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,

@@ -1,12 +1,14 @@
-// Tool-local hand grip sockets shared by gameplay and the Attack Animation Editor.
-// Primary grip is always the toolHolder origin. Weapons/tools may optionally define
-// one secondary grip frame for the opposite hand. No arm reach or IK participates.
+// Held-item-local hand grip sockets shared by gameplay and the Attack Animation Editor.
+// Every weapon/tool may author a primary frame for the right hand and an optional
+// secondary frame for the left. Missing primary data normalizes to the old
+// toolHolder-origin behavior, so existing saves and held items remain compatible.
 (function (global) {
   'use strict';
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'all-disabled-v1'; // One-time migration marker that clears every currently authored second-hand toggle.
+  const CRAFTED_METAL_SUFFIX = /-(?:nativecopper|lowtinbronze|tinbronze|hightinbronze|arsenicalbronze|leadedbronze|tumbaga)$/; // Used by toolKeyFor so one shape grip serves every crafted metal variant.
 
   function identityTransform() {
     return {
@@ -46,7 +48,7 @@
   }
 
   function toolKeyFor(value) {
-    const key = normalizeKey(value);
+    const key = normalizeKey(value).replace(CRAFTED_METAL_SUFFIX, '');
     if (key.includes('hatchet')) return 'hatchet';
     if (key.includes('hoe')) return 'hoe';
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'pickshovel';
@@ -88,6 +90,7 @@
     if (!next.tools || typeof next.tools !== 'object') next.tools = {};
     for (const entry of Object.values(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
+      entry.primaryGrip = normalizeTransform(entry.primaryGrip);
       const secondary = entry.secondaryGrip || {};
       entry.secondaryGrip = {
         enabled: disableExistingSecondaryGrips ? false : secondary.enabled === true,
@@ -124,9 +127,15 @@
   function ensureTool(value) {
     const key = toolKeyFor(value);
     if (!key) return null;
-    if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, ...identityTransform() } };
+    if (!data.tools[key]) data.tools[key] = { primaryGrip: identityTransform(), secondaryGrip: { enabled: false, ...identityTransform() } };
+    if (!data.tools[key].primaryGrip) data.tools[key].primaryGrip = identityTransform();
     if (!data.tools[key].secondaryGrip) data.tools[key].secondaryGrip = { enabled: false, ...identityTransform() };
     return data.tools[key];
+  }
+
+  function primaryGripForTool(value) {
+    const key = toolKeyFor(value);
+    return normalizeTransform(data.tools?.[key]?.primaryGrip);
   }
 
   function secondaryGripForTool(value) {
@@ -148,7 +157,7 @@
   function setGripMode(value, modeKey) {
     const key = toolKeyFor(value);
     if (!key) return null;
-    if (!data.tools[key]) data.tools[key] = { secondaryGrip: { enabled: false, ...identityTransform() } };
+    if (!data.tools[key]) data.tools[key] = { primaryGrip: identityTransform(), secondaryGrip: { enabled: false, ...identityTransform() } };
     data.tools[key].gripMode = normalizeGripMode(modeKey);
     notify();
     return data.tools[key].gripMode;
@@ -174,6 +183,7 @@
     clone: () => clone(data),
     toolKeyFor,
     ensureTool,
+    primaryGripForTool,
     secondaryGripForTool,
     gripModeForTool,
     setGripMode,

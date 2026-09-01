@@ -418,22 +418,22 @@
 
   // A bandit's actual held weapon -- see weaponMetalTierRangeByRank's
   // _comment in bandit-gang-config.json. Reuses the player's own
-  // deps.TOOL_SHAPE_DEFS/deps.METAL_DEFS/deps.craftedToolItemKey/deps.metalDmgMultiplier
+  // deps.HELD_SHAPE_DEFS/deps.METAL_DEFS/deps.craftedToolItemKey/deps.metalDmgMultiplier
   // rather than inventing a parallel weapon system, so a bandit's
   // hatchet/fishing-mace/fishing-spear/pick-shovel renders with the
   // exact same crafted-tool sprite+metal recolor the player's own gear
   // uses (see refreshMetalToolWorldTexture).
-  // Only shapes that actually go in the weapon slot (see deps.TOOL_SHAPE_DEFS
+  // Only shapes that actually go in the weapon slot (see deps.HELD_SHAPE_DEFS
   // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
   // Recomputed fresh each call rather than cached at module load so a
-  // shape added to deps.TOOL_SHAPE_DEFS later is picked up automatically.
+  // shape added to deps.HELD_SHAPE_DEFS later is picked up automatically.
   function banditWeaponShapeKeys() {
-    return Object.keys(deps.TOOL_SHAPE_DEFS).filter(k => deps.TOOL_SHAPE_DEFS[k].slots?.includes('weapon'));
+    return Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon'));
   }
   function banditWeaponFor(cfg, rank, tier) {
     const shapeKeys = banditWeaponShapeKeys();
     const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)];
-    const shape = deps.TOOL_SHAPE_DEFS[shapeKey];
+    const shape = deps.HELD_SHAPE_DEFS[shapeKey];
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
     const loT = deps.clamp(Math.round(minT), 1, 7), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, 7);
@@ -461,7 +461,7 @@
   // WHICH abilities a bandit carries, not how they run.
   function banditAbilityLoadout(shapeKey, held) {
     return {
-      tap1: deps.TOOL_SHAPE_DEFS[shapeKey]?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo',
+      tap1: (deps.HELD_SHAPE_DEFS[shapeKey]?.comboStyle || deps.HELD_SHAPE_DEFS[shapeKey]?.animStyle) === 'thrust' ? 'pokeCombo' : 'swingCombo',
       tap2: BANDIT_QUICK_ATTACK_IDS[Math.floor(deps.rnd() * BANDIT_QUICK_ATTACK_IDS.length)],
       hold1: held >= 1 ? 'chargedBreaker' : null,
       hold2: held >= 2 ? 'counterShield' : null,
