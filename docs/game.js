@@ -9804,6 +9804,9 @@
       // and by a runtime tile change on a plateau's flat top.
       function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
         const meshes = [];
+        // Rebuilds discard the previous geometry-derived ownership tags before
+        // the current mesa faces mark their exact steep tiles below.
+        for (const row of (zGrid || [])) for (const tile of (row || [])) if (tile) delete tile.mesaCliffFace;
         plateauMesas.forEach((mesa, i) => {
           const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
           if (elevOffset <= 0) return;
@@ -12958,16 +12961,17 @@
           // entire route heightfield (which previously froze large wilderness
           // maps for several seconds). Filling/smoothing restores the original
           // indices through the same path.
+          rebuildZoneMesaMeshes(mapId); // Re-tags exact steep-face ownership before the apron decides whether this tile belongs to rock.
           const routeApronUpdated = zi.pathNet?.refreshTile?.(col, row) || false; // Reported in the mobile-visible debug log below.
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
           const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
-          rebuildZoneMesaMeshes(mapId);
           window.WildTreasure.syncZoneInteractivity(mapId);
           debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
           return;
         }
+        rebuildZoneMesaMeshes(mapId); // Refresh geometry-derived cliff ownership before rebuilding ordinary/path ground.
         const oldFloor = _zoneFloorMeshGroups.get(mapId);
         if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
         const oldGrass = _zoneGrassMeshes.get(mapId);
@@ -12984,10 +12988,8 @@
         const cullables = [];
         zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
         zi.cullables = cullables;
-        // A dug/filled tile might sit on a plateau's flat top — its mesa lid
-        // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
-        // and would keep covering/exposing the wrong side of a real trench.
-        rebuildZoneMesaMeshes(mapId);
+        // The mesa rebuild above also keeps a dug/filled plateau-top lid from
+        // covering or exposing the wrong side of a real trench.
         // A dig/fill/raise here may have just turned a buried chest's tile
         // into (or out of) a real trench — see syncZoneTreasureInteractivity.
         window.WildTreasure.syncZoneInteractivity(mapId);
@@ -19285,7 +19287,7 @@
         // remain eligible so authored paths can still cross them normally.
         const isExcludedCell = (ci, cj) => {
           const tile = cellAt(ci, cj);
-          return !!tile?.incline || EXCLUDED.has(tile?.type);
+          return !!tile?.incline || !!tile?.mesaCliffFace || EXCLUDED.has(tile?.type);
         };
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
 

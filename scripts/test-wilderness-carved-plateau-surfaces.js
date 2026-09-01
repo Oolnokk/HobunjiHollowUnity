@@ -73,12 +73,17 @@ for (const key of carvedByKey.keys()) {
 const gameSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf8');
 const grassSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-grass-billboards.js'), 'utf8');
 const terrainChunkSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'terrain-render-chunks.js'), 'utf8');
+const mesaSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-plateau-mesa.js'), 'utf8');
 assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key, \{ \.\.\.staked, type: t\.type \}\)/,
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
-assert.match(gameSource, /const isExcludedCell[\s\S]{0,240}!!tile\?\.incline \|\| EXCLUDED\.has\(tile\?\.type\)/,
-  'the route grass apron must not cover a plateau incline/cliff-face cell');
+assert.match(gameSource, /const isExcludedCell[\s\S]{0,280}!!tile\?\.incline \|\| !!tile\?\.mesaCliffFace \|\| EXCLUDED\.has\(tile\?\.type\)/,
+  'the route grass apron must not cover metadata inclines or geometry-confirmed cliff-face cells');
+assert.match(mesaSource, /if \(steep\)[\s\S]{0,360}ownerTile\.mesaCliffFace = true/,
+  'the rendered mesa must tag every tile that actually emits a steep stone quad');
+assert.match(gameSource, /delete tile\.mesaCliffFace[\s\S]{0,700}buildPlateauMesa/,
+  'mesa rebuilds must replace stale geometry-derived cliff ownership tags');
 assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
   'load-time and runtime route-apron exclusions must share the complete-cell predicate');
 assert.match(gameSource, /const PATH_MESA_LIFT = 0\.004[\s\S]{0,4200}ownerTile\?\.skipFloor && !ownerTile\?\.incline \? PATH_MESA_LIFT : 0/,
@@ -167,6 +172,8 @@ liveGrid[3][3].type = TileType.PATH;
 liveGrid[2][2].type = TileType.TRENCH;
 liveGrid[2][3].incline = true;
 liveGrid[2][3].skipFloor = true;
+liveGrid[2][4].mesaCliffFace = true;
+liveGrid[2][4].skipFloor = true;
 liveGrid[3][4].skipFloor = true;
 const pathNetwork = buildPathNetworkGeo(liveGrid, 7, 7);
 const noMesaLiftGrid = liveGrid.map(row => row.map(tile => ({ ...tile, skipFloor: false }))); // Baseline used to isolate the plateau-only 0.004 vertex lift.
@@ -208,6 +215,9 @@ assert(tileIsCollapsed(trenchStarts), 'an initially carved tile must be absent a
 const inclineStarts = pathNetwork.renderedTileIndexRanges.get('3,2');
 assert.equal(inclineStarts?.length, 72, 'one plateau incline tile must retain all 72 restorable apron triangles');
 assert(tileIsCollapsed(inclineStarts), 'a plateau incline must have no flat grass apron intersecting its cliff skin');
+const renderedCliffStarts = pathNetwork.renderedTileIndexRanges.get('4,2');
+assert.equal(renderedCliffStarts?.length, 72, 'one geometry-confirmed cliff tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(renderedCliffStarts), 'a rendered steep mesa tile must have no path grass intersecting its cliff skin');
 liveGrid[2][2].type = TileType.GRASS;
 assert(pathNetwork.refreshTile(2, 2), 'filling must find the final rendered tile ranges');
 assert(!tileIsCollapsed(trenchStarts), 'filling must restore the route-apron surface');
@@ -217,6 +227,9 @@ assert(tileIsCollapsed(trenchStarts), 'redigging must remove the restored surfac
 liveGrid[2][3].incline = false;
 assert(pathNetwork.refreshTile(3, 2), 'flattening an incline must find the final rendered tile ranges');
 assert(!tileIsCollapsed(inclineStarts), 'flattening an incline must restore its route-apron surface');
+delete liveGrid[2][4].mesaCliffFace;
+assert(pathNetwork.refreshTile(4, 2), 'removing stale rendered-cliff ownership must find the final tile ranges');
+assert(!tileIsCollapsed(renderedCliffStarts), 'a mesa rebuild that removes a steep face must restore its route-apron surface');
 
 // Execute the real basin builder too. Wilderness water must be full depth at
 // its shoreline and must add vertical wall triangles, while the town call
