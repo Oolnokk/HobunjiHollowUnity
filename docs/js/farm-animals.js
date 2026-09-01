@@ -215,15 +215,18 @@
   // station-wander (_farmAnimalWanderTick) so there's one place that
   // knows how to move an animal one tile, instead of two hand-copies.
   // Prefers the diagonal-ish direction first, then straightens out along
-  // whichever single axis still has distance left, then (if fully
-  // blocked) tries every other cardinal direction rather than giving up
-  // immediately — onStep, if given, runs after a successful hop with the
-  // tile the animal just left (uumkao'ii's dew-pile drop uses this).
+  // whichever single axis still has distance left. Urgent barn homing may
+  // opt into unrelated cardinal fallbacks; daytime roaming does not, so a
+  // blocked animal paths around the obstruction instead of wandering away
+  // from its chosen station. onStep, if given, runs after a successful hop
+  // with the tile the animal just left (uumkao'ii's dew-pile drop uses this).
   // Returns true if it actually moved, false if every direction was
   // blocked (caller decides what "stuck" means for it).
-  function _farmAnimalStepToward(animal, targetCol, targetRow, onStep, isBlocked) {
+  function _farmAnimalStepToward(animal, targetCol, targetRow, onStep, isBlocked, allowUnrelatedFallback = true) {
     const dc = Math.sign(targetCol - animal.col), dr = Math.sign(targetRow - animal.row);
-    const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
+    const directDirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }]; // Used to keep station travel aimed at its chosen destination.
+    const fallbackDirs = allowUnrelatedFallback ? [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }] : []; // Used only by urgent barn homing.
+    const dirs = directDirs.concat(fallbackDirs)
       .filter(d => d.dc || d.dr);
     for (const d of dirs) {
       const nc = animal.col + d.dc, nr = animal.row + d.dr;
@@ -283,9 +286,11 @@
   // even though there's no literal fence data) rather than its current
   // position, so repeated station-hops can't slowly drift it across the
   // whole farm.
-  const FARM_ANIMAL_WANDER_RADIUS_TILES = 5;
-  const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
-  const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
+  const FARM_ANIMAL_WANDER_CONFIG = window.SCRATCHBONES_CONFIG?.game?.livestock?.wander || {}; // Used by target selection and station-rest timing below.
+  const FARM_ANIMAL_WANDER_RADIUS_TILES = Math.max(1, Number(FARM_ANIMAL_WANDER_CONFIG.radiusTiles) || 6);
+  const FARM_ANIMAL_WANDER_MIN_TRAVEL_TILES = Math.min(FARM_ANIMAL_WANDER_RADIUS_TILES, Math.max(1, Number(FARM_ANIMAL_WANDER_CONFIG.minTravelTiles) || 3));
+  const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = Math.max(0, Number(FARM_ANIMAL_WANDER_CONFIG.waitMinSeconds) || 10);
+  const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = Math.max(FARM_ANIMAL_WANDER_WAIT_MIN_SEC, Number(FARM_ANIMAL_WANDER_CONFIG.waitMaxSeconds) || 15);
   const LIVESTOCK_LOOK_RANGE_TILES = 3.75;
 
   // Livestock use the same face-height contract as wild companions, but this
@@ -351,31 +356,46 @@
   }
 
   function _farmAnimalPickWanderTarget(animal) {
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 16; attempt++) {
       const dc = Math.round((deps.rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
       const dr = Math.round((deps.rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
       if (!dc && !dr) continue;
       const nc = animal.homeCol + dc, nr = animal.homeRow + dr;
       if (nc < 0 || nc >= deps.COLS || nr < 0 || nr >= deps.ROWS) continue;
+      const travelTiles = Math.hypot(nc - animal.col, nr - animal.row); // Used to reject tiny one-tile shuffles that made livestock look indecisive.
+      if (travelTiles < FARM_ANIMAL_WANDER_MIN_TRAVEL_TILES) continue;
       if (!canSpawnAt(nc, nr) || _tileTouchesAnyBarn(nc, nr)) continue;
       animal.wanderTargetCol = nc;
       animal.wanderTargetRow = nr;
+      animal.wanderPhase = 'travel';
       return;
     }
     // Pen's momentarily crowded/blocked in every sampled spot — try
     // again shortly instead of re-rolling every single tick.
+    animal.wanderPhase = 'retry';
     animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
   }
 
   function _farmAnimalWanderTick(animal, dt, onStep) {
-    if (animal.wanderWaitT > 0) { animal.wanderWaitT -= dt; return; }
+    if (animal.wanderWaitT > 0) {
+      animal.wanderPhase = 'rest';
+      animal.wanderWaitT = Math.max(0, animal.wanderWaitT - dt);
+      return;
+    }
     if (animal.wanderTargetCol == null) { _farmAnimalPickWanderTarget(animal); return; }
     if (animal.col === animal.wanderTargetCol && animal.row === animal.wanderTargetRow) {
-      // Reached the station tile — rest here before picking a new one.
+      // Logical tile occupancy changes at the start of the final hop. Do not
+      // start consuming the 10–15 second rest until the rendered animal has
+      // actually reached that tile too.
+      const visiblyArrived = Math.abs(animal.wx - (animal.wanderTargetCol + 0.5)) < 0.04
+        && Math.abs(animal.wz - (animal.wanderTargetRow + 0.5)) < 0.04;
+      if (!visiblyArrived) return;
       animal.wanderTargetCol = null;
       animal.wanderTargetRow = null;
+      animal._wanderPath = null;
       animal.wanderWaitT = FARM_ANIMAL_WANDER_WAIT_MIN_SEC
         + deps.rnd() * (FARM_ANIMAL_WANDER_WAIT_MAX_SEC - FARM_ANIMAL_WANDER_WAIT_MIN_SEC);
+      animal.wanderPhase = 'rest';
       return;
     }
     // Only take the next hop once the previous one has actually finished
@@ -385,7 +405,7 @@
     const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
       && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
     if (!arrived) return;
-    if (_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
+    if (_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn, false)) {
       animal._wanderPath = null;
       return;
     }
@@ -403,7 +423,7 @@
     }
     if (animal._wanderPath && animal._wanderPath.length) {
       const hop = animal._wanderPath[0];
-      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn)) {
+      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn, false)) {
         animal._wanderPath.shift();
         return;
       }
@@ -413,6 +433,7 @@
     animal._wanderPath = null;
     animal.wanderTargetCol = null;
     animal.wanderTargetRow = null;
+    animal.wanderPhase = 'retry';
     animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
   }
 
@@ -429,7 +450,7 @@
     // spawn tile, and drops any stale station target/rest timer left
     // over from before it went inside for the night.
     animal.homeCol = spot.col; animal.homeRow = spot.row;
-    animal.wanderTargetCol = null; animal.wanderTargetRow = null; animal.wanderWaitT = 0;
+    animal.wanderTargetCol = null; animal.wanderTargetRow = null; animal.wanderWaitT = 0; animal.wanderPhase = 'pick';
     deps.worldObjects.set(spot.col + ',' + spot.row, animal);
     animal.avatarRef.group.visible = true;
     animal._barnHome = false;
@@ -534,7 +555,7 @@
       type: 'animal', animalKey: 'uumkaoii', genotype,
       col, row, targetCol: col, targetRow: row,
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
-      wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
+      wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0, wanderPhase: 'pick',
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
       halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
@@ -661,7 +682,7 @@
       type: 'animal', animalKey: kind, genotype,
       col, row, targetCol: col, targetRow: row,
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
-      wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
+      wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0, wanderPhase: 'pick',
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
       halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
