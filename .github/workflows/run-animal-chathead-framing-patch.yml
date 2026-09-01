@@ -1,0 +1,126 @@
+name: Run animal chathead framing patch
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/run-animal-chathead-framing-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+          fetch-depth: 0
+
+      - name: Apply robust integration patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          # Reuse the already-reviewed V15.43 JS payload from the first workflow,
+          # but apply it to current source using structural anchors instead of a
+          # brittle exact copy of the old creature normalizer.
+          prior_workflow = Path('.github/workflows/apply-animal-chathead-framing.yml').read_text()
+          payload_start_marker = "patch = r'''\n"
+          payload_end_marker = "\n          '''\n\n          marker = '\\n})();\\n</script>'"
+          payload_start = prior_workflow.find(payload_start_marker)
+          if payload_start < 0:
+              raise SystemExit('V15.43 payload start not found in prior workflow')
+          payload_start += len(payload_start_marker)
+          payload_end = prior_workflow.find(payload_end_marker, payload_start)
+          if payload_end < 0:
+              raise SystemExit('V15.43 payload end not found in prior workflow')
+          patch = prior_workflow[payload_start:payload_end]
+          # YAML block indentation is part of the workflow source, while the shell
+          # strips it before Python runs. Remove that fixed prefix from the embedded
+          # payload before inserting it into the HTML script.
+          patch = '\n'.join(line[10:] if line.startswith('          ') else line for line in patch.splitlines())
+
+          # Both runtime and editor-side normalization keep the requested minimum
+          # crop size while shifting it back inside [0,1] at the right/bottom edge.
+          editor_clamp_tail = """  if (height < ANIMAL_CHATHEAD_FRAME_MIN_V1543) { y = Math.max(0, 1 - ANIMAL_CHATHEAD_FRAME_MIN_V1543); height = ANIMAL_CHATHEAD_FRAME_MIN_V1543; }\n  return { x, y, width, height, coordinateSpace: 'sprite-normalized-top-left', version: 1 };"""
+          editor_clamp_fixed = """  if (height < ANIMAL_CHATHEAD_FRAME_MIN_V1543) { y = Math.max(0, 1 - ANIMAL_CHATHEAD_FRAME_MIN_V1543); height = ANIMAL_CHATHEAD_FRAME_MIN_V1543; }\n  if (x + width > 1) x = Math.max(0, 1 - width);\n  if (y + height > 1) y = Math.max(0, 1 - height);\n  return { x, y, width, height, coordinateSpace: 'sprite-normalized-top-left', version: 1 };"""
+          patch = replace_once(patch, editor_clamp_tail, editor_clamp_fixed, 'editor frame clamp')
+
+          runtime_path = Path('docs/js/animal-chathead-frame.js')
+          runtime = runtime_path.read_text()
+          runtime_clamp_tail = """    if (height < MIN_FRAME_SIZE) { y = Math.max(0, 1 - MIN_FRAME_SIZE); height = MIN_FRAME_SIZE; }\n    return {"""
+          runtime_clamp_fixed = """    if (height < MIN_FRAME_SIZE) { y = Math.max(0, 1 - MIN_FRAME_SIZE); height = MIN_FRAME_SIZE; }\n    if (x + width > 1) x = Math.max(0, 1 - width);\n    if (y + height > 1) y = Math.max(0, 1 - height);\n    return {"""
+          runtime = replace_once(runtime, runtime_clamp_tail, runtime_clamp_fixed, 'runtime frame clamp')
+          runtime_path.write_text(runtime)
+
+          index_path = Path('docs/index.html')
+          index = index_path.read_text()
+          runtime_include = '  <script src="js/animal-chathead-frame.js?v=20260901a"></script>\n'
+          if runtime_include not in index:
+              creature_line = '  <script src="js/creature-genetics-render.js?v=20260828eyes1"></script>\n'
+              index = replace_once(index, creature_line, creature_line + runtime_include, 'game runtime include')
+          index_path.write_text(index)
+
+          author_path = Path('docs/tools/animation-author/index.html')
+          author = author_path.read_text()
+          author = author.replace('<title>Hobunji Animation Author V15.41</title>', '<title>Hobunji Animation Author V15.43</title>', 1)
+          author_include = '<script src="../../js/animal-chathead-frame.js?v=20260901a"></script>\n'
+          if author_include not in author:
+              config_line = '<script src="../../config/attachment-rig-profiles.js"></script>\n'
+              author = replace_once(author, config_line, config_line + author_include, 'Animation Author runtime include')
+
+          normalizer_start = author.find('function normalizedRigProfileLibrary')
+          if normalizer_start < 0:
+              raise SystemExit('normalizedRigProfileLibrary function not found')
+          creature_loop = author.find('for (const [kind, profile] of Object.entries(value.creatures || {}))', normalizer_start)
+          if creature_loop < 0:
+              raise SystemExit('creature loop not found inside normalizedRigProfileLibrary')
+          normalizer_end = author.find('return output;', creature_loop)
+          if normalizer_end < 0:
+              raise SystemExit('normalizedRigProfileLibrary return not found after creature loop')
+          normalizer_segment = author[creature_loop:normalizer_end]
+          if 'chatheadFrame:' not in normalizer_segment:
+              pattern = r'(shoulderGrip:\s*normalizeTransformSnapshot\(profile\.anchors\?\.shoulderGrip,\s*1\),\s*\n\s*},)'
+              normalizer_segment, count = re.subn(
+                  pattern,
+                  r'\1\n      chatheadFrame: normalizedAnimalChatheadFrameV1543(profile.chatheadFrame),',
+                  normalizer_segment,
+                  count=1,
+              )
+              if count != 1:
+                  raise SystemExit('could not structurally insert chatheadFrame into creature normalizer')
+              author = author[:creature_loop] + normalizer_segment + author[normalizer_end:]
+
+          if 'id="maaAnimalChatheadFrameSection"' not in author:
+              final_marker = '\n})();\n</script>'
+              insertion = author.rfind(final_marker)
+              if insertion < 0:
+                  raise SystemExit('Animation Author final IIFE marker not found')
+              author = author[:insertion] + patch + author[insertion:]
+          author_path.write_text(author)
+          PY
+
+      - name: Run focused regression tests
+        run: |
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-head-rig-runtime.js
+
+      - name: Commit patched integration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html docs/js/animal-chathead-frame.js docs/tools/animation-author/index.html
+          git diff --cached --check
+          git commit -m "Integrate animal chathead framing into rig author"
+          git push origin HEAD:codex/animal-chathead-framing
