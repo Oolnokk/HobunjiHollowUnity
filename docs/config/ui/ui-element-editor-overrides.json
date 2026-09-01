@@ -2,25 +2,25 @@
   "version": 1,
   "elements": {
     "#statusBar": {
-      "left": "460px",
+      "left": "max(0px, calc(100vw - 706px))",
       "top": "0px",
-      "width": "706px",
+      "width": "min(706px, 100vw)",
       "height": "44px"
     },
     "#farmEditBtn": {
-      "left": "907px",
+      "left": "max(0px, calc(100vw - 258px))",
       "top": "44px",
       "width": "86px",
       "height": "30px"
     },
     "#furniturePlacerBtn": {
-      "left": "993px",
+      "left": "max(86px, calc(100vw - 172px))",
       "top": "44px",
       "width": "86px",
       "height": "30px"
     },
     "#menuBtn": {
-      "left": "1079px",
+      "left": "max(172px, calc(100vw - 86px))",
       "top": "44px",
       "width": "86px",
       "height": "30px"
