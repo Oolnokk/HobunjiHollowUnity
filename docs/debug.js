@@ -2,6 +2,22 @@
 (function () {
   'use strict';
 
+  // Seasonal vegetation must patch THREE's texture/material constructors before
+  // terrain and foliage assets start loading. Keep it parser-synchronous for
+  // the same reason as the Cloud Forest early hooks below.
+  (function loadSeasonalVegetationTintEarly() {
+    const src = 'js/seasonal-vegetation-tint.js?v=20260901b';
+    if (window.SeasonalVegetationTint || document.querySelector('script[data-seasonal-vegetation-tint]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-seasonal-vegetation-tint="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.seasonalVegetationTint = '1';
+    document.head.appendChild(script);
+  })();
+
   // Cloud Forest boundary options must arm their WildernessMapGenerator guard
   // before wilderness-map-generator.js and border-terrain.js execute. Because
   // debug.js is parser-loaded near the top of index.html, document.write keeps
