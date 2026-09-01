@@ -538,6 +538,7 @@ function renderStats(result, genMs, wallCheck, seedText) {
   $('statsPanel').innerHTML = `
     <div>Seed: <b>${escapeHtml(seedText)}</b> &nbsp; Gen time: <b>${Math.round(genMs)} ms</b></div>
     <div>Floor tiles: <b>${result.claimed.size}</b> &nbsp; Triangles: <b>${Math.round(result.mesh.indices.length / 3)}</b> &nbsp; Deformed tiles dropped: <b>${result.deformedTilesDropped}</b></div>
+    <div>Walkable wall sculpt: <b>${result.walkableSculptFragmentsSmoothed || 0}</b> fragments, <b>${result.walkableSculptVerticesMoved || 0}</b> welded vertices, <b>${result.walkableSculptSharedTargets || 0}</b> shared targets, <b>${result.walkableSculptCutsSealed || 0}</b> cuts sealed, max bevel <b>${(result.walkableSculptMaxBevelDepth || 0).toFixed(4)}</b> tiles</div>
     <div>Wall coverage: <b style="color:${wallOk ? 'var(--ok)' : 'var(--bad)'}">${wallCheck.edgesMissingWall}/${wallCheck.totalBoundaryEdges} missing (${wallCheck.pct}%)</b></div>
     <div>Sweep levels (floor=0): <b>${levels.map(l => l.toFixed(2)).join(', ')}</b></div>
     <div>Probe Y radius: <b>${result.probeYRadius.toFixed(3)}</b> &nbsp; Domain top Y: <b>${result.domainTopY.toFixed(2)}</b></div>

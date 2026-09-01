@@ -921,9 +921,18 @@
   // already relies on to find wall geometry by shape alone.
   const WALL_YRANGE_THRESHOLD = 0.15;
 
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed) {
+  // Surface height used to distinguish a real floor from wall/overhang
+  // geometry intruding into a claimed tile during the smooth-sculpt pass.
+  const WALKABLE_SURFACE_MAX_ABOVE_FLOOR = 0.18;
+  const WALKABLE_SMOOTH_SCULPT_STRENGTH = 0.96; // Used to pull intrusive geometry back toward its wall while retaining a soft bevel.
+
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
+    const sculptFragmentsByTile = new Map(); // Groups welded intrusion triangles into per-tile wall patches below.
+    const sculptVertexUsage = new Map(); // Pins vertices also used by untouched wall triangles outside the brush.
+    let walkableSculptFragmentsSmoothed = 0; // Exposed in generation diagnostics and the cavern tuner.
+    let walkableSculptSharedTargets = 0; // Counts welded vertices whose adjacent fragments reinforced the same target.
     const addVertex = v => {
       // Quantized key shares clipped/stitched vertices along the same tile
       // edge so the mesh has no microscopic cracks there.
@@ -934,45 +943,42 @@
     };
     const addTri = (a, b, c) => {
       const ia = addVertex(a), ib = addVertex(b), ic = addVertex(c);
-      if (ia === ib || ib === ic || ic === ia) return;
+      if (ia === ib || ib === ic || ic === ia) return null;
       outIndices.push(ia, ib, ic);
+      return [ia, ib, ic];
     };
-    // A claimed tile's own interior is field-guaranteed solid-free —
-    // carveTileColumn force-carves its exact footprint open at every
-    // height, and solidifyBoundaryWalls's heal only ever restores an
-    // *unclaimed* neighbor, never a claimed tile's own interior — so no
-    // real wall/ceiling surface should ever render inside one. It still
-    // can: a wall/ceiling triangle's XZ bounding box routinely overlaps a
-    // little past its own tile's edge into a claimed neighbor (normal
-    // dual-contour surface curvature from a leaf whose own cell straddles
-    // the boundary — not an error, see leafSurfaceVertex), and since that
-    // neighbor is always in keepTiles too (claimed tiles are always
-    // touched), the overlapping sliver gets clipped and rendered right
-    // there, reading as wall rock cosmetically dipping into the tile's
-    // own open floor space (confirmed via a raw, mesh-triangle-independent
-    // check: 4000+ misplaced dual-contour vertices per den, landing up to
-    // half a tile deep inside claimed tiles' own footprints — exactly the
-    // "significant improvement but not quite there — wall rock dips into
-    // the edge tiles a little" residual left after switching this clip's
-    // own cull from claimed to touched, see this function's docblock
-    // above on that earlier fix). An earlier attempt fixed this by
-    // repositioning the offending raw vertices before clipping instead —
-    // reverted after headless verification showed it corrupts the
-    // triangle shapes clipPolyToXZRect depends on, badly damaging real
-    // wall coverage. This version changes nothing about vertex positions
-    // or triangle shapes at all: it only withholds WALL-SHAPED (yRange
-    // test) fragments from a claimed tile's own bucket, since the tile's
-    // own FLOOR triangles (the flat crossing at floorY that spans every
-    // claimed tile, because carving never touches anything below floorY —
-    // see carveSphere/carveTileColumn's own floorY guards) must still
-    // render there. The wall's own home tile still renders the full
-    // triangle right up to the shared edge regardless (its own clip is
-    // completely untouched by this), so nothing goes gappy or missing —
-    // just no redundant sliver rendering on the far side of a boundary it
-    // should never have crossed. Verified via a field-level (not mesh-
-    // triangle) ground-truth check across 5 seeds: real wall coverage is
-    // bit-for-bit identical with and without this change.
-    const skipClaimedWallLike = (key, yRange) => claimed && claimed.has(key) && yRange > WALL_YRANGE_THRESHOLD;
+    // A claimed tile's field is genuinely open, but dual-contour triangles
+    // from a neighboring wall can cross its tile boundary. Do not delete
+    // those fragments: that makes the route clear by cutting visible holes
+    // out of the cave wall. Instead, after clipping the triangle into this
+    // tile, queue a high-strength smooth-sculpt-like target. All triangles
+    // are first assembled with their ORIGINAL clipped positions so addVertex
+    // welds shared edges exactly once. Only after the complete mesh exists do
+    // we resolve connected wall patches within each tile, assign one wall
+    // edge to the whole patch, and move every welded vertex exactly once.
+    // A per-vertex nearest-edge target keeps endpoints shallow but can still
+    // stretch the edge between them across the middle of a tile; patch-level
+    // targeting prevents that while preserving shared topology.
+    // The previous per-triangle deformation could send two copies of
+    // what began as the same edge toward slightly different walls, producing
+    // the visible cuts this shared pass is designed to prevent.
+    const queueWalkableSculpt = (key, poly, vertexIds, yRange) => {
+      if (!poly?.length || !vertexIds) return;
+      const isWall = yRange > WALL_YRANGE_THRESHOLD;
+      const isOverhang = floorY != null && poly.every(v => v.y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR);
+      const shouldSculpt = floorY != null && claimed?.has(key) && (isWall || isOverhang);
+      for (const id of vertexIds) {
+        let usage = sculptVertexUsage.get(id);
+        if (!usage) { usage = { sculpted: false, anchored: false }; sculptVertexUsage.set(id, usage); }
+        if (shouldSculpt) usage.sculpted = true;
+        else usage.anchored = true;
+      }
+      if (!shouldSculpt) return;
+      walkableSculptFragmentsSmoothed++;
+      let fragments = sculptFragmentsByTile.get(key);
+      if (!fragments) { fragments = []; sculptFragmentsByTile.set(key, fragments); }
+      fragments.push({ vertexIds: vertexIds.slice(), poly });
+    };
 
     for (let q = 0; q < indices.length; q += 3) {
       const ia = indices[q] * 3, ib = indices[q + 1] * 3, ic = indices[q + 2] * 3;
@@ -982,13 +988,10 @@
         { x: positions[ic], y: positions[ic + 1], z: positions[ic + 2] },
       ];
       const yRange = Math.max(tri[0].y, tri[1].y, tri[2].y) - Math.min(tri[0].y, tri[1].y, tri[2].y);
-      const areaXZ = Math.abs((tri[1].x - tri[0].x) * (tri[2].z - tri[0].z) - (tri[2].x - tri[0].x) * (tri[1].z - tri[0].z));
-      if (areaXZ < 1e-10) {
-        const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
-        const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
-        if (keepTiles.has(key) && !skipClaimedWallLike(key, yRange)) addTri(tri[0], tri[1], tri[2]);
-        continue;
-      }
+      // Even a vertical triangle with zero projected XZ area must go
+      // through per-tile clipping. The old centroid-only shortcut let one
+      // long wall triangle cross a tile boundary unsmoothed, leaving a
+      // single sharp fin after every ordinary fragment was sculpted.
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
       const minZ = Math.min(tri[0].z, tri[1].z, tri[2].z), maxZ = Math.max(tri[0].z, tri[1].z, tri[2].z);
       const ix0 = Math.floor(minX / ts), ix1 = Math.floor((maxX - 1e-7) / ts);
@@ -996,18 +999,201 @@
       for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
         const key = `${ix},${iz}`;
         if (!keepTiles.has(key)) continue;
-        if (skipClaimedWallLike(key, yRange)) continue;
         const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
-        for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
+        // Smooth each triangulated fragment independently. A clipped quad
+        // can straddle a tile corner; choosing one target wall for the whole
+        // polygon leaves the fan triangle nearest another edge untouched.
+        for (let p = 1; p < poly.length - 1; p++) {
+          const fragment = [poly[0], poly[p], poly[p + 1]];
+          const vertexIds = addTri(fragment[0], fragment[1], fragment[2]);
+          queueWalkableSculpt(key, fragment, vertexIds, yRange);
+        }
       }
     }
 
-    stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges, ts);
-    return { positions: new Float32Array(outPositions), indices: outIndices };
+    // Boundary caps are synthesized after the ordinary triangle loop, so
+    // route them through the same sculpt brush as raw wall fragments. A cap
+    // can legitimately land inside a claimed tile when the broader touched-
+    // geometry cull ends there; leaving it unsmoothed recreates one isolated
+    // square intrusion after every organic fragment has already been fixed.
+    const addSmoothedBoundaryTri = (a, b, c) => {
+      const cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3;
+      const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
+      const yRange = Math.max(a.y, b.y, c.y) - Math.min(a.y, b.y, c.y);
+      const fragment = [a, b, c];
+      const vertexIds = addTri(a, b, c);
+      queueWalkableSculpt(key, fragment, vertexIds, yRange);
+    };
+    stitchBoundaryCaps(st, keepTiles, addSmoothedBoundaryTri, skipCapEdges, ts);
+    const sculptTargets = new Map(); // Stores the single resolved target ultimately applied to each welded vertex.
+    for (const [key, fragments] of sculptFragmentsByTile) {
+      const [c, r] = key.split(',').map(Number);
+      const x0 = c * ts, x1 = (c + 1) * ts, z0 = r * ts, z1 = (r + 1) * ts;
+      const parent = new Map(); // Union-find joins candidate triangles that share a welded vertex in this tile.
+      const find = id => {
+        let root = id;
+        while (parent.get(root) !== root) root = parent.get(root);
+        while (parent.get(id) !== id) { const next = parent.get(id); parent.set(id, root); id = next; }
+        return root;
+      };
+      const union = (a, b) => {
+        const ra = find(a), rb = find(b);
+        if (ra !== rb) parent.set(rb, ra);
+      };
+      for (const fragment of fragments) {
+        for (const id of fragment.vertexIds) if (!parent.has(id)) parent.set(id, id);
+        union(fragment.vertexIds[0], fragment.vertexIds[1]);
+        union(fragment.vertexIds[0], fragment.vertexIds[2]);
+      }
+      const components = new Map();
+      for (const id of parent.keys()) {
+        const root = find(id);
+        let ids = components.get(root);
+        if (!ids) { ids = []; components.set(root, ids); }
+        ids.push(id);
+      }
+      for (const ids of components.values()) {
+        let cx = 0, cz = 0;
+        for (const id of ids) { cx += outPositions[id * 3]; cz += outPositions[id * 3 + 2]; }
+        cx /= ids.length; cz /= ids.length;
+        const edges = [
+          { axis: 'x', edge: x0, distance: Math.abs(cx - x0) },
+          { axis: 'x', edge: x1, distance: Math.abs(x1 - cx) },
+          { axis: 'z', edge: z0, distance: Math.abs(cz - z0) },
+          { axis: 'z', edge: z1, distance: Math.abs(z1 - cz) },
+        ];
+        const target = edges.reduce((best, edge) => edge.distance < best.distance ? edge : best);
+        for (const id of ids) {
+          const x = outPositions[id * 3], z = outPositions[id * 3 + 2];
+          const normalCoord = target.axis === 'x' ? x : z;
+          const depth = Math.min(ts * .5, Math.abs(normalCoord - target.edge));
+          const t = Math.max(0, Math.min(1, depth / Math.max(1e-6, ts * .5)));
+          const smoothFalloff = t * (2 - t); // High-intensity Smooth brush: decisive inward pull with a pinned edge.
+          const blend = WALKABLE_SMOOTH_SCULPT_STRENGTH * smoothFalloff;
+          const proposal = {
+            x: target.axis === 'x' ? lerp(x, target.edge, blend) : x,
+            z: target.axis === 'z' ? lerp(z, target.edge, blend) : z,
+          };
+          proposal.moveSq = (proposal.x - x) ** 2 + (proposal.z - z) ** 2;
+          proposal.boundaryDepth = Math.min(
+            Math.abs(proposal.x - Math.round(proposal.x / ts) * ts),
+            Math.abs(proposal.z - Math.round(proposal.z / ts) * ts),
+          );
+          const existing = sculptTargets.get(id);
+          if (existing) {
+            walkableSculptSharedTargets++;
+            // Resolve a shared vertex to the proposal that leaves the
+            // shallowest final wall bevel; displacement only breaks ties.
+            // The vertex is still moved once, so continuity is preserved.
+            if (proposal.boundaryDepth < existing.boundaryDepth - 1e-9 ||
+                (Math.abs(proposal.boundaryDepth - existing.boundaryDepth) <= 1e-9 && proposal.moveSq < existing.moveSq)) {
+              sculptTargets.set(id, proposal);
+            }
+          } else sculptTargets.set(id, proposal);
+        }
+      }
+    }
+    for (const [id, target] of sculptTargets) {
+      if (sculptVertexUsage.get(id)?.anchored) continue;
+      outPositions[id * 3] = target.x;
+      outPositions[id * 3 + 2] = target.z;
+    }
+    let walkableSculptVerticesMoved = 0;
+    let walkableSculptMaxBevelDepth = 0; // Maximum final depth of an actually moved brush vertex, in tile fractions.
+    for (const id of sculptTargets.keys()) if (!sculptVertexUsage.get(id)?.anchored) {
+      walkableSculptVerticesMoved++;
+      const x = outPositions[id * 3], z = outPositions[id * 3 + 2];
+      const depth = Math.min(
+        Math.abs(x - Math.round(x / ts) * ts),
+        Math.abs(z - Math.round(z / ts) * ts),
+      ) / ts;
+      walkableSculptMaxBevelDepth = Math.max(walkableSculptMaxBevelDepth, depth);
+    }
+    // Close small, fully-looped wall cuts left by the source dual-contour
+    // mesh. These are not the cavern's intentional outer/entrance borders:
+    // every vertex has boundary degree 2, the loop is compact, and at least
+    // one edge sits visibly inside a claimed tile above the floor. Filling
+    // the complete loop with one welded fan produces a continuous rock patch
+    // instead of trying to hide its individual open edges with overlapping
+    // fragments. The cavern material is intentionally DoubleSide, so loop
+    // winding does not affect visibility.
+    const edgeUse = new Map(); // Counts final triangle uses per welded edge to locate actual open wall loops.
+    for (let q = 0; q < outIndices.length; q += 3) {
+      const tri = [outIndices[q], outIndices[q + 1], outIndices[q + 2]];
+      for (const [a, b] of [[tri[0], tri[1]], [tri[1], tri[2]], [tri[2], tri[0]]]) {
+        const key = a < b ? `${a},${b}` : `${b},${a}`;
+        let edge = edgeUse.get(key);
+        if (!edge) { edge = { a: Math.min(a, b), b: Math.max(a, b), count: 0 }; edgeUse.set(key, edge); }
+        edge.count++;
+      }
+    }
+    const openAdj = new Map();
+    const connectOpen = (a, b) => {
+      let list = openAdj.get(a);
+      if (!list) { list = []; openAdj.set(a, list); }
+      list.push(b);
+    };
+    for (const edge of edgeUse.values()) if (edge.count === 1) {
+      connectOpen(edge.a, edge.b); connectOpen(edge.b, edge.a);
+    }
+    const seenOpen = new Set();
+    let walkableSculptCutsSealed = 0; // Exposed in diagnostics so visual hole repair is testable without DevTools.
+    for (const start of openAdj.keys()) {
+      if (seenOpen.has(start)) continue;
+      const stack = [start], component = [];
+      while (stack.length) {
+        const id = stack.pop();
+        if (seenOpen.has(id)) continue;
+        seenOpen.add(id); component.push(id);
+        for (const next of openAdj.get(id) || []) if (!seenOpen.has(next)) stack.push(next);
+      }
+      if (component.length < 3 || component.length > 64 || component.some(id => (openAdj.get(id) || []).length !== 2)) continue;
+      let containsVisibleCut = false;
+      for (const id of component) {
+        for (const next of openAdj.get(id)) {
+          if (id > next) continue;
+          const x = (outPositions[id * 3] + outPositions[next * 3]) * .5;
+          const y = (outPositions[id * 3 + 1] + outPositions[next * 3 + 1]) * .5;
+          const z = (outPositions[id * 3 + 2] + outPositions[next * 3 + 2]) * .5;
+          const tileKey = `${Math.floor(x / ts)},${Math.floor(z / ts)}`;
+          const localX = x - Math.floor(x / ts) * ts, localZ = z - Math.floor(z / ts) * ts;
+          const boundaryDepth = Math.min(localX, ts - localX, localZ, ts - localZ);
+          if (claimed?.has(tileKey) && y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR && boundaryDepth > ts * .085) {
+            containsVisibleCut = true; break;
+          }
+        }
+        if (containsVisibleCut) break;
+      }
+      if (!containsVisibleCut) continue;
+      const ordered = [component[0]];
+      let previous = -1, current = component[0];
+      while (ordered.length < component.length) {
+        const next = (openAdj.get(current) || []).find(id => id !== previous && id !== ordered[0]);
+        if (next === undefined || ordered.includes(next)) break;
+        ordered.push(next); previous = current; current = next;
+      }
+      if (ordered.length !== component.length || !(openAdj.get(current) || []).includes(ordered[0])) continue;
+      const center = { x: 0, y: 0, z: 0 };
+      for (const id of ordered) {
+        center.x += outPositions[id * 3]; center.y += outPositions[id * 3 + 1]; center.z += outPositions[id * 3 + 2];
+      }
+      center.x /= ordered.length; center.y /= ordered.length; center.z /= ordered.length;
+      const centerId = addVertex(center);
+      for (let i = 0; i < ordered.length; i++) outIndices.push(ordered[i], ordered[(i + 1) % ordered.length], centerId);
+      walkableSculptCutsSealed++;
+    }
+    return {
+      positions: new Float32Array(outPositions), indices: outIndices,
+      walkableSculptFragmentsSmoothed,
+      walkableSculptVerticesMoved,
+      walkableSculptSharedTargets,
+      walkableSculptCutsSealed,
+      walkableSculptMaxBevelDepth,
+    };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -1053,7 +1239,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -1446,7 +1632,7 @@
     // instead of being clipped down to a flat stitched cap.
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
-    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1478,6 +1664,11 @@
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
       deformedTilesDropped,
+      walkableSculptFragmentsSmoothed: mesh.walkableSculptFragmentsSmoothed || 0,
+      walkableSculptVerticesMoved: mesh.walkableSculptVerticesMoved || 0,
+      walkableSculptSharedTargets: mesh.walkableSculptSharedTargets || 0,
+      walkableSculptCutsSealed: mesh.walkableSculptCutsSealed || 0,
+      walkableSculptMaxBevelDepth: mesh.walkableSculptMaxBevelDepth || 0,
     };
   }
 
