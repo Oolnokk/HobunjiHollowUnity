@@ -8414,7 +8414,7 @@
         isMenuOpen: () => menuOpen,
         isDialogueOpen: () => dialogueOpen,
         isFarmEditMode: () => farmEditMode,
-        getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
+        getBoundDesktopEnter: () => getActionForButton('desktop', INPUT_DEFAULTS.desktopConfirmInput),
         debugComputeActionButtons: () => computeActionButtons(),
         getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
@@ -15882,10 +15882,10 @@
       function getKeyboardVector() {
         let x = 0;
         let y = 0;
-        if (input.keys.has('ArrowLeft') || input.keys.has('a')) x -= 1;
-        if (input.keys.has('ArrowRight') || input.keys.has('d')) x += 1;
-        if (input.keys.has('ArrowUp') || input.keys.has('w')) y -= 1;
-        if (input.keys.has('ArrowDown') || input.keys.has('s')) y += 1;
+        if (input.keys.has('moveLeft')) x -= 1;
+        if (input.keys.has('moveRight')) x += 1;
+        if (input.keys.has('moveUp')) y -= 1;
+        if (input.keys.has('moveDown')) y += 1;
         return { x, y, active: x !== 0 || y !== 0 };
       }
 
@@ -24358,8 +24358,8 @@
           }))); // Special ammo uses the same ordinary-radius arch primitive.
         }
 
-        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
-        // openDesktopHoldArc below), for quick actions that don't belong on
+        // Utilities wheel — opened by holding the configured Utility Select input,
+        // for quick actions that don't belong on
         // the per-tile action bar: warping back to a placed wilderness
         // campfire or the farm, quick-selecting a Campfire Kit without
         // scrolling the item wheel, or orbiting around the stationary player.
@@ -24809,7 +24809,7 @@
         // removed put-away button's old slot (see the CSS angle comment on
         // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
         // above — it only ever does anything while held, exactly like the
-        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
+        // configured desktop Utility Select input — so this
         // mirrors their hold-then-drag-to-select pattern but skips their
         // "what does a plain tap do" branch entirely.
         const btnUtilityMenu = document.getElementById('btnUtilityMenu');
@@ -25287,21 +25287,16 @@
         const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
         const itemBtns = nonClimbBtns.filter(isItemButton);
 
-        const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
-
-        function applyAbt(elId, b, originalIdx) {
+        function applyAbt(elId, b) {
           const el = document.getElementById(elId);
           if (!el) return;
           if (!b) { el.classList.add('abt-hidden'); return; }
           el.classList.remove('abt-hidden');
           el.classList.toggle('blocked', !b.allowed);
           el.dataset.action = b.action;
-          const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
-            ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
           const swigBadge = b.swigFraction
             ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
-          el.innerHTML = keyBadge +
-            `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
+          el.innerHTML = `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
             `<span class="abt-label">${b.label}</span>`;
           if (!el._abtDragInit) {
             el._abtDragInit = true;
@@ -25503,20 +25498,34 @@
         if (heldMode === 'item') {
           // Item mode: all actions spread across all 5 arch positions
           // (climb_branch excluded — see nonClimbBtns above)
-          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
-          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
-          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
-          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
-          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
+          applyAbt('btnAction1', nonClimbBtns[0]);
+          applyAbt('btnAction2', nonClimbBtns[1]);
+          applyAbt('btnAction3', nonClimbBtns[2]);
+          applyAbt('btnItemAction1', nonClimbBtns[3]);
+          applyAbt('btnItemAction2', nonClimbBtns[4]);
         } else {
-          applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
-          applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
-          applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
-          applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
-          applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
+          applyAbt('btnAction1', toolBtns[0]);
+          applyAbt('btnAction2', toolBtns[1]);
+          applyAbt('btnAction3', toolBtns[2]);
+          applyAbt('btnItemAction1', itemBtns[0]);
+          applyAbt('btnItemAction2', itemBtns[1]);
         }
 
         if (isDesktop) refreshKeyHud(btns);
+      }
+
+      function desktopHudInputLabel(actionIds) {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.input || {};
+        const ids = Array.isArray(actionIds) ? actionIds : [actionIds];
+        const authored = new Map((Array.isArray(cfg.actions) ? cfg.actions : []).map(action => [action.id, action.desktop]));
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(cfg.storageKey) || 'null'); } catch (_err) { /* authored defaults remain available */ }
+        const live = window.__hobunjiInputBindings?.desktop || saved?.desktop || {};
+        const codes = ids.flatMap(id => {
+          const value = live[id] === undefined ? authored.get(id) : live[id];
+          return (Array.isArray(value) ? value : value ? [value] : []).filter(Boolean);
+        });
+        return [...new Set(codes)].map(code => cfg.inputLabels?.[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Arrow/, '')).join(' / ') || 'Unbound';
       }
 
       function refreshKeyHud(btns) {
@@ -25533,12 +25542,12 @@
         const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
         const _khFallback = ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
         const toolInfo = [toolSelectIconHTML(_eqDef, _khFallback[0], '13px'), _eqDef?.label || _khFallback[1]];
-        parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
+        parts.push(`<div class="kh-group"><span class="kh-key">${desktopHudInputLabel(['tool1', 'tool2', 'weaponSwitch'])}</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
         parts.push('<div class="kh-div"></div>');
 
-        // Action buttons → key prompts: first = [Space/E], second = [Q]
+        // Action buttons use the player's current two-slot bindings.
         btns.forEach((b, idx) => {
-          const keyLabel = idx === 0 ? 'E' : idx === 1 ? 'Q' : `F${idx}`;
+          const keyLabel = desktopHudInputLabel(`action${idx + 1}`);
           const blocked  = !b.allowed;
           parts.push(
             `<div class="kh-group">` +
@@ -25555,9 +25564,9 @@
           const count = inventory[item.key] || 0;
           parts.push(
             `<div class="kh-group">` +
-            `<span class="kh-key">,</span><span class="kh-label"> </span>` +
+            `<span class="kh-key">${desktopHudInputLabel('itemPrev')}</span><span class="kh-label"> </span>` +
             `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
-            `<span class="kh-label"> </span><span class="kh-key">.</span>` +
+            `<span class="kh-label"> </span><span class="kh-key">${desktopHudInputLabel('itemNext')}</span>` +
             `</div>`
           );
         }
@@ -25576,7 +25585,7 @@
         );
 
         parts.push('<div class="kh-div"></div>');
-        parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
+        parts.push(`<div class="kh-group"><span class="kh-key">${desktopHudInputLabel('menuToggle')}</span><span class="kh-label">Menu</span></div>`);
 
         keyHudEl.innerHTML = parts.join('');
         if (item) {
@@ -26126,103 +26135,72 @@
         btnSwapTarget.addEventListener('pointercancel', _stUp);
       }
 
-      const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
-      let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
-      const desktopHoldKeys = {
-        q: { down: false, held: false, timer: null, arc: 'item' },
-        e: { down: false, held: false, timer: null, arc: 'tool' },
-        // Utilities wheel — an entries arc like potion/ammo select, not a
-        // tool/item wheel, so it commits via releaseSelection() below
-        // (whichever entry mouse-drag/scroll last highlighted) instead of
-        // close()'s "already applied live, just dismiss" behavior.
-        c: { down: false, held: false, timer: null, arc: 'utilities' },
-      };
-      function openDesktopHoldArc(key) {
-        const state = desktopHoldKeys[key];
-        if (!state || !state.down) return;
-        state.held = true;
-        if (state.arc === 'utilities') {
-          // Same reasoning as CookingSystem's setInteractionBlocked above —
-          // no visible cursor to pick a wedge with under cursor-less camera
-          // Pointer Lock otherwise.
-          releaseShoulderSurfPointerLock();
-          window._desktopSelectionArc?.openUtilities();
-        }
-        else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
-        else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
-        else window._desktopSelectionArc?.openTool();
-      }
-      function startDesktopHoldKey(key, event) {
-        const state = desktopHoldKeys[key];
-        if (!state || state.down || event.repeat) return;
-        state.down = true;
-        state.held = false;
-        state.timer = setTimeout(() => openDesktopHoldArc(key), desktopTapWindowMs());
-      }
-      function finishDesktopHoldKey(key) {
-        const state = desktopHoldKeys[key];
-        if (!state || !state.down) return false;
-        state.down = false;
-        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
-        const wasHeld = state.held;
-        state.held = false;
-        if (wasHeld) {
-          if (state.arc === 'utilities') window._desktopSelectionArc?.releaseSelection();
-          else if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection();
-          else window._desktopSelectionArc?.close();
-        }
-        if (wasHeld && state.arc === 'utilities' && cursorlessMouseAimRequested()) {
-          requestShoulderSurfPointerLock();
-        }
-        return wasHeld;
-      }
+      const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs);
+      let interactHoldActive = false; // Used to release a tent-looting Interact hold regardless of which configured input started it.
 
       const INPUT_DEFAULTS = (() => {
         const cfg = window.SCRATCHBONES_CONFIG?.game?.input || {};
         const actions = Array.isArray(cfg.actions) ? cfg.actions : [];
+        const bindingSlots = Number(cfg.bindingSlotsPerAction); // Used to normalize saved/default bindings into the configured number of choices per action.
+        if (!cfg.storageKey || !Number.isInteger(bindingSlots) || bindingSlots < 1) throw new Error('Invalid external game.input binding configuration.');
+        const slots = value => { const values = Array.isArray(value) ? value : value ? [value] : []; return Array.from({ length: bindingSlots }, (_, index) => values[index] || null); };
         return {
-          storageKey: cfg.storageKey || 'scratchbones.inputBindings.v1',
-          deadzone: Number(cfg.gamepadDeadzone) || 0.24,
-          axisPressThreshold: Number(cfg.axisPressThreshold) || 0.55,
+          storageKey: cfg.storageKey,
+          legacyStorageKeys: Array.isArray(cfg.legacyStorageKeys) ? cfg.legacyStorageKeys : [],
+          bindingSlots,
+          deadzone: Number(cfg.gamepadDeadzone),
+          axisPressThreshold: Number(cfg.axisPressThreshold),
+          desktopConfirmInput: cfg.desktopConfirmInput || null,
+          controllerTriggerInputs: Array.isArray(cfg.controllerTriggerInputs) ? cfg.controllerTriggerInputs : [],
+          controllerAxisInputs: cfg.controllerAxisInputs || {},
+          meleeAutoTargetOverrideInput: cfg.meleeAutoTargetOverrideInput || null,
+          newModeShiftDefaults: cfg.newModeShiftDefaults || {},
+          controllerInputOptions: Array.isArray(cfg.controllerInputOptions) ? cfg.controllerInputOptions : [],
+          inputLabels: cfg.inputLabels || {},
           actions,
-          desktop: Object.fromEntries(actions.map(a => [a.id, a.desktop]).filter(([, v]) => v)),
-          controller: Object.fromEntries(actions.map(a => [a.id, a.controller]).filter(([, v]) => v)),
+          desktop: Object.fromEntries(actions.map(action => [action.id, slots(action.desktop)])),
+          controller: Object.fromEntries(actions.map(action => [action.id, slots(action.controller)])),
           modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
         };
       })();
       const inputBindings = loadInputBindings();
-      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
-      const CONTROLLER_INPUT_OPTIONS = [
-        'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
-        'LeftTrigger', 'RightTrigger',
-        'Button8', 'Button9', 'Button10', 'Button11',
-        'Button12', 'Button13', 'Button14', 'Button15',
-        'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
-      ];
+      window.__hobunjiInputBindings = inputBindings; // Shared read-only-by-convention reference for pre-input HUD modules that display live configured bindings.
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), pressedActions: new Map(), activeShift: null, hadPad: false };
+      const CONTROLLER_INPUT_OPTIONS = INPUT_DEFAULTS.controllerInputOptions;
+      function normalizedBindingSlots(value) { const values = Array.isArray(value) ? value : value ? [value] : []; return Array.from({ length: INPUT_DEFAULTS.bindingSlots }, (_, index) => values[index] || null); }
+      function cloneModeShifts(value) { return (Array.isArray(value) ? value : []).map(shift => ({ ...shift, bindings: { ...(shift.bindings || {}) } })); }
 
       function loadInputBindings() {
         try {
-          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          let saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          let isLegacy = false; // Used to preserve old custom keys while upgrading the former one-binding layout.
+          if (!saved) for (const legacyKey of INPUT_DEFAULTS.legacyStorageKeys) { saved = JSON.parse(localStorage.getItem(legacyKey) || 'null'); if (saved) { isLegacy = true; break; } }
+          const migrateDevice = device => Object.fromEntries(INPUT_DEFAULTS.actions.map(action => {
+            const defaults = normalizedBindingSlots(INPUT_DEFAULTS[device][action.id]); const savedValue = saved?.[device]?.[action.id];
+            if (savedValue === undefined) return [action.id, defaults];
+            if (!isLegacy) return [action.id, normalizedBindingSlots(savedValue)];
+            const legacyInput = normalizedBindingSlots(savedValue).find(Boolean) || null;
+            if (device === 'desktop' && Object.hasOwn(action, 'legacyDesktopBinding')) {
+              const second = legacyInput && legacyInput !== action.legacyDesktopBinding ? legacyInput : defaults[1];
+              return [action.id, normalizedBindingSlots([defaults[0], second])];
+            }
+            return [action.id, normalizedBindingSlots([legacyInput, null])];
+          }));
           return {
-            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
-            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
-            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
+            desktop: migrateDevice('desktop'), controller: migrateDevice('controller'), modeShifts: cloneModeShifts(Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts)
           };
         } catch (_err) {
-          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
+          return { desktop: Object.fromEntries(Object.entries(INPUT_DEFAULTS.desktop).map(([id, values]) => [id, [...values]])), controller: Object.fromEntries(Object.entries(INPUT_DEFAULTS.controller).map(([id, values]) => [id, [...values]])), modeShifts: cloneModeShifts(INPUT_DEFAULTS.modeShifts) };
         }
       }
       function saveInputBindings() {
         localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
       }
+      function resetInputBindings() { for (const device of ['desktop', 'controller']) for (const action of INPUT_DEFAULTS.actions) inputBindings[device][action.id] = [...INPUT_DEFAULTS[device][action.id]]; inputBindings.modeShifts.splice(0, inputBindings.modeShifts.length, ...cloneModeShifts(INPUT_DEFAULTS.modeShifts)); saveInputBindings(); }
       function bindingConflict(device, button, actionId, modeShift = null) {
         if (!button) return '';
         if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
-        const bindings = inputBindings[device] || {};
-        for (const [otherAction, otherButton] of Object.entries(bindings)) {
-          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
-        }
-        if (!modeShift) return '';
+        if (!modeShift) return ''; // Ordinary overlaps are valid and summarized at the top of Controls.
         for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
           if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
         }
@@ -26232,8 +26210,7 @@
         return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
       }
       function buttonLabel(code) {
-        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
-        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+        return INPUT_DEFAULTS.inputLabels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
       }
 
       // ── Last-used input device tracking ─────────────────────────────
@@ -26288,9 +26265,9 @@
       // callers pass the same icon already shown for that action in the
       // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
       function actionPromptGlyph(actionId, touchIcon) {
-        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
+        if (lastInputDevice === 'controller') return (inputBindings.controller[actionId] || []).filter(Boolean).map(buttonLabel).join(' / ') || buttonLabel(null);
         if (lastInputDevice === 'touch') return touchIcon || '👆';
-        return buttonLabel(inputBindings.desktop[actionId]);
+        return (inputBindings.desktop[actionId] || []).filter(Boolean).map(buttonLabel).join(' / ') || buttonLabel(null);
       }
       function actionPromptColor(actionId) {
         return window.ActionArchSlotColors?.inputColors?.[actionId] || '#B8C5C0';
@@ -26393,14 +26370,38 @@
         return { slot, button };
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      const ownedWeaponInputSlots = new Map(); // Pairs a configured action press to its original combat slot even if equipment changes before release.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
+      const itemSelectPress = { down: false, lastScrollAt: 0 }; // Used by any configured input assigned to Item Select.
+      const utilitySelectPress = { down: false, lastScrollAt: 0 }; // Used by any configured input assigned to Utility Select.
+      let cameraOrbitModifierDown = false; // Used by configurable desktop bindings instead of literal Shift checks.
+      let cameraOrbitModifierDownAt = null; // Used to distinguish a quick auto-target toggle from a held camera-orbit gesture.
+      let cameraOrbitModifierDragged = false; // Used to suppress the tap action after the modifier actually rotated the camera.
       function potionSelectorAvailable(actionId) {
         return actionId === 'action3' && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(actionId)) { if (phase === 'release') input.keys.delete(actionId); else if (!menuOpen && !farmEditMode) input.keys.add(actionId); return; }
+        if (actionId === 'menuToggle') { if (phase === 'release') return; if (window.Fishing?.state?.active) { window.Fishing.close(); return; } if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; } if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        if (actionId === 'mapToggle') { if (phase === 'release' || window.MusicMinigame?.state?.active || dialogueOpen) return; const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active'); if (menuOpen && onMapTab) closeMenu(); else openMenu('map'); return; }
+        if (actionId === 'putAway') { if (phase === 'press' && !menuOpen) putAwayHeldEquipment(); return; }
+        if (actionId === 'cameraOrbitModifier') {
+          if (phase === 'press') { if (!cameraOrbitModifierDown) { cameraOrbitModifierDown = true; cameraOrbitModifierDownAt = performance.now(); cameraOrbitModifierDragged = false; } }
+          else { const heldMs = performance.now() - (cameraOrbitModifierDownAt ?? 0); if (cameraOrbitModifierDown && !menuOpen && !cameraOrbitModifierDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) { meleeAutoTargetOn = !meleeAutoTargetOn; showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn); } cameraOrbitModifierDown = false; cameraOrbitModifierDownAt = null; }
+          return;
+        }
+        if (actionId === 'debugLegBones') { if (phase === 'press') { const next = !window.ProceduralLegAnimation?.showBones; window.ProceduralLegAnimation?.setShowBones(next); showToast(next ? 'Leg bones: shown' : 'Leg bones: hidden', true, false); } return; }
+        if (actionId === 'itemSelect') {
+          if (phase === 'release') { if (!itemSelectPress.down) return; itemSelectPress.down = false; if (activeTool === 'ranged') window._desktopSelectionArc?.releaseSelection?.(); else window._desktopSelectionArc?.close?.(); window._desktopSelectionArc?.endHeldSelection?.(); return; }
+          if (itemSelectPress.down || menuOpen || farmEditMode) return; itemSelectPress.down = true; window._desktopSelectionArc?.beginHeldSelection?.(activeTool === 'ranged' ? 'ammo' : 'item'); if (activeTool === 'ranged') window._desktopSelectionArc?.openAmmo?.(); else window._desktopSelectionArc?.openItem?.(); return;
+        }
+        if (actionId === 'utilitySelect') {
+          if (phase === 'release') { if (!utilitySelectPress.down) return; utilitySelectPress.down = false; window._desktopSelectionArc?.releaseSelection?.(); window._desktopSelectionArc?.endHeldSelection?.(); if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock(); return; }
+          if (utilitySelectPress.down || menuOpen || farmEditMode) return; utilitySelectPress.down = true; releaseShoulderSurfPointerLock(); window._desktopSelectionArc?.beginHeldSelection?.('utilities'); window._desktopSelectionArc?.openUtilities?.(); return;
+        }
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -26478,9 +26479,11 @@
           return;
         }
         if (phase === 'release') {
+          if (actionId === 'interact' && interactHoldActive) { interactHoldActive = false; actionHeldDown = false; return; }
           if (actionId === 'action1') actionHeldDown = false;
           if (visibleWeaponContextPresses.delete(actionId)) return;
-          const releaseSlot = weaponActionSlot(actionId);
+          const releaseSlot = ownedWeaponInputSlots.get(actionId) || weaponActionSlot(actionId);
+          ownedWeaponInputSlots.delete(actionId);
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
         }
@@ -26489,7 +26492,7 @@
           return;
         }
         if (menuOpen || farmEditMode) return;
-        if (actionId === 'interact') { runInteractAction(); return; }
+        if (actionId === 'interact') { if (window.BanditCamps?.hasNearbyTent?.()) { interactHoldActive = true; activeAction = 'bandit_tent_interact'; actionHeldDown = true; useActiveAction(); } else runInteractAction(); return; }
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
@@ -26498,6 +26501,7 @@
         }
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
+          ownedWeaponInputSlots.set(actionId, weaponSlot);
           if (actionId === 'action1') actionHeldDown = true;
           tryAutoEngageMeleeTarget();
           window.Combat.input.pressStart(weaponSlot);
@@ -26535,11 +26539,25 @@
         const tool = { tool1: 'shovel', tool2: 'hoe', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
         if (tool) setActiveTool(tool);
       }
-      function getActionForButton(device, button, heldShift = null) {
-        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
-        const bindings = inputBindings[device] || {};
-        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+      const activeInputActionCounts = new Map(); // Keeps an action held until every configured physical input that started it has been released.
+      function dispatchInputAction(actionId, phase = 'press') {
+        const count = activeInputActionCounts.get(actionId) || 0;
+        if (phase === 'press') {
+          activeInputActionCounts.set(actionId, count + 1);
+          if (count === 0) runInputAction(actionId, 'press');
+          return;
+        }
+        if (count <= 1) {
+          activeInputActionCounts.delete(actionId);
+          if (count === 1) runInputAction(actionId, 'release');
+        } else activeInputActionCounts.set(actionId, count - 1);
       }
+      function getActionsForButton(device, button, heldShift = null) {
+        if (heldShift?.bindings?.[button]) return [heldShift.bindings[button]];
+        const bindings = inputBindings[device] || {};
+        return INPUT_DEFAULTS.actions.map(action => action.id).filter(actionId => (bindings[actionId] || []).includes(button));
+      }
+      function getActionForButton(device, button, heldShift = null) { return getActionsForButton(device, button, heldShift)[0] || null; }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
         const pads = navigator.getGamepads?.() || [];
@@ -26600,52 +26618,62 @@
         }
         const down = new Set();
         pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
-        if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
-        if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
+        for (const trigger of INPUT_DEFAULTS.controllerTriggerInputs) if ((pad.buttons[trigger.buttonIndex]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add(trigger.code);
         const axisPress = INPUT_DEFAULTS.axisPressThreshold;
-        if (rx <= -axisPress) down.add('RightStickLeft');
-        if (rx >= axisPress) down.add('RightStickRight');
-        if (ry <= -axisPress) down.add('RightStickUp');
-        if (ry >= axisPress) down.add('RightStickDown');
-        // Right-stick click (Button11 — R3) toggles melee auto-target
+        if (rx <= -axisPress && INPUT_DEFAULTS.controllerAxisInputs.left) down.add(INPUT_DEFAULTS.controllerAxisInputs.left);
+        if (rx >= axisPress && INPUT_DEFAULTS.controllerAxisInputs.right) down.add(INPUT_DEFAULTS.controllerAxisInputs.right);
+        if (ry <= -axisPress && INPUT_DEFAULTS.controllerAxisInputs.up) down.add(INPUT_DEFAULTS.controllerAxisInputs.up);
+        if (ry >= axisPress && INPUT_DEFAULTS.controllerAxisInputs.down) down.add(INPUT_DEFAULTS.controllerAxisInputs.down);
+        // The configured controller override toggles melee auto-target
         // while a melee weapon is out, taking over from its default
         // weaponSwitch binding for exactly that window (weaponSwitch still
         // works normally the rest of the time, and via its other bindings/
         // the action-bar button even then).
-        if (down.has('Button11') && meleeWeaponOut()) {
-          if (!gamepadState.previous.has('Button11')) {
+        const meleeTargetOverride = INPUT_DEFAULTS.meleeAutoTargetOverrideInput;
+        if (meleeTargetOverride && down.has(meleeTargetOverride) && meleeWeaponOut()) {
+          if (!gamepadState.previous.has(meleeTargetOverride)) {
             meleeAutoTargetOn = !meleeAutoTargetOn;
             manualAutoTarget = null;
             meleeAutoTargetFreeAim = false;
             showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
           }
-          down.delete('Button11');
+          down.delete(meleeTargetOverride);
         }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) controllerLookActive = false;
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
-          const actionId = getActionForButton('controller', button, heldShift);
-          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
+          const actionIds = getActionsForButton('controller', button, heldShift);
+          if (actionIds.length) lastInputDevice = 'controller';
+          if (actionIds.length) gamepadState.pressedActions.set(button, [...actionIds]);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'press');
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;
-          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
-          if (actionId) runInputAction(actionId, 'release');
+          const actionIds = gamepadState.pressedActions.get(button) || [];
+          gamepadState.pressedActions.delete(button);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'release');
         }
         gamepadState.previous = down;
         gamepadState.activeShift = heldShift || null;
       }
+      function releaseControllerActions() {
+        for (const [button, actionIds] of gamepadState.pressedActions) {
+          gamepadState.pressedActions.delete(button);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'release');
+        }
+        gamepadState.previous.clear();
+      }
       window.addEventListener('focus', () => { gamepadState.focused = true; });
-      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+      window.addEventListener('blur', () => { gamepadState.focused = false; releaseControllerActions(); input.x = 0; input.y = 0; controllerLookActive = false; });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; releaseControllerActions(); input.x = 0; input.y = 0; controllerLookActive = false; } });
 
       // Settings tab's input-binding rows now live in
       // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
       // init()'d here rather than down with the other window.<Namespace>
       // modules, since (unlike them) this one is rendered once immediately
       // at boot rather than lazily on first tab open.
-      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, ...INPUT_DEFAULTS.newModeShiftDefaults, bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
       window.InputSettingsPanel?.init({
         INPUT_DEFAULTS,
         inputBindings,
@@ -26653,238 +26681,43 @@
         buttonLabel,
         bindingConflict,
         saveInputBindings,
+        resetInputBindings,
       });
       window.InputSettingsPanel.render();
       window.MusicMinigame?.renderNoteKeySettings();
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
 
-      // Desktop Shift's dual role: held + mouse movement rotates the camera
-      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
-      // clean TAP — pressed and released within the same tap window as
-      // every other tap/hold gesture here, with no mouse movement in
-      // between — toggles melee auto-target instead. _shiftDragged is set
-      // the instant any mousemove event fires while Shift is down
-      // (regardless of which branch handles it — shoulder-surf's own free
-      // mouselook included), so a hold-to-rotate never gets misread as a
-      // toggle on release.
-      let _shiftDownAt = null;
-      let _shiftDragged = false;
+      const desktopKeyPressActions = new Map(); // Maps a physical key to every overlapping action started by that press.
       window.addEventListener('keydown', (event) => {
-        const key = event.key.toLowerCase();
-        if (window.Fishing?.state?.active) {
-          if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
-          const fishingBoundAction = getActionForButton('desktop', event.code);
-          if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
-            event.preventDefault();
-            window.Fishing?.primaryAction();
-          }
-          return;
-        }
-        if (key === 'escape') {
-          event.preventDefault();
-          // Normally unreachable — the overlay's iframe holds focus and
-          // handles Escape itself (see requestExitOrPause in
-          // lyre-performance.html, which asks js/music-minigame.js to
-          // close()) — but if focus ever lands back on the host page while
-          // the overlay is still open, this is the same fallback Fishing
-          // uses above rather than opening the menu underneath it.
-          if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; }
-          if (dialogueOpen) { closeNpcDialogue(); return; }
-          menuOpen ? closeMenu() : openMenu();
-          return;
-        }
-        // Tab: same menu open/close as Escape, without Escape's browser side
-        // effect of exiting Fullscreen — added specifically so a player in
-        // fullscreen doesn't have to drop out of it just to reach the menu.
-        // Shift+Tab does the same (no direction to pick between for a plain
-        // open/close toggle); item-cycling moved to [ / ] below to free up
-        // both bindings. Skipped during dialogue/the music minigame, same
-        // as Escape, so the menu can't pop open over either overlay.
-        if (key === 'tab') {
-          event.preventDefault();
-          if (window.MusicMinigame?.state?.active || dialogueOpen) return;
-          menuOpen ? closeMenu() : openMenu();
-          return;
-        }
-        // M: wilderness map — closes if already open on the map tab (mirrors
-        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
-        if (key === 'm') {
-          event.preventDefault();
-          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
-          if (menuOpen && onMapTab) closeMenu();
-          else openMenu('map');
-          return;
-        }
-        if (menuOpen) return;
-        if (key === 'z') {
-          event.preventDefault();
-          if (!event.repeat) putAwayHeldEquipment();
-          return;
-        }
-        const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
-          event.preventDefault();
-          if (!event.repeat) runInputAction(boundDesktopAction, 'press');
-          return;
-        }
-        if (key === 'shift') {
-          if (!event.repeat) { _shiftDownAt = performance.now(); _shiftDragged = false; }
-          return;
-        }
-        if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
-          event.preventDefault(); input.keys.add(key);
-        }
-
-        if (key === 'e') {
-          event.preventDefault();
-          if (isDesktop) {
-            if (!event.repeat && window.BanditCamps?.hasNearbyTent?.()) {
-              desktopTentInteractHeld = true;
-              activeAction = 'bandit_tent_interact';
-              actionHeldDown = true;
-              useActiveAction();
-              return;
-            }
-            startDesktopHoldKey('e', event);
-            return;
-          }
-        }
-        if (key === 'q') {
-          event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('q', event); return; }
-          const actions = toolActions[activeTool];
-          const idx = actions.indexOf(activeAction);
-          activeAction = actions[(idx + 1) % actions.length];
-          refreshActionBar();
-          return;
-        }
-        // C: hold to open the utilities wheel (Character View, Return to Camp,
-        // quick-select a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
-        // nothing pattern as E/Q above, but there's no separate tap
-        // behavior to fall back to on release (see the keyup handler).
-        if (key === 'c') {
-          event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('c', event); return; }
-        }
-
-        // Legacy unbound primary keys. Configured action bindings return above;
-        // desktop E is handled as Interact on keyup after its tool-wheel hold.
-        if (key === ' ' || key === 'enter' || key === 'e') {
+        if (desktopKeyPressActions.has(event.code)) return;
+        const configuredActions = getActionsForButton('desktop', event.code);
+        if (configuredActions.length) {
           event.preventDefault();
           if (!event.repeat) {
-            actionHeldDown = true;
-            useActiveAction();
+            desktopKeyPressActions.set(event.code, [...configuredActions]);
+            for (const actionId of configuredActions) dispatchInputAction(actionId, 'press');
           }
-          return;
-        }
-
-        if (key === '1') setActiveTool('shovel');
-        if (key === '2') setActiveTool('hoe');
-        if (key === '3') setActiveTool('weapon');
-        if (key === '4') setActiveTool('axe');
-        if (key === '5') setActiveTool('pick');
-        if (key === '6') setActiveTool('harpoon');
-
-        // Item scroll: , / . or [ / ] — Tab/Shift+Tab moved to opening the
-        // menu (see the keydown handler above) so both are free here.
-        if (key === ',' || key === '[') {
-          cycleActiveInventoryItem(-1);
-          refreshItemScroll(); refreshActionBar();
-        }
-        if (key === '.' || key === ']') {
-          event.preventDefault();
-          cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
-          refreshItemScroll(); refreshActionBar();
-        }
-
-        // X: context action — climbs/cliff-dives a wall in the current
-        // facing direction if one's there, otherwise dodges with i-frames
-        if (key === 'x') {
-          event.preventDefault();
-          performContextAction();
-          return;
-        }
-
-        // B: toggle debug leg-bone visualization (hip/thigh/calf/knee
-        // guides, same colored capsules the furniture-avatar-author tool
-        // draws over its own seated preview) for every visible avatar's leg
-        // rig — dev/diagnostic aid, not a player-facing mechanic.
-        if (key === 'b') {
-          event.preventDefault();
-          const next = !window.ProceduralLegAnimation?.showBones;
-          window.ProceduralLegAnimation?.setShowBones(next);
-          showToast(next ? 'Leg bones: shown' : 'Leg bones: hidden', true, false);
-          return;
-        }
-
-        // R: cycle active tool's action mode (equivalent to Q on mobile)
-        if (key === 'r') {
-          const actions = toolActions[activeTool];
-          const idx = actions.indexOf(activeAction);
-          activeAction = actions[(idx + 1) % actions.length];
-          refreshActionBar();
-          return;
         }
       });
 
       window.addEventListener('keyup', (event) => {
-        const key = event.key.toLowerCase();
-        input.keys.delete(key);
-        // Mirrors the keydown handler's early return: without this, releasing
-        // the interact key (E) after fishingPrimaryAction() already fired on
-        // keydown fell through to the 'e' handling below, which calls
-        // useActiveAction() — re-triggering beginFishingCast() and clobbering
-        // the ring minigame that press had just opened.
-        if (window.Fishing?.state?.active) return;
-        // Symmetric release for whatever keydown dispatched as a 'press' —
-        // same binding lookup/exclusion as keydown above, so a held weapon
-        // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
-        // instead of only ever firing as an instant tap.
-        const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
-          runInputAction(boundDesktopActionUp, 'release');
-        }
-        if (key === 'shift') {
-          const heldMs = performance.now() - (_shiftDownAt ?? 0);
-          if (!menuOpen && !_shiftDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) {
-            meleeAutoTargetOn = !meleeAutoTargetOn;
-            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-          }
-          _shiftDownAt = null;
-          return;
-        }
-        if (key === 'e' && isDesktop) {
+        const configuredActions = desktopKeyPressActions.get(event.code);
+        if (configuredActions) {
           event.preventDefault();
-          if (desktopTentInteractHeld) {
-            desktopTentInteractHeld = false;
-            actionHeldDown = false;
-            return;
-          }
-          const wasHeld = finishDesktopHoldKey('e');
-          if (!wasHeld) runInteractAction();
-          return;
+          desktopKeyPressActions.delete(event.code);
+          for (const actionId of configuredActions) dispatchInputAction(actionId, 'release');
         }
-        if (key === 'q' && isDesktop) {
-          event.preventDefault();
-          const wasHeld = finishDesktopHoldKey('q');
-          if (!wasHeld) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          }
-          return;
-        }
-        if (key === 'c' && isDesktop) {
-          event.preventDefault();
-          // No tap fallback — the utilities wheel only ever does anything
-          // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
-          // branch commits whatever entry was highlighted via releaseSelection()).
-          finishDesktopHoldKey('c');
-          return;
-        }
-        if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
       });
+
+      function releaseDesktopKeyActions() {
+        for (const [code, actionIds] of desktopKeyPressActions) {
+          desktopKeyPressActions.delete(code);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'release');
+        }
+      }
+      window.addEventListener('blur', releaseDesktopKeyActions);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) releaseDesktopKeyActions(); });
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
       function handleGameWheel(e, heldOnly = false) {
@@ -26894,7 +26727,7 @@
         // player instead of zooming — only once a lock is already active,
         // same "nothing happens if it's off" rule the controller/mobile
         // cycling inputs follow.
-        if (e.shiftKey && meleeAutoTargetOn && meleeWeaponOut()) {
+        if (cameraOrbitModifierDown && meleeAutoTargetOn && meleeWeaponOut()) {
           e.preventDefault();
           cycleMeleeAutoTarget(dir);
           return true;
@@ -26918,22 +26751,20 @@
           window._desktopSelectionArc?.scrollAmmo(-dir);
           return true;
         }
-        if (isDesktop && desktopHoldKeys.q.down) {
+        if (isDesktop && itemSelectPress.down) {
           e.preventDefault();
-          openDesktopHoldArc('q');
           if (activeTool === 'ranged') window._desktopSelectionArc?.scrollAmmo(-dir);
           else window._desktopSelectionArc?.scrollItem(-dir);
           return true;
         }
-        if (isDesktop && desktopHoldKeys.e.down) {
+        if (isDesktop && toolSelectPress.down) {
           e.preventDefault();
-          openDesktopHoldArc('e');
+          if (!toolSelectPress.held) { toolSelectPress.held = true; if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; } window._desktopSelectionArc?.openTool?.(); }
           window._desktopSelectionArc?.scrollTool(-dir);
           return true;
         }
-        if (isDesktop && desktopHoldKeys.c.down) {
+        if (isDesktop && utilitySelectPress.down) {
           e.preventDefault();
-          openDesktopHoldArc('c');
           window._desktopSelectionArc?.scrollEntries(-dir);
           return true;
         }
@@ -27082,44 +26913,17 @@
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
 
-      // Left click = tool action 1 (tap/hold), right click = tool action 2
-      // (tap/hold) when wielding the weapon tool — routed through
-      // Combat.input so the loadout's 4 ability slots can claim them.
-      // Every other tool keeps its previous click behavior unchanged: left
-      // click = primary action, right click = secondary action.
-      const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse press with the combat slot released below.
+      // Mouse buttons are ordinary configurable desktop inputs. Press ownership
+      // survives Pointer Lock/right-drag release quirks and binding edits.
+      const desktopMousePressActions = new Map(); // Maps a physical mouse button to every overlapping action started by that press.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode || e.shiftKey) return;
-          if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
-            const pointerActionId = e.button === 0 ? 'action1' : e.button === 2 ? 'action2' : null; // Used to map mouse presses through the same visible-slot override as keyboard/controller input.
-            const visibleOverride = pointerActionId ? visibleActionOverrideForWeaponSlot(pointerActionId) : null;
-            if (visibleOverride) {
-              visibleWeaponContextPresses.add('mouse:' + e.button);
-              runActionButtonAtSlot(visibleOverride.slot);
-              return;
-            }
-            tryAutoEngageMeleeTarget();
-            if (e.button === 0) {
-              desktopWeaponPointerSlots.set(e.button, 1);
-              actionHeldDown = true;
-              window.Combat.input.pressStart(1);
-            } else if (e.button === 2) {
-              desktopWeaponPointerSlots.set(e.button, 2);
-              window.Combat.input.pressStart(2);
-            }
-            return;
-          }
-          if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
-          if (e.button === 0) {
-            actionHeldDown = true;
-            useActiveAction();
-          } else if (e.button === 2) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          }
+          if (e.pointerType !== 'mouse' || menuOpen || farmEditMode || cameraOrbitModifierDown) return;
+          const actionIds = getActionsForButton('desktop', `Mouse${e.button}`);
+          if (!actionIds.length || desktopMousePressActions.has(e.button)) return;
+          e.preventDefault(); desktopMousePressActions.set(e.button, [...actionIds]);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'press');
         });
       }
       function finishDesktopMouseAction(e) {
@@ -27127,25 +26931,18 @@
         // no pointerType), so accept both forms and rely on press ownership.
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
-        if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
-          if (e.button === 0) actionHeldDown = false;
-          return;
-        }
-        const ownedSlot = desktopWeaponPointerSlots.get(e.button);
-        if (ownedSlot) {
-          desktopWeaponPointerSlots.delete(e.button);
-          if (ownedSlot === 1) actionHeldDown = false;
-          window.Combat?.input?.pressEnd(ownedSlot);
-          return;
-        }
-        if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
-          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
-          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
-          return;
-        }
-        if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
-        if (e.button === 0) actionHeldDown = false;
+        const actionIds = desktopMousePressActions.get(e.button);
+        if (!actionIds) return;
+        desktopMousePressActions.delete(e.button);
+        for (const actionId of actionIds) dispatchInputAction(actionId, 'release');
       }
+      function releaseDesktopMouseActions() {
+        for (const [button, actionIds] of desktopMousePressActions) {
+          desktopMousePressActions.delete(button);
+          for (const actionId of actionIds) dispatchInputAction(actionId, 'release');
+        }
+      }
+      function mouseButtonMask(button) { return [1, 4, 2, 8, 16][button] || 0; }
       // Capture release before action-arch/backdrop handlers can consume a
       // moved right-click gesture. `contextmenu` is Chromium/Opera's final
       // event for some right-drags even when their ordinary up event is lost.
@@ -27153,32 +26950,25 @@
       window.addEventListener('mouseup', finishDesktopMouseAction, true);
       window.addEventListener('auxclick', finishDesktopMouseAction, true);
       window.addEventListener('contextmenu', (e) => {
-        if (!isDesktop || !desktopWeaponPointerSlots.has(2)) return;
+        if (!isDesktop || !desktopMousePressActions.has(e.button)) return;
         e.preventDefault();
-        if ((Number(e.buttons) & 2) === 0) finishDesktopMouseAction(e);
+        if ((Number(e.buttons) & mouseButtonMask(e.button)) === 0) finishDesktopMouseAction(e);
       }, true);
       window.addEventListener('pointercancel', (e) => {
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
-        for (const [button, slot] of desktopWeaponPointerSlots) {
-          desktopWeaponPointerSlots.delete(button);
-          if (slot === 1) actionHeldDown = false;
-          window.Combat?.input?.abortPress?.(slot);
-        }
+        releaseDesktopMouseActions();
       }, true);
+      window.addEventListener('blur', releaseDesktopMouseActions);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) releaseDesktopMouseActions(); });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
-          // A missing right-button up can still be proven by the buttons
-          // bitmask on the next real mouse event. End the owned hold before
+          // A missing button-up can still be proven by the buttons bitmask on
+          // the next real mouse event. End every released owned hold before
           // camera-look or aiming gets a chance to use that event.
-          if (desktopWeaponPointerSlots.has(2) && (Number(e.buttons) & 2) === 0) {
-            finishDesktopMouseAction({ button: 2, pointerType: 'mouse' });
-          }
-          if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
-            finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
-          }
+          for (const button of [...desktopMousePressActions.keys()]) if ((Number(e.buttons) & mouseButtonMask(button)) === 0) finishDesktopMouseAction({ button, pointerType: 'mouse' });
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns
@@ -27193,12 +26983,12 @@
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
           if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
-          if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
+          if (cameraOrbitModifierDown) cameraOrbitModifierDragged = true; // Disqualifies a subsequent modifier release from reading as an auto-target tap.
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
-          // (Shift+drag, below) or spin the character's facing via mouse-
+          // (configured modifier + drag, below) or spin the character's facing via mouse-
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
@@ -27212,13 +27002,13 @@
             meleeAutoTargetFreeAim = true;
           }
           // Shoulder-surf gets mouse-look "for free" here: plain mouse
-          // movement drives the camera exactly like Shift+drag does
+          // movement drives the camera exactly like the configured modifier does
           // everywhere else, no modifier key needed, and freeRotateCameraActive()
           // (true for shoulder-surf's config, same as 'seated') already makes
           // this wrap into a full 360° orbit instead of the usual ±45° peek
           // clamp. Falls through to the raycast-based facing/aim below
           // otherwise, same as it always has.
-          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
+          if ((cameraOrbitModifierDown || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
@@ -27230,7 +27020,7 @@
             return;
           }
 
-          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
+          if (cameraDragPointerId !== null || cameraOrbitModifierDown) return; // Modifier + mouse movement is rotating the camera, not aiming.
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;

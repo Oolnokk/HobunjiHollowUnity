@@ -20,7 +20,7 @@ assert(
   'touch presses select nest and tent hold actions immediately',
 );
 assert(
-  game.includes("activeAction = 'bandit_tent_interact';\n              actionHeldDown = true;\n              useActiveAction();"),
+  /activeAction = 'bandit_tent_interact';\s*actionHeldDown = true;\s*useActiveAction\(\)/.test(game),
   'desktop tent interaction enters the same selected-action hold path',
 );
 assert(

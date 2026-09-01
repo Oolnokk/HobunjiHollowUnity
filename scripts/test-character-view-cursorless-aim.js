@@ -34,14 +34,14 @@ assert.match(
 );
 assert.equal(
   (game.match(/if \(cursorlessMouseAimRequested\(\)\) requestShoulderSurfPointerLock\(\);/g) || []).length,
-  2,
-  'menu-close and gameplay-click reacquire paths both honor Character View',
+  3,
+  'menu-close, gameplay-click, and configurable utility-release paths honor Character View',
 );
 assert.match(
   game,
-  /function finishDesktopHoldKey\(key\) \{[\s\S]{0,1200}if \(wasHeld && state\.arc === 'utilities' && cursorlessMouseAimRequested\(\)\) \{\s*requestShoulderSurfPointerLock\(\);\s*\}[\s\S]{0,120}return wasHeld;/,
-  'closing the utility wheel restores cursor-less aim when Character View remains active',
+  /actionId === 'utilitySelect'[\s\S]{0,500}if \(cursorlessMouseAimRequested\(\)\) requestShoulderSurfPointerLock\(\)/,
+  'releasing the configurable utility selector restores cursor-less aim when Character View remains active',
 );
-assert.match(index, /game\.js\?v=20260829charviewcursor1/, 'the Character View cursor-lock fix is cache-invalidated');
+assert.match(index, /game\.js\?v=20260901input2/, 'the Character View cursor-lock fix is cache-invalidated');
 
 console.log('Character View cursor-less mouse aim checks passed.');

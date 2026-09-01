@@ -91,7 +91,7 @@
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/combat/technique-scrolls.js?v=20260830unlocksave3', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
-    ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
+    ['js/held-seed-desktop-capture.js?v=20260901input2', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/npc-gifting.js?v=20260831a', () => !!window.NpcGifting],
     ['js/npc-wardrobe.js?v=20260831a', () => !!window.NpcWardrobe],

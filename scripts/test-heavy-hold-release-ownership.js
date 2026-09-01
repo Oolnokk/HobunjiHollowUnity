@@ -10,12 +10,12 @@ const index = fs.readFileSync('docs/index.html', 'utf8'); // Browser bootstrap u
 
 assert.match(
   game,
-  /const desktopWeaponPointerSlots = new Map\(\)[\s\S]*?desktopWeaponPointerSlots\.set\(e\.button, 2\)/,
-  'desktop weapon presses retain ownership of their original combat slot',
+  /const ownedWeaponInputSlots = new Map\(\)[\s\S]*?ownedWeaponInputSlots\.set\(actionId, weaponSlot\)/,
+  'configured weapon presses retain ownership of their original combat slot',
 );
 assert.match(
   game,
-  /const ownedSlot = desktopWeaponPointerSlots\.get\(e\.button\)[\s\S]*?Combat\?\.input\?\.pressEnd\(ownedSlot\)/,
+  /const releaseSlot = ownedWeaponInputSlots\.get\(actionId\) \|\| weaponActionSlot\(actionId\)[\s\S]*?Combat\.input\.pressEnd\(releaseSlot\)/,
   'release ends the originally pressed slot without consulting the current tool state',
 );
 assert.match(
@@ -25,13 +25,13 @@ assert.match(
 );
 assert.match(
   game,
-  /window\.addEventListener\('contextmenu',[\s\S]*?desktopWeaponPointerSlots\.has\(2\)[\s\S]*?finishDesktopMouseAction\(e\)/,
+  /window\.addEventListener\('contextmenu',[\s\S]*?desktopMousePressActions\.has\(e\.button\)[\s\S]*?finishDesktopMouseAction\(e\)/,
   'a completed right-click context gesture also releases its owned combat hold',
 );
 assert.match(
   game,
-  /desktopWeaponPointerSlots\.has\(2\) && \(Number\(e\.buttons\) & 2\) === 0[\s\S]*?finishDesktopMouseAction\(\{ button: 2, pointerType: 'mouse' \}\)/,
-  'the live mouse button bitmask repairs a missing right-button release event',
+  /for \(const button of \[\.\.\.desktopMousePressActions\.keys\(\)\]\)[\s\S]*?mouseButtonMask\(button\)[\s\S]*?finishDesktopMouseAction\(\{ button, pointerType: 'mouse' \}\)/,
+  'the live mouse button bitmask repairs any missing configured mouse release event',
 );
 assert.match(
   combatInput,
@@ -45,8 +45,8 @@ assert.match(
 );
 assert.match(
   index,
-  /combat-input\.js\?v=20260831heavyhold2[\s\S]*?game\.js\?v=20260831heavyhold2/,
-  'both changed browser modules are cache-invalidated together',
+  /combat-input\.js\?v=20260831heavyhold2[\s\S]*?game\.js\?v=20260901input2/,
+  'the unchanged combat state machine and changed game router have explicit cache versions',
 );
 
 console.log('heavy-hold release ownership contracts: 8 checks passed');

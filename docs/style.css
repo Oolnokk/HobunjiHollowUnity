@@ -1942,13 +1942,19 @@
     .input-bindings-grid, .mode-shift-list { display: grid; gap: 6px; width: 100%; }
     .input-binding-row, .mode-shift-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 8px; align-items: center; }
     .mode-shift-row { grid-template-columns: minmax(90px, 1fr) auto auto auto; }
+    .input-binding-controls { display: grid; grid-template-columns: repeat(2, minmax(92px, 1fr)); gap: 6px; }
+    .input-bind-slot { display: grid; grid-template-columns: minmax(74px, 1fr) 24px; gap: 3px; min-width: 0; }
     .input-bind-btn, .settings-small-btn {
       font-size: 11px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
       color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--border-bright);
     }
     .input-bind-btn.is-listening { border-color: var(--accent); color: var(--accent); }
+    .input-bind-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .input-bind-clear { padding: 4px; min-width: 24px; }
     .settings-select { font-size: 11px; padding: 5px 8px; border-radius: 7px; color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--border-bright); }
     .input-binding-warning { color: #f87171; font-size: 10px; min-height: 12px; }
+    .controls-conflict-warning { margin: 6px 0 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(248,113,113,.55); background: rgba(127,29,29,.24); color: #fecaca; font-size: 11px; line-height: 1.45; }
+    @media (max-width: 560px) { .input-binding-row { grid-template-columns: 1fr; } .input-binding-controls { width: 100%; } }
 
     /* ── Combat loadout: 4 category-locked slots, each with a 5-level
        upgrade tree (see combat-loadout-ui.js + combat-progression.js) ── */
