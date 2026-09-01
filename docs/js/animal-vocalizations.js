@@ -320,9 +320,14 @@
     if (!lines.length || !c?.avatarRef?.group || !window.AmbientDialogue?.show) return;
     const line = lines[Math.floor(random() * lines.length)] || '';
     if (!String(line).trim()) return;
+    const chatheadCreatureKind = speciesProfileKey(c); // Used by AnimalChatheadFrame to select the species-authored crop for this speaker.
     window.AmbientDialogue.show(c.avatarRef.group, line, {
       speakerId: c.id,
-      mode: 'overhead',
+      profile: chatheadCreatureKind ? {
+        chatheadCreatureKind,
+        creatureGenotype: c.genotype || null,
+      } : null, // Gives the shared portrait renderer animal species/genetics without pretending the creature is an NPC fighter profile.
+      mode: chatheadCreatureKind ? 'chathead' : 'overhead',
       durationMs: Math.max(500, finite(cfg.textDurationMs, 1600)),
       tone: 'animal',
     });

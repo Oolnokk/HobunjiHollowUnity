@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.43</title>
+<title>Hobunji Animation Author V15.45</title>
 <style>
 :root {
   color-scheme: dark;
@@ -13286,7 +13286,7 @@ showOverlay('Loading animation author', 'Fetching the repository NPC runtime plu
 log('Versatile animation author initialized from the repository-backed gameplay viewer.');
 setTimeout(() => loadSource(initialSettings), 0);
 // -----------------------------------------------------------------------------
-// V15.43 animal chathead framing.
+// V15.45 animal chathead framing.
 //
 // Creature attachment-rig profiles now also own a normalized idle-sprite crop
 // rectangle. It is authored here beside saddle/grip/size/ground coordinates and
@@ -13585,14 +13585,16 @@ serializeAttachmentRigLibrary = function() {
 const basePrepareMultiAvatarAnimationAuthorV1543 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const result = basePrepareMultiAvatarAnimationAuthorV1543();
-  document.title = 'Hobunji Animation Author V15.43';
-  if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.43';
+  document.title = 'Hobunji Animation Author V15.45';
+  if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';
   return result;
 };
 
-animationAuthor.recentChange = 'V15.43 adds species-authored animal dialogue chathead framing to Rig Coordinates; ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';
+document.title = 'Hobunji Animation Author V15.45';
+if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';
+animationAuthor.recentChange = 'V15.45 adds species-authored animal dialogue chathead framing to Rig Coordinates; animal ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
-log('V15.43 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview and mobile diagnostics.');
+log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');
 })();
 </script>
 <script>

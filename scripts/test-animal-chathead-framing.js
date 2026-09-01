@@ -20,8 +20,10 @@ assert.match(authorSource, /id="maaAnimalChatheadPreviewCanvas"/,
   'animal framing must show the resulting square dialogue chathead');
 assert.match(authorSource, /window\.__maaAnimalChatheadFrameDebug/,
   'mobile authoring diagnostics must expose the active creature frame without DevTools');
-assert.match(authorSource, /document\.title = 'Hobunji Animation Author V15\.43'/,
-  'published author title must identify the animal-chathead framing build');
+assert.match(authorSource, /document\.title = 'Hobunji Animation Author V15\.45'/,
+  'published author title must identify the animal-chathead framing build after V15.44');
+assert.match(authorSource, /MultiAvatarAnimationAuthor\.version = '15\.45'/,
+  'public Animation Author API version must match the V15.45 chathead build');
 
 assert.match(runtimeSource, /banubu: 'grehlr'/, 'Banubu must reuse Grehlr chathead framing');
 assert.match(runtimeSource, /hiki_hiki: 'drenkirra'/, 'Hiki-hiki must reuse Drenkirra chathead framing');
