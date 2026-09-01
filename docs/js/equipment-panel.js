@@ -585,6 +585,14 @@
           deps.saveMemberWorldData();
         });
       }
+      // Giftable straight from the pack too — see getHeldGiftItem in
+      // game.js, which checks packClothing as well as gear.
+      const heldNow = deps.getManualHeldItem?.();
+      const isHeld = heldNow?.kind === 'clothing' && heldNow?.uid === uid;
+      mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'secondary', () => {
+        deps.setManualHeldItem?.(isHeld ? null : { kind: 'clothing', uid });
+        selectPackClothingItem(uid);
+      });
     }
   }
 

@@ -14378,7 +14378,12 @@
       // manual hold first, falling back to the ordinary wheel selection.
       function getHeldGiftItem() {
         if (manualHeldItem?.kind === 'clothing') {
-          const item = (gearInventory?.clothingItems || []).find(c => c.uid === manualHeldItem.uid);
+          // Checks packClothing too — found/bought clothing sits there
+          // (see js/equipment-panel.js's selectPackClothingItem) until the
+          // player explicitly Transfers it to Gear, and it's held/giftable
+          // either way.
+          const item = (gearInventory?.clothingItems || []).find(c => c.uid === manualHeldItem.uid)
+            || packClothing.find(c => c.uid === manualHeldItem.uid);
           if (item) return { kind: 'clothing', instance: item };
           manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
         }
@@ -28249,12 +28254,15 @@
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
         saveGearInventory,
+        getPackClothing: () => packClothing,
+        setPackClothing: (arr) => { packClothing = arr; },
         refreshPlayerAvatar,
         inventory,
         clampInventoryStack,
         showToast,
         refreshItemScroll,
         buildInventoryGrid,
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(),
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         refreshActionBar,
         saveMemberWorldData,

@@ -174,14 +174,27 @@
 
     if (held.kind === 'clothing') {
       if (kept) {
+        // The held instance came from one of two places (see
+        // game.js's getHeldGiftItem) — gear (collected/possibly worn) or
+        // the pack (found/bought, not yet collected) — remove it from
+        // whichever one actually has it.
         const gearInventory = deps.getGearInventory();
-        if (gearInventory?.clothing) {
-          for (const slot of Object.keys(gearInventory.clothing)) {
+        let removedFromGear = false;
+        if (gearInventory?.clothingItems?.some(c => c.uid === held.instance.uid)) {
+          for (const slot of Object.keys(gearInventory.clothing || {})) {
             if (gearInventory.clothing[slot]?.uid === held.instance.uid) gearInventory.clothing[slot] = null;
           }
-          gearInventory.clothingItems = (gearInventory.clothingItems || []).filter(c => c.uid !== held.instance.uid);
+          gearInventory.clothingItems = gearInventory.clothingItems.filter(c => c.uid !== held.instance.uid);
           deps.saveGearInventory?.();
           deps.refreshPlayerAvatar?.();
+          removedFromGear = true;
+        }
+        if (!removedFromGear) {
+          const packClothing = deps.getPackClothing?.() || [];
+          if (packClothing.some(c => c.uid === held.instance.uid)) {
+            deps.setPackClothing?.(packClothing.filter(c => c.uid !== held.instance.uid));
+            deps.buildPackClothingSection?.();
+          }
         }
       }
       deps.clearManualHeldItem?.();
