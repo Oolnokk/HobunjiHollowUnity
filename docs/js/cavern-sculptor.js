@@ -921,15 +921,15 @@
   // already relies on to find wall geometry by shape alone.
   const WALL_YRANGE_THRESHOLD = 0.15;
 
-  // Maximum height above the true floor that may remain inside a claimed
-  // (walkable) tile. Used by clipAndStitch to discard near-horizontal
-  // ceiling/overhang fragments that the wall-shape test cannot recognize.
+  // Surface height used to distinguish a real floor from wall/overhang
+  // geometry intruding into a claimed tile during the smooth-sculpt pass.
   const WALKABLE_SURFACE_MAX_ABOVE_FLOOR = 0.18;
+  const WALKABLE_SMOOTH_SCULPT_STRENGTH = 0.96; // Used to pull intrusive geometry back toward its wall while retaining a soft bevel.
 
   function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
-    let walkableSpillFragmentsRemoved = 0; // Exposed in generation diagnostics and the cavern tuner.
+    let walkableSculptFragmentsSmoothed = 0; // Exposed in generation diagnostics and the cavern tuner.
     const addVertex = v => {
       // Quantized key shares clipped/stitched vertices along the same tile
       // edge so the mesh has no microscopic cracks there.
@@ -943,53 +943,49 @@
       if (ia === ib || ib === ic || ic === ia) return;
       outIndices.push(ia, ib, ic);
     };
-    // A claimed tile's own interior is field-guaranteed solid-free —
-    // carveTileColumn force-carves its exact footprint open at every
-    // height, and solidifyBoundaryWalls's heal only ever restores an
-    // *unclaimed* neighbor, never a claimed tile's own interior — so no
-    // real wall/ceiling surface should ever render inside one. It still
-    // can: a wall/ceiling triangle's XZ bounding box routinely overlaps a
-    // little past its own tile's edge into a claimed neighbor (normal
-    // dual-contour surface curvature from a leaf whose own cell straddles
-    // the boundary — not an error, see leafSurfaceVertex), and since that
-    // neighbor is always in keepTiles too (claimed tiles are always
-    // touched), the overlapping sliver gets clipped and rendered right
-    // there, reading as wall rock cosmetically dipping into the tile's
-    // own open floor space (confirmed via a raw, mesh-triangle-independent
-    // check: 4000+ misplaced dual-contour vertices per den, landing up to
-    // half a tile deep inside claimed tiles' own footprints — exactly the
-    // "significant improvement but not quite there — wall rock dips into
-    // the edge tiles a little" residual left after switching this clip's
-    // own cull from claimed to touched, see this function's docblock
-    // above on that earlier fix). An earlier attempt fixed this by
-    // repositioning the offending raw vertices before clipping instead —
-    // reverted after headless verification showed it corrupts the
-    // triangle shapes clipPolyToXZRect depends on, badly damaging real
-    // wall coverage. This version changes nothing about vertex positions
-    // or triangle shapes at all: it only withholds WALL-SHAPED (yRange
-    // test) fragments from a claimed tile's own bucket, since the tile's
-    // own FLOOR triangles (the flat crossing at floorY that spans every
-    // claimed tile, because carving never touches anything below floorY —
-    // see carveSphere/carveTileColumn's own floorY guards) must still
-    // render there. The wall's own home tile still renders the full
-    // triangle right up to the shared edge regardless (its own clip is
-    // completely untouched by this), so nothing goes gappy or missing —
-    // just no redundant sliver rendering on the far side of a boundary it
-    // should never have crossed. Verified via a field-level (not mesh-
-    // triangle) ground-truth check across 5 seeds: real wall coverage is
-    // bit-for-bit identical with and without this change.
-    const skipClaimedWallLike = (key, yRange) => claimed && claimed.has(key) && yRange > WALL_YRANGE_THRESHOLD;
-    // A claimed tile is force-carved open from floor to sky before meshing,
-    // so any surface wholly above its floor is necessarily a neighboring
-    // wall/overhang fragment whose triangle crossed the tile boundary. The
-    // existing yRange test removes steep fragments; this catches the flat
-    // undersides it deliberately misses. Test the CLIPPED polygon rather
-    // than the raw triangle so geometry is only removed from the walkable
-    // side of the boundary while the same triangle remains intact in its
-    // real, unclaimed home tile.
-    const isWalkableOverhang = (key, poly) => {
-      if (floorY == null || !claimed?.has(key) || !poly?.length) return false;
-      return poly.every(v => v.y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR);
+    // A claimed tile's field is genuinely open, but dual-contour triangles
+    // from a neighboring wall can cross its tile boundary. Do not delete
+    // those fragments: that makes the route clear by cutting visible holes
+    // out of the cave wall. Instead, after clipping the triangle into this
+    // tile, apply a high-strength smooth-sculpt-like stroke. The fragment's
+    // centroid chooses one wall edge and every vertex eases back toward it
+    // with a smooth falloff based on penetration depth. Boundary vertices,
+    // height, and along-wall tangent positions stay fixed, preserving the
+    // organic wall silhouette and connection to the untouched rock-side
+    // fragment while turning the intrusion into a shallow rounded bevel.
+    // This deliberately runs AFTER clipping; moving raw vertices before
+    // clipPolyToXZRect previously distorted the source triangle and damaged
+    // wall coverage in its legitimate unclaimed tile.
+    const smoothWalkableIntrusion = (key, poly, yRange) => {
+      if (floorY == null || !claimed?.has(key) || !poly?.length) return poly;
+      const isWall = yRange > WALL_YRANGE_THRESHOLD;
+      const isOverhang = poly.every(v => v.y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR);
+      if (!isWall && !isOverhang) return poly;
+      const [c, r] = key.split(',').map(Number);
+      const x0 = c * ts, x1 = (c + 1) * ts, z0 = r * ts, z1 = (r + 1) * ts;
+      const cx = poly.reduce((sum, v) => sum + v.x, 0) / poly.length;
+      const cz = poly.reduce((sum, v) => sum + v.z, 0) / poly.length;
+      const edges = [
+        { axis: 'x', edge: x0, distance: Math.abs(cx - x0) },
+        { axis: 'x', edge: x1, distance: Math.abs(x1 - cx) },
+        { axis: 'z', edge: z0, distance: Math.abs(cz - z0) },
+        { axis: 'z', edge: z1, distance: Math.abs(z1 - cz) },
+      ];
+      const target = edges.reduce((best, edge) => edge.distance < best.distance ? edge : best);
+      walkableSculptFragmentsSmoothed++;
+      return poly.map(v => {
+        const normalCoord = target.axis === 'x' ? v.x : v.z;
+        const depth = Math.min(ts * .5, Math.abs(normalCoord - target.edge));
+        const t = Math.max(0, Math.min(1, depth / Math.max(1e-6, ts * .5)));
+        // Fast-rising ease-out falloff models a high-intensity Smooth brush:
+        // even mid-depth vertices move decisively, while vertices already
+        // sitting on the boundary remain pinned and crack-free.
+        const smoothFalloff = t * (2 - t);
+        const blend = WALKABLE_SMOOTH_SCULPT_STRENGTH * smoothFalloff;
+        const out = { x: v.x, y: v.y, z: v.z };
+        out[target.axis] = lerp(normalCoord, target.edge, blend);
+        return out;
+      });
     };
 
     for (let q = 0; q < indices.length; q += 3) {
@@ -1000,16 +996,10 @@
         { x: positions[ic], y: positions[ic + 1], z: positions[ic + 2] },
       ];
       const yRange = Math.max(tri[0].y, tri[1].y, tri[2].y) - Math.min(tri[0].y, tri[1].y, tri[2].y);
-      const areaXZ = Math.abs((tri[1].x - tri[0].x) * (tri[2].z - tri[0].z) - (tri[2].x - tri[0].x) * (tri[1].z - tri[0].z));
-      if (areaXZ < 1e-10) {
-        const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
-        const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
-        if (keepTiles.has(key) && !skipClaimedWallLike(key, yRange)) {
-          if (isWalkableOverhang(key, tri)) walkableSpillFragmentsRemoved++;
-          else addTri(tri[0], tri[1], tri[2]);
-        }
-        continue;
-      }
+      // Even a vertical triangle with zero projected XZ area must go
+      // through per-tile clipping. The old centroid-only shortcut let one
+      // long wall triangle cross a tile boundary unsmoothed, leaving a
+      // single sharp fin after every ordinary fragment was sculpted.
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
       const minZ = Math.min(tri[0].z, tri[1].z, tri[2].z), maxZ = Math.max(tri[0].z, tri[1].z, tri[2].z);
       const ix0 = Math.floor(minX / ts), ix1 = Math.floor((maxX - 1e-7) / ts);
@@ -1017,16 +1007,32 @@
       for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
         const key = `${ix},${iz}`;
         if (!keepTiles.has(key)) continue;
-        if (skipClaimedWallLike(key, yRange)) continue;
         const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
-        if (isWalkableOverhang(key, poly)) { walkableSpillFragmentsRemoved++; continue; }
-        for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
+        // Smooth each triangulated fragment independently. A clipped quad
+        // can straddle a tile corner; choosing one target wall for the whole
+        // polygon leaves the fan triangle nearest another edge untouched.
+        for (let p = 1; p < poly.length - 1; p++) {
+          const smoothed = smoothWalkableIntrusion(key, [poly[0], poly[p], poly[p + 1]], yRange);
+          addTri(smoothed[0], smoothed[1], smoothed[2]);
+        }
       }
     }
 
-    stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges, ts);
-    return { positions: new Float32Array(outPositions), indices: outIndices, walkableSpillFragmentsRemoved };
+    // Boundary caps are synthesized after the ordinary triangle loop, so
+    // route them through the same sculpt brush as raw wall fragments. A cap
+    // can legitimately land inside a claimed tile when the broader touched-
+    // geometry cull ends there; leaving it unsmoothed recreates one isolated
+    // square intrusion after every organic fragment has already been fixed.
+    const addSmoothedBoundaryTri = (a, b, c) => {
+      const cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3;
+      const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
+      const yRange = Math.max(a.y, b.y, c.y) - Math.min(a.y, b.y, c.y);
+      const smoothed = smoothWalkableIntrusion(key, [a, b, c], yRange);
+      addTri(smoothed[0], smoothed[1], smoothed[2]);
+    };
+    stitchBoundaryCaps(st, keepTiles, addSmoothedBoundaryTri, skipCapEdges, ts);
+    return { positions: new Float32Array(outPositions), indices: outIndices, walkableSculptFragmentsSmoothed };
   }
 
   function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
@@ -1500,7 +1506,7 @@
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
       deformedTilesDropped,
-      walkableSpillFragmentsRemoved: mesh.walkableSpillFragmentsRemoved || 0,
+      walkableSculptFragmentsSmoothed: mesh.walkableSculptFragmentsSmoothed || 0,
     };
   }
 
