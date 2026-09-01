@@ -2172,6 +2172,16 @@
         },
       };
 
+      // Every processing method a world-object furniture piece can feed a
+      // held bag item into (see getProcessingOutputs) — used by
+      // isWheelEligible to keep a raw ingredient wheel-selectable even
+      // though it has no standalone held-item action of its own. Derived
+      // from PROCESSING_FURNITURE_DEFS so a new processor automatically
+      // widens this set; 'grindingFeed' is added by hand because the feed
+      // grinder (a barn fixture, see feedGrinderFurniture) predates/isn't
+      // part of that table.
+      const PROCESSING_METHODS = [...new Set(Object.values(PROCESSING_FURNITURE_DEFS).map(def => def.method))].concat('grindingFeed');
+
       // furnitureKey -> audio.objectSfx key for that machine's distinctive
       // "product's ready" cue (see makeProcessingFurniture's onAction) —
       // layered on top of showToast's generic confirm chime, not instead
@@ -7721,7 +7731,7 @@
       function defaultWorldMemberState() {
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
-          alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {},
+          alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {}, npcDiscoveredGiftTraits: {},
           alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
           joinedAt: Date.now(),
         };
@@ -7815,6 +7825,7 @@
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
           member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
+          member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
@@ -13457,6 +13468,48 @@
         return single ? [single] : null;
       }
 
+      // World-object placement items whose only "held" action is being set
+      // up on the ground — see the campfireKitFurniture check in
+      // computeActionButtons' held-item branch. Small and hand-maintained
+      // because nothing else in the file currently follows this pattern
+      // (see the isWheelEligible callers' own audit notes below).
+      const HELD_PLACEMENT_ITEM_KEYS = new Set(['campfireKitFurniture']);
+
+      // Whether `key` belongs on the item wheel/scroller at all — i.e.
+      // whether selecting it as the held item does anything, either
+      // directly (eat/drink/play/plant/flask-throw/read/place) or as the
+      // chosen ingredient for a nearby processing station (press, mill,
+      // drying rack, smoker, aging barrel/vase, feed grinder). Pure
+      // sell-fodder/crafting materials (wood, ore, hides, scrap, treasure
+      // tokens, mystery dyes, uncrafted tools, ...) fail every check here —
+      // they're still fully visible/usable from the Inventory grid (sell,
+      // craft, gift via its own Hold button), just not wheel-cyclable.
+      //
+      // Every consumer of getActiveInventoryItem()/getInventoryStackItems()
+      // was audited before adding this filter (see the commit that
+      // introduced it) to confirm nothing legitimately needs a
+      // wheel-ineligible item wheel-selected — cooking and alchemy brewing
+      // both have their own dedicated ingredient pickers, independent of
+      // the wheel.
+      function isWheelEligible(key) {
+        const def = ITEM_DEFS[key];
+        if (!def) return false;
+        if (def.isCookedFood || def.isInstrument) return true;
+        if (def.alchemyRecipeScrollId) return true;
+        if (HELD_PLACEMENT_ITEM_KEYS.has(key)) return true;
+        if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return true;
+        const potionPayload = window.AlchemySystem?.POTION_ITEMS?.[key];
+        if (potionPayload) {
+          const recipe = window.AlchemySystem?.RECIPE_DEFS?.[potionPayload.recipeId];
+          if (recipe?.useMode === 'throw' || recipe?.useMode === 'drink' || potionPayload.legacyEffects) return true;
+        }
+        const bridge = window.HobunjiDrunkGameplayBridge;
+        if (bridge?.isFood?.(def) || bridge?.isPotionOrDrink?.(key, def)) return true;
+        if (def.seedFor || inventoryItems.find(item => item.key === key)?.seedFor) return true;
+        if (PROCESSING_METHODS.some(method => getProcessingOutputs(method, key))) return true;
+        return false;
+      }
+
       function ensureProcessedItemDef(output) {
         const presentationMetadata = {
           ...(output.icon ? { icon: output.icon } : {}),
@@ -14272,8 +14325,17 @@
       }
 
       function getInventoryStackItems() {
-        // Used by the active item scroll; only stacks the player actually owns are selectable.
-        return getInventoryStackKeys('all').map(key => inventoryItems.find(item => item.key === key) || {
+        // The item wheel/scroller's own list — every consumer of this
+        // function (the active-item scroll, the desktop selection arc,
+        // refreshActionBar's held-item resolution, the two inventory-panel
+        // "Hold" buttons) is wheel-related, unlike getInventoryStackKeys
+        // (used by the plain inventory grid too), so the isWheelEligible
+        // filter belongs here rather than duplicated at every call site.
+        // Materials/etc it excludes stay fully visible and sellable in the
+        // inventory grid — see isWheelEligible's own comment for what does
+        // and doesn't qualify, and its own "Hold" button (selectInventoryItem)
+        // for how a non-wheel item still gets offered as a gift.
+        return getInventoryStackKeys('all').filter(isWheelEligible).map(key => inventoryItems.find(item => item.key === key) || {
           key,
           icon: ITEM_DEFS[key].icon,
           label: ITEM_DEFS[key].label.toUpperCase(),
@@ -14319,6 +14381,14 @@
           const item = (gearInventory?.clothingItems || []).find(c => c.uid === manualHeldItem.uid);
           if (item) return { kind: 'clothing', instance: item };
           manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
+        }
+        // A wheel-ineligible material/etc explicitly held via the Inventory
+        // panel's "Hold" button (see selectInventoryItem) — the wheel
+        // itself never contains these (see isWheelEligible), so this is
+        // the only way one becomes giftable.
+        if (manualHeldItem?.kind === 'bagItem') {
+          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
+          manualHeldItem = null; // Ran out since it was picked — fall through to the wheel.
         }
         const active = getActiveInventoryItem();
         if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
@@ -14445,6 +14515,19 @@
               if (index >= 0) activeItemIndex = index;
               heldMode = 'item';
               refreshItemScroll(); refreshActionBar(); closeMenu();
+            });
+          }
+          // Materials/etc that isWheelEligible excludes from the wheel
+          // (see getInventoryStackItems) have no other way to become the
+          // held item, so gifting one (see js/npc-gifting.js) needs its own
+          // explicit hold, same mechanism as the Equipment panel's clothing
+          // "Hold" button (see selectGearClothing in js/equipment-panel.js).
+          if (!isWheelEligible(key) && count > 0) {
+            const heldNow = getManualHeldItem();
+            const isHeld = heldNow?.kind === 'bagItem' && heldNow.key === key;
+            mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'equip', () => {
+              setManualHeldItem(isHeld ? null : { kind: 'bagItem', key });
+              selectInventoryItem(key, skipGridUpdate);
             });
           }
           if (def.isCookedFood && count > 0) {
@@ -29091,6 +29174,7 @@
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);
+        window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
         window.SkillSystem.restore(playerData);

@@ -33,10 +33,31 @@
           <div class="sh-info">
             <div class="sh-name">${deps.esc(name)} — Friendship Tier ${tier}</div>
             <div class="sh-desc">${favor} favor (${progressNote})</div>
+            <div class="sh-desc">${discoveredGiftTraitsHtml(npcId)}</div>
           </div>
         `;
         list.appendChild(row);
       });
+  }
+
+  // Gift-preference traits actually learned about this NPC so far (see
+  // js/npc-gifting.js's discoveredPrefs — recorded the moment a gift's
+  // reaction reveals one, not spoiled from their gifts.json data up
+  // front). Loved/liked render green, disliked/hated render red, same
+  // color convention as the gift prompt's own dislike/hate warning.
+  function discoveredGiftTraitsHtml(npcId) {
+    const found = window.NpcGifting?.getDiscoveredGiftTraits?.(npcId);
+    if (!found) return '';
+    const label = id => deps.esc(window.ItemTraits?.getTraitLabel?.(id) || id);
+    const group = (ids, color) => ids.length
+      ? `<span style="color:${color}">${ids.map(label).join(', ')}</span>` : '';
+    const parts = [
+      group(found.loved, '#34d399'),
+      group(found.liked, '#6aa7ff'),
+      group(found.disliked, '#fbbf24'),
+      group(found.hated, '#fb7185'),
+    ].filter(Boolean);
+    return parts.length ? `Known preferences: ${parts.join(' · ')}` : 'No known gift preferences yet — try gifting them something.';
   }
 
   window.RelationshipsPanel = {

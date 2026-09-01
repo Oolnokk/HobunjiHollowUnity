@@ -23,6 +23,49 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Per-NPC gift-preference traits the player has actually learned about by
+  // gifting them something and seeing the reaction — separate from
+  // js/item-traits.js's discovered-ITEM-traits (which is about the player
+  // recognizing a trait on their own belongings). Shown in the
+  // Relationships tab (js/relationships-panel.js) so "this NPC likes Hot
+  // colors" becomes visible knowledge once actually discovered, not
+  // spoiled from gifts.json up front. Persisted (see serialize/restore).
+  const discoveredPrefs = {}; // npcId -> { loved: Set, liked: Set, disliked: Set, hated: Set }
+
+  function ensureDiscoveredBucket(npcId) {
+    return discoveredPrefs[npcId] || (discoveredPrefs[npcId] = { loved: new Set(), liked: new Set(), disliked: new Set(), hated: new Set() });
+  }
+
+  function recordDiscoveredTraits(npcId, tier, traitIds) {
+    if (!npcId || tier === 'neutral' || !traitIds.length) return;
+    const bucket = ensureDiscoveredBucket(npcId);
+    traitIds.forEach(t => bucket[tier].add(t));
+  }
+
+  function getDiscoveredGiftTraits(npcId) {
+    const bucket = discoveredPrefs[npcId];
+    if (!bucket) return { loved: [], liked: [], disliked: [], hated: [] };
+    return { loved: [...bucket.loved], liked: [...bucket.liked], disliked: [...bucket.disliked], hated: [...bucket.hated] };
+  }
+
+  function serializeDiscoveredPrefs() {
+    const out = {};
+    for (const [npcId, bucket] of Object.entries(discoveredPrefs)) {
+      out[npcId] = { loved: [...bucket.loved], liked: [...bucket.liked], disliked: [...bucket.disliked], hated: [...bucket.hated] };
+    }
+    return out;
+  }
+
+  function restoreDiscoveredPrefs(data) {
+    Object.keys(discoveredPrefs).forEach(k => delete discoveredPrefs[k]);
+    for (const [npcId, bucket] of Object.entries(data || {})) {
+      discoveredPrefs[npcId] = {
+        loved: new Set(bucket?.loved || []), liked: new Set(bucket?.liked || []),
+        disliked: new Set(bucket?.disliked || []), hated: new Set(bucket?.hated || []),
+      };
+    }
+  }
+
   const TIER_FAVOR = { loved: 10, liked: 4, neutral: 1, disliked: -4, hated: -10 };
   const TIER_VERBS = {
     loved: 'lights up over',
@@ -69,6 +112,10 @@
     return (list || []).find(t => traits.includes(t));
   }
 
+  function matchedTraits(list, traits) {
+    return (list || []).filter(t => traits.includes(t));
+  }
+
   // Only calls out a dislike/hate in the prompt when the player has
   // actually discovered that trait somewhere in their own belongings — see
   // js/item-traits.js's getDiscoveredTraitSet for what "discovered" means.
@@ -111,6 +158,7 @@
     const tier = reactionTier(npcGifts, traits);
     const name = walker.rec.name || walker.rec.displayName || 'They';
     const itemLabel = itemLabelFor(held);
+    recordDiscoveredTraits(npcId, tier, matchedTraits(npcGifts[tier], traits));
 
     let kept = true;
     let keepNote = '';
@@ -160,5 +208,8 @@
     reactionTier,
     getNpcGiftOfferAction,
     offerGift,
+    getDiscoveredGiftTraits,
+    serializeDiscoveredPrefs,
+    restoreDiscoveredPrefs,
   };
 })();
