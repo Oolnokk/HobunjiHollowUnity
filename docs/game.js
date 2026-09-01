@@ -9328,8 +9328,8 @@
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
           }
-          if (tile.type === TileType.PATH ||
-              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
+          if (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) &&
+              (tile.type === TileType.PATH || tile.type === TileType.GRASS)) {
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
@@ -9452,7 +9452,10 @@
             }
             continue;
           }
-          const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
+          // An excluded PATH seam still needs an ordinary flat grass floor
+          // beneath its separate paved bricks; the route heightfield is what
+          // was removed here, not the walkable terrain itself.
+          const matKey = tile.type === TileType.PATH ? TileType.GRASS : (tileMats[tile.type] ? tile.type : TileType.GRASS);
           _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
         }
 
@@ -9466,6 +9469,15 @@
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
             mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
             mesh.userData.wildernessGlobalPathGround = true;
+            mesh.userData.terrainTileDebug = (c, r) => { // Used by Pixel Probe to report the live route/apron decision for a clicked tile.
+              const tile = zGrid?.[r]?.[c];
+              return tile ? {
+                type: tile.type, elevTier: tile.elevTier || 0,
+                skipFloor: !!tile.skipFloor, incline: !!tile.incline,
+                mesaCliffFace: !!tile.mesaCliffFace,
+                routeExcluded: !!pathNet.isExcludedTile?.(c, r),
+              } : null;
+            };
             pathNet.bindGlobalGroundMesh?.(mesh);
           }
           zScene.add(mesh);
@@ -12956,13 +12968,13 @@
         if (!zi) return;
         if (zi.chunkController && window.WildernessChunks) {
           // The route network's grass apron is zone-wide, but its index ranges
-          // are recorded per tile when it is first built. Toggle only this
-          // edited tile's handful of triangles instead of regenerating the
-          // entire route heightfield (which previously froze large wilderness
-          // maps for several seconds). Filling/smoothing restores the original
+          // are recorded per tile when it is first built. Toggle this edited
+          // tile and its one-cell cliff seam instead of regenerating the entire
+          // route heightfield (which previously froze large wilderness maps
+          // for several seconds). Filling/smoothing restores the original
           // indices through the same path.
           rebuildZoneMesaMeshes(mapId); // Re-tags exact steep-face ownership before the apron decides whether this tile belongs to rock.
-          const routeApronUpdated = zi.pathNet?.refreshTile?.(col, row) || false; // Reported in the mobile-visible debug log below.
+          const routeApronUpdated = zi.pathNet?.refreshTileAndSeam?.(col, row) || false; // Reported in the mobile-visible debug log below.
           // The live grid already contains the authoritative edit. Rebuild
           // only its resident chunk plus one-chunk seam halo; unloaded chunks
           // will naturally read the updated grid when they are next streamed.
@@ -19281,12 +19293,19 @@
         const cellAt      = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]; // Used by the apron mask and runtime hole refresh to inspect the complete terrain cell.
         const cellType    = (ci, cj) => cellAt(ci, cj)?.type;
         // Every skipFloor cell is already rendered by the mesa's continuous
-        // lid/skin. The route's separate grass sheet is redundant there and
-        // can intersect a nearby cliff even when the triangle itself belongs
-        // to a flat top. Paved path bricks remain free to cross the mesa lid.
+        // lid/skin. The route's shared heightfield must also stop in the
+        // one-cell seam around it: boundary vertices are shared, so a triangle
+        // owned by the low neighboring tile can otherwise inherit one raised
+        // mesa vertex and form a grass flap up the cliff. Ordinary per-tile
+        // floor fills that seam; paved path bricks remain independent.
+        const ownsMesaSurface = tile => !!tile?.skipFloor || !!tile?.incline || !!tile?.mesaCliffFace; // Used by the route exclusion halo to identify mesa/cliff geometry owners.
         const isExcludedCell = (ci, cj) => {
           const tile = cellAt(ci, cj);
-          return !!tile?.skipFloor || !!tile?.incline || !!tile?.mesaCliffFace || EXCLUDED.has(tile?.type);
+          if (ownsMesaSurface(tile) || EXCLUDED.has(tile?.type)) return true;
+          for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+            if ((dc || dr) && ownsMesaSurface(cellAt(ci + dc, cj + dr))) return true;
+          }
+          return false;
         };
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
 
@@ -19459,6 +19478,13 @@
             }
             indexAttr.needsUpdate = true;
             return true;
+          },
+          refreshTileAndSeam(c, r) {
+            let updated = false; // Returned to the mobile terrain-refresh log after all nine affected route cells are toggled.
+            for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+              updated = this.refreshTile(c + dc, r + dr) || updated;
+            }
+            return updated;
           },
         };
         return network;
