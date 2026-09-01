@@ -9633,7 +9633,11 @@
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
-        _zoneWaterMeshes.set(mapId, []);
+        const distantWaterMeshes = [
+          ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) || []),
+          ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) || []),
+        ]; // Zone-wide lightweight water survives 16x16 terrain-chunk streaming so rivers remain visible at camera distance.
+        _zoneWaterMeshes.set(mapId, distantWaterMeshes);
         _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
         window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
@@ -9703,10 +9707,7 @@
               }
             });
           }
-          const waterMeshes = [
-            ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-            ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-          ]; // Chunk-owned water surfaces and falls.
+          const waterMeshes = []; // Water is the persistent zone-wide layer above; chunks retain only terrain/collision/foliage ownership.
           const grassGroups = [
             window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds),
             window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds),
@@ -12833,6 +12834,13 @@
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
+          if (o.userData?.wildernessChunkOwnsMaterial) {
+            const materials = Array.isArray(o.material) ? o.material : [o.material];
+            for (const material of materials) {
+              for (const uniform of Object.values(material?.uniforms || {})) if (uniform?.value?.isTexture) uniform.value.dispose?.();
+              material?.dispose?.();
+            }
+          }
           if (o.userData?.mergedWaterStatKey) window.MergedWaterRenderer.clearStats(o.userData.mergedWaterStatKey);
         });
         _zoneScenes.delete(mapId);
@@ -18840,79 +18848,6 @@
           _furnitureIdMat.uniformsNeedUpdate = true;
         };
       }
-      // ── Vertical waterfall-curtain shader ──────────────────────────
-      // Horizontal surfaces use MergedWaterRenderer's shared PNG material.
-      // These shaders remain for the separately-oriented waterfall walls in
-      // zone-terrain-features.js, where vertical scrolling is still required.
-      const waterVertShader = `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `;
-      const waterFragShader = `
-        uniform float uTime;
-        uniform float uPhase;
-        uniform float uDepth;     // 0..1
-        uniform vec2  uFlow;      // normalised flow dir, (0,0) = still
-        uniform vec3  uColor;
-
-        varying vec2 vUv;
-
-        float stripe(float v, float freq, float sharpness) {
-          float s = fract(v * freq - uTime * 0.6 + uPhase);
-          return pow(max(0.0, 1.0 - abs(s - 0.5) * sharpness), 2.5);
-        }
-
-        float ripple(vec2 uv, float t) {
-          vec2 c = uv - 0.5;
-          float d = length(c);
-          float wave = sin(d * 18.0 - t * 2.5 + uPhase * 6.28) * 0.5 + 0.5;
-          float fade = smoothstep(0.5, 0.05, d); // fade toward edges
-          return wave * fade;
-        }
-
-        void main() {
-          float flowLen = length(uFlow);
-
-          float effect;
-          if (flowLen > 0.1) {
-            // ── Flow mode: animated lines parallel to flow direction ──
-            // Project UV onto flow axis to get the "along-flow" coordinate
-            vec2 flowDir = uFlow / flowLen;
-            vec2 perpDir = vec2(-flowDir.y, flowDir.x);
-            vec2 uvc     = vUv - 0.5;
-            float along  = dot(uvc, flowDir);
-            float perp   = dot(uvc, perpDir);
-
-            // Main flow stripes — scroll along flow axis
-            float lines  = stripe(along + perp * 0.15, 3.5, 6.0) * 0.7
-                         + stripe(along + perp * 0.1,  5.5, 8.0) * 0.4;
-
-            // Subtle cross-chop (perpendicular micro-ripples)
-            float chop   = stripe(perp, 9.0, 10.0) * 0.2;
-            effect = lines + chop;
-          } else {
-            // ── Still mode: expanding concentric rings ──
-            float t2 = uTime * 0.8 + uPhase * 3.14;
-            effect = ripple(vUv, t2) * 0.7
-                   + ripple(vUv + vec2(0.25, 0.1), t2 * 1.3) * 0.35;
-          }
-
-          // Brightness of surface detail scales with depth so shallow still shows something
-          float detailAlpha = mix(0.35, 0.65, uDepth) * effect;
-
-          // Base water tint
-          float baseAlpha = uDepth;  // opacity = depth fraction exactly
-
-          vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
-
-          gl_FragColor = vec4(surfaceColor, finalAlpha);
-        }
-      `;
-
       // Merged water mesh material/builder (mergedWaterMaterial,
       // _disposeMergedWaterMesh, _buildMergedWaterMesh) and the global
       // water-time accumulator now live in js/water-system.js — call the
@@ -27360,6 +27295,7 @@
         _isZoneArea,
         _isBuildingArea,
         EXTERIOR_ZONES,
+        npcGridForArea,
       });
 
       window.AudioSystem?.init({
@@ -28332,7 +28268,6 @@
         displaceZoneGeometry, resolveTileMat,
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
-        waterVertShader, waterFragShader,
         buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
       });
 
