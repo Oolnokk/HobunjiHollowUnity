@@ -73,20 +73,37 @@ for (const key of carvedByKey.keys()) {
 const gameSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf8');
 const grassSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-grass-billboards.js'), 'utf8');
 const terrainChunkSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'terrain-render-chunks.js'), 'utf8');
+const mesaSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-plateau-mesa.js'), 'utf8');
 assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key, \{ \.\.\.staked, type: t\.type \}\)/,
   'live workspace fold must mirror the preview carved-plateau preservation rule');
 assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
+assert.match(gameSource, /const ownsMesaSurface[\s\S]{0,650}ownsMesaSurface\(cellAt\(ci \+ dc, cj \+ dr\)\)/,
+  'the route grass apron must leave a complete one-cell seam around mesa and cliff geometry owners');
+assert.match(gameSource, /const matKey = tile\.type === TileType\.PATH \? TileType\.GRASS/,
+  'a route tile excluded at a cliff seam must fall back to ordinary flat grass beneath its paved bricks');
+assert.match(gameSource, /terrainTileDebug[\s\S]{0,500}routeExcluded:/,
+  'mobile Pixel Probe must receive live route exclusion metadata from the global path mesh');
+assert.match(mesaSource, /if \(steep\)[\s\S]{0,360}ownerTile\.mesaCliffFace = true/,
+  'the rendered mesa must tag every tile that actually emits a steep stone quad');
+assert.match(gameSource, /delete tile\.mesaCliffFace[\s\S]{0,700}buildPlateauMesa/,
+  'mesa rebuilds must replace stale geometry-derived cliff ownership tags');
+assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
+  'load-time and runtime route-apron exclusions must share the complete-cell predicate');
+assert.doesNotMatch(gameSource, /PATH_(?:MESA|Z_FIGHT)_LIFT/,
+  'the route grass mesh must not use a vertical lift that can expose it through neighboring cliff faces');
+assert.match(gameSource, /mesh\.name = 'zone_path_ground'/,
+  'mobile Pixel Probe reports must identify the global path grass mesh directly');
 assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
   'the route grass apron must index the final rendered geometry for surgical runtime hole updates');
 assert.doesNotMatch(gameSource, /if \(isExcluded\(tci, tcj\)\) continue/,
   'route geometry must reserve restorable triangles even for tiles carved when the zone first loads');
-assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}EXCLUDED\.has\(srcGrid\[r\]\?\.\[c\]\?\.type\)\) this\.refreshTile\(c, r\)/,
+assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}this\.isExcludedTile\(c, r\)\) this\.refreshTile\(c, r\)/,
   'initially carved route tiles must be collapsed before the first rendered frame');
 assert.match(terrainChunkSource, /notifyTerrainGeometryReady\(scene\)[\s\S]{0,1800}notifyTerrainGeometryReady\(scene\)/,
   'the terrain renderer must return the post-jigsaw, post-spatial-split geometry to runtime terrain owners');
-assert.match(gameSource, /zi\.pathNet\?\.refreshTile\?\.\(col, row\)/,
-  'runtime wilderness edits must toggle only the edited route-apron tile');
+assert.match(gameSource, /zi\.pathNet\?\.refreshTileAndSeam\?\.\(col, row\)/,
+  'runtime wilderness edits must toggle the edited route-apron tile and its one-cell cliff seam');
 assert.doesNotMatch(gameSource, /zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
   'runtime edits must not regenerate the whole route heightfield');
 assert.match(gameSource, /buildTerrainTileGeo\(c, r, tile\.type, zGrid, \{ includeCutWalls: true \}\)/,
@@ -152,10 +169,15 @@ global.window = { TerrainRenderChunks: { installed: true } };
 const pathFunctionMatch = gameSource.match(/(function buildPathNetworkGeo\(srcGrid, gcols, grows\) \{[\s\S]*?\n      \})\n\n      \/\/ ── Path:/);
 assert(pathFunctionMatch, 'must be able to execute the live path-network builder in this regression');
 const buildPathNetworkGeo = eval(`(${pathFunctionMatch[1]})`); // Executes repository code only.
-const liveGrid = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => ({ type: TileType.GRASS, elevTier: 0 })));
-liveGrid[3][3].type = TileType.PATH;
+const liveGrid = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ type: TileType.GRASS, elevTier: 0 })));
+liveGrid[4][4].type = TileType.PATH;
 liveGrid[2][2].type = TileType.TRENCH;
-const pathNetwork = buildPathNetworkGeo(liveGrid, 7, 7);
+liveGrid[2][4].incline = true;
+liveGrid[2][4].skipFloor = true;
+liveGrid[2][6].mesaCliffFace = true;
+liveGrid[2][6].skipFloor = true;
+liveGrid[6][6].skipFloor = true;
+const pathNetwork = buildPathNetworkGeo(liveGrid, 9, 9);
 const mergedPosition = [];
 const mergedIndex = [];
 let vertexBase = 0;
@@ -174,17 +196,45 @@ pathNetwork.bindGlobalGroundMesh(renderedMesh);
 renderedMesh.userData.onTerrainGeometryReady(renderedGeometry);
 const trenchStarts = pathNetwork.renderedTileIndexRanges.get('2,2');
 assert.equal(trenchStarts?.length, 72, 'one final rendered route-apron tile must retain all 72 triangles');
-const tileIsCollapsed = () => trenchStarts.every(offset => {
+const tileIsCollapsed = starts => starts.every(offset => {
   const a = renderedGeometry.index.array[offset];
   return renderedGeometry.index.array[offset + 1] === a && renderedGeometry.index.array[offset + 2] === a;
 });
-assert(tileIsCollapsed(), 'an initially carved tile must be absent after the final geometry handoff');
+assert(tileIsCollapsed(trenchStarts), 'an initially carved tile must be absent after the final geometry handoff');
+const inclineStarts = pathNetwork.renderedTileIndexRanges.get('4,2');
+assert.equal(inclineStarts?.length, 72, 'one plateau incline tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(inclineStarts), 'a plateau incline must have no flat grass apron intersecting its cliff skin');
+const renderedCliffStarts = pathNetwork.renderedTileIndexRanges.get('6,2');
+assert.equal(renderedCliffStarts?.length, 72, 'one geometry-confirmed cliff tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(renderedCliffStarts), 'a rendered steep mesa tile must have no path grass intersecting its cliff skin');
+const mesaTopStarts = pathNetwork.renderedTileIndexRanges.get('6,6');
+assert.equal(mesaTopStarts?.length, 72, 'one flat mesa-top tile must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(mesaTopStarts), 'a flat mesa top must use its own lid instead of a duplicate route-grass sheet');
+const mesaSeamStarts = pathNetwork.renderedTileIndexRanges.get('5,6');
+assert.equal(mesaSeamStarts?.length, 72, 'one low tile beside a mesa must retain all 72 restorable apron triangles');
+assert(tileIsCollapsed(mesaSeamStarts), 'a low neighboring tile must not share raised route vertices with the mesa edge');
 liveGrid[2][2].type = TileType.GRASS;
 assert(pathNetwork.refreshTile(2, 2), 'filling must find the final rendered tile ranges');
-assert(!tileIsCollapsed(), 'filling must restore the route-apron surface');
+assert(!tileIsCollapsed(trenchStarts), 'filling must restore the route-apron surface');
 liveGrid[2][2].type = TileType.TRENCH;
 assert(pathNetwork.refreshTile(2, 2), 'redigging must find the final rendered tile ranges');
-assert(tileIsCollapsed(), 'redigging must remove the restored surface again');
+assert(tileIsCollapsed(trenchStarts), 'redigging must remove the restored surface again');
+liveGrid[2][4].incline = false;
+assert(pathNetwork.refreshTile(4, 2), 'removing only the incline flag must find the final rendered tile ranges');
+assert(tileIsCollapsed(inclineStarts), 'a mesa-owned tile must stay clear after only its incline flag is removed');
+liveGrid[2][4].skipFloor = false;
+assert(pathNetwork.refreshTile(4, 2), 'removing the incline mesa ownership must find the final rendered tile ranges');
+assert(!tileIsCollapsed(inclineStarts), 'removing all incline mesa ownership must restore its route-apron surface');
+delete liveGrid[2][6].mesaCliffFace;
+assert(pathNetwork.refreshTile(6, 2), 'removing stale rendered-cliff ownership must find the final tile ranges');
+assert(tileIsCollapsed(renderedCliffStarts), 'a mesa-owned tile must remain clear even when its steep-face tag is removed');
+liveGrid[2][6].skipFloor = false;
+assert(pathNetwork.refreshTile(6, 2), 'removing mesa ownership must find the final tile ranges');
+assert(!tileIsCollapsed(renderedCliffStarts), 'a mesa rebuild that removes all ownership must restore its route-apron surface');
+liveGrid[6][6].skipFloor = false;
+assert(pathNetwork.refreshTileAndSeam(6, 6), 'flattening a former mesa top must find its final tile and seam ranges');
+assert(!tileIsCollapsed(mesaTopStarts), 'a former mesa top must restore its route-apron surface');
+assert(!tileIsCollapsed(mesaSeamStarts), 'a former mesa seam must restore its route-apron surface');
 
 // Execute the real basin builder too. Wilderness water must be full depth at
 // its shoreline and must add vertical wall triangles, while the town call

@@ -961,6 +961,11 @@
       const o = hit.object;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`);
+      if (hit.point && (o.userData?.terrainRenderChunk || o.userData?.wildernessGlobalPathGround || o.userData?.cameraObstacle)) {
+        const tileC = Math.floor(hit.point.x), tileR = Math.floor(hit.point.z); // Used to correlate a mobile terrain hit with its live tile metadata.
+        const tileDebug = o.userData?.terrainTileDebug?.(tileC, tileR); // Used to expose route exclusion state without requiring desktop devtools.
+        lines.push(`     terrain hit: world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)}) tile=(${tileC},${tileR}) face=${hit.faceIndex ?? '-'} materialSlot=${hit.face?.materialIndex ?? '-'}${tileDebug ? ` tileState=${JSON.stringify(tileDebug)}` : ''}`);
+      }
       mats.forEach(m => {
         if (!m) return;
         lines.push(`     material: ${_pixelProbeMatSummary(m)}`);

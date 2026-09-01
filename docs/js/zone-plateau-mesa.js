@@ -215,7 +215,13 @@
         const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
         const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
         const steep = cnx * cnx + cnz * cnz > 0.194;
-        (steep ? stoneIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+        if (steep) {
+          const ownerTile = zGrid?.[bb.minR + Math.floor(gj / 2)]?.[bb.minC + Math.floor(gi / 2)]; // Tags the exact cell whose rendered quad became cliff rock.
+          if (ownerTile) ownerTile.mesaCliffFace = true;
+          stoneIdx.push(v00, v01, v11, v00, v11, v10);
+        } else {
+          grassIdx.push(v00, v01, v11, v00, v11, v10);
+        }
       }
     }
     const idx = grassIdx.concat(stoneIdx);
