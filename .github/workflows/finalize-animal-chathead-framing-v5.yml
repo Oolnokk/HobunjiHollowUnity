@@ -1,0 +1,117 @@
+name: Finalize animal chathead framing v5
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/finalize-animal-chathead-framing-v5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize-test-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+          fetch-depth: 0
+
+      - name: Apply final integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          vocal_path = Path('docs/js/animal-vocalizations.js')
+          vocal = vocal_path.read_text()
+          fn_start = vocal.find('function showUtteranceText(c, active, utteranceIndex)')
+          if fn_start < 0:
+              raise SystemExit('showUtteranceText not found')
+          call_start = vocal.find('window.AmbientDialogue.show(c.avatarRef.group, line, {', fn_start)
+          if call_start < 0:
+              raise SystemExit('animal AmbientDialogue.show call not found')
+          call_line_start = vocal.rfind('\n', fn_start, call_start) + 1
+          call_end = vocal.find('\n    });', call_start)
+          if call_end < 0:
+              raise SystemExit('animal AmbientDialogue.show call end not found')
+          call_end += len('\n    });')
+          old_call = vocal[call_line_start:call_end]
+          if "mode: 'overhead'" not in old_call:
+              raise SystemExit('target animal dialogue call is not the expected text-only path')
+          indent = old_call[:len(old_call) - len(old_call.lstrip())]
+          inner = indent + '  '
+          deeper = inner + '  '
+          new_call = (
+              f"{indent}const chatheadCreatureKind = speciesProfileKey(c); // Used by AnimalChatheadFrame to select the species-authored crop for this speaker.\n"
+              f"{indent}window.AmbientDialogue.show(c.avatarRef.group, line, {{\n"
+              f"{inner}speakerId: c.id,\n"
+              f"{inner}profile: chatheadCreatureKind ? {{\n"
+              f"{deeper}chatheadCreatureKind,\n"
+              f"{deeper}creatureGenotype: c.genotype || null,\n"
+              f"{inner}}} : null, // Gives the shared portrait renderer animal species/genetics without pretending the creature is an NPC fighter profile.\n"
+              f"{inner}mode: chatheadCreatureKind ? 'chathead' : 'overhead',\n"
+              f"{inner}durationMs: Math.max(500, finite(cfg.textDurationMs, 1600)),\n"
+              f"{inner}tone: 'animal',\n"
+              f"{indent}}});"
+          )
+          vocal_path.write_text(vocal[:call_line_start] + new_call + vocal[call_end:])
+
+          author_path = Path('docs/tools/animation-author/index.html')
+          author = author_path.read_text()
+          author = replace_once(author, '<title>Hobunji Animation Author V15.43</title>', '<title>Hobunji Animation Author V15.45</title>', 'author HTML title')
+          block_marker = '// V15.43 animal chathead framing.'
+          block_start = author.rfind(block_marker)
+          if block_start < 0:
+              raise SystemExit('animal chathead framing patch block not found')
+          block = author[block_start:]
+          block = replace_once(block, '// V15.43 animal chathead framing.', '// V15.45 animal chathead framing.', 'chathead patch comment version')
+          block = replace_once(block, "document.title = 'Hobunji Animation Author V15.43';", "document.title = 'Hobunji Animation Author V15.45';", 'chathead prepare title')
+          block = replace_once(block, "if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.43';", "if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';", 'chathead API version')
+          old_recent = "animationAuthor.recentChange = 'V15.43 adds species-authored animal dialogue chathead framing to Rig Coordinates; ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';"
+          new_recent = "document.title = 'Hobunji Animation Author V15.45';\nif (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';\nanimationAuthor.recentChange = 'V15.45 adds species-authored animal dialogue chathead framing to Rig Coordinates; animal ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';"
+          block = replace_once(block, old_recent, new_recent, 'chathead installed version state')
+          block = replace_once(block, "log('V15.43 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview and mobile diagnostics.');", "log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');", 'chathead patch log version')
+          author_path.write_text(author[:block_start] + block)
+
+          framing_test_path = Path('scripts/test-animal-chathead-framing.js')
+          framing_test = framing_test_path.read_text()
+          framing_test = replace_once(framing_test, "/document\\.title = 'Hobunji Animation Author V15\\.43'/,", "/document\\.title = 'Hobunji Animation Author V15\\.45'/,", 'framing test visible version')
+          framing_test = replace_once(
+              framing_test,
+              "  'published author title must identify the animal-chathead framing build');",
+              "  'published author title must identify the animal-chathead framing build after V15.44');\nassert.match(authorSource, /MultiAvatarAnimationAuthor\\.version = '15\\.45'/,\n  'public Animation Author API version must match the V15.45 chathead build');",
+              'framing test API version assertion',
+          )
+          framing_test_path.write_text(framing_test)
+          PY
+
+      - name: Run scoped regression tests
+        run: |
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-chathead-ambient.js
+          node scripts/test-animal-head-rig-runtime.js
+
+      - name: Clean temporary workflows and commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-animal-chathead-framing.yml
+          git rm .github/workflows/run-animal-chathead-framing-patch.yml
+          git rm .github/workflows/finalize-animal-chathead-framing.yml
+          git rm .github/workflows/finalize-animal-chathead-framing-v2.yml
+          git rm .github/workflows/finalize-animal-chathead-framing-v3.yml
+          git rm .github/workflows/finalize-animal-chathead-framing-v4.yml
+          git rm .github/workflows/finalize-animal-chathead-framing-v5.yml
+          git add docs/js/animal-vocalizations.js docs/tools/animation-author/index.html scripts/test-animal-chathead-framing.js scripts/test-animal-chathead-ambient.js
+          git diff --cached --check
+          git commit -m "Finish animal ambient chathead framing"
+          git push origin HEAD:codex/animal-chathead-framing
