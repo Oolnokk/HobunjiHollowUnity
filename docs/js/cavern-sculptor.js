@@ -921,9 +921,15 @@
   // already relies on to find wall geometry by shape alone.
   const WALL_YRANGE_THRESHOLD = 0.15;
 
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed) {
+  // Maximum height above the true floor that may remain inside a claimed
+  // (walkable) tile. Used by clipAndStitch to discard near-horizontal
+  // ceiling/overhang fragments that the wall-shape test cannot recognize.
+  const WALKABLE_SURFACE_MAX_ABOVE_FLOOR = 0.18;
+
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
+    let walkableSpillFragmentsRemoved = 0; // Exposed in generation diagnostics and the cavern tuner.
     const addVertex = v => {
       // Quantized key shares clipped/stitched vertices along the same tile
       // edge so the mesh has no microscopic cracks there.
@@ -973,6 +979,18 @@
     // triangle) ground-truth check across 5 seeds: real wall coverage is
     // bit-for-bit identical with and without this change.
     const skipClaimedWallLike = (key, yRange) => claimed && claimed.has(key) && yRange > WALL_YRANGE_THRESHOLD;
+    // A claimed tile is force-carved open from floor to sky before meshing,
+    // so any surface wholly above its floor is necessarily a neighboring
+    // wall/overhang fragment whose triangle crossed the tile boundary. The
+    // existing yRange test removes steep fragments; this catches the flat
+    // undersides it deliberately misses. Test the CLIPPED polygon rather
+    // than the raw triangle so geometry is only removed from the walkable
+    // side of the boundary while the same triangle remains intact in its
+    // real, unclaimed home tile.
+    const isWalkableOverhang = (key, poly) => {
+      if (floorY == null || !claimed?.has(key) || !poly?.length) return false;
+      return poly.every(v => v.y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR);
+    };
 
     for (let q = 0; q < indices.length; q += 3) {
       const ia = indices[q] * 3, ib = indices[q + 1] * 3, ic = indices[q + 2] * 3;
@@ -986,7 +1004,10 @@
       if (areaXZ < 1e-10) {
         const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
         const key = `${Math.floor(cx / ts)},${Math.floor(cz / ts)}`;
-        if (keepTiles.has(key) && !skipClaimedWallLike(key, yRange)) addTri(tri[0], tri[1], tri[2]);
+        if (keepTiles.has(key) && !skipClaimedWallLike(key, yRange)) {
+          if (isWalkableOverhang(key, tri)) walkableSpillFragmentsRemoved++;
+          else addTri(tri[0], tri[1], tri[2]);
+        }
         continue;
       }
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
@@ -999,15 +1020,16 @@
         if (skipClaimedWallLike(key, yRange)) continue;
         const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
+        if (isWalkableOverhang(key, poly)) { walkableSpillFragmentsRemoved++; continue; }
         for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
       }
     }
 
     stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges, ts);
-    return { positions: new Float32Array(outPositions), indices: outIndices };
+    return { positions: new Float32Array(outPositions), indices: outIndices, walkableSpillFragmentsRemoved };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -1053,7 +1075,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -1446,7 +1468,7 @@
     // instead of being clipped down to a flat stitched cap.
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
-    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1478,6 +1500,7 @@
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
       deformedTilesDropped,
+      walkableSpillFragmentsRemoved: mesh.walkableSpillFragmentsRemoved || 0,
     };
   }
 
