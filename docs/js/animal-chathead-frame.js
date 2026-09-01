@@ -41,6 +41,8 @@
     if (y + height > 1) height = Math.max(MIN_FRAME_SIZE, 1 - y);
     if (width < MIN_FRAME_SIZE) { x = Math.max(0, 1 - MIN_FRAME_SIZE); width = MIN_FRAME_SIZE; }
     if (height < MIN_FRAME_SIZE) { y = Math.max(0, 1 - MIN_FRAME_SIZE); height = MIN_FRAME_SIZE; }
+    if (x + width > 1) x = Math.max(0, 1 - width);
+    if (y + height > 1) y = Math.max(0, 1 - height);
     return {
       x,
       y,
