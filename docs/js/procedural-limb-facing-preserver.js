@@ -18,26 +18,57 @@
   let lastFaceModel = null; // Keeps face-switch status updates limited to actual front/back transitions.
   let lastFaceName = '';
   let lastFaceSignature = '';
+  let solverReport = ''; // Prevents the same bootstrap source from being repeated in the editor's visible log.
+
+  function editorLog(message, level = 'info', extra = null) { // Writes through the giant editor's own visible logger when available, with console as the standalone fallback.
+    const text = `Ground / Carry: ${message}`;
+    if (typeof window.log === 'function') {
+      try {
+        window.log(text, level, extra);
+        return;
+      } catch (_) {}
+    }
+    if (level === 'error') console.error(`[Ground / Carry] ${message}`, extra ?? '');
+    else if (level === 'warn') console.warn(`[Ground / Carry] ${message}`, extra ?? '');
+    else console.info(`[Ground / Carry] ${message}`, extra ?? '');
+  }
+
+  function reportSolver(message, level = 'info') { // Makes mixed main/commit runtime provenance explicit once per distinct solver state.
+    if (solverReport === message) return;
+    solverReport = message;
+    editorLog(message, level);
+  }
 
   function ensureBranchFixedLegSolver() { // The editor's own repo picker can still resolve main even when the HTML is commit-pinned; replace only this changed dependency from the pinned document path.
-    if (typeof window.LegBones?.solveFixedTwoBoneChain === 'function') return Promise.resolve(true);
+    if (typeof window.LegBones?.solveFixedTwoBoneChain === 'function') {
+      reportSolver(`fixed-leg solver already available before pinned override · source ${SCRIPT_URL?.href || 'unknown'}`);
+      return Promise.resolve(true);
+    }
     const src = new URL('js/leg-bones.js?v=20260902-groundcarry', DOCS_BASE).href;
+    reportSolver(`main/runtime LegBones lacks solveFixedTwoBoneChain; loading pinned solver from ${src}`, 'warn');
     const existing = [...document.scripts].find(script => script.src === src);
     if (existing) return new Promise(resolve => {
       if (typeof window.LegBones?.solveFixedTwoBoneChain === 'function') return resolve(true);
-      existing.addEventListener('load', () => resolve(typeof window.LegBones?.solveFixedTwoBoneChain === 'function'), { once: true });
-      existing.addEventListener('error', () => resolve(false), { once: true });
+      existing.addEventListener('load', () => {
+        const ready = typeof window.LegBones?.solveFixedTwoBoneChain === 'function';
+        reportSolver(`${ready ? 'pinned fixed-leg solver ready' : 'pinned leg-bones loaded but fixed solver is still missing'} · ${src}`, ready ? 'info' : 'error');
+        resolve(ready);
+      }, { once: true });
+      existing.addEventListener('error', () => {
+        reportSolver(`failed to load pinned fixed-leg solver · ${src}`, 'error');
+        resolve(false);
+      }, { once: true });
     });
     return new Promise(resolve => {
       const script = document.createElement('script');
       script.src = src;
       script.onload = () => {
         const ready = typeof window.LegBones?.solveFixedTwoBoneChain === 'function';
-        console.info(`[Ground / Carry] pinned fixed-leg solver ${ready ? 'loaded' : 'missing after load'} from ${src}`);
+        reportSolver(`${ready ? 'pinned fixed-leg solver ready' : 'pinned leg-bones loaded but fixed solver is still missing'} · ${src}`, ready ? 'info' : 'error');
         resolve(ready);
       };
       script.onerror = () => {
-        console.error(`[Ground / Carry] failed to load pinned fixed-leg solver from ${src}`);
+        reportSolver(`failed to load pinned fixed-leg solver · ${src}`, 'error');
         resolve(false);
       };
       document.head.appendChild(script);
@@ -199,11 +230,13 @@
 
     const signature = `${resolved.face}:${parts.frontMaterials.length}:${parts.backMaterials.length}:${parts.frontMeshes.length}:${parts.backMeshes.length}`;
     if (lastFaceModel !== context.model || lastFaceName !== resolved.face || lastFaceSignature !== signature) {
+      const faceMessage = `portrait ${resolved.face.toUpperCase()} · local Z ${resolved.cameraLocalZ.toFixed(3)} · F ${parts.frontMaterials.length}/${parts.frontMeshes.length} · B ${parts.backMaterials.length}/${parts.backMeshes.length} · fixed solver ${typeof window.LegBones?.solveFixedTwoBoneChain === 'function' ? 'yes' : 'no'}`;
       const status = document.getElementById('statusPill');
       if (status) {
-        status.textContent = `Ground / Carry portrait · ${resolved.face.toUpperCase()} · Z ${resolved.cameraLocalZ.toFixed(3)} · F ${parts.frontMaterials.length}/${parts.frontMeshes.length} · B ${parts.backMaterials.length}/${parts.backMeshes.length}`;
+        status.textContent = `Ground / Carry ${faceMessage}`;
         status.className = hasFront && hasBack ? 'pill good' : 'pill warn';
       }
+      editorLog(faceMessage, hasFront && hasBack ? 'info' : 'warn');
       lastFaceModel = context.model;
       lastFaceName = resolved.face;
       lastFaceSignature = signature;
@@ -245,7 +278,8 @@
   // This script is intentionally loaded before procedural-limb-pose-author.js.
   // Registration order means fresh avatar rebuilds are protected before the
   // Ground / Carry listener can apply a pose with a zero Y rotation.
-  ensureBranchFixedLegSolver();
+  editorLog(`compatibility layer v6 booting from ${SCRIPT_URL?.href || 'document-relative source'}`);
+  const fixedLegSolverReady = ensureBranchFixedLegSolver(); // Exported below so other Ground / Carry code and diagnostics can await one canonical bootstrap.
   window.addEventListener('hobunji-backdrop-avatar-changed', () => {
     captureBaseline();
     lastFaceModel = null;
@@ -257,7 +291,8 @@
   requestAnimationFrame(compatibilityFrame);
 
   window.HobunjiProceduralLimbFacingPreserver = {
-    version: 5,
+    version: 6,
+    ready: fixedLegSolverReady,
     captureBaseline,
     ensureBranchFixedLegSolver,
     enforceCameraRelativePortraitFace,
