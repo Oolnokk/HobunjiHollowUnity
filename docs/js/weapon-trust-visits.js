@@ -1,0 +1,520 @@
+// Friendship-gated farmhouse visitors that gift/unlock weapon shapes.
+// All content/tuning lives in config/weapon-trust-visits.js; this file owns
+// only reusable queue, visitor-proxy, grant, persistence, and integration logic.
+(function (global) {
+  'use strict';
+
+  const cfg = global.WEAPON_TRUST_VISIT_CONFIG;
+  if (!cfg) {
+    console.warn('[weapon-trust-visits] config missing; system disabled');
+    return;
+  }
+
+  let dialogueDeps = null; // DialogueContent's narrow adapters; used only for natural dialogue close integration.
+  let scheduleDeps = null; // NpcScheduling adapters; authoritative live npcWalkers array.
+  let craftDeps = null; // MetalCraftShop adapters; authoritative gear/smithing/save functions.
+  let runtimeDeps = null; // BanditCombat adapters; player/current-area/grid helpers already supplied by game.js.
+  let allSmithShapeKeys = null; // Original bronzeworks shape order before friendship gating removes entries.
+  let activeVisit = null; // One visitor proxy at a time, exactly as requested.
+  let lastArea = null;
+  let lastSyncAt = 0;
+  let frameHandle = 0;
+  const patchedApis = new WeakSet();
+
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const giftById = new Map((cfg.gifts || []).map(gift => [gift.id, gift]));
+  const giftByShape = new Map((cfg.gifts || []).map(gift => [gift.shapeKey, gift]));
+  const gatedShapeKeys = new Set((cfg.gifts || []).map(gift => gift.shapeKey));
+  const banditShapeKeys = new Set(cfg.bandits?.weaponShapePool || []);
+
+  function requiredHearts(gift) {
+    return Math.max(0, Number(gift?.requiredHearts ?? cfg.relationship?.requiredHearts) || 0);
+  }
+
+  function completionMemoryEvent(gift) {
+    return `${cfg.visitor?.completionMemoryPrefix || 'weapon_trust_gift:'}${gift.id}`;
+  }
+
+  function originalNpcState(gift) {
+    return global.DialogueContent?.getNpcDlgState?.(gift?.npcId) || null;
+  }
+
+  function giftCompleted(gift) {
+    const state = originalNpcState(gift);
+    const event = completionMemoryEvent(gift);
+    return !!state?.memory?.some?.(entry => entry?.event === event);
+  }
+
+  function giftEligible(gift) {
+    if (!gift || giftCompleted(gift)) return false;
+    const favor = Number(originalNpcState(gift)?.favor) || 0;
+    return favor >= requiredHearts(gift);
+  }
+
+  function pendingGifts() {
+    // Config order is intentional queue order. The first eligible incomplete
+    // entry remains first until its natural dialogue end records completion.
+    return (cfg.gifts || []).filter(giftEligible);
+  }
+
+  function dialogueTreeFromGift(gift) {
+    const lines = Array.isArray(gift.dialogueLines) && gift.dialogueLines.length
+      ? gift.dialogueLines
+      : ['I trust you enough that I wanted you to have this.'];
+    const nodes = lines.map((text, index) => ({
+      id: `${gift.dialogueTreeId}_line_${index + 1}`,
+      type: 'text',
+      text,
+      expression: index === 0 ? 'neutral' : 'smile',
+      expressionHold: 2,
+      revealSpeed: 'normal',
+      next: index + 1 < lines.length ? `${gift.dialogueTreeId}_line_${index + 2}` : null,
+      tags: ['weapon-trust-gift'],
+    }));
+    return {
+      id: gift.dialogueTreeId,
+      label: gift.dialogueLabel || `Trust Gift — ${gift.shapeKey}`,
+      // Runtime visitor proxies convert this to interact. Keeping a distinct
+      // authored trigger makes these trees easy to find/audit in Dialogue Editor.
+      trigger: 'weaponTrustVisit',
+      priority: 1000,
+      visibility: 'any',
+      conditions: {
+        weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
+        relationship: { min: requiredHearts(gift), max: null },
+      },
+      excludeConditions: {
+        weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
+        relationship: { min: null, max: null },
+      },
+      entryNode: nodes[0]?.id || null,
+      nodes,
+      weaponTrustGiftId: gift.id,
+      generatedFromWeaponTrustVisitConfig: true,
+    };
+  }
+
+  function mergeDialogueTreesIntoDatabase(database) {
+    if (!database?.npcs) return database;
+    for (const gift of (cfg.gifts || [])) {
+      const npc = database.npcs.find(record => record?.id === gift.npcId);
+      if (!npc) continue;
+      if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
+      if (!npc.dialogueTrees.some(tree => tree?.id === gift.dialogueTreeId)) {
+        npc.dialogueTrees.push(dialogueTreeFromGift(gift));
+      }
+    }
+    return database;
+  }
+
+  function ensureDialogueTreesOnWalkers() {
+    const walkers = scheduleDeps?.npcWalkers || [];
+    for (const gift of (cfg.gifts || [])) {
+      const source = walkers.find(walker => !walker?._weaponTrustVisitor && walker?.rec?.id === gift.npcId);
+      const rec = source?.rec;
+      if (!rec) continue;
+      if (!Array.isArray(rec.dialogueTrees)) rec.dialogueTrees = [];
+      if (!rec.dialogueTrees.some(tree => tree?.id === gift.dialogueTreeId)) rec.dialogueTrees.push(dialogueTreeFromGift(gift));
+    }
+  }
+
+  function removeStarterGiftItems(playerData) {
+    const remove = cfg.onboarding?.removeStarterItemKeys || [];
+    const gear = playerData?.gearInventory || playerData?.gear || null;
+    if (!gear || !remove.length) return;
+    if (gear.tools) for (const itemKey of remove) delete gear.tools[itemKey];
+    const slots = gear.equipmentSlots || playerData?.equipmentSlots || null;
+    if (slots) {
+      for (const [slot, itemKey] of Object.entries(slots)) {
+        if (remove.includes(itemKey)) slots[slot] = null;
+      }
+    }
+  }
+
+  function syncSmithingShapeUnlocks() {
+    if (!craftDeps?.UNLOCKED_TOOL_SHAPES) return;
+    if (!allSmithShapeKeys) allSmithShapeKeys = [...craftDeps.UNLOCKED_TOOL_SHAPES];
+    const available = allSmithShapeKeys.filter(shapeKey => {
+      if (!gatedShapeKeys.has(shapeKey)) return true;
+      const gift = giftByShape.get(shapeKey);
+      return gift ? giftCompleted(gift) : false;
+    });
+    const target = craftDeps.UNLOCKED_TOOL_SHAPES;
+    if (target.length === available.length && target.every((key, index) => key === available[index])) return;
+    target.splice(0, target.length, ...available);
+  }
+
+  function giveGiftItem(gift) {
+    if (!gift || !craftDeps) return null;
+    const itemKey = craftDeps.craftedToolItemKey?.(gift.shapeKey, gift.giftMetalKey)
+      || `${gift.shapeKey}_${gift.giftMetalKey}`;
+    const gear = craftDeps.getGearInventory?.();
+    if (!gear) return null;
+    if (!gear.tools) gear.tools = {};
+    gear.tools[itemKey] = true;
+    craftDeps.saveGearInventory?.();
+    craftDeps.refreshMetalToolWorldTexture?.(itemKey);
+    craftDeps.buildInventoryGrid?.();
+    craftDeps.buildEquipmentSlots?.();
+    return itemKey;
+  }
+
+  function completeGift(gift) {
+    if (!gift || giftCompleted(gift)) return false;
+    const itemKey = giveGiftItem(gift);
+    global.DialogueContent?.recordNpcMemory?.(gift.npcId, completionMemoryEvent(gift));
+    syncSmithingShapeUnlocks();
+    craftDeps?.saveMemberWorldData?.();
+    const itemLabel = craftDeps?.TOOL_ITEM_DEFS?.[itemKey]?.label || gift.shapeKey;
+    craftDeps?.showToast?.(`🎁 ${itemLabel} received — its shape is now available at the bronzeworks.`, true);
+    document.dispatchEvent(new CustomEvent('hobunji-weapon-trust-gift', {
+      detail: { giftId: gift.id, npcId: gift.npcId, shapeKey: gift.shapeKey, itemKey },
+    }));
+    if (activeVisit?.gift?.id === gift.id) {
+      activeVisit.completed = true;
+      setTimeout(() => removeActiveVisitor('completed'), 250);
+    }
+    return true;
+  }
+
+  function parseTileKey(key) {
+    const parts = String(key || '').split(',').map(Number);
+    return parts.length === 2 && parts.every(Number.isFinite) ? { c: parts[0], r: parts[1] } : null;
+  }
+
+  function playerTilePosition() {
+    const player = runtimeDeps?.player;
+    const tileSize = Math.max(1e-6, Number(runtimeDeps?.TILE) || 1);
+    if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) return null;
+    return { c: player.x / tileSize, r: player.y / tileSize };
+  }
+
+  function exitDoorCandidates() {
+    const groups = global.HousePieces?.debugPieceFeatures?.() || [];
+    const candidates = [];
+    for (const group of groups) {
+      for (const feature of (group.features || [])) {
+        if (feature.type !== 'entrance' || feature.invalid || !feature.doorTile) continue;
+        const door = parseTileKey(feature.doorTile);
+        const approach = parseTileKey(feature.approachTile);
+        if (!door) continue;
+        const sideVector = {
+          north: { dc: 0, dr: -1 }, south: { dc: 0, dr: 1 }, west: { dc: -1, dr: 0 }, east: { dc: 1, dr: 0 },
+        }[feature.side];
+        const direction = approach
+          ? { dc: Math.sign(approach.c - door.c), dr: Math.sign(approach.r - door.r) }
+          : sideVector;
+        if (!direction || (!direction.dc && !direction.dr)) continue;
+        candidates.push({ ...feature, door, approach, direction });
+      }
+    }
+    return candidates;
+  }
+
+  function doorJustExited() {
+    const candidates = exitDoorCandidates();
+    if (!candidates.length) return null;
+    const player = playerTilePosition();
+    if (!player) return candidates[0];
+    return candidates.slice().sort((a, b) => {
+      const aa = a.approach || a.door, bb = b.approach || b.door;
+      return Math.hypot(aa.c + 0.5 - player.c, aa.r + 0.5 - player.r)
+        - Math.hypot(bb.c + 0.5 - player.c, bb.r + 0.5 - player.r);
+    })[0];
+  }
+
+  function occupiedByNpc(c, r) {
+    return (scheduleDeps?.npcWalkers || []).some(walker => {
+      if (walker === activeVisit?.proxy || walker?.area !== cfg.visitor.farmhouseExteriorArea || !walker?.root?.position) return false;
+      return Math.hypot(walker.root.position.x - (c + 0.5), walker.root.position.z - (r + 0.5)) < 0.7;
+    });
+  }
+
+  function nearestWalkableSpawn(door) {
+    if (!door) return null;
+    const distance = Math.max(1, Number(cfg.visitor?.preferredDistanceFromDoorTiles) || 3);
+    const desiredC = Math.round(door.door.c + door.direction.dc * distance);
+    const desiredR = Math.round(door.door.r + door.direction.dr * distance);
+    const radius = Math.max(0, Number(cfg.visitor?.nearestWalkableSearchRadiusTiles) || 5);
+    const candidates = [];
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        candidates.push({ c: desiredC + dc, r: desiredR + dr, d2: dc * dc + dr * dr });
+      }
+    }
+    candidates.sort((a, b) => a.d2 - b.d2 || Math.abs(a.c - desiredC) + Math.abs(a.r - desiredR) - (Math.abs(b.c - desiredC) + Math.abs(b.r - desiredR)));
+    for (const spot of candidates) {
+      if (occupiedByNpc(spot.c, spot.r)) continue;
+      if (global.NpcPathfinding?.isNpcTileWalkable?.(cfg.visitor.farmhouseExteriorArea, spot.c, spot.r)) return spot;
+    }
+    return null;
+  }
+
+  function farmSurfaceY(c, r) {
+    try {
+      const grid = runtimeDeps?.getGrid?.();
+      const tile = grid?.[r]?.[c];
+      if (tile && runtimeDeps?.tileSurfaceYInArea) return Number(runtimeDeps.tileSurfaceYInArea(tile, cfg.visitor.farmhouseExteriorArea)) || 0;
+    } catch (_) {}
+    return 0;
+  }
+
+  function sourceWalkerForGift(gift) {
+    return (scheduleDeps?.npcWalkers || []).find(walker => !walker?._weaponTrustVisitor && walker?.rec?.id === gift.npcId) || null;
+  }
+
+  function visitorTree(source, gift) {
+    const authored = source?.rec?.dialogueTrees?.find(tree => tree?.id === gift.dialogueTreeId) || dialogueTreeFromGift(gift);
+    const tree = clone(authored);
+    tree.trigger = 'interact';
+    tree.priority = 100000;
+    // Event eligibility/queueing is owned by this module; stripping ordinary
+    // conditions here prevents weather/station/etc. from suppressing a visitor
+    // who has already physically appeared at the farmhouse door.
+    tree.conditions = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [], relationship: { min: null, max: null } };
+    tree.excludeConditions = clone(tree.conditions);
+    tree.weaponTrustGiftId = gift.id;
+    return tree;
+  }
+
+  function cloneVisitorRoot(source, gift, spot, door) {
+    const root = source?.root?.clone?.(true);
+    if (!root) return null;
+    root.name = `weaponTrustVisitor_${gift.npcId}`;
+    root.visible = true;
+    root.userData = { ...(root.userData || {}), weaponTrustVisitor: true, weaponTrustGiftId: gift.id };
+    root.traverse?.(node => { node.visible = true; });
+    root.position.set(spot.c + 0.5, farmSurfaceY(spot.c, spot.r), spot.r + 0.5);
+    const dx = door.door.c + 0.5 - root.position.x;
+    const dz = door.door.r + 0.5 - root.position.z;
+    root.rotation.y = Math.atan2(dx, dz);
+    const parent = source.root.parent || runtimeDeps?.scene || null;
+    parent?.add?.(root);
+    return root;
+  }
+
+  function visitorRecord(source, gift) {
+    return {
+      ...clone(source.rec || {}),
+      id: `${cfg.visitor?.visitorIdPrefix || 'weapon_trust_visit:'}${gift.npcId}`,
+      sourceNpcId: gift.npcId,
+      relationship: false,
+      dialogueTrees: [visitorTree(source, gift)],
+      schedule: [],
+      schedules: [],
+      scheduleHooks: {},
+      weaponTrustGiftId: gift.id,
+    };
+  }
+
+  function spawnVisitor(gift) {
+    if (!gift || !scheduleDeps?.npcWalkers) return false;
+    const source = sourceWalkerForGift(gift);
+    const door = doorJustExited();
+    const spot = nearestWalkableSpawn(door);
+    if (!source || !door || !spot) return false;
+    removeActiveVisitor('replace');
+    const root = cloneVisitorRoot(source, gift, spot, door);
+    if (!root) return false;
+    const rec = visitorRecord(source, gift);
+    const proxy = {
+      ...source,
+      rec,
+      root,
+      avatarGroup: root,
+      area: cfg.visitor.farmhouseExteriorArea,
+      state: 'idle',
+      currentScheduleTarget: null,
+      targetX: root.position.x,
+      targetY: root.position.z,
+      rot: root.rotation.y,
+      _weaponTrustVisitor: true,
+      _weaponTrustGiftId: gift.id,
+      update() {},
+      dispose() { root.parent?.remove?.(root); },
+    };
+    scheduleDeps.npcWalkers.push(proxy);
+    activeVisit = { gift, source, proxy, root, door, spot, dialogueStarted: false, completed: false };
+    global.__farmLog?.(`[weapon-trust-visits] spawned ${gift.npcId} for ${gift.shapeKey} near farmhouse door`, 'npc');
+    return true;
+  }
+
+  function removeActiveVisitor(reason = 'cleanup') {
+    const visit = activeVisit;
+    if (!visit) return;
+    const walkers = scheduleDeps?.npcWalkers;
+    if (Array.isArray(walkers)) {
+      const index = walkers.indexOf(visit.proxy);
+      if (index >= 0) walkers.splice(index, 1);
+    }
+    visit.root?.parent?.remove?.(visit.root);
+    visit.root?.traverse?.(node => {
+      // Cloned visitor meshes share the source NPC's materials/textures; do not
+      // dispose shared GPU resources here. Removing the clone is sufficient.
+      node.userData && (node.userData.weaponTrustVisitorRemoved = true);
+    });
+    activeVisit = null;
+    global.__farmLog?.(`[weapon-trust-visits] visitor removed (${reason})`, 'npc');
+  }
+
+  function onFarmhouseExit() {
+    ensureDialogueTreesOnWalkers();
+    syncSmithingShapeUnlocks();
+    const queue = pendingGifts();
+    if (!queue.length) return;
+    // If the front visitor was never completed, they remain the front of the
+    // config-order queue and simply reappear on the next farmhouse exit.
+    spawnVisitor(queue[0]);
+  }
+
+  function currentArea() {
+    return runtimeDeps?.getCurrentArea?.() || scheduleDeps?.getCurrentArea?.() || null;
+  }
+
+  function update() {
+    const now = performance.now();
+    const area = currentArea();
+    if (area && area !== lastArea) {
+      const from = lastArea;
+      lastArea = area;
+      if (area !== cfg.visitor.farmhouseExteriorArea && activeVisit) removeActiveVisitor('area-change');
+      if (from === cfg.visitor.farmhouseInteriorArea && area === cfg.visitor.farmhouseExteriorArea) onFarmhouseExit();
+    }
+    if (now - lastSyncAt > 1000) {
+      lastSyncAt = now;
+      ensureDialogueTreesOnWalkers();
+      syncSmithingShapeUnlocks();
+    }
+    frameHandle = global.requestAnimationFrame(update);
+  }
+
+  function patchDialogueContent(api) {
+    if (!api || patchedApis.has(api)) return;
+    patchedApis.add(api);
+    const originalInit = api.init?.bind(api);
+    if (originalInit) api.init = function weaponTrustDialogueInit(injectedDeps) {
+      dialogueDeps = injectedDeps;
+      const close = injectedDeps?.closeNpcDialogue;
+      if (typeof close === 'function' && !close.__weaponTrustNaturalClose) {
+        const wrappedClose = function weaponTrustNaturalDialogueClose(...args) {
+          const shouldComplete = !!activeVisit?.dialogueStarted && !activeVisit?.completed;
+          const gift = activeVisit?.gift || null;
+          const result = close.apply(this, args);
+          if (shouldComplete && gift) completeGift(gift);
+          return result;
+        };
+        wrappedClose.__weaponTrustNaturalClose = true;
+        injectedDeps.closeNpcDialogue = wrappedClose;
+      }
+      const result = originalInit(injectedDeps);
+      ensureDialogueTreesOnWalkers();
+      return result;
+    };
+    const originalBegin = api.beginNpcConversation?.bind(api);
+    if (originalBegin) api.beginNpcConversation = function weaponTrustBeginConversation(rec, ...rest) {
+      if (activeVisit && rec?.weaponTrustGiftId === activeVisit.gift.id) activeVisit.dialogueStarted = true;
+      return originalBegin(rec, ...rest);
+    };
+  }
+
+  function patchNpcScheduling(api) {
+    if (!api || patchedApis.has(api)) return;
+    patchedApis.add(api);
+    const originalInit = api.init?.bind(api);
+    if (originalInit) api.init = function weaponTrustNpcSchedulingInit(injectedDeps) {
+      scheduleDeps = injectedDeps;
+      const result = originalInit(injectedDeps);
+      ensureDialogueTreesOnWalkers();
+      return result;
+    };
+  }
+
+  function patchMetalCraftShop(api) {
+    if (!api || patchedApis.has(api)) return;
+    patchedApis.add(api);
+    const originalInit = api.init?.bind(api);
+    if (originalInit) api.init = function weaponTrustSmithingInit(injectedDeps) {
+      craftDeps = injectedDeps;
+      allSmithShapeKeys = [...(injectedDeps?.UNLOCKED_TOOL_SHAPES || [])];
+      syncSmithingShapeUnlocks();
+      return originalInit(injectedDeps);
+    };
+  }
+
+  function patchBanditCombat(api) {
+    if (!api || patchedApis.has(api)) return;
+    patchedApis.add(api);
+    const originalInit = api.init?.bind(api);
+    if (originalInit) api.init = function weaponTrustBanditInit(injectedDeps) {
+      runtimeDeps = injectedDeps;
+      const held = injectedDeps?.HELD_SHAPE_DEFS;
+      if (held && banditShapeKeys.size && !held.__weaponTrustBanditPoolProxy) {
+        const proxy = new Proxy(held, {
+          ownKeys(target) {
+            return Reflect.ownKeys(target).filter(key => typeof key !== 'string' || !target[key]?.slots?.includes?.('weapon') || banditShapeKeys.has(key));
+          },
+        });
+        Object.defineProperty(proxy, '__weaponTrustBanditPoolProxy', { value: true, configurable: true });
+        injectedDeps.HELD_SHAPE_DEFS = proxy;
+      }
+      return originalInit(injectedDeps);
+    };
+  }
+
+  function patchApiWhenAssigned(name, patcher) {
+    const existing = global[name];
+    if (existing) { patcher(existing); return; }
+    const descriptor = Object.getOwnPropertyDescriptor(global, name);
+    if (descriptor && descriptor.configurable === false) return;
+    let stored = descriptor?.get ? descriptor.get.call(global) : descriptor?.value;
+    Object.defineProperty(global, name, {
+      configurable: true,
+      enumerable: descriptor?.enumerable ?? true,
+      get() { return stored; },
+      set(value) {
+        stored = value;
+        patcher(value);
+        Object.defineProperty(global, name, { value: stored, writable: true, configurable: true, enumerable: true });
+      },
+    });
+  }
+
+  // New-profile correction runs in capture phase so game/profile consumers see
+  // the Fishing Mace already removed. Existing saves are intentionally untouched.
+  document.addEventListener('hobunjiPlayerReady', event => {
+    removeStarterGiftItems(event.detail);
+    setTimeout(() => { ensureDialogueTreesOnWalkers(); syncSmithingShapeUnlocks(); }, 0);
+  }, { capture: true });
+
+  patchApiWhenAssigned('DialogueContent', patchDialogueContent);
+  patchApiWhenAssigned('NpcScheduling', patchNpcScheduling);
+  patchApiWhenAssigned('MetalCraftShop', patchMetalCraftShop);
+  patchApiWhenAssigned('BanditCombat', patchBanditCombat);
+
+  global.WeaponTrustVisits = Object.freeze({
+    config: cfg,
+    requiredHearts,
+    dialogueTreeFromGift,
+    mergeDialogueTreesIntoDatabase,
+    pendingGifts,
+    giftEligible,
+    giftCompleted,
+    syncSmithingShapeUnlocks,
+    spawnVisitor,
+    removeActiveVisitor,
+    completeGift,
+    debugSnapshot() {
+      return {
+        currentArea: currentArea(),
+        pendingGiftIds: pendingGifts().map(gift => gift.id),
+        activeGiftId: activeVisit?.gift?.id || null,
+        activeNpcId: activeVisit?.gift?.npcId || null,
+        activeDialogueStarted: !!activeVisit?.dialogueStarted,
+        smithShapes: craftDeps?.UNLOCKED_TOOL_SHAPES ? [...craftDeps.UNLOCKED_TOOL_SHAPES] : null,
+        configuredBanditShapes: [...banditShapeKeys],
+      };
+    },
+  });
+
+  frameHandle = global.requestAnimationFrame(update);
+})(window);
