@@ -15,6 +15,13 @@
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
   <script src="js/format-utils.js?v=20260902mod1"></script>
+  <!-- Movement virtual-joystick handlers extracted out of game.js; uses
+       window.FormatUtils.clamp, so must load after it and before game.js. -->
+  <script src="js/virtual-joystick.js?v=20260902mod1"></script>
+  <!-- Input-binding load/save/label helpers extracted out of game.js; must
+       load before game.js, which calls window.InputBindings.init(...) and
+       window.InputBindings.loadInputBindings() during its own setup. -->
+  <script src="js/input-bindings.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

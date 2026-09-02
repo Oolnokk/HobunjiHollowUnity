@@ -26098,59 +26098,6 @@
 
       function updateDebugPage() { /* debug panel removed from menu */ }
 
-      function handleJoystickPointerDown(event) {
-        input.joystickPointerId = event.pointerId;
-        // setPointerCapture can throw ("No active pointer with the given id
-        // is found") if the browser doesn't consider this pointer fully
-        // active yet — seen in practice on a touch that starts while the
-        // page/layout is still settling right after load. Uncaught, that
-        // exception used to abort this function before updateJoystick()
-        // ran, permanently stranding joystickPointerId pointed at a pointer
-        // that would never get a matching pointerup — every real touch
-        // after that got silently ignored (input.joystickPointerId !==
-        // event.pointerId in handleJoystickPointerMove/Up) until a full
-        // page reload reset the state. Without capture the joystick still
-        // works normally; the only loss is that a drag which leaves
-        // joystickZone's own DOM bounds stops being tracked.
-        try { joystickZone.setPointerCapture(event.pointerId); } catch (e) { /* see above — degrade gracefully, don't skip updateJoystick */ }
-        updateJoystick(event);
-      }
-
-      function handleJoystickPointerMove(event) {
-        if (input.joystickPointerId !== event.pointerId) return;
-        updateJoystick(event);
-      }
-
-      function handleJoystickPointerUp(event) {
-        if (input.joystickPointerId !== event.pointerId) return;
-        input.joystickPointerId = null;
-        input.x = 0;
-        input.y = 0;
-        joystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
-      }
-
-      function updateJoystick(event) {
-        const rect = joystickZone.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const rawX = event.clientX - centerX;
-        const rawY = event.clientY - centerY;
-        const distance = Math.hypot(rawX, rawY);
-        const activeRadius = Math.max(32, Math.min(JOYSTICK_RADIUS, rect.width * 0.42)); // Used below to clamp knob travel for the current screen-sized joystick.
-        const angle = Math.atan2(rawY, rawX);
-        const clamped = Math.min(distance, activeRadius);
-        const rawMagnitude = window.FormatUtils.clamp(clamped / activeRadius, 0, 1);
-        const remapped = rawMagnitude <= JOYSTICK_DEADZONE
-          ? 0
-          : Math.pow((rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE), JOYSTICK_RESPONSE);
-        const knobX = Math.cos(angle) * clamped;
-        const knobY = Math.sin(angle) * clamped;
-
-        input.x = remapped > 0 ? Math.cos(angle) * remapped : 0;
-        input.y = remapped > 0 ? Math.sin(angle) * remapped : 0;
-        joystickKnob.style.transform = `translate(-50%,-50%) translate(${knobX}px, ${knobY}px)`;
-      }
-
       async function copyDebugLog() {
         const reticle = getReticleTile();
         const filter = window.__debugLogFilter || 'all';
@@ -26304,10 +26251,11 @@
       document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) window.DialogueContent?.advanceNpcDialogue(); });
       document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
 
-      joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
-      joystickZone.addEventListener('pointermove', handleJoystickPointerMove);
-      joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
-      joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
+      window.VirtualJoystick.init({ input, joystickZone, joystickKnob, JOYSTICK_RADIUS, JOYSTICK_DEADZONE, JOYSTICK_RESPONSE });
+      joystickZone.addEventListener('pointerdown', window.VirtualJoystick.handleJoystickPointerDown);
+      joystickZone.addEventListener('pointermove', window.VirtualJoystick.handleJoystickPointerMove);
+      joystickZone.addEventListener('pointerup', window.VirtualJoystick.handleJoystickPointerUp);
+      joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
       // Dodge button: a plain tap, dodging in the current facing direction.
       // Always visible on touch (see #dodgeBtn in style.css); hidden only
@@ -26467,7 +26415,9 @@
           modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
         };
       })();
-      const inputBindings = loadInputBindings();
+      window.InputBindings.init({ INPUT_DEFAULTS });
+      const inputBindings = window.InputBindings.loadInputBindings();
+      window.InputBindings.init({ INPUT_DEFAULTS, getInputBindings: () => inputBindings });
       const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
@@ -26476,42 +26426,6 @@
         'Button12', 'Button13', 'Button14', 'Button15',
         'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
       ];
-
-      function loadInputBindings() {
-        try {
-          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
-          return {
-            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
-            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
-            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
-          };
-        } catch (_err) {
-          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
-        }
-      }
-      function saveInputBindings() {
-        localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
-      }
-      function bindingConflict(device, button, actionId, modeShift = null) {
-        if (!button) return '';
-        if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
-        const bindings = inputBindings[device] || {};
-        for (const [otherAction, otherButton] of Object.entries(bindings)) {
-          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
-        }
-        if (!modeShift) return '';
-        for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
-          if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
-        }
-        return '';
-      }
-      function actionLabel(id) {
-        return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
-      }
-      function buttonLabel(code) {
-        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
-        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
-      }
 
       // ── Last-used input device tracking ─────────────────────────────
       // Nothing else in the game tracks "what device is the player actually
@@ -26565,9 +26479,9 @@
       // callers pass the same icon already shown for that action in the
       // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
       function actionPromptGlyph(actionId, touchIcon) {
-        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
+        if (lastInputDevice === 'controller') return window.InputBindings.buttonLabel(inputBindings.controller[actionId]);
         if (lastInputDevice === 'touch') return touchIcon || '👆';
-        return buttonLabel(inputBindings.desktop[actionId]);
+        return window.InputBindings.buttonLabel(inputBindings.desktop[actionId]);
       }
       function actionPromptColor(actionId) {
         return window.ActionArchSlotColors?.inputColors?.[actionId] || '#B8C5C0';
@@ -26922,14 +26836,14 @@
       // init()'d here rather than down with the other window.<Namespace>
       // modules, since (unlike them) this one is rendered once immediately
       // at boot rather than lazily on first tab open.
-      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); window.InputBindings.saveInputBindings(); window.InputSettingsPanel.render(); });
       window.InputSettingsPanel?.init({
         INPUT_DEFAULTS,
         inputBindings,
         CONTROLLER_INPUT_OPTIONS,
-        buttonLabel,
-        bindingConflict,
-        saveInputBindings,
+        buttonLabel: window.InputBindings.buttonLabel,
+        bindingConflict: window.InputBindings.bindingConflict,
+        saveInputBindings: window.InputBindings.saveInputBindings,
       });
       window.InputSettingsPanel.render();
       window.MusicMinigame?.renderNoteKeySettings();
