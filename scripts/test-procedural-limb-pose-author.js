@@ -4,7 +4,7 @@ const fs = require('fs');
 const anatomy = fs.readFileSync('docs/config/procedural-anatomy-profiles.js', 'utf8'); // Verifies the new species+gender thickness/split source without duplicating canonical limb lengths.
 const solver = fs.readFileSync('docs/js/leg-bones.js', 'utf8'); // Verifies legacy gait IK remains available beside fixed anatomical two-bone IK.
 const author = fs.readFileSync('docs/js/procedural-limb-pose-author.js', 'utf8'); // Verifies the isolated Ground / Carry workspace integration contracts.
-const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies editor yaw, portrait-face visibility, and non-occluding torso guides.
+const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies editor yaw, portrait-face visibility, non-occluding torso guides, and visible bootstrap diagnostics.
 const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Verifies the already-loaded procedural editor adapter boots the new workspace.
 
 for (const field of [
@@ -63,6 +63,7 @@ assert(author.includes("runtime.backdrop?.setMovementPlayback?.(true)"), 'heavy 
 assert(author.includes("input.dispatchEvent(new Event('input', { bubbles: true }))"), 'heavy carry style bypasses the existing procedural movement controls/state');
 assert(author.includes("/_ExperimentalFeet$/"), 'ground poses do not reuse the procedural editor’s current species-specific feet');
 assert(author.includes('new MutationObserver'), 'mobile authoring panel is not restored when preview UI is rebuilt');
+assert(author.includes("!window.LegBones?.solveFixedTwoBoneChain"), 'Ground / Carry frame loop does not wait safely for the pinned fixed-leg solver');
 
 assert(facing.includes('hobunjiLimbPoseBaselineYaw'), 'facing preserver does not store the untouched editor yaw');
 assert(facing.includes('protectedGroundCarryEulerSet'), 'facing preserver does not intercept the Ground / Carry Euler setter');
@@ -81,6 +82,11 @@ assert(facing.includes('hobunjiGroundCarryPortraitFace'), 'camera-relative portr
 assert(facing.includes("name.includes('torso') && name.includes('radius')"), 'torso-radius guide lookup does not tolerate renamed guide meshes');
 assert(facing.includes('material.wireframe = true'), 'torso-radius guide remains a solid blue shell');
 assert(facing.includes('material.depthWrite = false'), 'torso-radius guide can still occlude the avatar depth buffer');
+assert(facing.includes("typeof window.log === 'function'"), 'Ground / Carry bootstrap does not write through the editor visible log when available');
+assert(facing.includes('main/runtime LegBones lacks solveFixedTwoBoneChain'), 'mixed main/commit solver mismatch is not explicitly reported');
+assert(facing.includes('pinned fixed-leg solver ready'), 'successful pinned solver replacement is not explicitly reported');
+assert(facing.includes('const fixedLegSolverReady = ensureBranchFixedLegSolver()'), 'Ground / Carry does not publish one canonical fixed-solver bootstrap promise');
+assert(facing.includes('ready: fixedLegSolverReady'), 'facing preserver public API does not expose the fixed-solver bootstrap promise');
 
 assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the facing preserver');
 assert(adapter.includes('await loadLimbFacingPreserver()'), 'facing preserver is not guaranteed to load before the Ground / Carry author');
