@@ -1,0 +1,30 @@
+name: Inspect dialogue camera math
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/inspect-dialogue-camera-temp.yml
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+      - name: Print dialogue camera seams
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('docs/game.js').read_text()
+          for marker in ['npcDialogueCameraMode', 'activeCameraTarget', 'dialogueZoom', 'npcDialogueStagingConfig']:
+              print('\n###', marker)
+              start = 0
+              for n in range(12):
+                  i = s.find(marker, start)
+                  if i < 0: break
+                  print('\n--- occurrence', n+1, '---')
+                  print(s[max(0,i-900):min(len(s),i+2200)])
+                  start = i + len(marker)
+          PY
