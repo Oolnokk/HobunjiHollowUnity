@@ -30,6 +30,12 @@
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
   <script src="js/cutscene-preview-helpers.js?v=20260902mod1"></script>
+  <!-- Loot-pool/shop-stock config loading and item-quality rolling,
+       extracted out of game.js. Must load before game.js, which calls
+       window.LootRolling.init(...) and .loadLootShopConfig() during its
+       own setup, and before every other module whose init(deps) is handed
+       window.LootRolling.rollItemStars/starRatingText/etc. -->
+  <script src="js/loot-rolling.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

@@ -2567,7 +2567,7 @@
           saveMemberWorldData();
           refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
         }
         function updateVfx(dt) {
           if (!authoredVfx) return;
@@ -2637,7 +2637,7 @@
               addProcessedOutputs(outputs, inputStars);
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: `${def.icon} Collected ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
@@ -2661,7 +2661,7 @@
             addProcessedOutputs(outputs, inputStars);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           reset() {
             window.FarmAnimals?.clearVatWorkerPose?.(this.id);
@@ -4226,82 +4226,17 @@
       // alongside every other config load; every consumer below only runs
       // in response to a later gameplay event (a creature dying, a chest
       // spawning, a shop menu opening), so by the time any of them actually
-      // read _lootPools/_shopStock the fetch has long since resolved — same
-      // assumption docs/game.js's other cached config loaders make (see
-      // loadBanditGangConfig).
-      let _lootPools = {};
-      let _shopStock = {};
-      let _lootShopConfigPromise = null;
-      function loadLootShopConfig() {
-        if (_lootShopConfigPromise) return _lootShopConfigPromise;
-        // Routed through window.LocalDBOverrides.loadDatabase() (see
-        // docs/js/local-db-overrides.js) so the onboarding "Database Source"
-        // toggle can swap in a locally-saved loot-shop-editor edit of either
-        // file without touching the repo copy — falls back to a direct fetch
-        // if that module somehow isn't loaded.
-        const loadOne = (id, path) => (window.LocalDBOverrides ? window.LocalDBOverrides.loadDatabase(id) : fetch(path).then(r => r.ok ? r.json() : null)).catch(() => null);
-        _lootShopConfigPromise = Promise.all([
-          loadOne('lootPools', 'config/loot/loot-pools.json'),
-          loadOne('shopStock', 'config/shops/shop-stock.json'),
-        ]).then(([lootData, shopData]) => {
-          _lootPools = lootData?.pools || {};
-          if (shopData?.shops) { _shopStock = shopData.shops; _applyLoadedShopStock(); }
-        });
-        return _lootShopConfigPromise;
-      }
-      loadLootShopConfig();
-
-      // The subset of the dialogue system's shared condition axes (see
-      // docs/js/condition-registry.js) that make sense for loot/shop gating
-      // outside of an NPC conversation — no relationship/encounter/station
-      // concept here, so those axes are simply never supplied/checked.
-      function _lootShopWorldState() {
-        return {
-          weekdays: window.CalendarSystem.currentWeekdayName(),
-          seasons: window.CalendarSystem.currentSeason().name,
-          weather: calendar.weather,
-          timesOfDay: window.Fishing.timeOfDay(),
-          maps: currentArea,
-          playerSpecies: _playerData?.appearance?.speciesId || '',
-        };
-      }
-
-      // Rolls a docs/config/loot/loot-pools.json pool by id: every entry is
-      // independently checked against its conditions and its own `chance`
-      // (default 1 = always, matching every migrated creature/bandit table),
-      // then contributes a `min..max` quantity (or a `min..max` in steps of
-      // `step`, for discrete-increment rolls like the treasure chest's gold).
-      function rollLootPool(poolId) {
-        const pool = _lootPools[poolId];
-        if (!pool) return {};
-        const world = _lootShopWorldState();
-        const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
-        const gained = {};
-        for (const entry of eligible) {
-          if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
-          const min = entry.min || 0, max = entry.max != null ? entry.max : min;
-          let qty;
-          if (entry.step) {
-            const steps = Math.floor((max - min) / entry.step) + 1;
-            qty = min + Math.floor(rnd() * steps) * entry.step;
-          } else {
-            qty = min + Math.floor(rnd() * (max - min + 1));
-          }
-          if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
-        }
-        return gained;
-      }
-
-      // Shared 1-5 star quality roll — fish, harvested crops, and butchered
-      // meat all use this. Weighted toward the middle (3 stars most common)
-      // rather than a flat 20% each, so it doesn't feel like a coin flip;
-      // otherwise deliberately simple/random for now, no per-item tuning.
-      function rollItemStars(skillKey) {
-        return window.SkillSystem?.rollQuality(skillKey) || 3;
-      }
-      function starRatingText(stars) {
-        return window.SkillSystem?.starRatingText(stars) || '★'.repeat(stars) + '☆'.repeat(5 - stars);
-      }
+      // read window.LootRolling's pools/stock the fetch has long since
+      // resolved — same assumption docs/game.js's other cached config
+      // loaders make (see loadBanditGangConfig). Moved into
+      // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
+      window.LootRolling.init({
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        calendar,
+        applyLoadedShopStock: () => _applyLoadedShopStock(),
+      });
+      window.LootRolling.loadLootShopConfig();
 
       // Settled corpses expose the same getButtons()/onAction() shape as
       // farm world objects (see makeSellCrate) so the existing action-bar
@@ -4322,15 +4257,15 @@
           },
           onAction(action) {
             if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const gained = rollLootPool(c.def.lootPool);
+            const gained = window.LootRolling.rollLootPool(c.def.lootPool);
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
               // Meat gets a quality roll same as fish/crops; hides and other
               // butchering byproducts don't.
-              const meatStars = /meat/i.test(key) ? rollItemStars('combat') : null;
+              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null;
               if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
-              parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
+              parts.push((meatStars ? window.LootRolling.starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
@@ -13883,6 +13818,7 @@
       // _shopStock.jubmirWares (via deps.getShopStock()) directly instead of
       // a mirrored variable.
       function _applyLoadedShopStock() {
+        const _shopStock = window.LootRolling.getShopStock();
         WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
           [id, { label: shop.label, menuId: shop.menuId }]));
         if (_shopStock.generalStoreWares?.goods) GENERAL_STORE_CATALOG = _shopStock.generalStoreWares.goods;
@@ -16332,10 +16268,10 @@
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
-        const stars = rollItemStars('farming');
+        const stars = window.LootRolling.rollItemStars('farming');
         window.CookingSystem.recordItemQuality(data.cropKey, stars, 1);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
-        const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
+        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -17099,7 +17035,7 @@
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
-          const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
+          const nutMessage = nutDrop ? `, ${addedNutAmount} ${window.LootRolling.starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
 
@@ -27908,8 +27844,8 @@
         worldToOverlay,
         inventory,
         equipmentSlots,
-        rollItemStars,
-        starRatingText,
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
         getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
@@ -28150,7 +28086,7 @@
         buildInventoryGrid,
         saveMemberWorldData,
         getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
-        lootShopWorldState: _lootShopWorldState,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
         calendar,
@@ -28169,7 +28105,7 @@
         getBarnTiers: () => BARN_TIERS,
         getHousePieceDeeds: () => Object.fromEntries(Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem)),
         FURNITURE_BLUEPRINT_CATALOG,
-        lootShopWorldState: _lootShopWorldState,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         esc: window.FormatUtils.esc,
       });
 
@@ -28824,8 +28760,8 @@
 
       window.JubmirShop?.init({
         tothalWorldId: _tothalWorldId,
-        getShopStock: () => _shopStock,
-        lootShopWorldState: _lootShopWorldState,
+        getShopStock: window.LootRolling.getShopStock,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         calendar,
         inventory,
         showToast,
@@ -28869,8 +28805,8 @@
         PROCESSING_FURNITURE_DEFS,
         PROCESSING_SFX_KEY,
         getGrid: () => grid,
-        rollItemStars,
-        starRatingText,
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
         getScene: getActiveScene,
@@ -28920,8 +28856,8 @@
         calendar,
         rnd,
         VERDIGRIS_METAL_KEYS,
-        getLootPools: () => _lootPools,
-        lootShopWorldState: _lootShopWorldState,
+        getLootPools: window.LootRolling.getLootPools,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         MYSTERY_DYE_ITEM_KEY_BY_POOL,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
@@ -29158,7 +29094,7 @@
       window.ProceduralTasks?.init({
         FISH_DEFS,
         CREATURE_DB,
-        getLootPools: () => _lootPools,
+        getLootPools: window.LootRolling.getLootPools,
         ITEM_DEFS,
         toolMasteryLevel,
         equipmentSlots,
@@ -29209,7 +29145,7 @@
         showToast,
         requestCompanionDiscovery: (c, reason) => window.AnimalVocalizations?.companionDiscovery?.(c, reason)
           || window.AudioSystem?.playCreatureTreasureAlert?.(c),
-        rollLootPool,
+        rollLootPool: window.LootRolling.rollLootPool,
         inventory,
         clampInventoryStack,
         itemIconForKey,
