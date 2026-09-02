@@ -1434,7 +1434,7 @@
     }
     const paths = buildMazePaths(rootPts, opts, rng);
     const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
-    const denseLocal = paths.map(path => sampleSpline(path, 10).map(clampPt));
+    const denseLocal = paths.map(path => sampleSpline(path, opts.splineSamples ?? 10).map(clampPt));
 
     // No ceilingY at all — see this function's docblock for why that's
     // deliberate, not an oversight. Earlier versions reached this by
