@@ -16,7 +16,7 @@
   let dialogueDeps = null; // DialogueContent's narrow adapters; used only for natural dialogue close integration.
   let scheduleDeps = null; // NpcScheduling adapters; authoritative live npcWalkers array.
   let craftDeps = null; // MetalCraftShop adapters; authoritative gear/smithing/save functions.
-  let runtimeDeps = null; // BanditCombat adapters; player/current-area/grid helpers already supplied by game.js.
+  let runtimeDeps = null; // BanditCombat adapters; active scene/grid/player-face helpers already supplied by game.js.
   let allSmithShapeKeys = null; // Original bronzeworks shape order before friendship gating removes entries.
   let activeVisit = null; // One visitor proxy at a time, exactly as requested.
   let lastArea = null;
@@ -24,9 +24,9 @@
   let frameHandle = 0;
   let editorObserver = null;
   const patchedApis = new WeakSet();
+  const banditPoolProxies = new WeakSet();
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
-  const giftById = new Map((cfg.gifts || []).map(gift => [gift.id, gift]));
   const giftByShape = new Map((cfg.gifts || []).map(gift => [gift.shapeKey, gift]));
   const gatedShapeKeys = new Set((cfg.gifts || []).map(gift => gift.shapeKey));
   const banditShapeKeys = new Set(cfg.bandits?.weaponShapePool || []);
@@ -73,7 +73,7 @@
       expressionHold: 2,
       revealSpeed: 'normal',
       next: index + 1 < lines.length ? `${gift.dialogueTreeId}_line_${index + 2}` : null,
-      tags: ['weapon-trust-gift'],
+      tags: [{ type: 'weapon_trust_gift' }],
     }));
     return {
       id: gift.dialogueTreeId,
@@ -81,7 +81,7 @@
       // Runtime visitor proxies convert this to interact. Keeping a distinct
       // authored trigger makes these trees easy to find/audit in Dialogue Editor.
       trigger: 'weaponTrustVisit',
-      priority: 1000,
+      priority: 99,
       visibility: 'any',
       conditions: {
         weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
@@ -234,6 +234,12 @@
   }
 
   function playerTilePosition() {
+    // BanditCombat deliberately receives a read-only face target rather than
+    // the private player object. It is already expressed in scene/tile world
+    // coordinates (x/z), which is exactly what farmhouse door selection needs.
+    const face = runtimeDeps?.getPlayerFaceTarget?.();
+    const z = Number.isFinite(Number(face?.z)) ? Number(face.z) : Number(face?.y);
+    if (Number.isFinite(Number(face?.x)) && Number.isFinite(z)) return { c: Number(face.x), r: z };
     const player = runtimeDeps?.player;
     const tileSize = Math.max(1e-6, Number(runtimeDeps?.TILE) || 1);
     if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) return null;
@@ -303,7 +309,7 @@
 
   function farmSurfaceY(c, r) {
     try {
-      const grid = runtimeDeps?.getGrid?.();
+      const grid = runtimeDeps?.getActiveGrid?.();
       const tile = grid?.[r]?.[c];
       if (tile && runtimeDeps?.tileSurfaceYInArea) return Number(runtimeDeps.tileSurfaceYInArea(tile, cfg.visitor.farmhouseExteriorArea)) || 0;
     } catch (_) {}
@@ -341,20 +347,63 @@
     return tree;
   }
 
+  function clonedNodeAtSamePath(sourceRoot, clonedRoot, sourceNode) {
+    if (!sourceRoot || !clonedRoot || !sourceNode) return null;
+    if (sourceNode === sourceRoot) return clonedRoot;
+    const indices = [];
+    let cursor = sourceNode;
+    while (cursor && cursor !== sourceRoot) {
+      const parent = cursor.parent;
+      const index = parent?.children?.indexOf?.(cursor) ?? -1;
+      if (!parent || index < 0) return null;
+      indices.unshift(index);
+      cursor = parent;
+    }
+    if (cursor !== sourceRoot) return null;
+    let cloned = clonedRoot;
+    for (const index of indices) cloned = cloned?.children?.[index] || null;
+    return cloned || null;
+  }
+
   function cloneVisitorRoot(source, gift, spot, door) {
     const root = source?.root?.clone?.(true);
     if (!root) return null;
     root.name = `weaponTrustVisitor_${gift.npcId}`;
     root.visible = true;
     root.userData = { ...(root.userData || {}), weaponTrustVisitor: true, weaponTrustGiftId: gift.id };
-    root.traverse?.(node => { node.visible = true; });
     root.position.set(spot.c + 0.5, farmSurfaceY(spot.c, spot.r), spot.r + 0.5);
     const dx = door.door.c + 0.5 - root.position.x;
     const dz = door.door.r + 0.5 - root.position.z;
     root.rotation.y = Math.atan2(dx, dz);
-    const parent = source.root.parent || runtimeDeps?.scene || null;
-    parent?.add?.(root);
-    return root;
+
+    // Always attach the visitor to the player's active FARM scene. Reusing the
+    // source NPC's parent is wrong whenever that NPC is currently in town or
+    // a building; the clone would exist, but in a scene the player cannot see.
+    const parent = runtimeDeps?.getActiveScene?.()
+      || (source.area === cfg.visitor.farmhouseExteriorArea ? source.root.parent : null);
+    if (!parent?.add) return null;
+    parent.add(root);
+    root._npcScene = parent;
+    root._pendingTownAdd = false;
+    root._pendingBuildingAdd = null;
+    root._pendingZoneAdd = null;
+
+    const avatarGroup = clonedNodeAtSamePath(source.root, root, source.avatarGroup);
+    const groundShadow = clonedNodeAtSamePath(source.root, root, source.groundShadow);
+    const alcoholPoseGroup = clonedNodeAtSamePath(source.root, root, source.alcoholPoseGroup);
+    const neckJoint = clonedNodeAtSamePath(source.root, root, source.neckJoint);
+    const stationToolMesh = clonedNodeAtSamePath(source.root, root, source.stationToolMesh);
+
+    // A visit is a standing social interaction, not a snapshot of whatever job
+    // pose/tool/drunken lean the source walker happened to be using elsewhere.
+    if (alcoholPoseGroup) {
+      alcoholPoseGroup.position.set(0, 0, 0);
+      alcoholPoseGroup.rotation.set(0, 0, 0);
+    }
+    if (neckJoint) neckJoint.rotation.set(0, 0, 0);
+    stationToolMesh?.parent?.remove?.(stationToolMesh);
+
+    return { root, avatarGroup, groundShadow, alcoholPoseGroup, neckJoint };
   }
 
   function visitorRecord(source, gift) {
@@ -378,28 +427,39 @@
     const spot = nearestWalkableSpawn(door);
     if (!source || !door || !spot) return false;
     removeActiveVisitor('replace');
-    const root = cloneVisitorRoot(source, gift, spot, door);
-    if (!root) return false;
+    const visual = cloneVisitorRoot(source, gift, spot, door);
+    if (!visual?.root) return false;
     const rec = visitorRecord(source, gift);
     const proxy = {
-      ...source,
+      root: visual.root,
       rec,
-      root,
-      avatarGroup: root,
+      profile: source.profile,
+      avatarGroup: visual.avatarGroup || visual.root,
+      avatarHeight: source.avatarHeight,
+      alcoholPoseGroup: visual.alcoholPoseGroup,
+      groundShadow: visual.groundShadow,
+      neckJoint: visual.neckJoint,
+      avatarFrontCanvas: source.avatarFrontCanvas,
+      avatarBackCanvas: source.avatarBackCanvas,
       area: cfg.visitor.farmhouseExteriorArea,
       state: 'idle',
       currentScheduleTarget: null,
-      targetX: root.position.x,
-      targetY: root.position.z,
-      rot: root.rotation.y,
+      targetX: visual.root.position.x,
+      targetY: visual.root.position.z,
+      rot: visual.root.rotation.y,
+      pause: 0,
+      catchup: 1,
+      legs: null,
+      stationToolMesh: null,
+      stationToolKey: null,
       _weaponTrustVisitor: true,
       _weaponTrustGiftId: gift.id,
       update() {}, // The visitor is deliberately stationary and never enters the normal schedule resolver.
-      dispose() { root.parent?.remove?.(root); },
+      dispose() { visual.root.parent?.remove?.(visual.root); },
     };
     scheduleDeps.npcWalkers.push(proxy);
     activeVisit = {
-      gift, source, proxy, root, door, spot,
+      gift, source, proxy, root: visual.root, door, spot,
       dialogueStarted: false,
       naturalEndArmed: false,
       completed: false,
@@ -521,7 +581,13 @@
     const originalInit = api.init?.bind(api);
     if (originalInit) api.init = function weaponTrustSmithingInit(injectedDeps) {
       craftDeps = injectedDeps;
-      allSmithShapeKeys = [...(injectedDeps?.UNLOCKED_TOOL_SHAPES || [])];
+      // Preserve the original full catalog across character/world re-init.
+      // After the first filter pass injectedDeps.UNLOCKED_TOOL_SHAPES is the
+      // same mutable array but shorter, so resnapshotting it would permanently
+      // forget every gated shape and make later friendship unlocks impossible.
+      if (!allSmithShapeKeys || injectedDeps?.UNLOCKED_TOOL_SHAPES?.length > allSmithShapeKeys.length) {
+        allSmithShapeKeys = [...(injectedDeps?.UNLOCKED_TOOL_SHAPES || [])];
+      }
       syncSmithingShapeUnlocks();
       return originalInit(injectedDeps);
     };
@@ -534,13 +600,13 @@
     if (originalInit) api.init = function weaponTrustBanditInit(injectedDeps) {
       runtimeDeps = injectedDeps;
       const held = injectedDeps?.HELD_SHAPE_DEFS;
-      if (held && banditShapeKeys.size && !held.__weaponTrustBanditPoolProxy) {
+      if (held && banditShapeKeys.size && !banditPoolProxies.has(held)) {
         const proxy = new Proxy(held, {
           ownKeys(target) {
             return Reflect.ownKeys(target).filter(key => typeof key !== 'string' || !target[key]?.slots?.includes?.('weapon') || banditShapeKeys.has(key));
           },
         });
-        Object.defineProperty(proxy, '__weaponTrustBanditPoolProxy', { value: true, configurable: true });
+        banditPoolProxies.add(proxy);
         injectedDeps.HELD_SHAPE_DEFS = proxy;
       }
       return originalInit(injectedDeps);
@@ -614,6 +680,7 @@
         activeNpcId: activeVisit?.gift?.npcId || null,
         activeDialogueStarted: !!activeVisit?.dialogueStarted,
         activeNaturalEndArmed: !!activeVisit?.naturalEndArmed,
+        activeSpawn: activeVisit?.spot ? { ...activeVisit.spot } : null,
         smithShapes: craftDeps?.UNLOCKED_TOOL_SHAPES ? [...craftDeps.UNLOCKED_TOOL_SHAPES] : null,
         configuredBanditShapes: [...banditShapeKeys],
       };
