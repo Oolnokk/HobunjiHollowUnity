@@ -61,8 +61,9 @@
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
 
-  function generateCavernFloor(seedText) {
-    if (_cavernFloorCache.has(seedText)) return _cavernFloorCache.get(seedText);
+  function generateCavernFloor(seedText, generationOptions = {}) {
+    const cacheKey = generationOptions.fast ? `${seedText}:fast` : seedText;
+    if (_cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
     const rng = makeRng(seedText + '_cavern');
     const targetTiles = TARGET_TILES_MIN + Math.floor(rng() * (TARGET_TILES_MAX - TARGET_TILES_MIN + 1));
@@ -83,7 +84,10 @@
     // bigger maps (roughly 4x the tile count for the same footprint)
     // without changing how large or branchy the actual carve is.
     const tileSize = 0.5;
-    const result = window.CavernSculptor.carveMazeCavern({ branchCount, entranceLength, tileSize }, rng);
+    const sculptOptions = generationOptions.fast
+      ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
+      : { branchCount, entranceLength, tileSize };
+    const result = window.CavernSculptor.carveMazeCavern(sculptOptions, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -122,7 +126,7 @@
       nestCol: nfx + shiftX, nestRow: nfy + shiftY,
       mesh: { positions, indices: result.mesh.indices },
     };
-    _cavernFloorCache.set(seedText, floorResult);
+    _cavernFloorCache.set(cacheKey, floorResult);
     return floorResult;
   }
 
