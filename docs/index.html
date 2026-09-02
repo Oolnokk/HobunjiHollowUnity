@@ -26,6 +26,10 @@
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
   <script src="js/action-prompt-ui.js?v=20260902mod1"></script>
+  <!-- Cutscene Director preview standalone helpers extracted out of
+       game.js; the stateful runCutscenePreview runner itself stays in
+       game.js and calls into these. Must load before game.js. -->
+  <script src="js/cutscene-preview-helpers.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>
