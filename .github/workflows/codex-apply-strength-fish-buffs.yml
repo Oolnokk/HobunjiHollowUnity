@@ -19,12 +19,13 @@ jobs:
           fetch-depth: 0
       - name: Apply focused source edits
         run: python3 scripts/codex-apply-strength-fish-buffs.py
-      - name: Validate JavaScript and integration tests
+      - name: Validate JavaScript and focused integration tests
         run: |
           node --check docs/js/alchemy-system.js
           node --check docs/js/skill-system.js
           node --check docs/js/fish-catalog.js
-          node scripts/test-skill-and-hearth-cooking.js
+          node --check scripts/test-strength-fish-buffs.js
+          node scripts/test-strength-fish-buffs.js
       - name: Remove temporary patch machinery
         run: |
           rm scripts/codex-apply-strength-fish-buffs.py
