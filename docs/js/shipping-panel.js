@@ -262,6 +262,8 @@
         white-space: pre-wrap;
       }
       #shippingWindowDebugPanel[hidden] { display: none !important; }
+      /* Ordinary pack inspection is no longer a point-of-sale surface. */
+      #iiActions .ii-btn.sell { display: none !important; }
       @media (max-width: 740px) {
         #shippingStandaloneRoot {
           --shipping-pane-w: 94vw;
@@ -285,6 +287,34 @@
   function releasePointerLock() {
     if (!standaloneOpen || !document.pointerLockElement || typeof document.exitPointerLock !== 'function') return;
     try { document.exitPointerLock(); } catch (_) {}
+  }
+
+  function getSellableInventory() {
+    if (!deps) return [];
+    return Object.keys(deps.ITEM_DEFS).flatMap(key => {
+      const count = Math.max(0, Number(deps.inventory[key]) || 0);
+      const price = Number(deps.BASE_PRICES[key]);
+      const def = deps.ITEM_DEFS[key];
+      if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
+      return [{ key, count, price, icon: def.icon || '📦', label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+    });
+  }
+
+  function sellInventoryAtStore(key, quantity = 1) {
+    if (!deps || deps.BASE_PRICES[key] === undefined) return { moved: 0, earned: 0 };
+    const available = Math.max(0, Number(deps.inventory[key]) || 0);
+    const requested = quantity === 'stack' ? available : Math.max(1, Math.floor(Number(quantity) || 1));
+    const moved = Math.min(available, requested);
+    if (moved < 1) return { moved: 0, earned: 0 };
+    const price = Math.max(0, Number(deps.BASE_PRICES[key]) || 0);
+    const earned = moved * price;
+    deps.inventory[key] -= moved;
+    deps.clampInventoryStack(key);
+    deps.inventory.gold = (deps.inventory.gold || 0) + earned;
+    deps.buildInventoryGrid();
+    deps.refreshItemScroll();
+    deps.saveMemberWorldData();
+    return { moved, earned };
   }
 
   function getDebugState() {
@@ -423,5 +453,7 @@
     close: closeStandalone,
     isOpen: () => standaloneOpen,
     getDebugState,
+    getSellableInventory,
+    sellInventoryAtStore,
   };
 })();
