@@ -59,6 +59,12 @@
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
   <script src="js/farm-editor.js?v=20260902mod1"></script>
+  <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
+       load before game.js, which calls window.TerrainGeometry.init(...)
+       partway through its own setup (after camTargetX/pathWallBuilder/
+       VEG_CULL_* are declared, well before the first real terrain mesh
+       build). -->
+  <script src="js/terrain-geometry.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>
