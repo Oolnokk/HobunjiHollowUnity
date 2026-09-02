@@ -19,6 +19,26 @@ assert.match(
   /_pieceDef\(entry\.nursery\s*\?\s*'nursery'\s*:\s*entry\.tier\)/,
   'Nursery world footprints use the dedicated 3x2 dimensions',
 );
+assert.match(
+  buildingsSource,
+  /function _startNurseryInteriorLoop\(mapId\)[\s\S]*map_i_barn_farm_nursery[\s\S]*requestAnimationFrame\(frame\)/,
+  'entering the Nursery starts its own temporary interior visual loop instead of relying on the exterior farm loop',
+);
+assert.match(
+  buildingsSource,
+  /window\.FarmAnimals\?\.updateAnimalMeshes\?\.\(dt\)/,
+  'the Nursery interior loop drives the existing wrapped FarmAnimals visual seam so baby swarm rendering still runs indoors',
+);
+assert.match(
+  buildingsSource,
+  /if \(_nurseryInteriorLoopEntered\)[\s\S]*_stopNurseryInteriorLoop\(\{ flush: true \}\)/,
+  'leaving the Nursery stops the temporary loop and flushes visual-only baby meshes',
+);
+assert.match(
+  buildingsSource,
+  /wrappedEnterBuilding[\s\S]*originalEnterBuilding\.call\(this, mapId, \.\.\.args\)[\s\S]*_startNurseryInteriorLoop\(mapId\)/,
+  'FarmBuildings wraps the authoritative enterBuilding dependency so the Nursery loop starts from the real building transition',
+);
 
 const cells = piece.footprint?.cells || [];
 assert.equal(cells.length, 6, 'Nursery authored footprint contains exactly six occupied cells');
@@ -34,4 +54,4 @@ assert.equal(entries[0].y, Math.max(...ys), 'Nursery entry is on the front/south
 assert(piece.base?.height < 1.4, 'Nursery body is authored shorter than the existing Small Barn');
 assert(piece.roof?.crossGableSections?.[0]?.roofHeight < 1.19, 'Nursery roof is proportionally lower than the Small Barn roof');
 
-console.log('Nursery 3x2 building-piece regression tests passed');
+console.log('Nursery 3x2 building + interior swarm regression tests passed');
