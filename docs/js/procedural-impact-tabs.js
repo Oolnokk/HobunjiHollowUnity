@@ -5,7 +5,30 @@
   'use strict';
 
   const STYLE_ID = 'proceduralImpactTabsStyles'; // Prevents duplicate workspace CSS if the adapter is evaluated twice.
-  const LIMB_POSE_SCRIPT_ID = 'proceduralLimbPoseAuthorScript'; // Keeps the new Ground / Carry authoring adapter single-loaded beside this existing procedural-editor adapter.
+  const LIMB_POSE_SCRIPT_ID = 'proceduralLimbPoseAuthorScript'; // Keeps the Ground / Carry authoring adapter single-loaded beside this existing procedural-editor adapter.
+  const LIMB_FACING_SCRIPT_ID = 'proceduralLimbFacingPreserverScript'; // Loads before the pose author so it can capture the editor's untouched front-facing yaw.
+
+  function loadLimbFacingPreserver() {
+    if (window.HobunjiProceduralLimbFacingPreserver) return Promise.resolve();
+    const existing = document.getElementById(LIMB_FACING_SCRIPT_ID);
+    if (existing) return new Promise(resolve => {
+      if (window.HobunjiProceduralLimbFacingPreserver) return resolve();
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', resolve, { once: true });
+    });
+    return new Promise(resolve => {
+      const script = document.createElement('script'); // Captures each fresh poseRoot yaw before Ground / Carry begins writing pitch/roll.
+      script.id = LIMB_FACING_SCRIPT_ID;
+      script.src = '../../js/procedural-limb-facing-preserver.js?v=20260902b';
+      script.defer = true;
+      script.onload = resolve;
+      script.onerror = () => {
+        console.error('[Impact tabs] Ground / Carry facing preserver failed to load.');
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
+  }
 
   function loadLimbPoseAuthor() {
     if (window.HobunjiProceduralLimbPoseAuthor || document.getElementById(LIMB_POSE_SCRIPT_ID)) return;
@@ -15,6 +38,11 @@
     script.defer = true;
     script.onerror = () => console.error('[Impact tabs] Ground / Carry pose author failed to load.');
     document.head.appendChild(script);
+  }
+
+  async function loadGroundCarryWorkspace() { // Enforces capture-before-author ordering so the pose adapter cannot erase the editor's normal facing yaw first.
+    await loadLimbFacingPreserver();
+    loadLimbPoseAuthor();
   }
 
   function injectImpactWorkspaceStyles() {
@@ -217,7 +245,7 @@
     console.info('[Impact tabs] Tabbed authoring workspace ready; existing control nodes and handlers preserved.');
   }
 
-  loadLimbPoseAuthor();
+  loadGroundCarryWorkspace();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildImpactWorkspace, { once: true });
   else buildImpactWorkspace();
 })();
