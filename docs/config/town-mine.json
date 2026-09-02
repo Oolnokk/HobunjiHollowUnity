@@ -1,0 +1,27 @@
+{
+  "schema": "hobunji_town_mine.v1",
+  "floorCount": 100,
+  "floorsPerTier": 10,
+  "townEntrance": {
+    "buildingId": "bldg_town_mine_entry",
+    "gridX": 15,
+    "gridZ": 3,
+    "footprintW": 2,
+    "footprintD": 2,
+    "doorCol": 16,
+    "doorRow": 5,
+    "rotationDeg": 0
+  },
+  "oreTierMetalKeys": ["nativeCopper","lowTinBronze","tinBronze","highTinBronze","arsenicalBronze","leadedBronze","tumbaga","silver","gold","electrumGold"],
+  "ladderUpgrades": [
+    { "tier": 1, "targetFloor": 11, "gold": 2500, "stone": 250, "wood": 100, "metalBars": 20 },
+    { "tier": 2, "targetFloor": 21, "gold": 5000, "stone": 400, "wood": 150, "metalBars": 30 },
+    { "tier": 3, "targetFloor": 31, "gold": 8500, "stone": 600, "wood": 200, "metalBars": 40 },
+    { "tier": 4, "targetFloor": 41, "gold": 13000, "stone": 850, "wood": 250, "metalBars": 50 },
+    { "tier": 5, "targetFloor": 51, "gold": 19000, "stone": 1150, "wood": 300, "metalBars": 60 },
+    { "tier": 6, "targetFloor": 61, "gold": 27000, "stone": 1500, "wood": 350, "metalBars": 70 },
+    { "tier": 7, "targetFloor": 71, "gold": 37000, "stone": 1900, "wood": 400, "metalBars": 80 },
+    { "tier": 8, "targetFloor": 81, "gold": 50000, "stone": 2400, "wood": 500, "metalBars": 90 },
+    { "tier": 9, "targetFloor": 91, "gold": 65000, "stone": 3000, "wood": 600, "metalBars": 100 }
+  ]
+}

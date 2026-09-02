@@ -1,0 +1,65 @@
+{
+  "id": "town-mine-entry-v1",
+  "name": "town_mine_entry",
+  "type": "room",
+  "preset": "highland",
+  "gridSize": 18,
+  "tileSize": 1,
+  "footprint": {
+    "cells": [
+      { "x": 8, "y": 9 },
+      { "x": 9, "y": 9 },
+      { "x": 8, "y": 10 },
+      { "x": 9, "y": 10 }
+    ],
+    "door": null,
+    "connectors": [],
+    "extensions": {
+      "entryTunnels": [
+        { "x": 8, "y": 10 },
+        { "x": 9, "y": 10 }
+      ],
+      "chimneys": [],
+      "porches": [],
+      "porchStairs": [],
+      "railings": []
+    }
+  },
+  "base": {
+    "height": 1.4,
+    "wallThickness": 0.15,
+    "groundY": 0,
+    "faces": [
+      { "id": 1, "v": [[0,0,0],[2,0,0],[2,0,2],[0,0,2]], "tag": "floor", "highlandSectionRole": "single_rectangle", "highlandFrustumBottom": true },
+      { "id": 2, "v": [[0.15,1.4,0.15],[1.85,1.4,0.15],[1.85,1.4,1.7],[0.15,1.4,1.7]], "tag": "ceiling", "highlandSectionRole": "single_rectangle", "highlandFrustumTop": true, "highlandTopScale": 0.85 },
+      { "id": 3, "v": [[0,0,0],[0.15,1.4,0.15],[1.85,1.4,0.15],[2,0,0]], "tag": "wall", "highlandSectionRole": "single_rectangle", "highlandFrustumWall": true, "highlandTopScale": 0.85 },
+      { "id": 4, "v": [[2,0,0],[1.85,1.4,0.15],[1.85,1.4,1.7],[2,0,2]], "tag": "wall", "highlandSectionRole": "single_rectangle", "highlandFrustumWall": true, "highlandTopScale": 0.85 },
+      { "id": 5, "v": [[2,0,2],[1.85,1.4,1.7],[0.15,1.4,1.7],[0,0,2]], "tag": "wall", "highlandSectionRole": "single_rectangle", "highlandFrustumWall": true, "highlandTopScale": 0.85 },
+      { "id": 6, "v": [[0,0,2],[0.15,1.4,1.7],[0.15,1.4,0.15],[0,0,0]], "tag": "wall", "highlandSectionRole": "single_rectangle", "highlandFrustumWall": true, "highlandTopScale": 0.85 },
+      { "id": 7, "v": [[0.15,1.4,0.15],[1,2.25,0.3],[1.85,1.4,0.15]], "tag": "wall", "gableEnd": true },
+      { "id": 8, "v": [[1.85,1.4,1.7],[1,2.25,1.55],[0.15,1.4,1.7]], "tag": "wall", "gableEnd": true },
+      { "id": 9, "v": [[0.15,1.4,0.15],[0.15,1.4,1.7],[1,2.25,1.55],[1,2.25,0.3]], "tag": "roof", "continuousFrustumSlope": true },
+      { "id": 10, "v": [[1,2.25,0.3],[1,2.25,1.55],[1.85,1.4,1.7],[1.85,1.4,0.15]], "tag": "roof", "continuousFrustumSlope": true }
+    ]
+  },
+  "roof": {
+    "tubeRadius": 0.08,
+    "tubeSpacing": 0.5,
+    "overhang": 0.3,
+    "direction": "u",
+    "lift": 0.04,
+    "secondLayer": true,
+    "secondLayerAcross": 0.25,
+    "secondLayerOverhang": 0.2,
+    "peakRotate": true,
+    "crossGableSections": []
+  },
+  "assets": [],
+  "extensionGeneration": {
+    "entryTunnelGroups": 1,
+    "chimneyGroups": 0,
+    "porches": 0,
+    "porchStairs": 0,
+    "railings": 0
+  }
+}

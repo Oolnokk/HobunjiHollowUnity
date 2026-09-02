@@ -7837,6 +7837,7 @@
           member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          member.townMineState = window.TownMine?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -9039,7 +9040,7 @@
       // requires tools/weapons to actually work there, unlike every other
       // building interior (see the combat-update gate in gameLoop and the
       // toolHolder/reticle scene wiring in enterBuilding below).
-      function _isCavernBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_den_'); }
+      function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area)); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
@@ -10055,7 +10056,8 @@
         if (t.target === 'exit_building') {
           exitBuilding();
         } else if (t.target === 'building') {
-          enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
+          const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
@@ -11854,6 +11856,7 @@
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
+          await window.TownMine?.decorateTownMap?.(townM);
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
@@ -11999,7 +12002,15 @@
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
-        if (mapId.startsWith('map_i_den_')) {
+        if (window.TownMine?.floorFromMapId?.(mapId)) {
+          const mineLoadingLabel = document.getElementById('denLoadingLabel'); // Used to give mobile players feedback during the reused synchronous Den carve.
+          if (mineLoadingLabel) mineLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+          mapData = await window.TownMine.synthesizeFloorMapData(mapId);
+          window.TownMine.recordFloorReached(mapData?.mineFloor);
+          loadSource = 'town-mine';
+          if (mineLoadingLabel) mineLoadingLabel.style.display = 'none';
+        } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
           // unbroken synchronous SDF carve (~25-40s), during which the
@@ -12105,7 +12116,7 @@
           // near-zero ambient read as almost pure black even right next to
           // the door light in a headless render check, since a point
           // light's falloff only reaches surfaces facing toward it.
-          const isCavernInterior = mapData.wallStyle === 'cavern';
+          const isCavernInterior = mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine';
           bScene.add(new THREE.AmbientLight(0xfff5e0, isCavernInterior ? 0.15 : 0.7));
           const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
@@ -12115,8 +12126,10 @@
           // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
           // one mesh, replacing the flat per-tile floor boxes and flat wall
           // panels every other interior style still uses below.
-          if (mapData.wallStyle === 'cavern' && mapData.mesh) {
-            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh);
+          if ((mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && mapData.mesh) {
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, mapData.wallStyle === 'mine'
+              ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42 }
+              : undefined);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
           } else {
@@ -12350,6 +12363,74 @@
                 ...(defOverride ? { def: defOverride } : {}),
               });
               if (creature) hostileObjects.add(creature);
+            }
+          }
+          if (mapData.wallStyle === 'mine') {
+            const oreRockMeshes = new Map(); // Used for O(1) removal when a mine-floor rock is broken.
+            _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
+            carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
+            carvedTexture.repeat.set(0.7, 0.7);
+            if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
+            for (const rock of (mapData.oreRocks || [])) {
+              const tile = bGrid[rock.row]?.[rock.col];
+              if (tile) {
+                tile.type = TileType.ROCK;
+                tile.rockKind = 'diggableRockOre';
+                tile.oreKind = rock.oreKind;
+                tile.metalKey = rock.metalKey || null;
+                tile.hiddenMineDescent = !!rock.hiddenDescent;
+                tile.mineFloor = mapData.mineFloor;
+              }
+              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              if (!stoneGeo) continue;
+              const rockGroup = new THREE.Group();
+              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0x898d92, map: carvedTexture, roughness: 0.94 }));
+              baseMesh.castShadow = baseMesh.receiveShadow = true;
+              rockGroup.add(baseMesh);
+              if (rock.metalKey && METAL_DEFS[rock.metalKey]) {
+                const metal = METAL_DEFS[rock.metalKey]; // Used to drive the same clean-metal and verdigris palette already authored for tools.
+                const seamColor = new THREE.Color(metal.verdigrisHex || metal.hex);
+                const seamMaterial = new THREE.MeshStandardMaterial({ color: seamColor, emissive: seamColor, emissiveIntensity: 0.12, roughness: 0.72 });
+                for (let seamIndex = 0; seamIndex < 3; seamIndex++) {
+                  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.72 - seamIndex * 0.12), seamMaterial);
+                  seam.position.set(-0.22 + seamIndex * 0.2, 0.46 + seamIndex * 0.045, 0);
+                  seam.rotation.y = 0.45 + seamIndex * 0.5;
+                  seam.rotation.z = -0.22 + seamIndex * 0.16;
+                  rockGroup.add(seam);
+                }
+              }
+              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+              bScene.add(rockGroup);
+              _markOutline(rockGroup);
+              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+            }
+
+            const gangConfig = await window.BanditCombat?.loadGangConfig?.(); // Used as the existing melee humanoid combat baseline for Ghoul instances.
+            for (const spawn of (mapData.mineEnemySpawns || [])) {
+              if (spawn.kind === 'grehlr') {
+                const creature = makeCreatureEntity('grehlr', (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, { scene: bScene, grid: bGrid, cols, rows, areaId: mapId, state: 'idle' });
+                if (creature) hostileObjects.add(creature);
+                continue;
+              }
+              const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
+              const rosterOverride = {
+                name: 'Ghoul',
+                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, bodyColors: { A: { h: 0, s: -0.82, v: 0.38 }, B: { h: 6, s: -0.78, v: 0.28 }, C: { h: -4, s: -0.7, v: 0.22 } } },
+                equippedCosmetics: [],
+                appliedDyes: {},
+              };
+              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, 'grunt', Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
+                zoneId: mapId,
+                scene: bScene,
+                grid: bGrid,
+                cols,
+                rows,
+                rosterOverride,
+                defOverride: { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: TILE * 8, leashRangePx: TILE * 30 },
+                extra: { isMineGhoul: true, mineGroupId: `mine-ghouls-${mapData.mineFloor}` },
+              });
+              if (ghoul) hostileObjects.add(ghoul);
             }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
@@ -16810,6 +16891,8 @@
           // Breaking a rock — reachable via a completed hold (see
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
+          const minedMetalKey = tile.metalKey || null; // Used to preserve a mine seam's metal identity before the tile becomes walkable floor.
+          const revealedMineDescent = !!tile.hiddenMineDescent; // Used to announce the hidden next-floor hole uncovered by this rock.
           const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('mining') || 0) ? 1 : 0; // Used for Mining's extra-stone and future-ore chance.
           const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 stone, plus a possible skill bonus
           tile.type = TileType.GRASS;
@@ -16827,6 +16910,13 @@
             _zoneMinedRockPersist.set(currentArea, _minedEntries);
           }
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
+          let metalMessage = ''; // Used to append the tier metal reward without changing ordinary farm/wilderness rock messaging.
+          if (minedMetalKey && METAL_DEFS[minedMetalKey]) {
+            const metalAmount = 1 + bonus; // Used as the initial raw seam yield until separate smelting inputs are authored.
+            const metalItemKey = metalBarItemKey(minedMetalKey); // Used to feed the existing crafting/ladder metal inventory consistently.
+            inventory[metalItemKey] = Math.min(99, (inventory[metalItemKey] || 0) + metalAmount);
+            metalMessage = ` and ${metalAmount} ${METAL_DEFS[minedMetalKey].label}`;
+          }
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
           // Farm rocks use ordinary per-tile mesh rebuilding. Wilderness
@@ -16837,7 +16927,8 @@
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
-          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
+          const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';
+          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${metalMessage}${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.${descentMessage}` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -28521,6 +28612,10 @@
         DEN_MOTHER_DEFS,
       });
 
+      window.TownMine?.init({
+        getCurrentArea: () => currentArea,
+      });
+
       window.ZonePlateauMesa?.init({
         NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
         resolveTileMat, displaceZoneGeometry,
@@ -29245,6 +29340,7 @@
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
+        window.TownMine?.restore?.(playerData.townMineState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

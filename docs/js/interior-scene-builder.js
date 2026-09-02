@@ -163,14 +163,20 @@
   // generateCavernFloor) rather than flat per-panel geometry. Same rock
   // look as the old buildCavernWalls (kept below for anything still using
   // the flat-panel path) so a den still reads as the same rock throughout.
-  function buildCarvedCavernMesh(THREE, meshData) {
+  function buildCarvedCavernMesh(THREE, meshData, options = {}) {
     if (!meshData || !meshData.positions || !meshData.positions.length) return new THREE.Group();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.positions, 3));
     const indices = meshData.indices;
     geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x5f5a56, roughness: .92, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used by the town mine to share the exterior carved_smooth stone surface.
+    if (texture) {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(options.textureRepeat || 0.35, options.textureRepeat || 0.35);
+      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const mat = new THREE.MeshStandardMaterial({ color: options.color ?? 0x5f5a56, map: texture, roughness: .92, metalness: 0, flatShading: !texture, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;

@@ -1,0 +1,16 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_town_mine_safe",
+  "name": "Town Mine — Ladder Room",
+  "cols": 9,
+  "rows": 8,
+  "wallStyle": "cavern",
+  "floor": [[2,2],[3,2],[4,2],[5,2],[6,2],[2,3],[3,3],[4,3],[5,3],[6,3],[2,4],[3,4],[4,4],[5,4],[6,4],[2,5],[3,5],[4,5],[5,5],[6,5],[3,6],[4,6],[5,6]],
+  "colliders": [],
+  "furniture": [],
+  "exits": [
+    { "id": "mine_safe_exit", "label": "Back to Town", "tiles": [[3,6],[4,6],[5,6]], "targetMap": "", "spawnCol": 16, "spawnRow": 6 },
+    { "id": "mine_ladder_floor_1", "label": "Descend to Floor 1", "tiles": [[4,2]], "targetMap": "map_i_town_mine_f_001", "spawnCol": 0, "spawnRow": 0 }
+  ],
+  "mineSafeRoom": true
+}
