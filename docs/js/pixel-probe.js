@@ -817,6 +817,8 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const riverAmbience = window.Music?.riverAmbienceDebugSnapshot?.(); // Makes proximity, earshot, and requested river-loop volume copyable on mobile.
+    if (riverAmbience) lines.push(`River ambience: active=${riverAmbience.active} distance=${riverAmbience.distanceTiles ?? 'none'}t range=${riverAmbience.rangeTiles ?? 'n/a'}t target=${riverAmbience.targetVolume} reason=${riverAmbience.reason}`);
     const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;

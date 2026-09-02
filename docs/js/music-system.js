@@ -31,6 +31,7 @@
   let _gameAudioUnlocked = false;
   const _audioFailedUrls = new Set();
   const _dailyBgmPlayed = new Set();
+  let _riverAmbienceDebug = null; // Exposes the nearest-water mix decision to Pixel Probe on mobile.
   let _musicAudioCtx = null;
   const _musicGainNodes = new Map();       // music <audio> element -> { ctx, gain, target }
   const _musicLoudnessGain = new Map();    // resolved track url -> measured normalization multiplier
@@ -866,6 +867,8 @@
       setLoopingBgs('nightbugs', '', 0);
       setLoopingBgs('wind1', '', 0);
       setLoopingBgs('wind2', '', 0);
+      setLoopingBgs('river', '', 0);
+      _riverAmbienceDebug = { area: currentArea, active: false, reason: 'audio-disabled', distanceTiles: null, targetVolume: 0 };
       return;
     }
     const bgs = audioCfg.bgs || {};
@@ -882,6 +885,45 @@
     const wind01 = exterior ? Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3)) : 0;
     setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65);
     setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (exterior ? Math.max(0.15, wind01 * 0.75) : 0));
+
+    const riverRangeTiles = Math.max(1, Number(bgs.riverRangeTiles) || 14); // Defines the audible search radius around the player.
+    const grid = exterior ? deps.npcGridForArea?.(currentArea) : null; // Reuses the authoritative area grid without allocating audio sources per river tile.
+    const playerCol = deps.player.x / deps.TILE; // Converts the listener from world pixels to the grid coordinates used below.
+    const playerRow = deps.player.y / deps.TILE; // Converts the listener from world pixels to the grid coordinates used below.
+    let nearestRiverTiles = Infinity; // Holds the closest river/stream/waterfall tile center within earshot.
+    if (grid?.length && Number.isFinite(playerCol) && Number.isFinite(playerRow)) {
+      const minRow = Math.max(0, Math.floor(playerRow - riverRangeTiles - 1)); // Bounds the local scan instead of walking a 200x200 wilderness grid every frame.
+      const maxRow = Math.min(grid.length - 1, Math.ceil(playerRow + riverRangeTiles + 1)); // Completes the bounded listener neighborhood.
+      for (let row = minRow; row <= maxRow; row++) {
+        const line = grid[row];
+        if (!line) continue;
+        const minCol = Math.max(0, Math.floor(playerCol - riverRangeTiles - 1)); // Clamps the local scan to this row's real width.
+        const maxCol = Math.min(line.length - 1, Math.ceil(playerCol + riverRangeTiles + 1)); // Avoids sparse/out-of-map tile reads.
+        for (let col = minCol; col <= maxCol; col++) {
+          const type = line[col]?.type;
+          if (type !== 'river' && type !== 'stream' && type !== 'waterfall') continue;
+          const distance = Math.hypot(playerCol - (col + 0.5), playerRow - (row + 0.5)); // Measures listener distance to the audible tile center.
+          if (distance < nearestRiverTiles) nearestRiverTiles = distance;
+        }
+      }
+    }
+    const riverProximity = nearestRiverTiles < riverRangeTiles
+      ? deps.clamp(1 - nearestRiverTiles / riverRangeTiles, 0, 1)
+      : 0; // Converts distance into a monotonic 0..1 closeness control.
+    const smoothedRiverProximity = riverProximity * riverProximity * (3 - 2 * riverProximity); // Softens the edge of earshot while preserving full close-range volume.
+    const riverTargetVolume = (bgs.riverVolume ?? 0.55) * smoothedRiverProximity; // Scales the authored loop volume by live distance.
+    setLoopingBgs('river', bgs.river, riverTargetVolume);
+    _riverAmbienceDebug = {
+      area: currentArea,
+      active: riverTargetVolume > 0.01,
+      reason: exterior ? (Number.isFinite(nearestRiverTiles) ? 'distance' : 'no-water-in-range') : 'not-exterior',
+      distanceTiles: Number.isFinite(nearestRiverTiles) ? Number(nearestRiverTiles.toFixed(2)) : null,
+      rangeTiles: riverRangeTiles,
+      targetVolume: Number(riverTargetVolume.toFixed(3)),
+    };
+    if (_audioDebugDue('river-proximity-' + currentArea, 5000)) {
+      audioTrace(`river ambience area=${currentArea} distance=${_riverAmbienceDebug.distanceTiles ?? 'none'}t range=${riverRangeTiles}t target=${_riverAmbienceDebug.targetVolume}`, 'river-proximity-' + currentArea, 5000, 'bgs');
+    }
   }
 
   // ── Layered rain audio ──────────────────────────────────────────────
@@ -1057,6 +1099,7 @@
     registerFurnitureSfxSource,
     unregisterFurnitureSfxSource,
     unregisterFurnitureSfxSourcesForArea,
+    riverAmbienceDebugSnapshot: () => _riverAmbienceDebug,
     logAudioTickDiagnostics,
     isRealMediaError,
     markAudioUrlFailed,

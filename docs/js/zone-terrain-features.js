@@ -15,6 +15,11 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  const WATERFALL_TEXTURE_URL = 'assets/textures/wibbly_surface.png'; // Reuses the authored water PNG on vertical waterfall cards.
+  const WATERFALL_REPEAT_Y = 1.35; // Repeats the PNG often enough that tall tier drops retain readable moving detail.
+  const WATERFALL_SCROLL_Y = 0.72; // Moves the primary PNG sample downward in local curtain UV space.
+  const WATERFALL_DETAIL_SCROLL_Y = 0.41; // Offsets a second sample so the waterfall does not read as one sliding decal.
+
   function normalizedBounds(zcols, zrows, bounds) {
     return {
       colStart: Math.max(0, Math.floor(bounds?.colStart ?? 0)),
@@ -42,6 +47,7 @@
     };
 
     const pos = [], uv = [], idx = [];
+    const curtainEdges = new Set(); // Prevents two adjacent waterfall cells from emitting the same shared vertical card twice.
     let vi = 0;
     for (const [c, r] of rampCells) {
       const fallback = deps.NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * deps.PLATEAU_UNIT;
@@ -262,8 +268,12 @@
         else if (dc === -1) { x0 = c;   z0 = r+1; x1 = c;   z1 = r;   }
         else if (dr === 1)  { x0 = c;   z0 = r+1; x1 = c+1; z1 = r+1; }
         else /* dr === -1 */{ x0 = c+1; z0 = r;   x1 = c;   z1 = r;   }
+        const edgeKey = [[x0, z0], [x1, z1]].sort((a, b) => a[0] - b[0] || a[1] - b[1]).flat().join(','); // Canonicalizes direction so opposite-side visits share one key.
+        if (curtainEdges.has(edgeKey)) continue;
+        curtainEdges.add(edgeKey);
+        const verticalRepeats = Math.max(1, (top - bottom) * WATERFALL_REPEAT_Y); // Keeps the PNG scale stable across drops of different heights.
         pos.push(x0, top, z0,  x1, top, z1,  x0, bottom, z0,  x1, bottom, z1);
-        uv.push(0,1, 1,1, 0,0, 1,0); // v=1 at top so uFlow=(0,1) scrolls downward
+        uv.push(0,0, 1,0, 0,verticalRepeats, 1,verticalRepeats); // V increases downward so negative sample motion reads as falling water.
         idx.push(vi, vi+2, vi+3, vi, vi+3, vi+1); vi += 4;
       }
     }
@@ -276,28 +286,68 @@
     deps.displaceZoneGeometry(geo, mapId);
     geo.computeVertexNormals();
 
+    const fallbackPixel = new Uint8Array([181, 224, 238, 255]); // Keeps curtains visible while the PNG is loading or unavailable.
+    const fallbackTexture = new THREE.DataTexture(fallbackPixel, 1, 1, THREE.RGBAFormat);
+    fallbackTexture.needsUpdate = true;
     const mat = new THREE.ShaderMaterial({
+      name: 'scrolling_png_waterfall_material',
       uniforms: {
-        uTime:  { value: 0 },
-        uPhase: { value: 0 },
-        uDepth: { value: 0.85 },
-        uFlow:  { value: new THREE.Vector2(0, 1) }, // local UV-space "down" — always set, never still-mode
-        uColor: { value: new THREE.Color(0x1f6f9c) },
+        uTime: { value: 0 },
+        uWaterfallTexture: { value: fallbackTexture },
+        uDeepColor: { value: new THREE.Color(0x176c98) },
+        uFoamColor: { value: new THREE.Color(0xd9f8ff) },
       },
-      vertexShader:   deps.waterVertShader,
-      fragmentShader: deps.waterFragShader,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform sampler2D uWaterfallTexture;
+        uniform vec3 uDeepColor;
+        uniform vec3 uFoamColor;
+        varying vec2 vUv;
+        void main() {
+          vec2 primaryUv = fract(vUv + vec2(uTime * 0.025, -uTime * ${WATERFALL_SCROLL_Y.toFixed(2)}));
+          vec2 detailUv = fract(vUv * vec2(1.7, 0.63) + vec2(-uTime * 0.018, -uTime * ${WATERFALL_DETAIL_SCROLL_Y.toFixed(2)}));
+          vec3 primary = texture2D(uWaterfallTexture, primaryUv).rgb;
+          vec3 detail = texture2D(uWaterfallTexture, detailUv).rgb;
+          float primaryLight = dot(primary, vec3(0.299, 0.587, 0.114));
+          float detailLight = dot(detail, vec3(0.299, 0.587, 0.114));
+          float foam = smoothstep(0.48, 0.88, primaryLight * 0.72 + detailLight * 0.42);
+          float edgeFoam = pow(abs(vUv.x - 0.5) * 2.0, 3.0) * 0.18;
+          vec3 color = mix(uDeepColor, uFoamColor, clamp(foam + edgeFoam, 0.0, 0.88));
+          gl_FragColor = vec4(color, 0.76 + foam * 0.18);
+        }
+      `,
       transparent:    true,
       depthWrite:     false,
       side:           THREE.DoubleSide,
     });
+    new THREE.TextureLoader().load(WATERFALL_TEXTURE_URL, texture => {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      mat.uniforms.uWaterfallTexture.value = texture;
+      mat.needsUpdate = true;
+      fallbackTexture.dispose();
+    }, undefined, error => {
+      console.warn(`[zone:${mapId}] waterfall PNG load failed (${WATERFALL_TEXTURE_URL})`, error);
+    });
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = `${mapId}_distant_png_waterfalls`;
     mesh.receiveShadow = false;
+    mesh.frustumCulled = false; // One low-cost zone-wide draw remains visible beyond streamed terrain chunks.
+    mesh.userData.distantWaterLayer = true;
+    mesh.userData.waterfallPngCards = pos.length / 12;
     mesh.userData.wildernessChunkOwnsGeometry = true;
     mesh.userData.wildernessChunkOwnsMaterial = true;
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, 'water');
 
-    console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
+    console.log(`%c[zone:${mapId}] scrolling PNG waterfall layer built: ${pos.length / 12} card(s), 1 persistent draw call`, 'color:#22c55e;font-weight:bold');
     return [mesh];
   }
 
@@ -330,13 +380,17 @@
       });
     }
     if (!cells.length) return [];
-    const chunkSuffix = range.colStart + '_' + range.rowStart;
+    const coversWholeZone = range.colStart === 0 && range.rowStart === 0 && range.colEnd === zcols && range.rowEnd === zrows; // Identifies the persistent far-water build.
+    const chunkSuffix = coversWholeZone ? 'distant' : range.colStart + '_' + range.rowStart;
     const mesh = deps.buildMergedWaterMesh(zScene, cells, {
       name: `${mapId}_merged_water_${chunkSuffix}`, statKey: `${mapId} waterways ${chunkSuffix}`,
     });
     if (!mesh) return [];
+    mesh.frustumCulled = !coversWholeZone; // The zone-wide merged layer must survive both chunk and frustum distance culling.
+    mesh.userData.distantWaterLayer = coversWholeZone;
+    mesh.userData.waterTileCount = cells.length;
     mesh.userData.wildernessChunkOwnsGeometry = true;
-    mesh.userData.wildernessChunkOwnsMaterial = true;
+    mesh.userData.wildernessChunkOwnsMaterial = false; // MergedWaterRenderer shares this material across every area and owns its lifetime.
     deps.displaceZoneGeometry(mesh.geometry, mapId);
     mesh.geometry.computeVertexNormals();
     console.log(`%c[zone:${mapId}] merged river/stream/waterfall water surface built: ${cells.length} tile(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
