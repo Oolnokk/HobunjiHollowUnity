@@ -1,4 +1,4 @@
-name: Inspect animal dialogue adapter seams
+name: Wire animals into NPC dialogue actor contract
 
 on:
   push:
@@ -6,32 +6,316 @@ on:
     paths:
       - .github/workflows/inspect-animal-dialogue-adapter-temp.yml
 
+permissions:
+  contents: write
+
 jobs:
-  inspect:
+  adapt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: codex/animal-chathead-framing
-      - name: Print livestock facing seams
+          fetch-depth: 0
+
+      - name: Restore pre-experiment dialogue implementation
+        run: |
+          git checkout 02b268c3c6602c853f87cb8d95d2e889d71f331d -- docs/game.js scripts/test-livestock-dialogue-chatheads.js
+
+      - name: Add animal NPC dialogue adapter
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for path, markers in [
-            ('docs/js/farm-animals.js', ['updateHeadYaw', 'updateHeadPitch', 'perpClamp', 'makePatternLivestockAnimal', 'makeUumkaoiiAnimal', '_dialogueFrozen']),
-            ('docs/js/png-plane-avatar.js', ['avatarRef.updateHeadYaw', 'avatarRef.updateHeadPitch']),
-          ]:
-            s = Path(path).read_text()
-            print('\n######## ' + path + ' ########')
-            for marker in markers:
-              pos = 0
-              count = 0
-              while True:
-                i = s.find(marker, pos)
-                if i < 0: break
-                count += 1
-                print(f'\n===== {marker} #{count} =====')
-                print(s[max(0,i-1400):min(len(s),i+3600)])
-                pos = i + len(marker)
-                if count >= 6: break
+          import re
+
+          p = Path('docs/game.js')
+          s = p.read_text()
+
+          # Keep the existing NPC eye-contact algorithm authoritative, but split out
+          # a world-point variant so non-humanoid actors can supply their authored
+          # head point without pretending to have an NPC skeleton.
+          aim_start = s.index('      function _aimNeckAtEyeContact(')
+          face_start = s.index('      function faceNpcDialogueParticipants()', aim_start)
+          aim_block = '''      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetEyeWorld, maxYawDeg, maxPitchDeg, debugEntity) {
+        if (!neckJoint?.parent || !targetEyeWorld) return false;
+        neckJoint.parent.updateMatrixWorld(true);
+        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld.clone()).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const horizontal = Math.hypot(direction.x, direction.z);
+        if (direction.lengthSq() < 1e-8) return false;
+        const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        return true;
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        return _aimNeckAtWorldPoint(
+          neckJoint,
+          selfRootPosition,
+          selfModelHeight,
+          _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight),
+          maxYawDeg,
+          maxPitchDeg,
+          debugEntity,
+        );
+      }
+
+'''
+          s = s[:aim_start] + aim_block + s[face_start:]
+
+          # Preserve the NPC facing call and ordinary neck math. Animals opt into
+          # two tiny actor-contract hooks: their own head-rig gaze math, and their
+          # authored head world point for the player's gaze target.
+          face_start = s.index('      function faceNpcDialogueParticipants() {')
+          update_start = s.index('      function updateNpcDialogueStaging(dt) {', face_start)
+          face_block = '''      function faceNpcDialogueParticipants(dt = 1 / 60) {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
+        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+        if (!walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const npcX = walker.root.position.x;
+        const npcZ = walker.root.position.z;
+        const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
+        facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
+        player.angle = facingAngle;
+        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+
+        // Eye contact remains one shared dialogue operation. Humanoid walkers use
+        // their skeletal neck; animal adapters translate the same player-eye target
+        // into the animal head-rig's body-relative yaw and negative-up pitch math.
+        walker.root.updateMatrixWorld(true);
+        playerMesh.updateMatrixWorld(true);
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
+        const playerEyeWorld = _dialogueEyeWorldPosition(playerMesh.position, playerAvatarModelHeight);
+        if (typeof walker.applyDialogueEyeContact === 'function') {
+          walker.applyDialogueEyeContact(playerEyeWorld, dt, cfg);
+        } else if (walker.neckJoint) {
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+        }
+        if (playerNeckJoint) {
+          const speakerEyeWorld = typeof walker.dialogueHeadWorldPosition === 'function'
+            ? walker.dialogueHeadWorldPosition(new THREE.Vector3())
+            : _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
+          _aimNeckAtWorldPoint(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, speakerEyeWorld, maxYawDeg, maxPitchDeg, player);
+        }
+      }
+
+'''
+          s = s[:face_start] + face_block + s[update_start:]
+
+          update_start = s.index('      function updateNpcDialogueStaging(dt) {')
+          update_end = s.index('      function npcDialogueButton()', update_start)
+          update_block = s[update_start:update_end]
+          count = update_block.count('faceNpcDialogueParticipants();')
+          if count != 2:
+              raise SystemExit(f'expected two staging face calls, found {count}')
+          update_block = update_block.replace('faceNpcDialogueParticipants();', 'faceNpcDialogueParticipants(dt);')
+          s = s[:update_start] + update_block + s[update_end:]
+
+          # Replace the old livestock-only staging bypass/camera-focus helper with a
+          # walker-shaped adapter. The existing NPC dialogue system now owns staging,
+          # auto-walk, body facing, zoom, camera restore, and close lifecycle.
+          livestock_start = s.index('      function createLivestockDialogueCameraTarget(animal, kind) {')
+          livestock_end = s.index('      // advanceNpcDialogue now lives', livestock_start)
+          livestock_block = '''      function _livestockDialogueHeadWorldPosition(animal, kind, out = new THREE.Vector3()) {
+        const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
+        const plane = animal?.avatarRef?.frontPlane || null;
+        const modelWidth = Number(animal?.modelWidth);
+        const modelHeight = Number(animal?.modelHeight);
+        if (frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)) {
+          const centerX = frame.x + frame.width * 0.5;
+          const centerY = frame.y + frame.height * 0.5;
+          out.set(
+            (centerX - 0.5) * modelWidth,
+            (0.5 - centerY) * modelHeight,
+            0,
+          );
+          plane.updateWorldMatrix?.(true, false);
+          return plane.localToWorld(out);
+        }
+        if (animal?.avatarRef?.group?.getWorldPosition) {
+          animal.avatarRef.group.getWorldPosition(out);
+          out.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
+        }
+        return out;
+      }
+
+      function createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines = []) {
+        const avatarRef = animal.avatarRef;
+        const headScratch = new THREE.Vector3();
+        const adapter = {
+          rec: {
+            id: `livestock:${livestockRec.id}`,
+            name: livestockRec.name || 'Livestock',
+            dialogueLines: Array.isArray(dialogueLines) && dialogueLines.length ? dialogueLines : ['...'],
+          },
+          profile: {
+            chatheadCreatureKind: kind,
+            creatureGenotype: livestockRec.genotype || animal.genotype || null,
+          },
+          root: avatarRef?.group,
+          avatarHeight: Number(animal.modelHeight) || 1,
+          pause: 0,
+
+          // Same interface used by NPC walkers. Animal sprites use groupRot as their
+          // world-space body yaw, so only the representation math differs.
+          applyFacingDeadzone(targetRot, lerp) {
+            const blend = Math.max(0, Math.min(1, Number(lerp) || 0));
+            const current = Number.isFinite(animal.groupRot) ? animal.groupRot : (avatarRef?.group?.rotation?.y || 0);
+            animal.groupRot = current + angleDiff(targetRot, current) * blend;
+            animal.targetRot = targetRot;
+            if (avatarRef?.group) avatarRef.group.rotation.y = animal.groupRot;
+            return animal.groupRot;
+          },
+
+          // Supplies the exact authored animal head-frame center to the shared
+          // dialogue gaze code instead of approximating it as humanoid eye height.
+          dialogueHeadWorldPosition(out = new THREE.Vector3()) {
+            return _livestockDialogueHeadWorldPosition(animal, kind, out);
+          },
+
+          // Animal head rigs are 2D weighted planes, not NPC neck bones. Convert the
+          // same world-space eye target into body-relative yaw; for pitch, the animal
+          // rig convention is negative=up and positive=down.
+          applyDialogueEyeContact(targetWorld, dt) {
+            if (!targetWorld || !avatarRef) return false;
+            const selfHead = _livestockDialogueHeadWorldPosition(animal, kind, headScratch);
+            const dx = targetWorld.x - selfHead.x;
+            const dy = targetWorld.y - selfHead.y;
+            const dz = targetWorld.z - selfHead.z;
+            const horizontal = Math.hypot(dx, dz);
+            if (horizontal < 1e-6 && Math.abs(dy) < 1e-6) return false;
+            const desiredWorldRot = -Math.atan2(dz, dx) + Math.PI / 2;
+            const bodyRot = Number.isFinite(animal.groupRot) ? animal.groupRot : (avatarRef.group?.rotation?.y || 0);
+            const yawDeg = angleDiff(desiredWorldRot, bodyRot) * 180 / Math.PI;
+            const pitchDeg = -Math.atan2(dy, Math.max(0.0001, horizontal)) * 180 / Math.PI;
+            avatarRef.updateHeadYaw?.(yawDeg, Math.max(0, Number(dt) || 0));
+            avatarRef.updateHeadRotation?.(pitchDeg, Math.max(0, Number(dt) || 0));
+            return true;
+          },
+        };
+        return adapter;
+      }
+
+      async function openLivestockDialogue(animal, livestockRec, dialogueLines = []) {
+        if (!animal || !livestockRec || dialogueOpen) return false;
+        const kind = String(livestockRec.kind || animal.animalKey || '').trim().toLowerCase();
+        const walker = createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines);
+        animal._dialogueFrozen = true;
+        let cleaned = false;
+        walker._onDialogueClose = () => {
+          if (cleaned) return;
+          cleaned = true;
+          animal._dialogueFrozen = false;
+          animal.avatarRef?.updateHeadYaw?.(0, 1);
+          animal.avatarRef?.setHeadRotation?.(0);
+        };
+        try {
+          await openNpcDialogue(walker, {
+            skipNpcMeta: true,
+            recordMemory: false,
+          });
+          return true;
+        } catch (err) {
+          walker._onDialogueClose();
+          console.warn('[livestock-dialogue] failed to open', err);
+          return false;
+        }
+      }
+
+'''
+          s = s[:livestock_start] + livestock_block + s[livestock_end:]
+
+          # Guard the design intent directly: no option-based animal exceptions may
+          # remain in the shared face loop, and livestock must not bypass staging.
+          if 'walker._dialogueOptions = options;' in s:
+              raise SystemExit('stale dialogue-options branch remains')
+          if 'skipSpeakerFacing' in s or 'skipEyeContact' in s:
+              raise SystemExit('stale animal face-skip option remains')
+          live_start = s.index('      async function openLivestockDialogue(')
+          live_end = s.index('      // advanceNpcDialogue now lives', live_start)
+          if 'skipStaging: true' in s[live_start:live_end]:
+              raise SystemExit('livestock still bypasses NPC staging')
+          p.write_text(s)
+
+          # New cache key; do not restore any other index.html state.
+          p = Path('docs/index.html')
+          idx = p.read_text()
+          idx, n = re.subn(r'<script src="game\.js\?v=[^"]+"></script>', '<script src="game.js?v=20260902livestock3"></script>', idx, count=1)
+          if n != 1:
+              raise SystemExit(f'game.js cache-bust expected one match, found {n}')
+          p.write_text(idx)
+
+          # Replace only the game-wiring assertions; retain all frame, interaction,
+          # genotype, and dialogue-line coverage from the pre-experiment test.
+          p = Path('scripts/test-livestock-dialogue-chatheads.js')
+          t = p.read_text()
+          game_marker = "const game = fs.readFileSync('docs/game.js', 'utf8');"
+          vocal_marker = "const vocal = fs.readFileSync('docs/js/animal-vocalizations.js', 'utf8');"
+          a = t.index(game_marker)
+          b = t.index(vocal_marker, a)
+          assertions = '''const game = fs.readFileSync('docs/game.js', 'utf8');
+assert(game.includes('async function openNpcDialogue(walker, options = {})'), 'NPC dialogue shell must remain the shared entry point');
+assert(game.includes('npcDialogueCameraMode()'), 'livestock must use NPC dialogue camera mode');
+assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'shared NPC dialogue shell must retain auto-approach staging');
+assert(game.includes('if (options.skipNpcMeta === true)'), 'livestock may skip NPC quest/favor/shop metadata only');
+assert(game.includes('function createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines = [])'), 'livestock must adapt to the NPC walker contract');
+const adapterStart = game.indexOf('function createLivestockNpcDialogueAdapter');
+const adapterEnd = game.indexOf('async function openLivestockDialogue', adapterStart);
+const adapter = game.slice(adapterStart, adapterEnd);
+assert(adapter.includes('applyFacingDeadzone(targetRot, lerp)'), 'animal adapter must implement NPC body-facing contract');
+assert(adapter.includes('dialogueHeadWorldPosition(out = new THREE.Vector3())'), 'animal adapter must expose authored head world position');
+assert(adapter.includes('applyDialogueEyeContact(targetWorld, dt)'), 'animal adapter must implement dialogue gaze math');
+assert(adapter.includes('avatarRef.updateHeadYaw?.(yawDeg'), 'animal eye contact must drive authored head yaw');
+assert(adapter.includes('avatarRef.updateHeadRotation?.(pitchDeg'), 'animal eye contact must drive authored head pitch');
+assert(game.includes('window.AnimalChatheadFrame?.frameForKind?.(kind)'), 'animal dialogue head point must use authored chathead frame');
+assert(game.includes('(centerX - 0.5) * modelWidth'), 'authored frame center X must map to animal plane space');
+assert(game.includes('(0.5 - centerY) * modelHeight'), 'authored frame center Y must map to animal plane space');
+assert(game.includes('walker.applyFacingDeadzone(npcTargetRot'), 'shared NPC body-facing call must remain authoritative');
+assert(game.includes("typeof walker.applyDialogueEyeContact === 'function'"), 'shared eye-contact loop must accept non-skeletal actor gaze math');
+assert(game.includes("typeof walker.dialogueHeadWorldPosition === 'function'"), 'player gaze must accept an authored animal head point');
+assert(game.includes('_aimNeckAtWorldPoint(playerNeckJoint'), 'player neck must aim at the adapted actor head point');
+const livestockStart = game.indexOf('async function openLivestockDialogue');
+const livestockEnd = game.indexOf('// advanceNpcDialogue now lives', livestockStart);
+const livestockDialogue = game.slice(livestockStart, livestockEnd);
+assert(!livestockDialogue.includes('skipStaging: true'), 'livestock must use ordinary NPC player auto-approach');
+assert(!livestockDialogue.includes('cameraTarget:'), 'livestock must use the ordinary NPC camera target/zoom path');
+assert(!game.includes('skipSpeakerFacing'), 'animal dialogue must not branch around shared speaker facing');
+assert(!game.includes('skipEyeContact'), 'animal dialogue must not branch around shared eye contact');
+assert(!game.includes('walker._dialogueOptions = options;'), 'shared dialogue face loop must not carry animal-specific option state');
+assert(game.includes('chatheadCreatureKind: kind'), 'portrait must use animal chathead renderer');
+assert(game.includes('creatureGenotype: livestockRec.genotype || animal.genotype || null'), 'portrait must preserve actual livestock genotype');
+assert(game.includes('_dialogueWalker._onDialogueClose?.()'), 'dialogue close must clean up livestock freeze/head state');
+assert(game.includes('openLivestockDialogue,'), 'FarmAnimals must receive shared dialogue opener');
+
+'''
+          t = t[:a] + assertions + t[b:]
+          p.write_text(t)
           PY
+
+      - name: Run regressions
+        run: |
+          node --check docs/game.js
+          node --check docs/js/farm-animals.js
+          node --check docs/js/animal-vocalizations.js
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-chathead-ambient.js
+          node scripts/test-animal-head-rig-runtime.js
+          node scripts/test-livestock-dialogue-chatheads.js
+          node scripts/test-npc-facing-deadzone.js
+
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/inspect-animal-dialogue-adapter-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/game.js docs/index.html scripts/test-livestock-dialogue-chatheads.js
+          git commit -m "Wire livestock into NPC dialogue actor contract"
+          git push origin HEAD:codex/animal-chathead-framing
