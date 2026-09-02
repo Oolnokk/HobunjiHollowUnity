@@ -17,12 +17,14 @@
     // Used by runtime terrain builders after the natural-surface wrappers are installed so PNG stretch-to-fit can be re-unwrapped per connected planar surface.
     ['HobunjiSurfaceStretchUV', 'surface-stretch-uv.js?v=20260902a'],
     // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
-    ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902a'],
+    ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260827b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
+    // Terrain Jigsaw clones opaque texture maps during its render-time scan. This final wrapper runs immediately afterward so copied 4x4 natural-surface placeholders are repaired and rock/cliff island UVs are restored before spatial chunking and drawing.
+    ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
