@@ -63,9 +63,9 @@ const windowMock = {
 };
 windowMock.window = windowMock;
 
-const sourcePath = path.join(__dirname, '..', 'docs', 'js', 'surface-stretch-uv.js'); // Used to test the exact production module checked into the repo.
+const sourcePath = path.join(__dirname, '..', 'docs', 'js', 'surface-stretch-uv-furniture.js'); // Used to test the exact furniture-derived production mapper checked into the repo.
 vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), {
-  window: windowMock, console, Float32Array, Float64Array, Int32Array, Map, Set, WeakSet, Math, Number, Array, Object, String, Infinity,
+  window: windowMock, console, Float32Array, Float64Array, Uint8Array, Map, Set, WeakSet, Math, Number, Array, Object, String, Infinity,
 });
 
 function fanPolygon(points) {
@@ -80,13 +80,34 @@ function fanPolygon(points) {
   return new Geometry(positions);
 }
 
-const mapper = windowMock.HobunjiSurfaceStretchUV; // Used by all three regression cases below.
+function foldedVerticalStrip(panelCount, stepDeg) {
+  const points = [[0, 0]]; // Used as the shared-edge polyline defining a progressively turning vertical cliff.
+  let heading = 0; // Used to rotate each successive panel by stepDeg relative to its immediate neighbor.
+  for (let i = 0; i < panelCount; i++) {
+    const previous = points[points.length - 1]; // Used as the shared lower/upper edge origin for the next panel.
+    const radians = heading * Math.PI / 180; // Used to convert the current panel heading into XZ displacement.
+    points.push([previous[0] + Math.cos(radians), previous[1] + Math.sin(radians)]);
+    heading += stepDeg;
+  }
+  const positions = []; // Used to triangulate every vertical panel with exact shared edge coordinates.
+  for (let i = 0; i < panelCount; i++) {
+    const a = points[i], b = points[i + 1];
+    positions.push(
+      a[0], 0, a[1], b[0], 0, b[1], b[0], 1, b[1],
+      a[0], 0, a[1], b[0], 1, b[1], a[0], 1, a[1],
+    );
+  }
+  return new Geometry(positions);
+}
+
+const mapper = windowMock.HobunjiSurfaceStretchUV; // Used by all regression cases below.
 if (!mapper?.installed) throw new Error('surface-stretch mapper did not install');
+if (mapper.snapshot().segmentation !== 'furniture-edge-adjacency') throw new Error('Expected furniture-style surface recognition');
 
 const texasLike = fanPolygon([[0, 0], [4, 0], [5, 1], [4, 2], [4.5, 4], [2.5, 3.2], [1, 4], [0.5, 2.2], [-0.5, 1.5]]); // Used to prove one square PNG can fill an irregular connected planar outline.
-const texasMapped = mapper.mapGeometry(texasLike, { angleToleranceDeg: 18 });
-const texasReport = texasMapped.userData.hobunjiSurfaceStretch; // Used to assert the irregular polygon remains one planar island with no fallback.
-if (texasReport.patchCount !== 1 || texasReport.fallbackCount !== 0) throw new Error(`Texas-like unwrap failed: ${JSON.stringify(texasReport)}`);
+const texasMapped = mapper.mapGeometry(texasLike);
+const texasReport = texasMapped.userData.hobunjiSurfaceStretch; // Used to assert the irregular polygon remains one recognized surface with no fallback.
+if (texasReport.version !== 2 || texasReport.patchCount !== 1 || texasReport.fallbackCount !== 0) throw new Error(`Texas-like unwrap failed: ${JSON.stringify(texasReport)}`);
 const texasUv = texasMapped.getAttribute('uv'); // Used to prove real perimeter vertices are pinned to all four square texture corners.
 const corners = new Set();
 for (let i = 0; i < texasUv.count; i++) {
@@ -100,10 +121,14 @@ const bentPositions = [
   0, 0, 0, 1, 0, 1, 0, 0, 1,
   1, 0, 0, 1, 1, 0, 1, 1, 1,
   1, 0, 0, 1, 1, 1, 1, 0, 1,
-]; // Used to prove a 90-degree bend becomes two separate planar texture surfaces.
-const bentMapped = mapper.mapGeometry(new Geometry(bentPositions), { angleToleranceDeg: 18 });
-const bentReport = bentMapped.userData.hobunjiSurfaceStretch; // Used to assert planar-rotation segmentation rather than one global bounding-box stretch.
+]; // Used to prove a 90-degree hard corner becomes two separate texture surfaces.
+const bentMapped = mapper.mapGeometry(new Geometry(bentPositions));
+const bentReport = bentMapped.userData.hobunjiSurfaceStretch; // Used to assert hard-corner surface recognition rather than one global bounding-box stretch.
 if (bentReport.patchCount !== 2 || bentReport.fallbackCount !== 0) throw new Error(`Bent-surface segmentation failed: ${JSON.stringify(bentReport)}`);
+
+const gradualMapped = mapper.mapGeometry(foldedVerticalStrip(4, 20)); // Used to distinguish furniture adjacency from the old seed/average-normal veto: total turn is 60°, but each shared edge changes only 20°.
+const gradualReport = gradualMapped.userData.hobunjiSurfaceStretch; // Used to require a gently curving cliff to remain one recognized surface.
+if (gradualReport.patchCount !== 1) throw new Error(`Furniture adjacency should keep 20° local bends connected: ${JSON.stringify(gradualReport)}`);
 
 const multiPositions = [
   0, 0, 0, 1, 0, 0, 1, 0, 1,
@@ -125,5 +150,10 @@ for (let i = 0; i < 6; i++) {
 const multiReport = multiMapped.userData.hobunjiSurfaceStretch; // Used to assert only the selected cliff material group was processed.
 if (multiReport.materialIndex !== 1 || multiReport.patchCount !== 1) throw new Error(`Material-slot unwrap failed: ${JSON.stringify(multiReport)}`);
 
+const stale = mapper.mapGeometry(fanPolygon([[0, 0], [2, 0], [2, 2], [0, 2]])); // Used to prove a v2 signature is not trusted after the UV attribute disappears downstream.
+delete stale.attributes.uv;
+const rebuilt = mapper.mapGeometry(stale); // Used to force regeneration from topology rather than returning the stale signature unchanged.
+if (!rebuilt.getAttribute('uv') || rebuilt.getAttribute('uv').count !== rebuilt.getAttribute('position').count) throw new Error('Missing UVs were not regenerated despite a stale v2 signature');
+
 if (!logs.some(entry => entry[2] === 'render')) throw new Error('Expected mobile-visible render diagnostics');
-console.log(JSON.stringify({ texas: texasReport, bent: bentReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
+console.log(JSON.stringify({ texas: texasReport, bent: bentReport, gradual: gradualReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
