@@ -14,6 +14,8 @@
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
+    // Used by runtime terrain builders after the natural-surface wrappers are installed so PNG stretch-to-fit can be re-unwrapped per connected planar surface.
+    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv.js?v=20260902a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
