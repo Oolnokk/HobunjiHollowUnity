@@ -675,8 +675,10 @@
       if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
         const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
         const fade = musicFadeConfig();
-        const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
-        const snd = playMusicTrack(track.url, vol, fade.songFadeInMs, fade.songFadeOutMs);
+        const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        const trackVolMulRaw = Number(track.volumeMultiplier); // Optional authored per-track gain; Ghoul mine music uses 2x while existing tracks remain 1x.
+        const trackVolMul = Number.isFinite(trackVolMulRaw) ? Math.max(0, trackVolMulRaw) : 1;
+        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs);
         snd._musicEntry = track;
         const finishCombatBgm = () => {
           if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;

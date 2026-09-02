@@ -9,7 +9,7 @@
   let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0, discoveredOreKeys: [] }; // Used as the world-member mine progression and permanent ore-recipe discovery saved alongside inventory and quests.
   const floorVisitCounts = new Map(); // Used to give every entry a fresh layout/content seed instead of treating a numbered floor as a permanent map.
   const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
-  const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
+  const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg', volumeMultiplier: 2 }; // Ghoul-floor music deliberately plays at twice the ordinary BGM base level.
 
   function init(injectedDeps) { deps = injectedDeps; }
 

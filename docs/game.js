@@ -12529,7 +12529,7 @@
               const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
               const rosterOverride = {
                 name: 'Ghoul',
-                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, bodyColors: { A: { h: 0, s: -0.82, v: 0.38 }, B: { h: 6, s: -0.78, v: 0.28 }, C: { h: -4, s: -0.7, v: 0.22 } } },
+                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `mine-ghoul:${mapData.mineFloor}:${spawn.col}:${spawn.row}` }, // Use Ghoul's authored pink skin palette instead of the old bright desaturated white override.
                 equippedCosmetics: [],
                 appliedDyes: {},
               };
