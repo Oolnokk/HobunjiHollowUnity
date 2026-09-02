@@ -65,7 +65,8 @@ assert(author.includes("/_ExperimentalFeet$/"), 'ground poses do not reuse the p
 assert(author.includes('new MutationObserver'), 'mobile authoring panel is not restored when preview UI is rebuilt');
 
 assert(facing.includes('hobunjiLimbPoseBaselineYaw'), 'facing preserver does not store the untouched editor yaw');
-assert(facing.includes('poseRoot.rotation.y = yaw'), 'facing preserver does not restore the captured yaw after Ground / Carry posing');
+assert(facing.includes('protectedGroundCarryEulerSet'), 'facing preserver does not intercept the Ground / Carry Euler setter');
+assert(facing.includes('originalSet.call(this, x, preserveFacing ? baselineYaw : y, z, order)'), 'Ground / Carry zero-yaw writes are not replaced with the captured editor yaw');
 assert(facing.includes("hobunji-backdrop-avatar-changed"), 'facing preserver does not recapture yaw when the preview avatar rebuilds');
 assert(facing.includes('Ground / Carry facing preserved'), 'facing fix lacks a mobile-visible confirmation');
 
