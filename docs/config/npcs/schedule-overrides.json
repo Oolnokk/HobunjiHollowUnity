@@ -52,7 +52,7 @@
       },
       "fallback": {
         "mapId": "map_i_inn",
-        "stationId": "furniture_chair_map_i_inn_16_9",
+        "stationId": "furniture_chair_map_i_inn_16_8",
         "activity": "avoiding Kinami"
       }
     }

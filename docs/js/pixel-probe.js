@@ -640,6 +640,23 @@
     } else if (target?.toolKey && !walker.stationToolKey && walker.state === 'idle') {
       lines.push(`>>> MISMATCH — walker is idle at a toolKey station ("${target.toolKey}") but hasn't equipped it (stationToolKey is empty).`);
     }
+    // NPC Agenda + Activity Planner diagnostics (design doc §49) — what the
+    // planner actually decided and why, straight from its own bookkeeping
+    // rather than re-derived here, so this can never disagree with the
+    // walker's real currentScheduleTarget.
+    const snap = window.NpcActivityPlanner?.debugSnapshot?.(walker.rec?.id);
+    if (snap) {
+      lines.push('', '=== Agenda / Activity Planner ===');
+      lines.push(`Agenda: ${snap.hasAgenda ? 'authored agenda[]' : 'legacy scheduleHooks (compatibility bridge)'}`);
+      lines.push(`Current activity: "${snap.currentActivity}"   source=${snap.source}   status=${snap.status}`);
+      if (snap.failureReason) lines.push(`Last failure/reason: ${snap.failureReason}`);
+      lines.push(`Intended beat: ${snap.intendedBeatId || '(none eligible right now)'}${snap.intendedActivityLabel ? ` — "${snap.intendedActivityLabel}"` : ''}`);
+      if (snap.intendedWindow) lines.push(`Intended window: ${window.NpcAgenda.minutesToClock(snap.intendedWindow.startMin)}–${window.NpcAgenda.minutesToClock(snap.intendedWindow.endMin)}`);
+      lines.push(`Suspended activity: ${snap.suspendedBeatId || 'none'}`);
+      if (snap.opportunityScores?.length) lines.push(`Nearby opportunities: ${snap.opportunityScores.map(o => `${o.key}=${o.score}`).join('  ')}`);
+      if (snap.recentStationIds?.length) lines.push(`Recently visited: ${snap.recentStationIds.join(', ')}`);
+      lines.push(`Last replan: ${Number.isFinite(snap.lastReplanAtMin) ? window.NpcAgenda.minutesToClock(snap.lastReplanAtMin) : '-'}   daily seed: ${snap.dailySeed.toFixed(4)}`);
+    }
     return lines;
   }
 

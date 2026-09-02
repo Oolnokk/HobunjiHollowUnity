@@ -136,6 +136,12 @@
       wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
         ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
         : [],
+      // Semantic destination roles this station advertises (design doc
+      // §13/§14 — "Stations Become World Affordances"), e.g. 'music-
+      // performance' or 'sit'. Optional and purely additive: a station with
+      // no roles authored is simply never returned by findStationsByRole
+      // below, and every existing exact-stationId lookup is unaffected.
+      roles: Array.isArray(station.roles) ? station.roles.filter(r => typeof r === 'string' && r) : [],
     };
   }
   function registerNpcStations(stations, fallbackArea) {
@@ -149,6 +155,22 @@
     return station ? { ...station, stationId: station.id } : null;
   }
 
+  // Every registered station advertising `role`, optionally narrowed to one
+  // area — the semantic counterpart to resolveNpcStationTarget's exact-id
+  // lookup, used by npc-activities.js's goToRole so an agenda beat can say
+  // "any music-performance spot" instead of a literal station id (design
+  // doc §15). Returned objects have the same shape resolveNpcStationTarget
+  // produces (station data + `stationId`).
+  function findStationsByRole(role, { area } = {}) {
+    const out = [];
+    for (const station of npcStationsById.values()) {
+      if (!station.roles || !station.roles.includes(role)) continue;
+      if (area && station.area !== area) continue;
+      out.push({ ...station, stationId: station.id });
+    }
+    return out;
+  }
+
   const _scheduleFallbackLogKeys = new Set();
   function logScheduleFallbackOnce(rec, kind, area, c, r) {
     const minuteBucket = Math.floor(currentGameMinutes() / 10);
@@ -158,7 +180,17 @@
     window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${deps.getCurrentArea()}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
   }
 
-  function resolveNpcScheduleTarget(rec) {
+  // The original, unmodified resolver: scheduleHooks.rules[] (time+day
+  // windowed, stationId or raw c/r with sourceStationId metadata restore) →
+  // shared schedules → defaultStationId → defaultPosition → legacy world
+  // path → null. Every existing NPC's authored content still runs through
+  // this exact function, unchanged — it's now the "legacyScheduleActivity"
+  // activity's implementation (see npc-activities.js) and the sole resolver
+  // for any NPC with no authored `agenda`. Renamed (from
+  // resolveNpcScheduleTarget) so that name could become the new
+  // agenda/planner-aware bridge below without disturbing this function's
+  // own logic at all.
+  function resolveLegacyNpcScheduleTarget(rec) {
     const hooks = rec?.scheduleHooks || {};
     const now = currentGameMinutes();
     for (const rule of hooks.rules || []) {
@@ -235,6 +267,37 @@
     const legacy = deps.getWorldNpcPaths().find(p => p.npcId === rec?.id);
     if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = deps.normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
     return null;
+  }
+
+  function hasExistingNpcWalker(rec) {
+    return (deps.npcWalkers || []).some(w => w.rec?.id === rec?.id);
+  }
+
+  // The real entry point every call site in game.js uses (spawnScheduledNpcs,
+  // _retrySpawnDeferredNpcs, the walker's own per-frame update(), and
+  // catchNpcsOnPlayerAreaTransition). Delegates to
+  // window.NpcActivityPlanner — the Agenda + Activity Planner redesign —
+  // when it's loaded, which is what actually fixes the "NPC freezes forever
+  // because an authored destination is missing/renamed/unavailable"
+  // failure mode: resolveLegacyNpcScheduleTarget above still runs
+  // unmodified as that planner's fallback tier for any NPC with no
+  // authored `agenda`, but a null result from it no longer has to mean
+  // "walker stays frozen in place" for an NPC that's already spawned — see
+  // npc-activity-planner.js's resolveNpcTarget for the full replan/
+  // free-time/wander fallback chain, and its module comment for exactly
+  // why *pre-spawn* resolution (hasExistingWalker === false) deliberately
+  // keeps returning bare null, unchanged, instead of synthesizing a first
+  // appearance out of nowhere.
+  //
+  // Falls back to calling resolveLegacyNpcScheduleTarget directly if the
+  // planner module didn't load for any reason, so a missing/broken script
+  // tag degrades to exactly today's behavior rather than breaking every NPC.
+  function resolveNpcScheduleTarget(rec) {
+    if (!window.NpcActivityPlanner) return resolveLegacyNpcScheduleTarget(rec);
+    return window.NpcActivityPlanner.resolveNpcTarget(rec, {
+      legacyResolve: resolveLegacyNpcScheduleTarget,
+      hasExistingWalker: hasExistingNpcWalker(rec),
+    }) || null;
   }
 
   // ── Dev/test-only scheduling hooks ────────────────────────────────────
@@ -317,7 +380,12 @@
     listInstrumentPerformers,
     registerNpcStations,
     resolveNpcStationTarget,
+    findStationsByRole,
     resolveNpcScheduleTarget,
+    // The unwrapped original resolver, exposed for the Agenda/Activity
+    // Planner's own "legacyScheduleActivity" activity and for tests —
+    // everyone else should keep calling resolveNpcScheduleTarget above.
+    resolveLegacyNpcScheduleTarget,
     // Exposed directly (not copied) so external code that only ever read/
     // wrote through this exact Map keeps doing so unchanged.
     stationsById: npcStationsById,

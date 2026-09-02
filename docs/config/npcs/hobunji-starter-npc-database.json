@@ -391,6 +391,25 @@
                         ],
                         "defaultStationId": "station_researchers_tent_sleep"
                   },
+                  "agenda": [
+                        {
+                              "id": "research",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["08:00", "20:00"],
+                              "destinationRole": "garanki-research",
+                              "activityLabel": "reviewing notes and examining specimens"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "08:00"],
+                              "destinationStationId": "station_researchers_tent_sleep",
+                              "destinationArea": "map_i_researchers_tent",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
                   "questHooks": [
                         "Accepts donations of Relics, Flora, Fish, and Minerals; each new donation raises the town's [Trade Value] as he mails findings back to the Tower of Learning.",
@@ -902,6 +921,57 @@
                         ],
                         "defaultStationId": "station_ginju_bed_parents"
                   },
+                  "agenda": [
+                        {
+                              "id": "market",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "days": ["Tothu"],
+                              "window": ["06:00", "19:00"],
+                              "destinationStationId": "station_ginju_market_gorobi",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "selling produce at market"
+                        },
+                        {
+                              "id": "farming-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["06:00", "12:00"],
+                              "destinationStationId": "station_ginju_field_nw",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "rest",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "daysExcept": ["Tothu"],
+                              "window": ["12:00", "14:00"],
+                              "destinationStationId": "furniture_chair_map_i_ginju_farmstead_9_3",
+                              "destinationArea": "map_i_ginju_farmstead",
+                              "activityLabel": "resting"
+                        },
+                        {
+                              "id": "farming-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["14:00", "19:00"],
+                              "destinationStationId": "station_ginju_field_sw",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["19:00", "06:00"],
+                              "destinationStationId": "station_ginju_bed_parents",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R1",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>",
                   "phrasePools": [
                         {
@@ -1400,6 +1470,47 @@
                         ],
                         "defaultStationId": "station_ginju_bed_parents"
                   },
+                  "agenda": [
+                        {
+                              "id": "market",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "days": ["Tothu"],
+                              "window": ["07:00", "18:00"],
+                              "destinationStationId": "station_ginju_market_gikali",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "selling produce at market"
+                        },
+                        {
+                              "id": "cook",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["07:00", "09:00"],
+                              "destinationStationId": "station_ginju_cook",
+                              "destinationArea": "map_i_ginju_farmstead",
+                              "activityLabel": "cooking breakfast"
+                        },
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["09:00", "18:00"],
+                              "destinationStationId": "station_ginju_field_ne",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "07:00"],
+                              "destinationStationId": "station_ginju_bed_parents",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R1",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_gikali_greetings",
@@ -1871,7 +1982,7 @@
                                     "from": "12:00",
                                     "to": "17:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_14_7",
+                                    "stationId": "furniture_chair_map_i_inn_14_9",
                                     "activity": "having a drink at the inn"
                               },
                               {
@@ -1884,6 +1995,35 @@
                         ],
                         "defaultStationId": "station_ginju_bed_aliri"
                   },
+                  "agenda": [
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_ginju_field_se",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "inn",
+                              "activity": "drink",
+                              "obligation": "plan",
+                              "window": ["12:00", "17:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_14_9",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "having a drink at the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["17:00", "07:00"],
+                              "destinationStationId": "station_ginju_bed_aliri",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R2",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_aliri_greetings",
@@ -2360,6 +2500,26 @@
                         ]
                   },
                   "defaultStationId": "station_ginju_bed_gantami",
+                  "agenda": [
+                        {
+                              "id": "play",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "window": ["08:00", "19:00"],
+                              "destinationRole": "town-square",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "playing around the square"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["19:00", "08:00"],
+                              "destinationStationId": "station_ginju_bed_gantami",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R2",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_gantami_greetings",
@@ -2808,7 +2968,7 @@
                                     "from": "10:00",
                                     "to": "18:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_14_11",
+                                    "stationId": "furniture_chair_map_i_inn_15_11",
                                     "activity": "relaxing at the inn"
                               },
                               {
@@ -2824,8 +2984,26 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_14_11"
+                        "defaultStationId": "furniture_chair_map_i_inn_15_11"
                   },
+                  "agenda": [
+                        {
+                              "id": "inn",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["10:00", "18:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_15_11",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "relaxing at the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "freeTime",
+                              "obligation": "leisure",
+                              "window": ["18:00", "10:00"],
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>",
                   "phrasePools": [
                         {
@@ -3311,14 +3489,14 @@
                                     "from": "08:00",
                                     "to": "14:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_4_7",
+                                    "stationId": "furniture_chair_map_i_inn_4_8",
                                     "activity": "socializing at the inn"
                               },
                               {
                                     "from": "14:00",
                                     "to": "20:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_4_11",
+                                    "stationId": "furniture_chair_map_i_inn_3_11",
                                     "activity": "enjoying the inn"
                               },
                               {
@@ -3334,8 +3512,35 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_4_11"
+                        "defaultStationId": "furniture_chair_map_i_inn_3_11"
                   },
+                  "agenda": [
+                        {
+                              "id": "morning-social",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["08:00", "14:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_4_8",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "socializing at the inn"
+                        },
+                        {
+                              "id": "afternoon-inn",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["14:00", "20:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_3_11",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "enjoying the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "freeTime",
+                              "obligation": "leisure",
+                              "window": ["20:00", "08:00"],
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_pahu_greetings",
@@ -4032,6 +4237,47 @@
                         ],
                         "defaultStationId": "station_p2x4t"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Naru"],
+                              "window": ["06:00", "18:00"],
+                              "destinationRole": "town-square",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "enjoying a day off in the square"
+                        },
+                        {
+                              "id": "cook",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["06:00", "08:00"],
+                              "destinationStationId": "station_w9r6j",
+                              "destinationArea": "map_i_general_store",
+                              "activityLabel": "cooking"
+                        },
+                        {
+                              "id": "counter",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["08:00", "18:00"],
+                              "destinationStationId": "station_p2x4t",
+                              "destinationArea": "map_i_general_store",
+                              "activityLabel": "sitting at counter"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "06:00"],
+                              "destinationStationId": "station_r3p5w",
+                              "destinationArea": "map_i_general_store_F2_R2",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>",
                   "phrasePools": [
                         {
@@ -4736,6 +4982,44 @@
                         ],
                         "defaultStationId": "station_k7m3q"
                   },
+                  "agenda": [
+                        {
+                              "id": "music-dayoff",
+                              "activity": "performMusic",
+                              "obligation": "plan",
+                              "days": ["Naru"],
+                              "window": ["08:00", "19:00"],
+                              "destinationRole": "music-performance",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "playing music all day, day off"
+                        },
+                        {
+                              "id": "shop-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["08:00", "19:00"],
+                              "destinationStationId": "station_k7m3q",
+                              "activityLabel": "checking shelves"
+                        },
+                        {
+                              "id": "inn-music",
+                              "activity": "performMusic",
+                              "obligation": "plan",
+                              "window": ["19:00", "23:00"],
+                              "destinationRole": "music-performance",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "playing music at the inn"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["23:00", "08:00"],
+                              "destinationStationId": "station_v4n8x",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_foroji_greetings",
@@ -5206,6 +5490,55 @@
                         ],
                         "defaultStationId": "station_smi_forge"
                   },
+                  "agenda": [
+                        {
+                              "id": "work-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["07:00", "12:00"],
+                              "destinationRole": "smith-work",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "smithing"
+                        },
+                        {
+                              "id": "lunch-break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Tothu"],
+                              "window": ["12:00", "13:00"],
+                              "activityLabel": "lunch break"
+                        },
+                        {
+                              "id": "work-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["13:00", "18:00"],
+                              "destinationRole": "smith-work",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "smithing"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["18:00", "07:00"],
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "home"
+                        },
+                        {
+                              "id": "day-off",
+                              "activity": "idle",
+                              "obligation": "plan",
+                              "days": ["Tothu"],
+                              "window": ["07:00", "18:00"],
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "resting at home, forge cold"
+                        }
+                  ],
                   "loreBackground": "SPOILER — not for casual player-facing dialogue. Sloomi is the half-sister of Jubmir the trader. Jubmir's father Slorik was a trader who got injured near Hobunji and was taken in by Kzubug's family. Slorik saw how loving Kzubug's household was and wanted that for himself, despite having already been chosen to sire one son (Jubmir) with the Doromabi of his home village. Slorik returned to a guard job near Jubmir in secret, fell in love with Jubmir's Mabinga, Yanmira, and the two eloped into the Slagothi'ey wilderness with Jubmir when Yanmira became pregnant with Sloomi. When the Doromabi found their hideout, Yanmira and Slorik were killed; Jubmir escaped with infant Sloomi on his father's last instructions, found Dugmir (an old trade-route friend of Slorik's), and had Sloomi delivered to Kzubug while Jubmir himself returned to his Doro as the only one who hadn't committed or resulted from a crime. By the time Sloomi arrived, plague had wiped out Kzubug's whole family, so he took her in as divine providence and has been overprotective of her ever since. Jubmir knows the full story; Sloomi does not. It's the biggest reason Jubmir keeps making his barely-profitable trade runs to Hobunji. <suggestion: backstory — the plague's name/cause, the exact timeline (years since), and whether/when Sloomi ever learns the truth>",
                   "phrasePools": [
                         {
@@ -5669,6 +6002,42 @@
                         ],
                         "defaultStationId": "station_smi_apprentice"
                   },
+                  "agenda": [
+                        {
+                              "id": "apprentice-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:30", "12:00"],
+                              "destinationStationId": "station_smi_apprentice",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "apprentice smithing"
+                        },
+                        {
+                              "id": "break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "window": ["12:00", "13:00"],
+                              "activityLabel": "break"
+                        },
+                        {
+                              "id": "apprentice-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["13:00", "17:30"],
+                              "destinationStationId": "station_smi_apprentice",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "apprentice smithing"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:30", "07:30"],
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "See Kzubug's loreBackground for the full secret — Sloomi is Jubmir's half-sister and doesn't know it. <suggestion: dialogue writing — how close dialogue can get to the truth before it would need to actually reveal it, and whether there's a reveal questline planned>",
                   "phrasePools": [
                         {
@@ -6161,6 +6530,35 @@
                         ],
                         "defaultStationId": "station_inn_dorm_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "bar-stand",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["06:00", "16:00"],
+                              "destinationStationId": "station_inn_bar_stand",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "standing behind bar"
+                        },
+                        {
+                              "id": "kegs",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["16:00", "22:00"],
+                              "destinationStationId": "station_inn_bar_kegs",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "checking kegs"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "06:00"],
+                              "destinationStationId": "station_inn_dorm_bed",
+                              "destinationArea": "map_i_inn_F2",
+                              "activityLabel": "resting"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_hreesh_greetings",
@@ -6651,6 +7049,26 @@
                         ],
                         "defaultStationId": "station_inn_dorm_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "explore",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "window": ["09:00", "17:00"],
+                              "destinationRole": "town-square",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "exploring the square"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["17:00", "09:00"],
+                              "destinationStationId": "station_inn_dorm_bed",
+                              "destinationArea": "map_i_inn_F2",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>",
                   "questHooks": [
                         "Currently the only trader willing to make the Hobunji run; stays only 2 days a week and sells on a bi-weekly cycle at game start.",
@@ -7128,6 +7546,73 @@
                         ],
                         "defaultStationId": "station_temple_altar"
                   },
+                  "agenda": [
+                        {
+                              "id": "counsel-pew",
+                              "activity": "watchPerformance",
+                              "obligation": "duty",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "furniture_chair_map_i_temple_12_11",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "watching the Spirit Counsel from a far pew"
+                        },
+                        {
+                              "id": "temple-service",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["09:00", "11:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "leading Temple Service"
+                        },
+                        {
+                              "id": "morning-prayers",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "10:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "morning prayers"
+                        },
+                        {
+                              "id": "in-town",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["10:00", "14:00"],
+                              "destinationRole": "temple-grounds",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "in town"
+                        },
+                        {
+                              "id": "temple-duties",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["14:00", "19:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "temple duties"
+                        },
+                        {
+                              "id": "evening-prayers",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["19:00", "22:00"],
+                              "destinationStationId": "station_temple_evening",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "evening prayers"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "07:00"],
+                              "destinationStationId": "station_temple_bsmt_hunundi",
+                              "destinationArea": "map_i_temple_basement_hunundi",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>",
                   "questHooks": [
                         "<suggestion: quest design — does the player ever learn about the twins' bounty / the Jubmir arrangement through Father Hunundi specifically, or only through the twins themselves?>"
@@ -7619,6 +8104,44 @@
                         ],
                         "defaultStationId": "station_temple_candles"
                   },
+                  "agenda": [
+                        {
+                              "id": "morning-duties",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["08:00", "12:00"],
+                              "destinationStationId": "station_temple_candles",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "tending the candles"
+                        },
+                        {
+                              "id": "grounds",
+                              "activity": "goToRole",
+                              "obligation": "duty",
+                              "window": ["12:00", "17:00"],
+                              "destinationRole": "temple-grounds",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "tending the temple grounds"
+                        },
+                        {
+                              "id": "evening-duties",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["17:00", "21:00"],
+                              "destinationStationId": "station_temple_candles",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "tending the candles"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["21:00", "08:00"],
+                              "destinationStationId": "station_temple_bsmt_namui",
+                              "destinationArea": "map_i_temple_basement_twins",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Staying at the temple under Father Hunundi's protection alongside her brother Taku'a. Most villagers are wary rather than hateful — they just won't risk hiring a suspected criminal — except Kinami Kunji, who has it out for her specifically. <suggestion: backstory — what she and Taku'a actually did to earn the bounty, and how large it is>",
                   "questHooks": [
                         "<suggestion: quest design — what kind of work would let her start paying off her own bounty, and what happens once it's paid>"
@@ -8150,6 +8673,44 @@
                         ],
                         "defaultStationId": "furniture_chair_map_i_temple_6_7"
                   },
+                  "agenda": [
+                        {
+                              "id": "morning-service",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "window": ["09:00", "13:00"],
+                              "destinationStationId": "furniture_chair_map_i_temple_6_7",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "at temple"
+                        },
+                        {
+                              "id": "wander",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "window": ["13:00", "18:00"],
+                              "destinationRole": "temple-grounds",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "wandering the temple grounds"
+                        },
+                        {
+                              "id": "evening-service",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "window": ["18:00", "21:00"],
+                              "destinationStationId": "furniture_chair_map_i_temple_6_7",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "at temple"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["21:00", "09:00"],
+                              "destinationStationId": "station_temple_bsmt_takua",
+                              "destinationArea": "map_i_temple_basement_twins",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>",
                   "questHooks": [
                         "Becomes the village miner NPC after the Old Mine's layers 1–20 boss is cleared and the tunnel collapse opens the next layer."
@@ -8703,6 +9264,72 @@
                         },
                         "defaultStationId": "station_di22s"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "days": ["Muunu"],
+                              "window": ["06:00", "19:00"],
+                              "destinationStationId": "station_kaboku_dayoff",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "enjoying a rare day off"
+                        },
+                        {
+                              "id": "cook",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Muunu"],
+                              "window": ["06:00", "09:00"],
+                              "destinationStationId": "station_6z6x4",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "cooking potion stock"
+                        },
+                        {
+                              "id": "counter",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Muunu"],
+                              "window": ["09:00", "12:00"],
+                              "destinationStationId": "station_0qpky",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "morning counter shift"
+                        },
+                        {
+                              "id": "social",
+                              "activity": "socialize",
+                              "obligation": "plan",
+                              "daysExcept": ["Muunu"],
+                              "window": ["12:00", "19:00"],
+                              "preferences": {
+                                    "preferNpcIds": ["dzahiri_khibu", "nashka_khibu"],
+                                    "preferArea": "map_i_carpenters",
+                                    "preferRole": "khibu-living-room",
+                                    "avoidNpcIds": ["kinami_kunji"],
+                                    "fallbackStationId": "furniture_chair_map_i_inn_16_8",
+                                    "fallbackArea": "map_i_inn"
+                              },
+                              "activityLabel": "visiting family / staying out of Kinami's way"
+                        },
+                        {
+                              "id": "dinner",
+                              "activity": "eat",
+                              "obligation": "plan",
+                              "window": ["19:00", "22:00"],
+                              "destinationStationId": "station_jayis",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "dinner upstairs"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "06:00"],
+                              "destinationStationId": "station_di22s",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "sleeping upstairs"
+                        }
+                  ],
                   "loreBackground": "<suggestion: backstory — what the falling out was actually about, and whether his passivity is contentment, exhaustion, or something sadder>",
                   "phrasePools": [
                         {
@@ -9274,6 +9901,56 @@
                         },
                         "defaultStationId": "station_20tpy"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "days": ["Muunu"],
+                              "window": ["06:00", "19:00"],
+                              "destinationStationId": "station_kinami_dayoff",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "enjoying a rare day off"
+                        },
+                        {
+                              "id": "errand",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "daysExcept": ["Muunu"],
+                              "window": ["06:00", "12:00"],
+                              "destinationStationId": "station_kinami_errand",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "morning errands away from Kaboku"
+                        },
+                        {
+                              "id": "counter",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Muunu"],
+                              "window": ["12:00", "19:00"],
+                              "destinationStationId": "station_0qpky",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "afternoon counter shift"
+                        },
+                        {
+                              "id": "dinner",
+                              "activity": "eat",
+                              "obligation": "plan",
+                              "window": ["19:00", "22:00"],
+                              "destinationStationId": "station_njyek",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "dinner upstairs"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "06:00"],
+                              "destinationStationId": "station_20tpy",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "sleeping upstairs"
+                        }
+                  ],
                   "loreBackground": "The strongest voice of suspicion against Namu'i and Taku'a Hakaru — her instincts about them happen to be correct (they are wanted thieves), which only fuels her certainty about everyone else she distrusts. <suggestion: backstory — what specifically she says about other races/villagers, calibrated to be hateful without making her a cartoon — and whether anyone in town ever pushes back on her>",
                   "phrasePools": [
                         {
@@ -9816,6 +10493,57 @@
                         ],
                         "defaultStationId": "station_dzibim_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["07:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_car_counter",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "lunch",
+                              "activity": "eat",
+                              "obligation": "plan",
+                              "daysExcept": ["Uung"],
+                              "window": ["12:00", "13:00"],
+                              "destinationStationId": "station_dzibim_lunch",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "lunch"
+                        },
+                        {
+                              "id": "carpentry-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["13:00", "17:00"],
+                              "destinationStationId": "station_car_counter",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "07:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_dzibim_greetings",
@@ -10294,6 +11022,37 @@
                         ],
                         "defaultStationId": "station_dzahiri_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationStationId": "station_car_crates",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "08:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_dzahiri_greetings",
@@ -10768,6 +11527,37 @@
                         ],
                         "defaultStationId": "station_nashka_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationStationId": "station_car_inventory",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry work"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "08:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_nashka_greetings",
@@ -11217,7 +12007,7 @@
                                     "from": "09:00",
                                     "to": "18:00",
                                     "mapId": "map_hobunji_town",
-                                    "stationId": "station_teacup_duties",
+                                    "stationId": "station_namui_grounds",
                                     "activity": "elder duties"
                               },
                               {
@@ -11230,6 +12020,36 @@
                         ],
                         "defaultStationId": "station_unmh_teacup_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "spirit-counsel-lead",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_teacup",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "leading the Spirit Counsel, eyes lowered"
+                        },
+                        {
+                              "id": "elder-duties",
+                              "activity": "goToRole",
+                              "obligation": "duty",
+                              "window": ["09:00", "18:00"],
+                              "destinationRole": "temple-grounds",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "elder duties"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "09:00"],
+                              "destinationStationId": "station_unmh_teacup_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant> The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -11724,6 +12544,36 @@
                         ],
                         "defaultStationId": "station_unmh_binding_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_1",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "19:00"],
+                              "destinationStationId": "station_ginju_field_c",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "working the farm"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["19:00", "07:00"],
+                              "destinationStationId": "station_unmh_binding_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_binding_greetings",
@@ -12247,6 +13097,57 @@
                         ],
                         "defaultStationId": "station_unmh_spearhead_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "day": "Hronu",
+                              "window": ["07:00", "20:00"],
+                              "destinationStationId": "station_unmh_spearhead_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home, off duty"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_2",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Hronu"],
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_spearhead_p1",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "morning patrol"
+                        },
+                        {
+                              "id": "afternoon-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Hronu"],
+                              "window": ["12:30", "20:00"],
+                              "destinationStationId": "station_spearhead_p3",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "afternoon patrol"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "07:00"],
+                              "destinationStationId": "station_unmh_spearhead_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -12768,6 +13669,65 @@
                         ],
                         "defaultStationId": "station_unmh_oddclaw_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "day": "Naru",
+                              "window": ["08:00", "20:00"],
+                              "destinationStationId": "station_unmh_oddclaw_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home, off duty"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_3",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["08:00", "12:00"],
+                              "destinationStationId": "station_oddclaw_p1",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "patrol"
+                        },
+                        {
+                              "id": "lunch-break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Naru"],
+                              "window": ["12:00", "14:00"],
+                              "activityLabel": "lunch break at the watchhouse"
+                        },
+                        {
+                              "id": "afternoon-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["14:00", "20:00"],
+                              "destinationStationId": "station_oddclaw_p2",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "patrol"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "08:00"],
+                              "destinationStationId": "station_unmh_oddclaw_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -13283,6 +14243,65 @@
                         ],
                         "defaultStationId": "station_unmh_tooth_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "day": "Kruru",
+                              "window": ["07:00", "22:00"],
+                              "destinationRole": "town-square",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "day off, relaxing"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_4",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Kruru"],
+                              "window": ["07:00", "15:00"],
+                              "destinationStationId": "station_inn_bar_kegs",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "morning shift at inn"
+                        },
+                        {
+                              "id": "break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Kruru"],
+                              "window": ["15:00", "17:00"],
+                              "activityLabel": "break"
+                        },
+                        {
+                              "id": "evening-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Kruru"],
+                              "window": ["17:00", "22:00"],
+                              "destinationStationId": "station_inn_bar_stand",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "evening dinner shift"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "07:00"],
+                              "destinationStationId": "station_unmh_tooth_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_tooth_greetings",
