@@ -15,6 +15,7 @@
   let lastPoseRoot = null; // Used only to avoid repeating the visible mobile status message on avatar refreshes.
   let lastFaceModel = null; // Keeps face-switch status updates limited to actual front/back transitions.
   let lastFaceName = '';
+  let lastFaceSignature = '';
 
   function currentContext() { // Resolves the public preview objects without reaching into the giant editor's private state.
     const backdrop = window.HobunjiGameplayBackdrop;
@@ -63,7 +64,10 @@
     return protectPoseRoot(poseRoot);
   }
 
-  function portraitFaceForMaterial(material) { // Uses stable texture metadata first, then the renderer's canonical material names.
+  function portraitFaceForMaterial(material, model) { // Uses texture identity first, then stable portrait metadata and canonical material names.
+    if (!material) return '';
+    if (material.map && model?.userData?.frontTexture && material.map === model.userData.frontTexture) return 'front';
+    if (material.map && model?.userData?.backTexture && material.map === model.userData.backTexture) return 'back';
     const tracked = material?.map?.userData?.hobunjiPortraitFlip?.face;
     if (tracked === 'front' || tracked === 'back') return tracked;
     const name = String(material?.name || '').toLowerCase();
@@ -72,21 +76,41 @@
     return '';
   }
 
-  function collectPortraitFaces(model) { // Supports both the rigid two-Mesh avatar and the neck-rigged one-Mesh/two-material avatar.
-    const parts = { frontMaterials: [], backMaterials: [], frontMeshes: [], backMeshes: [] };
+  function collectPortraitFaces(model) { // Supports both rigid two-Mesh avatars and the neck-rigged one-Mesh/two-material avatar.
+    const frontMaterials = new Set();
+    const backMaterials = new Set();
+    const frontMeshes = new Set();
+    const backMeshes = new Set();
     model.traverse?.((node) => {
       if (!node?.isMesh && !node?.isSkinnedMesh) return;
       const nodeName = String(node.name || '').toLowerCase();
-      if (nodeName === 'npc_avatar_front_plane' || /_front_plane$/.test(nodeName)) parts.frontMeshes.push(node);
-      if (nodeName === 'npc_avatar_back_plane' || /_back_plane$/.test(nodeName)) parts.backMeshes.push(node);
+      const explicitFace = String(node.userData?.hobunjiPlaneFace || '').toLowerCase();
+      if (explicitFace === 'front' || nodeName === 'npc_avatar_front_plane' || /_front_plane$/.test(nodeName)) frontMeshes.add(node);
+      if (explicitFace === 'back' || nodeName === 'npc_avatar_back_plane' || /_back_plane$/.test(nodeName)) backMeshes.add(node);
+
       const materials = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of materials) {
-        const face = portraitFaceForMaterial(material);
-        if (face === 'front') parts.frontMaterials.push(material);
-        else if (face === 'back') parts.backMaterials.push(material);
+      const classified = materials.map(material => portraitFaceForMaterial(material, model));
+      for (let i = 0; i < materials.length; i++) {
+        if (classified[i] === 'front') frontMaterials.add(materials[i]);
+        else if (classified[i] === 'back') backMaterials.add(materials[i]);
+      }
+
+      // PNGPlaneAvatar's skinned portrait is one SkinnedMesh with two geometry
+      // groups. Its renderer contract is slot 0 = front triangles/material and
+      // slot 1 = rear triangles/material. This remains true even when wrapper
+      // scripts clone or rename the materials, so use it as the authoritative
+      // fallback instead of depending on names.
+      if (Array.isArray(node.material) && node.material.length >= 2 && (node.isSkinnedMesh || (node.geometry?.groups?.length || 0) >= 2)) {
+        frontMaterials.add(node.material[0]);
+        backMaterials.add(node.material[1]);
       }
     });
-    return parts;
+    return {
+      frontMaterials: [...frontMaterials],
+      backMaterials: [...backMaterials],
+      frontMeshes: [...frontMeshes],
+      backMeshes: [...backMeshes],
+    };
   }
 
   function setFaceMaterial(material, visible) { // Makes the selected portrait side immune to winding/culling mistakes while keeping the opposite texture disabled.
@@ -96,6 +120,7 @@
       material.needsUpdate = true;
     }
     material.visible = visible;
+    material.transparent = true;
     if (visible && Number(material.opacity) <= 0) material.opacity = 1;
   }
 
@@ -129,6 +154,8 @@
     for (const mesh of parts.frontMeshes) mesh.visible = showFront;
     for (const mesh of parts.backMeshes) mesh.visible = !showFront;
 
+    const hasFront = parts.frontMaterials.length > 0 || parts.frontMeshes.length > 0;
+    const hasBack = parts.backMaterials.length > 0 || parts.backMeshes.length > 0;
     context.model.userData = context.model.userData || {};
     context.model.userData.hobunjiGroundCarryPortraitFace = {
       selected: resolved.face,
@@ -137,38 +164,47 @@
       backMaterials: parts.backMaterials.length,
       frontMeshes: parts.frontMeshes.length,
       backMeshes: parts.backMeshes.length,
-      rule: 'camera-local Z selects one portrait side; selected material is DoubleSide',
+      hasFront,
+      hasBack,
+      rule: 'camera-local Z selects one portrait side; skinned slot 0=front and slot 1=back; selected material is DoubleSide',
     }; // Existing mobile model dumps can inspect exactly what the face controller found.
 
-    if (lastFaceModel !== context.model || lastFaceName !== resolved.face) {
+    const signature = `${resolved.face}:${parts.frontMaterials.length}:${parts.backMaterials.length}:${parts.frontMeshes.length}:${parts.backMeshes.length}`;
+    if (lastFaceModel !== context.model || lastFaceName !== resolved.face || lastFaceSignature !== signature) {
       const status = document.getElementById('statusPill');
       if (status) {
-        status.textContent = `Ground / Carry portrait · ${resolved.face.toUpperCase()} · camera Z ${resolved.cameraLocalZ.toFixed(3)}`;
-        status.className = 'pill good';
+        status.textContent = `Ground / Carry portrait · ${resolved.face.toUpperCase()} · Z ${resolved.cameraLocalZ.toFixed(3)} · F ${parts.frontMaterials.length}/${parts.frontMeshes.length} · B ${parts.backMaterials.length}/${parts.backMeshes.length}`;
+        status.className = hasFront && hasBack ? 'pill good' : 'pill warn';
       }
       lastFaceModel = context.model;
       lastFaceName = resolved.face;
+      lastFaceSignature = signature;
     }
     return context.model.userData.hobunjiGroundCarryPortraitFace;
   }
 
   function softenTorsoRadiusGuide() { // Keeps the anatomy radius useful without drawing an opaque blue shell over the avatar.
     const scene = window.HobunjiGameplayBackdrop?.getScene?.();
-    const torso = scene?.getObjectByName?.('torso_radius_guide');
-    if (!torso?.material) return false;
-    const materials = Array.isArray(torso.material) ? torso.material : [torso.material];
-    for (const material of materials) {
-      if (!material) continue;
-      material.transparent = true;
-      material.opacity = Math.min(Number.isFinite(Number(material.opacity)) ? Number(material.opacity) : 0.22, 0.22);
-      material.wireframe = true;
-      material.depthTest = true;
-      material.depthWrite = false;
-      material.needsUpdate = true;
-    }
-    torso.userData = torso.userData || {};
-    torso.userData.hobunjiGroundCarryNonOccludingGuide = true;
-    return true;
+    if (!scene) return false;
+    let changed = false;
+    scene.traverse?.((node) => {
+      const name = String(node?.name || '').toLowerCase();
+      if (!node?.material || !(name === 'torso_radius_guide' || name.includes('torso') && name.includes('radius'))) return;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (!material) continue;
+        material.transparent = true;
+        material.opacity = Math.min(Number.isFinite(Number(material.opacity)) ? Number(material.opacity) : 0.16, 0.16);
+        material.wireframe = true;
+        material.depthTest = true;
+        material.depthWrite = false;
+        material.needsUpdate = true;
+      }
+      node.userData = node.userData || {};
+      node.userData.hobunjiGroundCarryNonOccludingGuide = true;
+      changed = true;
+    });
+    return changed;
   }
 
   function compatibilityFrame() { // Runs after rebuilds/camera movement without touching the procedural editor's private state.
@@ -185,13 +221,14 @@
     captureBaseline();
     lastFaceModel = null;
     lastFaceName = '';
+    lastFaceSignature = '';
   });
   window.addEventListener('hobunji-backdrop-api-ready', captureBaseline, { once: true });
   captureBaseline();
   requestAnimationFrame(compatibilityFrame);
 
   window.HobunjiProceduralLimbFacingPreserver = {
-    version: 3,
+    version: 4,
     captureBaseline,
     enforceCameraRelativePortraitFace,
     softenTorsoRadiusGuide,
