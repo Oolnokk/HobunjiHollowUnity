@@ -130,10 +130,32 @@
     });
   }
 
+  function resolvedFrameResult(frame, source) {
+    const normalized = normalizeFrame(frame); // Used below to give crop renderers and 3D dialogue consumers one canonical, validated rectangle.
+    if (!normalized) return null;
+    return {
+      ...normalized,
+      frame: normalized,
+      source,
+    }; // Top-level coordinates preserve the livestock dialogue contract while `.frame` remains backward-compatible for crop/editor callers.
+  }
+
   function frameForKind(kind) {
     const authored = normalizeFrame(profileForKind(kind)?.chatheadFrame);
-    if (authored) return { frame: authored, source: 'attachment-rig-profile' };
-    return { frame: automaticFrameForKind(kind), source: 'animal-head-rig-fallback' };
+    if (authored) return resolvedFrameResult(authored, 'attachment-rig-profile');
+    return resolvedFrameResult(automaticFrameForKind(kind), 'animal-head-rig-fallback');
+  }
+
+  function frameCenterForKind(kind) {
+    const resolved = frameForKind(kind); // Used below as the single normalized source for the sprite-space head center.
+    if (!resolved) return null;
+    const x = resolved.x + resolved.width * 0.5; // Used by 3D dialogue/camera consumers to map the authored crop center onto the animal plane.
+    const y = resolved.y + resolved.height * 0.5; // Used by 3D dialogue/camera consumers to map the authored crop center onto the animal plane.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      debugState.lastError = `Non-finite animal chathead center for ${normalizeKind(kind) || 'unknown creature'}`;
+      return null;
+    }
+    return { x, y, source: resolved.source };
   }
 
   function speakerIdFromSeatId(seatId) {
@@ -206,6 +228,7 @@
       const source = await sourceCanvasForKind(kind, options);
       if (!source) return false;
       const resolved = frameForKind(kind);
+      if (!resolved) return false;
       const rendered = drawFrameToCanvas(source, targetCanvas, resolved.frame);
       if (rendered) {
         debugState.lastKind = normalizeKind(kind);
@@ -250,6 +273,7 @@
     normalizeFrame,
     automaticFrameForKind,
     frameForKind,
+    frameCenterForKind,
     creatureKindFor,
     drawFrameToCanvas,
     sourceCanvasForKind,

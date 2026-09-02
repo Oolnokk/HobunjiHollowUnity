@@ -52,10 +52,34 @@ const sandbox = {
 vm.runInNewContext(runtimeSource, sandbox, { filename: 'animal-chathead-frame.js' });
 const api = sandbox.window.AnimalChatheadFrame;
 assert(api, 'runtime must expose window.AnimalChatheadFrame');
+const resolvedGrehlr = api.frameForKind('grehlr'); // Used below to verify crop callers and 3D-dialogue callers see the exact same rectangle.
 assert.deepStrictEqual(
-  JSON.parse(JSON.stringify(api.frameForKind('grehlr').frame)),
+  JSON.parse(JSON.stringify(resolvedGrehlr.frame)),
   { x: 0.2, y: 0.1, width: 0.4, height: 0.5, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
   'authored normalized frame must win over automatic head-rig fallback'
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify({
+    x: resolvedGrehlr.x,
+    y: resolvedGrehlr.y,
+    width: resolvedGrehlr.width,
+    height: resolvedGrehlr.height,
+    coordinateSpace: resolvedGrehlr.coordinateSpace,
+    version: resolvedGrehlr.version,
+  })),
+  JSON.parse(JSON.stringify(resolvedGrehlr.frame)),
+  'resolved frame must expose the same normalized rectangle at top level for full-dialogue world-space consumers'
+);
+const livestockCenterX = resolvedGrehlr.x + resolvedGrehlr.width * 0.5; // Mirrors the live livestock dialogue camera/head-target calculation in game.js.
+const livestockCenterY = resolvedGrehlr.y + resolvedGrehlr.height * 0.5; // Mirrors the live livestock dialogue camera/head-target calculation in game.js.
+assert(Number.isFinite(livestockCenterX) && Number.isFinite(livestockCenterY),
+  'livestock dialogue must never receive NaN from the resolved frame contract');
+assert.strictEqual(livestockCenterX, 0.4);
+assert.strictEqual(livestockCenterY, 0.35);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(api.frameCenterForKind('grehlr'))),
+  { x: 0.4, y: 0.35, source: 'attachment-rig-profile' },
+  'shared head-center helper must agree with the live full-dialogue center math'
 );
 assert.strictEqual(api.creatureKindFor(null, { speakerId: 'banubu' }), 'grehlr');
 assert.strictEqual(api.creatureKindFor(null, { seatId: 'ambient:hiki_hiki:123' }), 'drenkirra');
