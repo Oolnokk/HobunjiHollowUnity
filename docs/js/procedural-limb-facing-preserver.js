@@ -1,23 +1,34 @@
 // Procedural Animation Editor compatibility shim: preserve the editor-authored
-// front-facing yaw while the Ground / Carry adapter owns torso pitch/roll.
+// front-facing yaw while the Ground / Carry adapter owns torso pitch/roll,
+// keep the correct portrait side visible from any camera angle, and make the
+// torso-radius guide non-occluding.
 (() => {
   'use strict';
 
   if (!/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.pathname)) return;
   if (window.HobunjiProceduralLimbFacingPreserver) return;
 
+  const DOUBLE_SIDE = 2; // Three.js DoubleSide is stable across the r128/r165 versions used by Hobunji tools.
   const baselines = new WeakMap(); // Stores each fresh pose root's editor-authored yaw before Ground / Carry can overwrite it.
   const wrappedRotations = new WeakMap(); // Remembers the original Euler.set method so each pose root is wrapped exactly once.
+  const faceState = new WeakMap(); // Remembers the last camera-relative portrait face to add a tiny side-crossing hysteresis.
   let lastPoseRoot = null; // Used only to avoid repeating the visible mobile status message on avatar refreshes.
+  let lastFaceModel = null; // Keeps face-switch status updates limited to actual front/back transitions.
+  let lastFaceName = '';
 
-  function currentPoseRoot() { // Resolves the same model -> poseRoot hierarchy used by the Ground / Carry adapter.
+  function currentContext() { // Resolves the public preview objects without reaching into the giant editor's private state.
     const backdrop = window.HobunjiGameplayBackdrop;
     if (!backdrop || backdrop.getPreviewMode?.() !== 'npc') return null;
     const model = backdrop.getAvatarModel?.();
-    return model?.parent || null;
+    if (!model) return null;
+    return { backdrop, model, poseRoot: model.parent || null, camera: backdrop.getCamera?.() || null };
   }
 
-  function protectPoseRoot(poseRoot) { // Prevents this adapter's rotation.set(..., 0, ...) calls from erasing the editor's established front-facing yaw.
+  function currentPoseRoot() { // Retains the tiny public helper used by existing regression tests and diagnostics.
+    return currentContext()?.poseRoot || null;
+  }
+
+  function protectPoseRoot(poseRoot) { // Prevents Ground / Carry rotation.set(..., 0, ...) calls from erasing the editor's established front-facing yaw.
     if (!poseRoot?.rotation || wrappedRotations.has(poseRoot.rotation)) return poseRoot;
     const yaw = Number(poseRoot.rotation.y); // Captured before procedural-limb-pose-author.js is allowed to start.
     const baselineYaw = Number.isFinite(yaw) ? yaw : 0;
@@ -52,19 +63,142 @@
     return protectPoseRoot(poseRoot);
   }
 
+  function portraitFaceForMaterial(material) { // Uses stable texture metadata first, then the renderer's canonical material names.
+    const tracked = material?.map?.userData?.hobunjiPortraitFlip?.face;
+    if (tracked === 'front' || tracked === 'back') return tracked;
+    const name = String(material?.name || '').toLowerCase();
+    if (/npc_avatar_(?:skinned_)?front_material/.test(name)) return 'front';
+    if (/npc_avatar_(?:skinned_)?back_material/.test(name)) return 'back';
+    return '';
+  }
+
+  function collectPortraitFaces(model) { // Supports both the rigid two-Mesh avatar and the neck-rigged one-Mesh/two-material avatar.
+    const parts = { frontMaterials: [], backMaterials: [], frontMeshes: [], backMeshes: [] };
+    model.traverse?.((node) => {
+      if (!node?.isMesh && !node?.isSkinnedMesh) return;
+      const nodeName = String(node.name || '').toLowerCase();
+      if (nodeName === 'npc_avatar_front_plane' || /_front_plane$/.test(nodeName)) parts.frontMeshes.push(node);
+      if (nodeName === 'npc_avatar_back_plane' || /_back_plane$/.test(nodeName)) parts.backMeshes.push(node);
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        const face = portraitFaceForMaterial(material);
+        if (face === 'front') parts.frontMaterials.push(material);
+        else if (face === 'back') parts.backMaterials.push(material);
+      }
+    });
+    return parts;
+  }
+
+  function setFaceMaterial(material, visible) { // Makes the selected portrait side immune to winding/culling mistakes while keeping the opposite texture disabled.
+    if (!material) return;
+    if (material.side !== DOUBLE_SIDE) {
+      material.side = DOUBLE_SIDE;
+      material.needsUpdate = true;
+    }
+    material.visible = visible;
+    if (visible && Number(material.opacity) <= 0) material.opacity = 1;
+  }
+
+  function cameraRelativePortraitFace(context) { // Chooses front/back from the camera's true position in the posed avatar's own local coordinates.
+    const { model, camera } = context;
+    if (!camera?.position?.clone || !model?.worldToLocal) return null;
+    model.updateWorldMatrix?.(true, true);
+    camera.updateWorldMatrix?.(true, false);
+    const cameraWorld = camera.getWorldPosition ? camera.getWorldPosition(camera.position.clone()) : camera.position.clone();
+    const cameraLocal = model.worldToLocal(cameraWorld); // Local +Z is the canonical portrait-front side used by PNGPlaneAvatar.
+    const previous = faceState.get(model);
+    const width = Number(model.userData?.portraitModelWidth) || Number(model.userData?.gameModelWidth) || 1;
+    const hysteresis = Math.max(0.001, width * 0.008); // Avoids rapid front/back flicker while orbiting exactly edge-on.
+    let face = previous?.face || (cameraLocal.z >= 0 ? 'front' : 'back');
+    if (cameraLocal.z > hysteresis) face = 'front';
+    else if (cameraLocal.z < -hysteresis) face = 'back';
+    const next = { face, cameraLocalZ: cameraLocal.z };
+    faceState.set(model, next);
+    return next;
+  }
+
+  function enforceCameraRelativePortraitFace() { // Guarantees one correct portrait side is visible even if another wrapper changed culling or material visibility.
+    const context = currentContext();
+    if (!context?.camera) return null;
+    const resolved = cameraRelativePortraitFace(context);
+    if (!resolved) return null;
+    const parts = collectPortraitFaces(context.model);
+    const showFront = resolved.face === 'front';
+    for (const material of parts.frontMaterials) setFaceMaterial(material, showFront);
+    for (const material of parts.backMaterials) setFaceMaterial(material, !showFront);
+    for (const mesh of parts.frontMeshes) mesh.visible = showFront;
+    for (const mesh of parts.backMeshes) mesh.visible = !showFront;
+
+    context.model.userData = context.model.userData || {};
+    context.model.userData.hobunjiGroundCarryPortraitFace = {
+      selected: resolved.face,
+      cameraLocalZ: resolved.cameraLocalZ,
+      frontMaterials: parts.frontMaterials.length,
+      backMaterials: parts.backMaterials.length,
+      frontMeshes: parts.frontMeshes.length,
+      backMeshes: parts.backMeshes.length,
+      rule: 'camera-local Z selects one portrait side; selected material is DoubleSide',
+    }; // Existing mobile model dumps can inspect exactly what the face controller found.
+
+    if (lastFaceModel !== context.model || lastFaceName !== resolved.face) {
+      const status = document.getElementById('statusPill');
+      if (status) {
+        status.textContent = `Ground / Carry portrait · ${resolved.face.toUpperCase()} · camera Z ${resolved.cameraLocalZ.toFixed(3)}`;
+        status.className = 'pill good';
+      }
+      lastFaceModel = context.model;
+      lastFaceName = resolved.face;
+    }
+    return context.model.userData.hobunjiGroundCarryPortraitFace;
+  }
+
+  function softenTorsoRadiusGuide() { // Keeps the anatomy radius useful without drawing an opaque blue shell over the avatar.
+    const scene = window.HobunjiGameplayBackdrop?.getScene?.();
+    const torso = scene?.getObjectByName?.('torso_radius_guide');
+    if (!torso?.material) return false;
+    const materials = Array.isArray(torso.material) ? torso.material : [torso.material];
+    for (const material of materials) {
+      if (!material) continue;
+      material.transparent = true;
+      material.opacity = Math.min(Number.isFinite(Number(material.opacity)) ? Number(material.opacity) : 0.22, 0.22);
+      material.wireframe = true;
+      material.depthTest = true;
+      material.depthWrite = false;
+      material.needsUpdate = true;
+    }
+    torso.userData = torso.userData || {};
+    torso.userData.hobunjiGroundCarryNonOccludingGuide = true;
+    return true;
+  }
+
+  function compatibilityFrame() { // Runs after rebuilds/camera movement without touching the procedural editor's private state.
+    captureBaseline();
+    enforceCameraRelativePortraitFace();
+    softenTorsoRadiusGuide();
+    requestAnimationFrame(compatibilityFrame);
+  }
+
   // This script is intentionally loaded before procedural-limb-pose-author.js.
   // Registration order means fresh avatar rebuilds are protected before the
   // Ground / Carry listener can apply a pose with a zero Y rotation.
-  window.addEventListener('hobunji-backdrop-avatar-changed', captureBaseline);
+  window.addEventListener('hobunji-backdrop-avatar-changed', () => {
+    captureBaseline();
+    lastFaceModel = null;
+    lastFaceName = '';
+  });
   window.addEventListener('hobunji-backdrop-api-ready', captureBaseline, { once: true });
   captureBaseline();
+  requestAnimationFrame(compatibilityFrame);
 
   window.HobunjiProceduralLimbFacingPreserver = {
-    version: 2,
+    version: 3,
     captureBaseline,
+    enforceCameraRelativePortraitFace,
+    softenTorsoRadiusGuide,
     getBaselineYaw: () => {
       const poseRoot = currentPoseRoot();
       return poseRoot ? baselines.get(poseRoot) ?? null : null;
     },
+    getFaceDebug: () => currentContext()?.model?.userData?.hobunjiGroundCarryPortraitFace || null,
   };
 })();
