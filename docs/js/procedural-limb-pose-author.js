@@ -283,17 +283,22 @@
     object.updateMatrixWorld?.(true);
   }
 
-  function captureBaseline() { // Captures the editor's current body and real leg-chain transforms immediately before a ground pose owns them.
+  function captureBaseline() { // Captures editor body/leg transforms and standing hip spacing immediately before a ground pose owns them.
     runtime.feetRig = discoverFeetRig();
+    const standingHipX = Object.fromEntries(['left', 'right'].map(side => { // Stable pre-pose hip X prevents frame-to-frame feedback after the real hips move.
+      const point = objectPointInLocomotion(runtime.feetRig?.[side]?.hip); // Existing species/gender stance after torso-width scanning.
+      return [side, point && Number.isFinite(point.x) ? point.x : (side === 'left' ? -1 : 1) * runtime.modelWidth * 0.08];
+    }));
     runtime.baseline = {
       poseRoot: snapshotTransform(runtime.poseRoot),
+      standingHipX,
       legs: Object.fromEntries(['left', 'right'].map(side => [side, {
         hip: snapshotTransform(runtime.feetRig?.[side]?.hip),
         thigh: snapshotTransform(runtime.feetRig?.[side]?.thigh),
         calf: snapshotTransform(runtime.feetRig?.[side]?.calf),
         foot: snapshotTransform(runtime.feetRig?.[side]?.foot),
       }])),
-    }; // Baseline is never written while Normal is active; it exists only for leaving an authored pose safely.
+    }; // Baseline is never written while Normal is active; it exists only for leaving an authored ground pose safely.
   }
 
   function restoreBaseline() { // Gives body and existing leg nodes back exactly as they were when this workspace took ownership.
@@ -464,8 +469,10 @@
     return window.LegBones.solveFixedTwoBoneChain(runtime.THREE, { root, target, upperLength, lowerLength, pole });
   }
 
-  function standingHipX(side) { // Reuses the real existing procedural hip/stance X instead of inventing a second stance-width rule.
-    const current = objectPointInLocomotion(runtime.feetRig?.[side]?.hip); // Existing hip origin after torso-width scanning and species/gender tuning.
+  function standingHipX(side) { // Uses the pre-pose species stance during ground poses so moving the real hip cannot feed back into next frame's target.
+    const captured = Number(runtime.baseline?.standingHipX?.[side]); // Stable hip X captured before Ground / Carry moved any leg node.
+    if (Number.isFinite(captured)) return captured;
+    const current = objectPointInLocomotion(runtime.feetRig?.[side]?.hip); // Carry/Normal fallback reads the live existing stance without owning it.
     if (current && Number.isFinite(current.x)) return current.x;
     return (side === 'left' ? -1 : 1) * runtime.modelWidth * 0.08;
   }
@@ -645,7 +652,7 @@
     const hips = {
       left: floorPointToLocomotion({ x: standingHipX('left'), y: hipFloorY, z: 0 }),
       right: floorPointToLocomotion({ x: standingHipX('right'), y: hipFloorY, z: 0 }),
-    }; // Existing standing hip X values transformed through the current body pose.
+    }; // Pre-pose standing hip X values transformed through current authored/legacy body pose.
 
     let legSolve = null; // Ground modes drive existing leg hierarchy; carry computes guide-only knees from live real feet.
     let handPose = null; // Hand targets/poles for selected ground or carry mode.
