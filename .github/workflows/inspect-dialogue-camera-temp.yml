@@ -18,13 +18,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s = Path('docs/game.js').read_text()
-          for marker in ['npcDialogueCameraMode', 'activeCameraTarget', 'dialogueZoom', 'npcDialogueStagingConfig']:
+          for marker in ['alignToDialoguePortraitCenters', 'function updateCameraPosition', 'portraitCenterMinDistanceTiles']:
               print('\n###', marker)
               start = 0
-              for n in range(12):
+              for n in range(8):
                   i = s.find(marker, start)
                   if i < 0: break
                   print('\n--- occurrence', n+1, '---')
-                  print(s[max(0,i-900):min(len(s),i+2200)])
+                  print(s[max(0,i-1800):min(len(s),i+4200)])
                   start = i + len(marker)
           PY
