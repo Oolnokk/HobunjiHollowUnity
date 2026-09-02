@@ -137,12 +137,29 @@
   register('sleep', { resolveDestination: ctx => goToStationOrRole(ctx, 'sleep') });
   register('shop', { resolveDestination: ctx => goToStationOrRole(ctx, 'shop') });
   register('performMusic', { resolveDestination: ctx => goToStationOrRole(ctx, 'music-performance') });
+  // Right up at the front of the crowd — distinct from watchPerformance's
+  // personality-varied hang-back distance (design doc §25: "walk right up"
+  // is its own listed reaction, not just the close end of watching).
   // A full "bring your own instrument and back up the player" flow already
   // exists (js/music-minigame.js's leader/backup join, driven by
-  // INSTRUMENT_NPC_DEFS in npc-scheduling.js) — joinPerformance intentionally
-  // just gets an interested NPC to the performance area; it doesn't
-  // reimplement that flow.
-  register('joinPerformance', { resolveDestination: ctx => watchPerformanceImpl(ctx) });
+  // INSTRUMENT_NPC_DEFS in npc-scheduling.js), but only in the direction of
+  // the player joining an NPC's own lead — there's no session hook today
+  // for an NPC to join the *player's* lead the way this reaction implies.
+  // Actually wiring that up is a real music-minigame.js session change,
+  // deliberately left for later rather than bolted on here; for now an
+  // interested NPC (instrument-owner or not) just gets to the front.
+  register('joinPerformance', {
+    resolveDestination(ctx) {
+      if (ctx.beat.destinationRole) return goToRole(ctx, ctx.beat.destinationRole);
+      const stim = ctx.opportunityStimulus;
+      if (!stim || !ctx.walker) return goToRole(ctx, 'watch-performance');
+      const dir = pickDeterministic([[0.7, 0.5], [-0.7, 0.5], [0.7, -0.5], [-0.7, -0.5]], ctx.npcId, ctx.now?.day, `join:${stim.id}`);
+      return ready({
+        area: stim.area, c: Math.floor(stim.x + dir[0]), r: Math.floor(stim.z + dir[1]),
+        pose: 'stand', id: `join-${stim.id}`, activity: ctx.beat.activityLabel || 'joining the crowd',
+      }, 'joining the crowd up front');
+    },
+  });
 
   // "Just be here" — an authored resting-place (goToStation) if given, else
   // (only meaningful for an already-spawned NPC) stay exactly where they
@@ -253,15 +270,27 @@
     },
   });
 
+  // Reaction variety by personality (design doc §25: "watch from afar" and
+  // "walk right up" are both on the list, not just one fixed distance) —
+  // shyer/less sociable NPCs hang back further, bolder/more sociable ones
+  // come in close. Direction is deterministic per (npc, stimulus instance)
+  // same as every other opportunity pick, so it doesn't flicker tick to tick.
   function watchPerformanceImpl(ctx) {
     if (ctx.beat.destinationRole) return goToRole(ctx, ctx.beat.destinationRole);
     const stim = ctx.opportunityStimulus;
     if (stim && ctx.walker) {
-      const offset = pickDeterministic([[1, 0.6], [-1, 0.6], [1, -0.6], [-1, -0.6]], ctx.npcId, ctx.now?.day, `watch:${stim.id}`);
+      const personality = ctx.rec?.personality || {};
+      const shyness = Math.max(0, Math.min(1, personality.shyness ?? 0.3));
+      const sociability = Math.max(0, Math.min(1, personality.sociability ?? 0.5));
+      const boldness = Math.max(0, Math.min(1, sociability * 0.7 + (1 - shyness) * 0.3));
+      const dist = 3.0 - boldness * 1.8; // ~1.2 tiles (up close) .. ~3.0 tiles (from afar)
+      const dir = pickDeterministic([[1, 0.6], [-1, 0.6], [1, -0.6], [-1, -0.6]], ctx.npcId, ctx.now?.day, `watch:${stim.id}`);
+      const mag = Math.hypot(dir[0], dir[1]) || 1;
+      const label = boldness > 0.62 ? 'watching up close' : boldness < 0.38 ? 'watching from afar' : 'watching a performance';
       return ready({
-        area: stim.area, c: Math.floor(stim.x + offset[0]), r: Math.floor(stim.z + offset[1]),
-        pose: 'stand', id: `watch-${stim.id}`, activity: ctx.beat.activityLabel || 'watching a performance',
-      }, 'watching a nearby performance');
+        area: stim.area, c: Math.floor(stim.x + (dir[0] / mag) * dist), r: Math.floor(stim.z + (dir[1] / mag) * dist),
+        pose: 'stand', id: `watch-${stim.id}`, activity: ctx.beat.activityLabel || label,
+      }, label);
     }
     return goToRole(ctx, 'watch-performance');
   }

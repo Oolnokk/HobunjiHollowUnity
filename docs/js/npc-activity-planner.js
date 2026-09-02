@@ -32,6 +32,15 @@
   // can say what's suspended; nothing reads it to decide behavior. This is
   // the "keep the math simple, don't build a heavy simulation" tradeoff
   // design doc §42/§55 explicitly asks for.
+  //
+  // The one place real cross-tick state *does* change behavior is
+  // memory.offscreenCache (design doc §2/§54): an NPC the player currently
+  // cannot see gets a full fresh replan only every OFFSCREEN_RECHECK_INTERVAL_MS,
+  // not every call — this redesign adds real planning work on top of what
+  // the legacy resolver already did every frame for every NPC regardless of
+  // area, so without this the net effect would be *more* off-screen cost,
+  // the opposite of what §54 asks for. A visible NPC (or one with no walker
+  // yet) is never throttled.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -67,6 +76,7 @@
         lastStatus: null, lastSource: null, lastReason: '', lastReplanAtMin: null,
         recentStationIds: [], suspendedBeatId: null,
         lastInterruptCheckMs: 0, lastInterruptResult: null,
+        noticedStimulusId: null, noticedAtMs: 0,
         cooldownUntilMs: {}, lastOpportunityScores: [],
       };
       memoryByNpcId.set(npcId, m);
@@ -75,6 +85,7 @@
   }
 
   const COOLDOWN_MS = 4000; // How long a specific failed beat is skipped before retrying — long enough not to spam loadBuildingScene/logs every frame, short enough that a WAITING_FOR_WORLD beat picks back up quickly once its area finishes loading.
+  const OFFSCREEN_RECHECK_INTERVAL_MS = 2500; // How stale a cached target may get for an NPC the player currently cannot see (design doc §2/§54) — imperceptible off-screen, but keeps a full replan from running every frame for every NPC in the game regardless of visibility.
   function isOnCooldown(memory, beatId, t) { return (memory.cooldownUntilMs[beatId] || 0) > t; }
   function setCooldown(memory, beatId, t) { memory.cooldownUntilMs[beatId] = t + COOLDOWN_MS; }
 
@@ -105,6 +116,15 @@
   // ── Stimulus interruption gate (design doc §22-25) ──────────────────
   const INTERRUPT_CHECK_INTERVAL_MS = 500; // Throttled — never a per-frame stimulus scan (design doc §54).
   const INTEREST_THRESHOLD = 0.28;
+  // A crowd should gather gradually — "one NPC looks over, one approaches,
+  // another sits nearby..." (design doc §43) — not everyone converging the
+  // instant a stimulus clears the interest bar. NOTICE_DELAY_BASE_MS..+SPREAD_MS
+  // is how long an NPC "sits with" a compelling stimulus before actually
+  // committing, individually varied per (npc, stimulus instance) so the
+  // most drawn-in react first and the rest trickle in over the next few
+  // seconds instead of all at once.
+  const NOTICE_DELAY_BASE_MS = 600;
+  const NOTICE_DELAY_SPREAD_MS = 5000;
   function checkStimulusInterruption(rec, walker, topBeat, memory) {
     const t = nowMs();
     if (t - memory.lastInterruptCheckMs < INTERRUPT_CHECK_INTERVAL_MS) return memory.lastInterruptResult;
@@ -112,13 +132,18 @@
     window.NpcSocialStimuli?.pollPlayerMusic?.();
     const pos = walker.root.position;
     const found = window.NpcSocialStimuli?.strongestNear?.(walker.area, pos.x, pos.z);
-    if (!found) { memory.lastInterruptResult = null; return null; }
+    if (!found) { memory.noticedStimulusId = null; memory.lastInterruptResult = null; return null; }
     const personality = rec?.personality || {};
     const musicalInterest = clamp01(personality.musicalInterest ?? 0.5);
     const sociability = clamp01(personality.sociability ?? 0.5);
     const obligationResistance = window.NpcAgenda.obligationWeight(topBeat.obligation) / window.NpcAgenda.obligationWeight('critical');
     const interest = found.proximity * found.stimulus.strength * (0.5 + 0.5 * musicalInterest) * (0.7 + 0.3 * sociability) - obligationResistance * 0.4;
-    const result = interest > INTEREST_THRESHOLD ? found : null;
+    if (interest <= INTEREST_THRESHOLD) { memory.noticedStimulusId = null; memory.lastInterruptResult = null; return null; }
+
+    const stimId = found.stimulus.id;
+    if (memory.noticedStimulusId !== stimId) { memory.noticedStimulusId = stimId; memory.noticedAtMs = t; }
+    const noticeDelayMs = NOTICE_DELAY_BASE_MS + window.NpcAgenda.dailySeed(rec?.id, 0, `notice:${stimId}`) * NOTICE_DELAY_SPREAD_MS * (1 - 0.5 * clamp01(interest));
+    const result = (t - memory.noticedAtMs >= noticeDelayMs) ? found : null;
     memory.lastInterruptResult = result;
     return result;
   }
@@ -156,6 +181,7 @@
     const isVisible = !!walker && walker.area === deps.getCurrentArea();
     if (isVisible) {
       const pos = walker.root.position;
+      const found = ctx.opportunityStimulus ? { stimulus: ctx.opportunityStimulus, proximity: 1 } : window.NpcSocialStimuli?.strongestNear?.(walker.area, pos.x, pos.z);
 
       const sitStations = deps.findStationsByRole?.('sit', { area: walker.area }) || [];
       if (sitStations.length) {
@@ -166,9 +192,20 @@
         }
         if (nearest && nearestD <= 10) {
           const rep = memory.lastActivityId === 'sit' ? -6 : 0;
+          // A free bench near an ongoing performance is a much more
+          // attractive seat than a random one — "another walks out of
+          // nearby activity, sits nearby" (design doc §43) falls out of
+          // this naturally: sit and watchPerformance just compete on score
+          // like any other pair of opportunities, no separate mechanism.
+          let stimBonus = 0;
+          if (found) {
+            const s = found.stimulus;
+            const dStim = Math.hypot((nearest.c + 0.5) - s.x, (nearest.r + 0.5) - s.z);
+            if (dStim <= (s.radius || 8)) stimBonus = 10 * (1 - dStim / (s.radius || 8));
+          }
           candidates.push({
             key: 'sit', stationId: nearest.stationId || nearest.id,
-            score: FREE_TIME_BASE.sit + (personality.restfulness ?? 0.5) * 6 - nearestD * 0.4 + rep + seedNoise(npcId, day, 'sit'),
+            score: FREE_TIME_BASE.sit + (personality.restfulness ?? 0.5) * 6 - nearestD * 0.4 + rep + stimBonus + seedNoise(npcId, day, 'sit'),
           });
         }
       }
@@ -197,7 +234,6 @@
         });
       }
 
-      const found = ctx.opportunityStimulus ? { stimulus: ctx.opportunityStimulus, proximity: 1 } : window.NpcSocialStimuli?.strongestNear?.(walker.area, pos.x, pos.z);
       if (found) {
         const rep = memory.lastActivityId === 'watching-performance' ? -4 : 0;
         candidates.push({
@@ -236,7 +272,7 @@
   }
 
   // ── Main entry point ─────────────────────────────────────────────────
-  function finalize(memory, result, source, beat) {
+  function finalize(memory, result, source, beat, walker) {
     const target = result?.target || null;
     if (target) {
       target.semanticActivity = target.semanticActivity || target.activity || beat?.activity || 'idle';
@@ -246,6 +282,10 @@
       target.plannerSource = source;
       target.beatId = beat?.id || null;
     }
+    // Always refreshed, whether or not this NPC is currently visible — so
+    // the off-screen throttle above has an up-to-date answer ready the
+    // instant this NPC drops out of view.
+    memory.offscreenCache = { target: target ? { ...target } : null, area: walker?.area ?? null, at: nowMs() };
     memory.lastStatus = result?.status || null;
     memory.lastSource = source;
     memory.lastReason = result?.reason || '';
@@ -264,6 +304,25 @@
     let hasExistingWalker = !!extra.hasExistingWalker;
     let walker = hasExistingWalker ? deps.findNpcWalker(npcId) : null;
     if (hasExistingWalker && !walker) hasExistingWalker = false; // defensive — treat as pre-spawn if the lookup disagrees.
+
+    // Off-screen throttle (design doc §2/§54): a walker nobody can see still
+    // needs *some* valid target every frame (its own update() keeps moving
+    // it toward one, and things like catchNpcsOnPlayerAreaTransition read
+    // it), but nothing requires that target to be freshly replanned every
+    // single frame — nobody is watching closely enough to notice a couple
+    // seconds of lag. A visible NPC (or one with no walker yet) always gets
+    // a fully fresh resolution below; this only ever shortcuts the
+    // expensive path for NPCs the player currently cannot see. Returns a
+    // shallow clone, never the cached object itself, so this stays
+    // consistent with every other branch here always handing back a target
+    // nothing downstream should assume it can safely mutate long-term.
+    if (hasExistingWalker && walker.area !== deps.getCurrentArea()) {
+      const memory = getMemory(npcId);
+      const cache = memory.offscreenCache;
+      if (cache && cache.area === walker.area && (nowMs() - cache.at) < OFFSCREEN_RECHECK_INTERVAL_MS) {
+        return cache.target ? { ...cache.target } : null;
+      }
+    }
 
     const ctx0 = buildCtx(rec, walker);
     const beats = getBeatsForRec(rec);
@@ -300,7 +359,7 @@
       if (interrupt) {
         memory.suspendedBeatId = topBeat.id;
         const result = runFreeTime({ ...ctx0, legacyResolve, opportunityStimulus: interrupt.stimulus }, { preferOpportunity: 'watchPerformance' });
-        return finalize(memory, result, 'stimulus-interrupt', topBeat);
+        return finalize(memory, result, 'stimulus-interrupt', topBeat, walker);
       }
     }
     memory.suspendedBeatId = null;
@@ -311,7 +370,7 @@
       if (isOnCooldown(memory, beat.id, nowMs())) continue;
       attempts++;
       const res = window.NpcActivities.resolveDestination(beat, { ...ctx0, legacyResolve });
-      if (res.status === window.NpcActivities.STATUS.READY) return finalize(memory, res, beat === topBeat ? 'agenda' : 'agenda-fallback', beat);
+      if (res.status === window.NpcActivities.STATUS.READY) return finalize(memory, res, beat === topBeat ? 'agenda' : 'agenda-fallback', beat, walker);
       if (res.status !== window.NpcActivities.STATUS.NO_PLAN) {
         logFailure(npcId, beat, res);
         setCooldown(memory, beat.id, nowMs());
@@ -319,7 +378,7 @@
     }
 
     const free = runFreeTime({ ...ctx0, legacyResolve });
-    return finalize(memory, free, eligible.length ? 'activity-failure-fallback' : 'free-time', null);
+    return finalize(memory, free, eligible.length ? 'activity-failure-fallback' : 'free-time', null, walker);
   }
 
   // ── Debug (design doc §49) ───────────────────────────────────────────

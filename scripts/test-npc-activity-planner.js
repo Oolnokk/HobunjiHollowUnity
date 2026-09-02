@@ -170,6 +170,7 @@ let mockPlayerPos = { x: 0, z: 0 };
   walkers.push(makeWalker(kabokuRec, 'carpenters', 1, 1));
   const dzahiriWalker = makeWalker({ id: 'dzahiri' }, 'carpenters', 0, 0);
   walkers.push(dzahiriWalker);
+  mockCurrentArea = 'carpenters'; // visible — each call below must be a fresh recomputation, not the off-screen cache
 
   const withFamily = Planner.resolveNpcTarget(kabokuRec, { legacyResolve: () => null, hasExistingWalker: true });
   assert.equal(withFamily.stationId, 'family_stool', 'family present → visits them');
@@ -187,11 +188,36 @@ let mockPlayerPos = { x: 0, z: 0 };
   stationsById.set('bench_b', { id: 'bench_b', area: 'town', c: 2, r: 2, pose: 'sit', roles: ['sit'] });
   const rec = { id: 'determ_npc', agenda: [{ id: 'sitbeat', activity: 'goToRole', obligation: 'plan', window: ['00:00', '23:59'], destinationRole: 'sit', destinationArea: 'town' }] };
   walkers.push(makeWalker(rec, 'town', 0, 0));
+  mockCurrentArea = 'town'; // visible — each call must be a genuine fresh recomputation, not the off-screen cache from test J below
   const r1 = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
   const r2 = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
   const r3 = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
   assert.equal(r1.stationId, r2.stationId);
   assert.equal(r2.stationId, r3.stationId, 'the same day always picks the same station among ties, instead of re-rolling every planner tick');
+}
+
+// ── I2: off-screen NPCs are throttled to a periodic recheck, not replanned every call (design doc §2/§54) ──
+{
+  stationsById.set('offscreen_bench', { id: 'offscreen_bench', label: 'Bench', area: 'offscreen_town', c: 4, r: 4, pose: 'sit', roles: ['sit'] });
+  const rec = { id: 'offscreen_npc', agenda: [{ id: 'sitbeat', activity: 'goToRole', obligation: 'plan', window: ['00:00', '23:59'], destinationRole: 'sit', destinationArea: 'offscreen_town' }] };
+  walkers.push(makeWalker(rec, 'offscreen_town', 0, 0));
+  mockCurrentArea = 'nowhere-near-there'; // this NPC is off-screen for the whole test
+  const first = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(first.stationId, 'offscreen_bench');
+
+  stationsById.delete('offscreen_bench'); // the station vanishes entirely between calls
+  const stillCached = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(stillCached.stationId, 'offscreen_bench', 'within the recheck window, an off-screen NPC keeps its last resolved target instead of replanning every call');
+
+  mockNowMs += 5000; // past OFFSCREEN_RECHECK_INTERVAL_MS
+  const rechecked = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.notEqual(rechecked.stationId, 'offscreen_bench', 'once the recheck interval elapses, an off-screen NPC replans for real and notices the station is gone');
+  assert.equal(rechecked.plannerSource, 'activity-failure-fallback');
+
+  mockCurrentArea = 'offscreen_town'; // player walks in — this NPC is visible now
+  stationsById.set('offscreen_bench', { id: 'offscreen_bench', label: 'Bench', area: 'offscreen_town', c: 4, r: 4, pose: 'sit', roles: ['sit'] });
+  const visibleAgain = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(visibleAgain.stationId, 'offscreen_bench', 'becoming visible always gets a fully fresh resolution, ignoring any stale cache');
 }
 
 // ── J: critical obligation is never interrupted by even a very strong, point-blank stimulus ──
@@ -205,16 +231,47 @@ let mockPlayerPos = { x: 0, z: 0 };
   assert.equal(result.obligation, 'critical');
 }
 
-// ── K: a duty-level activity CAN be pulled away by a strong nearby stimulus, using the normal watchPerformance activity ──
+// ── K: a duty-level activity CAN be pulled away by a strong nearby stimulus, using the normal watchPerformance activity — but only after a brief, staggered "noticing" delay (design doc §43's gradual crowd growth) ──
 {
   Stimuli.emit({ id: 'test-music-duty', type: 'music', area: 'duty_area', x: 8.5, z: 8.5, radius: 10, strength: 1, durationMs: 60000 });
   const rec = { id: 'duty_npc', agenda: [{ id: 'work', activity: 'idle', obligation: 'duty', window: ['00:00', '23:59'] }] };
   walkers.push(makeWalker(rec, 'duty_area', 8.5, 8.5));
   mockCurrentArea = 'duty_area';
+
+  const firstLook = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.notEqual(firstLook.plannerSource, 'stimulus-interrupt', 'a compelling stimulus is noticed but not committed to instantly — NPCs should trickle in, not all converge on the very first tick');
+
+  mockNowMs += 6000; // past both the interrupt-check throttle and the longest possible notice delay
   const result = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: true });
-  assert.equal(result.plannerSource, 'stimulus-interrupt', 'a strong point-blank stimulus should pull a duty-level activity away');
+  assert.equal(result.plannerSource, 'stimulus-interrupt', 'a strong point-blank stimulus should pull a duty-level activity away once the NPC has "noticed" it long enough to commit');
   const snap = Planner.debugSnapshot('duty_npc');
   assert.equal(snap.suspendedBeatId, 'work', 'the debug panel reports what got suspended');
+}
+
+// ── K2: NPCs with different personalities react at different distances, and joinPerformance stands closer than watchPerformance ──
+{
+  Stimuli.emit({ id: 'test-music-variety', type: 'music', area: 'variety_area', x: 10, z: 10, radius: 12, strength: 1, durationMs: 60000 });
+  const boldRec = { id: 'bold_npc', personality: { shyness: 0, sociability: 1 } };
+  const shyRec = { id: 'shy_npc', personality: { shyness: 1, sociability: 0 } };
+  const boldWalker = makeWalker(boldRec, 'variety_area', 10, 10);
+  const shyWalker = makeWalker(shyRec, 'variety_area', 10, 10);
+  const stim = Stimuli.getActive('variety_area').find(s => s.id === 'test-music-variety');
+
+  const boldRes = Activities.resolveDestination(
+    { id: 'watch', activity: 'watchPerformance', obligation: 'leisure' },
+    { rec: boldRec, npcId: 'bold_npc', walker: boldWalker, now: { day: 1 }, opportunityStimulus: stim });
+  const shyRes = Activities.resolveDestination(
+    { id: 'watch', activity: 'watchPerformance', obligation: 'leisure' },
+    { rec: shyRec, npcId: 'shy_npc', walker: shyWalker, now: { day: 1 }, opportunityStimulus: stim });
+  const boldDist = Math.hypot(boldRes.target.c - stim.x, boldRes.target.r - stim.z);
+  const shyDist = Math.hypot(shyRes.target.c - stim.x, shyRes.target.r - stim.z);
+  assert(boldDist < shyDist, `a bold/sociable NPC should watch closer than a shy one (bold=${boldDist}, shy=${shyDist})`);
+
+  const joinRes = Activities.resolveDestination(
+    { id: 'join', activity: 'joinPerformance', obligation: 'leisure' },
+    { rec: boldRec, npcId: 'bold_npc', walker: boldWalker, now: { day: 1 }, opportunityStimulus: stim });
+  const joinDist = Math.hypot(joinRes.target.c - stim.x, joinRes.target.r - stim.z);
+  assert(joinDist < boldDist + 0.01, `joinPerformance should put an NPC at least as close as watchPerformance's boldest reaction (join=${joinDist}, boldWatch=${boldDist})`);
 }
 
 // ── L: Kurraya poll wires the player's own performance into a real stimulus, no bespoke NPC-facing hack ──
