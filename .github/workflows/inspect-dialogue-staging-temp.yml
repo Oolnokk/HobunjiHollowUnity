@@ -32,8 +32,6 @@ jobs:
                   raise SystemExit(f'{label}: expected 1 match, found {count}')
               return text.replace(old, new, 1)
 
-          # Preserve the dialogue options on the synthetic speaker so the shared
-          # per-frame staging/facing path can distinguish animal speakers from humanoids.
           s = replace_once(
               s,
               """        dialogueOpen    = true;
@@ -48,9 +46,6 @@ jobs:
               'dialogue options handoff',
           )
 
-          # Keep player auto-approach/facing for every dialogue speaker, but guard the
-          # NPC-only body-facing/neck machinery and let animal speakers refresh their
-          # authored head-frame camera target every frame.
           face_start = s.index('      function faceNpcDialogueParticipants() {')
           face_end = s.index('      function updateNpcDialogueStaging(dt) {', face_start)
           face = s[face_start:face_end]
@@ -96,9 +91,6 @@ jobs:
           )
           s = s[:face_start] + face + s[face_end:]
 
-          # Make the camera target remain a scene-space object (camera follow expects
-          # target.position in world coordinates), but recompute that position from the
-          # animal's authored head frame every dialogue frame rather than snapshotting it.
           target_start = s.index('      function createLivestockDialogueCameraTarget(animal, kind) {')
           target_end = s.index('      async function openLivestockDialogue(', target_start)
           target_fn = """      function createLivestockDialogueCameraTarget(animal, kind) {
@@ -158,23 +150,15 @@ jobs:
               """,
               'livestock frame hook wiring',
           )
-          livestock = replace_once(
-              livestock,
-              """          cameraTarget: focus,
-                    skipStaging: true,
-                    skipNpcMeta: true,
-              """,
-              """          cameraTarget: focus,
-                    skipSpeakerFacing: true,
-                    skipEyeContact: true,
-                    skipNpcMeta: true,
-              """,
-              'restore livestock staging',
+          if livestock.count('skipStaging: true,') != 1:
+              raise SystemExit(f'restore livestock staging: expected 1 skipStaging option, found {livestock.count("skipStaging: true,")}')
+          livestock = livestock.replace(
+              'skipStaging: true,',
+              "skipSpeakerFacing: true,\n          skipEyeContact: true,",
+              1,
           )
           s = s[:livestock_start] + livestock + s[livestock_end:]
 
-          # Clear synthetic-speaker hooks on close. The normal camera restore remains
-          # untouched so livestock exits follow exactly the same heading path as NPCs.
           s = replace_once(
               s,
               """          _dialogueWalker.pause = 0;
@@ -189,7 +173,6 @@ jobs:
           )
           p.write_text(s)
 
-          # Cache-bust only game.js because this fix is entirely in game.js.
           p = Path('docs/index.html')
           s = p.read_text()
           s, n = re.subn(r'<script src="game\.js\?v=[^"]+"></script>', '<script src="game.js?v=20260902livestock2"></script>', s, count=1)
@@ -197,16 +180,13 @@ jobs:
               raise SystemExit(f'game.js cache-bust expected 1 match, found {n}')
           p.write_text(s)
 
-          # Strengthen the regression test so the exact freeze cannot come back:
-          # livestock must use shared approach staging, while animal-only guards prevent
-          # the missing applyFacingDeadzone method from throwing out of the game loop.
           p = Path('scripts/test-livestock-dialogue-chatheads.js')
           t = p.read_text()
-          t = t.replace(
-              "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'livestock must skip humanoid staging');",
-              "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'shared NPC dialogue shell must retain auto-approach staging');",
-              1,
-          )
+          old_assert = "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'livestock must skip humanoid staging');"
+          new_assert = "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'shared NPC dialogue shell must retain auto-approach staging');"
+          if t.count(old_assert) != 1:
+              raise SystemExit('old staging assertion mismatch')
+          t = t.replace(old_assert, new_assert, 1)
           anchor = "assert(game.includes('openLivestockDialogue,'), 'FarmAnimals must receive shared dialogue opener');\n"
           if t.count(anchor) != 1:
               raise SystemExit('test insertion anchor mismatch')
