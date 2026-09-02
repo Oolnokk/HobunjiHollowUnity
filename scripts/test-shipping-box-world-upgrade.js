@@ -48,6 +48,14 @@ assert.doesNotMatch(storeSource, /Shipping Box world presentation\/footprint upg
 assert.match(storeSource, /shipping-box-config\.js/, 'General Store parser slot loads ShippingBoxConfig before game boot');
 assert.match(storeSource, /shipping-box-world\.js/, 'dedicated world adapter loads before game boot');
 
+// Replacing the fallback must work on the game's older Three.js runtime too.
+// Do not rely solely on Object3D.removeFromParent(); hide first and use the
+// universally available parent.remove(root) path before disposing resources.
+assert.match(worldSource, /function detachRoot\(root\)[\s\S]*root\.visible = false/, 'legacy fallback is hidden immediately before detach');
+assert.match(worldSource, /root\.parent\?\.remove[\s\S]*root\.parent\.remove\(root\)/, 'fallback uses parent.remove for Three.js r128 compatibility');
+assert.match(worldSource, /function disposeRoot\(root\)[\s\S]*detachRoot\(root\)/, 'resource disposal always detaches the visual first');
+assert.match(worldSource, /group\.position\.set\([\s\S]*scene\.add\(group\)[\s\S]*disposeRoot\(oldBody\)/, 'authored group is positioned before the fallback is removed');
+
 // Footprint registration is generic over configured width × height.
 assert.match(worldSource, /for \(let dz = 0; dz < height; dz\+\+\)/, 'footprint is generated from configured height');
 assert.match(worldSource, /for \(let dx = 0; dx < width; dx\+\+\)/, 'footprint is generated from configured width');
