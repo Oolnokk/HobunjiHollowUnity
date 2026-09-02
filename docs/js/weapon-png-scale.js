@@ -8,7 +8,7 @@
   const BASE_WEAPON_PNG_SCALE = 1.15;
   const ELIGIBLE_WEAPONS = new Set([
     'hatchet',
-    'bronzehoe',
+    'hoe',
     'pickshovel',
     'fishingspear',
     'fishingmace',
@@ -20,6 +20,10 @@
     const activeSlot = deps?.getActiveTool?.() || null;
     if (activeSlot !== 'weapon') return null;
     return deps?.equipmentSlots?.weapon || null;
+  }
+
+  function normalizedShapeKey(itemKey) {
+    return global.HobunjiHandToolGrips?.toolKeyFor?.(itemKey) || String(itemKey || '').toLowerCase(); // Shared normalization strips crafted-metal suffixes and maps bronzehoe back to the hoe shape.
   }
 
   function authoredBaseScale(itemKey) {
@@ -34,6 +38,7 @@
     const originalUpdateMatrixWorld = holder.updateMatrixWorld;
     holder.updateMatrixWorld = function weaponPngBaselineScaleUpdateMatrixWorld(force) {
       const itemKey = currentWeaponKey(deps);
+      const shapeKey = normalizedShapeKey(itemKey); // Lets the old baseline keep working for crafted variants without duplicating item-key aliases here.
       const mesh = deps?.toolMeshMap?.weapon || null;
       const toolPlane = mesh?.userData?.toolPlane || null;
       const holderScale = Math.max(
@@ -43,7 +48,7 @@
       );
       const itemBaseScale = authoredBaseScale(itemKey); // Intrinsic sprite size from the shared grip/held-item metadata, independent of attack animation scale.
       const shouldUpscale = !!toolPlane
-        && ELIGIBLE_WEAPONS.has(itemKey)
+        && ELIGIBLE_WEAPONS.has(shapeKey)
         // Respect any current/future animation that already enlarges the weapon.
         && holderScale <= 1.0001
         // Intrinsically scaled shapes already receive their scale in hand-tool-grips.
@@ -109,6 +114,7 @@
   global.HobunjiWeaponPngScale = Object.freeze({
     baseline: BASE_WEAPON_PNG_SCALE,
     eligibleWeapons: Object.freeze([...ELIGIBLE_WEAPONS]),
+    normalizedShapeKey,
     authoredBaseScale,
     get installed() { return installed; },
   });
