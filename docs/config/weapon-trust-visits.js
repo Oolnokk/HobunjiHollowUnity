@@ -3,6 +3,7 @@
 // This is intentionally data-only. Runtime queue/spawn/unlock behavior lives in
 // docs/js/weapon-trust-visits.js; add another villager by adding one entry here
 // and author/edit the matching dialogue tree in the Dialogue Editor.
+// Discovery-only weapon sources live separately in weapon-discovery-rewards.js.
 (function (global) {
   'use strict';
 
@@ -210,19 +211,6 @@
         ],
       },
       {
-        id: 'gantami_dagger',
-        npcId: 'gantami_ginju',
-        shapeKey: 'dagger',
-        giftMetalKey: 'nativeCopper',
-        dialogueTreeId: 'weapon_trust_gift_dagger',
-        dialogueLabel: 'Trust Gift — Dagger',
-        dialogueLines: [
-          "I think we're past the point where I have to wonder whether I can trust you.",
-          "This dagger is one I kept for myself instead of treating it like ordinary gear. It stayed with me because it was familiar, and because familiar things matter when you're nervous.",
-          "I'd like you to have it. If you need another later, the bronzeworks can reproduce the shape in whatever metal you bring them."
-        ],
-      },
-      {
         id: 'furunji_daggersword',
         npcId: 'furunji_funji',
         shapeKey: 'daggerSword',
@@ -233,19 +221,6 @@
           "You've been good to me and mine. At some point that stops being simple politeness and starts being trust.",
           "I've held onto this Dagger-Sword because it was one of those possessions that became part of my own history instead of just stock to buy and sell.",
           "Take it. And once Kzubug or Sloomi has the pattern in front of them, they can make the same kind of weapon for you in other metals."
-        ],
-      },
-      {
-        id: 'pahu_fishingmace',
-        npcId: 'pahu',
-        shapeKey: 'fishingmace',
-        giftMetalKey: 'nativeCopper',
-        dialogueTreeId: 'weapon_trust_gift_fishingmace',
-        dialogueLabel: 'Trust Gift — Fishing Mace',
-        dialogueLines: [
-          "You've come far enough with me that I reckon I can trust you with something I actually use, not just something I can replace without thinking.",
-          "This Fishing Mace has been with me out on the water and in the mire. A tool like this ends up carrying a lot of small memories with it.",
-          "You should have it. The bronzeworks can copy the pattern after this if you want one made from a different metal."
         ],
       },
     ],
