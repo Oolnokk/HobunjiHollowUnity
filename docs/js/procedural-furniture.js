@@ -552,6 +552,13 @@ function campfireRecipe() {
     cyl(0, .2, 0, .76, .22, .32, 1, { segments: 16, topScaleX: 1.1, topScaleZ: 1.1, bottomScaleX: .82, bottomScaleZ: .82 }),
   ];
 
+  // Loading can briefly race the first scene build; this tiny recipe keeps
+  // the authored mine ladder on the normal furniture path until its JSON is
+  // ready, at which point AuthoredFurniture supplies the real model.
+  CATALOG.mineLadder = [
+    box(0, .65, 0, .6, 1.3, .12, .85),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

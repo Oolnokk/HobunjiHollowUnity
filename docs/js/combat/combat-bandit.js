@@ -1864,7 +1864,7 @@
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-    const roster = await rollBanditRoster(cfg, rank, opts.nameOverride);
+    const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     const avatarRef = await buildBanditAvatar(roster);
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
@@ -1880,7 +1880,7 @@
       return null;
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    const def = Object.assign(makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth), opts.defOverride || {});
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();

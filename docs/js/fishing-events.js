@@ -526,10 +526,11 @@
 
   function rollTreasureMetalKeys() {
     const count = 1 + Math.floor(treasureDeps.rnd() * 3); // Used to match buried chests' 1-3 metal bars.
+    const eligibleMetalKeys = window.TownMine?.filterMetalKeysForTownValue?.(treasureDeps.VERDIGRIS_METAL_KEYS, window.TownMine.getTownValue()) || treasureDeps.VERDIGRIS_METAL_KEYS; // Used to give Gullet Fish the same Town Value metal ceiling as buried chests.
     const keys = []; // Used as the rolled metal-key bundle.
     for (let i = 0; i < count; i++) {
-      const index = Math.min(treasureDeps.VERDIGRIS_METAL_KEYS.length - 1, Math.floor(Math.pow(treasureDeps.rnd(), 2.2) * treasureDeps.VERDIGRIS_METAL_KEYS.length)); // Used to match buried chests' low-tier-biased metal hierarchy roll.
-      keys.push(treasureDeps.VERDIGRIS_METAL_KEYS[index]);
+      const index = Math.min(eligibleMetalKeys.length - 1, Math.floor(Math.pow(treasureDeps.rnd(), 2.2) * eligibleMetalKeys.length)); // Used to preserve the low-tier bias within the currently unlocked metal pool.
+      keys.push(eligibleMetalKeys[index]);
     }
     return keys;
   }

@@ -1,9 +1,18 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 
 global.window = global;
 require('../docs/js/cavern-sculptor.js');
+require('../docs/js/cavern-generator.js');
+
+const connectedFixture = global.CavernGenerator.entranceConnectedFloor([[0, 0], [1, 0], [2, 0], [8, 8], [8, 9]], 0, 0);
+assert.deepEqual(connectedFixture.floor, [[0, 0], [1, 0], [2, 0]], 'only the cave-mouth component may remain walkable');
+assert.equal(connectedFixture.removed, 2, 'isolated cave pockets must be reported and removed');
+const sceneBuilderSource = fs.readFileSync('docs/js/interior-scene-builder.js', 'utf8');
+assert.match(sceneBuilderSource, /materialOptions = \{[^\n]+side: THREE\.FrontSide/, 'carved caves must render only their air-facing side');
+assert.doesNotMatch(sceneBuilderSource, /materialOptions = \{[^\n]+side: THREE\.DoubleSide/, 'carved caves must not expose reverse faces from inter-tunnel voids');
 
 function seededRng(seed) {
   let state = seed >>> 0; // Used by the deterministic low-cost cavern test below.
