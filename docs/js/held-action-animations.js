@@ -198,6 +198,8 @@
     }
   }
 
+  // Cache versions below are bumped whenever their held-item authoring contract changes.
+  // This matters on the stable game/editor URLs where the parent held-action script URL itself may be cached.
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260821e', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
