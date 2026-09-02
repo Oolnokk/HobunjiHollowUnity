@@ -42,10 +42,20 @@ for (const contract of [
   'hobunji-procedural-limb-pose-library.v1',
 ]) assert(author.includes(contract), `Ground / Carry author is missing contract: ${contract}`);
 
-// Most important compatibility contract: before the user explicitly opens
-// Ground / Carry, the old procedural animator must remain completely
-// authoritative. The bootstrap sentinel prevents procedural-impact-tabs.js
-// from eager-loading the pose author.
+// Preview parity contract: the Attack Animation Editor is the known-good NPC
+// preview. Procedural NPC builds must opt into the same neck-rigged/skinned
+// PNGPlaneAvatar assembly, including rebuilding the already-selected startup
+// NPC through the editor's own selection handler after the wrapper is ready.
+assert(bootstrap.includes('installAttackEditorAvatarParity'), 'procedural preview does not install Attack Editor avatar parity');
+assert(bootstrap.includes('proceduralAttackPreviewParityBuild'), 'shared PNG avatar builder is not wrapped for procedural preview parity');
+assert(bootstrap.includes('neckRig: true'), 'procedural NPC previews do not request the Attack Editor neck-rig assembly');
+assert(bootstrap.includes('proceduralPreviewParity'), 'procedural preview parity is not exposed in avatar diagnostics');
+assert(bootstrap.includes('selectedCard.click()'), 'startup NPC is not rebuilt through the existing editor selection pipeline');
+assert(bootstrap.includes("referenceTool: 'attack-animation-editor'"), 'preview parity diagnostics do not identify the known-good reference tool');
+
+// Ground / Carry remains explicit opt-in. The bootstrap sentinel prevents
+// procedural-impact-tabs.js from eager-loading the pose author, while the
+// base procedural preview parity fix is active independently of Ground/Carry.
 assert(bootstrap.includes('dormantAuthorSentinel'), 'Ground / Carry lacks an explicit dormant state');
 assert(bootstrap.includes('window.HobunjiProceduralLimbPoseAuthor = dormantAuthorSentinel'), 'Ground / Carry no longer blocks eager author startup');
 assert(bootstrap.includes("button.addEventListener('click', activateGroundCarry)"), 'Ground / Carry is not explicit opt-in');
@@ -54,16 +64,16 @@ assert(bootstrap.includes('ensureBranchFixedLegSolver'), 'explicit activation do
 assert(bootstrap.includes('protectLegacyYaw'), 'Ground / Carry does not preserve the old animator facing');
 assert(bootstrap.includes('groundCarryRelativeEulerSet'), 'zero-yaw Ground / Carry writes are not relative to the legacy yaw');
 
-// The old PNGPlaneAvatar renderer already owns front/back culling. Ground /
-// Carry must never add a second material/mesh visibility controller.
-assert(!bootstrap.includes('material.visible ='), 'Ground / Carry must not hide/show portrait materials');
-assert(!bootstrap.includes('cameraRelativePortraitFace'), 'Ground / Carry must not choose portrait faces from camera position');
-assert(!bootstrap.includes('DOUBLE_SIDE'), 'Ground / Carry must not override legacy portrait culling');
-assert(!bootstrap.includes('frontMaterials'), 'Ground / Carry must not classify portrait materials');
-assert(!bootstrap.includes('backMaterials'), 'Ground / Carry must not classify portrait materials');
+// The parity fix changes construction mode only. It must not resurrect the
+// discarded camera-relative material/mesh visibility workaround.
+assert(!bootstrap.includes('material.visible ='), 'procedural preview must not hide/show portrait materials');
+assert(!bootstrap.includes('cameraRelativePortraitFace'), 'procedural preview must not choose portrait faces from camera position');
+assert(!bootstrap.includes('DOUBLE_SIDE'), 'procedural preview must not override portrait culling');
+assert(!bootstrap.includes('frontMaterials'), 'procedural preview must not classify portrait materials');
+assert(!bootstrap.includes('backMaterials'), 'procedural preview must not classify portrait materials');
 
-assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the lazy Ground / Carry bootstrap');
-assert(adapter.includes('await loadLimbFacingPreserver()'), 'bootstrap is not established before the adapter considers the pose author');
+assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the preview-parity/lazy Ground / Carry bootstrap');
+assert(adapter.includes('await loadLimbFacingPreserver()'), 'preview parity bootstrap is not established before the adapter considers the pose author');
 assert(adapter.includes('procedural-limb-pose-author.js?v='), 'adapter contract for the pose author disappeared');
 
 console.log('procedural limb pose author: PASS');
