@@ -33,6 +33,10 @@ assert.match(runtimeSource, /String\(options\.seatId \|\| ''\)\.startsWith\('amb
   'ambient chatheads must resolve animal framing from their speaker seat');
 assert.match(runtimeSource, /return original\.call\(preview, targetCanvas, profile, options\)/,
   'ordinary humanoid and in-world avatar renders must continue through the original portrait renderer');
+assert.match(runtimeSource, /const DIALOGUE_FACE_EXTRA_DEG = 8/,
+  'full livestock dialogue must add a small readability margin on top of the ordinary creature deadzone');
+assert.match(runtimeSource, /baseDeadRad \+ DIALOGUE_FACE_EXTRA_RAD/,
+  'dialogue facing must derive its readable angle from the existing creature deadzone rather than replacing it with unrelated rotation math');
 
 const sandbox = {
   console,
@@ -52,6 +56,42 @@ const sandbox = {
 vm.runInNewContext(runtimeSource, sandbox, { filename: 'animal-chathead-frame.js' });
 const api = sandbox.window.AnimalChatheadFrame;
 assert(api, 'runtime must expose window.AnimalChatheadFrame');
+
+const baseCreatureDeadRad = 27.5 * Math.PI / 180;
+let observedDialogueDeadRad = null;
+const animalObjects = new Set();
+sandbox.window.FarmAnimals = {
+  init() {},
+}; // Assignment exercises the early FarmAnimals bridge exactly like farm-animals.js loading after this module in index.html.
+sandbox.window.FarmAnimals.init({
+  animalObjects,
+  CREATURE_PERP_DEAD_RAD: baseCreatureDeadRad,
+  cameraRelativeCreaturePerps: () => [0, Math.PI],
+  perpClamp(_state, requested, _perps, deadRad) {
+    observedDialogueDeadRad = deadRad;
+    return { effectiveTarget: deadRad, snapTo: null, requested };
+  },
+});
+const dialogueAnimal = {
+  livestockId: 'test-livestock',
+  groupRot: 0,
+  perpState: {},
+  avatarRef: { group: { rotation: { y: 0 } } },
+};
+animalObjects.add(dialogueAnimal);
+dialogueAnimal.groupRot = 0.12;
+assert.strictEqual(dialogueAnimal.groupRot, 0.12, 'ordinary livestock rotation must remain untouched outside dialogue');
+dialogueAnimal._dialogueFrozen = true;
+dialogueAnimal.groupRot = 0;
+const expectedDialogueDeadRad = (27.5 + api.DIALOGUE_FACE_EXTRA_DEG) * Math.PI / 180;
+assert(Math.abs(observedDialogueDeadRad - expectedDialogueDeadRad) < 1e-12,
+  'dialogue livestock must reuse the ordinary creature deadzone plus the authored readability margin');
+assert(Math.abs(dialogueAnimal.groupRot - expectedDialogueDeadRad) < 1e-12,
+  'dialogue group rotation must take the deadzone-safe readable result rather than the direct edge-on request');
+dialogueAnimal._dialogueFrozen = false;
+dialogueAnimal.groupRot = 0.25;
+assert.strictEqual(dialogueAnimal.groupRot, 0.25, 'closing dialogue must immediately restore ordinary groupRot writes');
+
 const resolvedGrehlr = api.frameForKind('grehlr'); // Used below to verify crop callers and 3D-dialogue callers see the exact same rectangle.
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(resolvedGrehlr.frame)),
