@@ -187,6 +187,7 @@ const FIELD_GROUPS = [
     ['entranceLength', 'Entrance length (unused by engine)', 1, 20, 1, 8],
   ] },
   { title: 'Boundary collision', fields: [
+    ['enforceWalkableClearance', 'Hard-clear geometry over walkable tiles', 0, 1, 1, 0],
     ['deformedFloorMinCoverage', 'Deformed-tile min floor coverage (0 = off)', 0, 1, .01, 0],
     ['cullTouchTolerance', 'Cull touch tolerance', 0, .2, .002, .01],
   ] },
@@ -226,9 +227,9 @@ function resetDefaults() {
   }
 }
 const PERFORMANCE_PRESETS = {
-  fast: { gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45 },
-  balanced: { gridN: 40, splineSamples: 6, hitsPerStep: 2, probeDigBursts: 2, probeMaxPasses: 65 },
-  quality: { gridN: 64, splineSamples: 10, hitsPerStep: 3, probeDigBursts: 4, probeMaxPasses: 120 },
+  fast: { gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 },
+  balanced: { gridN: 40, splineSamples: 6, hitsPerStep: 2, probeDigBursts: 2, probeMaxPasses: 65, enforceWalkableClearance: 1 },
+  quality: { gridN: 64, splineSamples: 10, hitsPerStep: 3, probeDigBursts: 4, probeMaxPasses: 120, enforceWalkableClearance: 0 },
 };
 function applyPerformancePreset(name) {
   const preset = PERFORMANCE_PRESETS[name];
