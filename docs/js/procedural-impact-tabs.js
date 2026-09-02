@@ -5,6 +5,17 @@
   'use strict';
 
   const STYLE_ID = 'proceduralImpactTabsStyles'; // Prevents duplicate workspace CSS if the adapter is evaluated twice.
+  const LIMB_POSE_SCRIPT_ID = 'proceduralLimbPoseAuthorScript'; // Keeps the new Ground / Carry authoring adapter single-loaded beside this existing procedural-editor adapter.
+
+  function loadLimbPoseAuthor() {
+    if (window.HobunjiProceduralLimbPoseAuthor || document.getElementById(LIMB_POSE_SCRIPT_ID)) return;
+    const script = document.createElement('script'); // Loads the isolated anatomy/ground/carry workspace without modifying the editor's 2 MB embedded HTML.
+    script.id = LIMB_POSE_SCRIPT_ID;
+    script.src = '../../js/procedural-limb-pose-author.js?v=20260902a';
+    script.defer = true;
+    script.onerror = () => console.error('[Impact tabs] Ground / Carry pose author failed to load.');
+    document.head.appendChild(script);
+  }
 
   function injectImpactWorkspaceStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -206,6 +217,7 @@
     console.info('[Impact tabs] Tabbed authoring workspace ready; existing control nodes and handlers preserved.');
   }
 
+  loadLimbPoseAuthor();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildImpactWorkspace, { once: true });
   else buildImpactWorkspace();
 })();
