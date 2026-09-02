@@ -75,6 +75,13 @@
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
   <script src="js/vegetation-crop-rendering.js?v=20260902mod1"></script>
+  <!-- Active-area grid/scene/dimension accessors and building/den footprint
+       collision checks, extracted out of game.js. Must load before game.js,
+       which calls window.GridTileAccessors.init(...) alongside the other
+       window.*.init(...) calls — dozens of already-extracted modules also
+       read getActiveGrid/getActiveScene/etc. from their own init() calls
+       throughout game.js. -->
+  <script src="js/grid-tile-accessors.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

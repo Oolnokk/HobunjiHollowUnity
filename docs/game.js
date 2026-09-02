@@ -2777,7 +2777,7 @@
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
-            if (currentArea === 'farm' && isHouseFootprint(c, r)) return false;
+            if (currentArea === 'farm' && window.GridTileAccessors.isHouseFootprint(c, r)) return false;
           }
         }
         return !interiorFurnitureObjects.find(o => {
@@ -3743,10 +3743,10 @@
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
         const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
-        const targetScene = optScene || getActiveScene();
-        const targetGrid  = optGrid  || getActiveGrid();
-        const gridCols = optCols || getActiveCols();
-        const gridRows = optRows || getActiveRows();
+        const targetScene = optScene || window.GridTileAccessors.getActiveScene();
+        const targetGrid  = optGrid  || window.GridTileAccessors.getActiveGrid();
+        const gridCols = optCols || window.GridTileAccessors.getActiveCols();
+        const gridRows = optRows || window.GridTileAccessors.getActiveRows();
         const modelWidth = def.modelWidth;
         // New creature art is not required to use the legacy 1375×600 canvas.
         // Definitions with a different source canvas provide its width/height
@@ -4593,12 +4593,12 @@
         // etc.), eventually crashing far away from where it actually went
         // wrong (see audio-system.js's non-finite .volume guard).
         if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
-        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || isHouseFootprint(col, row))) return false;
-        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return false;
-        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return false;
+        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
+        if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
+        if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
         return true;
       }
 
@@ -4608,7 +4608,7 @@
       // attack lockout.
       function isSwimmingAt(x, y, canSwim, grid) {
         if (canSwim) return false;
-        const g = grid || getActiveGrid();
+        const g = grid || window.GridTileAccessors.getActiveGrid();
         const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
         const type = g[row]?.[col]?.type;
         return type === TileType.RIVER || type === TileType.STREAM;
@@ -4616,7 +4616,7 @@
 
       // The player has no canSwim tag of their own today.
       function isPlayerSwimming() {
-        return isSwimmingAt(player.x, player.y, false, getActiveGrid());
+        return isSwimmingAt(player.x, player.y, false, window.GridTileAccessors.getActiveGrid());
       }
 
       function isCreatureSwimming(c) {
@@ -4629,7 +4629,7 @@
       // scales cliffs at full speed.
       function isCreatureClimbing(c) {
         if (c.def?.canClimb) return false;
-        const g = c.areaGrid || getActiveGrid();
+        const g = c.areaGrid || window.GridTileAccessors.getActiveGrid();
         const col = Math.floor(c.x / TILE), row = Math.floor(c.y / TILE);
         return !!g[row]?.[col]?.incline;
       }
@@ -7998,7 +7998,7 @@
         getPlayer: () => player,
         getClimbTarget: window.ClimbSystem.getClimbTarget,
         startClimb: window.ClimbSystem.startClimb,
-        getActiveGrid,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getCurrentArea: () => currentArea,
         enterZone,
         companionObjects,
@@ -8138,8 +8138,8 @@
       // recovery roll, so there's nothing else to drive here.
       function advancePlayerKnockback(dt) {
         player.knockbackT = Math.max(0, player.knockbackT - dt);
-        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = window.FormatUtils.clamp(player.x + player.knockbackVX * dt, minX, maxX);
         const desiredY = window.FormatUtils.clamp(player.y + player.knockbackVY * dt, minY, maxY);
         const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
@@ -8153,8 +8153,8 @@
 
       function advancePlayerProneThrow(dt) {
         player.proneThrowT = Math.max(0, player.proneThrowT - dt);
-        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = window.FormatUtils.clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
         const desiredY = window.FormatUtils.clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
         const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
@@ -8696,6 +8696,32 @@
       // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
       const _zoneBuildingGroups = new Map();
       window._zoneBuildingGroups = _zoneBuildingGroups; // devtools/QA inspection hook
+
+      // Called this early (well ahead of the other window.*.init(...) calls
+      // near the bottom of this file) because several modules' own init()
+      // chains synchronously call window.GridTileAccessors.getActiveScene()
+      // during setup (e.g. sky-dome.js's attachToScene, reached via
+      // CloudForestFog.init → RainPlanes.init) — every dep below is either a
+      // getter closure (safe from any position) or a const/function already
+      // declared above this point.
+      window.GridTileAccessors.init({
+        TileType, CropType, COLS, ROWS, INTERIOR_COLS, INTERIOR_ROWS, EXTERIOR_ZONES,
+        _isBuildingArea, _isZoneArea, _buildingScenes, _zoneScenes, _zoneLayouts, _zoneBuildingGroups,
+        buildZoneScene,
+        getCurrentArea: () => currentArea,
+        getScene: () => scene,
+        getInteriorScene: () => interiorScene,
+        getGrid: () => grid,
+        getInteriorGrid: () => interiorGrid,
+        getTownGrid: () => townGrid,
+        getTownScene: () => townScene,
+        getTownZone: () => _townZone,
+        getHousePieces: () => housePieces,
+        getFarmBuildings: () => farmBuildings,
+        getWorldTownTransitions: () => worldTownTransitions,
+        getTownBuildingGroups: () => _townBuildingGroups,
+        getTownBuildingDefs: () => _townBuildingDefs,
+      });
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
@@ -10264,8 +10290,8 @@
         TileType,
         worldObjects,
         isSolid,
-        isHouseFootprint,
-        isTownBuildingCollisionTile,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
+        isTownBuildingCollisionTile: window.GridTileAccessors.isTownBuildingCollisionTile,
         isZoneArea: _isZoneArea,
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
@@ -12174,7 +12200,7 @@
         const fallback = !!extra.fallback;
         const loading = !!extra.loading;
         const target = extra.target ? ` target=${extra.target}` : '';
-        const heldObjectAttachment = toolHolder?.parent === getActiveScene() ? 'active-scene' : (toolHolder?.parent ? 'wrong-scene' : 'detached');
+        const heldObjectAttachment = toolHolder?.parent === window.GridTileAccessors.getActiveScene() ? 'active-scene' : (toolHolder?.parent ? 'wrong-scene' : 'detached');
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
@@ -12271,7 +12297,7 @@
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
-        const fromScene = getActiveScene();
+        const fromScene = window.GridTileAccessors.getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
@@ -13001,7 +13027,7 @@
       }
 
       function enterTown(col, row) {
-        const fromScene = getActiveScene();
+        const fromScene = window.GridTileAccessors.getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
         _currentBuildingMapId = null;
@@ -14780,7 +14806,7 @@
         showToast,
         markTileDirty,
         isFarmOwner,
-        isHouseFootprint,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
         canPlaceFurnitureAt,
         getWorldObjectAt,
         makeProcessingFurniture,
@@ -14809,132 +14835,11 @@
       let sceneTransCb    = null;     // fired once at peak darkness
       let sceneTransFromArea = null;  // area the player was in when the fade started
 
-      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.cols || EXTERIOR_ZONES[currentArea]?.cols || _zoneLayouts.get(currentArea)?.cols) : COLS; }
-      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.rows || EXTERIOR_ZONES[currentArea]?.rows || _zoneLayouts.get(currentArea)?.rows) : ROWS; }
-      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.grid || buildZoneScene(currentArea).grid) : grid; }
-      function getActiveScene() { return _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.scene || buildZoneScene(currentArea).scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene; }
-      function getActiveTileAt(col, row) {
-        const g = getActiveGrid();
-        return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
-      }
-
-      // Whether a farm-grid tile falls inside the house footprint
-      function isHouseFootprint(col, row) {
-        return housePieces.some(p => col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h);
-      }
-      // Barns (any tier, foundation or built) block movement over their
-      // whole registered footprint — stable.json's own footprint.cells is
-      // already a solid rectangle matching w×h, so the piece-less bbox
-      // fallback in _buildingFootprintBlocks (below) gives the identical
-      // result without needing the async-loaded piece JSON on hand here.
-      function isFarmBuildingCollisionTile(col, row) {
-        return farmBuildings.some(b => _buildingFootprintBlocks(b, null, col, row));
-      }
-      // Rotation math lives once in js/building-door.js (shared with the Map
-      // Editor and House Piece Author's door tooling) — this is just the
-      // local name collision detection already used before that file existed.
-      function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
-        return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
-      }
-      // Axis-aligned bbox check using the building's own footprintW/D (or
-      // legacy w/h) — used both when no piece is loaded yet at all, and as
-      // a defensive fallback if a piece IS loaded but its footprint.cells
-      // came back empty (e.g. exported before the House Piece Author's
-      // footprint tool was used). Either way, a real placed/rendered
-      // building should never end up with silently zero collision.
-      function _buildingFootprintBbox(bldg, originX, originZ, col, row) {
-        const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
-        const fbSwap = fbRot === 90 || fbRot === 270;
-        const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
-        const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
-        return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
-      }
-      function _buildingFootprintBlocks(bldg, piece, col, row) {
-        const originX = bldg.gridX ?? bldg.col ?? 0;
-        const originZ = bldg.gridZ ?? bldg.row ?? 0;
-
-        if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
-
-        const structuralCells = piece.footprint.cells || [];
-        const fencePostCells = piece.footprint.extensions?.railings || [];
-        const collisionCells = structuralCells.concat(fencePostCells);
-        if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
-
-        const allBuildingCells = []
-          .concat(piece.footprint.cells || [])
-          .concat(piece.footprint.extensions?.entryTunnels || [])
-          .concat(piece.footprint.extensions?.chimneys || [])
-          .concat(piece.footprint.extensions?.porches || [])
-          .concat(piece.footprint.extensions?.porchStairs || [])
-          .concat(piece.footprint.extensions?.railings || []);
-        const minX = Math.min(...allBuildingCells.map(cell => cell.x));
-        const minY = Math.min(...allBuildingCells.map(cell => cell.y));
-        const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
-        const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
-        const width = maxX - minX + 1;
-        const depth = maxY - minY + 1;
-
-        return collisionCells.some(cell => {
-          const rotated = rotateBuildingCollisionCell(
-            cell.x - minX,
-            cell.y - minY,
-            width,
-            depth,
-            bldg.rotationDeg || bldg.rotation || 0,
-          );
-          return col === originX + rotated.x && row === originZ + rotated.y;
-        });
-      }
-      // `area` defaults to 'town'; any zone mapId with its own merged buildings
-      // (see _spawnZoneBuildings / _zoneBuildingGroups) is also accepted, so the
-      // same collision rules apply to a building placed on a plateau zone map.
-      function isTownBuildingCollisionTile(col, row, area) {
-        area = area || 'town';
-        if (area === 'town') {
-          // Building-entrance transition tiles are always walkable (they ARE the door approach)
-          if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
-          // Every building must be checked regardless of whether ITS OWN piece
-          // has finished loading — _buildingFootprintBlocks already falls back
-          // to a bbox check per-entry when `piece` is null. Previously this
-          // filtered down to only piece-loaded entries once ANY building had
-          // loaded, which silently dropped collision entirely (not even the
-          // bbox fallback) for any building still fetching, whose fetch
-          // failed, or that the GLB-upgrade pass (town-zone-buildings.js)
-          // dropped for not having a piece — see that file's own upgrade loop.
-          const buildingSources = _townBuildingGroups.length
-            ? _townBuildingGroups
-            : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
-          return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
-        }
-
-        const zoneGroups = _zoneBuildingGroups.get(area) || [];
-        const zoneBuildingSources = zoneGroups.length
-          ? zoneGroups
-          : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
-        if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
-        return isAnimalDenCollisionTile(col, row, area);
-      }
-      // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
-      // their south-facing mouth tile, which stays walkable — it's both the
-      // doorway gap in the mesh and the cavern-entrance transition tile.
-      function isAnimalDenCollisionTile(col, row, area) {
-        for (const den of (_zoneLayouts.get(area)?.dens || [])) {
-          if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-          const w = den.w || 1, h = den.h || 1;
-          if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
-          // Doorway gap carved into the south wall, mirroring the mesh's own
-          // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
-          // zone-den-totem-features.js). Without this the footprint box was
-          // fully solid with no way through it at all — mouthAnchor alone
-          // never punched a hole here since it's defined as the tile just
-          // OUTSIDE the footprint, not a tile inside it.
-          const mouthColStart = den.x + Math.floor(w * 0.3);
-          const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
-          if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
-          return true;
-        }
-        return false;
-      }
+      // Active-area grid/scene/dimension accessors (getActiveCols/Rows/
+      // Grid/Scene/TileAt) and building/den footprint collision checks
+      // (isHouseFootprint/isFarmBuildingCollisionTile/
+      // isTownBuildingCollisionTile/isAnimalDenCollisionTile) now live in
+      // js/grid-tile-accessors.js — call via window.GridTileAccessors.*.
       // Interior grid: sized to the whole farm at 2x resolution (see
       // INTERIOR_COLS/INTERIOR_ROWS above); every cell starts as ROCK
       // (blocked) and rebuildInteriorGeometry() flips the currently-built
@@ -15073,7 +14978,7 @@
         _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
-          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
+          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, window.GridTileAccessors.getActiveCols() - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, window.GridTileAccessors.getActiveRows() - 1) };
         }
         return null;
       }
@@ -15156,7 +15061,7 @@
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!window.AudioSystem?.footstepAdvance(player, dist, window.AudioSystem.FOOTSTEP_PLAYER_STRIDE_PX)) return;
-        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid());
         window.AudioSystem?.playFootstepSfx(currentArea, tile, 1);
       }
 
@@ -15237,8 +15142,8 @@
 
         if (player.dodging) {
           player.dodgeT -= dt;
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
@@ -15248,7 +15153,7 @@
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
@@ -15277,7 +15182,7 @@
             } else {
               player.lunging = false;
               player.lungeHopCurrent = 0;
-              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
               tickPlayerFootsteps(_fsPrevX, _fsPrevY);
               tickLungeTrail(_fsPrevX, _fsPrevY);
               return;
@@ -15306,8 +15211,8 @@
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = window.FormatUtils.clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
           // Swept, not a single endpoint check — this recomputes an absolute
@@ -15322,7 +15227,7 @@
           if (player.lungeT <= 0) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           tickLungeTrail(_fsPrevX, _fsPrevY);
@@ -15454,9 +15359,9 @@
         // ── Axis-separated collision ─────────────────────────
         // Tests the player center plus a tiny radius so corners feel less snaggy.
         const minX = PLAYER_RADIUS;
-        const maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
-        const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = player.x + player.vx * dt;
         const desiredY = player.y + player.vy * dt;
         const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
@@ -15571,8 +15476,8 @@
         }
 
         // ── Boundary clamp ────────────────────────────────────
-        player.x = window.FormatUtils.clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
-        player.y = window.FormatUtils.clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+        player.x = window.FormatUtils.clamp(player.x, PLAYER_RADIUS, window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS);
+        player.y = window.FormatUtils.clamp(player.y, PLAYER_RADIUS, window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS);
 
         tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
@@ -15582,7 +15487,7 @@
       // attacks that need to know when a forced movement (e.g. a pounce leap)
       // has run into something.
       function canOccupyAt(wx, wy, radius) {
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
@@ -15738,7 +15643,7 @@
       // own fallback.
       function isChoppableTreeTile(col, row) {
         if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
-        const tile = getActiveGrid()[row]?.[col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
         return tile.floraKind === 'copse' || !tile.floraKind;
       }
@@ -15759,7 +15664,7 @@
       // all), so unlike a hand-authored wilderness rock, it's always fair
       // game to clear.
       function isMineableRockTile(col, row) {
-        const tile = getActiveGrid()[row]?.[col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.type !== TileType.ROCK) return false;
         if (currentArea === 'farm') return true;
         return tile.rockKind === 'diggableRockOre';
@@ -15780,12 +15685,12 @@
       }
 
       function canUseAction(tool, action, col, row) {
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         // A mineable ore rock is the one ROCK-tile exception to the blanket
         // solid-rock block below — everything else (cliff faces, boulders)
         // stays impassable/inert to every tool, mining included.
         if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
+        if (currentArea === 'farm' && window.GridTileAccessors.isHouseFootprint(col, row)) return false;
         // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are farm-only mechanics.
         if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe')) return false;
         if (tool === 'shovel') {
@@ -15814,7 +15719,7 @@
         }
         if (tool === 'machete' || tool === 'axe') {
           const targets = getMacheteTargets(col, row, action);
-          const tgrid = getActiveGrid();
+          const tgrid = window.GridTileAccessors.getActiveGrid();
           return targets.some(t => {
             const targetTile = tgrid[t.row]?.[t.col];
             return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
@@ -15866,7 +15771,7 @@
       }
 
       function getMacheteTargets(col, row, action) {
-        const acols = getActiveCols(), arows = getActiveRows();
+        const acols = window.GridTileAccessors.getActiveCols(), arows = window.GridTileAccessors.getActiveRows();
         const clampedCenter = { col: window.FormatUtils.clamp(col, 0, acols - 1), row: window.FormatUtils.clamp(row, 0, arows - 1) };
         if (action !== 'slash' && action !== 'hack') return [clampedCenter];
 
@@ -15889,7 +15794,7 @@
 
       function clearVegetationAt(col, row, action) {
         const targets = getMacheteTargets(col, row, action);
-        const tgrid = getActiveGrid();
+        const tgrid = window.GridTileAccessors.getActiveGrid();
         let cleared = 0;
         let zoneVisualsUpdated = true;
         for (const t of targets) {
@@ -15922,8 +15827,8 @@
       // the cone's small tile-space AABB, so cost scales with attack area,
       // not map size. Crops and true copse trees are intentionally protected.
       function clearVegetationInAttackCone(fromX, fromY, facingAngle, rangePx, halfConeRad) {
-        const tgrid = getActiveGrid();
-        const cols = getActiveCols(), rows = getActiveRows();
+        const tgrid = window.GridTileAccessors.getActiveGrid();
+        const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const radiusTiles = Math.max(0, rangePx) / TILE;
         const centerCol = fromX / TILE, centerRow = fromY / TILE;
         const minCol = window.FormatUtils.clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
@@ -15985,7 +15890,7 @@
 
       function spawnActionParticles(col, row, action, ok) {
         const profile = actionFxProfile(action, ok);
-        const agrid = getActiveGrid();
+        const agrid = window.GridTileAccessors.getActiveGrid();
         const baseY = activeSurfaceYAtWorld(col + 0.5, row + 0.5) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
@@ -16169,7 +16074,7 @@
       // plateau-tier, and subtle visual-height result as the player avatar.
       function activeSurfaceYAtWorld(worldX, worldZ) {
         if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
-        const tile = getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        const tile = window.GridTileAccessors.getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
       }
 
@@ -16415,7 +16320,7 @@
       }
 
       // areaId/grid/sceneObj let this same stamp-builder serve both the
-      // player (currentArea/getActiveGrid()/getActiveScene()) and a
+      // player (currentArea/window.GridTileAccessors.getActiveGrid()/window.GridTileAccessors.getActiveScene()) and a
       // creature (c.areaId/c.areaGrid/c.scene||scene — see
       // tickCreatureLungeTrail) without either caller needing to know how
       // the other resolves its own area context.
@@ -16467,7 +16372,7 @@
 
       function tickLungeTrail(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
-        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, getActiveGrid(), getActiveScene());
+        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, window.GridTileAccessors.getActiveGrid(), window.GridTileAccessors.getActiveScene());
       }
 
       // Pounce's leap (see combat-animal-attacks.js's pounceUpdate) covers
@@ -16508,7 +16413,7 @@
       function drawActionTileEffects() {
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
-          const tile = getActiveGrid()[fx.row][fx.col];
+          const tile = window.GridTileAccessors.getActiveGrid()[fx.row][fx.col];
           const y = activeSurfaceYAtWorld(fx.col + 0.5, fx.row + 0.5) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
           const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
           if (!center.visible) continue;
@@ -16546,7 +16451,7 @@
 
       function applyAction(tool, action, col, row) {
         if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${window.FormatUtils.actionName(action)} cannot be used on that tile.` };
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
           if (action === 'dig' && tile.dewPile) {
@@ -16895,7 +16800,7 @@
           }
           {
             const _chargeReticle = getReticleTile();
-            const _chargeTile = getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
+            const _chargeTile = window.GridTileAccessors.getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
             const _digStages = _chargeTile?.dewPile ? DIG_DEW_PILE_STAGES : DIG_NEW_TRENCH_STAGES;
             startChargeAction(_chargeReticle, activeAction === 'fill' ? FILL_TRENCH_STAGES : _digStages);
           }
@@ -16982,7 +16887,7 @@
           return;
         }
 
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         let result;
         // place_campfire_kit is NOT handled here — it fires immediately from
         // useActiveAction() instead (see its own comment there): this
@@ -17117,8 +17022,8 @@
         const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
         const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
-          col: window.FormatUtils.clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
-          row: window.FormatUtils.clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
+          col: window.FormatUtils.clamp(Math.floor(probeX / TILE), 0, window.GridTileAccessors.getActiveCols() - 1),
+          row: window.FormatUtils.clamp(Math.floor(probeY / TILE), 0, window.GridTileAccessors.getActiveRows() - 1),
           dir,
           probeX,
           probeY
@@ -17163,11 +17068,11 @@
       // js/music-system.js (window.Music).
 
       function tileSpeedAt(wx, wy) {
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
         const col  = Math.floor(wx / TILE);
         const row  = Math.floor(wy / TILE);
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         const type = tile.type;
         if (isSolid(type)) return null;
         // Auto-reserved plateau cliff-face ring — impassable except where a
@@ -17179,9 +17084,9 @@
         // for the matching attack-lockout.
         if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
-        if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
-        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
-        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
+        if (currentArea === 'farm' && (window.GridTileAccessors.isHouseFootprint(col, row) || window.GridTileAccessors.isFarmBuildingCollisionTile(col, row))) return null;
+        if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return null;
+        if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return null;
         if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
@@ -19047,7 +18952,7 @@
         THREE,
         camera,
         playerRoot: playerMesh,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
       });
       // ambientDialogueRuntime owns only lightweight proximity checks and
       // its temporary world-space speech planes. Game state, NPC routing,
@@ -19066,7 +18971,7 @@
       const ambientDialogueRuntime = window.AmbientDialogue?.init({
         THREE,
         camera,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getDay: () => calendar.day,
         getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
         getSeason: () => window.CalendarSystem.currentSeason?.().name || null,
@@ -19307,7 +19212,7 @@
         const resolved = resolveDigFillAction(tool, action, reticle);
         if (!canUseAction(tool, resolved, reticle.col, reticle.row)) return false;
         if (resolved === 'fill') return true; // canUseAction already required an existing trench
-        const tile = getActiveGrid()[reticle.row][reticle.col];
+        const tile = window.GridTileAccessors.getActiveGrid()[reticle.row][reticle.col];
         return tile.type !== TileType.TRENCH;
       }
 
@@ -19915,7 +19820,7 @@
         clamp: window.FormatUtils.clamp,
         getCurrentArea: () => currentArea,
         getActiveTool: () => activeTool,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
         getItemDef: itemKey => ITEM_DEFS[itemKey],
         poseAt: heldActionPoseAt,
@@ -20005,7 +19910,7 @@
       // Pixel Probe reads this snapshot so interior attachment failures can
       // be diagnosed from its mobile-friendly copied report.
       function getHeldObjectDebug() {
-        const activeScene = getActiveScene();
+        const activeScene = window.GridTileAccessors.getActiveScene();
         // Captures the five mobile arch slots after refreshActionBar populates them.
         const actionArch = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']
           .map(id => document.getElementById(id))
@@ -20593,9 +20498,9 @@
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
-        const col = window.FormatUtils.clamp(Math.floor(wx), 0, getActiveCols()-1);
-        const row = window.FormatUtils.clamp(Math.floor(wz), 0, getActiveRows()-1);
-        const tile = getActiveTileAt(col, row);
+        const col = window.FormatUtils.clamp(Math.floor(wx), 0, window.GridTileAccessors.getActiveCols()-1);
+        const row = window.FormatUtils.clamp(Math.floor(wz), 0, window.GridTileAccessors.getActiveRows()-1);
+        const tile = window.GridTileAccessors.getActiveTileAt(col, row);
         // While climbing, the player is mid-crossing through impassable
         // incline tiles — use the scripted start->landing blend from
         // updateClimb instead of a raw tile lookup, which would pop between
@@ -20662,7 +20567,7 @@
         // hardcoding `scene` here left the ring parented into a scene that
         // wasn't the one actually being rendered.
         if (window.ResourceRings) {
-          const ringHud = window.ResourceRings.updateRingHud(player, getActiveScene(), .62);
+          const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
           ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         }
 
@@ -20773,7 +20678,7 @@
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
         const reticle = getReticleTile();
-        const tile    = getActiveGrid()[reticle.row]?.[reticle.col];
+        const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row]?.[reticle.col];
         if (!tile) {
           reticleCircleMesh.visible = false;
           reticleRingMesh.visible   = false;
@@ -21830,7 +21735,7 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
-        const activeScene = getActiveScene();
+        const activeScene = window.GridTileAccessors.getActiveScene();
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
@@ -22349,7 +22254,7 @@
           // the farm/zone branch wholesale.
           if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
             const cavernReticle = getReticleTile();
-            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernTile = window.GridTileAccessors.getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
             const cavernBtns = [];
             (toolActions[activeTool] || []).forEach((action, i) => {
               const [fallbackIcon] = actionLabels[action];
@@ -22444,7 +22349,7 @@
         // nearby trunk by accident — but a facing climb target also gets a
         // listed prompt here purely for discoverability, since the dodge
         // trigger itself is otherwise silent/undiscoverable.
-        const tile    = getActiveGrid()[reticle.row][reticle.col];
+        const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
         if (_isZoneArea(currentArea) && !player.climbing) {
@@ -22577,7 +22482,7 @@
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
-        const tile    = getActiveTileAt(reticle.col, reticle.row);
+        const tile    = window.GridTileAccessors.getActiveTileAt(reticle.col, reticle.row);
 
         // Was farm-only (world objects didn't exist elsewhere) — now
         // unconditional so a lootable corpse's identity in any area (zones
@@ -22634,7 +22539,7 @@
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          scene: getActiveScene(),
+          scene: window.GridTileAccessors.getActiveScene(),
           promptInputs,
           showInputHints: true,
           isWorldInteraction,
@@ -24405,7 +24310,7 @@
         companionObjects,
         npcWalkers,
         player,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         getPlayerGroundY: _playerGroundY,
@@ -24485,7 +24390,7 @@
           return 0.4;
         },
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
         getHeldMode: () => heldMode,
@@ -24572,7 +24477,7 @@
         THREE,
         TILE,
         player,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         isCombatActive: () => isPlayerInCombat() ||
@@ -24593,7 +24498,7 @@
         hostileObjects,
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         // Same live render-height lookup Combat.init supplies for named
         // animal projectiles (see its own getActorWorldY) — a shooter or
         // target standing somewhere other than flat ground (a tree branch)
@@ -24618,9 +24523,9 @@
           return avatarGroup;
         },
         worldSurfaceY: (x, y) => {
-          const grid = getActiveGrid();
-          const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
-          const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          const grid = window.GridTileAccessors.getActiveGrid();
+          const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
+          const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);
           return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
         },
         canOccupyAt,
@@ -24679,10 +24584,10 @@
         updateCreatureAnimFrame,
         tileSurfaceYInArea,
         characterGroundShadowSurfaceOffset,
-        getActiveScene,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         _isZoneArea,
         _isCavernBuildingArea,
         showToast,
@@ -24703,12 +24608,12 @@
 
       window.Fishing?.init({
         clamp: window.FormatUtils.clamp,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         currentSeason: window.CalendarSystem.currentSeason,
         getHour: window.CalendarSystem.getHour,
         FISH_DEFS,
         getReticleTile,
-        getActiveTileAt,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceYInArea,
         playerMesh,
         showToast,
@@ -24843,10 +24748,10 @@
         tickCreatureLungeTrail,
         tickCreatureFootsteps,
         hostileObjects,
-        getActiveScene,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         tileSurfaceYInArea,
         makeCharacterGroundShadow,
         creatureGroundShadowRadii,
@@ -24924,7 +24829,7 @@
         clampInventoryStack,
         getPlayer: () => player,
         getCurrentArea: () => currentArea,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
         getGroundY: () => _playerGroundY() + 0.025,
         getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
@@ -25011,7 +24916,7 @@
         getSceneTransAlpha: () => sceneTransAlpha,
         getThreeRect: () => _threeRect,
         _isBuildingArea,
-        getActiveGrid, getActiveCols, getActiveRows,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid, getActiveCols: window.GridTileAccessors.getActiveCols, getActiveRows: window.GridTileAccessors.getActiveRows,
         getFlowingTrenchTiles: () => window.WaterSystem.getFlowingTrenchTiles(),
         getTownFlowingTrenchTiles: () => window.WaterSystem.getTownFlowingTrenchTiles(),
         threeContainer,
@@ -25033,7 +24938,7 @@
         // track furniture add/remove sites to invalidate it precisely.
         getFurnitureLightSources: () => {
           const cache = _furnitureLightScanCache;
-          const scene = getActiveScene();
+          const scene = window.GridTileAccessors.getActiveScene();
           const now = performance.now();
           if (cache.scene !== scene || now - cache.lastScan >= 2000) {
             const objs = [];
@@ -25069,7 +24974,7 @@
         player,
         TILE,
         getPlayerGroundY: _playerGroundY,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
       });
@@ -25079,7 +24984,7 @@
         player,
         TILE,
         getPlayerGroundY: _playerGroundY,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
       });
 
@@ -25096,7 +25001,7 @@
         TileType,
         COLS, ROWS,
         getGrid: () => grid,
-        isHouseFootprint,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
         processingFurnitureObjects,
         interiorFurnitureObjects,
         DECORATIVE_FURNITURE_DEFS,
@@ -25295,7 +25200,7 @@
       window.DevSpawner?.init({
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
         _isBuildingArea,
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
@@ -25315,7 +25220,7 @@
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
-        getActiveGrid,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         markOutline: _markOutline,
         zoneScenes: _zoneScenes,
@@ -25334,7 +25239,7 @@
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
         _isBuildingArea,
         _isCavernBuildingArea,
@@ -25382,7 +25287,7 @@
         TileType,
         getInventoryStackItems,
         getActiveInventoryItem,
-        getActiveTileAt,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         getReticleTile,
         getActiveItemIndex: () => activeItemIndex,
         setActiveItemIndex: (v) => { activeItemIndex = v; },
@@ -25460,7 +25365,7 @@
         isZoneArea: _isZoneArea,
         isMineArea: area => !!window.TownMine?.floorFromMapId?.(area),
         isAreaSceneReady: area => !_isBuildingArea(area) || !!_buildingScenes.get(area)?.scene,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getPlayer: () => player,
         getFacingAngle: () => facingAngle,
         surfaceYAt: activeSurfaceYAtWorld,
@@ -25658,9 +25563,9 @@
         hostileObjects,
         companionObjects,
         facingCardinal,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         TILE,
         isSolid,
         tileSurfaceYInArea,
@@ -25702,7 +25607,7 @@
       });
 
       window.DebugHitboxes?.init({
-        getActiveTileAt,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceY,
         surfaceYAtWorld: activeSurfaceYAtWorld,
         worldToOverlay,
@@ -25789,9 +25694,9 @@
         starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
-        getScene: getActiveScene,
+        getScene: window.GridTileAccessors.getActiveScene,
         getWorldObjectAt,
-        isHouseFootprint,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
         tileSurfaceY,
         creaturePlaneGroundOffset,
         nearestAngleAmong,
@@ -26594,8 +26499,8 @@
 
         const targetScene = sceneForNpcArea(area);
         const targetGrid  = npcGridForArea(area);
-        const targetCols  = getActiveCols();
-        const targetRows  = getActiveRows();
+        const targetCols  = window.GridTileAccessors.getActiveCols();
+        const targetRows  = window.GridTileAccessors.getActiveRows();
 
         // ── Camera: an "establishing" mode for everything except active
         //    dialogue, computed from the Director's captured shot (already
