@@ -14,8 +14,8 @@
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
-    // Used by runtime terrain builders after the natural-surface wrappers are installed so PNG stretch-to-fit can be re-unwrapped per connected planar surface.
-    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv.js?v=20260902a'],
+    // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
+    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260902a'],
     // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
     ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
