@@ -1,0 +1,38 @@
+name: Fix animal dialogue camera head target
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/fix-animal-dialogue-camera-head-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+          fetch-depth: 0
+      - name: Apply camera fix
+        run: python3 .github/scripts/fix-animal-dialogue-camera-head-temp.py
+      - name: Run focused regressions
+        run: |
+          node --check docs/game.js
+          node scripts/test-livestock-dialogue-chatheads.js
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-chathead-ambient.js
+          node scripts/test-animal-head-rig-runtime.js
+          node scripts/test-npc-facing-deadzone.js
+      - name: Commit tested fix and remove helpers
+        run: |
+          rm .github/workflows/fix-animal-dialogue-camera-head-temp.yml
+          rm .github/scripts/fix-animal-dialogue-camera-head-temp.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/game.js docs/index.html scripts/test-livestock-dialogue-chatheads.js .github/workflows/fix-animal-dialogue-camera-head-temp.yml .github/scripts/fix-animal-dialogue-camera-head-temp.py
+          git commit -m 'Aim animal dialogue camera at authored head point'
+          git push
