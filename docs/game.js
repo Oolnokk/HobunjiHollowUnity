@@ -12115,7 +12115,7 @@
             }
           }
           const bScene = new THREE.Scene();
-          bScene.background = new THREE.Color(0x2a1a0a);
+          bScene.background = new THREE.Color(mapData.wallStyle === 'mine' ? 0x000000 : 0x2a1a0a);
           // A den's cavern is meant to read as genuinely dark — the warm
           // door light + floor glow patch below (built fresh every time
           // this scene loads, i.e. every time the player actually enters)
@@ -20341,6 +20341,11 @@
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
+      const mineTorchLight = new THREE.PointLight(0xffd28a, 2.8, 9, 1.7);
+      mineTorchLight.name = 'mine_player_torch';
+      mineTorchLight.position.set(0, 1.15, 0.2);
+      mineTorchLight.visible = false;
+      playerMesh.add(mineTorchLight);
       scene.add(playerMesh);
       // worldPopupRuntime is updated by gameLoop and anchors every popup to
       // the same portrait centroid already used by dialogue camera framing.
@@ -22588,6 +22593,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
         // reads below) doesn't need to change.
