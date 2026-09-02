@@ -14,14 +14,14 @@
   },
   "oreTierMetalKeys": ["nativeCopper","lowTinBronze","tinBronze","highTinBronze","arsenicalBronze","leadedBronze","tumbaga","silver","gold","electrumGold"],
   "ladderUpgrades": [
-    { "tier": 1, "targetFloor": 11, "gold": 2500, "stone": 250, "wood": 100, "metalBars": 20 },
-    { "tier": 2, "targetFloor": 21, "gold": 5000, "stone": 400, "wood": 150, "metalBars": 30 },
-    { "tier": 3, "targetFloor": 31, "gold": 8500, "stone": 600, "wood": 200, "metalBars": 40 },
-    { "tier": 4, "targetFloor": 41, "gold": 13000, "stone": 850, "wood": 250, "metalBars": 50 },
-    { "tier": 5, "targetFloor": 51, "gold": 19000, "stone": 1150, "wood": 300, "metalBars": 60 },
-    { "tier": 6, "targetFloor": 61, "gold": 27000, "stone": 1500, "wood": 350, "metalBars": 70 },
-    { "tier": 7, "targetFloor": 71, "gold": 37000, "stone": 1900, "wood": 400, "metalBars": 80 },
-    { "tier": 8, "targetFloor": 81, "gold": 50000, "stone": 2400, "wood": 500, "metalBars": 90 },
-    { "tier": 9, "targetFloor": 91, "gold": 65000, "stone": 3000, "wood": 600, "metalBars": 100 }
+    { "tier": 1, "targetFloor": 11, "gold": 2500, "stone": 55, "wood": 60, "metalBars": 20 },
+    { "tier": 2, "targetFloor": 21, "gold": 5000, "stone": 60, "wood": 75, "metalBars": 28 },
+    { "tier": 3, "targetFloor": 31, "gold": 8500, "stone": 65, "wood": 90, "metalBars": 36 },
+    { "tier": 4, "targetFloor": 41, "gold": 13000, "stone": 70, "wood": 105, "metalBars": 44 },
+    { "tier": 5, "targetFloor": 51, "gold": 19000, "stone": 75, "wood": 120, "metalBars": 52 },
+    { "tier": 6, "targetFloor": 61, "gold": 27000, "stone": 80, "wood": 135, "metalBars": 60 },
+    { "tier": 7, "targetFloor": 71, "gold": 37000, "stone": 85, "wood": 150, "metalBars": 68 },
+    { "tier": 8, "targetFloor": 81, "gold": 50000, "stone": 90, "wood": 165, "metalBars": 76 },
+    { "tier": 9, "targetFloor": 91, "gold": 65000, "stone": 95, "wood": 180, "metalBars": 84 }
   ]
 }
