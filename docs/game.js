@@ -4516,6 +4516,19 @@
       }
 
       function respawnPlayer() {
+        if (window.TownMine?.floorFromMapId?.(currentArea)) {
+          _returnToFarmMeshes();
+          const root = window.TownMine.farmRootTotem?.(COLS, ROWS) || { spawnX: Math.floor(COLS * 0.5), spawnY: Math.floor(ROWS * 0.72) };
+          player.x = (root.spawnX + 0.5) * TILE;
+          player.y = (root.spawnY + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          player.health = player.maxHealth;
+          player.stamina = player.maxStamina;
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
+          return;
+        }
         const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
@@ -12121,6 +12134,21 @@
           const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
+          if (mapData.mineSafeRoom) {
+            const ladder = new THREE.Group();
+            const railMat = new THREE.MeshLambertMaterial({ color: 0x6f4b2d });
+            for (const x of [-0.28, 0.28]) {
+              const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.35, 7), railMat);
+              rail.position.set(x, 1.15, 0); ladder.add(rail);
+            }
+            for (let rung = 0; rung < 6; rung++) {
+              const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.66, 7), railMat);
+              mesh.rotation.z = Math.PI / 2; mesh.position.y = 0.25 + rung * 0.38; ladder.add(mesh);
+            }
+            ladder.position.set(6.5, 0, 3.5); ladder.rotation.x = -0.12;
+            bScene.add(ladder); _markOutline(ladder);
+            _buildingInteractables.set(mapId + ',6,3', window.TownMine.makeLadderInteractable());
+          }
           // A den's cavern (mapData.wallStyle === 'cavern') carries its own
           // pre-carved organic rock shell (see generateCavernFloor/
           // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
@@ -28614,6 +28642,14 @@
 
       window.TownMine?.init({
         getCurrentArea: () => currentArea,
+        inventory,
+        woodItemKeys: ['pineLog', 'shadewoodLog'],
+        metalBarItemKey,
+        metalLabel: metalKey => METAL_DEFS[metalKey]?.label || metalKey,
+        showToast,
+        refreshInventory: () => { refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+        save: saveMemberWorldData,
+        travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
       });
 
       window.ZonePlateauMesa?.init({
@@ -28635,6 +28671,10 @@
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
       });
+      {
+        const root = window.TownMine?.farmRootTotem?.(COLS, ROWS);
+        if (root) window.ZoneDenTotemFeatures?.buildRootTotemMeshes(scene, grid, [{ x: root.x, y: root.y }], 'farm-mine-respawn');
+      }
 
       window.ZoneGrassBillboards?.init({
         TileType, PLATEAU_UNIT,
