@@ -173,16 +173,19 @@
   };
 })();
 
-// The friendship weapon-visit feature is shared by the live game and Dialogue
-// Editor, so bootstrap it from this already-shared pre-game dependency instead
-// of adding another copy of its script-order contract to both HTML entrypoints.
+// Friendship weapon visits and non-NPC weapon discoveries share the same
+// authoritative shape-gating/grant path. Discovery config/runtime load between
+// the trust config and trust runtime so they can replace only the affected
+// acquisition mappings before WeaponTrustVisits snapshots its shape maps.
 (function loadWeaponTrustVisitFeature() {
   if (typeof document === 'undefined') return;
   const self = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = self ? new URL('../', self) : new URL('./', location.href);
   const scripts = [
-    new URL('config/weapon-trust-visits.js?v=20260902e', docsBase).href,
-    new URL('js/weapon-trust-visits.js?v=20260902e', docsBase).href,
+    new URL('config/weapon-trust-visits.js?v=20260902f', docsBase).href,
+    new URL('config/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
+    new URL('js/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20260902f', docsBase).href,
   ];
   for (const src of scripts) {
     if ([...document.scripts].some(script => script.src === src)) continue;
