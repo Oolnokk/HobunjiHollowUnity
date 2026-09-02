@@ -142,6 +142,7 @@
       // Existing characters keep whatever they already own, including when
       // they start/join another world.
       removeStarterItemKeys: ['fishingmace_nativeCopper'],
+      newCharacterCreationToleranceMs: 5000,
     },
   };
 
