@@ -9,6 +9,8 @@
   const MIN_FRAME_SIZE = 0.04; // Used to prevent malformed authoring data from creating an empty or effectively invisible crop.
   const DEFAULT_FRAME_SIZE = 0.36; // Used only when a species has neither an authored frame nor usable painted head weights.
   const AUTO_FRAME_PADDING = 0.035; // Used to keep ears/outlines just outside painted head influence from touching the chathead edge.
+  const DIALOGUE_FACE_EXTRA_DEG = 8; // Used only during full livestock dialogue to keep the animal a little farther from the camera edge-on angle so one eye/side reads clearly.
+  const DIALOGUE_FACE_EXTRA_RAD = DIALOGUE_FACE_EXTRA_DEG * Math.PI / 180; // Radian form used by the existing camera-relative creature perp clamp.
   const SPECIAL_NPC_KINDS = Object.freeze({
     banubu: 'grehlr',
     hiki_hiki: 'drenkirra',
@@ -24,7 +26,10 @@
     lastFrame: null,
     lastFrameSource: null,
     lastError: null,
-  }; // Mobile-visible diagnostics exposed below so framing failures do not require DevTools.
+    dialogueFacingBridgeInstalled: false,
+    dialogueFacingAnimalsPatched: 0,
+    lastDialogueFacing: null,
+  }; // Mobile-visible diagnostics exposed below so framing/facing failures do not require DevTools.
 
   function clamp(value, min = 0, max = 1) {
     const number = Number(value);
@@ -266,9 +271,101 @@
     return true;
   }
 
+  function patchDialogueFacingAnimal(animal, farmDeps) {
+    if (!animal || animal.__animalChatheadDialogueFacingPatched) return false;
+    const descriptor = Object.getOwnPropertyDescriptor(animal, 'groupRot');
+    if (descriptor && descriptor.configurable === false) return false;
+    let currentRot = Number(animal.groupRot);
+    if (!Number.isFinite(currentRot)) currentRot = 0; // Backing value used by the runtime accessor installed below.
+    Object.defineProperty(animal, 'groupRot', {
+      configurable: true,
+      enumerable: descriptor?.enumerable !== false,
+      get() { return currentRot; },
+      set(value) {
+        const requested = Number(value);
+        if (!Number.isFinite(requested)) return;
+        if (!animal._dialogueFrozen) {
+          currentRot = requested;
+          delete animal._animalChatheadDialoguePerpState;
+          return;
+        }
+        const perpClamp = farmDeps?.perpClamp || window.PerpRotation?.perpClamp;
+        const perps = farmDeps?.cameraRelativeCreaturePerps?.();
+        const baseDeadRad = Number(farmDeps?.CREATURE_PERP_DEAD_RAD ?? window.PerpRotation?.CREATURE_PERP_DEAD_RAD);
+        if (typeof perpClamp !== 'function' || !Array.isArray(perps) || !perps.length || !Number.isFinite(baseDeadRad)) {
+          currentRot = requested;
+          return;
+        }
+        const dialogueDeadRad = Math.min(Math.PI / 2 - 0.01, baseDeadRad + DIALOGUE_FACE_EXTRA_RAD); // Keeps dialogue a little more broadside than ordinary creature motion without changing the global deadzone.
+        const state = animal._animalChatheadDialoguePerpState ||= {}; // Separate state keeps dialogue hysteresis from contaminating ordinary farm-animal facing after the conversation ends.
+        const resolved = perpClamp(state, requested, perps, dialogueDeadRad);
+        const effective = Number(resolved?.effectiveTarget);
+        currentRot = Number.isFinite(effective) ? effective : requested;
+        debugState.lastDialogueFacing = {
+          livestockId: animal.livestockId || null,
+          requestedRot: requested,
+          effectiveRot: currentRot,
+          baseDeadzoneDeg: baseDeadRad * 180 / Math.PI,
+          dialogueDeadzoneDeg: dialogueDeadRad * 180 / Math.PI,
+        }; // Mobile-visible proof that dialogue used the camera-relative animal deadzone and the extra readability margin.
+      },
+    });
+    animal.__animalChatheadDialogueFacingPatched = true;
+    debugState.dialogueFacingAnimalsPatched++;
+    return true;
+  }
+
+  function patchFarmAnimalSet(farmDeps) {
+    const animals = farmDeps?.animalObjects;
+    if (!animals || typeof animals.add !== 'function') return false;
+    for (const animal of animals) patchDialogueFacingAnimal(animal, farmDeps);
+    if (animals.__animalChatheadDialogueAddWrapped) return true;
+    const originalAdd = animals.add; // Used to instrument every future livestock runtime object at creation time without changing farm-animals.js factories.
+    animals.add = function animalChatheadDialogueAwareAdd(animal) {
+      patchDialogueFacingAnimal(animal, farmDeps);
+      return originalAdd.call(this, animal);
+    };
+    animals.__animalChatheadDialogueAddWrapped = true;
+    return true;
+  }
+
+  function patchFarmAnimalsApi(api) {
+    if (!api || api.__animalChatheadDialogueFacingWrapped) return api;
+    const originalInit = api.init;
+    if (typeof originalInit === 'function') {
+      api.init = function animalChatheadAwareFarmInit(injectedDeps) {
+        const result = originalInit.call(this, injectedDeps);
+        patchFarmAnimalSet(injectedDeps);
+        return result;
+      };
+    }
+    api.__animalChatheadDialogueFacingWrapped = true;
+    return api;
+  }
+
+  function installFarmDialogueFacingBridge() {
+    if (debugState.dialogueFacingBridgeInstalled) return true;
+    const existingDescriptor = Object.getOwnPropertyDescriptor(window, 'FarmAnimals');
+    if (existingDescriptor && existingDescriptor.configurable === false) {
+      patchFarmAnimalsApi(window.FarmAnimals);
+      return false;
+    }
+    let farmAnimals = window.FarmAnimals; // Captures an already-loaded API on lightweight harnesses; the game normally assigns it later from farm-animals.js.
+    Object.defineProperty(window, 'FarmAnimals', {
+      configurable: true,
+      enumerable: true,
+      get() { return farmAnimals; },
+      set(value) { farmAnimals = patchFarmAnimalsApi(value); },
+    });
+    debugState.dialogueFacingBridgeInstalled = true;
+    if (farmAnimals) farmAnimals = patchFarmAnimalsApi(farmAnimals);
+    return true;
+  }
+
   const api = {
     FRAME_SPACE,
     MIN_FRAME_SIZE,
+    DIALOGUE_FACE_EXTRA_DEG,
     SPECIAL_NPC_KINDS,
     normalizeFrame,
     automaticFrameForKind,
@@ -279,11 +376,13 @@
     sourceCanvasForKind,
     renderCreatureChathead,
     installNpcPreviewBridge,
+    installFarmDialogueFacingBridge,
     debugSnapshot: () => JSON.parse(JSON.stringify(debugState)),
   }; // Public surface used by the Animation Author preview and mobile diagnostics.
 
   window.AnimalChatheadFrame = api;
   window.__animalChatheadFrameDebug = debugState;
+  installFarmDialogueFacingBridge();
   installNpcPreviewBridge();
   window.addEventListener?.('load', installNpcPreviewBridge, { once: true });
   if (!debugState.installed && typeof setInterval === 'function') {
