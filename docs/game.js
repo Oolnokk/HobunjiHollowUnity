@@ -585,9 +585,13 @@
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
       const CARDINAL_BIAS = 0.18; // used by updateMovement(); lower keeps diagonals less sticky.
-      const JOYSTICK_RADIUS = 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
-      const JOYSTICK_DEADZONE = 0.14; // used by updateJoystick() to prevent thumb drift near center.
-      const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
+      // Config-backed (docs/config/scratchbones-config.js game.input.touchJoystick)
+      // alongside the sibling gamepadDeadzone/axisPressThreshold tuning knobs —
+      // falls back to the pre-config defaults if the section is ever missing.
+      const _touchJoystickCfg = window.SCRATCHBONES_CONFIG?.game?.input?.touchJoystick || {};
+      const JOYSTICK_RADIUS = Number(_touchJoystickCfg.radius) || 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
+      const JOYSTICK_DEADZONE = Number(_touchJoystickCfg.deadzone) || 0.14; // used by updateJoystick() to prevent thumb drift near center.
+      const JOYSTICK_RESPONSE = Number(_touchJoystickCfg.response) || 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
       // Floating camera-look joystick (materializes under the thumb on a
       // right-half touch — see cameraDragRequested/updateCameraJoystick).
       // Same deadzone/response shape as the movement joystick, but the knob
