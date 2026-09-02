@@ -7,9 +7,10 @@
   // asset readiness, placement footprints, world registration, and livestock
   // proximity so those concerns stay out of game.js.
   const BARN_PIECES = {
-    small:  { file: 'config/pieces/barn-small.json',  w: 4, h: 3 },
-    medium: { file: 'config/pieces/barn-medium.json', w: 4, h: 5 },
-    large:  { file: 'config/pieces/barn-large.json',  w: 6, h: 5 },
+    nursery:{ file: 'config/pieces/barn-nursery.json', w: 3, h: 2 },
+    small:  { file: 'config/pieces/barn-small.json',   w: 4, h: 3 },
+    medium: { file: 'config/pieces/barn-medium.json',  w: 4, h: 5 },
+    large:  { file: 'config/pieces/barn-large.json',   w: 6, h: 5 },
   };
 
   let deps = null, blockedTileTypes;
@@ -99,9 +100,9 @@
     deps.recomputeWater(false);
   }
 
-  // Each barn tier has its own authored piece and cache. The three supplied
-  // v37 pieces share the Highland visual language but intentionally differ
-  // in footprint: Small 4x3, Medium 4x5, Large 6x5.
+  // Each barn tier has its own authored piece and cache. The Nursery adds a
+  // dedicated tiny 3x2 shell; regular barns keep their existing footprints:
+  // Small 4x3, Medium 4x5, Large 6x5.
   const _barnPiecePromises = new Map();
   function _loadBarnPiece(tier) {
     const key = BARN_PIECES[tier] ? tier : 'small';
@@ -342,7 +343,7 @@
 
   function _buildStructureMesh(entry) {
     if (typeof HousePieceGen === 'undefined') { deps.debugLog('HousePieceGen not loaded — barn shown as foundation slab', 'warn'); return; }
-    _loadBarnPiece(entry.tier).then(piece => {
+    _loadBarnPiece(entry.nursery ? 'nursery' : entry.tier).then(piece => {
       if (!piece || entry.stage !== 'built' || !deps.getFarmBuildings().includes(entry)) return;
       _disposeMesh(entry._mesh);
       entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, _prepareBarnPiece(piece), entry.col, entry.row, {
@@ -420,8 +421,8 @@
   }
 
   function spawnEntry(entry) {
-    const def = _pieceDef(entry.tier);
-    entry.w = def.w; entry.h = def.h; // Migrates old saves from the retired universal 7x3 barn footprint.
+    const def = _pieceDef(entry.nursery ? 'nursery' : entry.tier);
+    entry.w = def.w; entry.h = def.h; // Migrates old saves and gives the permanent Nursery its dedicated 3x2 footprint.
     entry._worldObj = _makeWorldObject(entry);
     entry._mesh = entry.stage === 'built' ? null : _buildFoundationMesh(entry.col, entry.row, entry.w, entry.h);
     if (entry.stage === 'built') _buildStructureMesh(entry);
