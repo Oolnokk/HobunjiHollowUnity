@@ -1,6 +1,82 @@
 # HobunjiHollowUnity
 
+> ## ⚠️ Before adding any new feature, read this
+>
+> **1. Modularize it.** New features are their own `docs/js/<name>.js` file, never
+> code grown directly inside `docs/game.js`. `game.js` is a legacy monolith
+> actively being broken apart — see "Development conventions" below for the
+> exact pattern (already used by ~200 existing systems) and copy it.
+>
+> **2. Never hard-code a tunable value.** Colors, quantities, distances,
+> durations, cooldowns, probabilities, thresholds — anything a designer or QA
+> person might reasonably want to retune later — goes in `docs/config/`, not a
+> literal baked into the code.
+>
+> Skipping either of these means the change has to be redone. See
+> **[Development conventions](#development-conventions-read-before-adding-a-feature)**
+> for the how.
+
 Portrait system scaffold imported from `Oolnokk/ScratchbonesGame` (source commit `c5253f18223b425ec0ebbb39295b7b3fae452d8e`) with game-specific runtime/screens excluded.
+
+## Development conventions (read before adding a feature)
+
+### Modularize — don't grow `docs/game.js`
+
+Every new system lives in its own `docs/js/<kebab-case-name>.js`, following the
+`window.<Namespace>` + `init(deps)` pattern already used throughout the
+codebase (see `docs/js/dye-system.js`, `docs/js/zone-regrowth.js`, or
+`docs/js/item-processing.js` for recent, clean examples):
+
+```js
+(() => {
+  'use strict';
+  let deps = null;
+  function init(injectedDeps) { deps = injectedDeps; }
+
+  // ...feature code here, using deps.getX()/deps.setX() for any state that
+  // still lives in game.js — never capture it by direct reference. game.js
+  // reassigns things like `player`/`grid` wholesale on load, so a plain
+  // closure over the outer variable goes stale the moment that happens.
+
+  window.YourNamespace = { init, /* ...public API */ };
+})();
+```
+
+Then:
+1. Add `<script src="js/your-file.js"></script>` to `docs/index.html`, placed
+   **before** `game.js`'s own `<script>` tag.
+2. Add one `window.YourNamespace.init({ ...deps })` call in `game.js`,
+   alongside the other `window.*.init(...)` calls near the bottom of the file.
+3. If a value you need is still declared in `game.js` and gets reassigned
+   elsewhere (not a stable `const`), pass a getter (`getX: () => x`) or
+   getter+setter pair — never the bare value.
+
+This isn't a style preference — `game.js` is actively being shrunk down to a
+thin bootstrap (DOM lookups, scene/renderer setup, the render loop, and the
+block of `init()` calls) precisely because a 25,000+ line single file is
+where bugs hide and reviews stall. Every line added to it directly instead of
+to a module makes that harder, not easier, for the next person.
+
+### Config-drive every tunable — don't hard-code values
+
+If a value is something a designer, QA person, or future you might
+reasonably want to retune without touching code — a color, a spawn chance, a
+cooldown, a radius, a price, a threshold — it belongs in `docs/config/`
+(JSON for pure data, or a `.js` file like `docs/config/scratchbones-config.js`
+when the config needs comments/structure), not a literal sitting inside a
+module.
+
+Follow the pattern already used by `outline-rendering.json` and
+`atmosphere-lighting.json` (see "Outlines are fog-aware" above): ship
+sensible built-in defaults so rendering/gameplay never blocks on the fetch,
+then overwrite the live values in place once the config file loads.
+
+This does **not** mean every constant needs a config entry — a DOM element
+id, an internal array index, a one-off fallback with no design precedent, or
+a value mechanically derived from another (e.g. a CSS filter computed from a
+color that's *already* configurable) stays as a plain literal. The test is
+"would a non-programmer ever want to change this number," not "is this a
+number."
 
 ## Imported portrait scaffold
 
