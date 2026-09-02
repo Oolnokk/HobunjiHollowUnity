@@ -51,4 +51,12 @@ for old, new, label in [
         raise SystemExit(f'expected {label} not found')
     script = script.replace(old, new, 1)
 
+# animal-chathead-frame.js itself did not change in this extension, so keep the
+# existing cache tag that the framing regression intentionally pins.
+script = script.replace(
+    "'js/animal-chathead-frame.js?v=20260902livestock1'",
+    "'js/animal-chathead-frame.js?v=20260901a'",
+    1,
+)
+
 exec(compile(script, str(source_path), 'exec'), {})
