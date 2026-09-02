@@ -122,6 +122,7 @@ assert(author.includes("if (runtime.poseId === 'normal') return"), 'Normal anima
 assert(author.includes("loadScript('js/leg-bones.js?v="), 'pose author must ensure its fixed solver itself instead of depending on bootstrap side effects');
 assert(author.includes('captureBaseline()'), 'ground poses must capture the existing animator transform before taking ownership');
 assert(author.includes('restoreBaseline()'), 'ground poses must restore the exact existing animator transform when released');
+assert(author.includes('runtime.baseline?.standingHipX?.[side]'), 'ground pose hip targets must stay pinned to the pre-pose standing stance rather than feeding back from moved hips');
 assert(!author.includes('poseRoot.scale.set(1, 1, 1)'), 'Ground / Carry must never erase species/gender scale');
 assert(!author.includes('poseRoot.rotation.set('), 'Ground / Carry must not zero/replace legacy yaw with Euler writes');
 assert(author.includes("findNamedObject(root, [`${side}_hip`"), 'Ground / Carry must discover the real procedural hip hierarchy recursively');
@@ -141,8 +142,8 @@ assert(!bootstrap.includes('rotation.set ='), 'Ground / Carry bootstrap must not
 assert(!bootstrap.includes('bootstrapFrame'), 'Ground / Carry bootstrap must not run a permanent animation-frame polling loop');
 assert(!bootstrap.includes('buildSinglePlaneAvatarModel ='), 'Ground / Carry bootstrap must not replace the shared avatar builder');
 
-assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter must load the lazy Ground / Carry bootstrap');
+assert(adapter.includes('procedural-limb-facing-preserver.js?v=20260902c'), 'procedural editor adapter must cache-bust the repaired lazy Ground / Carry bootstrap');
 assert(adapter.includes('await loadLimbFacingPreserver()'), 'lazy bootstrap must be established before the adapter considers the pose author');
-assert(adapter.includes('procedural-limb-pose-author.js?v='), 'adapter compatibility contract for the pose author disappeared');
+assert(adapter.includes('procedural-limb-pose-author.js?v=20260902c'), 'adapter compatibility author path must point at the repaired revision');
 
 console.log('procedural limb pose author: PASS');
