@@ -1,8 +1,8 @@
 // Held-item-local grip authoring shared by gameplay and the Attack Animation Editor.
-// Primary grip is a point on the item: moving it repositions the ITEM around the
-// unchanged authored right-hand socket. Optional off-hand authoring is a Z span on
-// the item; attack poses choose 0..100% along that span and smoothly blend the left
-// hand on/off it. A weapon with no span always remains primary-hand-only.
+// Primary grip is a point on the item: moving it repositions/rotates the ITEM around
+// the unchanged authored right-hand socket. Optional off-hand authoring is a Z span
+// on the item; attack poses choose 0..100% along that span and smoothly blend the
+// left hand on/off it. A weapon with no span always remains primary-hand-only.
 (function (global) {
   'use strict';
 
@@ -22,7 +22,7 @@
   }
 
   function disabledLegacySecondary() {
-    return { enabled: false, ...identityTransform() }; // Kept internally so the pre-span editor adapter can coexist while its old fields are hidden.
+    return { enabled: false, ...identityTransform() }; // Internal compatibility only; the old point editor is hidden.
   }
 
   const DEFAULT_DATA = {
@@ -220,9 +220,9 @@
   }
 
   const editorSecondaryPoses = {
-    neutral: { enabled: false, percent: 50 }, // Attack Editor pose-level off-hand authoring; Neutral=false keeps ordinary Light/Heavy idle one-handed.
-    windup: { enabled: false, percent: 50 }, // Used when preview reaches the Windup phase.
-    strike: { enabled: false, percent: 50 }, // Used when preview reaches the Strike/Hold phase.
+    neutral: { enabled: false, percent: 50 }, // Neutral=false keeps ordinary Light/Heavy idle one-handed.
+    windup: { enabled: false, percent: 50 }, // Used when preview reaches Windup.
+    strike: { enabled: false, percent: 50 }, // Used during Strike/Hold.
   };
   let capturedMelee = null; // Raw melee visual options retained so unknown pose metadata survives WeaponToolStances' numeric normalizer.
 
@@ -362,8 +362,8 @@
     const wrappedAttach = function secondarySpanBlendAttach(...args) {
       const rig = originalAttach(...args);
       if (!rig || rig.__hobunjiSecondarySpanBlend) return rig;
-      const leftSocket = rig.group?.getObjectByName?.('left_hand_socket') || null; // Socket blended between the latest free-hand pose and the weapon target.
-      let idlePosition = leftSocket?.position?.clone?.() || null; // Most recent fallback transform is the start/end of the animation grip blend.
+      const leftSocket = rig.group?.getObjectByName?.('left_hand_socket') || null; // Socket blended between free-hand pose and weapon target.
+      let idlePosition = leftSocket?.position?.clone?.() || null; // Most recent fallback transform is the start/end of the grip blend.
       let idleQuaternion = leftSocket?.quaternion?.clone?.() || null; // Matching fallback orientation for quaternion slerp.
       const captureIdle = () => {
         if (!leftSocket) return;
@@ -391,11 +391,10 @@
         rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion) {
           const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
           if (side !== 'left' || !leftSocket || !idlePosition || !idleQuaternion) return result;
-          const state = currentSecondaryGripAnimationState();
-          const influence = clamp01(state.influence);
+          const influence = clamp01(currentSecondaryGripAnimationState().influence);
           if (influence >= 0.9999) return result;
-          const targetPosition = leftSocket.position.clone(); // Target written by the original world-placement routine above.
-          const targetQuaternion = leftSocket.quaternion.clone(); // Target orientation written by the original world-placement routine above.
+          const targetPosition = leftSocket.position.clone(); // Target written by the original world placement above.
+          const targetQuaternion = leftSocket.quaternion.clone(); // Target orientation written by the original world placement above.
           leftSocket.position.copy(idlePosition).lerp(targetPosition, influence);
           leftSocket.quaternion.copy(idleQuaternion).slerp(targetQuaternion, influence);
           leftSocket.updateMatrix?.();
@@ -628,8 +627,17 @@
     if (!host || !status) return false;
 
     // Hide the obsolete always-on point editor while preserving its DOM/API so the
-    // older adapter remains harmless and does not need a second ownership system.
-    document.getElementById('handSecondaryGripEnabled')?.closest?.('.field')?.style?.setProperty('display', 'none');
+    // older adapter remains harmless and does not establish a second ownership path.
+    const oldCheckboxField = document.getElementById('handSecondaryGripEnabled')?.closest?.('.field') || null;
+    if (oldCheckboxField) {
+      oldCheckboxField.style.display = 'none';
+      const oldHelp = oldCheckboxField.previousElementSibling;
+      if (oldHelp?.classList?.contains('help')) {
+        oldHelp.style.display = 'none';
+        const oldHead = oldHelp.previousElementSibling;
+        if (oldHead?.classList?.contains('poseGroupHead')) oldHead.style.display = 'none';
+      }
+    }
     const oldPos = document.getElementById('handSecondaryGripPositionFields');
     const oldRot = document.getElementById('handSecondaryGripRotationFields');
     if (oldPos) oldPos.style.display = 'none';
@@ -692,8 +700,7 @@
       setTimeout(patchEditorJsonView, 0);
     }, true);
 
-    const exportBtn = document.getElementById('exportBtn');
-    exportBtn?.addEventListener('click', event => {
+    document.getElementById('exportBtn')?.addEventListener('click', event => {
       const obj = editorAnimationJsonObject();
       if (!obj) return;
       event.preventDefault();
@@ -767,6 +774,28 @@
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
+
+  // This module loads before procedural-hand-attachments in the shared bootstrap.
+  // Intercept that one global assignment so attach() is wrapped synchronously,
+  // before the editor/game can construct its first avatar rig.
+  if (!global.ProceduralHandAttachments) {
+    const descriptor = Object.getOwnPropertyDescriptor(global, 'ProceduralHandAttachments');
+    if (!descriptor || descriptor.configurable) {
+      Object.defineProperty(global, 'ProceduralHandAttachments', {
+        configurable: true,
+        enumerable: true,
+        get() { return null; },
+        set(value) {
+          Object.defineProperty(global, 'ProceduralHandAttachments', {
+            value, configurable: true, enumerable: true, writable: true,
+          });
+          installRigBlendWrapper();
+        },
+      });
+    }
+  } else {
+    installRigBlendWrapper();
+  }
 
   function frame() {
     installCombatCapture();
