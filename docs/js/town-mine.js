@@ -175,9 +175,133 @@
 
   function getTownValue() { return progression.townValue; }
 
+  function completedTier(tier) {
+    return progression.deepestFloor >= Math.max(1, Math.min(9, Number(tier) || 1)) * 10;
+  }
+
+  function woodCount() {
+    return (deps?.woodItemKeys || []).reduce((total, key) => total + Math.max(0, Number(deps.inventory?.[key]) || 0), 0);
+  }
+
+  function spendWood(amount) {
+    let remaining = amount;
+    for (const key of (deps?.woodItemKeys || [])) {
+      const take = Math.min(remaining, Math.max(0, Number(deps.inventory?.[key]) || 0));
+      deps.inventory[key] -= take;
+      remaining -= take;
+      if (!remaining) break;
+    }
+  }
+
+  async function ladderRows() {
+    const config = await loadConfig();
+    if (!config) return [];
+    return config.ladderUpgrades.map(upgrade => {
+      const metalKey = config.oreTierMetalKeys[upgrade.tier - 1];
+      const barKey = deps?.metalBarItemKey?.(metalKey) || `bar_${metalKey}`;
+      const unlocked = progression.unlockedShortcutTiers.includes(upgrade.tier);
+      const reached = completedTier(upgrade.tier);
+      const inventory = deps?.inventory || {};
+      const resources = {
+        gold: Math.max(0, Number(inventory.gold) || 0),
+        stone: Math.max(0, Number(inventory.stone) || 0),
+        wood: woodCount(),
+        metalBars: Math.max(0, Number(inventory[barKey]) || 0),
+      };
+      const affordable = Object.keys(resources).every(key => resources[key] >= upgrade[key]);
+      return { ...upgrade, metalKey, barKey, metalLabel: deps?.metalLabel?.(metalKey) || metalKey, unlocked, reached, affordable, resources };
+    });
+  }
+
+  async function buildLadderTier(tier) {
+    const row = (await ladderRows()).find(entry => entry.tier === Number(tier));
+    if (!row) return { ok: false, message: 'That ladder extension does not exist.' };
+    if (row.unlocked) return { ok: false, message: `The shortcut to Floor ${row.targetFloor} is already built.` };
+    if (row.tier > 1 && !progression.unlockedShortcutTiers.includes(row.tier - 1)) return { ok: false, message: 'Build the preceding ladder extension first.' };
+    if (!row.reached) return { ok: false, message: `Reach Floor ${row.tier * 10} before extending the ladder.` };
+    if (!row.affordable) return { ok: false, message: 'You do not have all of the required materials.' };
+    deps.inventory.gold -= row.gold;
+    deps.inventory.stone -= row.stone;
+    spendWood(row.wood);
+    deps.inventory[row.barKey] -= row.metalBars;
+    progression.unlockedShortcutTiers.push(row.tier);
+    progression.unlockedShortcutTiers.sort((a, b) => a - b);
+    progression.townValue += 1;
+    deps?.refreshInventory?.();
+    deps?.save?.();
+    return { ok: true, message: `Ladder extended to Floor ${row.targetFloor}. Town Value is now ${progression.townValue}.` };
+  }
+
+  function ensureLadderPanel() {
+    let panel = document.getElementById('townMineLadderPanel');
+    if (panel) return panel;
+    panel = document.createElement('div');
+    panel.id = 'townMineLadderPanel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.style.cssText = 'position:fixed;inset:0;z-index:18000;background:rgba(8,10,13,.82);display:none;align-items:center;justify-content:center;padding:18px;font:14px system-ui;color:#eee';
+    panel.innerHTML = '<section style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:#24272b;border:2px solid #777;border-radius:12px;padding:18px;box-shadow:0 18px 60px #000"><div style="display:flex;align-items:center;gap:12px"><h2 style="margin:0;flex:1">Mine Ladder</h2><button data-close style="font-size:20px">Close</button></div><p data-summary></p><div data-shortcuts></div><hr style="border-color:#555"><div data-upgrades></div></section>';
+    panel.querySelector('[data-close]').addEventListener('click', () => { panel.style.display = 'none'; });
+    panel.addEventListener('click', event => { if (event.target === panel) panel.style.display = 'none'; });
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  async function openLadderPanel() {
+    const panel = ensureLadderPanel();
+    panel.style.display = 'flex';
+    const rows = await ladderRows();
+    panel.querySelector('[data-summary]').textContent = `Deepest floor: ${progression.deepestFloor} · Town Value: ${progression.townValue}. Completed tiers permit costly permanent shortcuts.`;
+    const shortcuts = panel.querySelector('[data-shortcuts]');
+    shortcuts.innerHTML = '<h3>Descend</h3>';
+    const destinations = [{ floor: 1, label: 'Floor 1' }, ...rows.filter(row => row.unlocked).map(row => ({ floor: row.targetFloor, label: `Floor ${row.targetFloor}` }))];
+    for (const destination of destinations) {
+      const button = document.createElement('button');
+      button.textContent = `🪜 ${destination.label}`;
+      button.style.cssText = 'margin:0 8px 8px 0;padding:9px 13px';
+      button.addEventListener('click', () => { panel.style.display = 'none'; deps?.travelToFloor?.(destination.floor); });
+      shortcuts.appendChild(button);
+    }
+    const upgrades = panel.querySelector('[data-upgrades]');
+    upgrades.innerHTML = '<h3>Extensions</h3>';
+    for (const row of rows) {
+      const card = document.createElement('div');
+      card.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:8px;margin:8px 0;padding:12px;background:#181a1d;border:1px solid #555;border-radius:8px';
+      const status = row.unlocked ? 'Built' : !row.reached ? `Locked — reach Floor ${row.tier * 10}` : row.affordable ? 'Ready to build' : 'Missing materials';
+      card.innerHTML = `<div><strong>Tier ${row.tier} → Floor ${row.targetFloor}</strong><div style="color:#bbb;margin-top:5px">${row.gold}g (${row.resources.gold}) · ${row.stone} Stone (${row.resources.stone}) · ${row.wood} raw wood (${row.resources.wood}) · ${row.metalBars} ${row.metalLabel} Bars (${row.resources.metalBars})</div><div style="margin-top:5px">${status}</div></div>`;
+      const button = document.createElement('button');
+      button.textContent = row.unlocked ? 'Built' : 'Construct';
+      button.disabled = row.unlocked || !row.reached || !row.affordable || (row.tier > 1 && !progression.unlockedShortcutTiers.includes(row.tier - 1));
+      button.addEventListener('click', async () => {
+        const result = await buildLadderTier(row.tier);
+        deps?.showToast?.(result.message, result.ok);
+        await openLadderPanel();
+      });
+      card.appendChild(button);
+      upgrades.appendChild(card);
+    }
+  }
+
+  function makeLadderInteractable() {
+    return {
+      getButtons: () => [{ icon: '🪜', label: 'Mine Ladder', action: 'obj_mine_ladder', style: 'primary', allowed: true }],
+      onAction(action) {
+        if (action !== 'obj_mine_ladder') return { ok: false, message: 'Unknown action.' };
+        openLadderPanel();
+        return { ok: true, message: 'Opened the mine ladder plans.' };
+      },
+    };
+  }
+
   function filterMetalKeysForTownValue(metalKeys, townValue) {
     const maximumTier = maximumMetalTierForTownValue(townValue); // Used to keep chest and Gullet metals aligned with the first ten Town Value levels.
     return (metalKeys || []).filter((metalKey, index) => index < maximumTier);
+  }
+
+  function farmRootTotem(cols, rows) {
+    const x = Math.max(2, Math.min(cols - 3, Math.floor(cols * 0.5) + 2));
+    const y = Math.max(2, Math.min(rows - 3, Math.floor(rows * 0.72)));
+    return { x, y, spawnX: x - 1, spawnY: y };
   }
 
   function debugSnapshot() {
@@ -202,6 +326,11 @@
     serialize,
     restore,
     getTownValue,
+    ladderRows,
+    buildLadderTier,
+    openLadderPanel,
+    makeLadderInteractable,
+    farmRootTotem,
     debugSnapshot,
     SAFE_ROOM_ID,
   };
