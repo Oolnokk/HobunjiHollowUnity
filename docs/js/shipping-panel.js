@@ -407,6 +407,16 @@
     document.getElementById('shippingStandaloneBody').appendChild(pane);
     standaloneRoot = root;
 
+    // The legacy pane's own Close button is wired by game.js to closeMenu().
+    // Capture it before that target listener runs so standalone shipping never
+    // changes main-menu pause/pointer-lock state as a side effect of closing.
+    root.addEventListener('click', event => {
+      if (!event.target?.closest?.('#shipCloseBtn')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeStandalone();
+    }, true);
+
     // Bubble-phase blockers let the shipping controls receive input normally,
     // then prevent the hidden canvas camera/action listeners from seeing it.
     ['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','touchstart','touchmove','touchend','wheel','contextmenu','click'].forEach(type => {
