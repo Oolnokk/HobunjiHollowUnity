@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const audioSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'audio-system.js'), 'utf8');
-const played = []; // Used below to prove PATH/den/mine routing selects one of the authored hardstep files.
+const played = []; // Used below to prove PATH/den/mine/building routing selects one of the authored hardstep files.
 const logs = []; // Used below to prove the mobile-readable surface-change diagnostic is emitted without a browser console.
 
 class FakeAudio {
@@ -99,9 +99,12 @@ assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.PATH), 
 assert.strictEqual(audio.footstepSurfaceKey('map_i_den_map_northern_cliffs_1', TileType.GRASS), 'hard', 'dens should use hardstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_i_town_mine_f_005', TileType.GRASS), 'hard', 'mine floors should use hardstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_i_town_mine_safe', TileType.GRASS), 'hard', 'mine safe room should use hardstep');
-assert.strictEqual(audio.footstepSurfaceKey('building:general_store', TileType.PATH), 'gravel', 'ordinary building interiors should remain gravel');
+assert.strictEqual(audio.footstepSurfaceKey('building:general_store', TileType.GRASS), 'hard', 'building interiors should use hardstep');
+assert.strictEqual(audio.footstepSurfaceKey('interior', TileType.GRASS), 'hard', 'generic interior areas should use hardstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.GRASS), 'grass', 'ordinary grass should remain grassstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.RIVER), 'water', 'water should remain waterstep');
+assert.match(audioSource, /HARD_FOOTSTEP_TARGET_DBFS\s*=\s*-6\b/, 'hardstep source should declare the requested -6 dBFS normalization target');
+assert.match(audioSource, /hardFootstepNormalizationGainByUrl/, 'hardstep source should cache per-file normalization gains');
 
 played.length = 0;
 audio.playFootstepSfx('map_hobunji_town', { type: TileType.PATH, water: 0 });
