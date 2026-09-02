@@ -926,7 +926,7 @@
   const WALKABLE_SURFACE_MAX_ABOVE_FLOOR = 0.18;
   const WALKABLE_SMOOTH_SCULPT_STRENGTH = 0.96; // Used to pull intrusive geometry back toward its wall while retaining a soft bevel.
 
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
     const sculptFragmentsByTile = new Map(); // Groups welded intrusion triangles into per-tile wall patches below.
@@ -1183,6 +1183,29 @@
       for (let i = 0; i < ordered.length; i++) outIndices.push(ordered[i], ordered[(i + 1) % ordered.length], centerId);
       walkableSculptCutsSealed++;
     }
+    // Coarse fields can leave an anchored wall vertex leaning over a floor
+    // tile. Clipping has already split the triangle at tile borders, so a
+    // final snap to the nearest edge clears the route without opening the
+    // surrounding wall.
+    let walkableClearanceVerticesMoved = 0;
+    if (enforceWalkableClearance && claimed && floorY != null) {
+      for (let id = 0; id < outPositions.length / 3; id++) {
+        const x = outPositions[id * 3], y = outPositions[id * 3 + 1], z = outPositions[id * 3 + 2];
+        if (y <= floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR) continue;
+        const c = Math.floor((x + 1e-8) / ts), r = Math.floor((z + 1e-8) / ts);
+        if (!claimed.has(`${c},${r}`)) continue;
+        const edges = [
+          { offset: 0, value: c * ts, distance: Math.abs(x - c * ts) },
+          { offset: 0, value: (c + 1) * ts, distance: Math.abs((c + 1) * ts - x) },
+          { offset: 2, value: r * ts, distance: Math.abs(z - r * ts) },
+          { offset: 2, value: (r + 1) * ts, distance: Math.abs((r + 1) * ts - z) },
+        ];
+        const nearest = edges.reduce((best, edge) => edge.distance < best.distance ? edge : best);
+        if (nearest.distance <= 1e-6) continue;
+        outPositions[id * 3 + nearest.offset] = nearest.value;
+        walkableClearanceVerticesMoved++;
+      }
+    }
     return {
       positions: new Float32Array(outPositions), indices: outIndices,
       walkableSculptFragmentsSmoothed,
@@ -1190,10 +1213,11 @@
       walkableSculptSharedTargets,
       walkableSculptCutsSealed,
       walkableSculptMaxBevelDepth,
+      walkableClearanceVerticesMoved,
     };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -1239,7 +1263,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -1632,7 +1656,7 @@
     // instead of being clipped down to a flat stitched cap.
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
-    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1669,6 +1693,7 @@
       walkableSculptSharedTargets: mesh.walkableSculptSharedTargets || 0,
       walkableSculptCutsSealed: mesh.walkableSculptCutsSealed || 0,
       walkableSculptMaxBevelDepth: mesh.walkableSculptMaxBevelDepth || 0,
+      walkableClearanceVerticesMoved: mesh.walkableClearanceVerticesMoved || 0,
     };
   }
 
