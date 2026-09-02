@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 152194)
-Total output lines: 10000
-
     (() => {
       'use strict';
 
@@ -4967,7 +4964,160 @@ Total output lines: 10000
       // What this DOES now block: real structures — farm buildings/
       // furniture/crates (worldObjects) and the house, town buildings, and
       // zone buildings/animal dens — the same "walked straight through a
-      // wall" gap the player's own tileSpeedAt ne…2194 tokens truncated…ut instead: its hole is the player's
+      // wall" gap the player's own tileSpeedAt never had. moveCreatureToward
+      // already does axis-separated movement, so a creature blocked here
+      // slides along the obstacle's edge instead of freezing, exactly like
+      // the player's own wall collision.
+      function creatureCanEnterTile(def, wx, wy) {
+        // A NaN/Infinite coordinate compares false against every bound
+        // check below (NaN is never < or >= anything), so without this it
+        // would silently pass through as "allowed" and let a corrupted
+        // target position get written into c.x/c.y — from there it poisons
+        // every distance calc downstream (footstep falloff, aggro range,
+        // etc.), eventually crashing far away from where it actually went
+        // wrong (see audio-system.js's non-finite .volume guard).
+        if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || isHouseFootprint(col, row))) return false;
+        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return false;
+        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return false;
+        return true;
+      }
+
+      // True while `x,y` sits in a river/stream tile and `canSwim` is
+      // falsy — shared by the player (isPlayerSwimming) and creatures
+      // (isCreatureSwimming) to drive both the movement slowdown and the
+      // attack lockout.
+      function isSwimmingAt(x, y, canSwim, grid) {
+        if (canSwim) return false;
+        const g = grid || getActiveGrid();
+        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
+        const type = g[row]?.[col]?.type;
+        return type === TileType.RIVER || type === TileType.STREAM;
+      }
+
+      // The player has no canSwim tag of their own today.
+      function isPlayerSwimming() {
+        return isSwimmingAt(player.x, player.y, false, getActiveGrid());
+      }
+
+      function isCreatureSwimming(c) {
+        return isSwimmingAt(c.x, c.y, c.def?.canSwim, c.areaGrid);
+      }
+
+      // True while a creature without canClimb is standing on a cliff-face
+      // (incline) tile — same pattern as isCreatureSwimming, drives
+      // moveCreatureToward's CLIMB_SPEED_MUL slowdown. A canClimb creature
+      // scales cliffs at full speed.
+      function isCreatureClimbing(c) {
+        if (c.def?.canClimb) return false;
+        const g = c.areaGrid || getActiveGrid();
+        const col = Math.floor(c.x / TILE), row = Math.floor(c.y / TILE);
+        return !!g[row]?.[col]?.incline;
+      }
+
+      function moveCreatureToward(c, tx, ty, speed, dt) {
+        // A NaN/undefined target (e.g. a momentarily-gone companion master,
+        // a stale reference) must never reach the position math below — dist
+        // would come out NaN, every subsequent comparison against it is
+        // silently false rather than throwing, and c.x/c.y would end up
+        // permanently NaN with nothing downstream ever catching it directly.
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
+        const dx = tx - c.x, dy = ty - c.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
+        const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
+        const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
+        const baseSpeed = speed * devGlobalSpeedMul;
+        const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
+        const step = Math.min(dist, effectiveSpeed * dt);
+        // Axis-separated so a creature turned back by a cliff face or river
+        // slides along it instead of freezing outright (mirrors the player's
+        // collision in updateMovement).
+        const prevX = c.x, prevY = c.y;
+        const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
+        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
+        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
+        const moved = Math.hypot(c.x - prevX, c.y - prevY);
+        c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
+        if (moved > 0) tickCreatureFootsteps(c, moved);
+        return moved > 0;
+      }
+
+      // Grid-walkability predicate for TilePathfinding, expressed in tile
+      // coordinates — reuses creatureCanEnterTile at the tile's center so
+      // the pathfinder's notion of "blocked" always matches what actual
+      // movement will (and won't) let a creature step onto.
+      function creatureTileWalkable(col, row) {
+        return creatureCanEnterTile(null, (col + 0.5) * TILE, (row + 0.5) * TILE);
+      }
+
+      const CREATURE_STUCK_THRESHOLD_S = 0.6;
+      const CREATURE_PATH_REPLAN_DIST_PX = TILE * 3;
+      const CREATURE_PATH_SEARCH_PADDING_TILES = 6;
+
+      // Wraps moveCreatureToward for "travel to a fixed point" behaviors —
+      // returning home, patrol legs, grazing/drinking trips, a companion
+      // catching up to a far-off player — where getting stuck against a
+      // structure (now that creatureCanEnterTile actually blocks them)
+      // would be a visible regression with nothing to route around it.
+      // Direct combat chase/patrol-chase/wander deliberately keep calling
+      // moveCreatureToward directly instead of this: its axis-separated
+      // slide-along-the-wall is enough there, and rerouting mid-chase would
+      // perturb the carefully-tuned attack-range triggering built around a
+      // straight line to the target. Cheap in the unobstructed common case
+      // — a path is only computed once real movement stalls for
+      // CREATURE_STUCK_THRESHOLD_S, then followed hop-by-hop until the
+      // creature is close enough to fall back to the direct approach, the
+      // real target has moved far enough to invalidate it, or it goes stale.
+      function travelCreatureToward(c, tx, ty, speed, dt) {
+        const dist = Math.hypot(tx - c.x, ty - c.y);
+        if (dist < TILE * 0.5) { c._travelPath = null; c._travelStuckT = 0; return moveCreatureToward(c, tx, ty, speed, dt); }
+
+        if (c._travelPath && c._travelPath.length) {
+          if (!c._travelPathTarget || Math.hypot(tx - c._travelPathTarget.x, ty - c._travelPathTarget.y) > CREATURE_PATH_REPLAN_DIST_PX) {
+            c._travelPath = null; // real target moved on — stale path, fall through to a fresh attempt
+          } else {
+            const wp = c._travelPath[0];
+            const wx = (wp.col + 0.5) * TILE, wy = (wp.row + 0.5) * TILE;
+            const moving = moveCreatureToward(c, wx, wy, speed, dt);
+            if (Math.hypot(c.x - wx, c.y - wy) < TILE * 0.35) c._travelPath.shift();
+            return moving;
+          }
+        }
+
+        const moving = moveCreatureToward(c, tx, ty, speed, dt);
+        if (moving) { c._travelStuckT = 0; return moving; }
+        c._travelStuckT = (c._travelStuckT || 0) + dt;
+        if (c._travelStuckT < CREATURE_STUCK_THRESHOLD_S) return moving;
+        c._travelStuckT = 0;
+        const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
+        const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
+        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, creatureTileWalkable, {
+          bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+        });
+        if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
+        return moving;
+      }
+
+      function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          const ang = rnd() * Math.PI * 2;
+          const r = rnd() * radiusPx;
+          c.wanderTarget = { x: anchorX + Math.cos(ang) * r, y: anchorY + Math.sin(ang) * r };
+          c.wanderT = 1.5 + rnd() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
+      // A ground companion settled near the player (see the "settle" branch
+      // of updateCompanions below) used to pick its idle wander points from
+      // a plain disk centered on the player — including points arbitrarily
+      // close to (or right on top of) them. This keeps that same wander
+      // rhythm but samples from a donut instead: its hole is the player's
       // own "personal space" (1.5x the player's actual rendered portrait
       // width, so it scales with whatever avatar is currently equipped),
       // and its outer edge sits one more portrait-width further out, giving
