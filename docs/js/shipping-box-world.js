@@ -2,24 +2,29 @@
   'use strict';
 
   // Shipping Box world presentation + footprint adapter. FarmCrates owns the
-  // actual shipping inventory/timing; this module owns only configured farm
-  // occupancy/collision registration and authored furniture presentation.
+  // mutable inventory/timing state; ShippingBoxConfig + shippingBox.json own
+  // every feature value used by this presentation/occupancy layer.
   if (window.__shippingBoxWorldInstalled) return;
   window.__shippingBoxWorldInstalled = true;
 
-  const cfg = () => window.ShippingBoxConfig || {};
+  function config() {
+    if (!window.ShippingBoxConfig) throw new Error('ShippingBoxConfig must load before ShippingBoxWorld');
+    return window.ShippingBoxConfig;
+  }
+  const objectCfg = () => config().object;
+  const materialCfg = () => config().material;
+  const footprintCfg = () => objectCfg().footprint;
+  const worldCfg = () => config().world;
+
   let panelDeps = null; // Used for the Farm tab's authoritative worldObjects map.
   const boxes = new Set(); // Used to register boxes created before FarmPanel.init runs.
   const texturePromises = new Map(); // Used to load each configured PNG once, then clone per material.
 
-  function objectCfg() { return cfg().object || {}; }
-  function materialCfg() { return cfg().material || {}; }
-  function footprintCfg() { return objectCfg().footprint || {}; }
-
   function footprintSize() {
+    const footprint = footprintCfg();
     return {
-      width: Math.max(1, Math.round(Number(footprintCfg().width) || 1)),
-      height: Math.max(1, Math.round(Number(footprintCfg().height) || 1)),
+      width: Math.max(1, Math.round(Number(footprint.width))),
+      height: Math.max(1, Math.round(Number(footprint.height))),
     };
   }
 
@@ -55,7 +60,7 @@
 
   function patchFarmPanel(panel) {
     if (!panel?.init || panel.__shippingBoxFootprintPatched) return;
-    const originalInit = panel.init.bind(panel); // Used to preserve existing FarmPanel wrappers.
+    const originalInit = panel.init.bind(panel);
     panel.init = function shippingBoxFootprintInit(injectedDeps, ...rest) {
       panelDeps = injectedDeps;
       const result = originalInit(injectedDeps, ...rest);
@@ -70,7 +75,7 @@
       patchFarmPanel(window.FarmPanel);
       return;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel'); // Used to chain with FarmCrates' lazy hook.
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel');
     if (descriptor && !descriptor.configurable) return;
     const previousGet = descriptor?.get;
     const previousSet = descriptor?.set;
@@ -107,7 +112,7 @@
   }
 
   function configuredWrap() {
-    const mode = String(materialCfg().wrap || '').toLowerCase();
+    const mode = String(materialCfg().wrap).toLowerCase();
     if (mode === 'clamp') return THREE.ClampToEdgeWrapping;
     if (mode === 'mirror') return THREE.MirroredRepeatWrapping;
     return THREE.RepeatWrapping;
@@ -116,15 +121,12 @@
   function loadBaseTexture(filename) {
     if (texturePromises.has(filename)) return texturePromises.get(filename);
     const material = materialCfg();
-    const basePath = material.textureBasePath || '';
     const promise = new Promise((resolve, reject) => {
-      new THREE.TextureLoader().load(basePath + filename, texture => {
-        const center = material.center || [];
-        const repeat = material.repeat || [];
+      new THREE.TextureLoader().load(material.textureBasePath + filename, texture => {
         texture.wrapS = texture.wrapT = configuredWrap();
-        texture.center.set(Number(center[0]) || 0, Number(center[1]) || 0);
-        texture.repeat.set(Number(repeat[0]) || 1, Number(repeat[1]) || 1);
-        texture.rotation = (Number(material.rotationDeg) || 0) * Math.PI / 180;
+        texture.center.set(Number(material.center[0]), Number(material.center[1]));
+        texture.repeat.set(Number(material.repeat[0]), Number(material.repeat[1]));
+        texture.rotation = Number(material.rotationDeg) * Math.PI / 180;
         texture.needsUpdate = true;
         resolve(texture);
       }, undefined, reject);
@@ -135,22 +137,21 @@
 
   async function enforceConfiguredMaterials(group) {
     const material = materialCfg();
-    const forcedTexture = material.texture;
-    const forceEveryPart = material.forceTextureOnEveryPart !== false;
     const jobs = group.children.map(async mesh => {
       const part = authoredPartForMesh(mesh);
       if (!part) return;
-      const filename = forceEveryPart ? forcedTexture : (part.materialTexture || forcedTexture);
+      const filename = material.forceTextureOnEveryPart ? material.texture : part.materialTexture;
       if (!filename) return;
       const base = await loadBaseTexture(filename);
       materialList(mesh).forEach(meshMaterial => {
+        if (meshMaterial.map && meshMaterial.map !== base) meshMaterial.map.dispose?.();
         const texture = base.clone();
         texture.needsUpdate = true;
         meshMaterial.map = texture;
         meshMaterial.userData.shippingOwnedTexture = true;
-        if (material.multiplyAuthoredColor !== false && part.color) meshMaterial.color.set(part.color);
-        meshMaterial.transparent = material.transparent != null ? !!material.transparent : !!part.textureTransparent;
-        meshMaterial.opacity = material.opacity == null ? Number(part.surfaceOpacity ?? 1) : Number(material.opacity);
+        if (material.multiplyAuthoredColor) meshMaterial.color.set(part.color);
+        meshMaterial.transparent = !!material.transparent;
+        meshMaterial.opacity = Number(material.opacity);
         meshMaterial.needsUpdate = true;
       });
     });
@@ -163,33 +164,33 @@
 
   function isMovingLidPart(mesh) {
     const id = authoredPartForMesh(mesh)?.id || '';
-    const parts = objectCfg().parts || {};
-    return id === parts.lid || id === parts.lock || (!!parts.lidRimPrefix && id.startsWith(parts.lidRimPrefix));
+    const parts = objectCfg().parts;
+    return id === parts.lid || id === parts.lock || id.startsWith(parts.lidRimPrefix);
   }
 
   function installAuthoredShippingBox(box) {
     const authored = window.AuthoredFurniture;
     const object = objectCfg();
-    const furnitureKey = object.authoredFurnitureKey;
-    if (!furnitureKey || !authored?.load || !authored?.buildGroup || !box?.mesh?.parent) return;
+    if (!authored?.load || !authored?.buildGroup || !box?.mesh?.parent) return;
     const scene = box.mesh.parent;
     const fallbackBodyY = Number(box.mesh.position?.y) || 0;
 
-    authored.load(furnitureKey).then(async data => {
+    authored.load(object.authoredFurnitureKey).then(async data => {
       if (!boxes.has(box) || !box.mesh?.parent || !Array.isArray(data?.parts)) return;
-      const group = authored.buildGroup(data, object.fallback?.baseColor || '#8b6540');
+      const group = authored.buildGroup(data, object.fallback.baseColor);
       if (!group.children.length) return;
 
-      // Do not trust the generic async furniture texture path for this feature:
-      // wait for the configured texture, put a resolved clone on EVERY part,
-      // then restore each authored tint. This guarantees wood body/lid and the
-      // verdigris rim/lock all retain the same PNG-backed surface treatment.
+      // Generic furniture applies texture images asynchronously and may reset
+      // the diffuse color. Shipping waits for its configured PNG to resolve,
+      // replaces every part's map with a resolved clone, then reapplies that
+      // part's authored tint. Body + lid therefore share one visible wood
+      // texture/tint and rim + lock share the same PNG under verdigris tint.
       await enforceConfiguredMaterials(group);
       if (!boxes.has(box) || !box.mesh?.parent) { disposeRoot(group); return; }
 
-      const parts = object.parts || {};
+      const parts = object.parts;
       const bodyPart = data.parts.find(part => part.id === parts.body) || data.parts[0];
-      const fallbackBodyLocalY = Number(object.fallback?.body?.position?.[1]) || 0;
+      const fallbackBodyLocalY = Number(object.fallback.body.position[1]);
       const groundY = fallbackBodyY - (Number(bodyPart?.transform?.y) || fallbackBodyLocalY);
       const oldBody = box.mesh;
       const oldLid = box.lid;
@@ -205,18 +206,21 @@
       box.mesh = group;
       box.lid = lidPanel;
       box.latch = lock;
-      box.visualSource = object.visualSource || furnitureKey;
-      box.authoredFurnitureKey = furnitureKey;
+      box.visualSource = object.visualSource;
+      box.authoredFurnitureKey = object.authoredFurnitureKey;
       box.__syncShippingArt = () => {
-        const center = object.centerOffset || {};
-        group.position.set(Number(box.col) + (Number(center.x) || 0), groundY, Number(box.row) + (Number(center.z) || 0));
-        const lift = box.getTotalItems?.() > 0 ? (Number(object.lidLiftWhenOccupied) || 0) : 0;
+        group.position.set(
+          Number(box.col) + Number(object.centerOffset.x),
+          groundY,
+          Number(box.row) + Number(object.centerOffset.z),
+        );
+        const lift = box.getTotalItems?.() > 0 ? Number(object.lidLiftWhenOccupied) : 0;
         lidMovingMeshes.forEach(mesh => { mesh.position.y = (restY.get(mesh) || 0) + lift; });
       };
       box.__syncShippingArt();
       registerFootprint(box);
     }).catch(error => {
-      console.warn('[ShippingBoxWorld] authored Shipping Box load failed; using configured fallback', error);
+      console.warn('[ShippingBoxWorld] authored Shipping Box load failed; retaining configured fallback', error);
     });
   }
 
@@ -227,7 +231,7 @@
     box.__shippingBoxWorldDecorated = true;
     box.w = width;
     box.h = height;
-    box.blocksMovement = object.blocksMovement !== false;
+    box.blocksMovement = !!object.blocksMovement;
     box.getOccupiedTiles = () => footprintKeys(box).map(key => {
       const [col, row] = key.split(',').map(Number);
       return { col, row };
@@ -265,8 +269,7 @@
       });
     }
 
-    const wrappedMethods = cfg().world?.syncAfterMethods || ['refreshVisual', 'depositItem', 'withdrawItem', 'tick', 'onAction', 'reset'];
-    for (const methodName of wrappedMethods) {
+    for (const methodName of worldCfg().syncAfterMethods) {
       const original = box[methodName];
       if (typeof original !== 'function') continue;
       box[methodName] = function shippingBoxWorldWrappedMethod(...args) {
@@ -297,28 +300,28 @@
     sync: () => boxes.forEach(registerFootprint),
     reloadMaterials: () => boxes.forEach(box => installAuthoredShippingBox(box)),
     debug: () => [...boxes].map(box => ({
-      configVersion: cfg().version || null,
+      configVersion: config().version,
       col: box.col,
       row: box.row,
       occupiedTiles: box.getOccupiedTiles?.() || [],
       registeredKeys: panelDeps?.worldObjects
         ? [...panelDeps.worldObjects].filter(([, value]) => value === box).map(([key]) => key)
         : [],
-      visualSource: box.visualSource || 'fallback',
-      authoredFurnitureKey: box.authoredFurnitureKey || null,
+      visualSource: box.visualSource,
+      authoredFurnitureKey: box.authoredFurnitureKey,
       blocksMovement: box.blocksMovement === true,
-      materials: cfg().debug?.materialDiagnostics === false ? [] : (box.mesh?.children?.map(mesh => {
+      materials: config().debug.materialDiagnostics ? (box.mesh?.children?.map(mesh => {
         const part = authoredPartForMesh(mesh);
         const meshMaterial = materialList(mesh)[0];
         return {
           id: part?.id || mesh.name,
           role: part?.materialRole || null,
-          configuredTexture: materialCfg().texture || null,
+          configuredTexture: materialCfg().texture,
           hasRuntimeTexture: !!meshMaterial?.map?.image,
           authoredColor: part?.color || null,
           runtimeColor: meshMaterial?.color ? `#${meshMaterial.color.getHexString()}` : null,
         };
-      }) || []),
+      }) || []) : [],
     })),
   };
 })();
