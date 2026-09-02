@@ -1,12 +1,22 @@
 (() => {
   'use strict';
 
-  // Shipping tab (player bag <-> shipping-box transfer UI, category
-  // filters, amount stepper, ship/take buttons). Extracted out of
-  // game.js following the same window.<Namespace> + init(deps) pattern
-  // as its sibling systems.
+  // Shipping box transfer UI (Pack <-> box) plus the standalone floating
+  // window used when the in-world Shipping Box is opened.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  let standaloneOpen = false; // Used to suppress camera/game input while the shipping window is visible.
+  let standaloneRoot = null; // Used to host #mpShipping outside the main menu panel.
+  let standalonePreviousFocus = null; // Used to restore keyboard focus after closing the shipping window.
+  let standaloneDebugVisible = false; // Used by the in-window mobile-friendly diagnostics toggle.
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', ensureStandaloneWindow, { once: true });
+    } else {
+      ensureStandaloneWindow();
+    }
+  }
 
   // Narrow bridge for modular content catalogs. ITEM_DEFS and BASE_PRICES are
   // live objects owned by game.js; mutating them here keeps inventory, item
@@ -27,11 +37,12 @@
   const shippingActiveCat = { left: 'all', right: 'all' }; // Used by the category filters.
 
   function getShippingBoxContents() {
-    const shippingBoxObject = deps.getShippingBoxObject();
-    return shippingBoxObject && shippingBoxObject.getContents ? shippingBoxObject.getContents() : {};
+    const shippingBoxObject = deps?.getShippingBoxObject?.();
+    return shippingBoxObject?.getContents?.() || {};
   }
 
   function getShippingKeys(side) {
+    if (!deps) return [];
     const source = side === 'right' ? getShippingBoxContents() : deps.inventory;
     return Object.keys(deps.ITEM_DEFS).filter(key => {
       const def = deps.ITEM_DEFS[key];
@@ -42,11 +53,12 @@
   }
 
   function getShippingCount(side, key) {
+    if (!deps) return 0;
     return side === 'right' ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
   }
 
   function canShipKey(key) {
-    return deps.BASE_PRICES[key] !== undefined;
+    return !!deps && deps.BASE_PRICES[key] !== undefined;
   }
 
   function selectShippingItem(side, key) {
@@ -65,7 +77,7 @@
 
   function transferShippingAmount(mode) {
     const key = shippingSelected.key;
-    const shippingBoxObject = deps.getShippingBoxObject();
+    const shippingBoxObject = deps?.getShippingBoxObject?.();
     if (!key || !shippingBoxObject) return;
     const count = getShippingCount(shippingSelected.side, key);
     if (count < 1) return;
@@ -102,7 +114,7 @@
 
   function renderShippingGrid(side) {
     const grid = document.getElementById(side === 'left' ? 'shipLeftGrid' : 'shipRightGrid');
-    if (!grid) return;
+    if (!grid || !deps) return;
     grid.innerHTML = '';
     const keys = getShippingKeys(side);
     keys.forEach(key => {
@@ -126,13 +138,13 @@
   }
 
   function buildShippingTransferUI() {
-    if (!document.getElementById('mpShipping')) return;
+    if (!document.getElementById('mpShipping') || !deps) return;
     renderShippingGrid('left');
     renderShippingGrid('right');
 
     const leftStacks = Object.keys(deps.ITEM_DEFS).filter(k => (deps.inventory[k] || 0) > 0).length;
     const shippingBoxObject = deps.getShippingBoxObject();
-    const boxTotal = shippingBoxObject && shippingBoxObject.getTotalItems ? shippingBoxObject.getTotalItems() : 0;
+    const boxTotal = shippingBoxObject?.getTotalItems?.() || 0;
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     setText('shipLeftCap', `${leftStacks} stacks`);
     setText('shipRightCap', boxTotal > 0 ? `${boxTotal} queued` : 'Empty');
@@ -166,6 +178,236 @@
     setText('shipTransferOne', shippingSelected.side === 'left' ? 'Ship 1' : 'Take 1');
     setText('shipTransferHalf', shippingSelected.side === 'left' ? 'Ship Half' : 'Take Half');
     setText('shipTransferStack', shippingSelected.side === 'left' ? 'Ship Stack' : 'Take Stack');
+    updateStandaloneChrome();
+  }
+
+  function injectStandaloneStyles() {
+    if (document.getElementById('shippingStandaloneStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'shippingStandaloneStyles';
+    style.textContent = `
+      #shippingStandaloneRoot {
+        --shipping-pane-w: min(94vw, calc(27 * var(--col)));
+        --shipping-pane-h: min(76vh, calc(14 * var(--row) - 1.18 * var(--row)));
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        background: rgba(0, 0, 0, 0.22);
+        touch-action: none;
+      }
+      #shippingStandaloneRoot[hidden] { display: none !important; }
+      #shippingStandaloneWindow {
+        width: calc(var(--shipping-pane-w) + 16px);
+        max-width: 96vw;
+        max-height: 90vh;
+        display: grid;
+        grid-template-rows: auto minmax(0, var(--shipping-pane-h)) auto;
+        overflow: hidden;
+        border: 1px solid var(--border-bright);
+        border-radius: 16px;
+        background: var(--glass-2);
+        box-shadow: 0 18px 60px rgba(0,0,0,.58);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        outline: none;
+      }
+      .shipping-window-bar {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 9px 7px 12px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255,255,255,.035);
+      }
+      .shipping-window-heading { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+      #shippingStandaloneTitle { color: var(--accent); font-size: 13px; }
+      #shippingWindowStatus { color: var(--muted); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .shipping-window-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+      .shipping-window-btn {
+        min-width: 34px;
+        min-height: 30px;
+        padding: 4px 8px;
+        border: 1px solid var(--border-bright);
+        border-radius: 8px;
+        background: rgba(255,255,255,.055);
+        color: var(--text);
+        font-size: 10px;
+      }
+      .shipping-window-btn:hover, .shipping-window-btn:focus-visible { border-color: var(--accent); color: var(--accent); }
+      #shippingWindowClose { font-size: 18px; line-height: 1; }
+      #shippingStandaloneBody { position: relative; min-width: 0; min-height: 0; padding: 8px; overflow: hidden; }
+      #shippingStandaloneBody #mpShipping {
+        --tr-col: calc(var(--shipping-pane-w) / 60);
+        --tr-row: calc(var(--shipping-pane-h) / 32);
+        width: var(--shipping-pane-w);
+        height: var(--shipping-pane-h) !important;
+        display: block !important;
+        position: relative;
+      }
+      #shippingWindowDebugPanel {
+        max-height: 25vh;
+        overflow: auto;
+        margin: 0;
+        padding: 7px 10px;
+        border-top: 1px solid var(--border);
+        background: rgba(0,0,0,.24);
+        color: var(--muted);
+        font: 9px/1.35 'DM Mono', monospace;
+        white-space: pre-wrap;
+      }
+      #shippingWindowDebugPanel[hidden] { display: none !important; }
+      @media (max-width: 740px) {
+        #shippingStandaloneRoot {
+          --shipping-pane-w: 94vw;
+          --shipping-pane-h: min(74vh, calc(14 * var(--row) - .3 * var(--row)));
+          align-items: flex-start;
+        }
+        #shippingStandaloneWindow { margin-top: max(4px, env(safe-area-inset-top)); width: 96vw; max-height: 94vh; }
+        .shipping-window-bar { min-height: 38px; padding: 5px 7px 5px 9px; }
+        #shippingStandaloneTitle { font-size: 12px; }
+        #shippingWindowStatus { font-size: 8px; }
+        .shipping-window-btn { min-height: 28px; padding-inline: 6px; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function stopStandaloneInputPropagation(event) {
+    if (standaloneOpen) event.stopPropagation();
+  }
+
+  function releasePointerLock() {
+    if (!standaloneOpen || !document.pointerLockElement || typeof document.exitPointerLock !== 'function') return;
+    try { document.exitPointerLock(); } catch (_) {}
+  }
+
+  function getDebugState() {
+    const box = deps?.getShippingBoxObject?.();
+    const pane = document.getElementById('mpShipping');
+    return {
+      open: standaloneOpen,
+      pointerLocked: !!document.pointerLockElement,
+      panelParent: pane?.parentElement?.id || null,
+      queuedItems: box?.getTotalItems?.() || 0,
+      selectedSide: shippingSelected.side,
+      selectedKey: shippingSelected.key,
+      selectedAmount: shippingAmount,
+      boxPosition: box ? { col: box.col, row: box.row, width: box.w || 1, height: box.h || 1 } : null,
+    };
+  }
+
+  function updateStandaloneChrome() {
+    if (!standaloneRoot) return;
+    const state = getDebugState();
+    const status = document.getElementById('shippingWindowStatus');
+    if (status) status.textContent = `${state.queuedItems} queued · camera input blocked`;
+    const debugPanel = document.getElementById('shippingWindowDebugPanel');
+    if (debugPanel && standaloneDebugVisible) debugPanel.textContent = JSON.stringify(state, null, 2);
+  }
+
+  function closeStandalone() {
+    if (!standaloneOpen) return false;
+    standaloneOpen = false;
+    if (standaloneRoot) {
+      standaloneRoot.hidden = true;
+      standaloneRoot.setAttribute('aria-hidden', 'true');
+    }
+    const pane = document.getElementById('mpShipping');
+    pane?.classList.remove('shipping-standalone-pane');
+    updateStandaloneChrome();
+    const restore = standalonePreviousFocus;
+    standalonePreviousFocus = null;
+    if (restore && typeof restore.focus === 'function' && document.contains(restore)) {
+      try { restore.focus({ preventScroll: true }); } catch (_) { restore.focus(); }
+    }
+    return true;
+  }
+
+  function openStandalone() {
+    ensureStandaloneWindow();
+    if (!standaloneRoot || !deps) return false;
+    standalonePreviousFocus = document.activeElement;
+    standaloneOpen = true;
+    standaloneRoot.hidden = false;
+    standaloneRoot.setAttribute('aria-hidden', 'false');
+    document.getElementById('mpShipping')?.classList.add('shipping-standalone-pane');
+    releasePointerLock();
+    buildShippingTransferUI();
+    updateStandaloneChrome();
+    const dialog = document.getElementById('shippingStandaloneWindow');
+    requestAnimationFrame(() => {
+      releasePointerLock();
+      try { dialog?.focus({ preventScroll: true }); } catch (_) { dialog?.focus(); }
+    });
+    return true;
+  }
+
+  function ensureStandaloneWindow() {
+    if (standaloneRoot) return standaloneRoot;
+    const pane = document.getElementById('mpShipping');
+    if (!pane || !document.body) return null;
+    injectStandaloneStyles();
+
+    const root = document.createElement('div');
+    root.id = 'shippingStandaloneRoot';
+    root.hidden = true;
+    root.setAttribute('aria-hidden', 'true');
+    root.innerHTML = `
+      <section id="shippingStandaloneWindow" role="dialog" aria-modal="true" aria-labelledby="shippingStandaloneTitle" tabindex="-1">
+        <header class="shipping-window-bar">
+          <div class="shipping-window-heading">
+            <strong id="shippingStandaloneTitle">📦 Shipping Box</strong>
+            <span id="shippingWindowStatus">0 queued · camera input blocked</span>
+          </div>
+          <div class="shipping-window-actions">
+            <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">Debug</button>
+            <button type="button" class="shipping-window-btn" id="shippingWindowClose" aria-label="Close shipping box">×</button>
+          </div>
+        </header>
+        <div id="shippingStandaloneBody"></div>
+        <pre id="shippingWindowDebugPanel" hidden></pre>
+      </section>`;
+    document.body.appendChild(root);
+    document.getElementById('shippingStandaloneBody').appendChild(pane);
+    standaloneRoot = root;
+
+    // Bubble-phase blockers let the shipping controls receive input normally,
+    // then prevent the hidden canvas camera/action listeners from seeing it.
+    ['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','touchstart','touchmove','touchend','wheel','contextmenu','click'].forEach(type => {
+      root.addEventListener(type, stopStandaloneInputPropagation);
+    });
+    const dialog = document.getElementById('shippingStandaloneWindow');
+    dialog.addEventListener('keydown', event => {
+      if (!standaloneOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeStandalone();
+      }
+      event.stopPropagation();
+    });
+    dialog.addEventListener('keyup', stopStandaloneInputPropagation);
+    document.getElementById('shippingWindowClose').addEventListener('click', closeStandalone);
+    document.getElementById('shippingWindowDebug').addEventListener('click', event => {
+      standaloneDebugVisible = !standaloneDebugVisible;
+      event.currentTarget.setAttribute('aria-expanded', String(standaloneDebugVisible));
+      const panel = document.getElementById('shippingWindowDebugPanel');
+      panel.hidden = !standaloneDebugVisible;
+      updateStandaloneChrome();
+    });
+    root.addEventListener('click', event => {
+      if (event.target === root) closeStandalone();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      if (standaloneOpen && document.pointerLockElement) releasePointerLock();
+      updateStandaloneChrome();
+    });
+    return root;
   }
 
   window.ShippingPanel = {
@@ -177,5 +419,9 @@
     transferAmount: transferShippingAmount,
     setActiveCat: (side, cat) => { shippingActiveCat[side] = cat; },
     getActiveCat: (side) => shippingActiveCat[side],
+    open: openStandalone,
+    close: closeStandalone,
+    isOpen: () => standaloneOpen,
+    getDebugState,
   };
 })();
