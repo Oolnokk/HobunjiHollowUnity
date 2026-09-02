@@ -24,7 +24,7 @@
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260827b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw clones opaque texture maps during its render-time scan. This final wrapper runs immediately afterward so copied 4x4 natural-surface placeholders are repaired and rock/cliff island UVs are restored before spatial chunking and drawing.
-    ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902a'],
+    ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
