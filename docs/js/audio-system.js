@@ -21,6 +21,7 @@
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
     preloadAnimalVoices();
+    preloadHardFootstepNormalization();
   }
 
   function gameAudioConfig() {
@@ -33,8 +34,8 @@
   // Real recordings (docs/assets/audio/sfx/footsteps), keyed by a coarse
   // "surface" rather than raw TileType — several tile types share a
   // footstep (e.g. grass and weeds both sound like grass underfoot).
-  // Ordinary building interiors currently map to gravel; natural dens and
-  // the mine use the dedicated hard-step recording pool below.
+  // Roads plus every building/den/mine interior use the dedicated hard-step
+  // recording pool; loose/exposed exterior ground keeps gravelstep.
   //
   // Each surface's clip list normally comes from config
   // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
@@ -51,6 +52,10 @@
     'assets/audio/sfx/footsteps/hardstep_2.mp3',
     'assets/audio/sfx/footsteps/hardstep_3.mp3',
   ]);
+  const HARD_FOOTSTEP_TARGET_DBFS = -6; // Used by the one-time decoder scan below to peak-normalize every hard-step recording consistently.
+  const HARD_FOOTSTEP_TARGET_PEAK = Math.pow(10, HARD_FOOTSTEP_TARGET_DBFS / 20); // Converts the authored dBFS target to the linear amplitude used by Web Audio.
+  const hardFootstepNormalizationGainByUrl = new Map(); // Used by hard-step playback to apply each clip's cached -6 dBFS peak-normalization multiplier.
+  const hardFootstepNormalizationPromiseByUrl = new Map(); // Used to dedupe asynchronous fetch/decode scans when startup and first playback overlap.
 
   const FOOTSTEP_POST_FX = Object.freeze({
     grass:  {},
@@ -58,6 +63,66 @@
     hard:   { urls: HARD_FOOTSTEP_URLS, volumeMul: 1.0 },
     water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
   });
+
+  function decodeFootstepAudioData(context, arrayBuffer) {
+    return new Promise((resolve, reject) => {
+      let settled = false; // Used to support both callback-style and Promise-style decodeAudioData without resolving twice.
+      const succeed = value => { if (!settled) { settled = true; resolve(value); } };
+      const fail = error => { if (!settled) { settled = true; reject(error); } };
+      try {
+        const result = context.decodeAudioData(arrayBuffer.slice(0), succeed, fail);
+        if (result?.then) result.then(succeed, fail);
+      } catch (error) { fail(error); }
+    });
+  }
+
+  async function measureHardFootstepNormalization(url) {
+    if (hardFootstepNormalizationGainByUrl.has(url)) return hardFootstepNormalizationGainByUrl.get(url);
+    if (hardFootstepNormalizationPromiseByUrl.has(url)) return hardFootstepNormalizationPromiseByUrl.get(url);
+    const promise = (async () => {
+      try {
+        const fetchFn = window.fetch || (typeof fetch === 'function' ? fetch : null); // Uses same-origin browser fetch; absent in headless regression tests.
+        const DecodeContext = window.OfflineAudioContext || window.webkitOfflineAudioContext || window.AudioContext || window.webkitAudioContext; // OfflineAudioContext avoids autoplay restrictions where available.
+        if (!fetchFn || !DecodeContext) return null;
+        const response = await fetchFn(url);
+        if (!response?.ok) throw new Error(`HTTP ${response?.status ?? 'error'}`);
+        const arrayBuffer = await response.arrayBuffer();
+        const decodeContext = (window.OfflineAudioContext || window.webkitOfflineAudioContext)
+          ? new DecodeContext(1, 1, 44100)
+          : new DecodeContext();
+        const buffer = await decodeFootstepAudioData(decodeContext, arrayBuffer);
+        let sourcePeak = 0; // Used below to derive the exact per-file gain required to put its loudest sample at -6 dBFS.
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+          const data = buffer.getChannelData(channel);
+          for (let i = 0; i < data.length; i++) sourcePeak = Math.max(sourcePeak, Math.abs(data[i]));
+        }
+        if (!(sourcePeak > 0)) throw new Error('decoded clip has no nonzero samples');
+        const normalizationGain = HARD_FOOTSTEP_TARGET_PEAK / sourcePeak; // Applied before the ordinary footstep/master attenuation so mixer settings still behave normally.
+        const sourcePeakDbfs = 20 * Math.log10(sourcePeak);
+        const result = { gain: normalizationGain, sourcePeak, sourcePeakDbfs, targetDbfs: HARD_FOOTSTEP_TARGET_DBFS };
+        hardFootstepNormalizationGainByUrl.set(url, result);
+        window.__farmLog?.(`[footstep] normalized ${url.split('/').pop()} peak=${sourcePeakDbfs.toFixed(2)}dBFS gain=${normalizationGain.toFixed(3)} target=${HARD_FOOTSTEP_TARGET_DBFS}dBFS`, 'audio');
+        return result;
+      } catch (error) {
+        window.__farmLog?.(`[footstep] hardstep normalization unavailable for ${url.split('/').pop()}: ${error?.message || error}`, 'audio');
+        return null;
+      } finally {
+        hardFootstepNormalizationPromiseByUrl.delete(url);
+      }
+    })();
+    hardFootstepNormalizationPromiseByUrl.set(url, promise);
+    return promise;
+  }
+
+  function preloadHardFootstepNormalization() {
+    for (const url of HARD_FOOTSTEP_URLS) measureHardFootstepNormalization(url);
+  }
+
+  function hardFootstepNormalizationFor(url) {
+    const cached = hardFootstepNormalizationGainByUrl.get(url);
+    if (!cached) measureHardFootstepNormalization(url); // A startup decode may still be pending; first use also retries if startup could not measure it.
+    return cached || null;
+  }
 
   // How much of a ground footstep's own volume a simultaneous waterstep
   // blends in at when the tile is fully flooded (tile.water === MAX_WATER)
@@ -84,15 +149,15 @@
       || areaId.startsWith('map_i_den_');
   }
 
-  // Grass = grassstep. Roads (TileType.PATH), natural dens, and every mine
-  // floor/safe room = hardstep. Other hard-packed/exposed ground — tilled or
-  // raised soil, dug trenches, rock, shrub, ramps — remains gravelstep.
-  // Anything that actually holds standing water (river/stream/waterfall/
-  // paddy) = waterstep — this is "swimming" territory, not a moisture blend
-  // (see playFootstepSfx for the blend applied to non-water ground tiles).
+  // Grass = grassstep. Roads (TileType.PATH), natural dens, all mine areas,
+  // and every building interior = hardstep. Other hard-packed/exposed ground
+  // — tilled or raised soil, dug trenches, rock, shrub, ramps — remains
+  // gravelstep. Anything that actually holds standing water (river/stream/
+  // waterfall/paddy) = waterstep — this is "swimming" territory, not a
+  // moisture blend (see playFootstepSfx for the blend on non-water ground).
   function footstepSurfaceKey(area, type) {
     if (isHardFootstepArea(area)) return 'hard';
-    if (area === 'interior' || deps._isBuildingArea(area)) return 'gravel';
+    if (area === 'interior' || deps._isBuildingArea(area)) return 'hard';
     const TileType = deps.TileType;
     switch (type) {
       case TileType.PADDY:
@@ -138,11 +203,29 @@
     return true;
   }
 
+  function playGainAdjustedFootstepClip(snd, volume, gainMul = 1) {
+    const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0)); // Used by normalized hardstep clips while preserving ordinary footstep/master attenuation.
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('no AudioContext');
+      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const source = ctx.createMediaElementSource(snd);
+      const gain = ctx.createGain();
+      gain.gain.value = adjustedVolume;
+      source.connect(gain).connect(ctx.destination);
+      snd.play().catch(() => {});
+    } catch (error) {
+      snd.volume = Math.min(1, adjustedVolume); // HTMLAudio cannot amplify beyond unity; Web Audio above handles gains >1 when available.
+      snd.play().catch(() => {});
+    }
+  }
+
   // Routes a real footstep clip through the shared footstep AudioContext
   // with a dulling lowpass instead of just setting .volume, so a "heavy"
   // landing thud actually sounds tonally heavier (less high-end clack),
   // not just louder — used by playFootstepSurface's heavy branch.
-  function playHeavyFilteredClip(snd, volume) {
+  function playHeavyFilteredClip(snd, volume, gainMul = 1) {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) throw new Error('no AudioContext');
@@ -154,11 +237,11 @@
       lpf.frequency.value = 900; // dulls the clip's high end into a thud instead of a clack
       lpf.Q.value = 0.7;
       const gain = ctx.createGain();
-      gain.gain.value = Math.min(1, volume * 1.15); // filtering loses perceived loudness; compensate
+      gain.gain.value = Math.max(0, volume * 1.15 * Math.max(0, Number(gainMul) || 0)); // Filtering compensation is multiplied by hardstep normalization when applicable.
       source.connect(lpf).connect(gain).connect(ctx.destination);
       snd.play().catch(() => {});
     } catch (e) {
-      snd.volume = volume;
+      snd.volume = Math.min(1, Math.max(0, volume * Math.max(0, Number(gainMul) || 0)));
       snd.play().catch(() => {});
     }
   }
@@ -188,8 +271,17 @@
       const url = urls[Math.floor(Math.random() * urls.length)];
       const snd = new Audio(url);
       snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
-      if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) lastFootstepSfxDebug.url = url;
-      if (heavy) playHeavyFilteredClip(snd, finalVolume);
+      const normalization = surfaceKey === 'hard' ? hardFootstepNormalizationFor(url) : null; // Cached per-file source peak correction; null until the tiny startup decode completes.
+      const normalizationGain = normalization?.gain ?? 1;
+      if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
+        lastFootstepSfxDebug.url = url;
+        lastFootstepSfxDebug.normalizationReady = !!normalization;
+        lastFootstepSfxDebug.normalizationGain = normalizationGain;
+        lastFootstepSfxDebug.normalizationTargetDbfs = surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null;
+        lastFootstepSfxDebug.sourcePeakDbfs = normalization?.sourcePeakDbfs ?? null;
+      }
+      if (heavy) playHeavyFilteredClip(snd, finalVolume, normalizationGain);
+      else if (surfaceKey === 'hard') playGainAdjustedFootstepClip(snd, finalVolume, normalizationGain);
       else { snd.volume = finalVolume; snd.play().catch(() => {}); }
       return;
     }
@@ -275,6 +367,10 @@
       wetFraction,
       heavy,
       url: null,
+      normalizationReady: false,
+      normalizationGain: 1,
+      normalizationTargetDbfs: surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null,
+      sourcePeakDbfs: null,
       atMs: Math.round(performance.now()),
     };
     if (surfaceKey !== lastFootstepDebugSurface) {
