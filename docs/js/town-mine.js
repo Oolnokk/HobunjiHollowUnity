@@ -72,7 +72,7 @@
     const config = await loadConfig();
     if (!config) return null;
 
-    const generated = window.CavernGenerator.generateCavernFloor(`${mapId}_layout`); // Reuses the Den sculptor's organic tunnel topology and mesh.
+    const generated = window.CavernGenerator.generateCavernFloor(`${mapId}_layout`, { fast: true }); // Uses the player-approved Mine Fast sculpt preset.
     const rng = seededRng(`${mapId}_content`); // Used to keep a floor stable throughout a run while allowing every numbered floor to differ.
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
     const excluded = new Set(generated.exitTiles.map(([col, row]) => `${col},${row}`)); // Used to keep the entrance clear of rocks and enemies.
