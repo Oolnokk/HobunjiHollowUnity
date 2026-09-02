@@ -7,7 +7,7 @@
   // Geometry/per-part authored colors remain in config/furniture-authored/
   // shippingBox.json because that file is the furniture database itself.
   window.ShippingBoxConfig = {
-    version: '2026-09-02.3',
+    version: '2026-09-02.4',
 
     object: {
       id: 'sell_crate',
@@ -143,6 +143,7 @@
       allCategory: 'all',
       defaultAmount: 1,
       halfDivisor: 2,
+      transferModes: { half: 'half', stack: 'stack' },
       iconFallback: '📦',
       fontStack: "'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace",
       monoFontStack: "'DM Mono', monospace",
@@ -253,7 +254,23 @@
       sellStackLabel: 'Sell Stack',
       nothingToSellMessage: 'Nothing to sell.',
       soldPrefix: 'Sold ',
+      soldForText: ' for ',
+      goldSuffix: 'g',
       stackQuantityToken: 'stack',
+      singleQuantity: 1,
+      inPackText: 'in pack',
+      eachText: 'g each',
+      stackValueText: 'g stack',
+      css: {
+        actionGapPx: 4,
+        buttonMinWidthPx: 74,
+        buttonPaddingInlinePx: 7,
+        emptyFontSizePx: 11,
+        emptyPaddingPx: 12,
+        emptyRadiusPx: 10,
+        mobileBreakpointPx: 760,
+        mobileButtonMinWidthPx: 68,
+      },
     },
 
     debug: {
