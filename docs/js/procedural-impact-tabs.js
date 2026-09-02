@@ -5,8 +5,8 @@
   'use strict';
 
   const STYLE_ID = 'proceduralImpactTabsStyles'; // Prevents duplicate workspace CSS if the adapter is evaluated twice.
-  const LIMB_POSE_SCRIPT_ID = 'proceduralLimbPoseAuthorScript'; // Keeps the Ground / Carry authoring adapter single-loaded beside this existing procedural-editor adapter.
-  const LIMB_FACING_SCRIPT_ID = 'proceduralLimbFacingPreserverScript'; // Loads before the pose author so it can capture the editor's untouched front-facing yaw.
+  const LIMB_POSE_SCRIPT_ID = 'proceduralLimbPoseAuthorScript'; // Retains the legacy compatibility load path; the lazy bootstrap sentinel normally keeps it dormant.
+  const LIMB_FACING_SCRIPT_ID = 'proceduralLimbFacingPreserverScript'; // Legacy filename now installs the explicit opt-in Ground / Carry bootstrap before the compatibility author check.
 
   function loadLimbFacingPreserver() {
     if (window.HobunjiProceduralLimbFacingPreserver) return Promise.resolve();
@@ -17,13 +17,13 @@
       existing.addEventListener('error', resolve, { once: true });
     });
     return new Promise(resolve => {
-      const script = document.createElement('script'); // Captures each fresh poseRoot yaw before Ground / Carry begins writing pitch/roll.
+      const script = document.createElement('script'); // Installs the lightweight opt-in sentinel/button without changing avatar or animation state.
       script.id = LIMB_FACING_SCRIPT_ID;
-      script.src = '../../js/procedural-limb-facing-preserver.js?v=20260902b';
+      script.src = '../../js/procedural-limb-facing-preserver.js?v=20260902c';
       script.defer = true;
       script.onload = resolve;
       script.onerror = () => {
-        console.error('[Impact tabs] Ground / Carry facing preserver failed to load.');
+        console.error('[Impact tabs] Ground / Carry bootstrap failed to load.');
         resolve();
       };
       document.head.appendChild(script);
@@ -32,15 +32,15 @@
 
   function loadLimbPoseAuthor() {
     if (window.HobunjiProceduralLimbPoseAuthor || document.getElementById(LIMB_POSE_SCRIPT_ID)) return;
-    const script = document.createElement('script'); // Loads the isolated anatomy/ground/carry workspace without modifying the editor's 2 MB embedded HTML.
+    const script = document.createElement('script'); // Compatibility fallback only: successful bootstrap installs a dormant sentinel and prevents this eager load.
     script.id = LIMB_POSE_SCRIPT_ID;
-    script.src = '../../js/procedural-limb-pose-author.js?v=20260902a';
+    script.src = '../../js/procedural-limb-pose-author.js?v=20260902c';
     script.defer = true;
     script.onerror = () => console.error('[Impact tabs] Ground / Carry pose author failed to load.');
     document.head.appendChild(script);
   }
 
-  async function loadGroundCarryWorkspace() { // Enforces capture-before-author ordering so the pose adapter cannot erase the editor's normal facing yaw first.
+  async function loadGroundCarryWorkspace() { // Establishes the explicit opt-in sentinel before the old compatibility author check runs.
     await loadLimbFacingPreserver();
     loadLimbPoseAuthor();
   }
