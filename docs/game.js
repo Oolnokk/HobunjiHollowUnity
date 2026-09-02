@@ -18605,11 +18605,28 @@
           return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
         }
         if (!_dialogueWalker?.root) return null;
-        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
-        const npcCenter = typeof _dialogueWalker.dialogueHeadWorldPosition === 'function'
+        const hasAuthoredSpeakerHead = typeof _dialogueWalker.dialogueHeadWorldPosition === 'function';
+        const npcCenter = hasAuthoredSpeakerHead
           ? _dialogueWalker.dialogueHeadWorldPosition(new THREE.Vector3())
           : portraitAvatarCenterWorldPosition(_dialogueWalker.root);
-        if (!playerCenter || !npcCenter) return null;
+        if (!npcCenter) return null;
+
+        // Animal-shaped dialogue speakers provide an authored head point rather than
+        // an NPC portrait center. Treat that exact world-space pixel as the normal
+        // npcDialogue camera target: same configured distance/angle/azimuth/zoom,
+        // but no player->speaker pitch extrapolation (which can aim below terrain
+        // when the speaker is much shorter than the player).
+        if (hasAuthoredSpeakerHead) {
+          return {
+            cameraY: npcCenter.y + Math.sin(baseAngle) * distance,
+            lookY: npcCenter.y,
+            targetX: npcCenter.x,
+            targetZ: npcCenter.z,
+          };
+        }
+
+        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
+        if (!playerCenter) return null;
         const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
         const portraitDistance = Math.max(
           minDistance,

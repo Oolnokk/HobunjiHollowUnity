@@ -67,6 +67,11 @@ assert(!adapter.includes('chatheadCreatureKind'), 'triggered livestock dialogue 
 assert(!adapter.includes('creatureGenotype:'), 'triggered livestock dialogue must not repeatedly composite a genotype portrait');
 assert(game.includes("typeof _dialogueWalker.dialogueHeadWorldPosition === 'function'"), 'NPC camera calculation must accept the animal head point');
 assert(game.includes("? _dialogueWalker.dialogueHeadWorldPosition(new THREE.Vector3())"), 'NPC camera calculation must use the adapter head point directly');
+assert(game.includes("cameraY: npcCenter.y + Math.sin(baseAngle) * distance"), 'animal dialogue camera must use npcDialogue angle/distance relative to the authored head point');
+assert(game.includes("lookY: npcCenter.y"), 'animal dialogue camera must look directly at the authored head point instead of extrapolating below ground');
+assert(game.includes("targetX: npcCenter.x"), 'animal dialogue camera X target must be the authored head point');
+assert(game.includes("targetZ: npcCenter.z"), 'animal dialogue camera Z target must be the authored head point');
+assert(game.includes("if (hasAuthoredSpeakerHead)"), 'animal head camera branch must be isolated from ordinary NPC portrait-center math');
 assert(game.includes(": portraitAvatarCenterWorldPosition(_dialogueWalker.root);"), 'ordinary NPCs must keep their existing portrait-center fallback');
 assert(game.includes('frame.x + frame.width * 0.5'), 'triggered dialogue head X must be the exact center pixel of the authored frame');
 assert(game.includes('frame.y + frame.height * 0.5'), 'triggered dialogue head Y must be the exact center pixel of the authored frame');
