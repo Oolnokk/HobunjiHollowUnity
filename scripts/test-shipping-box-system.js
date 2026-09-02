@@ -62,7 +62,9 @@ assert.match(crates, /farmBuildingsList/, 'shipping integrates with the Farm tab
 assert.match(crates, /farmGlanceCanvas/, 'shipping movement uses the existing Farm overview canvas');
 assert.match(crates, /farmBuildingKind = 'shipping-box'/, 'shipping adds a dedicated Buildings-list row');
 assert.match(crates, /settings-small-btn/, 'shipping Move control uses the existing Farm row button class');
+assert.match(crates, /function patchFarmPanel[\s\S]*Object\.defineProperty\(window, 'FarmPanel'/, 'shipping captures FarmPanel dependencies regardless of script/init order');
 assert.match(crates, /FarmBuildings\?\.canPlaceAt/, 'shipping movement reuses farm-building placement validation');
+assert.match(crates, /function installShippingPlacementGuard[\s\S]*rectsOverlap/, 'barn placement also respects the Shipping Box full two-tile footprint');
 assert.match(crates, /worldObjects\.delete\(oldKey\)[\s\S]*box\.moveTo\(col, row\)[\s\S]*worldObjects\.set/, 'shipping movement preserves the existing box instance and its contents');
 assert.match(crates, /window\._farmEditor\?\.save\?\.\(\)/, 'shipping movement persists through the existing farm layout save path');
 
