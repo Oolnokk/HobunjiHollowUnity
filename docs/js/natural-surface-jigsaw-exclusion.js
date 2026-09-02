@@ -17,4 +17,5 @@
   };
 
   mapper.__naturalSurfaceJigsawExclusionInstalled = true;
+  window.NaturalSurfaceJigsawExclusion = { installed: true }; // Used by the HousePieces loader to avoid requesting this adapter more than once.
 })();
