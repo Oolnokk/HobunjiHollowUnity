@@ -116,6 +116,17 @@
     eligibleWeapons: Object.freeze([...ELIGIBLE_WEAPONS]),
     normalizedShapeKey,
     authoredBaseScale,
+    debugFor(itemKey) {
+      const shapeKey = normalizedShapeKey(itemKey); // Mobile/console-free diagnostics for why the legacy baseline does or does not apply to a particular item key.
+      const baseScale = authoredBaseScale(itemKey);
+      return {
+        itemKey: itemKey || null,
+        shapeKey,
+        authoredBaseScale: baseScale,
+        legacyEligible: ELIGIBLE_WEAPONS.has(shapeKey),
+        legacySuppressedByAuthoredScale: Math.abs(baseScale - 1) > 0.0001,
+      };
+    },
     get installed() { return installed; },
   });
 })(window);
