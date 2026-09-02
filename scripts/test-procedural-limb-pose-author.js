@@ -4,7 +4,7 @@ const fs = require('fs');
 const anatomy = fs.readFileSync('docs/config/procedural-anatomy-profiles.js', 'utf8'); // Verifies the new species+gender thickness/split source without duplicating canonical limb lengths.
 const solver = fs.readFileSync('docs/js/leg-bones.js', 'utf8'); // Verifies legacy gait IK remains available beside fixed anatomical two-bone IK.
 const author = fs.readFileSync('docs/js/procedural-limb-pose-author.js', 'utf8'); // Verifies the isolated Ground / Carry workspace integration contracts.
-const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies the editor-authored front-facing yaw survives Ground / Carry torso posing.
+const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies editor yaw, portrait-face visibility, and non-occluding torso guides.
 const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Verifies the already-loaded procedural editor adapter boots the new workspace.
 
 for (const field of [
@@ -69,6 +69,14 @@ assert(facing.includes('protectedGroundCarryEulerSet'), 'facing preserver does n
 assert(facing.includes('originalSet.call(this, x, preserveFacing ? baselineYaw : y, z, order)'), 'Ground / Carry zero-yaw writes are not replaced with the captured editor yaw');
 assert(facing.includes("hobunji-backdrop-avatar-changed"), 'facing preserver does not recapture yaw when the preview avatar rebuilds');
 assert(facing.includes('Ground / Carry facing preserved'), 'facing fix lacks a mobile-visible confirmation');
+assert(facing.includes('cameraRelativePortraitFace'), 'Ground / Carry does not select portrait faces from camera-local avatar space');
+assert(facing.includes("cameraLocal.z > hysteresis"), 'camera-relative portrait selection lacks edge-on hysteresis');
+assert(facing.includes('material.side = DOUBLE_SIDE'), 'selected portrait material can still be back-face culled');
+assert(facing.includes('material.visible = visible'), 'front/back portrait materials are not explicitly switched by camera side');
+assert(facing.includes('hobunjiGroundCarryPortraitFace'), 'camera-relative portrait selection lacks visible/model diagnostics');
+assert(facing.includes("getObjectByName?.('torso_radius_guide')"), 'torso-radius guide is not targeted for non-occluding rendering');
+assert(facing.includes('material.wireframe = true'), 'torso-radius guide remains a solid blue shell');
+assert(facing.includes('material.depthWrite = false'), 'torso-radius guide can still occlude the avatar depth buffer');
 
 assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the facing preserver');
 assert(adapter.includes('await loadLimbFacingPreserver()'), 'facing preserver is not guaranteed to load before the Ground / Carry author');
