@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const THREE = window.THREE; // Used to wrap Scene.add and identify runtime terrain meshes.
+  const THREE = window.THREE; // Used to wrap object attachment and identify runtime terrain meshes.
   if (!THREE || window.NaturalSurfaceStretchRuntime?.installed) return;
 
   const currentScript = document.currentScript; // Used to resolve authored texture paths relative to docs/js/.
@@ -11,6 +11,9 @@
   const textureRepairs = new WeakMap(); // Used to prevent duplicate asynchronous repairs of one shared texture object.
   const stats = {
     inspectedMeshes: 0,
+    sceneAddsInspected: 0,
+    nestedAddsInspected: 0,
+    naturalizeCallsInspected: 0,
     placeholderTexturesFound: 0,
     textureRepairsStarted: 0,
     textureRepairsCompleted: 0,
@@ -45,10 +48,12 @@
     };
   }
 
-  function naturalSurfaceFor(mesh, material) {
-    return material?.userData?.naturalSurface
-      || mesh?.userData?.naturalSurface
-      || (mesh?.userData?.naturalSurfaceCliffSlot != null ? 'cliffs' : null);
+  function naturalSurfaceFor(mesh, material, materialIndex = null) {
+    const explicit = material?.userData?.naturalSurface || mesh?.userData?.naturalSurface || null;
+    if (explicit) return explicit;
+    const cliffSlot = mesh?.userData?.naturalSurfaceCliffSlot;
+    if (cliffSlot != null && materialIndex != null && Number(materialIndex) === Number(cliffSlot)) return 'cliffs';
+    return null;
   }
 
   function textureDimensions(texture) {
@@ -63,7 +68,8 @@
     if (!texture || (surface !== 'rocks' && surface !== 'cliffs')) return false;
     const userData = texture.userData || {}; // Used to recognize both intact and metadata-stripped natural-surface textures.
     if (userData.naturalSurfaceBodySpriteTint) return true;
-    return /^natural_#?[0-9a-f]{6}_(?:clamp|repeat)$/i.test(String(texture.name || ''));
+    if (/^natural_#?[0-9a-f]{6}_(?:clamp|repeat)$/i.test(String(texture.name || ''))) return true;
+    return configuredSurface(surface).tintTreatment === 'body-sprite-tint';
   }
 
   function textureNeedsRepair(texture, surface) {
@@ -72,6 +78,7 @@
     const state = String(texture.userData?.hobunjiAuthoredSurfaceState || ''); // Used to retry explicit loading/failure states even if dimensions are unusual.
     return dimensions.width <= 4
       || dimensions.height <= 4
+      || !state
       || state === 'flat-loading'
       || state === 'flat-load-failure'
       || state === 'repair-loading'
@@ -163,7 +170,7 @@
       });
       texture.needsUpdate = true;
       stats.textureRepairsCompleted++;
-      debugLog(`${surface} texture repaired from flat fallback using ${sourceWidth}x${sourceHeight} source ${path}.`);
+      debugLog(`${surface} texture repaired from stranded placeholder using ${sourceWidth}x${sourceHeight} source ${path}.`);
       return true;
     }).catch(error => {
       texture.userData = Object.assign({}, texture.userData, {
@@ -184,8 +191,12 @@
   function reassertIslandUvs(mesh) {
     const mapper = window.HobunjiSurfaceStretchUV; // Used to make the new surface-island unwrap authoritative after legacy runtime UV repair code runs.
     if (!mapper?.remapNaturalTerrainMesh || !mesh?.geometry) return false;
-    const surface = naturalSurfaceFor(mesh, Array.isArray(mesh.material) ? mesh.material[0] : mesh.material); // Used to skip unrelated geometry and foliage.
-    if (surface !== 'rocks' && surface !== 'cliffs' && mesh.userData?.naturalSurfaceCliffSlot == null) return false;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const hasNaturalMaterial = materials.some((material, index) => {
+      const surface = naturalSurfaceFor(mesh, material, index);
+      return surface === 'rocks' || surface === 'cliffs';
+    });
+    if (!hasNaturalMaterial && mesh.userData?.naturalSurfaceCliffSlot == null) return false;
 
     const geometry = mesh.geometry; // Used to inspect whether the older single-cliff repair overwrote an already-computed island unwrap.
     if (geometry.userData?.naturalSurfaceUvMapping === 'cliff-face-stretch'
@@ -203,12 +214,10 @@
   function inspectMesh(mesh) {
     if (!mesh?.isMesh) return;
     stats.inspectedMeshes++;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Used to repair only the owning natural-surface slot(s) on one terrain mesh.
-    const cliffSlot = mesh.userData?.naturalSurfaceCliffSlot == null ? null : Number(mesh.userData.naturalSurfaceCliffSlot); // Used to avoid ever treating a shared plateau's grass slot as its cliff texture.
-    for (let materialIndex = 0; materialIndex < materials.length; materialIndex++) {
-      const material = materials[materialIndex]; // Used as the current material candidate for texture self-healing.
-      let surface = material?.userData?.naturalSurface || mesh.userData?.naturalSurface || null; // Used to prefer explicit per-material/per-mesh surface ownership.
-      if (!surface && cliffSlot === materialIndex) surface = 'cliffs';
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Used to repair every natural-surface material slot on one terrain mesh.
+    for (let index = 0; index < materials.length; index++) {
+      const material = materials[index];
+      const surface = naturalSurfaceFor(mesh, material, index); // Used to infer missing texture metadata from the owning rock/cliff material.
       if (surface !== 'rocks' && surface !== 'cliffs') continue;
       if (material?.map) repairTexture(material.map, surface);
     }
@@ -223,30 +232,68 @@
     });
   }
 
-  const sceneProto = THREE.Scene?.prototype; // Used to inspect terrain immediately after all previously installed Scene.add wrappers finish.
-  const previousAdd = sceneProto?.add; // Used to preserve every existing Scene.add behavior before adding this final repair pass.
-  if (sceneProto && typeof previousAdd === 'function' && !previousAdd.__hobunjiSurfaceStretchRuntimeWrapped) {
+  // Direct Scene.add remains necessary because older natural-surface modules
+  // installed their own Scene.prototype.add functions before this module.
+  const sceneProto = THREE.Scene?.prototype;
+  const previousSceneAdd = sceneProto?.add;
+  if (sceneProto && typeof previousSceneAdd === 'function' && !previousSceneAdd.__hobunjiSurfaceStretchRuntimeWrapped) {
     function wrappedSceneAdd(...objects) {
-      const result = previousAdd.apply(this, objects); // Used to let NaturalSurfaceMaterials and NaturalSurfaceRuntimeFixes finish first.
+      const result = previousSceneAdd.apply(this, objects);
+      stats.sceneAddsInspected += objects.length;
       for (const object of objects) inspectObject(object);
       return result;
     }
     wrappedSceneAdd.__hobunjiSurfaceStretchRuntimeWrapped = true;
-    wrappedSceneAdd.__hobunjiSurfaceStretchRuntimeOriginal = previousAdd;
+    wrappedSceneAdd.__hobunjiSurfaceStretchRuntimeOriginal = previousSceneAdd;
     sceneProto.add = wrappedSceneAdd;
+  }
+
+  // Terrain builders frequently add meshes to a Group after that Group itself
+  // has already been added to the scene. Scene.add cannot observe that path, so
+  // catch every later nested attachment at the base Object3D level as well.
+  const objectProto = THREE.Object3D?.prototype;
+  const previousObjectAdd = objectProto?.add;
+  if (objectProto && typeof previousObjectAdd === 'function' && !previousObjectAdd.__hobunjiSurfaceStretchNestedWrapped) {
+    function wrappedObjectAdd(...objects) {
+      const result = previousObjectAdd.apply(this, objects);
+      stats.nestedAddsInspected += objects.length;
+      for (const object of objects) inspectObject(object);
+      return result;
+    }
+    wrappedObjectAdd.__hobunjiSurfaceStretchNestedWrapped = true;
+    wrappedObjectAdd.__hobunjiSurfaceStretchNestedOriginal = previousObjectAdd;
+    objectProto.add = wrappedObjectAdd;
+  }
+
+  // NaturalSurfaceMaterials is the authoritative creation path for these maps.
+  // Inspect immediately after it returns so a surface gets repair coverage even
+  // before it belongs to any scene/group hierarchy.
+  const naturalApi = window.NaturalSurfaceMaterials;
+  const previousNaturalize = naturalApi?.naturalizeMesh;
+  if (naturalApi && typeof previousNaturalize === 'function' && !previousNaturalize.__hobunjiSurfaceStretchRuntimeWrapped) {
+    function wrappedNaturalizeMesh(...args) {
+      const mesh = previousNaturalize.apply(this, args);
+      stats.naturalizeCallsInspected++;
+      inspectMesh(mesh);
+      return mesh;
+    }
+    wrappedNaturalizeMesh.__hobunjiSurfaceStretchRuntimeWrapped = true;
+    wrappedNaturalizeMesh.__hobunjiSurfaceStretchRuntimeOriginal = previousNaturalize;
+    naturalApi.naturalizeMesh = wrappedNaturalizeMesh;
   }
 
   window.NaturalSurfaceStretchRuntime = {
     installed: true,
+    inspectMesh,
     inspectObject,
     repairTexture,
     snapshot() {
       return Object.assign({}, stats, {
-        cachedSourceImages: imagePromises.size,
+        pendingTextureRepairs: imagePromises.size,
         surfaceStretch: window.HobunjiSurfaceStretchUV?.snapshot?.() || null,
       });
     },
   };
 
-  debugLog('installed: flat PNG placeholders self-heal and legacy cliff UV repair can no longer remain on top of surface-island mapping.');
+  debugLog('installed: natural PNG placeholders self-heal from direct, nested, and naturalize paths; surface-island UV mapping remains authoritative.');
 })();
