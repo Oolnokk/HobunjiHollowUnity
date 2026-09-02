@@ -76,6 +76,7 @@
   $('handSecondaryGripRotationFields').innerHTML = rotationFields.map(field => fieldMarkup('handSecondaryRot', 'Secondary', field)).join('');
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
+  function currentToolScale() { return Math.max(0.1, Number(toolGrips.toolScaleForTool?.(currentToolKey())) || 1); }
   function currentEntry() { return toolGrips.ensureTool(currentToolKey()); }
   function currentPrimary() { return currentEntry()?.primaryGrip || null; }
   function currentSecondary() { return currentEntry()?.secondaryGrip || null; }
@@ -96,7 +97,8 @@
     const primary = currentPrimary();
     const p = primary?.position || {};
     const r = primary?.rotationDeg || {};
-    primaryMarker.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+    const visualScale = pickActive ? currentToolScale() : 1; // Pick mode shows the uncorrected scaled sprite, so its stored unscaled grip point is displayed at the matching scaled position.
+    primaryMarker.position.set((Number(p.x) || 0) * visualScale, (Number(p.y) || 0) * visualScale, (Number(p.z) || 0) * visualScale);
     const qYaw = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 1, 0), editorContext.THREE.MathUtils.degToRad(Number(r.yaw) || 0));
     const qPitch = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(1, 0, 0), editorContext.THREE.MathUtils.degToRad(Number(r.pitch) || 0));
     const qRoll = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 0, 1), editorContext.THREE.MathUtils.degToRad(Number(r.roll) || 0));
@@ -108,6 +110,7 @@
     $('handPrimaryGripPick').classList.remove('active');
     $('handPrimaryGripPick').textContent = '◎ Pick on sprite';
     if (message) $('handGripStatus').textContent = message;
+    updatePrimaryMarker();
   }
 
   function mutateGrip(gripKey, mutator) {
@@ -135,12 +138,14 @@
       return;
     }
     const local = editorContext.toolHolder.worldToLocal(hit.point.clone());
+    const baseScale = currentToolScale(); // worldToLocal removes animation/toolHolder scale, but intrinsic held-item scale lives on the visual child and must be removed here to keep authored grip coordinates scale-independent.
+    local.multiplyScalar(1 / baseScale);
     mutateGrip('primaryGrip', primary => {
       primary.position.x = Number(local.x.toFixed(4));
       primary.position.y = Number(local.y.toFixed(4));
       primary.position.z = Number(local.z.toFixed(4));
     });
-    stopPicking(`${currentToolKey()}: primary/right-hand point picked; fine-tune its rotation below.`);
+    stopPicking(`${currentToolKey()}: primary/right-hand point picked at base scale ×${baseScale.toFixed(2)}; stored in unscaled item coordinates.`);
   }
 
   function installEditorContext(context) {
@@ -177,7 +182,7 @@
       || null;
     if (effectiveStatus) {
       const second = debug?.secondaryActive ? `left→${debug.toolKey || currentToolKey()} secondary` : 'left→idle';
-      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · direct attachment · right→authored primary · ${second} · NO ARM IK`;
+      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · item ×${currentToolScale().toFixed(2)} · direct attachment · right→authored primary · ${second} · NO ARM IK`;
       effectiveStatus.style.color = debug?.hand?.loadError ? '#fb7185' : '';
     }
   }
@@ -245,7 +250,8 @@
     pickActive = true;
     $('handPrimaryGripPick').classList.add('active');
     $('handPrimaryGripPick').textContent = 'Cancel pick';
-    $('handGripStatus').textContent = 'Click the weapon handle in the viewport to place the primary/right-hand grip.';
+    $('handGripStatus').textContent = `Click the weapon handle in the viewport to place the primary/right-hand grip. Base scale ×${currentToolScale().toFixed(2)} is ignored in the stored coordinates.`;
+    updatePrimaryMarker();
   });
   $('handPrimaryGripZero').addEventListener('click', () => {
     mutateGrip('primaryGrip', primary => {
@@ -264,7 +270,7 @@
   $('handGripSave').addEventListener('click', () => {
     try {
       toolGrips.saveLocal();
-      $('handGripStatus').textContent = `${currentToolKey()}: grip draft saved locally.`;
+      $('handGripStatus').textContent = `${currentToolKey()}: grip + base-scale draft saved locally.`;
     } catch (error) {
       $('handGripStatus').textContent = `Grip save failed: ${error?.message || error}`;
     }
@@ -272,7 +278,7 @@
   $('handGripCopy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(toolGrips.clone(), null, 2));
-      $('handGripStatus').textContent = 'Copied held-item grip JSON.';
+      $('handGripStatus').textContent = 'Copied held-item grip + base-scale JSON.';
     } catch (error) {
       $('handGripStatus').textContent = `Copy failed: ${error?.message || error}`;
     }
@@ -289,6 +295,7 @@
     syncFields,
     refreshDirectStatus,
     get toolKey() { return currentToolKey(); },
+    get toolScale() { return currentToolScale(); },
     get primaryGrip() { return toolGrips.primaryGripForTool(currentToolKey()); },
   });
 
