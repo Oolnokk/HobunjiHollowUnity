@@ -1,15 +1,260 @@
 (() => {
   'use strict';
 
-  // Shipping Box (deposit sellable items, auto-sells every SELL_INTERVAL_HOURS)
-  // and Supply Box (mail-order supplies, arrive next day) — the farm's two
-  // fixed service world objects.
+  // Shipping Box (daily midnight sale cutoff, resolved when the player leaves
+  // the farm or explicitly passes time) and Supply Box (mail-order supplies,
+  // arrive next day) — the farm's two service world objects.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  let farmPanelDeps = null; // Used by the Shipping Box row to share the Farm tab's existing building-move UI and world-object map.
+  let shippingBoxInstance = null; // Used by midnight settlement and the Farm tab move integration to address the currently live box object.
+  let shippingMoveArmed = false; // Used to route the next Farm overview click to Shipping Box placement instead of barn placement.
+  let farmBuildingsObserver = null; // Used to restore the Shipping Box row whenever FarmPanel rerenders its Buildings list.
+  let shippingLifecycleTimer = 0; // Used to notice farm-area exits and natural day rollovers without coupling shipping to travel code.
+  let lastObservedDay = null; // Used as the midnight cutoff boundary; calendar.day increments exactly once per new game day.
+  let lastKnownArea = null; // Used to detect the first transition out of the farm context after a pending midnight shipment exists.
+  let lifecycleBusy = false; // Used to prevent a cutoff/settlement pulse from recursively resolving itself.
+  const pendingSaleCounts = Object.create(null); // Used to snapshot only goods that were present at a midnight cutoff; post-midnight deposits remain for the next day.
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    lastObservedDay = currentCalendarDay();
+    installFarmPanelShippingIntegration();
+    installShippingLifecycle();
+  }
+
+  function currentCalendarDay() {
+    return Math.max(1, Math.floor(Number(deps?.calendar?.day) || 1));
+  }
+
+  function pendingSaleTotal() {
+    return Object.values(pendingSaleCounts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
+  }
+
+  function clearPendingSales() {
+    Object.keys(pendingSaleCounts).forEach(key => { delete pendingSaleCounts[key]; });
+  }
+
+  function currentArea() {
+    const panelArea = farmPanelDeps?.getCurrentArea?.(); // Preferred when FarmPanel's dependency bundle exposes the game area's canonical getter.
+    if (panelArea) return panelArea;
+    const debugArea = window.__climbDebug?.getCurrentArea?.(); // Existing always-on game debug bridge; fallback avoids adding another game.js dependency solely for area reads.
+    return debugArea || null;
+  }
+
+  function isFarmContext(area) {
+    // The farmhouse interior is still "on the farm" for shipping purposes;
+    // walking into the house must not count as handing the box off for sale.
+    return area === 'farm' || area === 'interior';
+  }
+
+  function captureMidnightCutoff() {
+    const day = currentCalendarDay();
+    if (lastObservedDay == null) { lastObservedDay = day; return false; }
+    if (day < lastObservedDay) {
+      // Farm/world reset: old pending accounting must never leak into the new day-1 world.
+      lastObservedDay = day;
+      clearPendingSales();
+      return false;
+    }
+    if (day === lastObservedDay) return false;
+
+    const bin = shippingBoxInstance?.getContents?.() || {};
+    Object.entries(bin).forEach(([key, count]) => {
+      const available = Math.max(0, Number(count) || 0);
+      const alreadyPending = Math.max(0, Number(pendingSaleCounts[key]) || 0);
+      // Goods already pending remain physically visible in the box until the
+      // deferred resolution. Only the unscheduled remainder is newly captured.
+      const newlyEligible = Math.max(0, available - alreadyPending);
+      if (newlyEligible > 0) pendingSaleCounts[key] = alreadyPending + newlyEligible;
+    });
+    lastObservedDay = day;
+    return true;
+  }
+
+  function settlePendingShippingSale(reason = 'midnight settlement') {
+    if (lifecycleBusy || !shippingBoxInstance) return { sold: 0, earned: 0 };
+    lifecycleBusy = true;
+    try {
+      captureMidnightCutoff();
+      if (pendingSaleTotal() < 1) return { sold: 0, earned: 0 };
+
+      const bin = shippingBoxInstance.getContents();
+      let sold = 0;
+      let earned = 0;
+      const soldParts = [];
+      for (const [key, pending] of Object.entries(pendingSaleCounts)) {
+        const qty = Math.max(0, Math.min(Number(pending) || 0, Number(bin[key]) || 0));
+        delete pendingSaleCounts[key];
+        if (qty < 1) continue;
+        bin[key] -= qty;
+        sold += qty;
+        earned += qty * (deps.BASE_PRICES[key] || 0);
+        soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
+      }
+      if (sold < 1) return { sold: 0, earned: 0 };
+
+      deps.inventory.gold = (deps.inventory.gold || 0) + earned;
+      const line = 'Day ' + currentCalendarDay() + ' midnight shipment — ' + soldParts.join(' ') + ' = ' + earned + 'g (' + reason + ')';
+      const deliveryLog = deps.getDeliveryLog();
+      deliveryLog.unshift({ type: 'sale', text: line });
+      if (deliveryLog.length > 12) deliveryLog.pop();
+      deps.showToast('📦 Midnight shipment sold! +' + earned + 'g', true);
+      shippingBoxInstance.refreshVisual?.();
+      if (deps.getMenuOpen()) deps.buildInventoryGrid();
+      if (window.ShippingPanel?.isOpen?.()) deps.buildShippingTransferUI();
+      deps.saveMemberWorldData();
+      return { sold, earned };
+    } finally {
+      lifecycleBusy = false;
+    }
+  }
+
+  function shippingLifecyclePulse() {
+    if (!deps) return;
+    const crossedMidnight = captureMidnightCutoff();
+    const area = currentArea();
+
+    // If midnight arrives while the player is already away from the farm,
+    // there is nothing to defer: resolve the shipment at the cutoff itself.
+    if (crossedMidnight && area && !isFarmContext(area)) {
+      settlePendingShippingSale('player already away from farm');
+    }
+
+    // If midnight already happened while the player remained on the farm,
+    // the first actual departure is the deferred hand-off trigger.
+    if (lastKnownArea && isFarmContext(lastKnownArea) && area && !isFarmContext(area)) {
+      settlePendingShippingSale('left farm');
+    }
+    if (area) lastKnownArea = area;
+  }
+
+  function installShippingLifecycle() {
+    if (shippingLifecycleTimer) return;
+    window.addEventListener('hobunji-time-passage', event => {
+      const kind = event?.detail?.kind;
+      if (kind !== 'wait' && kind !== 'sleep') return;
+      // Wait/Sleep is explicitly a resolution trigger. Capture a midnight
+      // crossed by the time jump first, then settle whatever was eligible.
+      captureMidnightCutoff();
+      settlePendingShippingSale(kind);
+    });
+    shippingLifecycleTimer = window.setInterval(shippingLifecyclePulse, 500);
+  }
+
+  function installFarmPanelShippingIntegration() {
+    const panel = window.FarmPanel;
+    if (!panel) return;
+    if (!panel.__shippingBoxFarmUiPatched) {
+      const originalInit = panel.init; // Used to capture the same dependency bundle FarmPanel already receives from game.js.
+      panel.init = function shippingAwareFarmPanelInit(injectedDeps) {
+        farmPanelDeps = injectedDeps;
+        const result = originalInit.apply(this, arguments);
+        bindFarmBuildingUiHooks();
+        return result;
+      };
+      panel.__shippingBoxFarmUiPatched = true;
+    }
+    bindFarmBuildingUiHooks();
+  }
+
+  function bindFarmBuildingUiHooks() {
+    if (!document.body) return;
+    const list = document.getElementById('farmBuildingsList');
+    const canvas = document.getElementById('farmGlanceCanvas');
+    if (list && !farmBuildingsObserver) {
+      farmBuildingsObserver = new MutationObserver(() => ensureShippingFarmBuildingRow());
+      farmBuildingsObserver.observe(list, { childList: true });
+    }
+    if (canvas && !canvas.dataset.shippingMoveBound) {
+      canvas.dataset.shippingMoveBound = '1';
+      canvas.addEventListener('click', event => {
+        if (!shippingMoveArmed) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const rect = canvas.getBoundingClientRect();
+        const px = canvas.width / Math.max(1, farmPanelDeps?.getGrid?.()?.[0]?.length || 1); // Used to convert the same glance-canvas click into a farm column.
+        const py = canvas.height / Math.max(1, farmPanelDeps?.getGrid?.()?.length || 1); // Used to convert the same glance-canvas click into a farm row.
+        const col = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width) / px);
+        const row = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height) / py);
+        const result = moveShippingBoxFromFarmPanel(col, row);
+        (farmPanelDeps?.showToast || deps.showToast)(result.message, result.ok);
+        if (result.ok) shippingMoveArmed = false;
+        window.FarmPanel?.render?.();
+        ensureShippingFarmBuildingRow();
+      }, true);
+    }
+    ensureShippingFarmBuildingRow();
+  }
+
+  function syncShippingMoveUi() {
+    const canvas = document.getElementById('farmGlanceCanvas');
+    const note = document.getElementById('farmBuildingsNote');
+    const cancelBtn = document.getElementById('farmCancelPlacementBtn');
+    if (shippingMoveArmed) {
+      if (canvas) canvas.style.cursor = 'crosshair';
+      if (note) note.textContent = 'Click a tile on the map above to move the Shipping Box there.';
+      if (cancelBtn) {
+        cancelBtn.hidden = false;
+        cancelBtn.onclick = () => {
+          shippingMoveArmed = false;
+          window.FarmPanel?.render?.();
+          ensureShippingFarmBuildingRow();
+        };
+      }
+    } else if (note && note.textContent === 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.') {
+      note.textContent = 'Move a barn or the Shipping Box by clicking the map above. Place owned barn plans here, or open House Layout to edit your house.';
+    }
+  }
+
+  function ensureShippingFarmBuildingRow() {
+    const list = document.getElementById('farmBuildingsList');
+    if (!list || !shippingBoxInstance) return;
+    let row = list.querySelector('[data-farm-building-kind="shipping-box"]');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'farm-row';
+      row.dataset.farmBuildingKind = 'shipping-box';
+      row.innerHTML = '<span class="farm-row-name">📦 Shipping Box</span><span class="farm-note">2×1</span>';
+      const canAlter = !!farmPanelDeps?.hasFarmPermission?.('alterFarm');
+      if (canAlter) {
+        const btn = document.createElement('button');
+        btn.className = 'settings-small-btn';
+        btn.type = 'button';
+        btn.dataset.shippingBoxMove = '1';
+        btn.textContent = 'Move';
+        btn.addEventListener('click', () => {
+          const existingCancel = document.getElementById('farmCancelPlacementBtn');
+          if (existingCancel && !existingCancel.hidden && !shippingMoveArmed) existingCancel.click();
+          shippingMoveArmed = true;
+          syncShippingMoveUi();
+        });
+        row.appendChild(btn);
+      }
+      const firstPlan = [...list.children].find(child => child.textContent?.trim?.().startsWith('📜'));
+      list.insertBefore(row, firstPlan || null);
+    }
+    syncShippingMoveUi();
+  }
+
+  function moveShippingBoxFromFarmPanel(col, row) {
+    const box = shippingBoxInstance;
+    const worldObjects = farmPanelDeps?.worldObjects;
+    if (!box || !worldObjects) return { ok: false, message: 'Shipping Box move system is not ready.' };
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return { ok: false, message: 'Choose a valid farm tile.' };
+    const canPlace = window.FarmBuildings?.canPlaceAt?.(col, row, box.w || 2, box.h || 1, box.id);
+    if (!canPlace) return { ok: false, message: 'The Shipping Box will not fit there.' };
+
+    const oldKey = box.col + ',' + box.row;
+    worldObjects.delete(oldKey);
+    box.moveTo(col, row);
+    worldObjects.set(box.col + ',' + box.row, box);
+    window._farmEditor?.save?.();
+    deps.saveMemberWorldData();
+    return { ok: true, message: 'Shipping Box moved.' };
+  }
 
   function makeSellCrate(col, row) {
     const bin = Object.fromEntries(Object.keys(deps.BASE_PRICES).map(key => [key, 0]));
-    let lastSellHour = deps.getHour();
     const position = { col, row }; // Used by farm-editor coordinate assignments and shipping-box visual syncing.
 
     // Reuse the exact procedural Storage Chest recipe and stretch it to two
@@ -104,6 +349,9 @@
       get row() { return position.row; },
       set row(value) { moveTo(position.col, value); },
       moveTo,
+      refreshVisual() { syncVisualTransform(totalItems() > 0 ? 0.06 : 0); },
+      getPendingSaleTotal: pendingSaleTotal,
+      getMidnightCutoffDay: () => lastObservedDay,
       getButtons() {
         const item = deps.getActiveInventoryItem();
         const btns = [];
@@ -166,41 +414,32 @@
         const moved = Math.max(0, Math.min(qty, bin[key] || 0));
         if (moved < 1) return 0;
         bin[key] -= moved;
+        // If midnight already made some of this stack eligible, taking it back
+        // out cancels that many pending units before touching newer deposits.
+        if ((pendingSaleCounts[key] || 0) > 0) {
+          pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
+          if (pendingSaleCounts[key] < 1) delete pendingSaleCounts[key];
+        }
         deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + moved);
         syncVisualTransform(totalItems() > 0 ? 0.06 : 0);
         return moved;
       },
-      tick(gameHour) {
-        // Sell everything every SELL_INTERVAL_HOURS.
-        if (gameHour - lastSellHour >= deps.SELL_INTERVAL_HOURS && totalItems() > 0) {
-          let earned = 0;
-          const soldParts = [];
-          for (const [key, value] of Object.entries(bin)) {
-            if (value > 0) {
-              earned += value * (deps.BASE_PRICES[key] || 0);
-              soldParts.push((deps.itemIconForKey(key) || key) + '×' + value);
-              bin[key] = 0;
-            }
-          }
-          deps.inventory.gold += earned;
-          lastSellHour = gameHour;
-          const line = 'Day ' + deps.calendar.day + ' — ' + soldParts.join(' ') + ' = ' + earned + 'g';
-          const deliveryLog = deps.getDeliveryLog();
-          deliveryLog.unshift({ type: 'sale', text: line });
-          if (deliveryLog.length > 12) deliveryLog.pop();
-          deps.showToast('📦 Sold! +' + earned + 'g', true);
-          if (deps.getMenuOpen()) deps.buildInventoryGrid();
-          if (window.ShippingPanel?.isOpen?.()) deps.buildShippingTransferUI();
-          deps.saveMemberWorldData();
-        }
+      tick() {
+        // Midnight eligibility is keyed to calendar.day, never to a rolling
+        // N-hour timer. tick() only observes the cutoff; it deliberately does
+        // not empty the box while the player remains on the farm.
+        shippingLifecyclePulse();
         syncVisualTransform(totalItems() > 0 ? 0.06 : 0);
       },
       reset() {
         Object.keys(bin).forEach(key => { bin[key] = 0; });
-        lastSellHour = deps.MORNING_HOUR;
+        clearPendingSales();
+        lastObservedDay = currentCalendarDay();
         syncVisualTransform();
       },
     };
+    shippingBoxInstance = worldObject;
+    ensureShippingFarmBuildingRow();
     return worldObject;
   }
 
@@ -259,5 +498,7 @@
     init,
     makeSellCrate,
     makeSupplyBox,
+    settlePendingShippingSale,
+    getPendingShippingTotal: pendingSaleTotal,
   };
 })();
