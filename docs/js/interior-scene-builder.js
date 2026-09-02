@@ -167,6 +167,22 @@
     if (!meshData || !meshData.positions || !meshData.positions.length) return new THREE.Group();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.positions, 3));
+    // SDF cavern output contains positions/indices only. A textured mine
+    // previously had no UV attribute at all, so every vertex sampled the
+    // texture's same corner texel; if that texel was dark, no practical
+    // amount of torch light could reveal the surface. World-scaled XZ UVs
+    // give the walkable floor the same predictable tiling convention as
+    // town terrain. Cavern walls retain their organic geometry and simply
+    // inherit the nearest floor projection.
+    if (options.textureUrl) {
+      const uv = new Float32Array(meshData.positions.length / 3 * 2);
+      const uvScale = options.uvScale || 1;
+      for (let p = 0, u = 0; p < meshData.positions.length; p += 3, u += 2) {
+        uv[u] = meshData.positions[p] * uvScale;
+        uv[u + 1] = meshData.positions[p + 2] * uvScale;
+      }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
     const indices = meshData.indices;
     geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
     geo.computeVertexNormals();
@@ -176,7 +192,10 @@
       texture.repeat.set(options.textureRepeat || 0.35, options.textureRepeat || 0.35);
       if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     }
-    const mat = new THREE.MeshStandardMaterial({ color: options.color ?? 0x5f5a56, map: texture, roughness: .92, metalness: 0, flatShading: !texture, side: THREE.DoubleSide });
+    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.DoubleSide };
+    const mat = options.useLambert
+      ? new THREE.MeshLambertMaterial({ ...materialOptions, emissive: options.emissive ?? 0x000000 })
+      : new THREE.MeshStandardMaterial({ ...materialOptions, roughness: .92, metalness: 0 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
