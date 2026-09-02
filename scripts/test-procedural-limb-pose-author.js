@@ -73,8 +73,12 @@ assert(facing.includes('cameraRelativePortraitFace'), 'Ground / Carry does not s
 assert(facing.includes("cameraLocal.z > hysteresis"), 'camera-relative portrait selection lacks edge-on hysteresis');
 assert(facing.includes('material.side = DOUBLE_SIDE'), 'selected portrait material can still be back-face culled');
 assert(facing.includes('material.visible = visible'), 'front/back portrait materials are not explicitly switched by camera side');
+assert(facing.includes('model.userData?.frontTexture'), 'portrait detector does not recognize the canonical front texture by identity');
+assert(facing.includes('model.userData?.backTexture'), 'portrait detector does not recognize the canonical back texture by identity');
+assert(facing.includes('frontMaterials.add(node.material[0])'), 'skinned portrait slot 0 is not treated as the authoritative front material fallback');
+assert(facing.includes('backMaterials.add(node.material[1])'), 'skinned portrait slot 1 is not treated as the authoritative back material fallback');
 assert(facing.includes('hobunjiGroundCarryPortraitFace'), 'camera-relative portrait selection lacks visible/model diagnostics');
-assert(facing.includes("getObjectByName?.('torso_radius_guide')"), 'torso-radius guide is not targeted for non-occluding rendering');
+assert(facing.includes("name.includes('torso') && name.includes('radius')"), 'torso-radius guide lookup does not tolerate renamed guide meshes');
 assert(facing.includes('material.wireframe = true'), 'torso-radius guide remains a solid blue shell');
 assert(facing.includes('material.depthWrite = false'), 'torso-radius guide can still occlude the avatar depth buffer');
 
