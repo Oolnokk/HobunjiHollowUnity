@@ -355,7 +355,6 @@
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
-        walker._dialogueOptions = options;
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = options.cameraTarget || walker.root;
         if (options.skipStaging !== true) beginNpcDialogueStaging(walker);
@@ -503,45 +502,33 @@
       }
 
       
-      function createLivestockDialogueCameraTarget(animal, kind) {
-      const focus = new THREE.Object3D();
-      focus.name = `livestock_dialogue_head_${animal?.id || kind || 'animal'}`;
-      const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
-      const plane = animal?.avatarRef?.frontPlane || null;
-      const modelWidth = Number(animal?.modelWidth);
-      const modelHeight = Number(animal?.modelHeight);
-      const localHead = frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)
-        ? new THREE.Vector3(
-            (frame.x + frame.width * 0.5 - 0.5) * modelWidth,
-            (0.5 - (frame.y + frame.height * 0.5)) * modelHeight,
+      function _livestockDialogueHeadWorldPosition(animal, kind, out = new THREE.Vector3()) {
+        const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
+        const plane = animal?.avatarRef?.frontPlane || null;
+        const modelWidth = Number(animal?.modelWidth);
+        const modelHeight = Number(animal?.modelHeight);
+        if (frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)) {
+          const centerX = frame.x + frame.width * 0.5;
+          const centerY = frame.y + frame.height * 0.5;
+          out.set(
+            (centerX - 0.5) * modelWidth,
+            (0.5 - centerY) * modelHeight,
             0,
-          )
-        : null;
-      const worldHead = new THREE.Vector3();
-      const update = () => {
-        if (localHead && plane?.localToWorld) {
+          );
           plane.updateWorldMatrix?.(true, false);
-          worldHead.copy(localHead);
-          plane.localToWorld(worldHead);
-          focus.position.copy(worldHead);
-          return;
+          return plane.localToWorld(out);
         }
         if (animal?.avatarRef?.group?.getWorldPosition) {
-          animal.avatarRef.group.getWorldPosition(focus.position);
-          focus.position.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
+          animal.avatarRef.group.getWorldPosition(out);
+          out.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
         }
-      };
-      update();
-      scene.add(focus);
-      return { focus, update };
-    }
+        return out;
+      }
 
-      async function openLivestockDialogue(animal, livestockRec, dialogueLines = []) {
-        if (!animal || !livestockRec || dialogueOpen) return false;
-        const kind = String(livestockRec.kind || animal.animalKey || '').trim().toLowerCase();
-        const cameraFocus = createLivestockDialogueCameraTarget(animal, kind);
-        const focus = cameraFocus.focus;
-        const walker = {
+      function createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines = []) {
+        const avatarRef = animal.avatarRef;
+        const headScratch = new THREE.Vector3();
+        return {
           rec: {
             id: `livestock:${livestockRec.id}`,
             name: livestockRec.name || 'Livestock',
@@ -551,23 +538,57 @@
             chatheadCreatureKind: kind,
             creatureGenotype: livestockRec.genotype || animal.genotype || null,
           },
-          root: animal.avatarRef?.group,
+          root: avatarRef?.group,
+          avatarHeight: Number(animal.modelHeight) || 1,
           pause: 0,
-          _onDialogueFrame: cameraFocus.update,
+
+          applyFacingDeadzone(targetRot, lerp) {
+            const blend = Math.max(0, Math.min(1, Number(lerp) || 0));
+            const current = Number.isFinite(animal.groupRot) ? animal.groupRot : (avatarRef?.group?.rotation?.y || 0);
+            animal.groupRot = current + angleDiff(targetRot, current) * blend;
+            animal.targetRot = targetRot;
+            if (avatarRef?.group) avatarRef.group.rotation.y = animal.groupRot;
+            return animal.groupRot;
+          },
+
+          dialogueHeadWorldPosition(out = new THREE.Vector3()) {
+            return _livestockDialogueHeadWorldPosition(animal, kind, out);
+          },
+
+          applyDialogueEyeContact(targetWorld, dt) {
+            if (!targetWorld || !avatarRef) return false;
+            const selfHead = _livestockDialogueHeadWorldPosition(animal, kind, headScratch);
+            const dx = targetWorld.x - selfHead.x;
+            const dy = targetWorld.y - selfHead.y;
+            const dz = targetWorld.z - selfHead.z;
+            const horizontal = Math.hypot(dx, dz);
+            if (horizontal < 1e-6 && Math.abs(dy) < 1e-6) return false;
+            const desiredWorldRot = -Math.atan2(dz, dx) + Math.PI / 2;
+            const bodyRot = Number.isFinite(animal.groupRot) ? animal.groupRot : (avatarRef.group?.rotation?.y || 0);
+            const yawDeg = angleDiff(desiredWorldRot, bodyRot) * 180 / Math.PI;
+            const pitchDeg = -Math.atan2(dy, Math.max(0.0001, horizontal)) * 180 / Math.PI;
+            avatarRef.updateHeadYaw?.(yawDeg, Math.max(0, Number(dt) || 0));
+            avatarRef.updateHeadRotation?.(pitchDeg, Math.max(0, Number(dt) || 0));
+            return true;
+          },
         };
+      }
+
+      async function openLivestockDialogue(animal, livestockRec, dialogueLines = []) {
+        if (!animal || !livestockRec || dialogueOpen) return false;
+        const kind = String(livestockRec.kind || animal.animalKey || '').trim().toLowerCase();
+        const walker = createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines);
         animal._dialogueFrozen = true;
         let cleaned = false;
         walker._onDialogueClose = () => {
           if (cleaned) return;
           cleaned = true;
           animal._dialogueFrozen = false;
-          focus.parent?.remove(focus);
+          animal.avatarRef?.updateHeadYaw?.(0, 1);
+          animal.avatarRef?.setHeadRotation?.(0);
         };
         try {
           await openNpcDialogue(walker, {
-            cameraTarget: focus,
-            skipSpeakerFacing: true,
-          skipEyeContact: true,
             skipNpcMeta: true,
             recordMemory: false,
           });
@@ -10471,13 +10492,12 @@
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
       }
 
-      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
-        if (!neckJoint?.parent) return false;
+      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetEyeWorld, maxYawDeg, maxPitchDeg, debugEntity) {
+        if (!neckJoint?.parent || !targetEyeWorld) return false;
         neckJoint.parent.updateMatrixWorld(true);
         const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
-        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
         if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
-        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        const direction = neckJoint.parent.worldToLocal(targetEyeWorld.clone()).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
@@ -10486,13 +10506,22 @@
         return true;
       }
 
-      function faceNpcDialogueParticipants() {
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        return _aimNeckAtWorldPoint(
+          neckJoint,
+          selfRootPosition,
+          selfModelHeight,
+          _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight),
+          maxYawDeg,
+          maxPitchDeg,
+          debugEntity,
+        );
+      }
+
+      function faceNpcDialogueParticipants(dt = 1 / 60) {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
         if (!walker?.root) return;
-        try { walker._onDialogueFrame?.(); }
-        catch (err) { console.warn('[dialogue] frame hook failed', err); }
-        const dialogueOptions = walker._dialogueOptions || {};
         const cfg = npcDialogueStagingConfig();
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
@@ -10501,26 +10530,25 @@
         const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
         facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
         player.angle = facingAngle;
-        if (dialogueOptions.skipSpeakerFacing !== true && typeof walker.applyFacingDeadzone === 'function') {
-          const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
-          const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-          walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
-        }
-        // Eye contact: aims BOTH the NPC's and the player's own neck bone
-        // straight at the other's eyes, held for the whole conversation (see
-        // _aimNeckAtEyeContact above) — this owns the player's neck bone
-        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
-        // for exactly this reason, see its own dialogueOpen guard).
-        if (dialogueOptions.skipEyeContact === true) return;
+        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+
         walker.root.updateMatrixWorld(true);
         playerMesh.updateMatrixWorld(true);
         const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
         const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
-        if (walker.neckJoint) {
+        const playerEyeWorld = _dialogueEyeWorldPosition(playerMesh.position, playerAvatarModelHeight);
+        if (typeof walker.applyDialogueEyeContact === 'function') {
+          walker.applyDialogueEyeContact(playerEyeWorld, dt, cfg);
+        } else if (walker.neckJoint) {
           _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
         }
         if (playerNeckJoint) {
-          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
+          const speakerEyeWorld = typeof walker.dialogueHeadWorldPosition === 'function'
+            ? walker.dialogueHeadWorldPosition(new THREE.Vector3())
+            : _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
+          _aimNeckAtWorldPoint(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, speakerEyeWorld, maxYawDeg, maxPitchDeg, player);
         }
       }
 
@@ -10540,7 +10568,7 @@
           player.y = targetY;
           player.vx = 0;
           player.vy = 0;
-          faceNpcDialogueParticipants();
+          faceNpcDialogueParticipants(dt);
           return;
         }
         const step = Math.min(dist, speed * dt);
@@ -10551,7 +10579,7 @@
         if (canPlayerOccupy(player.x, desiredY)) { player.y = desiredY; moved = true; }
         player.vx = moved ? dx / dist * speed : 0;
         player.vy = moved ? dy / dist * speed : 0;
-        faceNpcDialogueParticipants();
+        faceNpcDialogueParticipants(dt);
       }
 
       function npcDialogueButton() {
