@@ -16,6 +16,8 @@
   const MAX_REAGENTS = 3; // Existing Alchemy Table capacity.
   const DEFAULT_SPLASH_RADIUS_TILES = 1.35; // Flask fallback radius.
   const FAMILY_ORDER = Object.freeze(['damage', 'control', 'offensiveDebuff', 'defensiveDebuff']); // Four Cures-button families.
+  const STRENGTH_FOOTING_DAMAGE_RATIO = 1.5; // Used to make Strength's damage magnitude grant 1.5x as much Footing damage (+75% at base potency).
+  const STRENGTH_WORK_SPEED_RATIO = 1.5; // Used to make Strength's damage magnitude grant 1.5x as much chop/dig/mine speed (+75% at base potency).
   const traitKey = traits => `${traits.humour}.${traits.drive}.${traits.magnetism}`; // Canonical reaction lookup.
   const recipe = (id, humour, drive, magnetism, data) => Object.freeze({ // Central recipe metadata constructor.
     id, traits: Object.freeze({ humour, drive, magnetism }),
@@ -40,7 +42,7 @@
     potionOfPoise: recipe('potionOfPoise', 'bones', 'greaten', 'earth', { label: 'Potion of Poise', icon: '🗿', useMode: 'drink', application: 'buff', stat: 'maxFooting', magnitude: 0.35, durationS: 90, desc: 'Temporarily increases maximum Footing.' }),
     potionOfImpact: recipe('potionOfImpact', 'bones', 'greaten', 'fire', { label: 'Potion of Impact', icon: '💥', useMode: 'drink', application: 'buff', stat: 'footingDamage', magnitude: 1.5, durationS: 15, desc: 'Enormously increases knockback and Footing damage briefly.' }),
     potionOfRegeneration: recipe('potionOfRegeneration', 'flesh', 'greaten', 'water', { label: 'Potion of Regeneration', icon: '💚', useMode: 'drink', application: 'buff', stat: 'healthRegen', magnitude: 1, durationS: 90, desc: 'Increases existing Health regeneration.' }),
-    potionOfStrength: recipe('potionOfStrength', 'flesh', 'greaten', 'earth', { label: 'Potion of Strength', icon: '💪', useMode: 'drink', application: 'buff', stat: 'outgoingDamage', magnitude: 0.35, durationS: 90, desc: 'Increases outgoing damage.' }),
+    potionOfStrength: recipe('potionOfStrength', 'flesh', 'greaten', 'earth', { label: 'Potion of Strength', icon: '💪', useMode: 'drink', application: 'buff', stat: 'outgoingDamage', magnitude: 0.5, durationS: 90, desc: 'Increases outgoing damage, Footing damage, and chopping, digging, and mining speed.' }),
     potionOfFury: recipe('potionOfFury', 'flesh', 'greaten', 'fire', { label: 'Potion of Fury', icon: '🔥', useMode: 'drink', application: 'buff', stat: 'outgoingDamage', magnitude: 1, durationS: 15, desc: 'Greatly increases outgoing damage very briefly.' }),
     potionOfQuickness: recipe('potionOfQuickness', 'flesh', 'greaten', 'wind', { label: 'Potion of Quickness', icon: '⚡', useMode: 'drink', application: 'buff', stat: 'attackSpeed', magnitude: 0.42, durationS: 52, desc: 'Increases attack and action speed.' }),
     potionOfEndurance: recipe('potionOfEndurance', 'breath', 'greaten', 'water', { label: 'Potion of Endurance', icon: '🫁', useMode: 'drink', application: 'buff', stat: 'maxStamina', secondaryStat: 'staminaRegen', magnitude: 0.35, durationS: 90, desc: 'Increases Stamina capacity and regeneration.' }),
@@ -351,6 +353,7 @@
   }
 
   function statMagnitude(stat) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat)).reduce((sum, effect) => sum + effect.magnitude, 0); } // Central buff query.
+  function recipeMagnitude(recipeId) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && effect.recipeId === recipeId).reduce((sum, effect) => sum + effect.magnitude, 0); } // Used by Strength's recipe-specific secondary effects while preserving stored potency.
   const getMovementSpeedMultiplier = () => 1 + statMagnitude('movementSpeed');
   const getSpeedMul = getMovementSpeedMultiplier;
   const getAttackSpeedMultiplier = () => 1 + statMagnitude('attackSpeed');
@@ -363,7 +366,8 @@
   const getIncomingDamageAfflictionMultiplier = () => Math.max(0.15, 1 - statMagnitude('incomingDamageAffliction'));
   const getPositiveFavorMultiplier = () => 1 + statMagnitude('positiveFavor');
   const getPerceptionMultiplier = () => 1 + statMagnitude('perception');
-  const getFootingDamageMultiplier = () => 1 + statMagnitude('footingDamage');
+  const getFootingDamageMultiplier = () => 1 + statMagnitude('footingDamage') + recipeMagnitude('potionOfStrength') * STRENGTH_FOOTING_DAMAGE_RATIO;
+  const getWorkSpeedMultiplier = () => 1 + recipeMagnitude('potionOfStrength') * STRENGTH_WORK_SPEED_RATIO;
   function serializeActiveEffects() { const now = performance.now() / 1000; return activeEffects.map(effect => ({ recipeId: effect.recipeId, remainingS: effect.expiresAt - now, magnitude: effect.magnitude, potencyTier: effect.potencyTier || 0 })).filter(effect => effect.remainingS > 0); } // Save remaining time.
   function restoreActiveEffects(saved) {
     activeEffects = [];
@@ -461,7 +465,7 @@
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canAddReagent,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
     itemKeyForRecipe,parseBrewedItemKey,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
-    serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,
+    serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,
     get selectedReagents(){return [...selectedReagents];}, get targetedRecipeId(){return targetedRecipeId;}, get activeEffects(){return activeEffects.map(effect=>({...effect}));},
   };
