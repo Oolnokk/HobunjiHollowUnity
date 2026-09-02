@@ -145,9 +145,10 @@
     const leftStacks = Object.keys(deps.ITEM_DEFS).filter(k => (deps.inventory[k] || 0) > 0).length;
     const shippingBoxObject = deps.getShippingBoxObject();
     const boxTotal = shippingBoxObject?.getTotalItems?.() || 0;
+    const pendingTotal = shippingBoxObject?.getPendingSaleTotal?.() || 0;
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     setText('shipLeftCap', `${leftStacks} stacks`);
-    setText('shipRightCap', boxTotal > 0 ? `${boxTotal} queued` : 'Empty');
+    setText('shipRightCap', boxTotal > 0 ? `${boxTotal} in box${pendingTotal > 0 ? ` · ${pendingTotal} midnight-ready` : ''}` : 'Empty');
 
     const key = shippingSelected.key;
     const def = key ? deps.ITEM_DEFS[key] : null;
@@ -161,14 +162,16 @@
     setText('shipPreviewName', def ? `${def.label} ×${count}` : 'Select item');
     setText('shipDirection', blocked ? 'Blocked' : direction);
     setText('shipAmount', String(shippingAmount));
-    setText('shipLeftFooter', shippingSelected.side === 'left' && def ? `${def.label} ×${count}` : 'Select a player item.');
-    setText('shipRightFooter', shippingSelected.side === 'right' && def ? `${def.label} ×${count}` : 'Select a boxed item to take it back before sale.');
+    setText('shipLeftFooter', shippingSelected.side === 'left' && def ? `${def.label} ×${count}` : 'Select an item from your pack.');
+    setText('shipRightFooter', shippingSelected.side === 'right' && def ? `${def.label} ×${count}` : 'Midnight marks items for sale. Leave the farm, Wait, or Sleep to resolve it.');
     setText('shipDetailIcon', def ? def.icon : '📦');
     setText('shipDetailName', def ? def.label : 'Shipping Box Transfer');
     setText('shipDetailValue', def && canShipKey(key) ? `${deps.BASE_PRICES[key]}g each` : (def ? 'Not sellable' : '—'));
-    setText('shipDetailDesc', def ? `${def.desc}${blocked ? ' This item stays in your bag because the shipping box only accepts sellable goods.' : ''}` : 'Move sellable crops and materials from the player bag into the shipping box. Select items already in the box to pull them back out before the timed sale.');
+    setText('shipDetailDesc', def
+      ? `${def.desc}${blocked ? ' This item stays in your bag because the Shipping Box only accepts sellable goods.' : ''}`
+      : 'Move sellable goods from your pack into the Shipping Box. Each midnight marks everything already inside for sale; the marked shipment is actually collected when you leave the farm, Wait, or Sleep. Goods added after midnight wait for the next cutoff.');
     const tags = document.getElementById('shipDetailTags');
-    if (tags) tags.innerHTML = def ? def.tags.map(t => `<span class="ship-tag">${t}</span>`).join('') : '<span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Instant transfer</span>';
+    if (tags) tags.innerHTML = def ? def.tags.map(t => `<span class="ship-tag">${t}</span>`).join('') : '<span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Midnight cutoff</span>';
 
     const hasTransfer = !!key && count > 0 && !blocked;
     ['shipAmtMinus','shipAmtPlus','shipTransferOne','shipTransferHalf','shipTransferStack'].forEach(id => {
@@ -187,8 +190,8 @@
     style.id = 'shippingStandaloneStyles';
     style.textContent = `
       #shippingStandaloneRoot {
-        --shipping-pane-w: min(94vw, calc(27 * var(--col)));
-        --shipping-pane-h: min(76vh, calc(14 * var(--row) - 1.18 * var(--row)));
+        --shipping-pane-w: min(96vw, calc(30 * var(--col)));
+        --shipping-pane-h: min(82vh, calc(16 * var(--row)));
         position: fixed;
         inset: 0;
         z-index: 120;
@@ -202,8 +205,8 @@
       #shippingStandaloneRoot[hidden] { display: none !important; }
       #shippingStandaloneWindow {
         width: calc(var(--shipping-pane-w) + 16px);
-        max-width: 96vw;
-        max-height: 90vh;
+        max-width: 97vw;
+        max-height: 94vh;
         display: grid;
         grid-template-rows: auto minmax(0, var(--shipping-pane-h)) auto;
         overflow: hidden;
@@ -214,51 +217,87 @@
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         outline: none;
+        color: var(--text);
+        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace;
+        font-size: clamp(12px, 1.55vmin, 16px);
+      }
+      #shippingStandaloneWindow button,
+      #shippingStandaloneWindow input {
+        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace;
       }
       .shipping-window-bar {
-        min-height: 42px;
+        min-height: 48px;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 10px;
-        padding: 7px 9px 7px 12px;
+        padding: 8px 10px 8px 14px;
         border-bottom: 1px solid var(--border);
         background: rgba(255,255,255,.035);
       }
-      .shipping-window-heading { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-      #shippingStandaloneTitle { color: var(--accent); font-size: 13px; }
-      #shippingWindowStatus { color: var(--muted); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .shipping-window-heading { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      #shippingStandaloneTitle { color: var(--accent); font-size: clamp(16px, 2.05vmin, 20px); line-height: 1.15; }
+      #shippingWindowStatus { color: var(--muted); font-size: clamp(11px, 1.35vmin, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .shipping-window-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
       .shipping-window-btn {
-        min-width: 34px;
-        min-height: 30px;
-        padding: 4px 8px;
+        min-width: 40px;
+        min-height: 34px;
+        padding: 5px 10px;
         border: 1px solid var(--border-bright);
         border-radius: 8px;
         background: rgba(255,255,255,.055);
         color: var(--text);
-        font-size: 10px;
+        font-size: clamp(12px, 1.45vmin, 15px);
       }
       .shipping-window-btn:hover, .shipping-window-btn:focus-visible { border-color: var(--accent); color: var(--accent); }
-      #shippingWindowClose { font-size: 18px; line-height: 1; }
+      #shippingWindowClose { font-size: 21px; line-height: 1; }
       #shippingStandaloneBody { position: relative; min-width: 0; min-height: 0; padding: 8px; overflow: hidden; }
       #shippingStandaloneBody #mpShipping {
         --tr-col: calc(var(--shipping-pane-w) / 60);
         --tr-row: calc(var(--shipping-pane-h) / 32);
+        --tr-font-xs: clamp(11px, 1.35vmin, 14px);
+        --tr-font-sm: clamp(13px, 1.65vmin, 17px);
         width: var(--shipping-pane-w);
         height: var(--shipping-pane-h) !important;
         display: block !important;
         position: relative;
+        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace !important;
+        font-size: var(--tr-font-sm);
       }
+      #shippingStandaloneBody #mpShipping .ship-title,
+      #shippingStandaloneBody #mpShipping .ship-transfer-title,
+      #shippingStandaloneBody #mpShipping .ship-preview-name,
+      #shippingStandaloneBody #mpShipping .ship-direction,
+      #shippingStandaloneBody #mpShipping .ship-detail-name {
+        font-size: var(--tr-font-sm) !important;
+        line-height: 1.2;
+      }
+      #shippingStandaloneBody #mpShipping .ship-capacity,
+      #shippingStandaloneBody #mpShipping .ship-cat,
+      #shippingStandaloneBody #mpShipping .ship-slot-count,
+      #shippingStandaloneBody #mpShipping .ship-slot-pending,
+      #shippingStandaloneBody #mpShipping .ship-footer,
+      #shippingStandaloneBody #mpShipping .ship-detail-value,
+      #shippingStandaloneBody #mpShipping .ship-detail-desc,
+      #shippingStandaloneBody #mpShipping .ship-tag {
+        font-size: var(--tr-font-xs) !important;
+        line-height: 1.3;
+      }
+      #shippingStandaloneBody #mpShipping .ship-transfer-btn,
+      #shippingStandaloneBody #mpShipping .ship-amt-btn,
+      #shippingStandaloneBody #mpShipping .ship-amount {
+        font-size: clamp(12px, 1.5vmin, 16px) !important;
+      }
+      #shippingStandaloneBody #mpShipping .ship-slot-icon { font-size: clamp(20px, 3vmin, 30px) !important; }
       #shippingWindowDebugPanel {
         max-height: 25vh;
         overflow: auto;
         margin: 0;
-        padding: 7px 10px;
+        padding: 8px 12px;
         border-top: 1px solid var(--border);
         background: rgba(0,0,0,.24);
         color: var(--muted);
-        font: 9px/1.35 'DM Mono', monospace;
+        font: clamp(11px, 1.3vmin, 13px)/1.4 'DM Mono', monospace;
         white-space: pre-wrap;
       }
       #shippingWindowDebugPanel[hidden] { display: none !important; }
@@ -266,15 +305,15 @@
       #iiActions .ii-btn.sell { display: none !important; }
       @media (max-width: 740px) {
         #shippingStandaloneRoot {
-          --shipping-pane-w: 94vw;
-          --shipping-pane-h: min(74vh, calc(14 * var(--row) - .3 * var(--row)));
+          --shipping-pane-w: 96vw;
+          --shipping-pane-h: min(84vh, calc(16 * var(--row)));
           align-items: flex-start;
         }
-        #shippingStandaloneWindow { margin-top: max(4px, env(safe-area-inset-top)); width: 96vw; max-height: 94vh; }
-        .shipping-window-bar { min-height: 38px; padding: 5px 7px 5px 9px; }
-        #shippingStandaloneTitle { font-size: 12px; }
-        #shippingWindowStatus { font-size: 8px; }
-        .shipping-window-btn { min-height: 28px; padding-inline: 6px; }
+        #shippingStandaloneWindow { margin-top: max(4px, env(safe-area-inset-top)); width: 98vw; max-height: 96vh; }
+        .shipping-window-bar { min-height: 44px; padding: 6px 8px 6px 10px; }
+        #shippingStandaloneTitle { font-size: 16px; }
+        #shippingWindowStatus { font-size: 11px; }
+        .shipping-window-btn { min-height: 32px; padding-inline: 8px; font-size: 12px; }
       }
     `;
     document.head.appendChild(style);
@@ -325,6 +364,8 @@
       pointerLocked: !!document.pointerLockElement,
       panelParent: pane?.parentElement?.id || null,
       queuedItems: box?.getTotalItems?.() || 0,
+      midnightReadyItems: box?.getPendingSaleTotal?.() || 0,
+      midnightCutoffDay: box?.getMidnightCutoffDay?.() || null,
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
@@ -336,7 +377,7 @@
     if (!standaloneRoot) return;
     const state = getDebugState();
     const status = document.getElementById('shippingWindowStatus');
-    if (status) status.textContent = `${state.queuedItems} queued · camera input blocked`;
+    if (status) status.textContent = `${state.queuedItems} in box · ${state.midnightReadyItems} midnight-ready · camera input blocked`;
     const debugPanel = document.getElementById('shippingWindowDebugPanel');
     if (debugPanel && standaloneDebugVisible) debugPanel.textContent = JSON.stringify(state, null, 2);
   }
@@ -393,7 +434,7 @@
         <header class="shipping-window-bar">
           <div class="shipping-window-heading">
             <strong id="shippingStandaloneTitle">📦 Shipping Box</strong>
-            <span id="shippingWindowStatus">0 queued · camera input blocked</span>
+            <span id="shippingWindowStatus">0 in box · 0 midnight-ready · camera input blocked</span>
           </div>
           <div class="shipping-window-actions">
             <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">Debug</button>
