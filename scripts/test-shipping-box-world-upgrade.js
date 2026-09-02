@@ -35,7 +35,8 @@ assert.match(worldSource, /top, bottom, front, back, left, and right surfaces/, 
 assert.match(worldSource, /id\.startsWith\('shipping_box_lid_rim_'\)/, 'all four rim meshes move with the lid');
 assert.match(worldSource, /id === 'shipping_box_lock'/, 'the verdigris lock moves with the lid');
 assert.doesNotMatch(storeSource, /Shipping Box world presentation\/footprint upgrade/, 'General Store no longer contains Shipping Box world implementation');
-assert.match(storeSource, /shipping-box-world\.js/, 'dedicated Shipping Box module is loaded before game boot');
+assert.match(storeSource, /shipping-box-world\.js/, 'dedicated Shipping Box module is synchronously included before game boot');
+assert.match(storeSource, /document\.write\([\s\S]*<\/scr'[\s\S]*\+ 'ipt>/, 'Shipping Box module loader is parser-safe');
 
 // Two-tile farm map/collision registration remains authoritative.
 assert.match(worldSource, /`\$\{col\},\$\{row\}`[\s\S]*`\$\{col \+ 1\},\$\{row\}`/, 'Shipping Box footprint explicitly contains both horizontal tiles');
