@@ -47,6 +47,12 @@
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
   <script src="js/hud-update.js?v=20260902mod1"></script>
+  <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
+       entry menus, utilities wheel), extracted out of game.js; uses
+       window.HudUpdate.refreshItemScroll, so must load after it and before
+       game.js, which calls window.ActionArcUI.init(...) (binds its own
+       toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
+  <script src="js/action-arc-ui.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>
