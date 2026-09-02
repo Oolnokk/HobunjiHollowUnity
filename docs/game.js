@@ -12451,16 +12451,17 @@
       // hue/saturation change per reagent, not the source texture's value.
       const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
       function getReagentPlantMaterial(colorHex) {
-        if (!_grassLeafTex) return null;
+        const grassLeafTex = window.VegetationCropRendering.getGrassLeafTex();
+        if (!grassLeafTex) return null;
         let mat = _reagentPlantMaterials.get(colorHex);
         if (mat) return mat;
         mat = new THREE.ShaderMaterial({
           uniforms: {
-            uGrassTex: { value: _grassLeafTex },
+            uGrassTex: { value: grassLeafTex },
             uTime: { value: 0 }, uStrength: { value: 0.04 },
             uColor: { value: new THREE.Color(colorHex) },
           },
-          vertexShader: _grassBillVert,
+          vertexShader: window.VegetationCropRendering.grassBillVert,
           fragmentShader: `
             uniform sampler2D uGrassTex;
             uniform vec3 uColor;
@@ -13093,7 +13094,7 @@
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
 
-        _buildTownGrassBillboards(TCOLS, TROWS);
+        window.VegetationCropRendering.buildTownGrassBillboards(TCOLS, TROWS);
         window.BorderTerrain.buildTownBorderTerrain();
 
         // Gold ring markers for town transitions
@@ -17777,7 +17778,7 @@
       function clearTargetHighlights() {
         for (const m of _targetOutlineMeshes) m.layers.disable(2);
         _targetOutlineMeshes = [];
-        updateCuttableBillboardGlow(0, 0, false);
+        window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
         const i = row * COLS + col;
@@ -17788,10 +17789,12 @@
           if (obj.lid) out.push(obj.lid);
           return out;
         }
+        const cropMeshes = window.VegetationCropRendering.cropMeshes;
         if (cropMeshes[i]) {
           cropMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
           if (out.length) return out;
         }
+        const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
         if (vegFoliageMeshes[i]) {
           vegFoliageMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
         }
@@ -18770,7 +18773,8 @@
         const season = window.CalendarSystem.currentSeason();
         tileMats.grass.color.copy(season.grassColor); // unlit — no .emissive to update, see unlitFloorMat
         vegFloorMat.color.copy(season.grassColor); // also unlit — see its own declaration comment
-        _grassTint.copy(season.grassColor);
+        window.VegetationCropRendering.grassTint.copy(season.grassColor);
+        const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
 
@@ -18812,7 +18816,7 @@
       }
       loadTerrainMaterialConfig();
       function refreshTerrainForLateMaterialConfig() {
-        if (typeof buildTileMeshes === 'function' && typeof grid !== 'undefined' && grid) buildTileMeshes();
+        if (window.VegetationCropRendering && typeof grid !== 'undefined' && grid) window.VegetationCropRendering.buildTileMeshes();
         if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) refreshZoneGroundVisuals(mapId);
       }
 
@@ -19059,6 +19063,10 @@
       };
 
       const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
+      // Must match js/vegetation-crop-rendering.js's own VEG_H — both control
+      // the same shrub/weed slab height (one for its geometry, this one for
+      // tileYCenter/tileSurfaceY's Y-placement math).
+      const VEG_H = 0.18;
 
       // Y center of each tile's primary mesh
       function tileYCenter(type) {
@@ -19145,8 +19153,8 @@
       // the simulation remains tile-based, but every wet tile contributes its
       // four height-aware vertices to one world-UV merged surface mesh (the
       // farm/town dynamic water meshes and far-terrain south aprons now live
-      // as private state in js/water-system.js).
-      const tileMeshes  = new Array(ROWS * COLS).fill(null);
+      // as private state in js/water-system.js). tileMeshes itself now lives
+      // as private state in js/vegetation-crop-rendering.js (see below).
 
       // Static river/stream water-surface meshes built once in buildTownScene
       // (not part of the rain-fed water sim — rivers always flow).
@@ -20692,713 +20700,10 @@
 
 
 
-      // ── Build/update tile meshes ───────────────────────────────────
-
-      // ── Vegetation slab geometry + wind shader ────────────────────
-      const VEG_H = 0.18;  // slab height for shrubs/weeds
-      const vegGeo = new THREE.BoxGeometry(0.88, VEG_H, 0.88);
-
-      // Wind vertex shader — displaces top vertices horizontally by sin(time + phase)
-      const windVert = `
-        uniform float uTime;
-        uniform float uPhase;
-        uniform float uStrength;
-        varying vec3 vNormal;
-        varying vec3 vViewPos;
-        void main() {
-          vNormal = normalMatrix * normal;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          // Only sway the top half (position.y > 0)
-          float topFactor = max(0.0, position.y / ${VEG_H.toFixed(3)});
-          float sway = sin(uTime * 1.8 + uPhase) * uStrength * topFactor;
-          float sway2 = cos(uTime * 1.2 + uPhase * 1.3) * uStrength * 0.5 * topFactor;
-          worldPos.x += sway;
-          worldPos.z += sway2;
-          vec4 mvPos = viewMatrix * worldPos;
-          vViewPos = mvPos.xyz;
-          gl_Position = projectionMatrix * mvPos;
-        }
-      `;
-      const windFrag = `
-        uniform vec3 uColor;
-        varying vec3 vNormal;
-        varying vec3 vViewPos;
-        void main() {
-          vec3 lightDir = normalize(vec3(0.4, 1.0, 0.3));
-          float diff = max(dot(normalize(vNormal), lightDir), 0.0) * 0.6 + 0.4;
-          gl_FragColor = vec4(uColor * diff, 1.0);
-        }
-      `;
-
-      // Shared time uniform — updated every frame
-      const windUniforms = { uTime: { value: 0 }, uPhase: { value: 0 }, uStrength: { value: 0.04 }, uColor: { value: new THREE.Color(0x247c3c) } };
-
-      function makeVegMaterial(color, phase) {
-        return new THREE.ShaderMaterial({
-          uniforms: {
-            uTime:     { value: 0 },
-            uPhase:    { value: phase },
-            uStrength: { value: 0.04 },
-            uColor:    { value: new THREE.Color(color) },
-          },
-          vertexShader:   windVert,
-          fragmentShader: windFrag,
-          side: THREE.DoubleSide,
-        });
-      }
-
-      // Track all vegetation meshes for wind animation
-      const vegMeshes = [];
-      // Track foliage-generator groups by tile index for rotation-based sway
-      const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
-      // Sparse index of occupied vegFoliageMeshes slots, kept in sync by setVegFoliageMesh(),
-      // so the per-frame wind-sway loop only visits live entries instead of all 936 slots.
-      const _vegFoliageActive = new Set();
-      function setVegFoliageMesh(i, val) {
-        vegFoliageMeshes[i] = val;
-        if (val) _vegFoliageActive.add(i); else _vegFoliageActive.delete(i);
-      }
-
-      // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
-      // Rendered via InstancedMesh (one draw call per category) instead of one
-      // Mesh pair per blade — at 14 crosses × 2 blades per tile, a per-Mesh
-      // approach would cost tens of thousands of draw calls across the farm's
-      // WEEDS-majority default tile pattern, which is the real cause of janky
-      // frame pacing during movement (not the per-tile speed multiplier).
-
-      function _mbRng(seed) {
-        let s = seed >>> 0;
-        return () => {
-          s += 0x6D2B79F5;
-          let t = Math.imul(s ^ (s >>> 15), s | 1);
-          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-      }
-
-      // Shared blade geometry: 1×1 PlaneGeometry anchored at Y=0
-      const _grassBladeGeo = (() => {
-        const g = new THREE.PlaneGeometry(1, 1);
-        g.translate(0, 0.5, 0);
-        return g;
-      })();
-
-      const _grassBillVert = `
-        uniform float uTime;
-        uniform float uStrength;
-        #ifdef USE_FOG
-          #ifdef FOG_EXP2
-            uniform float fogDensity;
-          #else
-            uniform float fogNear;
-            uniform float fogFar;
-          #endif
-          varying float vGrassFogFactor;
-        #endif
-        varying vec2 vUv;
-        varying float vRandom;
-        void main() {
-          vUv = uv;
-          #ifdef USE_INSTANCING
-            vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-          #else
-            vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          #endif
-          // Stable per-blade pseudo-random value from its (fixed) ground
-          // position — used by the fragment shader to thin the tuft count
-          // seasonally (Deadgrass/Coldmuck) without touching the instance
-          // buffer itself, so density can change with a single uniform.
-          vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
-          float topFactor = uv.y;
-          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
-          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
-          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
-          worldPos.x += sway;
-          worldPos.z += sway2;
-          vec4 mvPosition = viewMatrix * worldPos;
-          #ifdef USE_FOG
-            // Evaluate fog four times per blade plane and interpolate it, rather
-            // than running exp() for every overlapping grass fragment.
-            float fogDepth = -mvPosition.z;
-            #ifdef FOG_EXP2
-              vGrassFogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDepth * fogDepth);
-            #else
-              vGrassFogFactor = smoothstep(fogNear, fogFar, fogDepth);
-            #endif
-          #endif
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `;
-
-      const _grassBillFrag = `
-        uniform sampler2D uGrassTex;
-        uniform vec3 uTint;
-        uniform float uDensity;
-        uniform vec3 fogColor;
-        #ifdef USE_FOG
-          varying float vGrassFogFactor;
-        #endif
-        varying vec2 vUv;
-        varying float vRandom;
-        void main() {
-          if (vRandom > uDensity) discard;
-          vec4 texel = texture2D(uGrassTex, vUv);
-          if (texel.a < 0.5) discard;
-          // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
-          float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          // Unlit, same as the ground tiles' MeshBasicMaterial (see
-          // unlitFloorMat/tileMats.grass) — blades read at one consistent
-          // painted brightness day or night/storm instead of dimming with
-          // ambientLight/sunLight, so a blade never goes darker than the
-          // grass surface it's standing on.
-          vec3 tinted = uTint * (0.7 + lum * 0.8);
-          // Drawn outline pixels (near-black source) stay pure black; tint the rest
-          vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
-          #ifdef USE_FOG
-            col = mix(col, fogColor, vGrassFogFactor);
-          #endif
-          gl_FragColor = vec4(col, texel.a);
-        }
-      `;
-
-      const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
-      let grassBillboardMat = null;
-      let cuttableBillboardGlowMat = null;
-      let cuttableBillboardGlowMesh = null;
-      // Cached grass-leaf silhouette texture, reused (re-tinted per reagent)
-      // by getReagentPlantMaterial for alchemy reagent plant billboards.
-      let _grassLeafTex = null;
-
-      new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        _grassLeafTex = tex;
-        const sharedUniforms = () => ({
-          uGrassTex:   { value: tex },
-          uTint:       { value: _grassTint },
-          uTime:       { value: 0 },
-          uStrength:   { value: 0.04 },
-          uDensity:    { value: 1 },
-          // Fog uniform slots _grassBillFrag's USE_FOG block reads, refreshed
-          // every frame from whichever scene is active — declared directly
-          // here rather than via THREE.UniformsUtils.merge(UniformsLib.fog):
-          // merge() deep-clones every merged uniform, and cloning uGrassTex
-          // (a real Texture, not a Color/number) here somehow left the
-          // resulting InstancedMesh instances rendering nothing at all —
-          // confirmed live (every farm grass tuft vanished) and isolated to
-          // this specific clone call, not fog itself or the shader changes.
-          fogColor:    { value: new THREE.Color() },
-          fogDensity:  { value: 0 },
-          fogNear:     { value: 1 },
-          fogFar:      { value: 1000 },
-        });
-        grassBillboardMat = new THREE.ShaderMaterial({
-          fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
-          uniforms:       sharedUniforms(),
-          vertexShader:   _grassBillVert,
-          fragmentShader: _grassBillFrag,
-          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
-        });
-        applySeasonalGrassAppearance();
-        cuttableBillboardGlowMat = new THREE.ShaderMaterial({
-          uniforms: {
-            uGrassTex: { value: tex },
-            uColor: { value: new THREE.Color(combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
-            uAlpha: { value: Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
-          },
-          vertexShader: _grassBillVert,
-          fragmentShader: `
-            uniform sampler2D uGrassTex;
-            uniform vec3 uColor;
-            uniform float uAlpha;
-            varying vec2 vUv;
-            void main() {
-              vec4 texel = texture2D(uGrassTex, vUv);
-              if (texel.a < 0.5) discard;
-              gl_FragColor = vec4(uColor, uAlpha * texel.a);
-            }
-          `,
-          transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-        });
-        _rebuildFarmBillboards();
-        if (_townSceneBuilt) {
-          _buildTownGrassBillboards(_townZone?.cols || 60, _townZone?.rows || 50);
-          window.BorderTerrain.buildTownBorderGrassBillboards();
-        }
-      });
-
-      // Fills 14 crosses (28 blades) worth of instance matrices for one tile
-      // into `mesh` starting at `startIdx`; returns the next free index.
-      function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0) {
-        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
-        const baseY = tileSurfaceY(TileType.GRASS) + yOffset;
-        let idx = startIdx;
-        for (let b = 0; b < 14; b++) {
-          const ox  = (rand() - 0.5) * 0.9;
-          const oz  = (rand() - 0.5) * 0.9;
-          const w   = (0.16 + rand() * 0.10) * sizeMul;
-          const h   = (0.22 + rand() * 0.14) * sizeMul;
-          const rot = rand() * Math.PI;
-          const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
-
-          dummy.position.set(px, baseY, pz);
-          dummy.rotation.set(0, rot, 0);
-          dummy.scale.set(w, h, 1);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-
-          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-        }
-        return idx;
-      }
-
-      function updateCuttableBillboardGlow(col, row, visible) {
-        if (!cuttableBillboardGlowMesh || !cuttableBillboardGlowMat) return;
-        if (!visible || combatConfig().cuttableTargetGlow?.enabled === false) {
-          cuttableBillboardGlowMesh.count = 0;
-          return;
-        }
-        cuttableBillboardGlowMat.uniforms.uColor.value.set(combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
-        cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42;
-        const dummy = new THREE.Object3D();
-        cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
-        cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
-      }
-
-      // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
-      // Mode A, always on) each get one InstancedMesh sized for the worst case
-      // (every farm tile being that type), so edits just refill the buffer and
-      // adjust .count rather than recreating the mesh.
-      let farmGrassBillMesh = null, farmWeedBillMesh = null;
-      function _ensureFarmBillboardMeshes() {
-        if (farmGrassBillMesh) return;
-        const cap = ROWS * COLS * 28;
-        farmGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
-        farmGrassBillMesh.frustumCulled = false;
-        farmGrassBillMesh.count = 0;
-        farmGrassBillMesh.visible = s_grass;
-        farmGrassBillMesh.userData.isBillboard = true;
-        scene.add(farmGrassBillMesh);
-
-        farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
-        farmWeedBillMesh.frustumCulled = false;
-        farmWeedBillMesh.count = 0;
-        farmWeedBillMesh.userData.isBillboard = true;
-        scene.add(farmWeedBillMesh);
-
-        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
-        cuttableBillboardGlowMesh.frustumCulled = false;
-        cuttableBillboardGlowMesh.count = 0;
-        cuttableBillboardGlowMesh.userData.isBillboard = true;
-        scene.add(cuttableBillboardGlowMesh);
-      }
-
-      function _rebuildFarmBillboards() {
-        if (!grassBillboardMat) return;
-        _ensureFarmBillboardMeshes();
-        const dummy = new THREE.Object3D();
-        let gi = 0, wi = 0;
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-            if (tile.type === TileType.GRASS) {
-              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
-            } else if (tile.type === TileType.WEEDS && !s_weed3D) {
-              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
-            }
-          }
-        }
-        farmGrassBillMesh.count = gi;
-        farmWeedBillMesh.count  = wi;
-        farmGrassBillMesh.instanceMatrix.needsUpdate = true;
-        farmWeedBillMesh.instanceMatrix.needsUpdate  = true;
-      }
-
-      // Town's grass billboards — built once when entering town (town tiles
-      // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
-      let townGrassBillMesh = null;
-      function _buildTownGrassBillboards(tcols, trows) {
-        if (!grassBillboardMat) return;
-        if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
-        let count = 0;
-        for (let row = 0; row < trows; row++)
-          for (let col = 0; col < tcols; col++)
-            if (townGrid[row]?.[col]?.type === TileType.GRASS) count++;
-        if (count === 0) return;
-
-        townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
-        townGrassBillMesh.frustumCulled = false;
-        townGrassBillMesh.visible = s_grass;
-        townGrassBillMesh.userData.isBillboard = true;
-        const dummy = new THREE.Object3D();
-        let idx = 0;
-        for (let row = 0; row < trows; row++) {
-          for (let col = 0; col < tcols; col++) {
-            const tile = townGrid[row]?.[col];
-            if (tile?.type !== TileType.GRASS) continue;
-            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
-          }
-        }
-        townGrassBillMesh.count = idx;
-        townGrassBillMesh.instanceMatrix.needsUpdate = true;
-        townScene.add(townGrassBillMesh);
-      }
-
-      function _rebuildWeedTiles() {
-        for (let r = 0; r < ROWS; r++)
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r][c].type !== TileType.WEEDS) continue;
-            const i = r * COLS + c;
-            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); setVegFoliageMesh(i, null); }
-            _buildOneTileMesh(c, r);
-          }
-        _rebuildFarmBillboards();
-      }
-
-      // ── Crop mesh system ──────────────────────────────────────────
-      // Needlegrain and heftroot use procedural foliage geometry.
-      // All other crops use a simple colored cube (unchanged).
-      const CROP_COLORS = {
-        needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
-        heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
-        garlink:       { body: 0xd8d0b0, ripe: 0xf2ead0, sprout: 0x8bbf6a },
-        ongyums:       { body: 0xc07a3d, ripe: 0xe09a4b, sprout: 0x86b95a },
-        redberries:    { body: 0xb83b42, ripe: 0xff4f62, sprout: 0x4c9b43 },
-        blueberries:   { body: 0x3d62c8, ripe: 0x5f80ff, sprout: 0x4c9b74 },
-        yellowberries: { body: 0xd6c345, ripe: 0xffe86a, sprout: 0x7ca84b },
-        whiteberries:  { body: 0xdcded2, ripe: 0xffffff, sprout: 0x8bbf8a },
-        blackberries:  { body: 0x3d2a52, ripe: 0x17121f, sprout: 0x4d8a4a },
-        blackMustard:  { body: 0x4a3b2f, ripe: 0x1f1812, sprout: 0x789b3a },
-        greenMustard:  { body: 0x6da64a, ripe: 0x9bd66b, sprout: 0x75b957 },
-      };
-      const CROP_MAX_SCALE = 0.96;
-      const CROP_MIN_SCALE = 0.16;
-      const cropMeshes = new Array(ROWS * COLS).fill(null);
-
-      // Tracks which growth bucket (0–3) each foliage crop was built at,
-      // so we only rebuild when the plant crosses a threshold.
-      const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
-
-      // Indices of tiles that currently have a crop — rebuilt lazily whenever
-      // a tile changes so updateCropMeshes() doesn't scan all 936 tiles.
-      let _cropTileIndices = null;
-      function _invalidateCropList() { _cropTileIndices = null; }
-      function _ensureCropList() {
-        if (_cropTileIndices !== null) return;
-        _cropTileIndices = [];
-        for (let row = 0; row < ROWS; row++)
-          for (let col = 0; col < COLS; col++)
-            if (grid[row][col].crop) _cropTileIndices.push(row * COLS + col);
-      }
-
-      const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
-      const FG = window.FoliageGenerator;
-
-      function _growthBucket(growth) {
-        // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
-        if (growth < 0.15) return 0;
-        if (growth < 0.45) return 1;
-        if (growth < 0.80) return 2;
-        return 3;
-      }
-
-      function _buildFoliageMesh(crop, growth, col, row) {
-        if (!FG) return null;
-        if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
-        if (crop === 'heftroot') {
-          // Three plants in a triangle cluster, each with a unique seed offset
-          const wrapper = new THREE.Group();
-          const offsets = [[-0.20, 0, 0.14], [0.22, 0, 0.14], [0.0, 0, -0.22]];
-          for (let idx = 0; idx < 3; idx++) {
-            const [ox, oy, oz] = offsets[idx];
-            const plant = FG.buildHeftrootMesh(growth, col + idx * 127, row + idx * 61);
-            plant.position.set(ox, oy, oz);
-            plant.scale.setScalar(0.68);
-            wrapper.add(plant);
-          }
-          return wrapper;
-        }
-        return null;
-      }
-
-      function updateCropMeshes() {
-        _ensureCropList();
-        const _now = performance.now();
-        for (const i of _cropTileIndices) {
-          const col  = i % COLS;
-          const row  = (i / COLS) | 0;
-          const tile = grid[row][col];
-
-          // Stale entry (crop was harvested since last list rebuild) — clean up.
-          if (!tile.crop) {
-            if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
-            cropGrowthBucket[i] = -1;
-            _invalidateCropList();
-            continue;
-          }
-
-            const data   = cropData[tile.crop];
-            const growth = Math.min(tile.cropAge / data.growDays, 1.0);
-            const surfY  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-
-            if (FOLIAGE_CROPS.has(tile.crop)) {
-              // ── Procedural foliage mesh ──────────────────────────────
-              const bucket = _growthBucket(growth);
-              if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
-                // Growth crossed a threshold — rebuild.
-                scene.remove(cropMeshes[i]);
-                cropMeshes[i] = null;
-              }
-              if (!cropMeshes[i]) {
-                const group = _buildFoliageMesh(tile.crop, growth, col, row);
-                if (group) {
-                  scene.add(group);
-                  _markOutline(group);
-                  cropMeshes[i]       = group;
-                  cropGrowthBucket[i] = bucket;
-                }
-              }
-              const mesh = cropMeshes[i];
-              if (!mesh) continue;
-
-              // Scale: foliage group base is at y=0, grows +Y about 0.5 units at full.
-              // Map to the same visual range as the old box (0.08..0.48).
-              const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
-              mesh.scale.setScalar(scale);
-
-              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
-              mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = _now / 2200 + col;
-
-            } else {
-              // ── Simple colored cube (all other crops) ────────────────
-              const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
-              const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
-              const color  = tile.cropReady ? colors.ripe
-                           : growth < 0.15  ? colors.sprout
-                           : colors.body;
-
-              if (!cropMeshes[i]) {
-                const geo  = new THREE.BoxGeometry(1, 1, 1);
-                const mat  = new THREE.MeshLambertMaterial({ color });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.castShadow = true;
-                scene.add(mesh);
-                mesh.layers.enable(1);
-                cropMeshes[i] = mesh;
-              }
-
-              const mesh = cropMeshes[i];
-              mesh.material.color.setHex(color);
-              mesh.scale.setScalar(size);
-              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.03 : 0;
-              mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = _now / 1200 + col;
-            }
-        }
-      }
-
-      // Update a single tile mesh (called after shovel actions)
-      function _buildOneTileMesh(col, row) {
-        const i    = row * COLS + col;
-        const tile = grid[row][col];
-        const mat  = resolveTileMat('farm', tile.type);
-
-        if (tile.type === TileType.ROCK) {
-          // Floor slab — grass so it blends with surrounding tiles
-          const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), resolveTileMat('farm', TileType.GRASS));
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-          // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
-          const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(col, row);
-          let moundRoot = null;
-          if (stoneGeo) {
-            const m = new THREE.Mesh(stoneGeo, resolveTileMat('farm', TileType.ROCK));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.ROCK);
-            moundRoot = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            if (!moundRoot) moundRoot = m;
-          }
-          if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
-          setVegFoliageMesh(i, moundRoot || { _windAmp: 0 });
-          _markOutline(moundRoot);
-          return;
-        }
-
-        if (tile.type === TileType.SHRUB && window.FoliageGenerator) {
-          // Grass floor slab underneath the shrub
-          const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), vegFloorMat);
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-
-          const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
-          vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-          vegGroup._windAmp   = 0.06;
-          // buildShrubMesh now returns TREE_PRESETS.bush, so its native scale
-          // is already the regular wilderness-bush size. Do not apply the old
-          // generic shrub x2 farm boost here.
-          vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
-          scene.add(vegGroup);
-          setVegFoliageMesh(i, vegGroup);
-          _markOutline(vegGroup);
-          return;
-        }
-
-        if (tile.type === TileType.WEEDS) {
-          // Grass floor slab underneath
-          const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), vegFloorMat);
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-
-          if (s_weed3D && window.FoliageGenerator) {
-            // Mode B: procedural 3D weeds, subject to shell outline
-            const vegGroup = new THREE.Group();
-            vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
-            const rng   = _mbRng(((col * 31337 + row * 1009) >>> 0));
-            const count = 3 + ((col * 7 + row * 13) % 3);  // 3–5 plants
-            for (let p = 0; p < count; p++) {
-              const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
-              if (wm) {
-                wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
-                vegGroup.add(wm);
-              }
-            }
-            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-            vegGroup._windAmp   = 0.10;
-            scene.add(vegGroup);
-            setVegFoliageMesh(i, vegGroup);
-            _markOutline(vegGroup);
-          }
-          return;
-        }
-
-        if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
-          const { dirtGeo, grassGeo } = window.TerrainGeometry.buildTerrainTileGeo(col, row, tile.type);
-          let primary = null;
-          if (dirtGeo) {
-            // Both types use trench brown — raised earth is the same dug-soil colour
-            const m = new THREE.Mesh(dirtGeo, resolveTileMat('farm', TileType.TRENCH));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            m.layers.enable(1);  // material transition outline
-            _markTerrainEdgeId(m, TileType.TRENCH);
-            primary = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            m._windAmp = 0;
-            scene.add(m);
-            m.layers.enable(1);  // material transition outline
-            _markTerrainEdgeId(m, TileType.GRASS);
-            setVegFoliageMesh(i, m);
-            if (!primary) primary = m;
-          }
-          tileMeshes[i] = primary;
-          return;
-        }
-
-        if (tile.type === TileType.PATH) {
-          const { pathGeo, grassGeo } = window.TerrainGeometry.buildPathTileGeo(col, row);
-          let primary = null;
-          if (pathGeo) {
-            // Regular ground (grass) under the path — the paved brick
-            // surface (see "Path: paved brick surface" / registerPathBrickChunks
-            // for 'farm') overlays ordinary ground rather than a separately-
-            // colored path patch, same treatment as the town path.
-            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            scene.add(m);
-            primary = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            if (!primary) primary = m;
-          }
-          tileMeshes[i] = primary;
-          return;
-        }
-
-        let mesh;
-        if (tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
-          // Fallback: foliage generator not available
-          const phase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-          const color = tile.type === TileType.SHRUB ? 0x356e36 : 0x247c3c;
-          mesh = new THREE.Mesh(vegGeo, makeVegMaterial(color, phase));
-          vegMeshes.push(mesh);
-        } else {
-          mesh = new THREE.Mesh(tile.type === TileType.ROCK ? rockGeo : window.TerrainGeometry.makeFloorGeo(col, row), mat);
-        }
-        mesh.castShadow = mesh.receiveShadow = true;
-        mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
-        scene.add(mesh);
-        tileMeshes[i] = mesh;
-        // Rock and fallback vegetation get outlines; flat floor tiles do not.
-        if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
-          mesh.layers.enable(1);
-        } else {
-          // Flat ground tiles (grass/tilled/paddy/river/stream bed) — fallback
-          // foliage billboards above are skipped since they aren't flat ground.
-          _markTerrainEdgeId(mesh, _terrainCategoryFor(tile.type));
-        }
-      }
-
-      function buildTileMeshes() {
-        window.WaterSystem.resetFarmWaterMesh();
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const i = row * COLS + col;
-            if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-            if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
-            cropGrowthBucket[i] = -1;
-            _buildOneTileMesh(col, row);
-          }
-        }
-        _rebuildFarmBillboards();
-      }
-
-      // Update a single tile mesh (called after shovel actions)
-      function refreshTileMesh(col, row) {
-        const i = row * COLS + col;
-        if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-        if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
-        cropGrowthBucket[i] = -1;
-        _buildOneTileMesh(col, row);
-        _rebuildFarmBillboards();
-      }
+      // Farm/town grass billboards, crop growth meshes, and per-tile
+      // ground+vegetation mesh building now live in
+      // js/vegetation-crop-rendering.js — called from gameLoop and elsewhere
+      // via window.VegetationCropRendering.*.
 
       // Merged-water-surface collection/rendering (_collectDynamicWaterCells,
       // _buildFarAquiferApron, updateWaterMeshes, updateTownWaterMeshes,
@@ -21617,6 +20922,7 @@
         const showTile   = isExcavate || isHoeWork;
         const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
         const i = reticle.row * COLS + reticle.col;
+        const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
         const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
         const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
                          && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
@@ -21656,10 +20962,10 @@
             for (const m of meshes) m.layers.enable(2);
             _targetOutlineMeshes = meshes;
             _targetOutlineAllowed = isObjTarget;
-            updateCuttableBillboardGlow(0, 0, false);
+            window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
             reticleRingMesh.visible = false;
           } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
-            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
+            window.VegetationCropRendering.updateCuttableBillboardGlow(reticle.col, reticle.row, true);
             reticleRingMesh.visible = false;
           } else {
             // No specific mesh — fall back to floating ring
@@ -21833,7 +21139,32 @@
 
       let _pathBrickCullAccum = 0;
 
-      buildTileMeshes();
+      // Called here (ahead of the other window.*?.init(...) calls near the
+      // bottom of this file, which run too late) since the farm's very first
+      // ground build (buildTileMeshes() below) and buildBorderTerrain()
+      // further down both need it immediately — every dep it captures
+      // (COLS/ROWS/scene/NORMAL_TOP/SLAB_H/PLATEAU_UNIT/WATER_UNIT/TileType/
+      // resolveTileMat/rockGeo/vegFloorMat/cropData/tileYCenter/tileSurfaceY/
+      // combatConfig/applySeasonalGrassAppearance/_markOutline/
+      // _markTerrainEdgeId/_terrainCategoryFor) is already declared above
+      // this point, same forward-reference-safe ordering as
+      // window.WaterSystem.init()/window.FarmEditor.init() one block above.
+      window.VegetationCropRendering.init({
+        COLS, ROWS, NORMAL_TOP, SLAB_H, PLATEAU_UNIT, WATER_UNIT, TileType,
+        scene, resolveTileMat, rockGeo, vegFloorMat, cropData,
+        tileYCenter, tileSurfaceY, combatConfig, applySeasonalGrassAppearance,
+        markOutline: _markOutline,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+        getGrid: () => grid,
+        getWeed3D: () => s_weed3D,
+        getGrassEnabled: () => s_grass,
+        getTownScene: () => townScene,
+        getTownGrid: () => townGrid,
+        getTownZone: () => _townZone,
+        getTownSceneBuilt: () => _townSceneBuilt,
+      });
+      window.VegetationCropRendering.buildTileMeshes();
 
       // Paved brick surface over the farm's path, if it has one — same
       // technique as the town path (see "Path: paved brick surface" below):
@@ -21851,17 +21182,17 @@
       // bottom of this file, which run too late) since buildBorderTerrain()
       // below needs it immediately — every other dep it captures by closure
       // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
-      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass) is
-      // already declared above this point, or (window.FormatUtils.clamp,
-      // loaded via its own <script> tag before game.js) already available
-      // regardless of where it's written.
+      // _mbRng/_markOutline/window.VegetationCropRendering's grass state/
+      // s_grass) is already declared above this point, or
+      // (window.FormatUtils.clamp, loaded via its own <script> tag before
+      // game.js) already available regardless of where it's written.
       window.BorderTerrain?.init({
         COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
         resolveTileMat, resolveCliffMat, clamp: window.FormatUtils.clamp,
-        mbRng: _mbRng,
+        mbRng: window.VegetationCropRendering.mbRng,
         markOutline: _markOutline,
-        grassBladeGeo: _grassBladeGeo,
-        getGrassBillboardMat: () => grassBillboardMat,
+        grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
+        getGrassBillboardMat: () => window.VegetationCropRendering.getGrassBillboardMat(),
         getGrassEnabled: () => s_grass,
         getTownScene: () => townScene,
         getTownZone: () => _townZone,
@@ -21922,7 +21253,9 @@
         s_grass = !!visible;
         const settingCheckbox = document.getElementById('settingGrass');
         if (settingCheckbox) settingCheckbox.checked = s_grass;
+        const farmGrassBillMesh = window.VegetationCropRendering.getFarmGrassBillMesh();
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
+        const townGrassBillMesh = window.VegetationCropRendering.getTownGrassBillMesh();
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
         // Streamed zone grass/rich-foliage groups live below their owning
         // chunk groups, so traverse rather than assuming direct scene children.
@@ -21942,7 +21275,7 @@
       });
       document.getElementById('settingWeed3D').addEventListener('change', e => {
         s_weed3D = e.target.checked;
-        _rebuildWeedTiles();
+        window.VegetationCropRendering.rebuildWeedTiles();
       });
       // Cloud Forest perf-testing toggles — each takes effect immediately,
       // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
@@ -22564,7 +21897,7 @@
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
-          updateCropMeshes();
+          window.VegetationCropRendering.updateCropMeshes();
           window.FarmAnimals.updateAnimalMeshes(dt);
           updateThreeLighting();
 
@@ -22575,7 +21908,7 @@
             : 0.03;
           const _playerTX = player.x / TILE;
           const _playerTZ = player.y / TILE;
-          for (const vm of vegMeshes) {
+          for (const vm of window.VegetationCropRendering.vegMeshes) {
             if (vm.material && vm.material.uniforms) {
               vm.material.uniforms.uTime.value = windTime;
               // Proximity boost only triggers within 1.2 tiles. Use cheap
@@ -22593,7 +21926,8 @@
             }
           }
           const windScale = windStrBase / 0.03;
-          for (const _vfi of _vegFoliageActive) {
+          const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
+          for (const _vfi of window.VegetationCropRendering.vegFoliageActive) {
             const fg = vegFoliageMeshes[_vfi];
             if (!fg || !fg._windAmp) continue;
             // Skip foliage well outside the camera view — it won't be visible.
@@ -22602,17 +21936,21 @@
             fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
             fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
           }
+          const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
           if (grassBillboardMat) {
             grassBillboardMat.uniforms.uTime.value     = windTime;
             grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
           }
         }
-        if (currentArea === 'town' && grassBillboardMat) {
-          // Town grass billboards share the farm's wind shader/material, so keep
-          // them swaying too — farm's block above only runs while on the farm.
-          const windTime = performance.now() / 1000;
-          grassBillboardMat.uniforms.uTime.value     = windTime;
-          grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+        if (currentArea === 'town') {
+          const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
+          if (grassBillboardMat) {
+            // Town grass billboards share the farm's wind shader/material, so keep
+            // them swaying too — farm's block above only runs while on the farm.
+            const windTime = performance.now() / 1000;
+            grassBillboardMat.uniforms.uTime.value     = windTime;
+            grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+          }
         }
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
@@ -22768,14 +22106,14 @@
       }
 
       function markTileDirty(col, row) {
-        _invalidateCropList();
-        refreshTileMesh(col, row);
+        window.VegetationCropRendering.invalidateCropList();
+        window.VegetationCropRendering.refreshTileMesh(col, row);
         // TRENCH/RAISED shape depends on which neighbors share their type, so any
         // change that could alter those connections must also refresh those neighbors.
         for (const [dc, dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
           const nt = grid[row + dr]?.[col + dc]?.type;
           if (nt === TileType.TRENCH || nt === TileType.RAISED)
-            refreshTileMesh(col + dc, row + dr);
+            window.VegetationCropRendering.refreshTileMesh(col + dc, row + dr);
         }
       }
 
@@ -26383,11 +25721,11 @@
 
       window.ZoneGrassBillboards?.init({
         TileType, PLATEAU_UNIT,
-        grassBladeGeo: _grassBladeGeo,
-        getGrassBillboardMat: () => grassBillboardMat,
+        grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
+        getGrassBillboardMat: () => window.VegetationCropRendering.getGrassBillboardMat(),
         getGrassEnabled: () => s_grass,
-        fillBillboardInstances: _fillBillboardInstances,
-        mbRng: _mbRng,
+        fillBillboardInstances: window.VegetationCropRendering.fillBillboardInstances,
+        mbRng: window.VegetationCropRendering.mbRng,
         tileSurfaceY,
       });
 
@@ -26550,11 +25888,11 @@
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
         NORMAL_TOP,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         findZoneFlatEmptyTiles,
         getReagentPlantMaterial,
-        _grassBladeGeo,
+        _grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
         _zoneScenes,
         _zoneReagentObjects,
         _zoneReagentMeshGroups,
@@ -26602,7 +25940,7 @@
         NORMAL_TOP,
         cropData,
         inventory,
-        _grassBladeGeo,
+        _grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
         _zoneScenes,
         _zoneBerryMeshGroups,
         _zoneBerryObjects,
@@ -26612,7 +25950,7 @@
         debugLog,
         getCurrentArea: () => currentArea,
         isZoneArea: _isZoneArea,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         findZoneFlatEmptyTiles,
         getReagentPlantMaterial,
@@ -26630,7 +25968,7 @@
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
         _zoneScenes,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         _zoneReagentPersist,
         _zoneBerryPersist,
