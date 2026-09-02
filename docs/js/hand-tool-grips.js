@@ -230,13 +230,14 @@
     return { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI };
   }
 
-  function inverseTransform(raw) {
-    const transform = normalizeTransform(raw); // Authored point on the item that must land on the fixed right-hand socket.
+  function inverseTransform(raw, positionScale = 1) {
+    const transform = normalizeTransform(raw); // Authored point on the unscaled item that must land on the fixed right-hand socket.
+    const scale = normalizeToolScale(positionScale); // Uniform base item scale; multiplying the grip offset makes scaling happen around the hand pivot instead of the sprite origin.
     const inverseRotation = inverseQuaternion(quaternionFromDeg(transform.rotationDeg)); // P^-1 rotation moves the item, never the hand.
     const inversePosition = rotateVector(inverseRotation, {
-      x: -transform.position.x,
-      y: -transform.position.y,
-      z: -transform.position.z,
+      x: -transform.position.x * scale,
+      y: -transform.position.y * scale,
+      z: -transform.position.z * scale,
     });
     return { position: inversePosition, quaternion: inverseRotation };
   }
@@ -372,6 +373,10 @@
     const relative = composePrimaryInverseWithPoint(authoredPrimaryGripForTool(value), {
       position: { x: 0, y: 0, z: itemZ }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
     });
+    const itemScale = toolScaleForTool(value); // Intrinsic visual scale is not part of toolHolder's animation transform, so off-hand travel must scale explicitly with the weapon shape.
+    relative.position.x *= itemScale;
+    relative.position.y *= itemScale;
+    relative.position.z *= itemScale;
     return { enabled: true, influence: clamp01(state.influence), percent: state.percent, itemZ, ...relative };
   }
 
@@ -466,13 +471,14 @@
   function applyPrimaryCorrection(node, primaryRaw, toolScale = 1) {
     const base = visualBaseFor(node);
     if (!base) return;
-    const correction = inverseTransform(primaryRaw);
+    const scale = normalizeToolScale(toolScale);
+    const correction = inverseTransform(primaryRaw, scale);
     const correctedBasePosition = rotateVector(correction.quaternion, base.position);
     node.position.set(correction.position.x + correctedBasePosition.x, correction.position.y + correctedBasePosition.y, correction.position.z + correctedBasePosition.z);
     const QuaternionCtor = node.quaternion.constructor;
     const correctionQ = new QuaternionCtor(correction.quaternion.x, correction.quaternion.y, correction.quaternion.z, correction.quaternion.w);
     node.quaternion.copy(correctionQ.multiply(base.quaternion));
-    applyScaleFromBase(node, base, toolScale);
+    applyScaleFromBase(node, base, scale);
     node.updateMatrix?.();
   }
 
