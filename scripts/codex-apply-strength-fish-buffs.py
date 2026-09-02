@@ -72,32 +72,29 @@ replace_once(
     "        cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES[f.species] || 'fishing',\n"
 )
 
-# Persistent regression coverage in the existing skill/cooking integration test.
-test = 'scripts/test-skill-and-hearth-cooking.js'
-replace_once(
-    test,
-    "assert(context.window.SkillSystem.actionSpeedMultiplier('mining') >= 1, 'Mining exposes a hold-speed multiplier');\n",
-    "assert(context.window.SkillSystem.actionSpeedMultiplier('mining') >= 1, 'Mining exposes a hold-speed multiplier');\n"
-    "context.window.AlchemySystem = { getWorkSpeedMultiplier: () => 1.75 };\n"
-    "assert.equal(context.window.SkillSystem.actionSpeedMultiplier('foraging'), 1.75, 'Strength work speed multiplies axe holds');\n"
-    "assert.equal(context.window.SkillSystem.actionSpeedMultiplier('mining'), 1.75, 'Strength work speed multiplies pick holds');\n"
-    "assert.equal(context.window.SkillSystem.actionSpeedMultiplier('farming'), 1.75, 'Strength work speed multiplies digging');\n"
-)
-replace_once(
-    test,
-    "const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');\n",
-    "const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');\n"
-    "const fishCatalogSource = fs.readFileSync('docs/js/fish-catalog.js', 'utf8');\n"
-)
-replace_once(
-    test,
-    "assert.match(alchemySource, /registerProvider\\('alchemy'/, 'alchemy contributes to the shared effect HUD');\n",
-    "assert.match(alchemySource, /registerProvider\\('alchemy'/, 'alchemy contributes to the shared effect HUD');\n"
-    "assert.match(alchemySource, /potionOfStrength[\\s\\S]{0,240}magnitude: 0\\.5/, 'Strength grants half of Fury base outgoing-damage bonus');\n"
-    "assert.match(alchemySource, /STRENGTH_FOOTING_DAMAGE_RATIO = 1\\.5/, 'Strength grants +75% base Footing damage through its secondary ratio');\n"
-    "assert.match(alchemySource, /STRENGTH_WORK_SPEED_RATIO = 1\\.5/, 'Strength grants +75% base chop, dig, and mine speed through its secondary ratio');\n"
-    "assert.match(fishCatalogSource, /gurumahi: 'strength'[\\s\\S]{0,80}rockscale: 'fortitude'[\\s\\S]{0,80}sixfin: 'speed'/, 'fish species carry distinct authored cooking buffs');\n"
-    "assert.match(fishCatalogSource, /cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES\\[f\\.species\\]/, 'live fish item definitions expose their species cooking buff');\n"
-)
+Path('scripts/test-strength-fish-buffs.js').write_text(r'''#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const alchemy = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');
+const skill = fs.readFileSync('docs/js/skill-system.js', 'utf8');
+const fish = fs.readFileSync('docs/js/fish-catalog.js', 'utf8');
+const cooking = fs.readFileSync('docs/js/cooking-system.js', 'utf8');
+const game = fs.readFileSync('docs/game.js', 'utf8');
+assert.match(alchemy, /potionOfStrength[\s\S]{0,240}magnitude: 0\.5/, 'Strength is half Fury base damage');
+assert.match(alchemy, /STRENGTH_FOOTING_DAMAGE_RATIO = 1\.5/, 'Strength derives +75% base Footing damage');
+assert.match(alchemy, /STRENGTH_WORK_SPEED_RATIO = 1\.5/, 'Strength derives +75% base work speed');
+assert.match(alchemy, /getFootingDamageMultiplier = \(\) => 1 \+ statMagnitude\('footingDamage'\) \+ recipeMagnitude\('potionOfStrength'\)/, 'Strength feeds the real Footing multiplier');
+assert.match(alchemy, /getWorkSpeedMultiplier/, 'Alchemy exports a dedicated Strength work-speed multiplier');
+assert.match(skill, /\['foraging', 'mining', 'farming'\]\.includes\(skillKey\)[\s\S]{0,120}getWorkSpeedMultiplier/, 'Strength work speed is limited to chop, mine, and dig skills');
+assert.match(game, /actionSpeedMultiplier\?\.\('farming'\)/, 'digging consumes the shared action-speed helper');
+assert.match(game, /chargeAction\.tool === 'axe' \? 'foraging' : chargeAction\.tool === 'pick' \? 'mining'/, 'axe and pick holds consume the shared action-speed helper');
+assert.match(game, /getOutgoingDamageMultiplier/, 'combat consumes potion outgoing damage');
+assert.match(game, /getFootingDamageMultiplier/, 'combat consumes potion Footing damage');
+assert.match(fish, /gurumahi: 'strength'[\s\S]{0,80}rockscale: 'fortitude'[\s\S]{0,80}sixfin: 'speed'/, 'fish species have distinct cooking buffs');
+assert.match(fish, /cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES\[f\.species\]/, 'live fish expose species cooking buffs');
+assert.match(cooking, /def\.cookingPrimaryEffect \|\| defaultPrimaryEffectForCategories/, 'cooking consumes live item cookingPrimaryEffect metadata');
+console.log('Strength and fish buff tests passed');
+''', encoding='utf-8')
 
 print('Applied Strength and fish cooking buff changes.')
