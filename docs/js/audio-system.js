@@ -12,6 +12,14 @@
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
+  const footstepAudioPools = new Map(); // URL -> reusable preloaded native-audio voices used by every recorded footstep.
+  let footstepUnlockListenersInstalled = false; // Prevents duplicate touch/key priming listeners if AudioSystem.init is wrapped or repeated.
+  let footstepPlayRequestCount = 0; // Shown in mobile diagnostics to prove cadence reached actual media playback.
+  let footstepPlayStartedCount = 0; // Shown in mobile diagnostics to distinguish successful starts from requested footsteps.
+  let footstepPlayFailureCount = 0; // Shown in mobile diagnostics when native media playback rejects or throws.
+  let footstepPrimeFailureCount = 0; // Shown in mobile diagnostics when a gesture-time pooled voice prime fails.
+  let lastFootstepPlayError = null; // Keeps the newest media failure copyable without requiring a browser console.
+  let lastFootstepPlayErrorKey = null; // Suppresses repeated identical footstep failure lines in the in-game debug log.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
   let lastFootstepSfxDebug = null; // Exposed by footstepSfxDebugSnapshot and mirrored into the in-game debug log on surface changes.
@@ -21,6 +29,8 @@
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
     preloadAnimalVoices();
+    preloadConfiguredFootstepSfx();
+    installFootstepAudioUnlock();
     preloadHardFootstepNormalization();
   }
 
@@ -36,6 +46,13 @@
   // footstep (e.g. grass and weeds both sound like grass underfoot).
   // Roads plus every building/den/mine interior use the dedicated hard-step
   // recording pool; loose/exposed exterior ground keeps gravelstep.
+  //
+  // Recorded footsteps deliberately use reusable HTMLAudioElement voices,
+  // not a freshly-created Audio(url) on every stride. The old disposable
+  // path swallowed play() rejections and gave mobile autoplay policy no
+  // persistent voice to prime/retry; it could therefore execute perfectly
+  // while remaining completely silent. Reusing preloaded voices also removes
+  // per-step fetch/decode startup from the movement frame.
   //
   // Each surface's clip list normally comes from config
   // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
@@ -56,6 +73,7 @@
   const HARD_FOOTSTEP_TARGET_PEAK = Math.pow(10, HARD_FOOTSTEP_TARGET_DBFS / 20); // Converts the authored dBFS target to the linear amplitude used by Web Audio.
   const hardFootstepNormalizationGainByUrl = new Map(); // Used by hard-step playback to apply each clip's cached -6 dBFS peak-normalization multiplier.
   const hardFootstepNormalizationPromiseByUrl = new Map(); // Used to dedupe asynchronous fetch/decode scans when startup and first playback overlap.
+  const FOOTSTEP_AUDIO_POOL_SIZE = 2; // Two persistent voices per recording allow nearby NPC/player steps to overlap without spawning disposable media elements.
 
   const FOOTSTEP_POST_FX = Object.freeze({
     grass:  {},
@@ -63,6 +81,157 @@
     hard:   { urls: HARD_FOOTSTEP_URLS, volumeMul: 1.0 },
     water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
   });
+
+  function configuredFootstepUrls() {
+    const urls = new Set(HARD_FOOTSTEP_URLS); // Includes the runtime-owned hard surface even though it is not duplicated in config.
+    const surfaces = gameAudioConfig().footsteps?.surfaces || {};
+    for (const surface of Object.values(surfaces)) {
+      if (surface?.url) urls.add(surface.url);
+      for (const url of surface?.urls || []) if (url) urls.add(url);
+    }
+    return [...urls];
+  }
+
+  function createFootstepAudioVoice(url, poolIndex) {
+    const snd = new Audio(url);
+    snd.preload = 'auto';
+    snd.dataset.footstepUrl = url;
+    snd.dataset.footstepPoolIndex = String(poolIndex);
+    snd.addEventListener?.('error', () => {
+      const error = snd.error;
+      recordFootstepPlayFailure(url, error || new Error('footstep media error'), 'media-error');
+    });
+    try { snd.load?.(); } catch (_) {}
+    return snd;
+  }
+
+  function ensureFootstepAudioPool(url) {
+    if (!url || typeof Audio !== 'function') return null;
+    if (footstepAudioPools.has(url)) return footstepAudioPools.get(url);
+    const pool = [];
+    for (let i = 0; i < FOOTSTEP_AUDIO_POOL_SIZE; i++) pool.push(createFootstepAudioVoice(url, i));
+    footstepAudioPools.set(url, pool);
+    return pool;
+  }
+
+  function preloadConfiguredFootstepSfx() {
+    if (typeof Audio !== 'function') return;
+    for (const url of configuredFootstepUrls()) ensureFootstepAudioPool(url);
+  }
+
+  function acquireFootstepAudio(url) {
+    const pool = ensureFootstepAudioPool(url);
+    if (!pool?.length) return null;
+    const available = pool.find(snd => snd.paused || snd.ended);
+    const snd = available || pool.reduce((oldest, candidate) =>
+      (candidate._footstepRequestedAt || 0) < (oldest._footstepRequestedAt || 0) ? candidate : oldest);
+    if (!snd.paused) snd.pause();
+    try { snd.currentTime = 0; } catch (_) {}
+    snd._footstepRequestedAt = performance.now();
+    return snd;
+  }
+
+  function recordFootstepPlayFailure(url, error, phase = 'play') {
+    footstepPlayFailureCount += phase === 'play' ? 1 : 0;
+    footstepPrimeFailureCount += phase === 'prime' ? 1 : 0;
+    const errorName = error?.name || error?.code || 'Error';
+    const message = error?.message || String(error || 'unknown media failure');
+    lastFootstepPlayError = { phase, url, errorName: String(errorName), message, atMs: Math.round(performance.now()) };
+    if (lastFootstepSfxDebug) {
+      lastFootstepSfxDebug.playState = 'failed';
+      lastFootstepSfxDebug.playError = { phase, name: String(errorName), message };
+    }
+    const key = `${phase}|${url}|${errorName}|${message}`;
+    if (key === lastFootstepPlayErrorKey) return;
+    lastFootstepPlayErrorKey = key;
+    window.__farmLog?.(`[footstep] ${phase.toUpperCase()} FAILED ${url?.split('/').pop() || url || '-'} ${String(errorName)}: ${message}`, 'audio');
+  }
+
+  function requestFootstepMediaPlay(snd, url, surfaceKey) {
+    if (!snd) return false;
+    footstepPlayRequestCount++;
+    const requestId = (snd._footstepPlayRequestId || 0) + 1;
+    snd._footstepPlayRequestId = requestId;
+    if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
+      lastFootstepSfxDebug.playState = 'requested';
+      lastFootstepSfxDebug.playError = null;
+      lastFootstepSfxDebug.readyState = snd.readyState ?? null;
+      lastFootstepSfxDebug.networkState = snd.networkState ?? null;
+      lastFootstepSfxDebug.poolIndex = Number(snd.dataset?.footstepPoolIndex) || 0;
+    }
+    let started = false;
+    const markStarted = () => {
+      if (started || snd._footstepPlayRequestId !== requestId) return;
+      started = true;
+      footstepPlayStartedCount++;
+      if (lastFootstepSfxDebug?.surfaceKey === surfaceKey && lastFootstepSfxDebug?.url === url) {
+        lastFootstepSfxDebug.playState = 'playing';
+        lastFootstepSfxDebug.playError = null;
+      }
+    };
+    snd.addEventListener?.('playing', markStarted, { once: true });
+    try {
+      const result = snd.play();
+      if (result?.then) result.then(markStarted).catch(error => {
+        if (snd._footstepPlayRequestId === requestId) recordFootstepPlayFailure(url, error, 'play');
+      });
+      else markStarted();
+      return true;
+    } catch (error) {
+      recordFootstepPlayFailure(url, error, 'play');
+      return false;
+    }
+  }
+
+  function primeFootstepVoice(snd, reason) {
+    if (!snd || snd._footstepPrimed || snd._footstepPrimePending) return;
+    snd._footstepPrimePending = true;
+    const previousVolume = Number.isFinite(Number(snd.volume)) ? snd.volume : 1;
+    const previousRate = Number.isFinite(Number(snd.playbackRate)) ? snd.playbackRate : 1;
+    // A tiny non-muted gain keeps this an ordinary media playback request
+    // inside the actual user gesture while remaining effectively inaudible.
+    snd.volume = 0.0001;
+    snd.playbackRate = 1;
+    try { snd.currentTime = 0; } catch (_) {}
+    const restore = () => {
+      snd.pause?.();
+      try { snd.currentTime = 0; } catch (_) {}
+      snd.volume = previousVolume;
+      snd.playbackRate = previousRate;
+      snd._footstepPrimePending = false;
+    };
+    try {
+      const result = snd.play();
+      Promise.resolve(result).then(() => {
+        snd._footstepPrimed = true;
+        restore();
+      }).catch(error => {
+        restore();
+        recordFootstepPlayFailure(snd.dataset?.footstepUrl || snd.src, error, 'prime');
+      });
+    } catch (error) {
+      restore();
+      recordFootstepPlayFailure(snd.dataset?.footstepUrl || snd.src, error, 'prime');
+    }
+  }
+
+  function unlockFootstepAudio(reason = 'user gesture') {
+    const ctx = window._footstepAudioCtx;
+    if (ctx?.state === 'suspended') ctx.resume?.().catch(error => recordFootstepPlayFailure('(AudioContext)', error, 'prime'));
+    let primed = 0;
+    for (const pool of footstepAudioPools.values()) for (const snd of pool) {
+      if (!snd._footstepPrimed) { primeFootstepVoice(snd, reason); primed++; }
+    }
+    if (primed) window.__farmLog?.(`[footstep] gesture unlock ${reason}: priming ${primed} pooled voices`, 'audio');
+  }
+
+  function installFootstepAudioUnlock() {
+    if (footstepUnlockListenersInstalled || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+    footstepUnlockListenersInstalled = true;
+    document.addEventListener('pointerdown', () => unlockFootstepAudio('pointerdown'), { capture: true, passive: true });
+    document.addEventListener('touchstart', () => unlockFootstepAudio('touchstart'), { capture: true, passive: true });
+    document.addEventListener('keydown', () => unlockFootstepAudio('keydown'), { capture: true });
+  }
 
   function decodeFootstepAudioData(context, arrayBuffer) {
     return new Promise((resolve, reject) => {
@@ -203,60 +372,37 @@
     return true;
   }
 
-  function playGainAdjustedFootstepClip(snd, volume, gainMul = 1) {
-    const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0)); // Used by normalized hardstep clips while preserving ordinary footstep/master attenuation.
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) throw new Error('no AudioContext');
-      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createMediaElementSource(snd);
-      const gain = ctx.createGain();
-      gain.gain.value = adjustedVolume;
-      source.connect(gain).connect(ctx.destination);
-      snd.play().catch(() => {});
-    } catch (error) {
-      snd.volume = Math.min(1, adjustedVolume); // HTMLAudio cannot amplify beyond unity; Web Audio above handles gains >1 when available.
-      snd.play().catch(() => {});
+  // Recorded footsteps stay on native media output rather than being moved
+  // into a MediaElementSource GainNode graph. This repo's music subsystem has
+  // a documented device where that graph reported running but produced no
+  // audible destination output; a footstep repair should not depend on the
+  // same failure-prone route. Hard-step -6 dBFS correction is therefore
+  // applied as a native volume multiplier after measurement. The native
+  // volume ceiling is exposed in diagnostics if an unusually quiet source
+  // would require >1.0 after the normal footstep/master attenuation.
+  function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false) {
+    const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0) * (heavy ? 1.15 : 1));
+    const nativeVolume = Math.min(1, adjustedVolume);
+    snd.volume = nativeVolume;
+    if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
+      lastFootstepSfxDebug.nativeVolume = nativeVolume;
+      lastFootstepSfxDebug.requestedLinearVolume = adjustedVolume;
+      lastFootstepSfxDebug.normalizationClampedByNativeVolume = adjustedVolume > 1;
     }
-  }
-
-  // Routes a real footstep clip through the shared footstep AudioContext
-  // with a dulling lowpass instead of just setting .volume, so a "heavy"
-  // landing thud actually sounds tonally heavier (less high-end clack),
-  // not just louder — used by playFootstepSurface's heavy branch.
-  function playHeavyFilteredClip(snd, volume, gainMul = 1) {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) throw new Error('no AudioContext');
-      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createMediaElementSource(snd);
-      const lpf = ctx.createBiquadFilter();
-      lpf.type = 'lowpass';
-      lpf.frequency.value = 900; // dulls the clip's high end into a thud instead of a clack
-      lpf.Q.value = 0.7;
-      const gain = ctx.createGain();
-      gain.gain.value = Math.max(0, volume * 1.15 * Math.max(0, Number(gainMul) || 0)); // Filtering compensation is multiplied by hardstep normalization when applicable.
-      source.connect(lpf).connect(gain).connect(ctx.destination);
-      snd.play().catch(() => {});
-    } catch (e) {
-      snd.volume = Math.min(1, Math.max(0, volume * Math.max(0, Number(gainMul) || 0)));
-      snd.play().catch(() => {});
-    }
+    requestFootstepMediaPlay(snd, url, surfaceKey);
   }
 
   // Plays one surface's footfall at `volume` — a random pick from that
   // surface's configured clip list (audio.footsteps.surfaces[key].urls)
   // when one exists, else the oscillator+noise synth fallback tuned by
-  // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (a plain
-  // <audio> element, like every other one-shot sfx in this file, doesn't
-  // get routed through a StereoPannerNode).
+  // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (recorded clips
+  // use the native media path for maximum mobile compatibility).
   //
-  // `heavy` is for a dodge/attack-lunge landing thud (see
-  // playHeavyLandingSfx): pitches noticeably down and, for real clips,
-  // runs through playHeavyFilteredClip's dulling lowpass so it reads as
-  // hitting the ground hard rather than an ordinary stride.
+  // `heavy` is for a dodge/attack-lunge landing thud. Recorded clips use
+  // their lower playback rate plus a small gain bump; the previous WebAudio
+  // lowpass was intentionally dropped from this path because reliable dry
+  // playback matters more than an optional filter on devices where the
+  // MediaElementSource destination has already proven unreliable.
   function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
     // A non-finite volume (NaN/Infinity — e.g. from a caller's distance
     // falloff math going through a NaN position) throws a hard
@@ -269,7 +415,7 @@
 
     if (urls && urls.length) {
       const url = urls[Math.floor(Math.random() * urls.length)];
-      const snd = new Audio(url);
+      const snd = acquireFootstepAudio(url) || new Audio(url);
       snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
       const normalization = surfaceKey === 'hard' ? hardFootstepNormalizationFor(url) : null; // Cached per-file source peak correction; null until the tiny startup decode completes.
       const normalizationGain = normalization?.gain ?? 1;
@@ -280,16 +426,14 @@
         lastFootstepSfxDebug.normalizationTargetDbfs = surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null;
         lastFootstepSfxDebug.sourcePeakDbfs = normalization?.sourcePeakDbfs ?? null;
       }
-      if (heavy) playHeavyFilteredClip(snd, finalVolume, normalizationGain);
-      else if (surfaceKey === 'hard') playGainAdjustedFootstepClip(snd, finalVolume, normalizationGain);
-      else { snd.volume = finalVolume; snd.play().catch(() => {}); }
+      playRecordedFootstepClip(snd, url, surfaceKey, finalVolume, normalizationGain, heavy);
       return;
     }
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state === 'suspended') ctx.resume().catch(error => recordFootstepPlayFailure('(synth AudioContext)', error, 'prime'));
     const now = ctx.currentTime;
     const base = FOOTSTEP_BASE;
     const pitchMul = (Number(postFx.pitchMul) || 1) * (heavy ? 0.55 : 1);
@@ -343,7 +487,7 @@
   // right); leave at 0 for the player (the listener) and companions
   // (always close, not worth panning). `opts.heavy` — see
   // playHeavyLandingSfx — plays both layers through playFootstepSurface's
-  // heavy (louder, pitched-down/filtered) mode instead of a plain stride.
+  // heavy (louder, pitched-down) mode instead of a plain stride.
   //
   // Ground surfaces (grass/gravel/hard) layer in a second, simultaneous
   // waterstep clip scaled by the tile's moisture (tile.water, 0..
@@ -371,6 +515,14 @@
       normalizationGain: 1,
       normalizationTargetDbfs: surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null,
       sourcePeakDbfs: null,
+      nativeVolume: null,
+      requestedLinearVolume: null,
+      normalizationClampedByNativeVolume: false,
+      playState: 'routing',
+      playError: null,
+      readyState: null,
+      networkState: null,
+      poolIndex: null,
       atMs: Math.round(performance.now()),
     };
     if (surfaceKey !== lastFootstepDebugSurface) {
@@ -388,17 +540,35 @@
   }
 
   function footstepSfxDebugSnapshot() {
-    return lastFootstepSfxDebug ? { ...lastFootstepSfxDebug } : null;
+    const pools = [...footstepAudioPools.entries()].map(([url, pool]) => ({
+      url,
+      voices: pool.length,
+      primed: pool.filter(snd => snd._footstepPrimed).length,
+      ready: pool.filter(snd => Number(snd.readyState) >= 2).length,
+      states: pool.map(snd => ({
+        readyState: snd.readyState ?? null,
+        networkState: snd.networkState ?? null,
+        paused: !!snd.paused,
+        ended: !!snd.ended,
+        primed: !!snd._footstepPrimed,
+      })),
+    }));
+    return {
+      ...(lastFootstepSfxDebug ? { ...lastFootstepSfxDebug } : {}),
+      playbackRequests: footstepPlayRequestCount,
+      playbackStarts: footstepPlayStartedCount,
+      playbackFailures: footstepPlayFailureCount,
+      primeFailures: footstepPrimeFailureCount,
+      lastPlayError: lastFootstepPlayError ? { ...lastFootstepPlayError } : null,
+      poolUrlCount: footstepAudioPools.size,
+      pools,
+    };
   }
 
   // Heavy "landing thud" used when a dodge or attack lunge comes to a
   // stop — same surface/moisture-blend as an ordinary footstep (see
-  // playFootstepSfx) but louder and run through playFootstepSurface's
-  // heavy mode so it reads as hitting the ground hard after a leap,
-  // not just another stride in the cadence. Player-only: dodges and
-  // combat lunges are a player.dodging/player.lunging-only mechanic
-  // (see performDodge/beginCombatLunge) — no pan, matching the player's
-  // own unpanned regular footsteps.
+  // playFootstepSfx) but louder and pitched down so it reads as hitting the
+  // ground hard after a leap, not just another stride in the cadence.
   const HEAVY_LANDING_VOLUME_MUL = 2.0;
   function playHeavyLandingSfx(area, tile) {
     playFootstepSfx(area, tile, HEAVY_LANDING_VOLUME_MUL, 0, { heavy: true });
@@ -755,7 +925,7 @@
     const baseVolume = Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : 0.7;
     snd.volume = Math.max(0, Math.min(1, baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
     if (snd.volume <= 0.002) return false;
-    const rate = Math.max(0.35, Math.min(2, Number(opts.rate) || 1));
+    const rate = Math.max(0.35, Math.min(2, Number(opts.rate)) || 1);
     snd.playbackRate = rate;
     const contour = Array.isArray(opts.rateContour)
       ? opts.rateContour.map(v => Math.max(0.35, Math.min(2, Number(v) || rate))) : null;
