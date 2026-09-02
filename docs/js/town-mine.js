@@ -94,6 +94,7 @@
     const visit = (floorVisitCounts.get(mapId) || 0) + 1;
     floorVisitCounts.set(mapId, visit);
     const visitSeed = `${mapId}_visit_${visit}_${Date.now()}_${Math.floor(Math.random() * 0x7fffffff)}`; // Used so revisiting the same numbered floor rebuilds both geometry and encounters.
+    window.CavernGenerator.setGenerationLabel?.(`FLOOR ${floorNumber}`, true); // Used to replace the den-specific loading copy with the current mine floor in huge centered type before the synchronous carve begins.
     const generated = window.CavernGenerator.generateCavernFloor(`${visitSeed}_layout`, { fast: true, cache: false }); // Uses Mine Fast without retaining every regenerated visit in the Den cache.
     const rng = seededRng(`${visitSeed}_content`);
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
