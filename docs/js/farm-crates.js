@@ -59,12 +59,20 @@
     const mesh = parts[0];
     const lid = parts[1] || null;
     const latch = parts[2] || null;
+    const movableParts = [mesh, lid].filter(Boolean); // Used by the existing editor cleanup path, which removes only body + lid.
+    if (latch && lid) {
+      const latchLocal = latch.userData.shippingLocalPosition; // Used to preserve the chest recipe's latch offset after parenting it to the lid.
+      const lidLocal = lid.userData.shippingLocalPosition; // Used as the relative-origin reference for the child latch.
+      deps.scene.remove(latch);
+      lid.add(latch);
+      latch.position.set(latchLocal.x - lidLocal.x, latchLocal.y - lidLocal.y, latchLocal.z - lidLocal.z);
+    }
 
     function syncVisualTransform(lidLift = 0) {
       const groundY = deps.tileSurfaceY(deps.TileType.GRASS);
       const centerX = position.col + 1;
       const centerZ = position.row + 0.5;
-      parts.forEach((partMesh, index) => {
+      movableParts.forEach((partMesh, index) => {
         const local = partMesh.userData.shippingLocalPosition;
         const lift = index > 0 ? lidLift : 0;
         partMesh.position.set(centerX + local.x, groundY + local.y + lift, centerZ + local.z);
