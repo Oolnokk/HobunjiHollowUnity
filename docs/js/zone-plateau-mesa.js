@@ -12,6 +12,16 @@
   // pattern as its sibling systems. Deterministic given the same zone grid/
   // mesa footprint — no player/combat state — another clean candidate for
   // eventually running standalone (e.g. server-side world generation).
+  //
+  // buildZoneMesaMeshes/rebuildZoneMesaMeshes (the per-zone orchestration
+  // that calls buildPlateauMesa once per tier-transition group and tracks
+  // the resulting meshes in game.js's _zoneMesaMeshGroups) and the rounded
+  // boulder-mound bump field (buildRockMoundBumpField/sampleRockMoundBump —
+  // the same BFS-grown-plateau algorithm generalized to an arbitrary
+  // col×row footprint) joined this file rather than becoming a separate
+  // module: they're either direct callers of buildPlateauMesa above or
+  // share its exact seam/roughness noise formulas, so keeping them apart
+  // would just be an extra file for a five-line wrapper.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -247,8 +257,139 @@
     return mesh;
   }
 
+  // One plateau group's footprint as a continuous heightfield mesa: flat raised
+  // top across the interior, blending smoothly down to ground level over the
+  // outer MARGIN_TILES band — the same seam-hash + blend + steep-face-stone-skin
+  // technique buildZoneBorderTerrain uses for the distant boundary terrain beyond
+  // the playable area, so an in-bounds plateau reads visually like those same
+  // mesas instead of a flat-sided box. The margin band's width matches exactly
+  // how much smaller each plateau's submap is than its parent (see
+  // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
+  // reserved for this cliff-face blend.
+  // Builds every tier-transition mesa for a zone, returning the meshes so
+  // the caller can track and later remove/rebuild them (see
+  // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
+  // and by a runtime tile change on a plateau's flat top.
+  function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
+    const meshes = [];
+    // Rebuilds discard the previous geometry-derived ownership tags before
+    // the current mesa faces mark their exact steep tiles below.
+    for (const row of (zGrid || [])) for (const tile of (row || [])) if (tile) delete tile.mesaCliffFace;
+    plateauMesas.forEach((mesa, i) => {
+      const elevOffset = (mesa.toTier - mesa.fromTier) * deps.PLATEAU_UNIT;
+      if (elevOffset <= 0) return;
+      const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * deps.PLATEAU_UNIT, zGrid);
+      if (mesh) meshes.push(mesh);
+    });
+    return meshes;
+  }
+
+  // Rebuilds a zone's plateau mesa meshes from its current grid — used
+  // after a dig/fill/raise/till/smooth changes a tile that sits on a
+  // plateau's flat top, so a newly-carved CARVED_TILE_TYPES cell's hole
+  // (or a filled-back-in cell's restored solid lid) actually shows up
+  // instead of the mesa staying frozen at whatever it looked like when
+  // the zone first loaded. See refreshZoneGroundVisuals.
+  function rebuildZoneMesaMeshes(mapId) {
+    const zi = deps._zoneScenes.get(mapId);
+    const zoneData = deps._zoneLayouts.get(mapId);
+    if (!zi || !zoneData?.mesas?.length) return;
+    const oldMeshes = deps._zoneMesaMeshGroups.get(mapId);
+    if (oldMeshes) for (const mesh of oldMeshes) { zi.scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); }
+    deps._zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
+  }
+
+  // Rounded boulder-mound bump field — the exact same BFS-grown-plateau
+  // algorithm (and the identical seam/roughness noise formulas) that
+  // buildRockTileGeo already uses for every loose rock scattered on
+  // farm/zone ground, generalized from a single 1x1 tile to an arbitrary
+  // col×row footprint so a whole surface (a den face, a cavern wall
+  // panel — see buildAnimalDenMeshes/buildCavernWalls) reads as one
+  // continuous cluster of rounded lobes, matching the farm's rocks,
+  // instead of a flat panel with small edge-only jitter. Boundary
+  // vertices are forced to exactly 0 so adjacent faces/panels that meet
+  // at a shared edge stay crack-free even though each field is grown
+  // independently in its own local coordinate space.
+  function buildRockMoundBumpField(colsTiles, rowsTiles, worldU0, worldV0, salt, peakScale = 1) {
+    const CX = Math.max(1, Math.round(colsTiles * deps.ROCK_MOUND_CELLS_PER_TILE));
+    const CZ = Math.max(1, Math.round(rowsTiles * deps.ROCK_MOUND_CELLS_PER_TILE));
+    const VX = CX + 1, VZ = CZ + 1, STEP = 1 / deps.ROCK_MOUND_CELLS_PER_TILE;
+    let _s = ((Math.round(worldU0 * 8) * 374761393) ^ (Math.round(worldV0 * 8) * 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+    const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const seamDisp = (vx, vz) => {
+      const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+    const roughDisp = (vx, vz) => {
+      const kx = Math.round(vx * 8) | 0, kz = Math.round(vz * 8) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.05;
+    };
+    const Y = new Float32Array(VX * VZ);
+    for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(worldU0 + vi * STEP, worldV0 + vj * STEP);
+    if (CX >= 3 && CZ >= 3) {
+      const lobeCount = Math.max(1, Math.round(colsTiles * rowsTiles * 0.7));
+      for (let lobe = 0; lobe < lobeCount; lobe++) {
+        const startCi = 1 + Math.floor(rng() * (CX - 2));
+        const startCj = 1 + Math.floor(rng() * (CZ - 2));
+        const maxSize = 2 + Math.floor(rng() * 12);
+        const group = new Set([startCj * CX + startCi]);
+        const front = [[startCi, startCj]];
+        while (front.length && group.size < maxSize) {
+          const fi = Math.floor(rng() * front.length);
+          const [ci, cj] = front.splice(fi, 1)[0];
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ni = ci + dc, nj = cj + dr;
+            if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
+            const nk = nj * CX + ni;
+            if (group.has(nk)) continue;
+            group.add(nk); front.push([ni, nj]);
+          }
+        }
+        let maxY = -Infinity;
+        const raised = new Set();
+        for (const ck of group) {
+          const ci = ck % CX, cj = (ck / CX) | 0;
+          for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
+            raised.add(vv);
+            if (Y[vv] > maxY) maxY = Y[vv];
+          }
+        }
+        const PEAK = (0.22 + rng() * 0.3) * peakScale;
+        const target = maxY + PEAK;
+        for (const vv of raised) {
+          const vix = vv % VX, viy = (vv / VX) | 0;
+          const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
+          const blend = Math.min(1, edgeDist / 2);
+          if (blend <= 0) continue;
+          const vx = worldU0 + vix * STEP, vz = worldV0 + viy * STEP;
+          const hgt = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+          if (hgt > Y[vv]) Y[vv] = hgt;
+        }
+      }
+    }
+    for (let vi = 0; vi < VX; vi++) { Y[vi] = 0; Y[(VZ - 1) * VX + vi] = 0; }
+    for (let vj = 0; vj < VZ; vj++) { Y[vj * VX] = 0; Y[vj * VX + VX - 1] = 0; }
+    return { VX, VZ, Y };
+  }
+  function sampleRockMoundBump(field, u, v) {
+    const fx = u * (field.VX - 1), fz = v * (field.VZ - 1);
+    const ix = Math.max(0, Math.min(field.VX - 2, Math.floor(fx))), iz = Math.max(0, Math.min(field.VZ - 2, Math.floor(fz)));
+    const tx = fx - ix, tz = fz - iz;
+    const y00 = field.Y[iz * field.VX + ix], y10 = field.Y[iz * field.VX + ix + 1];
+    const y01 = field.Y[(iz + 1) * field.VX + ix], y11 = field.Y[(iz + 1) * field.VX + ix + 1];
+    return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
+  }
+
   window.ZonePlateauMesa = {
     init,
     buildPlateauMesa,
+    buildZoneMesaMeshes,
+    rebuildZoneMesaMeshes,
+    buildRockMoundBumpField,
+    sampleRockMoundBump,
   };
 })();
