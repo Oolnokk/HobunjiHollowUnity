@@ -43,7 +43,7 @@ const BUILT_IN_TOKENS=[
 function mapLabel(id){return mapRegistry.find(m=>m.id===id)?.name||id}
 function stationsForMap(id){return mapRegistry.find(m=>m.id===id)?.stations||[]}
 function shopLabel(id){return shopRegistry.find(s=>s.id===id)?.label||id}
-const cssEscape=v=>window.CSS?.escape?CSS.escape(String(v)):String(v).replace(/[^a-zA-Z0-9_-]/g,m=>`\${m}`);
+const cssEscape=v=>window.CSS?.escape?CSS.escape(String(v)):String(v).replace(/[^a-zA-Z0-9_-]/g,m=>`\\${m}`);
 function currentNpc(){return state.db?.npcs?.find(n=>n.id===state.npcId)||null}
 function currentTree(){return currentNpc()?.dialogueTrees?.find(t=>t.id===state.treeId)||null}
 function logEvent(message,data){
@@ -111,7 +111,7 @@ function undo(){
 function redo(){
   if(!state.history.future.length)return;
   const current=historySnapshot();const next=state.history.future.pop();state.history.past.push(current);
-  restoreSnapshot(next);state.history.lastLabel='Redid change';state.history.lastCoalesceKey=null;renderAll();updateHistoryButtons();logEvent('Redo');
+  restoreSnapshot(next);state.history.lastLabel='Redid last change';state.history.lastCoalesceKey=null;renderAll();updateHistoryButtons();logEvent('Redo');
 }
 function updateHistoryButtons(){
   if(!$('undoBtn'))return;
@@ -126,6 +126,10 @@ function setSetting(key,value){
 function normalizeDatabase(raw){
   if(!raw||!Array.isArray(raw.npcs))throw new Error('Expected a database object with an npcs array.');
   const db=deepCopy(raw);
+  // Weapon-trust trees are a config-backed authoring overlay. Merge only
+  // missing IDs so an exported/hand-authored tree with the same ID remains
+  // authoritative and immediately editable instead of being overwritten.
+  window.WeaponTrustVisits?.mergeDialogueTreesIntoDatabase?.(db);
   db.schema??='hobunji_npc_database.v2';
   db.npcs.forEach((npc,ni)=>{
     npc.id??=`npc_${ni}`;npc.name??=npc.id;
