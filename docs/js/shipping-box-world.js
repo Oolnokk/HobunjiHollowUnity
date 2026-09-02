@@ -99,9 +99,25 @@
     return mesh?.userData?.authoredPart || null;
   }
 
+  function detachRoot(root) {
+    if (!root) return false;
+    // Hide first so even an unexpectedly non-removable legacy object cannot
+    // keep occluding the authored replacement for another rendered frame.
+    root.visible = false;
+    if (root.parent?.remove) {
+      root.parent.remove(root);
+      return true;
+    }
+    if (typeof root.removeFromParent === 'function') {
+      root.removeFromParent();
+      return true;
+    }
+    return false;
+  }
+
   function disposeRoot(root) {
     if (!root) return;
-    root.removeFromParent?.();
+    detachRoot(root);
     root.traverse?.(object => {
       object.geometry?.dispose?.();
       materialList(object).forEach(material => {
@@ -208,6 +224,14 @@
       const groundY = fallbackBodyY - (Number(bodyPart?.transform?.y) || fallbackBodyLocalY);
       const oldBody = box.mesh;
       const oldLid = box.lid;
+
+      // Put the authored group at its final transform before it becomes visible,
+      // then remove the fallback through the r128-compatible parent.remove path.
+      group.position.set(
+        Number(box.col) + Number(object.centerOffset.x),
+        groundY,
+        Number(box.row) + Number(object.centerOffset.z),
+      );
       scene.add(group);
       disposeRoot(oldBody);
       if (oldLid && oldLid !== oldBody) disposeRoot(oldLid);
