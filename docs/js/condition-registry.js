@@ -172,3 +172,25 @@
     rollIndependentEligible, pickWeightedEligible,
   };
 })();
+
+// The friendship weapon-visit feature is shared by the live game and Dialogue
+// Editor, so bootstrap it from this already-shared pre-game dependency instead
+// of adding another copy of its script-order contract to both HTML entrypoints.
+(function loadWeaponTrustVisitFeature() {
+  if (typeof document === 'undefined') return;
+  const self = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
+  const docsBase = self ? new URL('../', self) : new URL('./', location.href);
+  const scripts = [
+    new URL('config/weapon-trust-visits.js?v=20260902a', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20260902a', docsBase).href,
+  ];
+  for (const src of scripts) {
+    if ([...document.scripts].some(script => script.src === src)) continue;
+    if (document.readyState === 'loading' && document.currentScript) document.write(`<script src="${src}"><\/script>`);
+    else {
+      const script = document.createElement('script');
+      script.src = src;
+      document.head.appendChild(script);
+    }
+  }
+})();
