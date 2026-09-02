@@ -12156,7 +12156,7 @@
           // panels every other interior style still uses below.
           if ((mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && mapData.mesh) {
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, mapData.wallStyle === 'mine'
-              ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42 }
+              ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
               : undefined);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
