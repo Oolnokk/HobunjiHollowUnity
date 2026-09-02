@@ -15,8 +15,65 @@
 
   let deps = null, blockedTileTypes;
   let _sharedFarmStructureAssetPromise = null; // Used to make the real brick/shingle upgrade one shared readiness boundary for barns and the player house.
+  let _nurseryInteriorLoopRaf = 0; // Owns the temporary Nursery-only visual loop because the normal farm-animal loop may stop while inside buildings.
+  let _nurseryInteriorLoopMapId = null; // Tracks the generated Nursery map whose swarm is currently being serviced.
+  let _nurseryInteriorLoopEntered = false; // Distinguishes a short building-load handoff from a real exit so the loop can wait for area activation once.
+  let _nurseryInteriorLastFrameAt = 0; // Timestamp used to feed stable seconds-based dt into the existing livestock visual updater.
 
   function _pieceDef(tier) { return BARN_PIECES[tier] || BARN_PIECES.small; }
+
+  function _currentAreaForNurseryLoop() {
+    return window.Combat?.deps?.getCurrentArea?.()
+      || window.__hobunjiFurnitureDebug?.getCurrentArea?.()
+      || null;
+  }
+
+  function _stopNurseryInteriorLoop({ flush = false } = {}) {
+    if (_nurseryInteriorLoopRaf) cancelAnimationFrame(_nurseryInteriorLoopRaf);
+    _nurseryInteriorLoopRaf = 0;
+    _nurseryInteriorLoopMapId = null;
+    _nurseryInteriorLoopEntered = false;
+    _nurseryInteriorLastFrameAt = 0;
+    if (flush) window.FarmAnimals?.updateAnimalMeshes?.(0); // Lets the Nursery wrapper dispose its visual-only baby meshes after an exit.
+  }
+
+  function _startNurseryInteriorLoop(mapId) {
+    if (mapId !== 'map_i_barn_farm_nursery') return;
+    _stopNurseryInteriorLoop();
+    _nurseryInteriorLoopMapId = mapId;
+    let activationFrames = 0; // Small load-handoff grace period; avoids assuming enterBuilding switches currentArea synchronously.
+    const frame = now => {
+      _nurseryInteriorLoopRaf = 0;
+      const currentArea = _currentAreaForNurseryLoop();
+      const inside = currentArea === _nurseryInteriorLoopMapId;
+      if (!inside) {
+        if (_nurseryInteriorLoopEntered) {
+          _stopNurseryInteriorLoop({ flush: true });
+          return;
+        }
+        activationFrames++;
+        if (activationFrames > 120) { _stopNurseryInteriorLoop(); return; }
+        _nurseryInteriorLoopRaf = requestAnimationFrame(frame);
+        return;
+      }
+
+      _nurseryInteriorLoopEntered = true;
+      const dt = _nurseryInteriorLastFrameAt > 0
+        ? Math.max(0, Math.min(0.05, (now - _nurseryInteriorLastFrameAt) / 1000))
+        : 1 / 60;
+      _nurseryInteriorLastFrameAt = now;
+      // FarmAnimals.updateAnimalMeshes is already wrapped by LivestockNursery;
+      // driving that public seam here keeps the swarm renderer authoritative
+      // without adding another animal renderer or touching game.js's private loop.
+      window.FarmAnimals?.updateAnimalMeshes?.(dt);
+      if (_currentAreaForNurseryLoop() === _nurseryInteriorLoopMapId) {
+        _nurseryInteriorLoopRaf = requestAnimationFrame(frame);
+      } else {
+        _stopNurseryInteriorLoop({ flush: true });
+      }
+    };
+    _nurseryInteriorLoopRaf = requestAnimationFrame(frame);
+  }
 
   function _applySharedFarmStructureTints() {
     if (!deps?.houseWallBuilder || typeof HousePieceGen === 'undefined') return;
@@ -57,6 +114,16 @@
       deps.TileType.TRENCH, deps.TileType.TILLED, deps.TileType.RAISED, deps.TileType.PADDY,
       deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.WATERFALL, deps.TileType.RAMP,
     ]);
+    if (typeof deps.enterBuilding === 'function' && !deps.enterBuilding.__nurseryInteriorLoopWrapped) {
+      const originalEnterBuilding = deps.enterBuilding;
+      const wrappedEnterBuilding = function nurseryInteriorLoopEnterBuilding(mapId, ...args) {
+        const result = originalEnterBuilding.call(this, mapId, ...args);
+        _startNurseryInteriorLoop(mapId);
+        return result;
+      };
+      wrappedEnterBuilding.__nurseryInteriorLoopWrapped = true;
+      deps.enterBuilding = wrappedEnterBuilding;
+    }
     _ensureSharedFarmStructureAssets();
   }
 
