@@ -94,6 +94,14 @@
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
   <script src="js/player-vitals.js?v=20260902mod1"></script>
+  <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
+       derivation, and item-wheel eligibility, extracted out of game.js.
+       Must load before game.js, which calls window.ItemProcessing.init(...)
+       alongside the other window.*.init(...) calls; js/dew-vats.js and
+       js/wild-berries.js also read from it via their own init() calls
+       further down game.js. Doesn't touch the DOM (see player-vitals.js's
+       comment above and the plan notes on that bug class). -->
+  <script src="js/item-processing.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>
