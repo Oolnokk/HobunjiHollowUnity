@@ -16,10 +16,11 @@ const world = read('docs/js/shipping-box-world.js');
 const configContext = { window: {} };
 vm.runInNewContext(configSource, configContext, { filename: 'shipping-box-config.js' });
 const config = configContext.window.ShippingBoxConfig;
+const plain = value => JSON.parse(JSON.stringify(value));
 assert.ok(config, 'ShippingBoxConfig loads as a standalone tuning module');
 
 // All new Shipping Box modules consume the shared config rather than owning
-// their own independent feature constants.
+// independent copies of Shipping-specific tuning values.
 for (const [name, source] of [['ShippingPanel', shipping], ['FarmCrates', crates], ['GeneralStore', store], ['ShippingBoxWorld', world]]) {
   assert.match(source, /ShippingBoxConfig/, `${name} reads ShippingBoxConfig`);
 }
@@ -33,13 +34,14 @@ assert.doesNotMatch(crates, /hasFarmPermission\(['"]storage['"]\)/, 'FarmCrates 
 assert.doesNotMatch(crates, /w:\s*2,\s*h:\s*1/, 'FarmCrates does not hardcode Shipping Box footprint');
 assert.doesNotMatch(crates, /0\.06/, 'FarmCrates does not hardcode lid lift');
 
-// Config owns the behavior knobs requested in this work.
-assert.deepStrictEqual(config.object.footprint, { width: 2, height: 1 });
+// Config owns the behavior/UI/material knobs requested in this work.
+assert.deepStrictEqual(plain(config.object.footprint), { width: 2, height: 1 });
 assert.strictEqual(config.object.blocksMovement, true);
+assert.strictEqual(config.object.surfaceTileTypeKey, 'GRASS');
 assert.strictEqual(config.object.lidLiftWhenOccupied, 0.06);
 assert.strictEqual(config.lifecycle.pollMs, 500);
-assert.deepStrictEqual(config.lifecycle.resolveOnTimePassageKinds, ['wait', 'sleep']);
-assert.deepStrictEqual(config.lifecycle.farmContextAreas, ['farm', 'interior']);
+assert.deepStrictEqual(plain(config.lifecycle.resolveOnTimePassageKinds), ['wait', 'sleep']);
+assert.deepStrictEqual(plain(config.lifecycle.farmContextAreas), ['farm', 'interior']);
 assert.strictEqual(config.inventory.permissions.withdraw, 'storage');
 assert.strictEqual(config.inventory.permissions.alterFarm, 'alterFarm');
 assert.strictEqual(config.material.texture, 'carved_smooth.png');
@@ -49,6 +51,7 @@ assert.ok(config.panel.fontStack.includes('KhymeryyanRomanLetters+Numbers'));
 assert.ok(config.panel.pointerBlockedEvents.includes('mousemove'));
 assert.ok(config.panel.style.baseFont.includes('12px'), 'readable Shipping UI font floor stays config-driven');
 assert.strictEqual(config.store.categoryKey, 'sell');
+assert.ok(Number.isFinite(config.store.css.buttonMinWidthPx), 'General Store Shipping sell CSS lives in config');
 
 // Standalone shipping window + input isolation still exist, now config-driven.
 assert.match(shipping, /id = 'shippingStandaloneRoot'/, 'shipping creates a standalone root');
@@ -61,8 +64,9 @@ assert.match(shipping, /getDebugState/, 'shipping exposes diagnostics');
 assert.match(shipping, /configVersion/, 'shipping diagnostics report active config version');
 assert.match(shipping, /#iiActions \.ii-btn\.sell\{display:none!important\}/, 'inventory direct-sale buttons remain unavailable');
 
-// General Store shipping-sale surface uses configured category/copy and the
-// same canonical sale-price bridge owned by ShippingPanel.
+// General Store Shipping sale surface uses configured category/copy/CSS and
+// the same canonical sale-price bridge owned by ShippingPanel.
+assert.match(store, /const css = store\.css/, 'General Store Shipping sell CSS reads config');
 assert.match(store, /store\.categoryKey/, 'General Store sell category key is config-driven');
 assert.match(store, /store\.sellOneLabel/, 'Sell 1 label is config-driven');
 assert.match(store, /store\.sellStackLabel/, 'Sell Stack label is config-driven');
