@@ -4,6 +4,7 @@ const fs = require('fs');
 const anatomy = fs.readFileSync('docs/config/procedural-anatomy-profiles.js', 'utf8'); // Verifies the new species+gender thickness/split source without duplicating canonical limb lengths.
 const solver = fs.readFileSync('docs/js/leg-bones.js', 'utf8'); // Verifies legacy gait IK remains available beside fixed anatomical two-bone IK.
 const author = fs.readFileSync('docs/js/procedural-limb-pose-author.js', 'utf8'); // Verifies the isolated Ground / Carry workspace integration contracts.
+const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies the editor-authored front-facing yaw survives Ground / Carry torso posing.
 const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Verifies the already-loaded procedural editor adapter boots the new workspace.
 
 for (const field of [
@@ -63,6 +64,13 @@ assert(author.includes("input.dispatchEvent(new Event('input', { bubbles: true }
 assert(author.includes("/_ExperimentalFeet$/"), 'ground poses do not reuse the procedural editor’s current species-specific feet');
 assert(author.includes('new MutationObserver'), 'mobile authoring panel is not restored when preview UI is rebuilt');
 
+assert(facing.includes('hobunjiLimbPoseBaselineYaw'), 'facing preserver does not store the untouched editor yaw');
+assert(facing.includes('poseRoot.rotation.y = yaw'), 'facing preserver does not restore the captured yaw after Ground / Carry posing');
+assert(facing.includes("hobunji-backdrop-avatar-changed"), 'facing preserver does not recapture yaw when the preview avatar rebuilds');
+assert(facing.includes('Ground / Carry facing preserved'), 'facing fix lacks a mobile-visible confirmation');
+
+assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the facing preserver');
+assert(adapter.includes('await loadLimbFacingPreserver()'), 'facing preserver is not guaranteed to load before the Ground / Carry author');
 assert(adapter.includes('procedural-limb-pose-author.js?v='), 'procedural editor adapter does not load the Ground / Carry author');
 assert(adapter.includes('LIMB_POSE_SCRIPT_ID'), 'Ground / Carry adapter loader lacks duplicate-load protection');
 
