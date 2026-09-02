@@ -66,11 +66,23 @@
         shapeKey: 'kylie',
         giftMetalKey: 'nativeCopper',
         dialogueTreeId: 'weapon_trust_gift_kylie',
-        dialogueLabel: 'Trust Gift — Kylie',
+        dialogueLabel: "Trust Gift — Hreesh's Kylies",
         dialogueLines: [
-          "You've become someone I can count on. I figured that deserved more than saying it across a counter.",
-          "I've kept this Kylie for a long time because it was mine, not because it was valuable. That's the sort of thing that gets harder to hand away, not easier.",
-          "So I'm handing it to you. Kzubug and Sloomi can work from the pattern if you ever want another."
+          "Good {{timeOfDay}}, {{playerName}}. I decided to close the tavern for a moment so I could talk to you about something. So please listen.",
+          "In my line of work I see lots of people come and go from this little nook of ours. I'm glad you came, and even happier that you didn't go.",
+          "I wasn't born around here, you know. I grew up in Khanibarr-krassin, north up into the Eastern Highplains, and as far west as you could possibly go. Down a mountain's height of stairs, deep into a burning savannah, and up another into the snowy towerwood forests of the Western Highplains.",
+          "There stands the Great Stone City, the capital of the entire Khanibarri Empire. A place of fortune and prosperity. And I grew up with neither.",
+          "My parents died in the plague of '22. Same one that took Kzubug's wife and kids. So I grew up with nothing, and nobody. Nobody unaffiliated with the Thug's Guild, that is.",
+          "In order to eat I stole, and often in order to steal, I had no choice but to fight. And the Thug's Guild gave me the tools I needed to do that. These.",
+          "They're called kylies. They say the Tembarri use them for hunting giant birds down in the Low Plains. We used them for beating innocent people within an inch of their lives and clobbering anyone who thought they could make a run for it.",
+          "I've never killed anyone, but it weren't out of mercy. I've never killed because a dead man couldn't go out and make the bronze he owed us.",
+          "Eventually that stuff caught up with me. I ended up spending half my life locked away in the city's massive, dark, and inescapable dungeon. When I got out, I knew I had to start over somewhere else, so I went to the only 'somewhere else' I knew anything about. Hobunji Hollow.",
+          "Both my parents grew up here, fell in love together here. They used to tell us all kinds of stories about this place.",
+          "I set up my little inn here in my parents' old house. Before I showed up, the place was nothing but broken boards and cobwebs. Visitors just stayed with whoever had an extra bed.",
+          "But now I've got a place here. A purpose. But as I said, I'm always seeing people come and go, and I always have. And I thought I always would.",
+          "But I have this gut feeling that you're not going anywhere. That you're someone I can actually rely on.",
+          "I used to feel that the only things I could rely on were those kylies. But I don't feel that way anymore. I want you to have them.",
+          "I'm sure they'll serve you better than they ever served me."
         ],
       },
       {
