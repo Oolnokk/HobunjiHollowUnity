@@ -181,14 +181,15 @@
   const self = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = self ? new URL('../', self) : new URL('./', location.href);
   const scripts = [
-    new URL('config/weapon-trust-visits.js?v=20260902a', docsBase).href,
-    new URL('js/weapon-trust-visits.js?v=20260902a', docsBase).href,
+    new URL('config/weapon-trust-visits.js?v=20260902b', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20260902b', docsBase).href,
   ];
   for (const src of scripts) {
     if ([...document.scripts].some(script => script.src === src)) continue;
     if (document.readyState === 'loading' && document.currentScript) document.write(`<script src="${src}"><\/script>`);
     else {
       const script = document.createElement('script');
+      script.async = false;
       script.src = src;
       document.head.appendChild(script);
     }
