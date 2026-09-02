@@ -183,9 +183,10 @@
   // from leveling up (that used to scale with normalizedPower(skillKey)) —
   // each such bonus now only exists behind its own perk in PerkSystem's
   // tree for that skill (see docs/js/perk-system.js), so leveling those
-  // three only grants perk points rather than free passive power. Mining,
-  // Farming, and Cooking have no perk tree yet, so they keep the original
-  // automatic level-based curve below unchanged.
+  // three only grants perk points rather than free passive power. Mining
+  // now has its first specialized mine-descent perks, while its core yield
+  // and pick-speed effects (like Farming and Cooking) retain the original
+  // automatic level-based curve below.
   function bonusYieldChance(skillKey) {
     if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1); // Increase Yield Chance perk.
     return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by stone and future ore rewards.

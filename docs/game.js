@@ -4413,6 +4413,15 @@
         if (c.health <= 0) {
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
+          if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
+            c._mineDescentDeathRolled = true;
+            const deathCol = Math.floor(c.x / TILE);
+            const deathRow = Math.floor(c.y / TILE);
+            if (tryRevealMineDescent(mineDeathArea, deathCol, deathRow, 'enemy')) {
+              showToast(`The ${c.def?.label || 'enemy'} fell through a patch of weak rock when it died!`, true);
+            }
+          }
           // A killed wild creature is the starting source of Motes of
           // Prowess — spent on ability-upgrade choices (see combat-
           // progression.js). Not awarded for a downed companion.
@@ -9099,9 +9108,9 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
-      // Mine floor -> hidden descent-tile marker. The marker is built with
-      // the floor but remains invisible until its covering rock is mined.
+      // Mine floor -> dynamically revealed descent markers, keyed by tile.
       const _mineDescentHoleMeshes = new Map();
+      const _mineFloorRunStates = new Map(); // Per-visit rock/enemy counts and one-shot descent discovery state.
       let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
       const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
@@ -12013,6 +12022,49 @@
         return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
       }
 
+      function buildMineLadderMesh() {
+        const ladder = new THREE.Group();
+        const railMat = new THREE.MeshLambertMaterial({ color: 0x6f4b2d });
+        for (const x of [-0.28, 0.28]) {
+          const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.35, 7), railMat);
+          rail.position.set(x, 1.15, 0);
+          ladder.add(rail);
+        }
+        for (let rung = 0; rung < 6; rung++) {
+          const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.66, 7), railMat);
+          mesh.rotation.z = Math.PI / 2;
+          mesh.position.y = 0.25 + rung * 0.38;
+          ladder.add(mesh);
+        }
+        ladder.rotation.x = -0.12;
+        _markOutline(ladder);
+        return ladder;
+      }
+
+      function discardGeneratedMineFloor(mapId) {
+        if (!window.TownMine?.floorFromMapId?.(mapId)) return;
+        const info = _buildingScenes.get(mapId);
+        if (info?.scene && currentArea === mapId) {
+          info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+        }
+        for (const creature of [...hostileObjects]) {
+          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+          hostileObjects.delete(creature);
+          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          creature.mesh?.parent?.remove(creature.mesh);
+          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        }
+        if (info?.scene) {
+          info.scene.traverse(object => object.geometry?.dispose?.());
+          info.scene.clear();
+        }
+        _buildingScenes.delete(mapId);
+        _zoneMineableRockMeshes.delete(mapId);
+        _mineDescentHoleMeshes.delete(mapId);
+        _mineFloorRunStates.delete(mapId);
+        _zoneMinedRockPersist.delete(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -12138,19 +12190,16 @@
           dl.position.set(5, 10, 5);
           bScene.add(dl);
           if (mapData.mineSafeRoom) {
-            const ladder = new THREE.Group();
-            const railMat = new THREE.MeshLambertMaterial({ color: 0x6f4b2d });
-            for (const x of [-0.28, 0.28]) {
-              const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.35, 7), railMat);
-              rail.position.set(x, 1.15, 0); ladder.add(rail);
-            }
-            for (let rung = 0; rung < 6; rung++) {
-              const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.66, 7), railMat);
-              mesh.rotation.z = Math.PI / 2; mesh.position.y = 0.25 + rung * 0.38; ladder.add(mesh);
-            }
+            const ladder = buildMineLadderMesh();
             ladder.position.set(6.5, 0, 3.5); ladder.rotation.x = -0.12;
-            bScene.add(ladder); _markOutline(ladder);
+            bScene.add(ladder);
             _buildingInteractables.set(mapId + ',6,3', window.TownMine.makeLadderInteractable());
+          }
+          if (mapData.mineReturnLadder) {
+            const ladder = buildMineLadderMesh();
+            ladder.position.set(mapData.mineReturnLadder.col + 0.5, 0.02, mapData.mineReturnLadder.row + 0.5);
+            ladder.rotation.y = Math.PI;
+            bScene.add(ladder);
           }
           // A den's cavern (mapData.wallStyle === 'cavern') carries its own
           // pre-carved organic rock shell (see generateCavernFloor/
@@ -12401,43 +12450,20 @@
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
             const descentHoleMeshes = new Map();
             _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
-            const previouslyMined = new Set((_zoneMinedRockPersist.get(mapId) || []).map(entry => `${entry.col},${entry.row}`));
             const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
             carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
             carvedTexture.repeat.set(0.7, 0.7);
             if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
-              const wasMined = previouslyMined.has(rockKey);
               const tile = bGrid[rock.row]?.[rock.col];
               if (tile) {
-                tile.type = wasMined ? TileType.GRASS : TileType.ROCK;
+                tile.type = TileType.ROCK;
                 tile.rockKind = 'diggableRockOre';
                 tile.oreKind = rock.oreKind;
                 tile.metalKey = rock.metalKey || null;
-                tile.hiddenMineDescent = !!rock.hiddenDescent;
                 tile.mineFloor = mapData.mineFloor;
               }
-              if (rock.hiddenDescent) {
-                const hole = new THREE.Group();
-                const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
-                voidDisk.rotation.x = -Math.PI / 2;
-                voidDisk.position.y = 0.135;
-                hole.add(voidDisk);
-                const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
-                rim.rotation.x = Math.PI / 2;
-                rim.position.y = 0.15;
-                hole.add(rim);
-                const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
-                innerRim.rotation.x = Math.PI / 2;
-                innerRim.position.y = 0.145;
-                hole.add(innerRim);
-                hole.position.set(rock.col + 0.5, 0, rock.row + 0.5);
-                hole.visible = wasMined;
-                bScene.add(hole);
-                descentHoleMeshes.set(rockKey, hole);
-              }
-              if (wasMined) continue;
               const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
@@ -12461,12 +12487,12 @@
               _markOutline(rockGroup);
               oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
             }
-
+            let spawnedMineEnemyCount = 0;
             const gangConfig = await window.BanditCombat?.loadGangConfig?.(); // Used as the existing melee humanoid combat baseline for Ghoul instances.
             for (const spawn of (mapData.mineEnemySpawns || [])) {
               if (spawn.kind === 'grehlr') {
                 const creature = makeCreatureEntity('grehlr', (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, { scene: bScene, grid: bGrid, cols, rows, areaId: mapId, state: 'idle' });
-                if (creature) hostileObjects.add(creature);
+                if (creature) { hostileObjects.add(creature); spawnedMineEnemyCount++; }
                 continue;
               }
               const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
@@ -12486,8 +12512,15 @@
                 defOverride: { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: TILE * 8, leashRangePx: TILE * 30 },
                 extra: { isMineGhoul: true, mineGroupId: `mine-ghouls-${mapData.mineFloor}` },
               });
-              if (ghoul) hostileObjects.add(ghoul);
+              if (ghoul) { hostileObjects.add(ghoul); spawnedMineEnemyCount++; }
             }
+            _mineFloorRunStates.set(mapId, {
+              floor: mapData.mineFloor,
+              canDescend: !!mapData.mineCanDescend,
+              descentRevealed: false,
+              remainingRocks: oreRockMeshes.size,
+              remainingEnemies: spawnedMineEnemyCount,
+            });
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
@@ -12507,7 +12540,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, mineFloor: mapData.mineFloor || null, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -12532,7 +12565,7 @@
               // land outside the organic floor blob (see denTransitions'
               // comment in performTothalShift for why this is resolved
               // lazily here rather than eagerly at zone-generation time).
-              const sp = mapData.wallStyle === 'cavern' && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+              const sp = (mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
                 ? { col: mapData.exitCol, row: mapData.exitRow }
                 : buildingSpawnFromExit(info, cols, rows);
               player.x = (sp.col + 0.5) * TILE;
@@ -12646,6 +12679,7 @@
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
+        if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
@@ -13080,9 +13114,73 @@
       }
 
       function revealMineDescentVisual(mapId, col, row) {
-        const hole = _mineDescentHoleMeshes.get(mapId)?.get(`${col},${row}`);
-        if (!hole) return false;
-        hole.visible = true;
+        const info = _buildingScenes.get(mapId);
+        const floor = window.TownMine?.floorFromMapId?.(mapId);
+        if (!info?.scene || !floor || floor >= 100) return false;
+        const key = `${col},${row}`;
+        let hole = _mineDescentHoleMeshes.get(mapId)?.get(key);
+        if (!hole) {
+          hole = new THREE.Group();
+          const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
+          voidDisk.rotation.x = -Math.PI / 2;
+          voidDisk.position.y = 0.135;
+          hole.add(voidDisk);
+          const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
+          rim.rotation.x = Math.PI / 2;
+          rim.position.y = 0.15;
+          hole.add(rim);
+          const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
+          innerRim.rotation.x = Math.PI / 2;
+          innerRim.position.y = 0.145;
+          hole.add(innerRim);
+          hole.position.set(col + 0.5, 0, row + 0.5);
+          info.scene.add(hole);
+          if (!_mineDescentHoleMeshes.has(mapId)) _mineDescentHoleMeshes.set(mapId, new Map());
+          _mineDescentHoleMeshes.get(mapId).set(key, hole);
+        }
+        if (!info.transitions.some(transition => transition.mineDynamicDescent)) {
+          info.transitions.push({
+            col, row, area: mapId, target: 'building',
+            targetMapId: window.TownMine.mapIdForFloor(floor + 1),
+            mineDynamicDescent: true,
+          });
+        }
+        return true;
+      }
+
+      function nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow) {
+        const info = _buildingScenes.get(mapId);
+        if (!info?.grid) return null;
+        const occupiedTransitions = new Set(info.transitions.map(transition => `${transition.col},${transition.row}`));
+        for (let radius = 0; radius <= 6; radius++) {
+          for (let row = preferredRow - radius; row <= preferredRow + radius; row++) {
+            for (let col = preferredCol - radius; col <= preferredCol + radius; col++) {
+              if (Math.max(Math.abs(col - preferredCol), Math.abs(row - preferredRow)) !== radius) continue;
+              const tile = info.grid[row]?.[col];
+              if (!tile || tile.type === TileType.ROCK || occupiedTransitions.has(`${col},${row}`)) continue;
+              return { col, row };
+            }
+          }
+        }
+        return null;
+      }
+
+      function tryRevealMineDescent(mapId, preferredCol, preferredRow, source) {
+        const state = _mineFloorRunStates.get(mapId);
+        if (!state || state.descentRevealed) return false;
+        if (source === 'rock') state.remainingRocks = Math.max(0, state.remainingRocks - 1);
+        if (source === 'enemy') state.remainingEnemies = Math.max(0, state.remainingEnemies - 1);
+        if (!state.canDescend) return false;
+        const perkId = source === 'enemy' ? 'collapsingBlows' : 'weakRockSense';
+        const perkRank = window.PerkSystem?.rank?.('mining', perkId) || 0;
+        const chance = source === 'enemy' ? 0.08 + perkRank * 0.03 : 0.04 + perkRank * 0.015;
+        const guaranteedFallback = state.remainingRocks + state.remainingEnemies === 0;
+        if (!guaranteedFallback && Math.random() >= chance) return false;
+        const tile = nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow);
+        if (!tile || !revealMineDescentVisual(mapId, tile.col, tile.row)) return false;
+        state.descentRevealed = true;
+        state.descentCol = tile.col;
+        state.descentRow = tile.row;
         return true;
       }
 
@@ -16955,7 +17053,6 @@
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
           const minedMetalKey = tile.metalKey || null; // Used to preserve a mine seam's metal identity before the tile becomes walkable floor.
-          const revealedMineDescent = !!tile.hiddenMineDescent; // Used to announce the hidden next-floor hole uncovered by this rock.
           const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('mining') || 0) ? 1 : 0; // Used for Mining's extra-stone and future-ore chance.
           const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 stone, plus a possible skill bonus
           tile.type = TileType.GRASS;
@@ -16967,7 +17064,7 @@
           // entry entirely (tickMinedRockRegrowth only ever resolves entries
           // against _zoneScenes-backed wilderness maps; a 'farm' entry would
           // just sit there forever, bloating the save for nothing).
-          if (currentArea !== 'farm') {
+          if (_isZoneArea(currentArea)) {
             const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
             _minedEntries.push({ col, row, minedDay: calendar.day });
             _zoneMinedRockPersist.set(currentArea, _minedEntries);
@@ -16988,7 +17085,7 @@
           const zoneVisualsUpdated = currentArea === 'farm'
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
-          if (revealedMineDescent) revealMineDescentVisual(currentArea, col, row);
+          const revealedMineDescent = tryRevealMineDescent(currentArea, col, row, 'rock');
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
           const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';

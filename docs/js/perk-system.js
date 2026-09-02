@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // Perk trees for Combat, Alchemy, Foraging, and Fishing. Point entitlement
+  // Perk trees for Combat, Alchemy, Foraging, Fishing, and Mining. Point entitlement
   // is derived from the current tree itself rather than stored as a separate
   // balance: at max skill level, a character can buy about half of that
   // tree's total purchasable ranks. The entitlement is distributed across
@@ -99,10 +99,14 @@
       { id: 'increaseGulletSpawnRate', name: 'Increase Gullet Fish Spawn Rate', tier: 3, maxRank: 3, desc: r => `Gullet Fish spawn chance is increased ${r * 35}%.` },
       { id: 'amphibiousFish', name: 'Amphibious Fish', tier: 3, maxRank: 4, desc: r => `Reeling in a catch only costs ${[80, 60, 40, 20][Math.min(3, r - 1)]}% as much Footing.` },
     ],
+    mining: [
+      { id: 'weakRockSense', name: 'Weak Rock Sense', tier: 1, maxRank: 5, desc: r => `Breaking a mine rock has an additional ${r * 1.5}% chance to reveal the way down.` },
+      { id: 'collapsingBlows', name: 'Collapsing Blows', tier: 1, maxRank: 5, desc: r => `Killing a mine enemy has an additional ${r * 3}% chance to expose weak rock beneath it.` },
+    ],
   };
 
   let deps = null;
-  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {} }; // skillKey -> perkId -> rank
+  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {}, mining: {} }; // skillKey -> perkId -> rank
 
   function init(injectedDeps = {}) { deps = injectedDeps; render(); }
 
@@ -205,6 +209,7 @@
     alchemy: { label: 'Alchemy', icon: '⚗️' },
     foraging: { label: 'Foraging', icon: '🌿' },
     fishing: { label: 'Fishing', icon: '🎣' },
+    mining: { label: 'Mining', icon: '⛏️' },
   };
   const openTrees = new Set();
 

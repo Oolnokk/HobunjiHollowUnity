@@ -7,6 +7,7 @@
   let configPromise = null; // Used to share the single mine-config request among map loading, loot gating, and diagnostics.
   let deps = null; // Used by runtime progression helpers while pure generation remains independently testable.
   let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0 }; // Used as the world-member mine progression saved alongside inventory and quests.
+  const floorVisitCounts = new Map(); // Used to give every entry a fresh layout/content seed instead of treating a numbered floor as a permanent map.
   const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
   const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
 
@@ -68,22 +69,24 @@
     return Array.from({ length: ghoulCount }, () => 'ghoul');
   }
 
+  function hasReturnLadder(floor) {
+    return floor === 1; // Shortcut destinations deliberately do not provide a return route; the utility menu remains the run escape.
+  }
+
   async function synthesizeFloorMapData(mapId) {
     const floorNumber = floorFromMapId(mapId); // Used as the authoritative progression number for this procedural floor.
     if (!floorNumber) return null;
     const config = await loadConfig();
     if (!config) return null;
 
-    const generated = window.CavernGenerator.generateCavernFloor(`${mapId}_layout`, { fast: true }); // Uses the player-approved Mine Fast sculpt preset.
-    const rng = seededRng(`${mapId}_content`); // Used to keep a floor stable throughout a run while allowing every numbered floor to differ.
+    const visit = (floorVisitCounts.get(mapId) || 0) + 1;
+    floorVisitCounts.set(mapId, visit);
+    const visitSeed = `${mapId}_visit_${visit}_${Date.now()}_${Math.floor(Math.random() * 0x7fffffff)}`; // Used so revisiting the same numbered floor rebuilds both geometry and encounters.
+    const generated = window.CavernGenerator.generateCavernFloor(`${visitSeed}_layout`, { fast: true, cache: false }); // Uses Mine Fast without retaining every regenerated visit in the Den cache.
+    const rng = seededRng(`${visitSeed}_content`);
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
     const excluded = new Set(generated.exitTiles.map(([col, row]) => `${col},${row}`)); // Used to keep the entrance clear of rocks and enemies.
-    const distantTiles = generated.floor.filter(([col, row]) => Math.hypot(col - generated.exitCol, row - generated.exitRow) >= 5); // Used to prevent the hidden descent from appearing beside the entrance.
-    const descentCandidates = distantTiles.length ? distantTiles : generated.floor;
-    const descentTile = descentCandidates[Math.floor(rng() * descentCandidates.length)]; // Used as the rock whose removal reveals the next-floor hole.
-    excluded.add(`${descentTile[0]},${descentTile[1]}`);
-
-    const ordinaryRockCount = Math.max(8, Math.min(24, Math.round(generated.floor.length / 7))); // Used to make searching for the descent a real mining process without sealing the cave.
+    const ordinaryRockCount = Math.max(8, Math.min(24, Math.round(generated.floor.length / 7))); // Used to make searching for a weak patch a real mining process without sealing the cave.
     const ordinaryTiles = pickSeparatedTiles(rng, generated.floor, excluded, ordinaryRockCount);
     const tierMetalKey = config.oreTierMetalKeys[tier - 1]; // Used by rewards and verdigris-colored seam rendering for this floor tier.
     const oreRocks = ordinaryTiles.map(([col, row], index) => ({
@@ -93,18 +96,16 @@
       metalKey: index % 3 === 0 ? tierMetalKey : null,
       mineFloor: floorNumber,
     }));
-    oreRocks.push({ col: descentTile[0], row: descentTile[1], oreKind: 'stone', hiddenDescent: floorNumber < config.floorCount });
-
     const enemyKinds = enemyPlan(floorNumber, rng); // Used to apply the requested quiet opening followed by increasingly large ghoul groups.
     const enemyTiles = pickSeparatedTiles(rng, generated.floor, excluded, enemyKinds.length);
     const mineEnemySpawns = enemyTiles.map(([col, row], index) => ({ col, row, kind: enemyKinds[index] }));
     if (mineEnemySpawns.some(spawn => spawn.kind === 'ghoul')) ghoulBgmFloorIds.add(mapId);
     else ghoulBgmFloorIds.delete(mapId);
 
-    const exits = [{ id: `mine_floor_${floorNumber}_retreat`, label: 'Retreat to the ladder room', tiles: generated.exitTiles, targetMap: SAFE_ROOM_ID, spawnCol: 4, spawnRow: 3 }]; // Used to let players deliberately bank a run instead of requiring death.
-    if (floorNumber < config.floorCount) {
-      exits.push({ id: `mine_floor_${floorNumber}_descent`, label: `Descend to Floor ${floorNumber + 1}`, tiles: [descentTile], targetMap: mapIdForFloor(floorNumber + 1), spawnCol: 0, spawnRow: 0, hiddenUnderRock: true });
-    }
+    const returnLadder = hasReturnLadder(floorNumber);
+    const exits = returnLadder
+      ? [{ id: `mine_floor_${floorNumber}_retreat`, label: 'Climb to the ladder room', tiles: [[generated.exitCol, generated.exitRow]], targetMap: SAFE_ROOM_ID, spawnCol: 4, spawnRow: 3 }]
+      : []; // Only Floor 1 provides an upward escape; deeper and shortcut-entry floors rely on the utility-menu farm teleport.
 
     return {
       schema: 'hobunji_building_interior.v1',
@@ -125,7 +126,8 @@
       mineMetalKey: tierMetalKey,
       oreRocks,
       mineEnemySpawns,
-      descentRock: floorNumber < config.floorCount ? { col: descentTile[0], row: descentTile[1] } : null,
+      mineCanDescend: floorNumber < config.floorCount,
+      mineReturnLadder: returnLadder ? { col: generated.exitCol, row: generated.exitRow } : null,
     };
   }
 
@@ -336,6 +338,7 @@
     restore,
     getTownValue,
     bgmTracksForArea,
+    hasReturnLadder,
     ladderRows,
     buildLadderTier,
     openLadderPanel,

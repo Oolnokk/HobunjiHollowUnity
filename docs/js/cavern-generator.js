@@ -63,7 +63,8 @@
 
   function generateCavernFloor(seedText, generationOptions = {}) {
     const cacheKey = generationOptions.fast ? `${seedText}:fast` : seedText;
-    if (_cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
+    const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
+    if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
     const rng = makeRng(seedText + '_cavern');
     const targetTiles = TARGET_TILES_MIN + Math.floor(rng() * (TARGET_TILES_MAX - TARGET_TILES_MIN + 1));
@@ -126,7 +127,7 @@
       nestCol: nfx + shiftX, nestRow: nfy + shiftY,
       mesh: { positions, indices: result.mesh.indices },
     };
-    _cavernFloorCache.set(cacheKey, floorResult);
+    if (useCache) _cavernFloorCache.set(cacheKey, floorResult);
     return floorResult;
   }
 
