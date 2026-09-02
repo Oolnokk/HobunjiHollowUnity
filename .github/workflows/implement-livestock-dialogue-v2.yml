@@ -1,0 +1,58 @@
+name: Implement livestock dialogue v2
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/implement-livestock-dialogue-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+          fetch-depth: 0
+      - name: Apply feature patch from guarded implementation script
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/sync-animal-chathead-main.yml').read_text()
+          marker = "          python3 <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index('\n          PY', start)
+          raw = source[start:end]
+          lines = []
+          for line in raw.splitlines():
+              lines.append(line[10:] if line.startswith('          ') else line)
+          script = '\n'.join(lines) + '\n'
+          bad = '''s = replace_once(s, """    headNodOffsetDeg,\n      debugSnapshot,\n""", """    headNodOffsetDeg,\n      dialogueLinesFor,\n      debugSnapshot,\n""", 'vocalization export')'''
+          good = '''s = replace_once(s, """    headNodOffsetDeg,\n    debugSnapshot,\n""", """    headNodOffsetDeg,\n    dialogueLinesFor,\n    debugSnapshot,\n""", 'vocalization export')'''
+          if bad not in script:
+              raise SystemExit('correctable vocalization export guard not found in extracted patch')
+          script = script.replace(bad, good, 1)
+          Path('/tmp/apply_livestock_dialogue.py').write_text(script)
+          PY
+          python3 /tmp/apply_livestock_dialogue.py
+      - name: Run scoped regressions
+        run: |
+          node --check docs/config/attachment-rig-profiles.js
+          node --check docs/js/animal-vocalizations.js
+          node --check docs/js/farm-animals.js
+          node --check docs/js/animal-chathead-frame.js
+          node --check docs/game.js
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-chathead-ambient.js
+          node scripts/test-animal-head-rig-runtime.js
+          node scripts/test-livestock-dialogue-chatheads.js
+      - name: Commit feature files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/config/attachment-rig-profiles.js docs/config/dialogue/ambient-dialogue.json docs/js/animal-vocalizations.js docs/js/farm-animals.js docs/game.js docs/index.html scripts/test-livestock-dialogue-chatheads.js
+          git commit -m "Add full livestock dialogue using authored head frames"
+          git push origin HEAD:codex/animal-chathead-framing
