@@ -42,7 +42,7 @@
   }
 
   function init(injectedDeps) {
-    config(); // Fail early if the tuning module was not loaded.
+    config();
     deps = injectedDeps;
     lastObservedDay = currentCalendarDay();
     installFarmPanelShippingIntegration();
@@ -376,7 +376,8 @@
     }
 
     function syncVisualTransform(lidLift = 0) {
-      const groundY = deps.tileSurfaceY(deps.TileType.GRASS);
+      const surfaceType = deps.TileType[object.surfaceTileTypeKey];
+      const groundY = deps.tileSurfaceY(surfaceType);
       const center = object.centerOffset;
       const centerX = position.col + Number(center.x);
       const centerZ = position.row + Number(center.z);
@@ -412,8 +413,10 @@
     syncVisualTransform();
     const fp = footprintSize();
     const actions = actionCfg();
-    const labels = interactionCfg().labels;
-    const messages = interactionCfg().messages;
+    const interaction = interactionCfg();
+    const labels = interaction.labels;
+    const messages = interaction.messages;
+    const styles = interaction.styles;
 
     const worldObject = {
       id: object.id,
@@ -440,9 +443,9 @@
           const count = deps.inventory[item.key] || 0;
           btns.push({
             icon: item.icon,
-            label: count > 0 ? interactionCfg().shipVerb + item.icon : labels.emptyFastAction,
+            label: count > 0 ? interaction.shipVerb + item.icon : labels.emptyFastAction,
             action: actions.deposit,
-            style: 'primary',
+            style: styles.primary,
             allowed: count > 0,
           });
         }
@@ -451,7 +454,7 @@
           icon: object.icon,
           label: total > 0 ? labels.openOccupied : labels.openEmpty,
           action: actions.open,
-          style: total > 0 ? 'secondary' : 'primary',
+          style: total > 0 ? styles.secondary : styles.primary,
           allowed: true,
         });
         return btns;
