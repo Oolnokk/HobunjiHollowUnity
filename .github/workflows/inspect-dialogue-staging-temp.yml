@@ -1,0 +1,41 @@
+name: Inspect dialogue staging temp
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/inspect-dialogue-staging-temp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+      - name: Print dialogue staging and compass context
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('docs/game.js').read_text()
+          needles = [
+            'function beginNpcDialogueStaging',
+            'beginNpcDialogueStaging =',
+            'function npcDialogueCameraMode',
+            'function closeNpcDialogue',
+            'activeCameraMode',
+            'compass',
+          ]
+          lines = s.splitlines()
+          for needle in needles:
+            print('\n===== NEEDLE:', needle, '=====')
+            hits = [i for i,l in enumerate(lines) if needle.lower() in l.lower()]
+            print('hits', [i+1 for i in hits[:20]])
+            for i in hits[:8]:
+              lo=max(0,i-45); hi=min(len(lines),i+90)
+              print(f'--- {lo+1}:{hi} ---')
+              print('\n'.join(f'{j+1}: {lines[j]}' for j in range(lo,hi)))
+          PY
