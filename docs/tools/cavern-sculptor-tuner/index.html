@@ -69,6 +69,11 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
         <button id="copyOptsBtn" class="secondary">📋 Copy opts as code</button>
         <span id="copyStatus"></span>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button class="secondary perfPreset" data-preset="fast">⚡ Mine fast</button>
+        <button class="secondary perfPreset" data-preset="balanced">⛏ Mine balanced</button>
+        <button class="secondary perfPreset" data-preset="quality">🕳 Den quality</button>
+      </div>
       <div class="checkRow"><input id="darkChk" type="checkbox" checked><label for="darkChk">Dark game lighting (uncheck for bright inspect light)</label></div>
       <div class="checkRow"><input id="wireframeChk" type="checkbox"><label for="wireframeChk">Wireframe overlay</label></div>
       <div class="checkRow"><input id="keepViewChk" type="checkbox"><label for="keepViewChk">Keep camera view on regenerate</label></div>
@@ -151,6 +156,7 @@ const FIELD_GROUPS = [
     ['pathPointCount', 'Cluster root points', 3, 20, 1, 7],
   ] },
   { title: 'Probe / carve', fields: [
+    ['splineSamples', 'Spline samples (lower = faster)', 3, 14, 1, 10],
     ['probeRadius', 'Probe radius (detector xz)', .1, 2, .01, .65],
     ['brushRadius', 'Brush radius (carve stamp)', .05, 1.5, .01, .34],
     ['radiusChaos', 'Radius chaos', 0, 1, .01, .38],
@@ -218,6 +224,20 @@ function resetDefaults() {
     $('f_' + key).value = def;
     $('v_' + key).textContent = def;
   }
+}
+const PERFORMANCE_PRESETS = {
+  fast: { gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45 },
+  balanced: { gridN: 40, splineSamples: 6, hitsPerStep: 2, probeDigBursts: 2, probeMaxPasses: 65 },
+  quality: { gridN: 64, splineSamples: 10, hitsPerStep: 3, probeDigBursts: 4, probeMaxPasses: 120 },
+};
+function applyPerformancePreset(name) {
+  const preset = PERFORMANCE_PRESETS[name];
+  if (!preset) return;
+  for (const [key, value] of Object.entries(preset)) {
+    $('f_' + key).value = value;
+    $('v_' + key).textContent = value;
+  }
+  regenerate();
 }
 
 // ── Scene setup — matches game.js's loadBuildingScene dark-cavern branch
@@ -602,6 +622,7 @@ function runGenerate() {
   }
 }
 $('genBtn').addEventListener('click', regenerate);
+document.querySelectorAll('.perfPreset').forEach(button => button.addEventListener('click', () => applyPerformancePreset(button.dataset.preset)));
 $('randomSeedBtn').addEventListener('click', () => {
   $('seedInput').value = 'seed-' + Math.random().toString(36).slice(2, 9);
   regenerate();
