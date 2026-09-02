@@ -1,7 +1,7 @@
 // Procedural Animation Editor compatibility shim: preserve the editor-authored
 // front-facing yaw while the Ground / Carry adapter owns torso pitch/roll,
-// keep the correct portrait side visible from any camera angle, and make the
-// torso-radius guide non-occluding.
+// keep the correct portrait side visible from any camera angle, make the
+// torso-radius guide non-occluding, and repair mixed main/branch test runtimes.
 (() => {
   'use strict';
 
@@ -9,6 +9,8 @@
   if (window.HobunjiProceduralLimbFacingPreserver) return;
 
   const DOUBLE_SIDE = 2; // Three.js DoubleSide is stable across the r128/r165 versions used by Hobunji tools.
+  const SCRIPT_URL = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null; // Keeps extension-owned dependencies on this exact GitHack branch/commit.
+  const DOCS_BASE = SCRIPT_URL ? new URL('../', SCRIPT_URL) : new URL('../../', location.href); // Resolves docs/ regardless of the giant editor's own repository picker.
   const baselines = new WeakMap(); // Stores each fresh pose root's editor-authored yaw before Ground / Carry can overwrite it.
   const wrappedRotations = new WeakMap(); // Remembers the original Euler.set method so each pose root is wrapped exactly once.
   const faceState = new WeakMap(); // Remembers the last camera-relative portrait face to add a tiny side-crossing hysteresis.
@@ -16,6 +18,31 @@
   let lastFaceModel = null; // Keeps face-switch status updates limited to actual front/back transitions.
   let lastFaceName = '';
   let lastFaceSignature = '';
+
+  function ensureBranchFixedLegSolver() { // The editor's own repo picker can still resolve main even when the HTML is commit-pinned; replace only this changed dependency from the pinned document path.
+    if (typeof window.LegBones?.solveFixedTwoBoneChain === 'function') return Promise.resolve(true);
+    const src = new URL('js/leg-bones.js?v=20260902-groundcarry', DOCS_BASE).href;
+    const existing = [...document.scripts].find(script => script.src === src);
+    if (existing) return new Promise(resolve => {
+      if (typeof window.LegBones?.solveFixedTwoBoneChain === 'function') return resolve(true);
+      existing.addEventListener('load', () => resolve(typeof window.LegBones?.solveFixedTwoBoneChain === 'function'), { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+    });
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = () => {
+        const ready = typeof window.LegBones?.solveFixedTwoBoneChain === 'function';
+        console.info(`[Ground / Carry] pinned fixed-leg solver ${ready ? 'loaded' : 'missing after load'} from ${src}`);
+        resolve(ready);
+      };
+      script.onerror = () => {
+        console.error(`[Ground / Carry] failed to load pinned fixed-leg solver from ${src}`);
+        resolve(false);
+      };
+      document.head.appendChild(script);
+    });
+  }
 
   function currentContext() { // Resolves the public preview objects without reaching into the giant editor's private state.
     const backdrop = window.HobunjiGameplayBackdrop;
@@ -166,6 +193,7 @@
       backMeshes: parts.backMeshes.length,
       hasFront,
       hasBack,
+      fixedLegSolver: typeof window.LegBones?.solveFixedTwoBoneChain === 'function',
       rule: 'camera-local Z selects one portrait side; skinned slot 0=front and slot 1=back; selected material is DoubleSide',
     }; // Existing mobile model dumps can inspect exactly what the face controller found.
 
@@ -217,6 +245,7 @@
   // This script is intentionally loaded before procedural-limb-pose-author.js.
   // Registration order means fresh avatar rebuilds are protected before the
   // Ground / Carry listener can apply a pose with a zero Y rotation.
+  ensureBranchFixedLegSolver();
   window.addEventListener('hobunji-backdrop-avatar-changed', () => {
     captureBaseline();
     lastFaceModel = null;
@@ -228,8 +257,9 @@
   requestAnimationFrame(compatibilityFrame);
 
   window.HobunjiProceduralLimbFacingPreserver = {
-    version: 4,
+    version: 5,
     captureBaseline,
+    ensureBranchFixedLegSolver,
     enforceCameraRelativePortraitFace,
     softenTorsoRadiusGuide,
     getBaselineYaw: () => {
