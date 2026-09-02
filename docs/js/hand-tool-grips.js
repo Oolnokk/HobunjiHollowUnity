@@ -626,8 +626,6 @@
     const status = document.getElementById('handGripStatus');
     if (!host || !status) return false;
 
-    // Hide the obsolete always-on point editor while preserving its DOM/API so the
-    // older adapter remains harmless and does not establish a second ownership path.
     const oldCheckboxField = document.getElementById('handSecondaryGripEnabled')?.closest?.('.field') || null;
     if (oldCheckboxField) {
       oldCheckboxField.style.display = 'none';
@@ -775,9 +773,9 @@
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
 
-  // This module loads before procedural-hand-attachments in the shared bootstrap.
+  // hand-tool-grips loads before procedural-hand-attachments in the shared bootstrap.
   // Intercept that one global assignment so attach() is wrapped synchronously,
-  // before the editor/game can construct its first avatar rig.
+  // before the Attack Editor or game can construct its first avatar rig.
   if (!global.ProceduralHandAttachments) {
     const descriptor = Object.getOwnPropertyDescriptor(global, 'ProceduralHandAttachments');
     if (!descriptor || descriptor.configurable) {
