@@ -222,6 +222,44 @@
 
   // ── Avatar ────────────────────────────────────────────────────────
 
+  function makeGhoulAvatarMineLit(avatarRef) {
+    if (!avatarRef?.group) return avatarRef;
+    avatarRef.group.traverse(object => {
+      if (!object?.isMesh || !object.material) return;
+      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      let changed = false;
+      const litMaterials = sourceMaterials.map(source => {
+        if (!source?.isMeshBasicMaterial || !source.map) return source;
+        changed = true;
+        const lit = new THREE.MeshLambertMaterial({
+          name: `${source.name || 'ghoul_sprite'}_mine_lit`,
+          map: source.map,
+          alphaMap: source.alphaMap || null,
+          color: source.color?.clone?.() || new THREE.Color(0xffffff),
+          transparent: source.transparent,
+          opacity: source.opacity,
+          alphaTest: source.alphaTest,
+          side: source.side,
+          depthTest: source.depthTest,
+          depthWrite: source.depthWrite,
+          blending: source.blending,
+          vertexColors: source.vertexColors,
+        });
+        lit.premultipliedAlpha = source.premultipliedAlpha;
+        lit.polygonOffset = source.polygonOffset;
+        lit.polygonOffsetFactor = source.polygonOffsetFactor;
+        lit.polygonOffsetUnits = source.polygonOffsetUnits;
+        lit.toneMapped = source.toneMapped;
+        lit.userData = { ...(source.userData || {}), hobunjiMineLitGhoul: true };
+        source.dispose?.();
+        return lit;
+      });
+      if (changed) object.material = Array.isArray(object.material) ? litMaterials : litMaterials[0];
+    });
+    avatarRef.group.userData = { ...(avatarRef.group.userData || {}), mineLitGhoul: true };
+    return avatarRef;
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
@@ -1864,8 +1902,9 @@
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-    const roster = await rollBanditRoster(cfg, rank, opts.nameOverride);
+    const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     const avatarRef = await buildBanditAvatar(roster);
+    if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
       return null;
@@ -1880,7 +1919,7 @@
       return null;
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    const def = Object.assign(makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth), opts.defOverride || {});
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();

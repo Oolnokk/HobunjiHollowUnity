@@ -6,6 +6,11 @@
       "path": "./mao-ao.json"
     },
     {
+      "speciesId": "ghoul",
+      "label": "Ghoul",
+      "path": "./ghoul.json"
+    },
+    {
       "speciesId": "tletingan",
       "label": "Tletingan",
       "path": "./tletingan.json"

@@ -8,7 +8,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260815a"></script>
+  <script src="js/interior-scene-builder.js?v=20260902cavesafe1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -77,7 +77,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260830campfire1"></script>
+  <script src="js/procedural-furniture.js?v=20260902mineladder1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260802a"></script>
@@ -167,8 +167,8 @@
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
-  <script src="js/skill-system.js?v=20260821alchemy1"></script>
-  <script src="js/perk-system.js?v=20260828a"></script>
+  <script src="js/skill-system.js?v=20260902mineperks1"></script>
+  <script src="js/perk-system.js?v=20260902mineperks1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -364,9 +364,10 @@
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
   <script src="js/furniture-placer.js?v=20260809c"></script>
-  <!-- Player-craftable wilderness campfire (window.WildernessCampfire) —
-       only one at a time, cleared on any map change. Self-contained aside
-       from deps injected via init(); must load before game.js, which calls
+  <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
+       only one at a time; survives map changes/saves and also works on Town
+       Mine floors, where player death destroys an underground camp.
+       Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
   <script src="js/wilderness-campfire.js?v=20260828a"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
@@ -428,10 +429,9 @@
        open). -->
   <script src="js/input-settings-panel.js?v=20260807a"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
-       — pure DOM/state, no other window.* system reads; load order relative
-       to the other systems above doesn't matter; must load before game.js,
-       which calls window.CraftingPanel.init(...) during its own setup. -->
-  <script src="js/crafting-panel.js?v=20260807a"></script>
+       — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
+       must load before game.js, which injects inventory and metallurgy data. -->
+  <script src="js/crafting-panel.js?v=20260902ore1"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -463,8 +463,9 @@
        CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
-  <script src="js/cavern-sculptor.js?v=20260901a"></script>
-  <script src="js/cavern-generator.js?v=20260815a"></script>
+  <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
+  <script src="js/cavern-generator.js?v=20260902cavesafe1"></script>
+  <script src="js/town-mine.js?v=20260902ore1"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -862,20 +863,19 @@
       </div><!-- /mpInventory -->
 
       <!-- ── Crafting pane ─────────────────────────────────────
-           Turn an owned furniture blueprint (bought from the carpenter's
-           shop — see FURNITURE_BLUEPRINT_CATALOG/renderCarpenterShopPage)
-           into the finished furniture piece using wood + stone gathered
-           with the axe and pick. See renderCraftingPanel() in game.js. -->
+           Turns owned furniture blueprints into furniture and five held
+           elemental ores into a pure/alloy metal bar. See CraftingPanel. -->
       <div class="mp-pane" id="mpCrafting">
         <div class="supply-top-row">
           <div class="supply-tabs" role="tablist" aria-label="Crafting category filters">
             <button class="supply-tab crafting-cat-tab active" data-crafting-cat="all" type="button">All</button>
+            <button class="supply-tab crafting-cat-tab" data-crafting-cat="metallurgy" type="button">Metal Bars</button>
             <button class="supply-tab crafting-cat-tab" data-crafting-cat="processing" type="button">Processing Stations</button>
             <button class="supply-tab crafting-cat-tab" data-crafting-cat="decorative" type="button">Decorative</button>
           </div>
         </div>
         <div class="menu-section supply-shop-section">
-          <div class="menu-section-title">Craft Furniture from Blueprints</div>
+          <div class="menu-section-title">Crafting Recipes</div>
           <div id="craftingList" class="supply-list"></div>
         </div>
       </div><!-- /mpCrafting -->
@@ -2175,7 +2175,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260831heavyhold2"></script>
+  <script src="game.js?v=20260902ore1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

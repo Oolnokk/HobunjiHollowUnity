@@ -552,9 +552,14 @@
     return isAudioEntryEligible(track, area) && !audioUrlFailed(track.url);
   }
 
+  function areaBgmTracks(area) {
+    const mineTracks = window.TownMine?.bgmTracksForArea?.(area);
+    if (Array.isArray(mineTracks)) return mineTracks;
+    return window.AudioSystem?.gameAudioConfig().areaBgm?.[area] || [];
+  }
+
   function resolveAreaBgm(area) {
-    const sets = window.AudioSystem?.gameAudioConfig().areaBgm || {};
-    const all = (sets[area] || []).filter(track => track?.url);
+    const all = areaBgmTracks(area).filter(track => track?.url);
     const playable = all.filter(track => isBgmTrackEligible(track, area));
     if (!playable.length) {
       if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000, 'bgm');
@@ -574,7 +579,7 @@
     const trackUrl = snd?._trackUrl;
     if (!trackUrl) return false;
     const resolved = resolveAudioUrl(trackUrl);
-    const list = window.AudioSystem?.gameAudioConfig().areaBgm?.[area] || [];
+    const list = areaBgmTracks(area);
     return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved && isBgmTrackEligible(t, area, { alreadyPlaying: true }));
   }
 
@@ -670,8 +675,10 @@
       if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
         const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
         const fade = musicFadeConfig();
-        const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
-        const snd = playMusicTrack(track.url, vol, fade.songFadeInMs, fade.songFadeOutMs);
+        const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        const trackVolMulRaw = Number(track.volumeMultiplier); // Optional authored per-track gain; Ghoul mine music uses 2x while existing tracks remain 1x.
+        const trackVolMul = Number.isFinite(trackVolMulRaw) ? Math.max(0, trackVolMulRaw) : 1;
+        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs);
         snd._musicEntry = track;
         const finishCombatBgm = () => {
           if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;

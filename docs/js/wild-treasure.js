@@ -33,10 +33,11 @@
   // (weakest) before scaling across the hierarchy.
   function _rollTreasureMetalKeys() {
     const count = 1 + Math.floor(deps.rnd() * 3); // 1-3 bars
+    const eligibleMetalKeys = window.TownMine?.filterMetalKeysForTownValue?.(deps.VERDIGRIS_METAL_KEYS, window.TownMine.getTownValue()) || deps.VERDIGRIS_METAL_KEYS; // Used to gate chest metals by Town Value levels 0-9.
     const keys = [];
     for (let i = 0; i < count; i++) {
-      const idx = Math.min(deps.VERDIGRIS_METAL_KEYS.length - 1, Math.floor(Math.pow(deps.rnd(), 2.2) * deps.VERDIGRIS_METAL_KEYS.length));
-      keys.push(deps.VERDIGRIS_METAL_KEYS[idx]);
+      const idx = Math.min(eligibleMetalKeys.length - 1, Math.floor(Math.pow(deps.rnd(), 2.2) * eligibleMetalKeys.length));
+      keys.push(eligibleMetalKeys[idx]);
     }
     return keys;
   }

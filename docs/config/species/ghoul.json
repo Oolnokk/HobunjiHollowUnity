@@ -1,0 +1,352 @@
+{
+  "speciesId": "ghoul",
+  "label": "Ghoul",
+  "parentSpecies": "mao-ao",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male",
+    "female"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "mao-ao",
+    "wardrobeSpecies": "mao-ao",
+    "appearanceCosmetics": false
+  },
+  "male": {
+    "headSprite": "fightersprites/mao-ao-m/head_ghoul_m.png",
+    "headUrLayers": [],
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ]
+    },
+    "bodyColorRanges": {
+      "A": {
+        "choices": [
+          {
+            "weight": 3,
+            "range": {
+              "minH": -6,
+              "maxH": 6,
+              "stops": [
+                {
+                  "h": -6,
+                  "sMin": 0.42,
+                  "sMax": 0.68,
+                  "vMin": -0.1,
+                  "vMax": 0.0
+                },
+                {
+                  "h": 6,
+                  "sMin": 0.42,
+                  "sMax": 0.68,
+                  "vMin": -0.1,
+                  "vMax": 0.0
+                }
+              ]
+            }
+          },
+          {
+            "weight": 3,
+            "range": {
+              "minH": -12,
+              "maxH": 2,
+              "stops": [
+                {
+                  "h": -12,
+                  "sMin": 0.62,
+                  "sMax": 0.88,
+                  "vMin": -0.17,
+                  "vMax": -0.06
+                },
+                {
+                  "h": 2,
+                  "sMin": 0.62,
+                  "sMax": 0.88,
+                  "vMin": -0.17,
+                  "vMax": -0.06
+                }
+              ]
+            }
+          },
+          {
+            "weight": 2,
+            "range": {
+              "minH": -20,
+              "maxH": -6,
+              "stops": [
+                {
+                  "h": -20,
+                  "sMin": 0.34,
+                  "sMax": 0.58,
+                  "vMin": -0.24,
+                  "vMax": -0.12
+                },
+                {
+                  "h": -6,
+                  "sMin": 0.34,
+                  "sMax": 0.58,
+                  "vMin": -0.24,
+                  "vMax": -0.12
+                }
+              ]
+            }
+          },
+          {
+            "weight": 2,
+            "range": {
+              "minH": 2,
+              "maxH": 12,
+              "stops": [
+                {
+                  "h": 2,
+                  "sMin": 0.48,
+                  "sMax": 0.74,
+                  "vMin": -0.18,
+                  "vMax": -0.07
+                },
+                {
+                  "h": 12,
+                  "sMin": 0.48,
+                  "sMax": 0.74,
+                  "vMin": -0.18,
+                  "vMax": -0.07
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "deriveBFromA": true,
+      "deriveCFromA": true
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_ghoul_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_ghoul_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_ghoul_m.png",
+        "tintSlot": "C",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ]
+  },
+  "female": {
+    "headSprite": "fightersprites/mao-ao-f/ghoul_head_f.png",
+    "headUrLayers": [],
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ]
+    },
+    "bodyColorRanges": {
+      "A": {
+        "choices": [
+          {
+            "weight": 3,
+            "range": {
+              "minH": -6,
+              "maxH": 6,
+              "stops": [
+                {
+                  "h": -6,
+                  "sMin": 0.42,
+                  "sMax": 0.68,
+                  "vMin": -0.1,
+                  "vMax": 0.0
+                },
+                {
+                  "h": 6,
+                  "sMin": 0.42,
+                  "sMax": 0.68,
+                  "vMin": -0.1,
+                  "vMax": 0.0
+                }
+              ]
+            }
+          },
+          {
+            "weight": 3,
+            "range": {
+              "minH": -12,
+              "maxH": 2,
+              "stops": [
+                {
+                  "h": -12,
+                  "sMin": 0.62,
+                  "sMax": 0.88,
+                  "vMin": -0.17,
+                  "vMax": -0.06
+                },
+                {
+                  "h": 2,
+                  "sMin": 0.62,
+                  "sMax": 0.88,
+                  "vMin": -0.17,
+                  "vMax": -0.06
+                }
+              ]
+            }
+          },
+          {
+            "weight": 2,
+            "range": {
+              "minH": -20,
+              "maxH": -6,
+              "stops": [
+                {
+                  "h": -20,
+                  "sMin": 0.34,
+                  "sMax": 0.58,
+                  "vMin": -0.24,
+                  "vMax": -0.12
+                },
+                {
+                  "h": -6,
+                  "sMin": 0.34,
+                  "sMax": 0.58,
+                  "vMin": -0.24,
+                  "vMax": -0.12
+                }
+              ]
+            }
+          },
+          {
+            "weight": 2,
+            "range": {
+              "minH": 2,
+              "maxH": 12,
+              "stops": [
+                {
+                  "h": 2,
+                  "sMin": 0.48,
+                  "sMax": 0.74,
+                  "vMin": -0.18,
+                  "vMax": -0.07
+                },
+                {
+                  "h": 12,
+                  "sMin": 0.48,
+                  "sMax": 0.74,
+                  "vMin": -0.18,
+                  "vMax": -0.07
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "deriveBFromA": true,
+      "deriveCFromA": true
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_ghoul_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_ghoul_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_ghoul_f.png",
+        "tintSlot": "C",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ]
+  }
+}

@@ -1612,10 +1612,10 @@
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
       };
 
-      // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
+      // ── Metal registry (crafted bars, the verdigris hierarchy) ─────────
       // Clean/polished target hex + verdigris hex ported from the tool-sprite
       // recolorer dev tool's METAL_PRESETS list. `tier` is null for metals
-      // that don't produce a verdigris (dug up and sold, or used only for
+      // that don't produce a verdigris (sold or used only for
       // cosmetic plating) — the seven that do have tier: 1 (weakest, native
       // copper) through 7 (strongest, tumbaga) form the hierarchy Sloomi/
       // Kzubug can craft real tools from and reinforce a tool up through
@@ -1636,12 +1636,37 @@
         electrumSilver:  { label: 'Pale Electrum',     hex: '#CEC88E', verdigrisHex: null, tier: null },
         pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
+      const ORE_DEFS = {
+        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
+        tin:     { label: 'Tin Ore',     hex: '#C8CCD0', verdigrisHex: null, oxidationAmount: 0 },
+        arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
+        lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
+        silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
+        gold:    { label: 'Gold Ore',    hex: '#D4AF37', verdigrisHex: null, oxidationAmount: 0 },
+      }; // Used by mine drops, inventory registration, crafting discovery, and the masked rock-texture recolor.
+      const METAL_BAR_RECIPES = {
+        nativeCopper:    { copper: 5 },
+        lowTinBronze:    { copper: 4, tin: 1 },
+        tinBronze:       { copper: 3, tin: 2 },
+        highTinBronze:   { copper: 2, tin: 3 },
+        arsenicalBronze: { copper: 4, arsenic: 1 },
+        leadedBronze:    { copper: 3, tin: 1, lead: 1 },
+        tumbaga:         { copper: 3, gold: 2 },
+        tin:             { tin: 5 },
+        lead:            { lead: 5 },
+        silver:          { silver: 5 },
+        gold:            { gold: 5 },
+        electrumGold:    { gold: 3, silver: 2 },
+        electrumSilver:  { gold: 2, silver: 3 },
+        pewter:          { tin: 4, lead: 1 },
+      }; // Used by the Crafting pane; every bar consumes exactly five elemental ore and alloys always combine distinct ores.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
         .sort((a, b) => METAL_DEFS[a].tier - METAL_DEFS[b].tier);
 
       function metalBarItemKey(metalKey) { return 'bar_' + metalKey; }
+      function metalOreItemKey(oreKey) { return 'ore_' + oreKey; }
 
       // A tier-linear damage/efficacy scalar — read by both weaponAbility()
       // (combat damage) and, going forward, any other tool-use "efficacy"
@@ -2257,6 +2282,7 @@
         // duplicateable in the Interior Editor like anything else.
         alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
+        mineLadder:    { itemKey: 'mineLadderFurniture',    icon: '🪜', name: 'Mine Ladder',          price: 0,  fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'The mine ladder and its construction plans.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -2286,7 +2312,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -4413,6 +4439,15 @@
         if (c.health <= 0) {
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
+          if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
+            c._mineDescentDeathRolled = true;
+            const deathCol = Math.floor(c.x / TILE);
+            const deathRow = Math.floor(c.y / TILE);
+            if (tryRevealMineDescent(mineDeathArea, deathCol, deathRow, 'enemy')) {
+              showToast(`The ${c.def?.label || 'enemy'} fell through a patch of weak rock when it died!`, true);
+            }
+          }
           // A killed wild creature is the starting source of Motes of
           // Prowess — spent on ability-upgrade choices (see combat-
           // progression.js). Not awarded for a downed companion.
@@ -4516,6 +4551,20 @@
       }
 
       function respawnPlayer() {
+        if (window.TownMine?.floorFromMapId?.(currentArea)) {
+          window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
+          _returnToFarmMeshes();
+          const root = window.TownMine.farmRootTotem?.(COLS, ROWS) || { spawnX: Math.floor(COLS * 0.5), spawnY: Math.floor(ROWS * 0.72) };
+          player.x = (root.spawnX + 0.5) * TILE;
+          player.y = (root.spawnY + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          player.health = player.maxHealth;
+          player.stamina = player.maxStamina;
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
+          return;
+        }
         const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
@@ -7837,6 +7886,7 @@
           member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
+          member.townMineState = window.TownMine?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -9029,6 +9079,7 @@
             return { ok: true, message: 'Read the notice board.' };
           },
         }),
+        mineLadderFurniture: () => window.TownMine.makeLadderInteractable(),
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
@@ -9039,7 +9090,7 @@
       // requires tools/weapons to actually work there, unlike every other
       // building interior (see the combat-update gate in gameLoop and the
       // toolHolder/reticle scene wiring in enterBuilding below).
-      function _isCavernBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_den_'); }
+      function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area)); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
@@ -9085,6 +9136,9 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
+      // Mine floor -> dynamically revealed descent markers, keyed by tile.
+      const _mineDescentHoleMeshes = new Map();
+      const _mineFloorRunStates = new Map(); // Per-visit rock/enemy counts and one-shot descent discovery state.
       let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
       const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
@@ -10055,7 +10109,8 @@
         if (t.target === 'exit_building') {
           exitBuilding();
         } else if (t.target === 'building') {
-          enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
+          const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
@@ -11854,6 +11909,7 @@
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
+          await window.TownMine?.decorateTownMap?.(townM);
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
@@ -11994,12 +12050,53 @@
         return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
       }
 
+      async function buildMineLadderMesh() {
+        const authored = await window.AuthoredFurniture?.load?.('mineLadder'); // Used by procedural Floor 1, while the safe-room copy is ordinary editor furniture.
+        const ladder = authored
+          ? window.AuthoredFurniture.buildGroup(authored, 0x7a5c3a)
+          : window.ProceduralFurniture.buildFurnitureGroup('mineLadder', 0x7a5c3a);
+        _markOutline(ladder);
+        return ladder;
+      }
+
+      function discardGeneratedMineFloor(mapId) {
+        if (!window.TownMine?.floorFromMapId?.(mapId)) return;
+        const info = _buildingScenes.get(mapId);
+        if (info?.scene && currentArea === mapId) {
+          info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+        }
+        for (const creature of [...hostileObjects]) {
+          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+          hostileObjects.delete(creature);
+          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          creature.mesh?.parent?.remove(creature.mesh);
+          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        }
+        if (info?.scene) {
+          info.scene.traverse(object => object.geometry?.dispose?.());
+          info.scene.clear();
+        }
+        _buildingScenes.delete(mapId);
+        _zoneMineableRockMeshes.delete(mapId);
+        _mineDescentHoleMeshes.delete(mapId);
+        _mineFloorRunStates.delete(mapId);
+        _zoneMinedRockPersist.delete(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
-        if (mapId.startsWith('map_i_den_')) {
+        if (window.TownMine?.floorFromMapId?.(mapId)) {
+          const mineLoadingLabel = document.getElementById('denLoadingLabel'); // Used to give mobile players feedback during the reused synchronous Den carve.
+          if (mineLoadingLabel) mineLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+          mapData = await window.TownMine.synthesizeFloorMapData(mapId);
+          window.TownMine.recordFloorReached(mapData?.mineFloor);
+          loadSource = 'town-mine';
+          if (mineLoadingLabel) mineLoadingLabel.style.display = 'none';
+        } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
           // unbroken synchronous SDF carve (~25-40s), during which the
@@ -12091,7 +12188,7 @@
             }
           }
           const bScene = new THREE.Scene();
-          bScene.background = new THREE.Color(0x2a1a0a);
+          bScene.background = new THREE.Color(mapData.wallStyle === 'mine' ? 0x000000 : 0x2a1a0a);
           // A den's cavern is meant to read as genuinely dark — the warm
           // door light + floor glow patch below (built fresh every time
           // this scene loads, i.e. every time the player actually enters)
@@ -12105,18 +12202,26 @@
           // near-zero ambient read as almost pure black even right next to
           // the door light in a headless render check, since a point
           // light's falloff only reaches surfaces facing toward it.
-          const isCavernInterior = mapData.wallStyle === 'cavern';
+          const isCavernInterior = mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine';
           bScene.add(new THREE.AmbientLight(0xfff5e0, isCavernInterior ? 0.15 : 0.7));
           const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
+          if (mapData.mineReturnLadder) {
+            const ladder = await buildMineLadderMesh();
+            ladder.position.set(mapData.mineReturnLadder.col + 0.5, 0.02, mapData.mineReturnLadder.row + 0.5);
+            ladder.rotation.y = Math.PI;
+            bScene.add(ladder);
+          }
           // A den's cavern (mapData.wallStyle === 'cavern') carries its own
           // pre-carved organic rock shell (see generateCavernFloor/
           // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
           // one mesh, replacing the flat per-tile floor boxes and flat wall
           // panels every other interior style still uses below.
-          if (mapData.wallStyle === 'cavern' && mapData.mesh) {
-            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh);
+          if ((mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && mapData.mesh) {
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, mapData.wallStyle === 'mine'
+              ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
+              : undefined);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
           } else {
@@ -12134,7 +12239,7 @@
             // brick.
             const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png' });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -12175,6 +12280,7 @@
           for (const f of (mapData.furniture || [])) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
+            if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -12352,6 +12458,101 @@
               if (creature) hostileObjects.add(creature);
             }
           }
+          if (mapData.wallStyle === 'mine') {
+            const oreRockMeshes = new Map(); // Used for O(1) removal when a mine-floor rock is broken.
+            _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            const descentHoleMeshes = new Map();
+            _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
+            const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
+            carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
+            carvedTexture.repeat.set(0.7, 0.7);
+            if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
+            const mineOreTexturePromises = new Map(); // Used to generate each ore's masked PNG texture once per floor rather than once per rock.
+            const mineRockTextureFor = oreKey => {
+              if (!oreKey || !ORE_DEFS[oreKey] || !window.ToolMetalRecolor) return Promise.resolve(carvedTexture);
+              if (mineOreTexturePromises.has(oreKey)) return mineOreTexturePromises.get(oreKey);
+              const ore = ORE_DEFS[oreKey]; // Used to feed the exact clean-metal/verdigris palette into the shared weapon PNG effect.
+              const seed = Array.from(oreKey).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261); // Stable per-ore blotch layout used by ToolMetalRecolor.
+              const request = window.ToolMetalRecolor.getRecoloredCanvas('assets/textures/carved_smooth.png', {
+                sourceHex: '#635544',
+                targetHex: ore.hex,
+                verdigrisHex: ore.verdigrisHex,
+                oxidationAmount: ore.oxidationAmount,
+                hueToleranceDeg: 8,
+                saturationTolerance: 0.12,
+                outlineWidth: 1,
+                seed,
+              }).then(canvas => {
+                const texture = new THREE.CanvasTexture(canvas); // Applies the recolored/oxidized PNG directly to the rock mesh instead of adding colored geometry.
+                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                texture.repeat.set(0.7, 0.7);
+                if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+                texture.needsUpdate = true;
+                return texture;
+              }).catch(error => {
+                window.__farmLog?.(`[town-mine] ${ore.label} texture recolor failed; using carved stone: ${error?.message || error}`, 'warn', 'mine');
+                return carvedTexture;
+              });
+              mineOreTexturePromises.set(oreKey, request);
+              return request;
+            };
+            for (const rock of (mapData.oreRocks || [])) {
+              const rockKey = `${rock.col},${rock.row}`;
+              const tile = bGrid[rock.row]?.[rock.col];
+              if (tile) {
+                tile.type = TileType.ROCK;
+                tile.rockKind = 'diggableRockOre';
+                tile.oreKind = rock.oreKind;
+                tile.oreKey = rock.oreKey || null;
+                tile.mineFloor = mapData.mineFloor;
+              }
+              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              if (!stoneGeo) continue;
+              const rockGroup = new THREE.Group();
+              const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
+              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, map: rockTexture, roughness: 0.94 }));
+              baseMesh.castShadow = baseMesh.receiveShadow = true;
+              rockGroup.add(baseMesh);
+              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+              bScene.add(rockGroup);
+              _markOutline(rockGroup);
+              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+            }
+            let spawnedMineEnemyCount = 0;
+            const gangConfig = await window.BanditCombat?.loadGangConfig?.(); // Used as the existing melee humanoid combat baseline for Ghoul instances.
+            for (const spawn of (mapData.mineEnemySpawns || [])) {
+              if (spawn.kind === 'grehlr') {
+                const creature = makeCreatureEntity('grehlr', (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, { scene: bScene, grid: bGrid, cols, rows, areaId: mapId, state: 'idle' });
+                if (creature) { hostileObjects.add(creature); spawnedMineEnemyCount++; }
+                continue;
+              }
+              const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
+              const rosterOverride = {
+                name: 'Ghoul',
+                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `mine-ghoul:${mapData.mineFloor}:${spawn.col}:${spawn.row}` }, // Use Ghoul's authored pink skin palette instead of the old bright desaturated white override.
+                equippedCosmetics: [],
+                appliedDyes: {},
+              };
+              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, 'grunt', Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
+                zoneId: mapId,
+                scene: bScene,
+                grid: bGrid,
+                cols,
+                rows,
+                rosterOverride,
+                defOverride: { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: TILE * 8, leashRangePx: TILE * 30 },
+                extra: { isMineGhoul: true, mineGroupId: `mine-ghouls-${mapData.mineFloor}` },
+              });
+              if (ghoul) { hostileObjects.add(ghoul); spawnedMineEnemyCount++; }
+            }
+            _mineFloorRunStates.set(mapId, {
+              floor: mapData.mineFloor,
+              canDescend: !!mapData.mineCanDescend,
+              descentRevealed: false,
+              remainingRocks: oreRockMeshes.size,
+              remainingEnemies: spawnedMineEnemyCount,
+            });
+          }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
@@ -12370,8 +12571,9 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
+          if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
               w.root._pendingBuildingAdd = null;
@@ -12395,11 +12597,17 @@
               // land outside the organic floor blob (see denTransitions'
               // comment in performTothalShift for why this is resolved
               // lazily here rather than eagerly at zone-generation time).
-              const sp = mapData.wallStyle === 'cavern' && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+              const sp = (mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
                 ? { col: mapData.exitCol, row: mapData.exitRow }
                 : buildingSpawnFromExit(info, cols, rows);
-              player.x = (sp.col + 0.5) * TILE;
-              player.y = (sp.row + 0.5) * TILE;
+              const intendedX = (sp.col + 0.5) * TILE;
+              const intendedY = (sp.row + 0.5) * TILE;
+              const safeSpawn = canOccupyAt(intendedX, intendedY, PLAYER_RADIUS * 0.72)
+                ? { x: intendedX, y: intendedY }
+                : findNearestWalkableTileCenter(intendedX, intendedY); // Used to keep asynchronous cavern entry out of a wall sliver if future generation changes invalidate its authored exit tile.
+              player.x = safeSpawn?.x ?? intendedX;
+              player.y = safeSpawn?.y ?? intendedY;
+              if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
               _snapCameraTarget();
             }
           }
@@ -12509,6 +12717,7 @@
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
+        if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
@@ -12939,6 +13148,75 @@
         const floorMeshes = _zoneFloorMeshGroups.get(mapId);
         const floorIndex = floorMeshes?.indexOf(rockGroup) ?? -1;
         if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
+        return true;
+      }
+
+      function revealMineDescentVisual(mapId, col, row) {
+        const info = _buildingScenes.get(mapId);
+        const floor = window.TownMine?.floorFromMapId?.(mapId);
+        if (!info?.scene || !floor || floor >= 100) return false;
+        const key = `${col},${row}`;
+        let hole = _mineDescentHoleMeshes.get(mapId)?.get(key);
+        if (!hole) {
+          hole = new THREE.Group();
+          const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
+          voidDisk.rotation.x = -Math.PI / 2;
+          voidDisk.position.y = 0.135;
+          hole.add(voidDisk);
+          const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
+          rim.rotation.x = Math.PI / 2;
+          rim.position.y = 0.15;
+          hole.add(rim);
+          const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
+          innerRim.rotation.x = Math.PI / 2;
+          innerRim.position.y = 0.145;
+          hole.add(innerRim);
+          hole.position.set(col + 0.5, 0, row + 0.5);
+          info.scene.add(hole);
+          if (!_mineDescentHoleMeshes.has(mapId)) _mineDescentHoleMeshes.set(mapId, new Map());
+          _mineDescentHoleMeshes.get(mapId).set(key, hole);
+        }
+        if (!info.transitions.some(transition => transition.mineDynamicDescent)) {
+          info.transitions.push({
+            col, row, area: mapId, target: 'building',
+            targetMapId: window.TownMine.mapIdForFloor(floor + 1),
+            mineDynamicDescent: true,
+          });
+        }
+        return true;
+      }
+
+      function nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow) {
+        const info = _buildingScenes.get(mapId);
+        if (!info?.grid) return null;
+        const occupiedTransitions = new Set(info.transitions.map(transition => `${transition.col},${transition.row}`));
+        for (let radius = 0; radius <= 6; radius++) {
+          for (let row = preferredRow - radius; row <= preferredRow + radius; row++) {
+            for (let col = preferredCol - radius; col <= preferredCol + radius; col++) {
+              if (Math.max(Math.abs(col - preferredCol), Math.abs(row - preferredRow)) !== radius) continue;
+              const tile = info.grid[row]?.[col];
+              if (!tile || tile.type === TileType.ROCK || occupiedTransitions.has(`${col},${row}`)) continue;
+              return { col, row };
+            }
+          }
+        }
+        return null;
+      }
+
+      function tryRevealMineDescent(mapId, preferredCol, preferredRow, source) {
+        const state = _mineFloorRunStates.get(mapId);
+        if (!state || state.descentRevealed) return false;
+        if (source === 'rock') state.remainingRocks = Math.max(0, state.remainingRocks - 1);
+        if (source === 'enemy') state.remainingEnemies = Math.max(0, state.remainingEnemies - 1);
+        if (!state.canDescend) return false;
+        const chance = window.TownMine?.descentChance?.(source) || (source === 'enemy' ? 0.16 : 0.08); // Doubled base odds; TownMine adds the source-specific perk rank.
+        const guaranteedFallback = state.remainingRocks + state.remainingEnemies === 0;
+        if (!guaranteedFallback && Math.random() >= chance) return false;
+        const tile = nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow);
+        if (!tile || !revealMineDescentVisual(mapId, tile.col, tile.row)) return false;
+        state.descentRevealed = true;
+        state.descentCol = tile.col;
+        state.descentRow = tile.row;
         return true;
       }
 
@@ -14002,9 +14280,24 @@
         return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
       }
 
-      // ── Metal bars (dug up from wilderness treasure chests — see
-      // ensureZoneTreasure) — one per METAL_DEFS entry, verdigris-capable
-      // or not; non-verdigris bars are only useful for cosmetic plating.
+      // ── Raw metal ores — mine nodes yield these instead of finished bars.
+      // Crafting recipes remain permanently hidden until every ore used by
+      // that recipe has entered this world-member's inventory at least once.
+      Object.entries(ORE_DEFS).forEach(([oreKey, ore]) => {
+        const key = metalOreItemKey(oreKey); // Used as the canonical inventory key shared by mine rewards and Crafting ingredients.
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: '🪨', label: ore.label.toUpperCase(), max: 99 });
+        }
+        ITEM_DEFS[key] = {
+          icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
+          tags: ['Material', 'Ore', oreKey],
+          desc: 'Raw ore from the Town Mine. Five total ore can be worked into one metal bar through Crafting.',
+        };
+      });
+
+      // ── Metal bars (crafted from raw ore or found in treasure) — one per
+      // METAL_DEFS entry. Alloy identities live only here and in recipes;
+      // mine nodes never contain fictional bronze/electrum/pewter ore.
       Object.entries(METAL_DEFS).forEach(([metalKey, metal]) => {
         const key = metalBarItemKey(metalKey);
         if (!inventoryItems.some(item => item.key === key)) {
@@ -14018,8 +14311,8 @@
             sellPrice: 4 + (metal.tier || 1) * 3,
             tags: ['Material', 'Metal Bar', metal.tier != null ? 'Verdigris Metal' : 'Plating Metal'],
             desc: metal.tier != null
-              ? `A bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
-              : `A bar of ${metal.label.toLowerCase()}. Doesn't take a verdigris — Sloomi or Kzubug can still use it for cosmetic plating.`,
+              ? `A crafted bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
+              : `A crafted bar of ${metal.label.toLowerCase()}. It doesn't take a verdigris; Sloomi or Kzubug can still use it for cosmetic plating.`,
           };
         }
       });
@@ -15790,7 +16083,10 @@
         // box collision resumes automatically the instant their real
         // position is valid again, so this never opens a lasting way to
         // squeeze through walls.
-        if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+        // Caverns never use the center-only escape path: it can let an
+        // invalid spawn cross a one-tile wall into the inter-tunnel void.
+        // updateMovement's strict nearest-tile rescue handles that state.
+        if (!_isCavernBuildingArea(currentArea) && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
           return tileSpeedAt(wx, wy) !== null;
         }
         return false;
@@ -16810,6 +17106,7 @@
           // Breaking a rock — reachable via a completed hold (see
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
+          const minedOreKey = tile.oreKey || null; // Used to preserve a mine node's elemental ore identity before the tile becomes walkable floor.
           const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('mining') || 0) ? 1 : 0; // Used for Mining's extra-stone and future-ore chance.
           const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 stone, plus a possible skill bonus
           tile.type = TileType.GRASS;
@@ -16821,12 +17118,20 @@
           // entry entirely (tickMinedRockRegrowth only ever resolves entries
           // against _zoneScenes-backed wilderness maps; a 'farm' entry would
           // just sit there forever, bloating the save for nothing).
-          if (currentArea !== 'farm') {
+          if (_isZoneArea(currentArea)) {
             const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
             _minedEntries.push({ col, row, minedDay: calendar.day });
             _zoneMinedRockPersist.set(currentArea, _minedEntries);
           }
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
+          let metalMessage = ''; // Used to append raw ore rewards without changing ordinary farm/wilderness rock messaging.
+          if (minedOreKey && ORE_DEFS[minedOreKey]) {
+            const oreAmount = window.TownMine?.rollOreYield?.(rnd, bonus) ?? (1 + (rnd() < 0.5 ? 1 : 0) + bonus); // One or two ore averages 1.5 before the separate +1 Mining yield perk roll.
+            const oreItemKey = metalOreItemKey(minedOreKey); // Used to feed the Crafting pane without ever minting a bar directly from a rock.
+            inventory[oreItemKey] = Math.min(99, (inventory[oreItemKey] || 0) + oreAmount);
+            window.TownMine?.recordHeldOres?.([minedOreKey]);
+            metalMessage = ` and ${oreAmount} ${ORE_DEFS[minedOreKey].label}`;
+          }
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
           // Farm rocks use ordinary per-tile mesh rebuilding. Wilderness
@@ -16835,9 +17140,11 @@
           const zoneVisualsUpdated = currentArea === 'farm'
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
+          const revealedMineDescent = tryRevealMineDescent(currentArea, col, row, 'rock');
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
-          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
+          const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';
+          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${metalMessage}${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.${descentMessage}` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -20222,6 +20529,11 @@
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
+      const mineTorchLight = new THREE.PointLight(0xffd28a, 2.8, 9, 1.7);
+      mineTorchLight.name = 'mine_player_torch';
+      mineTorchLight.position.set(0, 1.15, 0.2);
+      mineTorchLight.visible = false;
+      playerMesh.add(mineTorchLight);
       scene.add(playerMesh);
       // worldPopupRuntime is updated by gameLoop and anchors every popup to
       // the same portrait centroid already used by dialogue camera framing.
@@ -22469,6 +22781,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
         // reads below) doesn't need to change.
@@ -24394,7 +24707,12 @@
                   // entry col/row (same fire-and-forget async-inside-
                   // startSceneTransition pattern performTravel's own 'zone'
                   // case uses for an ordinary authored zone transition).
-                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
+                    window.WildernessCampfire?.requestReturnToCampfire?.();
+                    startSceneTransition(() => enterBuilding(campfire.mapId));
+                  } else {
+                    startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  }
                 }
               },
             },
@@ -24976,6 +25294,14 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Procedural mine floors are building interiors, so they return from
+          // this branch before the general wilderness/town action block below.
+          // Surface campfires are handled there; mine campfires must expose the
+          // same nearby Save/Cook/Brew actions here instead.
+          const mineCampfireActions = window.TownMine?.floorFromMapId?.(currentArea)
+            ? window.WildernessCampfire?.getNearbyActions?.()
+            : null;
+          if (mineCampfireActions?.length) return mineCampfireActions;
           // Building interiors return early above and never reach the
           // farm/zone/town item-context block further down (it also relies
           // on a reticle/tile pair this branch never computes) — without
@@ -24986,6 +25312,13 @@
           // indoors so isn't duplicated here.
           if (heldMode === 'item') {
             const heldItem = getActiveInventoryItem();
+            // Mine floors are building interiors, so the general held-item
+            // campfire-kit branch below is unreachable here. Mirror it in this
+            // early-return branch so Action 1 can actually set up a campfire
+            // underground instead of silently omitting the button.
+            if (heldItem && heldItem.key === 'campfireKitFurniture' && window.WildernessCampfire?.supportsArea?.(currentArea)) {
+              return [{ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            }
             const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
             if (flaskActions.length) return flaskActions;
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
@@ -25030,7 +25363,7 @@
         // tents above — walking up to it puts Save/Cook/Brew each on their
         // own action-bar slot (Return to Camp lives on the utilities wheel
         // instead — see the 'c' hold-key handling further down).
-        const campfireActions = _isZoneArea(currentArea)
+        const campfireActions = window.WildernessCampfire?.supportsArea?.(currentArea)
           ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
         if (campfireActions?.length) return campfireActions;
@@ -25116,7 +25449,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -28358,6 +28691,13 @@
         inventory,
         clampInventoryStack,
         FURNITURE_BLUEPRINT_CATALOG,
+        ORE_DEFS,
+        METAL_DEFS,
+        METAL_BAR_RECIPES,
+        metalOreItemKey,
+        metalBarItemKey,
+        recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),
+        hasDiscoveredOre: oreKey => window.TownMine?.hasDiscoveredOre?.(oreKey) || false,
         showToast,
         buildInventoryGrid,
         saveMemberWorldData,
@@ -28427,6 +28767,8 @@
       window.WildernessCampfire?.init({
         getCurrentArea: () => currentArea,
         isZoneArea: _isZoneArea,
+        isMineArea: area => !!window.TownMine?.floorFromMapId?.(area),
+        isAreaSceneReady: area => !_isBuildingArea(area) || !!_buildingScenes.get(area)?.scene,
         getActiveScene,
         getPlayer: () => player,
         getFacingAngle: () => facingAngle,
@@ -28521,6 +28863,19 @@
         DEN_MOTHER_DEFS,
       });
 
+      window.TownMine?.init({
+        getCurrentArea: () => currentArea,
+        buildingScenes: _buildingScenes,
+        inventory,
+        woodItemKeys: ['pineLog', 'shadewoodLog'],
+        metalBarItemKey,
+        metalLabel: metalKey => METAL_DEFS[metalKey]?.label || metalKey,
+        showToast,
+        refreshInventory: () => { refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+        save: saveMemberWorldData,
+        travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
+      });
+
       window.ZonePlateauMesa?.init({
         NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
         resolveTileMat, displaceZoneGeometry,
@@ -28540,6 +28895,10 @@
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
       });
+      {
+        const root = window.TownMine?.farmRootTotem?.(COLS, ROWS);
+        if (root) window.ZoneDenTotemFeatures?.buildRootTotemMeshes(scene, grid, [{ x: root.x, y: root.y }], 'farm-mine-respawn');
+      }
 
       window.ZoneGrassBillboards?.init({
         TileType, PLATEAU_UNIT,
@@ -29245,6 +29604,7 @@
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
+        window.TownMine?.restore?.(playerData.townMineState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

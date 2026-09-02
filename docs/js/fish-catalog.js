@@ -6,6 +6,7 @@
   const ROCKSCALE_IGNORES = [['#7f6e77',7],['#bababa',45]];
   const AMPHIBIOUS_SPECIES = new Set(['gurumahi']); // Used to gate dangerous fish to casts made while the player is standing in water.
   const AMPHIBIOUS_SELL_MULTIPLIER = 3; // Used to compensate amphibious catches for their post-reel combat/retrieval step.
+  const COOKING_EFFECT_BY_SPECIES = Object.freeze({ gurumahi: 'strength', rockscale: 'fortitude', sixfin: 'speed' }); // Used to give each live fish species a distinct buff when cooked into food.
 
   const ROWS = [
     ['gurumahi_tawny','Gurumahi Tawny','gurumahi','#9b6f49',1.06,.25,'smooth',34,['farm','town'],'spring,summer,fall',['day','dusk'],'common',30],
@@ -84,6 +85,7 @@
       out[f.key] = {
         icon:'🐟', label:f.label, cat:'material', category:'Fish', sellPrice:f.sellPrice,
         tags, amphibious:f.amphibious,
+        cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES[f.species] || 'fishing',
         desc:f.amphibious
           ? `${f.label}, an amphibious fish worth triple normal value because landing it only starts the fight.`
           : `${f.label}, a fish found around Hobunji Hollow.`,
