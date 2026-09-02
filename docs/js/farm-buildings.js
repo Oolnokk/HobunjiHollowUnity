@@ -607,3 +607,400 @@
     BARN_PIECES,
   };
 })();
+
+(() => {
+  'use strict';
+
+  // Nursery baby presentation override. The original Nursery lifecycle keeps
+  // authoritative save/sample behavior in farm-troughs.js; this layer replaces
+  // only its flat visual stand-ins with the same rigged animal avatar path used
+  // by adult livestock, so movement frames and authored head rigs remain shared.
+  const NURSERY_MAP_ID = 'map_i_barn_farm_nursery';
+  const BABY_SCALE = 0.25;
+  const VISIBLE_LIMIT = 12;
+  const BABY_SPEED_MULTIPLIER = 1.5; // Requested: babies move fifty percent faster than the first Nursery swarm tuning.
+  const TURN_MIN_SEC = 0.12;
+  const TURN_MAX_SEC = 0.42;
+  const HOP_MIN_HZ = 3.2;
+  const HOP_MAX_HZ = 5.4;
+  const HOP_MIN_HEIGHT = 0.10;
+  const HOP_MAX_HEIGHT = 0.24;
+  const FRAME_MIN_SEC = 0.075;
+  const FRAME_MAX_SEC = 0.115;
+
+  let animalDeps = null; // Captures the existing FarmAnimals dependency seam so genotype/player-face data stay authoritative.
+  let installed = false;
+  let insideLastFrame = false;
+  let generation = 0;
+  let building = false;
+  let agents = [];
+  let selectedIds = [];
+  let lastMotionFrameAt = -Infinity;
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const angleDiff = (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  const randomBetween = (min, max) => min + Math.random() * (max - min);
+
+  function currentArea() {
+    return window.Combat?.deps?.getCurrentArea?.()
+      || animalDeps?.getCurrentArea?.()
+      || window.__hobunjiFurnitureDebug?.getCurrentArea?.()
+      || null;
+  }
+
+  function activeScene() {
+    return window.Combat?.deps?.getActiveScene?.() || null;
+  }
+
+  function isBaby(entry) {
+    if (!entry) return false;
+    if (entry.lifeStage === 'baby') return true;
+    if (entry.lifeStage === 'adult') return false;
+    return Object.prototype.hasOwnProperty.call(entry, 'barnId') && entry.barnId == null;
+  }
+
+  function babies() {
+    return (animalDeps?.loadWorldLivestock?.() || []).filter(isBaby);
+  }
+
+  function nurseryBounds() {
+    const nursery = window.LivestockNursery?.debugSnapshot?.().nursery;
+    return {
+      cols: Math.max(6, (Number(nursery?.w) || 3) * 2),
+      rows: Math.max(5, (Number(nursery?.h) || 2) * 2),
+    };
+  }
+
+  function playerFaceTarget() {
+    const authored = animalDeps?.getPlayerFaceTarget?.();
+    if (authored) {
+      const z = Number.isFinite(Number(authored.z)) ? Number(authored.z) : Number(authored.y);
+      return { x: Number(authored.x), z, worldY: Number(authored.worldY) };
+    }
+    const combatDeps = window.Combat?.deps;
+    const player = combatDeps?.player || animalDeps?.player;
+    const tile = Number(combatDeps?.TILE || animalDeps?.TILE) || 1;
+    if (!player) return null;
+    return {
+      x: (Number(player.x) || 0) / tile,
+      z: (Number(player.y) || 0) / tile,
+      worldY: Number(player.worldY ?? player.headWorldY ?? 0.9),
+    };
+  }
+
+  function playerGroundPoint() {
+    const face = playerFaceTarget();
+    if (face && Number.isFinite(face.x) && Number.isFinite(face.z)) return face;
+    return { x: 3, z: 2.5, worldY: 0.9 };
+  }
+
+  function hideLegacyFlatBabies(scene) {
+    if (!scene?.traverse) return;
+    scene.traverse(object => {
+      const name = String(object?.name || '');
+      if (name.startsWith('nursery_baby_') && !name.startsWith('nursery_baby_rig_')) object.visible = false;
+    });
+  }
+
+  function shuffledSample(entries, count) {
+    const copy = entries.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const swap = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[swap]] = [copy[swap], copy[i]];
+    }
+    return copy.slice(0, count);
+  }
+
+  function texturePairFromCanvas(THREE_NS, canvas, name) {
+    if (!canvas) return null;
+    const front = new THREE_NS.CanvasTexture(canvas);
+    const back = new THREE_NS.CanvasTexture(canvas);
+    if ('colorSpace' in front && THREE_NS.SRGBColorSpace) {
+      front.colorSpace = THREE_NS.SRGBColorSpace;
+      back.colorSpace = THREE_NS.SRGBColorSpace;
+    }
+    back.wrapS = THREE_NS.RepeatWrapping;
+    back.repeat.set(-1, 1);
+    back.offset.set(1, 0);
+    front.name = `${name}_front`;
+    back.name = `${name}_back`;
+    front.needsUpdate = true;
+    back.needsUpdate = true;
+    return { front, back };
+  }
+
+  function applyTexturePair(agent, pair) {
+    if (!agent?.avatarRef?.group || !pair) return;
+    agent.avatarRef.group.traverse(child => {
+      if (!child?.material) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (!material) continue;
+        if (String(child.name || '').endsWith('_front_plane')) {
+          material.map = pair.front;
+          material.needsUpdate = true;
+        } else if (String(child.name || '').endsWith('_back_plane')) {
+          material.map = pair.back;
+          material.needsUpdate = true;
+        }
+      }
+    });
+  }
+
+  async function prepareAnimationFrames(agent, entry, token) {
+    const renderer = window.CreatureGeneticsRender;
+    const THREE_NS = window.THREE || (typeof THREE !== 'undefined' ? THREE : null);
+    if (!renderer?.composeFrame || !THREE_NS || !entry?.genotype) return;
+    const frameNames = ['idle', 'run1', 'run2'];
+    try {
+      const canvases = await Promise.all(frameNames.map(frame => renderer.composeFrame(entry.kind, frame, entry.genotype, false)));
+      if (token !== generation || !agents.includes(agent)) return;
+      const frames = {};
+      frameNames.forEach((frame, index) => { frames[frame] = texturePairFromCanvas(THREE_NS, canvases[index], `nursery_${entry.id}_${frame}`); });
+      agent.frames = frames;
+      agent.frameName = 'run1';
+      applyTexturePair(agent, frames.run1 || frames.idle);
+    } catch (error) {
+      console.warn('[Nursery] baby animation compose failed:', entry.kind, error);
+    }
+  }
+
+  function disposeAgent(agent) {
+    if (!agent) return;
+    agent.avatarRef?.group?.parent?.remove?.(agent.avatarRef.group);
+    try { agent.avatarRef?.dispose?.(); } catch (_) {}
+    const textures = new Set();
+    for (const pair of Object.values(agent.frames || {})) {
+      if (pair?.front) textures.add(pair.front);
+      if (pair?.back) textures.add(pair.back);
+    }
+    for (const texture of textures) texture.dispose?.();
+  }
+
+  function clearAgents() {
+    generation++;
+    building = false;
+    for (const agent of agents) disposeAgent(agent);
+    agents = [];
+    selectedIds = [];
+  }
+
+  function retarget(agent, immediate = false) {
+    const { cols, rows } = nurseryBounds();
+    const player = playerGroundPoint();
+    // Hyper babies repeatedly choose a new point close to the player rather
+    // than orbiting one smooth target for seconds at a time.
+    const angle = Math.random() * Math.PI * 2;
+    const radius = randomBetween(0.18, 1.05);
+    agent.targetX = clamp(player.x + Math.cos(angle) * radius, 0.45, cols - 0.45);
+    agent.targetZ = clamp(player.z + Math.sin(angle) * radius, 0.45, rows - 0.45);
+    agent.turnTimer = immediate ? 0 : randomBetween(TURN_MIN_SEC, TURN_MAX_SEC);
+  }
+
+  function createRiggedAgent(entry, scene, token) {
+    const THREE_NS = window.THREE || (typeof THREE !== 'undefined' ? THREE : null);
+    const renderer = window.CreatureGeneticsRender;
+    const avatarApi = window.PNGPlaneAvatar;
+    if (!THREE_NS || !renderer || !avatarApi?.buildAnimalPlaneAvatarModel || token !== generation) return null;
+    const spec = renderer.SPECIES?.[entry.kind];
+    const idleUrl = spec?.base?.idle;
+    if (!idleUrl) return null;
+
+    const speciesDef = animalDeps?.CREATURE_DB?.[entry.kind] || {};
+    const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
+    const adultWidth = entry.kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[entry.kind]) || 1.7);
+    const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+    const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(entry.kind, entry.genotype) || { x: 1, y: 1 };
+    const modelWidth = adultWidth * BABY_SCALE;
+    const modelHeight = adultWidth * spriteAspect * BABY_SCALE;
+    const avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE_NS, idleUrl, {
+      modelWidth,
+      modelHeight,
+      name: `nursery_baby_rig_${entry.id}`,
+      creatureId: entry.kind,
+      headRig: renderer.headRigForKind?.(entry.kind) || undefined,
+    });
+    if (!avatarRef?.group) return null;
+    avatarRef.group.name = `nursery_baby_rig_${entry.id}`;
+    window.CreatureGenetics?.applyCreatureBillboardScale?.(avatarRef.group, sizeScale);
+
+    const { cols, rows } = nurseryBounds();
+    const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(entry.kind, entry.genotype);
+    const automaticGround = modelHeight * (Number(sizeScale.y) || 1) / 2;
+    const baseY = Number.isFinite(authoredGroundOffset)
+      ? Math.max(0.03, authoredGroundOffset * BABY_SCALE * (Number(sizeScale.y) || 1))
+      : Math.max(0.03, automaticGround);
+    const agent = {
+      id: entry.id,
+      kind: entry.kind,
+      genotype: entry.genotype,
+      avatarRef,
+      wx: 0.65 + Math.random() * Math.max(0.2, cols - 1.3),
+      wz: 0.65 + Math.random() * Math.max(0.2, rows - 1.3),
+      wy: baseY,
+      baseY,
+      speed: randomBetween(1.15, 2.0) * BABY_SPEED_MULTIPLIER,
+      targetX: 0,
+      targetZ: 0,
+      turnTimer: 0,
+      hopPhase: Math.random() * Math.PI,
+      hopHz: randomBetween(HOP_MIN_HZ, HOP_MAX_HZ),
+      hopHeight: randomBetween(HOP_MIN_HEIGHT, HOP_MAX_HEIGHT),
+      animTimer: randomBetween(FRAME_MIN_SEC, FRAME_MAX_SEC),
+      framePeriod: randomBetween(FRAME_MIN_SEC, FRAME_MAX_SEC),
+      frameName: 'idle',
+      frames: {},
+      groupRot: Math.random() * Math.PI * 2,
+    };
+    avatarRef.group.position.set(agent.wx, agent.wy, agent.wz);
+    avatarRef.group.rotation.y = agent.groupRot;
+    scene.add(avatarRef.group);
+    retarget(agent);
+    prepareAnimationFrames(agent, entry, token);
+    return agent;
+  }
+
+  function buildAgents() {
+    if (building || agents.length || currentArea() !== NURSERY_MAP_ID) return;
+    const scene = activeScene();
+    if (!scene) return;
+    const list = babies();
+    if (!list.length) return;
+    building = true;
+    const token = ++generation;
+    const sample = shuffledSample(list, Math.min(VISIBLE_LIMIT, list.length));
+    selectedIds = sample.map(entry => entry.id);
+    const made = sample.map(entry => createRiggedAgent(entry, scene, token)).filter(Boolean);
+    if (token !== generation || currentArea() !== NURSERY_MAP_ID) {
+      made.forEach(disposeAgent);
+      building = false;
+      return;
+    }
+    agents = made;
+    building = false;
+  }
+
+  function trackPlayerHead(agent, dt) {
+    const target = playerFaceTarget();
+    if (!target || !Number.isFinite(target.worldY) || typeof agent.avatarRef?.updateHeadRotation !== 'function') return;
+    const headWorldY = window.CreatureHeadCache?.getHeadWorld?.(agent, 'animal')?.worldY
+      ?? (agent.avatarRef.group.position.y + 0.18);
+    const horizontal = Math.max(0.15, Math.hypot(target.x - agent.wx, target.z - agent.wz));
+    // Shared animal head-rig convention: negative degrees look up, positive look down.
+    const pitchDeg = -Math.atan2(target.worldY - headWorldY, horizontal) * 180 / Math.PI;
+    agent.avatarRef.updateHeadRotation(pitchDeg, dt);
+  }
+
+  function updateAnimation(agent, moving, dt) {
+    if (!agent.frames || (!agent.frames.run1 && !agent.frames.run2)) return;
+    agent.animTimer -= dt;
+    if (agent.animTimer > 0) return;
+    agent.animTimer = agent.framePeriod;
+    let next = 'idle';
+    if (moving) next = agent.frameName === 'run1' ? 'run2' : 'run1';
+    if (next === agent.frameName) return;
+    agent.frameName = next;
+    applyTexturePair(agent, agent.frames[next] || agent.frames.idle);
+  }
+
+  function updateAgent(agent, dt) {
+    const { cols, rows } = nurseryBounds();
+    agent.turnTimer -= dt;
+    let dx = agent.targetX - agent.wx;
+    let dz = agent.targetZ - agent.wz;
+    let distance = Math.hypot(dx, dz);
+    if (agent.turnTimer <= 0 || distance < 0.09) {
+      retarget(agent);
+      dx = agent.targetX - agent.wx;
+      dz = agent.targetZ - agent.wz;
+      distance = Math.hypot(dx, dz);
+    }
+
+    const moving = distance > 0.004;
+    if (moving) {
+      const step = Math.min(distance, agent.speed * dt);
+      const vx = dx / distance;
+      const vz = dz / distance;
+      agent.wx = clamp(agent.wx + vx * step, 0.42, cols - 0.42);
+      agent.wz = clamp(agent.wz + vz * step, 0.42, rows - 0.42);
+      // Same movement-facing convention as adult livestock. The old Nursery
+      // prototype used a different atan2 ordering, which made several species
+      // visibly travel backwards relative to their painted sprite.
+      const targetRot = -Math.atan2(vz, vx) + Math.PI / 2;
+      agent.groupRot += angleDiff(targetRot, agent.groupRot) * Math.min(1, dt * 22);
+    }
+
+    agent.hopPhase += dt * Math.PI * 2 * agent.hopHz;
+    const hop = Math.abs(Math.sin(agent.hopPhase)) * agent.hopHeight;
+    agent.wy = agent.baseY + hop;
+    agent.avatarRef.group.position.set(agent.wx, agent.wy, agent.wz);
+    agent.avatarRef.group.rotation.y = agent.groupRot;
+    trackPlayerHead(agent, dt);
+    updateAnimation(agent, moving, dt);
+  }
+
+  function updateRiggedNurseryBabies(dt) {
+    const scene = activeScene();
+    if (scene) hideLegacyFlatBabies(scene);
+    const inside = currentArea() === NURSERY_MAP_ID;
+    if (!inside) {
+      if (insideLastFrame || agents.length || building) clearAgents();
+      insideLastFrame = false;
+      return;
+    }
+
+    insideLastFrame = true;
+    if (!agents.length && !building) buildAgents();
+    const liveBabyIds = new Set(babies().map(entry => entry.id));
+    const survivors = [];
+    for (const agent of agents) {
+      if (!liveBabyIds.has(agent.id)) { disposeAgent(agent); continue; }
+      updateAgent(agent, dt);
+      survivors.push(agent);
+    }
+    agents = survivors;
+  }
+
+  function installMotionHook() {
+    if (installed || !animalDeps || !window.FarmAnimals?.updateAnimalMeshes) return;
+    installed = true;
+    const api = window.FarmAnimals;
+    const originalUpdate = api.updateAnimalMeshes.bind(api);
+    api.updateAnimalMeshes = function nurseryHyperBabyVisualUpdate(dt) {
+      const result = originalUpdate(dt);
+      const now = performance.now();
+      // Avoid double-stepping if both the legacy game loop and Nursery-only
+      // loop happen to call the same public updater during one render frame.
+      if (now - lastMotionFrameAt >= 4) {
+        lastMotionFrameAt = now;
+        updateRiggedNurseryBabies(Math.max(0, Math.min(0.05, Number(dt) || 0)));
+      } else {
+        const scene = activeScene();
+        if (scene) hideLegacyFlatBabies(scene);
+      }
+      return result;
+    };
+    api.__nurseryHyperBabyVisuals = true;
+    window.__nurseryBabyMotionDebug = {
+      speedMultiplier: BABY_SPEED_MULTIPLIER,
+      visibleIds: () => agents.map(agent => agent.id),
+      reroll() { clearAgents(); if (currentArea() === NURSERY_MAP_ID) buildAgents(); },
+    };
+  }
+
+  const farmAnimals = window.FarmAnimals;
+  if (farmAnimals?.init && !farmAnimals.init.__nurseryHyperBabyInitHook) {
+    const originalInit = farmAnimals.init;
+    const wrappedInit = function nurseryHyperBabyInit(injectedDeps) {
+      animalDeps = injectedDeps;
+      const result = originalInit.call(this, injectedDeps);
+      // farm-troughs.js wraps FarmAnimals.init after this file loads. Delaying
+      // one microtask means we wrap its final Nursery updater rather than being
+      // overwritten by the lifecycle install that occurs on this same stack.
+      queueMicrotask(installMotionHook);
+      return result;
+    };
+    wrappedInit.__nurseryHyperBabyInitHook = true;
+    farmAnimals.init = wrappedInit;
+  }
+})();
