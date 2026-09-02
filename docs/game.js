@@ -1691,11 +1691,23 @@
         fishingspear: { label: 'Fishing Spear', icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', baseSprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
       };
+      // Weapon-only shapes are intentionally separate from farming/fishing tools.
+      // They still enter the shared smithing/item pipeline through HELD_SHAPE_DEFS
+      // below, but future weapons no longer have to masquerade as tool definitions.
+      const MELEE_WEAPON_SHAPE_DEFS = {
+        bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
+        plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
+        dagger:       { label: 'Dagger',        icon: '🗡️', baseSprite: 'assets/toolsprites/dagger.png',             slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light' },
+        kylie:        { label: 'Kylie',         icon: '🗡️', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+      };
+      const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
       // Every shape is unlocked from the start — "you unlock all the current
       // ones by default" — this is just the set Sloomi/Kzubug's crafting
       // counter offers; it's never spent/consumed so it isn't gearInventory
       // state the way owned tools/mastery/plating are.
-      const UNLOCKED_TOOL_SHAPES = Object.keys(TOOL_SHAPE_DEFS);
+      const UNLOCKED_TOOL_SHAPES = Object.keys(HELD_SHAPE_DEFS);
       function craftedToolItemKey(shapeKey, metalKey) { return shapeKey + '_' + metalKey; }
 
       // Registers one TOOL_ITEM_DEFS entry per (shape × verdigris metal)
@@ -1706,7 +1718,7 @@
       // these generated entries mark them as smith-crafted, verdigris-
       // capable tools (see toolVerdigrisFraction/toolEffectiveMetalKey).
       for (const metalKey of VERDIGRIS_METAL_KEYS) {
-        for (const [shapeKey, shape] of Object.entries(TOOL_SHAPE_DEFS)) {
+        for (const [shapeKey, shape] of Object.entries(HELD_SHAPE_DEFS)) {
           const itemKey = craftedToolItemKey(shapeKey, metalKey);
           TOOL_ITEM_DEFS[itemKey] = {
             label: `${METAL_DEFS[metalKey].label} ${shape.label}`,
@@ -1714,8 +1726,10 @@
             sprite: shape.baseSprite,
             slots: shape.slots,
             animStyle: shape.animStyle,
+            comboStyle: shape.comboStyle,
             dmgType: shape.dmgType,
             spinning: shape.spinning,
+            weaponIdleClass: shape.weaponIdleClass,
             shapeKey, metalKey,
             itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
           };
@@ -1725,11 +1739,13 @@
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
       // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
       // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
-      // Combo. No weapon equipped falls back to the swing combo, same as the
-      // legacy 'slash' action's own default.
+      // Combo. A definition may explicitly override that coupling with
+      // comboStyle (the dagger-sword does), while older definitions keep using
+      // animStyle. No weapon equipped falls back to the swing combo, same as
+      // the legacy 'slash' action's own default.
       function currentComboAbilityId() {
         const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
-        return def?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+        return (def?.comboStyle || def?.animStyle) === 'thrust' ? 'pokeCombo' : 'swingCombo';
       }
 
       // Drives which flavor of affliction options every weapon-tool ability
@@ -14322,15 +14338,16 @@
       // 5 hand-authored tool keys just above.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
-        const tags = ['Tool', TOOL_SHAPE_DEFS[def.shapeKey]?.label || def.shapeKey];
-        if (def.slots?.includes('weapon')) tags.push('Weapon');
+        const shape = HELD_SHAPE_DEFS[def.shapeKey];
+        const tags = [MELEE_WEAPON_SHAPE_DEFS[def.shapeKey] ? 'Weapon' : 'Tool', shape?.label || def.shapeKey];
+        if (def.slots?.includes('weapon') && tags[0] !== 'Weapon') tags.push('Weapon');
         ITEM_DEFS[key] = {
           icon: def.icon,
           label: def.label,
           cat: 'tool',
           sellPrice: 0,
           tags,
-          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${TOOL_SHAPE_DEFS[def.shapeKey]?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this tool's own mastery.`,
+          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${shape?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this item's own mastery.`,
         };
       });
 
@@ -28238,7 +28255,9 @@
         JUMP_BACK_DUR_S,
         JUMP_BACK_SPEED,
         HOSTILE_BITE_KNOCKBACK_PX_S,
+        HELD_SHAPE_DEFS,
         TOOL_SHAPE_DEFS,
+        MELEE_WEAPON_SHAPE_DEFS,
         METAL_DEFS,
         TOOL_ITEM_DEFS,
         VERDIGRIS_METAL_KEYS,
@@ -28935,7 +28954,8 @@
         TOOL_ITEM_DEFS,
         VERDIGRIS_METAL_KEYS,
         UNLOCKED_TOOL_SHAPES,
-        TOOL_SHAPE_DEFS,
+        TOOL_SHAPE_DEFS: HELD_SHAPE_DEFS, // Legacy dependency name retained for the smithing module.
+        MELEE_WEAPON_SHAPE_DEFS,
       });
 
       window.WildernessMap?.init({

@@ -1,14 +1,14 @@
-// Gives weapon-slot PNGs a small baseline enlargement without touching weapons
-// that already author their own larger scale (the ranged weapons are 1.77x).
-// This is deliberately a render-time multiplier around WeaponToolStances so tool
-// mode keeps its existing sprite size and no permanent mesh scale accumulates.
+// Gives legacy weapon-slot PNGs a small baseline enlargement without touching weapons
+// that already author their own larger scale (the ranged weapons are 1.77x) or now
+// carry an intrinsic held-item scale in hand-tool-grips.js. This remains a render-time
+// fallback around WeaponToolStances so tool mode keeps its existing sprite size.
 (function (global) {
   'use strict';
 
   const BASE_WEAPON_PNG_SCALE = 1.15;
   const ELIGIBLE_WEAPONS = new Set([
     'hatchet',
-    'bronzehoe',
+    'hoe',
     'pickshovel',
     'fishingspear',
     'fishingmace',
@@ -22,6 +22,15 @@
     return deps?.equipmentSlots?.weapon || null;
   }
 
+  function normalizedShapeKey(itemKey) {
+    return global.HobunjiHandToolGrips?.toolKeyFor?.(itemKey) || String(itemKey || '').toLowerCase(); // Shared normalization strips crafted-metal suffixes and maps bronzehoe back to the hoe shape.
+  }
+
+  function authoredBaseScale(itemKey) {
+    const scale = Number(global.HobunjiHandToolGrips?.toolScaleForTool?.(itemKey)); // Used below to keep the legacy 1.15 fallback from multiplying an authored per-shape scale a second time.
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  }
+
   function installScaleHook(deps) {
     const holder = deps?.toolHolder;
     if (!holder?.updateMatrixWorld || holder.__weaponPngBaselineScaleHook) return false;
@@ -29,6 +38,7 @@
     const originalUpdateMatrixWorld = holder.updateMatrixWorld;
     holder.updateMatrixWorld = function weaponPngBaselineScaleUpdateMatrixWorld(force) {
       const itemKey = currentWeaponKey(deps);
+      const shapeKey = normalizedShapeKey(itemKey); // Lets the old baseline keep working for crafted variants without duplicating item-key aliases here.
       const mesh = deps?.toolMeshMap?.weapon || null;
       const toolPlane = mesh?.userData?.toolPlane || null;
       const holderScale = Math.max(
@@ -36,10 +46,13 @@
         Math.abs(Number(this.scale?.y) || 1),
         Math.abs(Number(this.scale?.z) || 1),
       );
+      const itemBaseScale = authoredBaseScale(itemKey); // Intrinsic sprite size from the shared grip/held-item metadata, independent of attack animation scale.
       const shouldUpscale = !!toolPlane
-        && ELIGIBLE_WEAPONS.has(itemKey)
+        && ELIGIBLE_WEAPONS.has(shapeKey)
         // Respect any current/future animation that already enlarges the weapon.
-        && holderScale <= 1.0001;
+        && holderScale <= 1.0001
+        // Intrinsically scaled shapes already receive their scale in hand-tool-grips.
+        && Math.abs(itemBaseScale - 1) <= 0.0001;
 
       let savedScale = null;
       if (shouldUpscale) {
@@ -62,7 +75,7 @@
       configurable: true,
     });
     installed = true;
-    global.__farmLog?.('[weapon-png-scale] weapon-slot baseline=1.15 for unscaled melee/tool weapons', 'combat');
+    global.__farmLog?.('[weapon-png-scale] legacy weapon-slot baseline=1.15 only for shapes without authored base scale', 'combat');
     return true;
   }
 
@@ -101,6 +114,19 @@
   global.HobunjiWeaponPngScale = Object.freeze({
     baseline: BASE_WEAPON_PNG_SCALE,
     eligibleWeapons: Object.freeze([...ELIGIBLE_WEAPONS]),
+    normalizedShapeKey,
+    authoredBaseScale,
+    debugFor(itemKey) {
+      const shapeKey = normalizedShapeKey(itemKey); // Mobile/console-free diagnostics for why the legacy baseline does or does not apply to a particular item key.
+      const baseScale = authoredBaseScale(itemKey);
+      return {
+        itemKey: itemKey || null,
+        shapeKey,
+        authoredBaseScale: baseScale,
+        legacyEligible: ELIGIBLE_WEAPONS.has(shapeKey),
+        legacySuppressedByAuthoredScale: Math.abs(baseScale - 1) > 0.0001,
+      };
+    },
     get installed() { return installed; },
   });
 })(window);
