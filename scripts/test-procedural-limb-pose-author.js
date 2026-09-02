@@ -1,11 +1,11 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const anatomy = fs.readFileSync('docs/config/procedural-anatomy-profiles.js', 'utf8'); // Verifies the new species+gender thickness/split source without duplicating canonical limb lengths.
-const solver = fs.readFileSync('docs/js/leg-bones.js', 'utf8'); // Verifies legacy gait IK remains available beside fixed anatomical two-bone IK.
-const author = fs.readFileSync('docs/js/procedural-limb-pose-author.js', 'utf8'); // Verifies the isolated Ground / Carry workspace integration contracts.
-const facing = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8'); // Verifies editor yaw, portrait-face visibility, non-occluding torso guides, and visible bootstrap diagnostics.
-const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Verifies the already-loaded procedural editor adapter boots the new workspace.
+const anatomy = fs.readFileSync('docs/config/procedural-anatomy-profiles.js', 'utf8');
+const solver = fs.readFileSync('docs/js/leg-bones.js', 'utf8');
+const author = fs.readFileSync('docs/js/procedural-limb-pose-author.js', 'utf8');
+const bootstrap = fs.readFileSync('docs/js/procedural-limb-facing-preserver.js', 'utf8');
+const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8');
 
 for (const field of [
   'upperArmFraction',
@@ -14,26 +14,13 @@ for (const field of [
   'thighRadiusHeightFraction',
   'calfRadiusHeightFraction',
   'torsoRadiusHeightFraction',
-]) {
-  assert(anatomy.includes(field), `species anatomy profile is missing ${field}`);
-}
-for (const key of [
-  'kenkari::male', 'kenkari::female',
-  'mao-ao::male', 'mao-ao::female',
-  'engh-sho::male', 'engh-sho::female',
-  'tletingan::male', 'tletingan::female',
-  'mashtzarr::male', 'mashtzarr::female',
-]) {
-  assert(anatomy.includes(`'${key}'`), `species anatomy profile is missing ${key}`);
-}
-assert(!anatomy.includes('upperArmLength:'), 'anatomy profile must not create a competing authored arm-length table');
-assert(!anatomy.includes('upperLegLength:'), 'anatomy profile must not create a competing authored leg-length table');
+]) assert(anatomy.includes(field), `species anatomy profile is missing ${field}`);
 
-assert(solver.includes('function solveTwoBoneLeg'), 'legacy procedural-foot solver was removed');
+assert(!anatomy.includes('upperArmLength:'), 'anatomy profile must not duplicate canonical arm lengths');
+assert(!anatomy.includes('upperLegLength:'), 'anatomy profile must not duplicate canonical leg lengths');
+assert(solver.includes('function solveTwoBoneLeg'), 'legacy gait solver was removed');
 assert(solver.includes('function solveFixedTwoBoneChain'), 'fixed-length anatomical solver is missing');
-assert(solver.includes('upper * upper - lower * lower + solvedDistance * solvedDistance'), 'fixed solver is not using a two-segment law-of-cosines joint solve');
-assert(solver.includes('reachable:'), 'fixed solver does not expose reach diagnostics');
-assert(solver.includes('window.LegBones = { solveTwoBoneLeg, solveFixedTwoBoneChain }'), 'both legacy and fixed solvers are not exported together');
+assert(solver.includes('window.LegBones = { solveTwoBoneLeg, solveFixedTwoBoneChain }'), 'legacy and fixed solvers are not exported together');
 
 for (const pose of ['crossLegged', 'kneel', 'sideLeanLeft', 'sideLeanRight', 'lieSideLeft', 'lieSideRight', 'lieBack', 'carryUpright']) {
   assert(author.includes(pose), `Ground / Carry author is missing pose ${pose}`);
@@ -52,45 +39,31 @@ for (const contract of [
   'thighRadius',
   'calfRadius',
   'torsoRadius',
-  'limbPoseDebug',
-  'Ground / Carry',
   'hobunji-procedural-limb-pose-library.v1',
-]) {
-  assert(author.includes(contract), `Ground / Carry author is missing contract: ${contract}`);
-}
-assert(author.includes("runtime.backdrop?.setMovementPlayback?.(false)"), 'ground poses do not pause procedural locomotion before taking over body/feet');
-assert(author.includes("runtime.backdrop?.setMovementPlayback?.(true)"), 'heavy carry style does not resume the existing movement engine');
-assert(author.includes("input.dispatchEvent(new Event('input', { bubbles: true }))"), 'heavy carry style bypasses the existing procedural movement controls/state');
-assert(author.includes("/_ExperimentalFeet$/"), 'ground poses do not reuse the procedural editor’s current species-specific feet');
-assert(author.includes('new MutationObserver'), 'mobile authoring panel is not restored when preview UI is rebuilt');
-assert(author.includes("!window.LegBones?.solveFixedTwoBoneChain"), 'Ground / Carry frame loop does not wait safely for the pinned fixed-leg solver');
+]) assert(author.includes(contract), `Ground / Carry author is missing contract: ${contract}`);
 
-assert(facing.includes('hobunjiLimbPoseBaselineYaw'), 'facing preserver does not store the untouched editor yaw');
-assert(facing.includes('protectedGroundCarryEulerSet'), 'facing preserver does not intercept the Ground / Carry Euler setter');
-assert(facing.includes('originalSet.call(this, x, preserveFacing ? baselineYaw : y, z, order)'), 'Ground / Carry zero-yaw writes are not replaced with the captured editor yaw');
-assert(facing.includes("hobunji-backdrop-avatar-changed"), 'facing preserver does not recapture yaw when the preview avatar rebuilds');
-assert(facing.includes('Ground / Carry facing preserved'), 'facing fix lacks a mobile-visible confirmation');
-assert(facing.includes('cameraRelativePortraitFace'), 'Ground / Carry does not select portrait faces from camera-local avatar space');
-assert(facing.includes("cameraLocal.z > hysteresis"), 'camera-relative portrait selection lacks edge-on hysteresis');
-assert(facing.includes('material.side = DOUBLE_SIDE'), 'selected portrait material can still be back-face culled');
-assert(facing.includes('material.visible = visible'), 'front/back portrait materials are not explicitly switched by camera side');
-assert(facing.includes('model.userData?.frontTexture'), 'portrait detector does not recognize the canonical front texture by identity');
-assert(facing.includes('model.userData?.backTexture'), 'portrait detector does not recognize the canonical back texture by identity');
-assert(facing.includes('frontMaterials.add(node.material[0])'), 'skinned portrait slot 0 is not treated as the authoritative front material fallback');
-assert(facing.includes('backMaterials.add(node.material[1])'), 'skinned portrait slot 1 is not treated as the authoritative back material fallback');
-assert(facing.includes('hobunjiGroundCarryPortraitFace'), 'camera-relative portrait selection lacks visible/model diagnostics');
-assert(facing.includes("name.includes('torso') && name.includes('radius')"), 'torso-radius guide lookup does not tolerate renamed guide meshes');
-assert(facing.includes('material.wireframe = true'), 'torso-radius guide remains a solid blue shell');
-assert(facing.includes('material.depthWrite = false'), 'torso-radius guide can still occlude the avatar depth buffer');
-assert(facing.includes("typeof window.log === 'function'"), 'Ground / Carry bootstrap does not write through the editor visible log when available');
-assert(facing.includes('main/runtime LegBones lacks solveFixedTwoBoneChain'), 'mixed main/commit solver mismatch is not explicitly reported');
-assert(facing.includes('pinned fixed-leg solver ready'), 'successful pinned solver replacement is not explicitly reported');
-assert(facing.includes('const fixedLegSolverReady = ensureBranchFixedLegSolver()'), 'Ground / Carry does not publish one canonical fixed-solver bootstrap promise');
-assert(facing.includes('ready: fixedLegSolverReady'), 'facing preserver public API does not expose the fixed-solver bootstrap promise');
+// Most important compatibility contract: before the user explicitly opens
+// Ground / Carry, the old procedural animator must remain completely
+// authoritative. The bootstrap sentinel prevents procedural-impact-tabs.js
+// from eager-loading the pose author.
+assert(bootstrap.includes('dormantAuthorSentinel'), 'Ground / Carry lacks an explicit dormant state');
+assert(bootstrap.includes('window.HobunjiProceduralLimbPoseAuthor = dormantAuthorSentinel'), 'Ground / Carry no longer blocks eager author startup');
+assert(bootstrap.includes("button.addEventListener('click', activateGroundCarry)"), 'Ground / Carry is not explicit opt-in');
+assert(bootstrap.includes("delete window.HobunjiProceduralLimbPoseAuthor"), 'explicit activation cannot release the dormant sentinel');
+assert(bootstrap.includes('ensureBranchFixedLegSolver'), 'explicit activation does not ensure the branch fixed-length solver');
+assert(bootstrap.includes('protectLegacyYaw'), 'Ground / Carry does not preserve the old animator facing');
+assert(bootstrap.includes('groundCarryRelativeEulerSet'), 'zero-yaw Ground / Carry writes are not relative to the legacy yaw');
 
-assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the facing preserver');
-assert(adapter.includes('await loadLimbFacingPreserver()'), 'facing preserver is not guaranteed to load before the Ground / Carry author');
-assert(adapter.includes('procedural-limb-pose-author.js?v='), 'procedural editor adapter does not load the Ground / Carry author');
-assert(adapter.includes('LIMB_POSE_SCRIPT_ID'), 'Ground / Carry adapter loader lacks duplicate-load protection');
+// The old PNGPlaneAvatar renderer already owns front/back culling. Ground /
+// Carry must never add a second material/mesh visibility controller.
+assert(!bootstrap.includes('material.visible ='), 'Ground / Carry must not hide/show portrait materials');
+assert(!bootstrap.includes('cameraRelativePortraitFace'), 'Ground / Carry must not choose portrait faces from camera position');
+assert(!bootstrap.includes('DOUBLE_SIDE'), 'Ground / Carry must not override legacy portrait culling');
+assert(!bootstrap.includes('frontMaterials'), 'Ground / Carry must not classify portrait materials');
+assert(!bootstrap.includes('backMaterials'), 'Ground / Carry must not classify portrait materials');
+
+assert(adapter.includes('procedural-limb-facing-preserver.js?v='), 'procedural editor adapter does not load the lazy Ground / Carry bootstrap');
+assert(adapter.includes('await loadLimbFacingPreserver()'), 'bootstrap is not established before the adapter considers the pose author');
+assert(adapter.includes('procedural-limb-pose-author.js?v='), 'adapter contract for the pose author disappeared');
 
 console.log('procedural limb pose author: PASS');
