@@ -1,0 +1,37 @@
+name: Fix Town Mine progression save
+on:
+  push:
+    branches:
+      - codex/persistent-mine-campfires-20260902
+    paths:
+      - .github/workflows/codex-fix-town-mine-progression-save.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/persistent-mine-campfires-20260902
+          fetch-depth: 0
+      - name: Apply progression persistence fix
+        run: python3 .github/codex/fix-town-mine-progression-save.py
+      - name: Validate
+        run: |
+          node --check docs/js/town-mine.js
+          node --check docs/game.js
+          node scripts/test-town-mine-descent.js
+          node scripts/test-persistent-mine-campfires.js
+      - name: Remove temporary machinery
+        run: |
+          rm -f .github/codex/fix-town-mine-progression-save.py
+          rm -f .github/workflows/codex-fix-town-mine-progression-save.yml
+          rm -f .github/workflows/codex-inspect-town-mine-save.yml
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Persist deepest Town Mine floor immediately"
+          git push origin HEAD:codex/persistent-mine-campfires-20260902
