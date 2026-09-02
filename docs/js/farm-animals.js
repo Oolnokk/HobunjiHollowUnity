@@ -439,22 +439,37 @@
     if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
-    const buttons = []; // Livestock may offer both its normal resource action and an administered potion action.
-    const heldKey = deps.getHeldItemKey?.(); // Ordinary held-item selection is the only administration source.
-    const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
-    const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
-    if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
-      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'primary', allowed: true });
-    }
-    if (rec?.resourceReady && resDef) {
+    const buttons = [];
+    const resourceReady = !!(rec?.resourceReady && resDef);
+
+    // Harvest is Action 1 while a good is ready. Talk follows as Action 2;
+    // as soon as the good is collected, Talk naturally slides into Action 1.
+    if (resourceReady) {
       const itemLabel = deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
       const verb = deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
       buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
     }
-    return buttons.length ? buttons : [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
+    const talkName = rec?.name || label;
+    buttons.push({ icon: '💬', label: `Talk to ${talkName}`, action: 'obj_talk_' + animal.id, style: resourceReady ? 'secondary' : 'primary', allowed: true });
+
+    const heldKey = deps.getHeldItemKey?.(); // Ordinary held-item selection is the only administration source.
+    const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
+    const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
+    if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
+      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
+    }
+    return buttons;
   }
 
   function _farmAnimalOnAction(animal, action, fallbackMessage) {
+    if (action === 'obj_talk_' + animal.id) {
+      const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
+      if (!rec) return { ok: false, message: 'Livestock not found.' };
+      const lines = window.AnimalVocalizations?.dialogueLinesFor?.(animal) || [];
+      const line = lines.length ? lines[Math.floor(deps.rnd() * lines.length)] : '...';
+      deps.openLivestockDialogue?.(animal, rec, [line]);
+      return { ok: true };
+    }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_collect_' + animal.id) {
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
@@ -536,7 +551,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
-      halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
+      halfHeight: halfH, groundLift, modelWidth: ANIMAL_W, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -548,7 +563,7 @@
       },
       tick(dt) {
         if (this._vatWorkPose) return;
-        if (this._harvestFrozen) return;
+        if (this._harvestFrozen || this._dialogueFrozen) return;
         if (_farmAnimalBarnTick(this)) return;
         // Drops a persistent dew pile on whichever tile a station-wander
         // hop happens to leave next, once this uumkao'ii's dew cooldown
@@ -568,6 +583,7 @@
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -663,7 +679,7 @@
       homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
       wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
       wx: col + 0.5, wz: row + 0.5, wy: initSurfY + groundLift,
-      halfHeight: halfH, groundLift, modelHeight: ANIMAL_H, avatarRef,
+      halfHeight: halfH, groundLift, modelWidth: ANIMAL_W, modelHeight: ANIMAL_H, avatarRef,
       groupRot: Math.PI / 2, targetRot: Math.PI / 2,
       perpState: {},
 
@@ -675,12 +691,13 @@
       },
       tick(dt) {
         if (this._vatWorkPose) return;
-        if (this._harvestFrozen) return;
+        if (this._harvestFrozen || this._dialogueFrozen) return;
         if (_farmAnimalBarnTick(this)) return;
         _farmAnimalWanderTick(this, dt || 0);
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];

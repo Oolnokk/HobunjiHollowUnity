@@ -210,7 +210,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260828breath3"></script>
+  <script src="js/farm-animals.js?v=20260902livestock1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -2087,7 +2087,7 @@
   <script src="js/audio-system.js?v=20260830flaskcues1"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20260828animalvoices3"></script>
+  <script src="js/animal-vocalizations.js?v=20260902livestock1"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2121,7 +2121,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
+  <script src="js/fishing-minigame.js?v=20260902livestock1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->

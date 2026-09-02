@@ -348,16 +348,16 @@
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
 
-      async function openNpcDialogue(walker) {
+      async function openNpcDialogue(walker, options = {}) {
         const rec  = walker.rec;
-        window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
+        if (options.recordMemory !== false) window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
-        activeCameraTarget = walker.root;
-        beginNpcDialogueStaging(walker);
+        activeCameraTarget = options.cameraTarget || walker.root;
+        if (options.skipStaging !== true) beginNpcDialogueStaging(walker);
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
@@ -373,6 +373,13 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+      // Animal-shaped speakers reuse the full NPC dialogue shell and camera, but
+      // deliberately bypass NPC-only quests, favors, shops, and memory bookkeeping.
+      if (options.skipNpcMeta === true) {
+        window.DialogueContent?.beginNpcConversation(rec);
+        return;
+      }
+
 
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
@@ -494,6 +501,72 @@
         window.DialogueContent?.beginNpcConversation(rec);
       }
 
+      
+      function createLivestockDialogueCameraTarget(animal, kind) {
+        const focus = new THREE.Object3D();
+        focus.name = `livestock_dialogue_head_${animal?.id || kind || 'animal'}`;
+        const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
+        const plane = animal?.avatarRef?.frontPlane || null;
+        const modelWidth = Number(animal?.modelWidth);
+        const modelHeight = Number(animal?.modelHeight);
+        if (frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)) {
+          const centerX = frame.x + frame.width * 0.5;
+          const centerY = frame.y + frame.height * 0.5;
+          const localHead = new THREE.Vector3(
+            (centerX - 0.5) * modelWidth,
+            (0.5 - centerY) * modelHeight,
+            0,
+          );
+          plane.updateWorldMatrix?.(true, false);
+          focus.position.copy(plane.localToWorld(localHead));
+        } else if (animal?.avatarRef?.group?.getWorldPosition) {
+          animal.avatarRef.group.getWorldPosition(focus.position);
+          focus.position.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
+        }
+        scene.add(focus);
+        return focus;
+      }
+
+      async function openLivestockDialogue(animal, livestockRec, dialogueLines = []) {
+        if (!animal || !livestockRec || dialogueOpen) return false;
+        const kind = String(livestockRec.kind || animal.animalKey || '').trim().toLowerCase();
+        const focus = createLivestockDialogueCameraTarget(animal, kind);
+        const walker = {
+          rec: {
+            id: `livestock:${livestockRec.id}`,
+            name: livestockRec.name || 'Livestock',
+            dialogueLines: Array.isArray(dialogueLines) && dialogueLines.length ? dialogueLines : ['...'],
+          },
+          profile: {
+            chatheadCreatureKind: kind,
+            creatureGenotype: livestockRec.genotype || animal.genotype || null,
+          },
+          root: animal.avatarRef?.group,
+          pause: 0,
+        };
+        animal._dialogueFrozen = true;
+        let cleaned = false;
+        walker._onDialogueClose = () => {
+          if (cleaned) return;
+          cleaned = true;
+          animal._dialogueFrozen = false;
+          focus.parent?.remove(focus);
+        };
+        try {
+          await openNpcDialogue(walker, {
+            cameraTarget: focus,
+            skipStaging: true,
+            skipNpcMeta: true,
+            recordMemory: false,
+          });
+          return true;
+        } catch (err) {
+          walker._onDialogueClose();
+          console.warn('[livestock-dialogue] failed to open', err);
+          return false;
+        }
+      }
+
       // advanceNpcDialogue now lives in js/dialogue-content.js
       // (window.DialogueContent).
 
@@ -510,6 +583,8 @@
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
           _dialogueWalker._lookAtDebug = null;
           _dialogueWalker.pause = 0;
+          try { _dialogueWalker._onDialogueClose?.(); }
+          catch (err) { console.warn('[dialogue] close hook failed', err); }
           // Resume at the normal schedule speed. Dialogue must not create a
           // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
@@ -29179,6 +29254,7 @@
       });
 
       window.FarmAnimals?.init({
+      openLivestockDialogue,
         COLS,
         ROWS,
         TILE,
