@@ -11,6 +11,10 @@
   <script src="js/interior-scene-builder.js?v=20260902cavesafe1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
+  <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
+       extracted out of game.js; must load before game.js and before every
+       other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
+  <script src="js/format-utils.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

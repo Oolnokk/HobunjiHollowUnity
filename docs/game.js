@@ -966,9 +966,9 @@
           return;
         }
 
-        const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
+        const footingFrac = entity.maxFooting ? window.FormatUtils.clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
         const lossRange = 1 - maxDurationAtFootingFrac;
-        const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
+        const staggerProgress = lossRange > 0 ? window.FormatUtils.clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
         const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
         const visualMinDurationS = Math.max(0, Number(staggerCfg.visualMinDurationSeconds) || 0);
@@ -996,7 +996,7 @@
       const FOOTING_SPEED_MUL_MIN = 0.55;
       function getFootingSpeedMul(entity) {
         if (!entity || !(entity.maxFooting > 0)) return 1;
-        const frac = clamp(entity.footing / entity.maxFooting, 0, 1);
+        const frac = window.FormatUtils.clamp(entity.footing / entity.maxFooting, 0, 1);
         return FOOTING_SPEED_MUL_MIN + (1 - FOOTING_SPEED_MUL_MIN) * frac;
       }
 
@@ -1440,7 +1440,7 @@
         // town-workspace-v1.json (unlike the two placeholder zones above), but
         // never got an EXTERIOR_ZONES entry of their own — so their "back to
         // town" ring (which reads zdef.townReturnCol/Row, not zoneData) sent
-        // the player to clamp(undefined, ...) === NaN. townReturnCol/Row below
+        // the player to window.FormatUtils.clamp(undefined, ...) === NaN. townReturnCol/Row below
         // are one tile inside town from that zone's own town-side transition
         // spot (spot_2vsub at col 0, row 25 / spot_d33e9 at col 59, row 25 in
         // hobunji_hollow_town.map.json). entryCol/Row/exitCol/Row match the
@@ -2024,6 +2024,11 @@
         whistle: null,
       };
 
+      // equipmentSlots/TOOL_ITEM_DEFS/actionLabels/calendar are all declared
+      // above this point and only ever mutated in place (never reassigned),
+      // so FormatUtils can hold direct references to them for its lifetime.
+      window.FormatUtils.init({ equipmentSlots, TOOL_ITEM_DEFS, actionLabels, calendar });
+
       function makeDefaultGear() {
         return {
           // Weakest-possible verdigris metal (see VERDIGRIS_METAL_KEYS/
@@ -2138,10 +2143,6 @@
             localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           }
         } catch {}
-      }
-
-      function esc(s) {
-        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       }
 
       // World object system handles sell+supply (see below)
@@ -3294,7 +3295,7 @@
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
               if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
-                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
+                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? window.FormatUtils.clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
                   cropAge: t.crop && t.crop !== CropType.NONE ? t.cropAge : undefined,
                   cropReady: t.crop && t.crop !== CropType.NONE ? !!t.cropReady : undefined });
               }
@@ -3358,7 +3359,7 @@
             grid[r][c].type = type;
             // Older layouts omit depth; treat those trenches as fully dug.
             grid[r][c].depth = type === TileType.TRENCH
-              ? (Number.isFinite(depth) ? clamp(depth, 0, 1) : 1)
+              ? (Number.isFinite(depth) ? window.FormatUtils.clamp(depth, 0, 1) : 1)
               : 0;
             grid[r][c].crop = crop || CropType.NONE;
             if (crop) {
@@ -3788,7 +3789,7 @@
             cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           if (Math.abs(iy) > 0.001) {
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
           }
           return;
         }
@@ -4126,8 +4127,8 @@
           const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
           window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
         }
-        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
-        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
+        const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, gridCols - 1);
+        const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + groundLift, y / TILE);
         _markPngPlane(avatarRef.group);
@@ -4786,9 +4787,9 @@
           const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
           const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
           if (horizDist < 0.05) return 0;
-          return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+          return window.FormatUtils.clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
         }
-        return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+        return window.FormatUtils.clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
 
       // Shared player melee direction. A hostile under the centered reticle
@@ -4809,7 +4810,7 @@
       }
       function currentPlayerMeleeAimPitch() {
         const direction = currentPlayerMeleeAimDirection();
-        return Math.asin(clamp(Number(direction?.y) || 0, -1, 1));
+        return Math.asin(window.FormatUtils.clamp(Number(direction?.y) || 0, -1, 1));
       }
 
       // Used by updateAmbientCues() to duck exploration/dawn music during a
@@ -4949,7 +4950,7 @@
           const targetAzimuthDeg = wrapAzimuthDeg(-(aimAngle * 180 / Math.PI) - 90 - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
           const diffDeg = angleDiff(THREE.MathUtils.degToRad(targetAzimuthDeg), THREE.MathUtils.degToRad(cameraAzimuthOffsetDeg)) * 180 / Math.PI;
           const maxStepDeg = MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC * dt;
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + clamp(diffDeg, -maxStepDeg, maxStepDeg));
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + window.FormatUtils.clamp(diffDeg, -maxStepDeg, maxStepDeg));
         } else {
           mouseLookAngle = aimAngle;
           targetAimAngle = aimAngle;
@@ -5173,8 +5174,8 @@
 
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
-        const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
-        const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
+        const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
+        const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
         // spawn) uses that branch's own height instead of terrain-follow —
         // same override the player gets while climbing/on a branch.
@@ -5208,7 +5209,7 @@
         if (c.isBandit) {
           const banditSpeed = Math.hypot(c.vx || 0, c.vy || 0);
           if (banditSpeed > 5) {
-            const bobEffort = clamp(banditSpeed / ((c.def.moveSpeed || MOVE_SPEED) * devGlobalSpeedMul), 0, 1);
+            const bobEffort = window.FormatUtils.clamp(banditSpeed / ((c.def.moveSpeed || MOVE_SPEED) * devGlobalSpeedMul), 0, 1);
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
@@ -5219,7 +5220,7 @@
         // creature or float with it during a pounce crouch.
         if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         if (window.ResourceRings) {
-          const ringRadius = clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
+          const ringRadius = window.FormatUtils.clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
           const ringScene = c.scene || scene;
           // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
           // a red target-lock ring renders around a hostile's resource rings
@@ -6078,8 +6079,8 @@
           // to rest by that block's own unconditional _restoreCompanionHead.
           window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
-          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
-          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           // One line per AI-state transition for den-spawned wildlife (not
           // scripted combat-card creatures, which have no denKey) — lets the
@@ -6312,7 +6313,7 @@
         const state = _fallbackCompanionHeadState(c);
         if (!state) return;
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentDeg += clamp(targetDeg - state.currentDeg, -step, step);
+        state.currentDeg += window.FormatUtils.clamp(targetDeg - state.currentDeg, -step, step);
         const radians = state.currentDeg * Math.PI / 180;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.x = state.baseFrontX + radians;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.x = state.baseBackX + radians;
@@ -6508,9 +6509,9 @@
           }
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
-        state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
-        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentLeanDeg += window.FormatUtils.clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -7297,8 +7298,8 @@
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
-          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
-          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
@@ -8550,8 +8551,8 @@
         player.knockbackT = Math.max(0, player.knockbackT - dt);
         const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
-        const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+        const desiredX = window.FormatUtils.clamp(player.x + player.knockbackVX * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + player.knockbackVY * dt, minY, maxY);
         const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
         player.x = kbSwept.x; player.y = kbSwept.y;
         if (kbSwept.blockedX) player.knockbackVX = 0;
@@ -8565,8 +8566,8 @@
         player.proneThrowT = Math.max(0, player.proneThrowT - dt);
         const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
-        const desiredY = clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
+        const desiredX = window.FormatUtils.clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
         const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
         player.x = swept.x; player.y = swept.y;
         if (swept.blockedX) player.proneThrowVX = 0;
@@ -8720,7 +8721,7 @@
         player.lungeStartY = player.y;
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
-        const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
+        const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
         const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
           || { distancePx, hopUnits, pitch: aimPitch };
         player.lungeDirX = Math.cos(aimYaw);
@@ -10113,21 +10114,21 @@
           enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
-          const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
-          const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, INTERIOR_COLS - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
           player.x = (c + 0.5) * TILE;
           player.y = (r + 0.5) * TILE;
         } else if (t.target === 'town') {
           const tcols = _townZone?.cols || 60, trows = _townZone?.rows || 50;
-          const c = clamp(t.targetCol, 0, tcols - 1);
-          const r = clamp(t.targetRow, 0, trows - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, tcols - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, trows - 1);
           enterTown(c, r);
         } else if (t.target === 'zone') {
           enterZone(t.targetMapId, t.targetCol, t.targetRow);
         } else { // 'farm'
           _returnToFarmMeshes();
-          const c = clamp(t.targetCol, 0, COLS - 1);
-          const r = clamp(t.targetRow, 0, ROWS - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, COLS - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, ROWS - 1);
           player.x = (c + 0.5) * TILE;
           player.y = (r + 0.5) * TILE;
         }
@@ -10227,14 +10228,14 @@
       function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
       function clampDialogueZoomPercent(value) {
         const cfg = dialogueZoomConfig();
-        return clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
+        return window.FormatUtils.clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
       }
       function dialogueZoomFactor() {
         const cfg = dialogueZoomConfig();
         const minPercent = cfg.minPercent ?? 0;
         const maxPercent = cfg.maxPercent ?? 100;
         const range = Math.max(0.001, maxPercent - minPercent);
-        const normalized = clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
+        const normalized = window.FormatUtils.clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
         return 1 + normalized * ((cfg.maxZoomFactor ?? 2.5) - 1);
       }
       function setDialogueCameraZoomPercent(value) {
@@ -11244,7 +11245,7 @@
                 const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * 0.2;
                 if (this._moveSpeedTiles > 0.05) {
-                  const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                  const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
                   root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
                 }
                 groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
@@ -11392,7 +11393,7 @@
             // above) approaches its own max (cfg.speedTilesPerSecond),
             // rather than a flat distance whenever it's walking at all.
             if (this._moveSpeedTiles > 0.05) {
-              const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+              const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
               root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
             }
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
@@ -12694,8 +12695,8 @@
         const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
         const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
         return {
-          col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
-          row: clamp(northRow, 0, fallbackRows - 1)
+          col: window.FormatUtils.clamp(Math.round(avgCol), 0, fallbackCols - 1),
+          row: window.FormatUtils.clamp(northRow, 0, fallbackRows - 1)
         };
       }
 
@@ -15262,7 +15263,7 @@
       // still-null-at-this-point `scene`/`townScene`/SLAB_H/WATER_UNIT/etc).
       window.WaterSystem.init({
         calendar, TileType, ROWS, COLS, MAX_WATER, RAIN_RATE,
-        clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
+        clamp: window.FormatUtils.clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
         getGrid: () => grid,
         getTownGrid: () => townGrid,
         getTownZone: () => _townZone,
@@ -15536,7 +15537,7 @@
         _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
-          return { col: clamp(Math.floor(_edHit.x), 0, COLS - 1), row: clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
+          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, COLS - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
         }
         return null;
       }
@@ -15551,7 +15552,7 @@
         _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
-          return { col: clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
+          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
         }
         return null;
       }
@@ -15717,8 +15718,8 @@
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * DODGE_SPEED_PX;
@@ -15786,8 +15787,8 @@
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
-          const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          const desiredX = window.FormatUtils.clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
           // Swept, not a single endpoint check — this recomputes an absolute
           // target from total elapsed progress every frame (ease-out is
           // fastest right at the start), so a big lunge like Charged
@@ -15830,7 +15831,7 @@
         // but preserve joystick throw strength so thumb distance controls walk/run.
         let inputStrength = 0;
         if (inputLen > 0.001) {
-          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
+          inputStrength = usingKeyboard ? 1 : window.FormatUtils.clamp(inputLen, 0, 1);
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
@@ -15916,8 +15917,8 @@
           const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
           const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
-          player.vx += clamp(targetVx - player.vx, -step, step);
-          player.vy += clamp(targetVy - player.vy, -step, step);
+          player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
+          player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
@@ -15937,8 +15938,8 @@
         const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = player.x + player.vx * dt;
         const desiredY = player.y + player.vy * dt;
-        const nextX = clamp(desiredX, minX, maxX);
-        const nextY = clamp(desiredY, minY, maxY);
+        const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
+        const nextY = window.FormatUtils.clamp(desiredY, minY, maxY);
         const moveStartX = player.x;
         const moveStartY = player.y;
 
@@ -16009,7 +16010,7 @@
           } else {
             const diff = angleDiff(facingAngle, camFacing);
             if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
-              const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+              const targetFacing = camFacing + window.FormatUtils.clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
               const turnDiff = angleDiff(targetFacing, facingAngle);
               facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
             }
@@ -16049,8 +16050,8 @@
         }
 
         // ── Boundary clamp ────────────────────────────────────
-        player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
-        player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+        player.x = window.FormatUtils.clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
+        player.y = window.FormatUtils.clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
 
         tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
@@ -16106,8 +16107,8 @@
             // A small forward component rounds corners; the tangent-only
             // fallback still slides along a flat wall when forward is blocked.
             for (const forwardScale of [0.22, 0]) {
-              const candidateX = clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
-              const candidateY = clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
+              const candidateX = window.FormatUtils.clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
+              const candidateY = window.FormatUtils.clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
               if (!canPlayerOccupy(candidateX, candidateY)) continue;
               player.x = candidateX;
               player.y = candidateY;
@@ -16345,7 +16346,7 @@
 
       function getMacheteTargets(col, row, action) {
         const acols = getActiveCols(), arows = getActiveRows();
-        const clampedCenter = { col: clamp(col, 0, acols - 1), row: clamp(row, 0, arows - 1) };
+        const clampedCenter = { col: window.FormatUtils.clamp(col, 0, acols - 1), row: window.FormatUtils.clamp(row, 0, arows - 1) };
         if (action !== 'slash' && action !== 'hack') return [clampedCenter];
 
         // Slash uses a simple three-tile cone: the aimed tile plus its two side tiles relative to facing.
@@ -16404,10 +16405,10 @@
         const cols = getActiveCols(), rows = getActiveRows();
         const radiusTiles = Math.max(0, rangePx) / TILE;
         const centerCol = fromX / TILE, centerRow = fromY / TILE;
-        const minCol = clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
-        const maxCol = clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
-        const minRow = clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
-        const maxRow = clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
+        const minCol = window.FormatUtils.clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
+        const maxCol = window.FormatUtils.clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
+        const minRow = window.FormatUtils.clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
+        const maxRow = window.FormatUtils.clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
         let cleared = 0;
 
         for (let row = minRow; row <= maxRow; row++) {
@@ -17023,7 +17024,7 @@
       }
 
       function applyAction(tool, action, col, row) {
-        if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${actionName(action)} cannot be used on that tile.` };
+        if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${window.FormatUtils.actionName(action)} cannot be used on that tile.` };
         const tile = getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
@@ -17595,8 +17596,8 @@
         const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
         const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
-          col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
-          row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
+          col: window.FormatUtils.clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
+          row: window.FormatUtils.clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
           dir,
           probeX,
           probeY
@@ -18651,7 +18652,7 @@
               const alpha = 1 - Math.exp(-8 * dt);
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
-            safeDist = clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
             _seatedCameraDebug = {
               idealDistance: dist,
               directHitDistance,
@@ -18667,7 +18668,7 @@
             _seatedCameraDebug = null;
           }
           if (safeDist < dist - 1e-4) {
-            const shrink = clamp(1 - safeDist / dist, 0, 1);
+            const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
             // the wall-only frozen view in the Pixel Probe report.
@@ -18697,7 +18698,7 @@
         if (resultY < minCameraY) {
           const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
           if (dy < -1e-4) {
-            const t = clamp((minCameraY - lookAtY) / dy, 0, 1);
+            const t = window.FormatUtils.clamp((minCameraY - lookAtY) / dy, 0, 1);
             resultX = lookAtX + dx * t;
             resultY = lookAtY + dy * t;
             resultZ = lookAtZ + dz * t;
@@ -19008,7 +19009,7 @@
               const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
               if (distFromPlayer > fadeStartAt) {
                 const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
-                target = Math.min(target, clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+                target = Math.min(target, window.FormatUtils.clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
               }
               outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
             }
@@ -19360,7 +19361,7 @@
           float baseAlpha = uDepth;  // opacity = depth fraction exactly
 
           vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+          float finalAlpha  = window.FormatUtils.clamp(baseAlpha + detailAlpha, 0.0, 0.92);
 
           gl_FragColor = vec4(surfaceColor, finalAlpha);
         }
@@ -20942,7 +20943,7 @@
           rangePx,
           halfConeRad: halfConeRad ?? 0,
           angle: angle ?? Math.atan2(aimDirection.z, aimDirection.x),
-          pitch: pitch ?? Math.asin(clamp(aimDirection.y, -1, 1)),
+          pitch: pitch ?? Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1)),
         };
       }
 
@@ -21330,9 +21331,9 @@
       let _heldDrinkAnimDuration = 0;
 
       function heldActionPoseAt(animation, progress) {
-        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
-        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
-        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const windupFrac = window.FormatUtils.clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = window.FormatUtils.clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = window.FormatUtils.clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
         const neutral = animation.poses?.neutral || {};
         const windup = animation.poses?.windup || neutral;
         const strike = animation.poses?.strike || windup;
@@ -21406,7 +21407,7 @@
         actionLocks: window.CharacterActionLocks,
         playerParticipantId: PLAYER_ACTION_LOCK_ID,
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         getCurrentArea: () => currentArea,
         getActiveTool: () => activeTool,
         getActiveScene,
@@ -22790,8 +22791,8 @@
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
-        const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
-        const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
+        const col = window.FormatUtils.clamp(Math.floor(wx), 0, getActiveCols()-1);
+        const row = window.FormatUtils.clamp(Math.floor(wz), 0, getActiveRows()-1);
         const tile = getActiveTileAt(col, row);
         // While climbing, the player is mid-crossing through impassable
         // incline tiles — use the scripted start->landing blend from
@@ -22928,7 +22929,7 @@
         // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
-          const bobEffort = clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
+          const bobEffort = window.FormatUtils.clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
           playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
         }
         // Suppressed (legs stay visible but just hang straight down from
@@ -23225,12 +23226,13 @@
       // bottom of this file, which run too late) since buildBorderTerrain()
       // below needs it immediately — every other dep it captures by closure
       // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
-      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass/clamp)
-      // is already declared above this point, or (clamp, a function
-      // declaration) hoisted regardless of where it's written.
+      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass) is
+      // already declared above this point, or (window.FormatUtils.clamp,
+      // loaded via its own <script> tag before game.js) already available
+      // regardless of where it's written.
       window.BorderTerrain?.init({
         COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
-        resolveTileMat, resolveCliffMat, clamp,
+        resolveTileMat, resolveCliffMat, clamp: window.FormatUtils.clamp,
         mbRng: _mbRng,
         markOutline: _markOutline,
         grassBladeGeo: _grassBladeGeo,
@@ -23684,7 +23686,7 @@
       // window.BanditCombatLog.captureSnapshotText() if needed elsewhere.
 
       document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
-        devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
+        devGlobalSpeedMul = window.FormatUtils.clamp(Number(e.target.value) || 100, 25, 300) / 100;
         const label = document.getElementById('devSpeedMulLabel');
         if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
       });
@@ -23764,7 +23766,7 @@
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
         const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
-        s_zoomScale = clamp(Number(value) || 1.5, min, max);
+        s_zoomScale = window.FormatUtils.clamp(Number(value) || 1.5, min, max);
         const zoomSetting = document.getElementById('settingZoom');
         if (zoomSetting) zoomSetting.value = String(s_zoomScale);
         updateCameraPosition();
@@ -24042,12 +24044,12 @@
             const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
-              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
             // Inverted relative to X on purpose — matches the desktop
             // Shift-drag/plain-mouselook convention just below (+movementY
             // pitches the same way), whereas the raw touch delta this knob
             // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -26011,7 +26013,7 @@
 
       function updateHud() {
         const season = window.CalendarSystem.currentSeason();
-        const clock  = formatClock(window.CalendarSystem.getHour());
+        const clock  = window.FormatUtils.formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
         const seasonText = season.emoji + ' ' + season.name;
@@ -26042,7 +26044,7 @@
           const dayText = window.CalendarSystem.formatCalendarDate();
           if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
         }
-        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        const toolText = heldMode === 'none' ? '✋ Hands free' : window.FormatUtils.toolEmoji(activeTool) + ' ' + window.FormatUtils.actionName(activeAction);
         if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
 
         // Reticle tile info
@@ -26096,50 +26098,6 @@
 
       function updateDebugPage() { /* debug panel removed from menu */ }
 
-      function toolEmoji(tool) {
-        const equipped = equipmentSlots[tool];
-        if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
-        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
-      }
-
-      function nextRainText() {
-        if (!calendar.nextRainWindows.length) return 'No rain scheduled today';
-        const hour = window.CalendarSystem.getHour();
-        const next = calendar.nextRainWindows.find((window) => hour < window.end);
-        if (!next) return 'Rain has passed for today';
-        return `Next flow ${formatClock(next.start)}-${formatClock(next.end)}`;
-      }
-
-      function formatClock(hourValue) {
-        const hour = Math.floor(hourValue);
-        const minute = Math.floor((hourValue - hour) * 60 / 10) * 10;
-        const suffix = hour >= 12 ? 'PM' : 'AM';
-        const displayHour = ((hour + 11) % 12) + 1;
-        return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
-      }
-
-      function actionEmoji(action) {
-        return actionLabels[action]?.[0] || '❔';
-      }
-
-      function actionName(action) {
-        if (action.startsWith('place_')) return 'Place';
-        if (action.startsWith('obj_process_')) return 'Process';
-        return actionLabels[action]?.[1] || action;
-      }
-
-      function toolName(tool) {
-        const equipped = equipmentSlots[tool];
-        const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
-        if (def) return `${def.icon} ${def.label}`;
-        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
-      }
-
-      function seededRandom(seed) {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      }
-
       function handleJoystickPointerDown(event) {
         input.joystickPointerId = event.pointerId;
         // setPointerCapture can throw ("No active pointer with the given id
@@ -26181,7 +26139,7 @@
         const activeRadius = Math.max(32, Math.min(JOYSTICK_RADIUS, rect.width * 0.42)); // Used below to clamp knob travel for the current screen-sized joystick.
         const angle = Math.atan2(rawY, rawX);
         const clamped = Math.min(distance, activeRadius);
-        const rawMagnitude = clamp(clamped / activeRadius, 0, 1);
+        const rawMagnitude = window.FormatUtils.clamp(clamped / activeRadius, 0, 1);
         const remapped = rawMagnitude <= JOYSTICK_DEADZONE
           ? 0
           : Math.pow((rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE), JOYSTICK_RESPONSE);
@@ -26210,8 +26168,8 @@
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
-          `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
+          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
+          `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
@@ -26236,20 +26194,6 @@
           showToast('Copy failed — log visible in Debug tab.', false);
           debugLog(`copy debug log failed: ${error.message}`, 'error');
         }
-      }
-
-      function clamp(value, min, max) {
-        return Math.max(min, Math.min(max, value));
-      }
-
-      function roundRect(context, x, y, width, height, radius) {
-        context.beginPath();
-        context.moveTo(x + radius, y);
-        context.arcTo(x + width, y, x + width, y + height, radius);
-        context.arcTo(x + width, y + height, x, y + height, radius);
-        context.arcTo(x, y + height, x, y, radius);
-        context.arcTo(x, y, x + width, y, radius);
-        context.closePath();
       }
 
       function doReset() {
@@ -27399,7 +27343,7 @@
         const distance = Math.hypot(rawX, rawY);
         const angle = Math.atan2(rawY, rawX);
         const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
-        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const rawMagnitude = window.FormatUtils.clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
         const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
           ? 0
           : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
@@ -27557,8 +27501,8 @@
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
-              : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
             return;
           }
@@ -27842,7 +27786,7 @@
         calendar,
         player,
         TILE,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         debugLog,
         getCurrentArea: () => currentArea,
         getPaused: () => paused,
@@ -27863,7 +27807,7 @@
         TileType,
         TILE,
         MAX_WATER,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
         _isBuildingArea,
@@ -28031,8 +27975,8 @@
         },
         worldSurfaceY: (x, y) => {
           const grid = getActiveGrid();
-          const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
-          const row = clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
+          const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
           return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
         },
         canOccupyAt,
@@ -28079,7 +28023,7 @@
         MOUSE_IDLE_MS,
         isDesktop,
         rnd,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         angleDiff,
         canPlayerOccupy,
         getAlchemySpeedMul: window.AlchemySystem.getSpeedMul,
@@ -28114,7 +28058,7 @@
       });
 
       window.Fishing?.init({
-        clamp,
+        clamp: window.FormatUtils.clamp,
         getActiveScene,
         currentSeason: window.CalendarSystem.currentSeason,
         getHour: window.CalendarSystem.getHour,
@@ -28224,7 +28168,7 @@
 
       window.BanditCombat?.init({
         rnd,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         debugLog,
         TILE,
         // Used only for the "Show Interaction Raycast" debug overlay's
@@ -28276,7 +28220,7 @@
         getCurrentArea: () => currentArea,
       });
 
-      window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+      window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
 
       window.CookingSystem?.init({
         ITEM_DEFS,
@@ -28377,10 +28321,10 @@
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
         calendar,
-        esc,
+        esc: window.FormatUtils.esc,
         getPackClothing: () => packClothing,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
-        seededRandom,
+        seededRandom: window.FormatUtils.seededRandom,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
       });
 
@@ -28393,7 +28337,7 @@
         getHousePieceDeeds: () => Object.fromEntries(Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem)),
         FURNITURE_BLUEPRINT_CATALOG,
         lootShopWorldState: _lootShopWorldState,
-        esc,
+        esc: window.FormatUtils.esc,
       });
 
       // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
@@ -28404,11 +28348,11 @@
 
       window.WeatherFX?.init({
         calendar,
-        seededRandom,
+        seededRandom: window.FormatUtils.seededRandom,
         getGrid: () => grid,
         ROWS, COLS,
         TileType,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         showToast,
         debugLog,
         worldToOverlay,
@@ -28515,7 +28459,7 @@
         _loadWorldLivestock,
         worldObjects,
         animalObjects,
-        esc,
+        esc: window.FormatUtils.esc,
         hasFarmPermission,
         getBarnTiers: () => BARN_TIERS,
         getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
@@ -28564,7 +28508,7 @@
 
       window.TasksPanel?.init({
         ITEM_DEFS,
-        esc,
+        esc: window.FormatUtils.esc,
         WMAP_ZONE_LABELS,
         getQuestProgress: () => questProgress,
         inventory,
@@ -28603,7 +28547,7 @@
         toolMasteryLevel,
         devBumpToolMasteryLevel,
         metalToolImgSrc,
-        esc,
+        esc: window.FormatUtils.esc,
         refreshPlayerAvatar,
         buildInventoryGrid,
         clearInventoryDetail,
@@ -28656,7 +28600,7 @@
       });
 
       window.WildlifeDebugPanel?.init({
-        esc,
+        esc: window.FormatUtils.esc,
         _zoneLayouts,
         hostileObjects,
         getCurrentArea: () => currentArea,
@@ -28701,7 +28645,7 @@
         showToast,
         buildInventoryGrid,
         saveMemberWorldData,
-        esc,
+        esc: window.FormatUtils.esc,
       });
 
       window.DevSpawner?.init({
@@ -28722,8 +28666,8 @@
         buildZoneScene,
         COLS, ROWS, TILE,
         CREATURE_DB,
-        esc,
-        clamp,
+        esc: window.FormatUtils.esc,
+        clamp: window.FormatUtils.clamp,
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
@@ -28759,7 +28703,7 @@
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
-        esc,
+        esc: window.FormatUtils.esc,
         isPaused: () => paused,
         isDevMode: () => s_devMode,
       });
@@ -28917,7 +28861,7 @@
         buildInventoryGrid,
         buildEquipmentSlots: window.EquipmentPanel.buildEquipmentSlots,
         saveMemberWorldData,
-        esc,
+        esc: window.FormatUtils.esc,
         getGearInventory: () => gearInventory,
         saveGearInventory,
         metalBarItemKey,
@@ -28971,7 +28915,7 @@
         TILE,
         isSolid,
         tileSurfaceYInArea,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         getMountRideState: () => window.Mounts?.rideState ?? 'none',
         showToast,
         setFacingAngle: (v) => { facingAngle = v; },
@@ -29031,7 +28975,7 @@
 
       window.RelationshipsPanel?.init({
         npcWalkers,
-        esc,
+        esc: window.FormatUtils.esc,
       });
 
       window.CalendarSystem?.init({
@@ -29052,7 +28996,7 @@
         calendar,
         inventory,
         showToast,
-        esc,
+        esc: window.FormatUtils.esc,
         buildInventoryGrid,
         saveMemberWorldData,
       });
@@ -29267,7 +29211,7 @@
         getFarmBuildings: () => farmBuildings,
         inventory,
         ITEM_DEFS,
-        esc,
+        esc: window.FormatUtils.esc,
         showToast,
         buildInventoryGrid,
         refreshActionBar,
@@ -29338,7 +29282,7 @@
         TILE,
         COLS,
         ROWS,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         canOccupyAt,
         characterGroundShadowSurfaceOffset,
         tileSurfaceYInArea,
@@ -29407,7 +29351,7 @@
       });
 
       window.BanditCamps?.init({
-        clamp,
+        clamp: window.FormatUtils.clamp,
         rnd,
         debugLog,
         TILE,
@@ -30124,7 +30068,7 @@
           const p = payload.camera3d.worldPos, t = payload.camera3d.worldTarget;
           const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z;
           const distance = Math.max(0.5, Math.hypot(dx, dy, dz));
-          const angleFromGroundDeg = Math.asin(clamp(dy / distance, -1, 1)) * 180 / Math.PI;
+          const angleFromGroundDeg = Math.asin(window.FormatUtils.clamp(dy / distance, -1, 1)) * 180 / Math.PI;
           const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
           const shotModeKey = 'cutscenePreviewShot';
           window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
