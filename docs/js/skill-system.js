@@ -193,9 +193,11 @@
   }
 
   function actionSpeedMultiplier(skillKey) {
-    if (skillKey === 'foraging') return 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1; // Increase Foraging Speed perk.
-    if (skillKey === 'mining') return 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
-    return 1 + normalizedPower(skillKey) * 0.5; // Used to shorten pick and digging action stages.
+    let skillSpeed = 1 + normalizedPower(skillKey) * 0.5; // Used as the skill-owned action baseline before temporary alchemy modifiers.
+    if (skillKey === 'foraging') skillSpeed = 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1; // Increase Foraging Speed perk.
+    else if (skillKey === 'mining') skillSpeed = 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
+    const strengthWorkSpeed = ['foraging', 'mining', 'farming'].includes(skillKey) ? (window.AlchemySystem?.getWorkSpeedMultiplier?.() || 1) : 1; // Used to apply Strength only to chop, mine, and dig actions.
+    return skillSpeed * strengthWorkSpeed;
   }
 
   function attackMultiplier() {
