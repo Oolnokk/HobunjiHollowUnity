@@ -93,7 +93,8 @@ assert.match(game, /getOutgoingDamageMultiplier/, 'combat consumes potion outgoi
 assert.match(game, /getFootingDamageMultiplier/, 'combat consumes potion Footing damage');
 assert.match(fish, /gurumahi: 'strength'[\s\S]{0,80}rockscale: 'fortitude'[\s\S]{0,80}sixfin: 'speed'/, 'fish species have distinct cooking buffs');
 assert.match(fish, /cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES\[f\.species\]/, 'live fish expose species cooking buffs');
-assert.match(cooking, /def\.cookingPrimaryEffect \|\| defaultPrimaryEffectForCategories/, 'cooking consumes live item cookingPrimaryEffect metadata');
+assert.match(cooking, /definition\.cookingPrimaryEffect \|\|= 'fishing'/, 'cooking preserves fish-specific effects and only falls back to fishing when missing');
+assert.match(cooking, /totals\[definition\.cookingPrimaryEffect\]/, 'cooked-food effect totals consume each ingredient cookingPrimaryEffect');
 console.log('Strength and fish buff tests passed');
 ''', encoding='utf-8')
 
