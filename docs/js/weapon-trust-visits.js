@@ -61,7 +61,42 @@
     return (cfg.gifts || []).filter(giftEligible);
   }
 
+  function emptyTrustConditions(gift, requireRelationship = true) {
+    return {
+      weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
+      relationship: { min: requireRelationship ? requiredHearts(gift) : null, max: null },
+    };
+  }
+
   function dialogueTreeFromGift(gift) {
+    // Simple visits can remain a line list. Visits that need choices, sequences,
+    // or custom node topology may instead provide an ordinary Dialogue Editor
+    // tree under gift.dialogueTree; the runtime adds only trust-event metadata.
+    if (gift?.dialogueTree && Array.isArray(gift.dialogueTree.nodes)) {
+      const tree = clone(gift.dialogueTree);
+      const required = emptyTrustConditions(gift, true);
+      const excluded = emptyTrustConditions(gift, false);
+      tree.id = gift.dialogueTreeId;
+      tree.label = gift.dialogueLabel || tree.label || `Trust Gift — ${gift.shapeKey}`;
+      tree.trigger = 'weaponTrustVisit';
+      tree.priority = Number.isFinite(Number(tree.priority)) ? Number(tree.priority) : 99;
+      tree.visibility = tree.visibility || 'any';
+      tree.conditions = {
+        ...required,
+        ...(tree.conditions || {}),
+        relationship: { ...required.relationship, ...(tree.conditions?.relationship || {}) },
+      };
+      tree.excludeConditions = {
+        ...excluded,
+        ...(tree.excludeConditions || {}),
+        relationship: { ...excluded.relationship, ...(tree.excludeConditions?.relationship || {}) },
+      };
+      tree.entryNode = tree.entryNode || tree.nodes[0]?.id || null;
+      tree.weaponTrustGiftId = gift.id;
+      tree.generatedFromWeaponTrustVisitConfig = true;
+      return tree;
+    }
+
     const lines = Array.isArray(gift.dialogueLines) && gift.dialogueLines.length
       ? gift.dialogueLines
       : ['I trust you enough that I wanted you to have this.'];
@@ -83,14 +118,8 @@
       trigger: 'weaponTrustVisit',
       priority: 99,
       visibility: 'any',
-      conditions: {
-        weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
-        relationship: { min: requiredHearts(gift), max: null },
-      },
-      excludeConditions: {
-        weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [],
-        relationship: { min: null, max: null },
-      },
+      conditions: emptyTrustConditions(gift, true),
+      excludeConditions: emptyTrustConditions(gift, false),
       entryNode: nodes[0]?.id || null,
       nodes,
       weaponTrustGiftId: gift.id,
