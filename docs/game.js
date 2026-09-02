@@ -2569,7 +2569,7 @@
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           saveFarmLayout();
           saveMemberWorldData();
-          refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
           showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
         }
@@ -2733,7 +2733,7 @@
         obj.reset?.();
         if (def?.itemKey) { inventory[def.itemKey] = (inventory[def.itemKey] || 0) + 1; clampInventoryStack(def.itemKey); }
         saveFarmLayout();
-        refreshItemScroll();
+        window.HudUpdate.refreshItemScroll();
         return { ok: true, message: `${def?.icon || '⚙️'} ${def?.name || 'Processing furniture'} returned to inventory.` };
       }
 
@@ -2927,7 +2927,7 @@
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner });
         if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
         registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
-        refreshItemScroll();
+        window.HudUpdate.refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
       }
@@ -2977,7 +2977,7 @@
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         disposeDecorativeFurniture(obj, true);
         saveFarmLayout();
-        refreshItemScroll();
+        window.HudUpdate.refreshItemScroll();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} returned to inventory.` };
       }
 
@@ -8986,7 +8986,7 @@
             clampInventoryStack(active.key);
             const out = outputs[0];
             inventory[out.key] = Math.min(99, (inventory[out.key] || 0) + 1);
-            refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+            window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
             saveMemberWorldData();
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processHandmill);
             return { ok: true, message: `⚙️ Ground 1 ${ITEM_DEFS[out.key]?.label || out.key}.` };
@@ -14756,7 +14756,7 @@
             mkBtn('🎨 Use', 'equip', () => {
               const result = useMysteryDye(key);
               showToast(result.message, result.ok);
-              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+              if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); saveMemberWorldData(); }
             });
           }
           // Alchemical items follow the same physical held-item language as
@@ -14767,7 +14767,7 @@
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
               heldMode = 'item';
-              refreshItemScroll(); refreshActionBar(); closeMenu();
+              window.HudUpdate.refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
           // Materials/etc that isWheelEligible excludes from the wheel
@@ -14787,7 +14787,7 @@
             mkBtn('🍲 Eat', 'equip', () => {
               const result = window.CookingSystem.eat(key);
               showToast(result.message, result.ok !== false);
-              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
+              if (result.ok !== false) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
             });
           }
           if (def.sellPrice > 0 && count > 0) {
@@ -14797,7 +14797,7 @@
               delete inventory[key];
               showToast(`Sold all ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
-              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
             mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
@@ -14806,7 +14806,7 @@
               clampInventoryStack(key);
               showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
-              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
           }
@@ -14828,7 +14828,7 @@
             mkBtn('Add to Stable', 'equip', () => {
               const result = window.FarmAnimals.addToStable(key);
               showToast(result.message, result.ok);
-              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); }
+              if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); }
             });
           }
 
@@ -16990,7 +16990,7 @@
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${window.HudUpdate.contextualActionLabel(action, tile)}.`;
           awardToolUseMasteryXp('shovel');
           window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, action);
           return { ok: true, message: digMsg };
@@ -24042,7 +24042,7 @@
         window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
-        updateHud();
+        window.HudUpdate.updateHud();
         requestAnimationFrame(gameLoop);
       }
 
@@ -24521,7 +24521,7 @@
           if (index < 0) return;
           activeItemIndex = index;
           heldMode = 'item';
-          refreshItemScroll(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); refreshActionBar();
         }
 
         const CURE_FAMILY_ICONS = { damage: '🩸', control: '🌀', offensiveDebuff: '⚔️', defensiveDebuff: '🛡️' }; // Four-family selector vocabulary.
@@ -24690,7 +24690,7 @@
           } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
             heldMode = 'item';
             activeItemIndex = slot.data.index;
-            refreshItemScroll(); refreshActionBar();
+            window.HudUpdate.refreshItemScroll(); refreshActionBar();
           } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
             const select = slot.data.onSelect;
             if (typeof select === 'function') {
@@ -24734,7 +24734,7 @@
             if (_arcOpen !== 'item') _openItemArc();
             heldMode = 'item';
             cycleActiveInventoryItem(dir);
-            refreshItemScroll(); refreshActionBar();
+            window.HudUpdate.refreshItemScroll(); refreshActionBar();
             _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
             _buildItemSlots();
             _arcSlots.forEach((s, i) => {
@@ -24865,7 +24865,7 @@
                 // Tap while holding a tool or hands-free → switch to item mode.
                 if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
                 heldMode = 'item';
-                refreshItemScroll(); refreshActionBar();
+                window.HudUpdate.refreshItemScroll(); refreshActionBar();
               }
             }
             _iHeld = false; _iMoved = false;
@@ -25041,7 +25041,7 @@
               const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
               const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
               cavernBtns.push({
-                icon, label: contextualActionLabel(action, cavernTile),
+                icon, label: window.HudUpdate.contextualActionLabel(action, cavernTile),
                 action, style: i === 0 ? 'primary' : 'secondary', allowed,
               });
             });
@@ -25187,7 +25187,7 @@
             const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
             btns.push({
-              icon, label: contextualActionLabel(action, tile),
+              icon, label: window.HudUpdate.contextualActionLabel(action, tile),
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
             });
           });
@@ -25605,248 +25605,13 @@
           applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
         }
 
-        if (isDesktop) refreshKeyHud(btns);
+        if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }
 
-      function refreshKeyHud(btns) {
-        if (!keyHudEl) return;
-        const item = getActiveInventoryItem();
-        const reticle = getReticleTile();
-        const tile = grid[reticle.row][reticle.col];
-        const obj  = getWorldObjectAt(reticle.col, reticle.row);
-
-        const parts = [];
-
-        // Tool
-        const _eqItem = equipmentSlots[activeTool];
-        const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
-        const _khFallback = ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
-        const toolInfo = [toolSelectIconHTML(_eqDef, _khFallback[0], '13px'), _eqDef?.label || _khFallback[1]];
-        parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
-        parts.push('<div class="kh-div"></div>');
-
-        // Action buttons → key prompts: first = [Space/E], second = [Q]
-        btns.forEach((b, idx) => {
-          const keyLabel = idx === 0 ? 'E' : idx === 1 ? 'Q' : `F${idx}`;
-          const blocked  = !b.allowed;
-          parts.push(
-            `<div class="kh-group">` +
-            `<span class="kh-key${blocked ? '" style="opacity:0.35' : ''}">${keyLabel}</span>` +
-            `<span class="kh-action ${b.style}${blocked ? ' blocked' : ''}">${b.icon} ${b.label}</span>` +
-            `</div>`
-          );
-        });
-
-        parts.push('<div class="kh-div"></div>');
-
-        // Item scroll
-        if (item) {
-          const count = inventory[item.key] || 0;
-          parts.push(
-            `<div class="kh-group">` +
-            `<span class="kh-key">,</span><span class="kh-label"> </span>` +
-            `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
-            `<span class="kh-label"> </span><span class="kh-key">.</span>` +
-            `</div>`
-          );
-        }
-
-        parts.push('<div class="kh-div"></div>');
-
-        // Tile info
-        const tileStyle = tileStyles[tile.type] || tileStyles.grass;
-        const waterPct  = Math.round((tile.water / MAX_WATER) * 100);
-        parts.push(
-          `<div class="kh-group">` +
-          `<span class="kh-label">${tileStyle.label}` +
-          (obj ? ` · ${obj.label}` : '') +
-          ` · 💧${waterPct}%</span>` +
-          `</div>`
-        );
-
-        parts.push('<div class="kh-div"></div>');
-        parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
-
-        keyHudEl.innerHTML = parts.join('');
-        if (item) {
-          applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key], item.key);
-        }
-      }
-
-      function contextualActionLabel(action, tile) {
-        if (action === 'dig')   return tile.type === TileType.TRENCH ? 'Redig' : 'Dig';
-        if (action === 'fill')  return 'Fill';
-        if (action === 'raise') return tile.type === TileType.RAISED ? 'Lower' : 'Raise';
-        if (action === 'till')  return tile.type === TileType.TILLED ? 'Untill' : 'Till';
-        if (action === 'smooth') return 'Smooth';
-        if (action === 'cut')   return 'Cut';
-        if (action === 'slash') return 'Slash 3×';
-        if (action === 'chop')  return 'Chop';
-        if (action === 'hack')  return 'Hack 3×';
-        if (action === 'mine')  return 'Mine';
-        if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
-        if (action === 'fish') return 'Fish';
-        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
-        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
-        if (action === 'potion_select') return 'Potions';
-        if (action.startsWith('place_')) return 'Place';
-        if (action.startsWith('obj_process_')) return 'Process';
-        return action;
-      }
-
-      // ── Item scroll ────────────────────────────────────────
-      let _lastItemScrollKey = null;
-      function refreshItemScroll(stacks = getInventoryStackItems()) {
-        const n = stacks.length;
-        const iBtnEl = itemBtnEl;
-        if (n === 0) {
-          if (_lastItemScrollKey === 'empty') return;
-          _lastItemScrollKey = 'empty';
-          itemIcon.textContent  = '□';
-          itemName.textContent  = 'EMPTY';
-          itemCount.textContent = '×0';
-          itemCount.className   = 'is-count empty';
-          if (iBtnEl) iBtnEl.textContent = '□';
-          const prevEl = isPrevIconEl;
-          const nextEl = isNextIconEl;
-          clearItemSpriteIcon(itemIcon);
-          clearItemSpriteIcon(iBtnEl);
-          if (prevEl) prevEl.textContent = '□';
-          if (nextEl) nextEl.textContent = '□';
-          clearItemSpriteIcon(prevEl);
-          clearItemSpriteIcon(nextEl);
-          return;
-        }
-        if (activeItemIndex >= n) activeItemIndex = 0;
-        if (activeItemIndex < 0) activeItemIndex = n - 1;
-        const curr = stacks[activeItemIndex];
-        const prev = stacks[(activeItemIndex - 1 + n) % n];
-        const next = stacks[(activeItemIndex + 1) % n];
-        const count = inventory[curr.key] || 0;
-        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
-        if (key === _lastItemScrollKey) return;
-        _lastItemScrollKey = key;
-        // Current item
-        itemIcon.textContent  = curr.icon;
-        itemName.textContent  = curr.label;
-        if (iBtnEl) iBtnEl.textContent = curr.icon;
-        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key], curr.key);
-        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key], curr.key);
-        itemCount.textContent = `×${count}`;
-        itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
-        // Peek icons (prev/next previews)
-        const prevEl = isPrevIconEl;
-        const nextEl = isNextIconEl;
-        if (prevEl) {
-          prevEl.textContent = prev.icon;
-          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
-        }
-        if (nextEl) {
-          nextEl.textContent = next.icon;
-          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key], next.key);
-        }
-      }
-      itemPrev.addEventListener('click', () => {
-        cycleActiveInventoryItem(-1);
-        refreshItemScroll();
-        refreshActionBar();
-      });
-      itemNext.addEventListener('click', () => {
-        cycleActiveInventoryItem(1);
-        refreshItemScroll();
-        refreshActionBar();
-      });
-
-      // Status-pill fields only actually change a few times a (real) second
-      // at most (season/weather/day/gold on world-state events, time once a
-      // simulated minute, tool/tile/water on reticle or equip changes) —
-      // updateHud runs every frame, so each field caches its last-written
-      // string/color and skips the DOM write (and, for spTile/spWater,
-      // the string-building) when nothing changed.
-      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
-
-      function updateHud() {
-        const season = window.CalendarSystem.currentSeason();
-        const clock  = window.FormatUtils.formatClock(window.CalendarSystem.getHour());
-
-        // Season (changes slowly)
-        const seasonText = season.emoji + ' ' + season.name;
-        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
-
-        // Current weather + precipitation rate
-        let weatherText, precipText;
-        if (calendar.isRaining) {
-          const str = calendar.rainStrength;
-          if (str >= 3) {
-            weatherText = '⛈️ Storm';
-            precipText  = '⬇️ heavy';
-          } else {
-            weatherText = '🌧️ Rain';
-            // RAIN_RATE * str * ticks/hr ≈ mm equivalent display
-            const mmEq  = (RAIN_RATE * str * 51).toFixed(1); // ~51 ticks/hr at 0.7s/tick
-            precipText  = `⬇️ ${mmEq}mm/hr`;
-          }
-        } else {
-          weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
-          precipText  = '⬇️ none';
-        }
-        const weatherFull = weatherText + ' ' + precipText;
-        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
-
-        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
-        if (spDay) {
-          const dayText = window.CalendarSystem.formatCalendarDate();
-          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
-        }
-        const toolText = heldMode === 'none' ? '✋ Hands free' : window.FormatUtils.toolEmoji(activeTool) + ' ' + window.FormatUtils.actionName(activeAction);
-        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
-
-        // Reticle tile info
-        const reticle  = getReticleTile();
-        const tile     = getActiveTileAt(reticle.col, reticle.row);
-        const tStyle   = tileStyles[tile.type] || tileStyles.grass;
-        const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
-        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
-
-        const waterPct = Math.round((tile.water / MAX_WATER) * 100);
-        const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
-        const waterText = '💧 ' + depthStr;
-        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
-        const waterColor = waterPct > 80 ? '#4488ff'
-                          : waterPct > 40 ? '#6ec6f0'
-                          : waterPct > 10 ? '#aaddee' : '#888';
-        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
-        if (spGoldAmount && inventory.gold !== _hud.gold) { _hud.gold = inventory.gold; spGoldAmount.textContent = inventory.gold; }
-
-        // Computed once and threaded through below instead of letting
-        // refreshItemScroll/refreshActionBar (and the desktop item pill)
-        // each re-filter-and-sort the whole inventory from scratch — this
-        // runs every frame, and inventory contents don't change nearly
-        // that often.
-        const stacks = getInventoryStackItems();
-
-        // Desktop: show active item in status pill (item scroll is hidden)
-        if (isDesktop) {
-          const item = getActiveInventoryItem(stacks);
-          if (spItem && item) {
-            spItem.style.display = '';
-            spItemDiv.style.display = '';
-            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
-            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
-          }
-        }
-
-        refreshItemScroll(stacks);
-        // refreshActionBar is called after actions and on tool/item change;
-        // the dirty-key check makes it cheap to call here too for reticle updates
-        refreshActionBar(stacks);
-        if (menuOpen) {
-          // Keep wallet display live while menu is open
-          const wd = document.getElementById('invWalletAmount');
-          if (wd) wd.textContent = (inventory.gold || 0);
-        }
-      }
+      // Key HUD row, item-scroll widget, and the per-frame status-pill HUD
+      // refresh now live in js/hud-update.js (window.HudUpdate) — see its
+      // own init(deps) call below for the shared game.js state it's
+      // threaded.
 
       function updateMenuContent() { /* replaced by buildInventoryGrid() */ }
 
@@ -25990,7 +25755,7 @@
         showToast('Farm reset to Stormtide.', true);
         debugLog('prototype reset');
         refreshActionBar();
-        refreshItemScroll();
+        window.HudUpdate.refreshItemScroll();
         closeMenu();
       }
 
@@ -26392,7 +26157,7 @@
         }
         if (actionId === 'itemPrev' || actionId === 'itemNext') {
           cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
-          refreshItemScroll(); refreshActionBar(); return;
+          window.HudUpdate.refreshItemScroll(); refreshActionBar(); return;
         }
         if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
         if (actionId === 'weaponSwitch') { toggleQuickWeaponSwitch(); return; }
@@ -26654,12 +26419,12 @@
         // menu (see the keydown handler above) so both are free here.
         if (key === ',' || key === '[') {
           cycleActiveInventoryItem(-1);
-          refreshItemScroll(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); refreshActionBar();
         }
         if (key === '.' || key === ']') {
           event.preventDefault();
           cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
-          refreshItemScroll(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); refreshActionBar();
         }
 
         // X: context action — climbs/cliff-dives a wall in the current
@@ -27169,7 +26934,7 @@
           showToast(result.message, result.ok);
           window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
           if (result.ok && processingKey) {
-            refreshItemScroll();
+            window.HudUpdate.refreshItemScroll();
             saveFarmLayout();
             saveMemberWorldData();
           }
@@ -27814,7 +27579,7 @@
         inventoryItems,
         inventory,
         clampInventoryStack,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         showToast,
@@ -27849,7 +27614,7 @@
         ITEM_DEFS,
         inventory,
         clampInventoryStack,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         showToast,
@@ -27889,7 +27654,7 @@
         startThrowWindup: () => { _heldThrowAimT = 1; },
         confirmThrowAnimation: () => { _heldThrowAimT = 2; },
         cancelThrowWindup: () => { _heldThrowAimT = 0; },
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
       });
@@ -28163,7 +27928,7 @@
         inventory,
         clampInventoryStack,
         showToast,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(),
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
@@ -28213,7 +27978,7 @@
         hasFarmPermission,
         clampInventoryStack,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
       });
@@ -28303,10 +28068,44 @@
         inventory,
         clampInventoryStack,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         saveMemberWorldData,
         itemIconForKey,
         ITEM_DEFS,
+      });
+
+      window.HudUpdate.init({
+        getGrid: () => grid,
+        getWorldObjectAt,
+        equipmentSlots,
+        getActiveTool: () => activeTool,
+        TOOL_ITEM_DEFS,
+        toolSelectIconHTML,
+        inventory,
+        tileStyles,
+        MAX_WATER,
+        ITEM_DEFS,
+        applyItemSpriteIcon,
+        clearItemSpriteIcon,
+        TileType,
+        getInventoryStackItems,
+        getActiveInventoryItem,
+        getActiveTileAt,
+        getReticleTile,
+        getActiveItemIndex: () => activeItemIndex,
+        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        cycleActiveInventoryItem,
+        getHeldMode: () => heldMode,
+        getActiveAction: () => activeAction,
+        getCurrentArea: () => currentArea,
+        isMenuOpen: () => menuOpen,
+        calendar,
+        RAIN_RATE,
+        isDesktop,
+        refreshActionBar,
+        keyHudEl, itemBtnEl, itemIcon, itemName, itemCount, isPrevIconEl, isNextIconEl,
+        spSeason, spWeather, spTime, spDay, spTool, spTile, spWater, spGoldAmount, spItem, spItemDiv,
+        itemPrev, itemNext,
       });
 
       window.FurniturePlacer?.init({
@@ -28349,7 +28148,7 @@
         inventory,
         clampInventoryStack,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
       });
 
       window.TownZoneBuildings?.init({
@@ -28438,7 +28237,7 @@
         metalBarItemKey,
         metalLabel: metalKey => METAL_DEFS[metalKey]?.label || metalKey,
         showToast,
-        refreshInventory: () => { refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+        refreshInventory: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
         save: saveMemberWorldData,
         travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
       });
@@ -28633,7 +28432,7 @@
         calendar,
         inventory,
         debugLog,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
         NORMAL_TOP,
         _mbRng,
@@ -28702,7 +28501,7 @@
         _seedFromString,
         findZoneFlatEmptyTiles,
         getReagentPlantMaterial,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
       });
 
@@ -28733,7 +28532,7 @@
         _zoneTreasureMeshGroups,
         _zoneTreasureObjects,
         _zoneTreasurePersist,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         debugLog,
@@ -28789,7 +28588,7 @@
         cameraRelativePerps,
         clampInventoryStack,
         getHeldItemKey: () => heldMode === 'item' ? getActiveInventoryItem()?.key || null : null,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
         companionAiTypeForKind,
@@ -28934,7 +28733,7 @@
         showToast,
         saveMemberWorldData,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         buildShippingTransferUI: () => window.ShippingPanel.build(),
         tileSurfaceY,
@@ -29003,7 +28802,7 @@
         inventory,
         clampInventoryStack,
         itemIconForKey,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         saveMemberWorldData,
@@ -29023,7 +28822,7 @@
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
-      refreshItemScroll();
+      window.HudUpdate.refreshItemScroll();
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
       try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }

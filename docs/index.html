@@ -41,6 +41,12 @@
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
   <script src="js/den-nest-system.js?v=20260902mod1"></script>
+  <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
+       refresh, extracted out of game.js; uses window.FormatUtils.
+       toolEmoji/actionName/formatClock, so must load after it and before
+       game.js, which calls window.HudUpdate.init(...) (binds its own
+       itemPrev/itemNext listeners) during its own setup. -->
+  <script src="js/hud-update.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>
