@@ -1,21 +1,48 @@
 (() => {
   'use strict';
 
-  // Shipping Box (daily midnight sale cutoff, resolved when the player leaves
-  // the farm or explicitly passes time) and Supply Box (mail-order supplies,
-  // arrive next day) — the farm's two service world objects.
+  // Shipping Box (daily cutoff + deferred settlement) and Supply Box. All
+  // Shipping Box-specific tuning lives in shipping-box-config.js; this module
+  // owns mutable shipping inventory/accounting state and the farm service API.
   let deps = null;
-  let farmPanelDeps = null; // Used by the Shipping Box row to share the Farm tab's existing building-move UI and world-object map.
-  let shippingBoxInstance = null; // Used by midnight settlement and the Farm tab move integration to address the currently live box object.
-  let shippingMoveArmed = false; // Used to route the next Farm overview click to Shipping Box placement instead of barn placement.
-  let farmBuildingsObserver = null; // Used to restore the Shipping Box row whenever FarmPanel rerenders its Buildings list.
-  let shippingLifecycleTimer = 0; // Used to notice farm-area exits and natural day rollovers without coupling shipping to travel code.
-  let lastObservedDay = null; // Used as the midnight cutoff boundary; calendar.day increments exactly once per new game day.
-  let lastKnownArea = null; // Used to detect the first transition out of the farm context after a pending midnight shipment exists.
-  let lifecycleBusy = false; // Used to prevent a cutoff/settlement pulse from recursively resolving itself.
-  const pendingSaleCounts = Object.create(null); // Used to snapshot only goods that were present at a midnight cutoff; post-midnight deposits remain for the next day.
+  let farmPanelDeps = null;
+  let shippingBoxInstance = null;
+  let shippingMoveArmed = false;
+  let farmBuildingsObserver = null;
+  let shippingLifecycleTimer = 0;
+  let lastObservedDay = null;
+  let lastKnownArea = null;
+  let lifecycleBusy = false;
+  const pendingSaleCounts = Object.create(null);
+
+  function config() {
+    if (!window.ShippingBoxConfig) throw new Error('ShippingBoxConfig must load before FarmCrates.init');
+    return window.ShippingBoxConfig;
+  }
+  const objectCfg = () => config().object;
+  const lifecycleCfg = () => config().lifecycle;
+  const inventoryCfg = () => config().inventory;
+  const farmUiCfg = () => config().farmUi;
+  const actionCfg = () => config().actions;
+  const interactionCfg = () => config().interactionUi;
+
+  function footprintSize() {
+    const fp = objectCfg().footprint;
+    return {
+      width: Math.max(1, Math.round(Number(fp.width))),
+      height: Math.max(1, Math.round(Number(fp.height))),
+    };
+  }
+
+  function footprintKeys(col, row) {
+    const { width, height } = footprintSize();
+    const keys = [];
+    for (let dz = 0; dz < height; dz++) for (let dx = 0; dx < width; dx++) keys.push(`${col + dx},${row + dz}`);
+    return keys;
+  }
 
   function init(injectedDeps) {
+    config(); // Fail early if the tuning module was not loaded.
     deps = injectedDeps;
     lastObservedDay = currentCalendarDay();
     installFarmPanelShippingIntegration();
@@ -24,7 +51,8 @@
   }
 
   function currentCalendarDay() {
-    return Math.max(1, Math.floor(Number(deps?.calendar?.day) || 1));
+    const life = lifecycleCfg();
+    return Math.max(Number(life.minCalendarDay), Math.floor(Number(deps?.calendar?.day) || Number(life.minCalendarDay)));
   }
 
   function pendingSaleTotal() {
@@ -36,23 +64,19 @@
   }
 
   function currentArea() {
-    const panelArea = farmPanelDeps?.getCurrentArea?.(); // Preferred when FarmPanel's dependency bundle exposes the game area's canonical getter.
+    const panelArea = farmPanelDeps?.getCurrentArea?.();
     if (panelArea) return panelArea;
-    const debugArea = window.__climbDebug?.getCurrentArea?.(); // Existing always-on game debug bridge; fallback avoids adding another game.js dependency solely for area reads.
-    return debugArea || null;
+    return window.__climbDebug?.getCurrentArea?.() || null;
   }
 
   function isFarmContext(area) {
-    // The farmhouse interior is still "on the farm" for shipping purposes;
-    // walking into the house must not count as handing the box off for sale.
-    return area === 'farm' || area === 'interior';
+    return lifecycleCfg().farmContextAreas.includes(area);
   }
 
   function captureMidnightCutoff() {
     const day = currentCalendarDay();
     if (lastObservedDay == null) { lastObservedDay = day; return false; }
     if (day < lastObservedDay) {
-      // Farm/world reset: old pending accounting must never leak into the new day-1 world.
       lastObservedDay = day;
       clearPendingSales();
       return false;
@@ -63,8 +87,6 @@
     Object.entries(bin).forEach(([key, count]) => {
       const available = Math.max(0, Number(count) || 0);
       const alreadyPending = Math.max(0, Number(pendingSaleCounts[key]) || 0);
-      // Goods already pending remain physically visible in the box until the
-      // deferred resolution. Only the unscheduled remainder is newly captured.
       const newlyEligible = Math.max(0, available - alreadyPending);
       if (newlyEligible > 0) pendingSaleCounts[key] = alreadyPending + newlyEligible;
     });
@@ -72,7 +94,7 @@
     return true;
   }
 
-  function settlePendingShippingSale(reason = 'midnight settlement') {
+  function settlePendingShippingSale(reason = lifecycleCfg().reasons.default) {
     if (lifecycleBusy || !shippingBoxInstance) return { sold: 0, earned: 0 };
     lifecycleBusy = true;
     try {
@@ -95,11 +117,12 @@
       if (sold < 1) return { sold: 0, earned: 0 };
 
       deps.inventory.gold = (deps.inventory.gold || 0) + earned;
-      const line = 'Day ' + currentCalendarDay() + ' midnight shipment — ' + soldParts.join(' ') + ' = ' + earned + 'g (' + reason + ')';
+      const ui = interactionCfg();
+      const line = `Day ${currentCalendarDay()} ${ui.deliveryLogLabel} — ${soldParts.join(' ')} = ${earned}g (${reason})`;
       const deliveryLog = deps.getDeliveryLog();
-      deliveryLog.unshift({ type: 'sale', text: line });
-      if (deliveryLog.length > 12) deliveryLog.pop();
-      deps.showToast('📦 Midnight shipment sold! +' + earned + 'g', true);
+      deliveryLog.unshift({ type: ui.deliveryLogType, text: line });
+      while (deliveryLog.length > Number(lifecycleCfg().deliveryLogLimit)) deliveryLog.pop();
+      deps.showToast(`${objectCfg().icon} ${ui.saleToastPrefix}${earned}g`, true);
       shippingBoxInstance.refreshVisual?.();
       if (deps.getMenuOpen()) deps.buildInventoryGrid();
       if (window.ShippingPanel?.isOpen?.()) deps.buildShippingTransferUI();
@@ -112,40 +135,34 @@
 
   function shippingLifecyclePulse() {
     if (!deps) return;
+    const life = lifecycleCfg();
     const crossedMidnight = captureMidnightCutoff();
     const area = currentArea();
 
-    // If midnight arrives while the player is already away from the farm,
-    // there is nothing to defer: the earlier departure already satisfied the
-    // hand-off condition, so resolve the now-eligible shipment at the cutoff.
-    if (crossedMidnight && area && !isFarmContext(area)) {
-      settlePendingShippingSale('player already away from farm');
+    if (life.resolveIfAlreadyAwayAtMidnight && crossedMidnight && area && !isFarmContext(area)) {
+      settlePendingShippingSale(life.reasons.alreadyAway);
     }
-
-    // If midnight already happened while the player remained on the farm,
-    // the first actual departure is the deferred hand-off trigger.
     if (lastKnownArea && isFarmContext(lastKnownArea) && area && !isFarmContext(area)) {
-      settlePendingShippingSale('left farm');
+      settlePendingShippingSale(life.reasons.leftFarm);
     }
     if (area) lastKnownArea = area;
   }
 
   function installShippingLifecycle() {
     if (shippingLifecycleTimer) return;
-    window.addEventListener('hobunji-time-passage', event => {
+    const life = lifecycleCfg();
+    window.addEventListener(life.timePassageEvent, event => {
       const kind = event?.detail?.kind;
-      if (kind !== 'wait' && kind !== 'sleep') return;
-      // Wait/Sleep is explicitly a resolution trigger. Capture a midnight
-      // crossed by the time jump first, then settle whatever was eligible.
+      if (!life.resolveOnTimePassageKinds.includes(kind)) return;
       captureMidnightCutoff();
       settlePendingShippingSale(kind);
     });
-    shippingLifecycleTimer = window.setInterval(shippingLifecyclePulse, 500);
+    shippingLifecycleTimer = window.setInterval(shippingLifecyclePulse, Number(life.pollMs));
   }
 
   function patchFarmPanel(panel) {
     if (!panel?.init || panel.__shippingBoxFarmUiPatched) return;
-    const originalInit = panel.init.bind(panel); // Used to preserve FarmPanel initialization while retaining the exact dependency bundle game.js already supplies.
+    const originalInit = panel.init.bind(panel);
     panel.init = function shippingAwareFarmPanelInit(injectedDeps, ...rest) {
       farmPanelDeps = injectedDeps;
       const result = originalInit(injectedDeps, ...rest);
@@ -158,28 +175,21 @@
   function installFarmPanelShippingIntegration() {
     if (window.FarmPanel) {
       patchFarmPanel(window.FarmPanel);
-      bindFarmBuildingUiHooks();
+      if (window.ShippingBoxConfig) bindFarmBuildingUiHooks();
       return;
     }
-
-    // farm-crates.js and farm-panel.js are both loaded before game.js, but do
-    // not rely on their relative script order. This accessor follows the same
-    // lazy FarmPanel-hook pattern already used by crop-billboard-presentation.
-    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel'); // Used to chain with any earlier lazy/global FarmPanel owner instead of replacing it.
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel');
     if (descriptor && !descriptor.configurable) return;
-    const previousGet = descriptor?.get; // Used to preserve a previously installed FarmPanel getter.
-    const previousSet = descriptor?.set; // Used to preserve a previously installed FarmPanel setter.
-    let value = descriptor?.value; // Used as local storage only when no earlier accessor owns the global.
+    const previousGet = descriptor?.get;
+    const previousSet = descriptor?.set;
+    let value = descriptor?.value;
     Object.defineProperty(window, 'FarmPanel', {
       configurable: true,
-      get() {
-        return previousGet ? previousGet.call(window) : value;
-      },
+      get() { return previousGet ? previousGet.call(window) : value; },
       set(next) {
         if (previousSet) previousSet.call(window, next);
         else value = next;
-        const current = previousGet ? previousGet.call(window) : value;
-        patchFarmPanel(current);
+        patchFarmPanel(previousGet ? previousGet.call(window) : value);
       },
     });
   }
@@ -191,20 +201,22 @@
   function installShippingPlacementGuard() {
     const buildings = window.FarmBuildings;
     if (!buildings?.canPlaceAt || buildings.__shippingBoxPlacementGuarded) return;
-    const originalCanPlaceAt = buildings.canPlaceAt.bind(buildings); // Used to keep all existing terrain/house/barn validation authoritative before adding the service-box footprint.
+    const originalCanPlaceAt = buildings.canPlaceAt.bind(buildings);
     buildings.canPlaceAt = function shippingAwareCanPlaceAt(col, row, w, h, excludeId) {
       if (!originalCanPlaceAt(col, row, w, h, excludeId)) return false;
       const box = shippingBoxInstance;
       if (!box || excludeId === box.id) return true;
-      return !rectsOverlap(col, row, w, h, box.col, box.row, box.w || 2, box.h || 1);
+      const fp = footprintSize();
+      return !rectsOverlap(col, row, w, h, box.col, box.row, fp.width, fp.height);
     };
     buildings.__shippingBoxPlacementGuarded = true;
   }
 
   function bindFarmBuildingUiHooks() {
-    if (!document.body) return;
-    const list = document.getElementById('farmBuildingsList');
-    const canvas = document.getElementById('farmGlanceCanvas');
+    if (!window.ShippingBoxConfig || !document.body) return;
+    const ui = farmUiCfg();
+    const list = document.getElementById(ui.listId);
+    const canvas = document.getElementById(ui.canvasId);
     if (list && !farmBuildingsObserver) {
       farmBuildingsObserver = new MutationObserver(() => ensureShippingFarmBuildingRow());
       farmBuildingsObserver.observe(list, { childList: true });
@@ -216,8 +228,9 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         const rect = canvas.getBoundingClientRect();
-        const px = canvas.width / Math.max(1, farmPanelDeps?.getGrid?.()?.[0]?.length || 1); // Used to convert the same glance-canvas click into a farm column.
-        const py = canvas.height / Math.max(1, farmPanelDeps?.getGrid?.()?.length || 1); // Used to convert the same glance-canvas click into a farm row.
+        const grid = farmPanelDeps?.getGrid?.() || [];
+        const px = canvas.width / Math.max(1, grid?.[0]?.length || 1);
+        const py = canvas.height / Math.max(1, grid.length || 1);
         const col = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width) / px);
         const row = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height) / py);
         const result = moveShippingBoxFromFarmPanel(col, row);
@@ -231,12 +244,13 @@
   }
 
   function syncShippingMoveUi() {
-    const canvas = document.getElementById('farmGlanceCanvas');
-    const note = document.getElementById('farmBuildingsNote');
-    const cancelBtn = document.getElementById('farmCancelPlacementBtn');
+    const ui = farmUiCfg();
+    const canvas = document.getElementById(ui.canvasId);
+    const note = document.getElementById(ui.noteId);
+    const cancelBtn = document.getElementById(ui.cancelButtonId);
     if (shippingMoveArmed) {
-      if (canvas) canvas.style.cursor = 'crosshair';
-      if (note) note.textContent = 'Click a tile on the map above to move the Shipping Box there.';
+      if (canvas) canvas.style.cursor = ui.cursor;
+      if (note) note.textContent = ui.placementPrompt;
       if (cancelBtn) {
         cancelBtn.hidden = false;
         cancelBtn.onclick = () => {
@@ -247,115 +261,115 @@
       }
     } else {
       if (canvas) canvas.style.cursor = '';
-      if (note && note.textContent === 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.') {
-        note.textContent = 'Move a barn or the Shipping Box by clicking the map above. Place owned barn plans here, or open House Layout to edit your house.';
-      }
+      if (note && note.textContent === ui.defaultBuildingNote) note.textContent = ui.combinedBuildingNote;
     }
   }
 
   function ensureShippingFarmBuildingRow() {
-    const list = document.getElementById('farmBuildingsList');
+    if (!window.ShippingBoxConfig) return;
+    const ui = farmUiCfg();
+    const object = objectCfg();
+    const list = document.getElementById(ui.listId);
     if (!list || !shippingBoxInstance) return;
-    let row = list.querySelector('[data-farm-building-kind="shipping-box"]');
+    let row = list.querySelector(`[data-farm-building-kind="${ui.rowKind}"]`);
     if (!row) {
+      const fp = footprintSize();
       row = document.createElement('div');
-      row.className = 'farm-row';
-      row.dataset.farmBuildingKind = 'shipping-box';
-      row.innerHTML = '<span class="farm-row-name">📦 Shipping Box</span><span class="farm-note">2×1</span>';
-      const canAlter = !!farmPanelDeps?.hasFarmPermission?.('alterFarm');
-      if (canAlter) {
+      row.className = ui.rowClass;
+      row.dataset.farmBuildingKind = ui.rowKind;
+      row.innerHTML = `<span class="${ui.nameClass}">${object.icon} ${object.label}</span><span class="${ui.noteClass}">${fp.width}×${fp.height}</span>`;
+      if (farmPanelDeps?.hasFarmPermission?.(inventoryCfg().permissions.alterFarm)) {
         const btn = document.createElement('button');
-        btn.className = 'settings-small-btn';
+        btn.className = ui.moveButtonClass;
         btn.type = 'button';
-        btn.dataset.shippingBoxMove = '1';
-        btn.textContent = 'Move';
+        btn.dataset[ui.moveButtonDataKey] = '1';
+        btn.textContent = ui.moveButtonText;
         btn.addEventListener('click', () => {
-          const existingCancel = document.getElementById('farmCancelPlacementBtn');
+          const existingCancel = document.getElementById(ui.cancelButtonId);
           if (existingCancel && !existingCancel.hidden && !shippingMoveArmed) existingCancel.click();
           shippingMoveArmed = true;
           syncShippingMoveUi();
         });
         row.appendChild(btn);
       }
-      const firstPlan = [...list.children].find(child => child.textContent?.trim?.().startsWith('📜'));
+      const firstPlan = [...list.children].find(child => child.textContent?.trim?.().startsWith(ui.planPrefix));
       list.insertBefore(row, firstPlan || null);
     }
     syncShippingMoveUi();
   }
 
   function moveShippingBoxFromFarmPanel(col, row) {
+    const ui = farmUiCfg();
     const box = shippingBoxInstance;
     const worldObjects = farmPanelDeps?.worldObjects;
-    if (!box || !worldObjects) return { ok: false, message: 'Shipping Box move system is not ready.' };
-    if (!Number.isFinite(col) || !Number.isFinite(row)) return { ok: false, message: 'Choose a valid farm tile.' };
+    if (!box || !worldObjects) return { ok: false, message: ui.messages.notReady };
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return { ok: false, message: ui.messages.invalidTile };
     installShippingPlacementGuard();
-    const canPlace = window.FarmBuildings?.canPlaceAt?.(col, row, box.w || 2, box.h || 1, box.id);
-    if (!canPlace) return { ok: false, message: 'The Shipping Box will not fit there.' };
+    const fp = footprintSize();
+    if (!window.FarmBuildings?.canPlaceAt?.(col, row, fp.width, fp.height, box.id)) return { ok: false, message: ui.messages.noFit };
 
-    const oldKey = box.col + ',' + box.row;
-    worldObjects.delete(oldKey);
+    footprintKeys(box.col, box.row).forEach(key => { if (worldObjects.get(key) === box) worldObjects.delete(key); });
     box.moveTo(col, row);
-    worldObjects.set(box.col + ',' + box.row, box);
+    footprintKeys(box.col, box.row).forEach(key => worldObjects.set(key, box));
     window._farmEditor?.save?.();
     deps.saveMemberWorldData();
-    return { ok: true, message: 'Shipping Box moved.' };
+    return { ok: true, message: ui.messages.moved };
+  }
+
+  function colorValue(value) {
+    if (typeof value === 'number') return value;
+    return parseInt(String(value).replace('#', ''), 16);
+  }
+
+  function makeFallbackPart(definition) {
+    const [sx, sy, sz] = definition.size;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(Number(sx), Number(sy), Number(sz)),
+      new THREE.MeshLambertMaterial({ color: colorValue(definition.color) }),
+    );
+    mesh.position.set(...definition.position.map(Number));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.shippingLocalPosition = mesh.position.clone();
+    deps.scene.add(mesh);
+    return mesh;
   }
 
   function makeSellCrate(col, row) {
+    const object = objectCfg();
+    const fallbackCfg = object.fallback;
     const bin = Object.fromEntries(Object.keys(deps.BASE_PRICES).map(key => [key, 0]));
-    const position = { col, row }; // Used by farm-editor coordinate assignments and shipping-box visual syncing.
-
-    // Reuse the exact procedural Storage Chest recipe and stretch it to two
-    // tiles wide. Keeping the individual recipe parts as separate world meshes
-    // preserves the old crate's body/lid interaction shape while replacing the
-    // orange placeholder cube with the established furniture visual language.
+    const position = { col, row };
     const furniture = window.ProceduralFurniture;
-    const sourceRecipe = furniture?.CATALOG?.chest;
-    const baseColor = 0x7b4c2b;
+    const sourceRecipe = furniture?.CATALOG?.[fallbackCfg.sourceCatalogKey];
     const parts = [];
+
     if (sourceRecipe?.length >= 2 && furniture?.buildPartMesh) {
       sourceRecipe.forEach(part => {
         const stretched = {
           ...part,
           transform: {
             ...part.transform,
-            x: (part.transform?.x || 0) * 2,
-            sx: Math.max(0.001, (part.transform?.sx || 0.001) * 2),
+            x: (Number(part.transform?.x) || 0) * Number(fallbackCfg.stretchX),
+            sx: Math.max(Number(fallbackCfg.minScale), (Number(part.transform?.sx) || Number(fallbackCfg.minScale)) * Number(fallbackCfg.stretchX)),
           },
         };
-        const partMesh = furniture.buildPartMesh(stretched, baseColor);
+        const partMesh = furniture.buildPartMesh(stretched, colorValue(fallbackCfg.baseColor));
         partMesh.userData.shippingLocalPosition = partMesh.position.clone();
         parts.push(partMesh);
         deps.scene.add(partMesh);
       });
     } else {
-      const bodyMat = new THREE.MeshLambertMaterial({ color: baseColor });
-      const lidMat = new THREE.MeshLambertMaterial({ color: 0x915c35 });
-      const latchMat = new THREE.MeshLambertMaterial({ color: 0x3d2a1d });
-      const fallback = [
-        new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.38, 0.5), bodyMat),
-        new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.08, 0.52), lidMat),
-        new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.03), latchMat),
-      ];
-      fallback[0].position.set(0, 0.19, 0);
-      fallback[1].position.set(0, 0.42, 0);
-      fallback[2].position.set(0, 0.39, 0.26);
-      fallback.forEach(partMesh => {
-        partMesh.castShadow = true;
-        partMesh.receiveShadow = true;
-        partMesh.userData.shippingLocalPosition = partMesh.position.clone();
-        parts.push(partMesh);
-        deps.scene.add(partMesh);
-      });
+      parts.push(makeFallbackPart(fallbackCfg.body), makeFallbackPart(fallbackCfg.lid), makeFallbackPart(fallbackCfg.lock));
     }
 
     const mesh = parts[0];
     const lid = parts[1] || null;
     const latch = parts[2] || null;
-    const movableParts = [mesh, lid].filter(Boolean); // Used by the existing editor cleanup path, which removes only body + lid.
+    const movableParts = [mesh, lid].filter(Boolean);
     if (latch && lid) {
-      const latchLocal = latch.userData.shippingLocalPosition; // Used to preserve the chest recipe's latch offset after parenting it to the lid.
-      const lidLocal = lid.userData.shippingLocalPosition; // Used as the relative-origin reference for the child latch.
+      const latchLocal = latch.userData.shippingLocalPosition;
+      const lidLocal = lid.userData.shippingLocalPosition;
       deps.scene.remove(latch);
       lid.add(latch);
       latch.position.set(latchLocal.x - lidLocal.x, latchLocal.y - lidLocal.y, latchLocal.z - lidLocal.z);
@@ -363,121 +377,132 @@
 
     function syncVisualTransform(lidLift = 0) {
       const groundY = deps.tileSurfaceY(deps.TileType.GRASS);
-      const centerX = position.col + 1;
-      const centerZ = position.row + 0.5;
+      const center = object.centerOffset;
+      const centerX = position.col + Number(center.x);
+      const centerZ = position.row + Number(center.z);
       movableParts.forEach((partMesh, index) => {
         const local = partMesh.userData.shippingLocalPosition;
         const lift = index > 0 ? lidLift : 0;
         partMesh.position.set(centerX + local.x, groundY + local.y + lift, centerZ + local.z);
       });
     }
-    syncVisualTransform();
+
+    function occupiedLift() {
+      return totalItems() > 0 ? Number(object.lidLiftWhenOccupied) : 0;
+    }
 
     function totalItems() {
       return Object.values(bin).reduce((sum, value) => sum + value, 0);
     }
+
     function contentsStr() {
       const contents = Object.entries(bin)
         .filter(([, value]) => value > 0)
-        .map(([key, value]) => (deps.itemIconForKey(key) + '×' + value));
-      return contents.length ? contents.join(' ') : 'Empty';
+        .map(([key, value]) => deps.itemIconForKey(key) + '×' + value);
+      return contents.length ? contents.join(' ') : interactionCfg().labels.emptyContents;
     }
+
     function moveTo(nextCol, nextRow) {
       if (Number.isFinite(Number(nextCol))) position.col = Math.round(Number(nextCol));
       if (Number.isFinite(Number(nextRow))) position.row = Math.round(Number(nextRow));
-      syncVisualTransform(totalItems() > 0 ? 0.06 : 0);
+      syncVisualTransform(occupiedLift());
       return { col: position.col, row: position.row };
     }
 
+    syncVisualTransform();
+    const fp = footprintSize();
+    const actions = actionCfg();
+    const labels = interactionCfg().labels;
+    const messages = interactionCfg().messages;
+
     const worldObject = {
-      id: 'sell_crate', type: 'sell_crate', w: 2, h: 1, mesh, lid, latch, contentsStr,
-      label: '📦 Shipping Box',
+      id: object.id,
+      type: object.type,
+      w: fp.width,
+      h: fp.height,
+      mesh,
+      lid,
+      latch,
+      contentsStr,
+      label: `${object.icon} ${object.label}`,
       get col() { return position.col; },
       set col(value) { moveTo(value, position.row); },
       get row() { return position.row; },
       set row(value) { moveTo(position.col, value); },
       moveTo,
-      refreshVisual() { syncVisualTransform(totalItems() > 0 ? 0.06 : 0); },
+      refreshVisual() { syncVisualTransform(occupiedLift()); },
       getPendingSaleTotal: pendingSaleTotal,
       getMidnightCutoffDay: () => lastObservedDay,
       getButtons() {
         const item = deps.getActiveInventoryItem();
         const btns = [];
-        // Fast one-item deposit for the currently selected sellable item.
         if (item && deps.BASE_PRICES[item.key] !== undefined) {
           const count = deps.inventory[item.key] || 0;
           btns.push({
             icon: item.icon,
-            label: count > 0 ? 'Ship ' + item.icon : 'None',
-            action: 'obj_deposit',
+            label: count > 0 ? interactionCfg().shipVerb + item.icon : labels.emptyFastAction,
+            action: actions.deposit,
             style: 'primary',
             allowed: count > 0,
           });
         }
         const total = totalItems();
-        btns.push({ icon: '📦', label: total > 0 ? 'Open Box' : 'Shipping', action: 'obj_open_shipping', style: total > 0 ? 'secondary' : 'primary', allowed: true });
+        btns.push({
+          icon: object.icon,
+          label: total > 0 ? labels.openOccupied : labels.openEmpty,
+          action: actions.open,
+          style: total > 0 ? 'secondary' : 'primary',
+          allowed: true,
+        });
         return btns;
       },
       onAction(action) {
-        if (action === 'obj_deposit') {
+        if (action === actions.deposit) {
           const item = deps.getActiveInventoryItem();
-          if (!item || deps.BASE_PRICES[item.key] === undefined) return { ok: false, message: 'Cannot deposit that.' };
+          if (!item || deps.BASE_PRICES[item.key] === undefined) return { ok: false, message: labels.cannotDeposit };
           const qty = deps.inventory[item.key] || 0;
-          if (qty < 1) return { ok: false, message: 'No ' + item.label + ' to deposit.' };
+          if (qty < 1) return { ok: false, message: messages.noItemPrefix + item.label + messages.noItemSuffix };
           deps.inventory[item.key]--;
           deps.clampInventoryStack(item.key);
           bin[item.key] = (bin[item.key] || 0) + 1;
-          syncVisualTransform(0.06);
-          return { ok: true, message: 'Deposited ' + item.icon + ' into shipping box.' };
+          syncVisualTransform(Number(object.lidLiftWhenOccupied));
+          return { ok: true, message: messages.depositedPrefix + item.icon + messages.depositedSuffix };
         }
-        if (action === 'obj_show_bin' || action === 'obj_open_shipping') {
-          if (window.ShippingPanel?.open?.()) {
-            return { ok: true, message: contentsStr() };
-          }
-          // Compatibility fallback for an unusually early/failed module load.
-          deps.openMenu('shipping');
+        if (action === actions.legacyOpen || action === actions.open) {
+          if (window.ShippingPanel?.open?.()) return { ok: true, message: contentsStr() };
+          deps.openMenu(actions.fallbackMenu);
           return { ok: true, message: contentsStr() };
         }
-        return { ok: false, message: 'Unknown action.' };
+        return { ok: false, message: labels.unknownAction };
       },
-      getContents() {
-        return bin;
-      },
-      getTotalItems() {
-        return totalItems();
-      },
+      getContents() { return bin; },
+      getTotalItems() { return totalItems(); },
       depositItem(key, qty) {
         if (deps.BASE_PRICES[key] === undefined) return 0;
         const moved = Math.max(0, Math.min(qty, deps.inventory[key] || 0));
         if (moved < 1) return 0;
         deps.inventory[key] -= moved;
         bin[key] = (bin[key] || 0) + moved;
-        syncVisualTransform(0.06);
+        syncVisualTransform(Number(object.lidLiftWhenOccupied));
         return moved;
       },
       withdrawItem(key, qty) {
-        // Self-guarded (not just at the transfer UI call site) so future API
-        // callers cannot bypass the farm's storage-withdraw permission.
-        if (!deps.hasFarmPermission('storage')) return 0;
+        if (!deps.hasFarmPermission(inventoryCfg().permissions.withdraw)) return 0;
         const moved = Math.max(0, Math.min(qty, bin[key] || 0));
         if (moved < 1) return 0;
         bin[key] -= moved;
-        // If midnight already made some of this stack eligible, taking it back
-        // out cancels that many pending units before touching newer deposits.
         if ((pendingSaleCounts[key] || 0) > 0) {
           pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
           if (pendingSaleCounts[key] < 1) delete pendingSaleCounts[key];
         }
-        deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + moved);
-        syncVisualTransform(totalItems() > 0 ? 0.06 : 0);
+        const maxStack = Number(inventoryCfg().maxStack);
+        deps.inventory[key] = Math.min(maxStack, (deps.inventory[key] || 0) + moved);
+        syncVisualTransform(occupiedLift());
         return moved;
       },
       tick() {
-        // Midnight eligibility is keyed to calendar.day, never to a rolling
-        // N-hour timer. tick() only observes the cutoff; it deliberately does
-        // not empty the box while the player remains on the farm.
         shippingLifecyclePulse();
-        syncVisualTransform(totalItems() > 0 ? 0.06 : 0);
+        syncVisualTransform(occupiedLift());
       },
       reset() {
         Object.keys(bin).forEach(key => { bin[key] = 0; });
@@ -486,12 +511,15 @@
         syncVisualTransform();
       },
     };
+
     shippingBoxInstance = worldObject;
     installShippingPlacementGuard();
     ensureShippingFarmBuildingRow();
     return worldObject;
   }
 
+  // Supply Box is an older, separate farm service and intentionally keeps its
+  // existing values here; ShippingBoxConfig only owns the new Shipping system.
   function makeSupplyBox(col, row) {
     const mat  = new THREE.MeshLambertMaterial({ color: 0x2060c0 });
     const geo  = new THREE.BoxGeometry(0.7, 0.55, 0.7);
@@ -501,22 +529,16 @@
     deps.scene.add(mesh);
 
     const lidMat = new THREE.MeshLambertMaterial({ color: 0x4080e0 });
-    const lid    = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.72), lidMat);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.72), lidMat);
     lid.position.set(col + 0.5, deps.tileSurfaceY(deps.TileType.GRASS) + 0.56, row + 0.5);
     deps.scene.add(lid);
 
-    // qty selections per catalog item
     const qtys = {};
     deps.SUPPLY_CATALOG.forEach(it => { qtys[it.key] = 0; });
-
     return {
       id: 'supply_box', type: 'supply_box', col, row, mesh, lid,
       label: '📦 Supply Box',
-      getButtons() {
-        return [
-          { icon: '📦', label: 'Order', action: 'obj_open_shop', style: 'primary', allowed: true },
-        ];
-      },
+      getButtons() { return [{ icon: '📦', label: 'Order', action: 'obj_open_shop', style: 'primary', allowed: true }]; },
       onAction(action) {
         if (action === 'obj_open_shop') {
           deps.openMenu('supplies');
@@ -543,9 +565,6 @@
     };
   }
 
-  // Install the FarmPanel hook as soon as this module loads, not only when
-  // game.js later initializes FarmCrates. This makes dependency capture
-  // independent of whether FarmPanel.init happens before or after FarmCrates.init.
   installFarmPanelShippingIntegration();
 
   window.FarmCrates = {
@@ -554,5 +573,6 @@
     makeSupplyBox,
     settlePendingShippingSale,
     getPendingShippingTotal: pendingSaleTotal,
+    getShippingConfig: config,
   };
 })();
