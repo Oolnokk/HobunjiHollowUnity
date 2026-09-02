@@ -19,6 +19,8 @@
     textureRepairsCompleted: 0,
     textureRepairsFailed: 0,
     legacyCliffUvOverridesFound: 0,
+    missingUvSurfaceMarkersFound: 0,
+    missingUvSurfaceRepairs: 0,
     islandUvReassertions: 0,
   }; // Used by snapshot() and the mobile-visible render debug log.
 
@@ -198,9 +200,24 @@
     });
     if (!hasNaturalMaterial && mesh.userData?.naturalSurfaceCliffSlot == null) return false;
 
-    const geometry = mesh.geometry; // Used to inspect whether the older single-cliff repair overwrote an already-computed island unwrap.
-    if (geometry.userData?.naturalSurfaceUvMapping === 'cliff-face-stretch'
-        && geometry.userData?.hobunjiSurfaceStretchSignature) {
+    const geometry = mesh.geometry; // Used to inspect whether an older terrain pass invalidated the surface-island unwrap while leaving its marker behind.
+    geometry.userData = Object.assign({}, geometry.userData || {});
+    const position = geometry.getAttribute?.('position') || geometry.attributes?.position; // Used as the authoritative vertex count that a valid UV attribute must match.
+    const uvBefore = geometry.getAttribute?.('uv') || geometry.attributes?.uv; // Used to detect the exact Pixel Probe state where the final rendered rock has no UVs.
+    const hadStaleIslandMarkerWithoutUvs = !!(
+      geometry.userData.hobunjiSurfaceStretchSignature
+      && position
+      && (!uvBefore || uvBefore.count !== position.count || Number(uvBefore.itemSize || 0) < 2)
+    ); // Used to invalidate a cached island signature when the actual UV buffer disappeared downstream.
+    if (hadStaleIslandMarkerWithoutUvs) {
+      stats.missingUvSurfaceMarkersFound++;
+      delete geometry.userData.hobunjiSurfaceStretchSignature;
+      delete geometry.userData.hobunjiSurfaceStretch;
+      debugLog(`${mesh.name || '(unnamed)'}: stale surface-island marker survived after UVs disappeared; forcing a full UV rebuild.`, 'warn');
+    }
+
+    if (geometry.userData.naturalSurfaceUvMapping === 'cliff-face-stretch'
+        && geometry.userData.hobunjiSurfaceStretchSignature) {
       stats.legacyCliffUvOverridesFound++;
       delete geometry.userData.hobunjiSurfaceStretchSignature;
       delete geometry.userData.hobunjiSurfaceStretch;
@@ -208,6 +225,14 @@
 
     const report = mapper.remapNaturalTerrainMesh(mesh, `${mesh.name || '(unnamed)'} runtime`); // Used to perform or re-perform the final authoritative UV unwrap.
     if (report) stats.islandUvReassertions++;
+    if (hadStaleIslandMarkerWithoutUvs) {
+      const repairedGeometry = mesh.geometry; // Used to verify the forced remap actually restored a UV buffer instead of merely restoring metadata.
+      const repairedPosition = repairedGeometry?.getAttribute?.('position') || repairedGeometry?.attributes?.position; // Used as the final vertex-count reference after a possible geometry replacement.
+      const repairedUv = repairedGeometry?.getAttribute?.('uv') || repairedGeometry?.attributes?.uv; // Used to confirm the final rendered geometry can provide intersection.uv to Pixel Probe.
+      if (repairedPosition && repairedUv?.count === repairedPosition.count && Number(repairedUv.itemSize || 0) >= 2) {
+        stats.missingUvSurfaceRepairs++;
+      }
+    }
     return !!report;
   }
 
@@ -295,5 +320,5 @@
     },
   };
 
-  debugLog('installed: natural PNG placeholders self-heal from direct, nested, and naturalize paths; surface-island UV mapping remains authoritative.');
+  debugLog('installed: natural PNG placeholders self-heal from direct, nested, and naturalize paths; missing UVs invalidate stale island markers and rebuild before render.');
 })();
