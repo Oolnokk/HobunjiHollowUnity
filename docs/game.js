@@ -532,6 +532,12 @@
       function createLivestockNpcDialogueAdapter(animal, livestockRec, kind, dialogueLines = []) {
         const avatarRef = animal.avatarRef;
         const headScratch = new THREE.Vector3();
+        const cameraHeadScratch = new THREE.Vector3();
+        const dialogueCameraTarget = {
+          get position() {
+            return _livestockDialogueHeadWorldPosition(animal, kind, cameraHeadScratch);
+          },
+        };
         return {
           rec: {
             id: `livestock:${livestockRec.id}`,
@@ -544,6 +550,7 @@
           root: avatarRef?.group,
           avatarHeight: Number(animal.modelHeight) || 1,
           pause: 0,
+          dialogueCameraTarget,
 
           applyFacingDeadzone(targetRot, lerp) {
             const blend = Math.max(0, Math.min(1, Number(lerp) || 0));
@@ -592,6 +599,7 @@
         };
         try {
           await openNpcDialogue(walker, {
+            cameraTarget: walker.dialogueCameraTarget,
             skipNpcMeta: true,
             recordMemory: false,
           });
@@ -10454,6 +10462,19 @@
         return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
       }
 
+      const _dialogueWalkerWorldScratch = new THREE.Vector3();
+      function dialogueWalkerWorldPosition(walker, out = new THREE.Vector3()) {
+        const root = walker?.root;
+        if (!root) return null;
+        if (typeof root.getWorldPosition === 'function') {
+          root.updateWorldMatrix?.(true, false);
+          return root.getWorldPosition(out);
+        }
+        const pos = root.position;
+        if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return null;
+        return out.set(pos.x, pos.y, pos.z);
+      }
+
       function beginNpcDialogueStaging(walker) {
         // Cutscene Preview drives every participant's position/facing itself
         // (see "Cutscene Preview Mode" below) — walking/turning the real
@@ -10461,9 +10482,10 @@
         // with would fight the director's own scripted blocking, and there
         // may not even be a "player" in the scene the preview is running.
         if (cutscenePreviewActive) return;
-        const npcX = walker?.root?.position?.x;
-        const npcZ = walker?.root?.position?.z;
-        if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
+        const npcWorld = dialogueWalkerWorldPosition(walker, new THREE.Vector3());
+        if (!npcWorld) { npcDialogueStaging = null; return; }
+        const npcX = npcWorld.x;
+        const npcZ = npcWorld.z;
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
         const candidates = npcDialogueStagingOffsets().map(offset => ({
@@ -10528,8 +10550,10 @@
         const cfg = npcDialogueStagingConfig();
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
-        const npcX = walker.root.position.x;
-        const npcZ = walker.root.position.z;
+        const npcWorld = dialogueWalkerWorldPosition(walker, _dialogueWalkerWorldScratch);
+        if (!npcWorld) return;
+        const npcX = npcWorld.x;
+        const npcZ = npcWorld.z;
         const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
         facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
         player.angle = facingAngle;
@@ -10545,12 +10569,12 @@
         if (typeof walker.applyDialogueEyeContact === 'function') {
           walker.applyDialogueEyeContact(playerEyeWorld, dt, cfg);
         } else if (walker.neckJoint) {
-          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+          _aimNeckAtEyeContact(walker.neckJoint, npcWorld, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
         }
         if (playerNeckJoint) {
           const speakerEyeWorld = typeof walker.dialogueHeadWorldPosition === 'function'
             ? walker.dialogueHeadWorldPosition(new THREE.Vector3())
-            : _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
+            : _dialogueEyeWorldPosition(npcWorld, walker.avatarHeight);
           _aimNeckAtWorldPoint(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, speakerEyeWorld, maxYawDeg, maxPitchDeg, player);
         }
       }
