@@ -7,36 +7,38 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  const shippingCfg = () => window.ShippingBoxConfig || {};
-  let generalStoreActiveCategory = 'goods'; // Mirrors the Supply Shop's own category tabs.
+  function shippingCfg() {
+    if (!window.ShippingBoxConfig) throw new Error('ShippingBoxConfig must load before GeneralStore Shipping integration');
+    return window.ShippingBoxConfig;
+  }
+  let generalStoreActiveCategory = 'goods'; // Existing General Store category state; Shipping adds one configured category to it.
 
   function getGeneralStoreCategoryLabel(category) {
-    const store = shippingCfg().store || {};
-    return ({ all: 'All', goods: 'Goods', clothing: 'Clothing', [store.categoryKey || 'sell']: store.categoryLabel || 'Sell' })[category] || 'General Store';
+    const store = shippingCfg().store;
+    return ({ all: 'All', goods: 'Goods', clothing: 'Clothing', [store.categoryKey]: store.categoryLabel })[category] || 'General Store';
   }
 
   function ensureGeneralStoreSellUi() {
-    const store = shippingCfg().store || {};
-    const sellKey = store.categoryKey || 'sell';
-    const tabs = document.querySelector('.general-store-tab')?.parentElement; // Used to add the configured point-of-sale category without duplicating index markup.
-    if (tabs && !tabs.querySelector(`[data-general-store-cat="${sellKey}"]`)) {
+    const store = shippingCfg().store;
+    const tabs = document.querySelector('.general-store-tab')?.parentElement;
+    if (tabs && !tabs.querySelector(`[data-general-store-cat="${store.categoryKey}"]`)) {
       const sellTab = document.createElement('button');
       sellTab.className = 'supply-tab general-store-tab';
-      sellTab.dataset.generalStoreCat = sellKey;
+      sellTab.dataset.generalStoreCat = store.categoryKey;
       sellTab.type = 'button';
-      sellTab.textContent = store.categoryLabel || 'Sell';
-      const beforeKey = store.insertBeforeCategoryKey || 'all';
-      const beforeTab = tabs.querySelector(`[data-general-store-cat="${beforeKey}"]`);
+      sellTab.textContent = store.categoryLabel;
+      const beforeTab = tabs.querySelector(`[data-general-store-cat="${store.insertBeforeCategoryKey}"]`);
       tabs.insertBefore(sellTab, beforeTab || null);
     }
     if (!document.getElementById('generalStoreSellStyles')) {
+      const css = store.css;
       const style = document.createElement('style');
       style.id = 'generalStoreSellStyles';
       style.textContent = `
-        #mpGeneralStore .gs-sell-actions { display:flex; flex:0 0 auto; gap:4px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
-        #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:74px; padding-inline:7px; }
-        #mpGeneralStore .gs-sell-empty { color:var(--muted); font-size:11px; padding:12px; text-align:center; border:1px dashed var(--border); border-radius:10px; }
-        @media (max-width:760px) { #mpGeneralStore .gs-sell-actions { flex-direction:column; align-items:stretch; } #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:68px; } }
+        #mpGeneralStore .gs-sell-actions { display:flex; flex:0 0 auto; gap:${css.actionGapPx}px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+        #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:${css.buttonMinWidthPx}px; padding-inline:${css.buttonPaddingInlinePx}px; }
+        #mpGeneralStore .gs-sell-empty { color:var(--muted); font-size:${css.emptyFontSizePx}px; padding:${css.emptyPaddingPx}px; text-align:center; border:1px dashed var(--border); border-radius:${css.emptyRadiusPx}px; }
+        @media (max-width:${css.mobileBreakpointPx}px) { #mpGeneralStore .gs-sell-actions { flex-direction:column; align-items:stretch; } #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:${css.mobileButtonMinWidthPx}px; } }
       `;
       document.head.appendChild(style);
     }
@@ -88,20 +90,20 @@
   }
 
   function sellGeneralStoreItem(item, quantity) {
-    const store = shippingCfg().store || {};
+    const store = shippingCfg().store;
     const result = window.ShippingPanel?.sellInventoryAtStore?.(item.key, quantity);
-    if (!result?.moved) { deps.showToast(store.nothingToSellMessage || 'Nothing to sell.', false); return; }
-    deps.showToast(`${store.soldPrefix || 'Sold '}${result.moved}× ${item.label} for ${result.earned}g`, true);
+    if (!result?.moved) { deps.showToast(store.nothingToSellMessage, false); return; }
+    deps.showToast(`${store.soldPrefix}${result.moved}× ${item.label}${store.soldForText}${result.earned}${store.goldSuffix}`, true);
     renderGeneralStorePage();
   }
 
   function renderGeneralStoreSell(list) {
-    const store = shippingCfg().store || {};
+    const store = shippingCfg().store;
     const sellable = window.ShippingPanel?.getSellableInventory?.() || [];
     if (!sellable.length) {
       const empty = document.createElement('div');
       empty.className = 'gs-sell-empty';
-      empty.textContent = store.emptyMessage || 'No sellable items in your pack.';
+      empty.textContent = store.emptyMessage;
       list.appendChild(empty);
       return;
     }
@@ -112,16 +114,16 @@
         <div class="sh-icon">${item.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(item.label)}</div>
-          <div class="sh-desc">${deps.esc(item.desc || store.defaultDescription || '')}</div>
-          <div class="sh-price">${item.count} in pack · ${item.price}g each · ${item.count * item.price}g stack</div>
+          <div class="sh-desc">${deps.esc(item.desc || store.defaultDescription)}</div>
+          <div class="sh-price">${item.count} ${store.inPackText} · ${item.price}${store.eachText} · ${item.count * item.price}${store.stackValueText}</div>
         </div>
         <div class="gs-sell-actions">
-          <button class="shop-buy-btn gs-sell-one" type="button">${store.sellOneLabel || 'Sell 1'}</button>
-          <button class="shop-buy-btn gs-sell-stack" type="button">${store.sellStackLabel || 'Sell Stack'}</button>
+          <button class="shop-buy-btn gs-sell-one" type="button">${store.sellOneLabel}</button>
+          <button class="shop-buy-btn gs-sell-stack" type="button">${store.sellStackLabel}</button>
         </div>
       `;
-      row.querySelector('.gs-sell-one')?.addEventListener('click', () => sellGeneralStoreItem(item, 1));
-      row.querySelector('.gs-sell-stack')?.addEventListener('click', () => sellGeneralStoreItem(item, store.stackQuantityToken || 'stack'));
+      row.querySelector('.gs-sell-one')?.addEventListener('click', () => sellGeneralStoreItem(item, store.singleQuantity));
+      row.querySelector('.gs-sell-stack')?.addEventListener('click', () => sellGeneralStoreItem(item, store.stackQuantityToken));
       list.appendChild(row);
     });
   }
@@ -187,8 +189,7 @@
 
   function renderGeneralStorePage() {
     bindGeneralStoreTabs();
-    const store = shippingCfg().store || {};
-    const sellKey = store.categoryKey || 'sell';
+    const store = shippingCfg().store;
     const sectionTitle = document.getElementById('generalStoreSectionTitle');
     if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
     const list = document.getElementById('generalStoreList');
@@ -198,15 +199,15 @@
     list.innerHTML = '';
     if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
     if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
-    if (generalStoreActiveCategory === sellKey) renderGeneralStoreSell(list);
+    if (generalStoreActiveCategory === store.categoryKey) renderGeneralStoreSell(list);
   }
 
   window.GeneralStore = { init, render: renderGeneralStorePage };
 })();
 
-// General Store is already loaded before game.js. Use that stable slot to load
-// the Shipping Box tuning file, then the separate world adapter, before boot.
+// General Store is already loaded before game.js. Use that stable parser slot
+// to load ShippingBoxConfig, then the separate world adapter, before game boot.
 if (document.readyState === 'loading') {
-  if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20260902shipping5"></scr' + 'ipt>');
-  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20260902shipping5"></scr' + 'ipt>');
+  if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20260902shipping6"></scr' + 'ipt>');
+  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20260902shipping6"></scr' + 'ipt>');
 }
