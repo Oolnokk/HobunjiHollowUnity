@@ -174,6 +174,13 @@ jobs:
           if t.count(old_assert) != 1:
               raise SystemExit('old staging assertion mismatch')
           t = t.replace(old_assert, new_assert, 1)
+          old_x = "assert(game.includes('(centerX - 0.5) * modelWidth'), 'frame center X must target world head position');"
+          old_y = "assert(game.includes('(0.5 - centerY) * modelHeight'), 'frame center Y must target world head position');"
+          new_x = "assert(game.includes('frame.x + frame.width * 0.5'), 'frame center X must target world head position');"
+          new_y = "assert(game.includes('frame.y + frame.height * 0.5'), 'frame center Y must target world head position');"
+          if t.count(old_x) != 1 or t.count(old_y) != 1:
+              raise SystemExit('old head-center assertions mismatch')
+          t = t.replace(old_x, new_x, 1).replace(old_y, new_y, 1)
           anchor = "assert(game.includes('openLivestockDialogue,'), 'FarmAnimals must receive shared dialogue opener');\n"
           if t.count(anchor) != 1:
               raise SystemExit('test insertion anchor mismatch')
