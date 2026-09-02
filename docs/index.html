@@ -82,6 +82,13 @@
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
   <script src="js/grid-tile-accessors.js?v=20260902mod1"></script>
+  <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
+       the daily felled-tree/mined-rock regrowth ticks that call back into
+       it, extracted out of game.js. Must load before game.js, which calls
+       window.ZoneRegrowth.init(...) alongside the other window.*.init(...)
+       calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
+       from its own init() call further down game.js. -->
+  <script src="js/zone-regrowth.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

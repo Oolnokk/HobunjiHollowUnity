@@ -12709,139 +12709,11 @@
         return true;
       }
 
-      function updateClearedZoneVegetationVisual(mapId, col, row, previousType) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return false;
-        const removedFoliage = removeZoneVegetationVisual(mapId, col, row);
-        if (previousType !== TileType.WEEDS) return removedFoliage;
-
-        // WEEDS are part of the zone's merged material buckets rather than
-        // individual foliage groups. Cover only the cleared tile with a
-        // grass patch; the next ordinary terrain refresh folds it back into
-        // the merged grass mesh. This keeps a weapon swing O(AoE tiles)
-        // instead of O(the entire wilderness map).
-        const tile = zi.grid?.[row]?.[col];
-        if (!tile) return removedFoliage;
-        const geometry = window.TerrainGeometry.makeFloorGeo(col, row); // Used by the one-tile grass cover mesh below.
-        displaceZoneGeometry(geometry, mapId, col + 0.5, row + 0.5);
-        const patch = new THREE.Mesh(geometry, resolveTileMat(mapId, TileType.GRASS)); // Covers the stale merged WEEDS surface.
-        patch.receiveShadow = true;
-        patch.position.set(
-          col + 0.5,
-          tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
-          row + 0.5
-        );
-        if (!window.WildernessChunks?.attachObject(mapId, col, row, patch)) zi.scene.add(patch);
-        _markTerrainEdgeId(patch, TileType.GRASS);
-        _zoneFloorMeshGroups.get(mapId)?.push(patch);
-        return true;
-      }
-
-      // Rebuilds just a zone's ground floor + grass tufts (see
-      // _buildZoneFloorMeshes/_buildZoneGrassBillboards) from its current
-      // grid, in place — used after a shovel/pick action changes a tile's
-      // type at runtime (digging/filling/raising — see applyAction) while
-      // standing inside a wilderness zone. A zone's terrain is built once as
-      // merged meshes rather than the farm's per-tile mesh array, so without
-      // this a freshly dug trench would be "physically" real (tile.type/
-      // height read live every frame) while its grass never disappears —
-      // the player would see themselves sink through still-standing grass.
-      // Deliberately narrower than _disposeZoneScene + buildZoneScene: it
-      // leaves buildings/decor/creatures/NPCs/reagents/berries/treasure
-      // alone, so it's safe to call immediately while the player is
-      // standing in the zone (unlike a full zone rebuild — see
-      // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
-      function refreshZoneGroundVisuals(mapId, col = null, row = null) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        if (zi.chunkController && window.WildernessChunks) {
-          // The route network's grass apron is zone-wide, but its index ranges
-          // are recorded per tile when it is first built. Toggle this edited
-          // tile and its one-cell cliff seam instead of regenerating the entire
-          // route heightfield (which previously froze large wilderness maps
-          // for several seconds). Filling/smoothing restores the original
-          // indices through the same path.
-          window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId); // Re-tags exact steep-face ownership before the apron decides whether this tile belongs to rock.
-          const routeApronUpdated = zi.pathNet?.refreshTileAndSeam?.(col, row) || false; // Reported in the mobile-visible debug log below.
-          // The live grid already contains the authoritative edit. Rebuild
-          // only its resident chunk plus one-chunk seam halo; unloaded chunks
-          // will naturally read the updated grid when they are next streamed.
-          const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
-          window.WildTreasure.syncZoneInteractivity(mapId);
-          debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
-          return;
-        }
-        window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId); // Refresh geometry-derived cliff ownership before rebuilding ordinary/path ground.
-        const oldFloor = _zoneFloorMeshGroups.get(mapId);
-        if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
-        const oldGrass = _zoneGrassMeshes.get(mapId);
-        if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
-        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
-        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
-        // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
-        // felled tree's mesh is gone after this rebuild, and leaving its stale
-        // entries around would keep hard-limiting zoom / culling nothing over
-        // an empty stump.
-        const canopyZones = [];
-        zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
-        zi.canopyZones = canopyZones;
-        const cullables = [];
-        zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
-        zi.cullables = cullables;
-        // The mesa rebuild above also keeps a dug/filled plateau-top lid from
-        // covering or exposing the wrong side of a real trench.
-        // A dig/fill/raise here may have just turned a buried chest's tile
-        // into (or out of) a real trench — see syncZoneTreasureInteractivity.
-        window.WildTreasure.syncZoneInteractivity(mapId);
-      }
-
-      // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
-      // passed (see _zoneFelledTreePersist/applyAction's axe branch).
-      // Called once per day from advanceDay()/sleepInBed(), the same
-      // trigger tickCropDay() uses for the farm grid's crop aging.
-      function tickFelledTreeRegrowth() {
-        for (const [mapId, entries] of _zoneFelledTreePersist) {
-          if (!entries.length) { _zoneFelledTreePersist.delete(mapId); continue; }
-          const zi = _zoneScenes.get(mapId);
-          // Zone isn't currently built (never visited this session, or its
-          // scene was disposed) — nothing to mutate live. Leave every entry
-          // exactly as-is; buildZoneScene re-derives due/not-due from
-          // feltDay itself the next time this zone is actually built (see
-          // there), so dropping entries here without a grid to apply them
-          // to would just lose the regrowth timer entirely.
-          if (!zi) continue;
-          const stillFelled = [];
-          let regrewAny = false;
-          for (const entry of entries) {
-            if (calendar.day - entry.feltDay < TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
-            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.SHRUB;
-            regrewAny = true;
-          }
-          if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
-          else _zoneFelledTreePersist.delete(mapId);
-          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
-
-      // Regrows ore rocks broken with the pick once ROCK_REGROWTH_DAYS have
-      // passed — mirrors tickFelledTreeRegrowth above for ROCK/rockKind.
-      function tickMinedRockRegrowth() {
-        for (const [mapId, entries] of _zoneMinedRockPersist) {
-          if (!entries.length) { _zoneMinedRockPersist.delete(mapId); continue; }
-          const zi = _zoneScenes.get(mapId);
-          if (!zi) continue;
-          const stillMined = [];
-          let regrewAny = false;
-          for (const entry of entries) {
-            if (calendar.day - entry.minedDay < ROCK_REGROWTH_DAYS) { stillMined.push(entry); continue; }
-            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.ROCK;
-            regrewAny = true;
-          }
-          if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
-          else _zoneMinedRockPersist.delete(mapId);
-          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
+      // Wilderness zone ground-visual refresh after a runtime tile edit
+      // (updateClearedZoneVegetationVisual/refreshZoneGroundVisuals) and the
+      // daily felled-tree/mined-rock regrowth ticks (tickFelledTreeRegrowth/
+      // tickMinedRockRegrowth) now live in js/zone-regrowth.js — call via
+      // window.ZoneRegrowth.*.
 
       function buildTownScene() {
         if (_townSceneBuilt) return;
@@ -15814,7 +15686,7 @@
             // than per cleared tile.
             if (currentArea === 'farm') markTileDirty(t.col, t.row);
             else if (_isZoneArea(currentArea)) {
-              zoneVisualsUpdated = updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
+              zoneVisualsUpdated = window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
             }
             cleared++;
           }
@@ -15849,7 +15721,7 @@
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
             if (currentArea === 'farm') markTileDirty(col, row);
-            else if (_isZoneArea(currentArea)) updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
+            else if (_isZoneArea(currentArea)) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
             cleared++;
           }
         }
@@ -16933,7 +16805,7 @@
           // (not just this one tile) for the change to actually show up. See
           // refreshZoneGroundVisuals.
           recordWildernessChunkTileDelta(currentArea, col, row);
-          refreshZoneGroundVisuals(currentArea, col, row);
+          window.ZoneRegrowth.refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -18594,7 +18466,7 @@
       loadTerrainMaterialConfig();
       function refreshTerrainForLateMaterialConfig() {
         if (window.VegetationCropRendering && typeof grid !== 'undefined' && grid) window.VegetationCropRendering.buildTileMeshes();
-        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) refreshZoneGroundVisuals(mapId);
+        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) window.ZoneRegrowth.refreshZoneGroundVisuals(mapId);
       }
 
       // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
@@ -19420,7 +19292,7 @@
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
           recordWildernessChunkTileDelta(currentArea, col, row);
-          refreshZoneGroundVisuals(currentArea, col, row);
+          window.ZoneRegrowth.refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -21939,8 +21811,8 @@
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildBerries.respawnAll();
         window.WildTreasure.respawnAll();
-        tickFelledTreeRegrowth();
-        tickMinedRockRegrowth();
+        window.ZoneRegrowth.tickFelledTreeRegrowth();
+        window.ZoneRegrowth.tickMinedRockRegrowth();
         _saveWorldCalendar();
       }
 
@@ -21969,8 +21841,8 @@
         window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildTreasure.respawnAll();
-        tickFelledTreeRegrowth();
-        tickMinedRockRegrowth();
+        window.ZoneRegrowth.tickFelledTreeRegrowth();
+        window.ZoneRegrowth.tickMinedRockRegrowth();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -25479,6 +25351,17 @@
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
       });
 
+      window.ZoneRegrowth?.init({
+        TileType, PLATEAU_UNIT, TREE_REGROWTH_DAYS, ROCK_REGROWTH_DAYS,
+        _zoneScenes, _zoneFloorMeshGroups, _zoneGrassMeshes,
+        _zoneFelledTreePersist, _zoneMinedRockPersist,
+        calendar, debugLog,
+        resolveTileMat, tileYCenter, displaceZoneGeometry,
+        removeZoneVegetationVisual, _buildZoneFloorMeshes,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        getCurrentArea: () => currentArea,
+      });
+
       window.ZoneTerrainFeatures?.init({
         TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
         displaceZoneGeometry, resolveTileMat,
@@ -26015,7 +25898,7 @@
         NORMAL_TOP,
         zoneLayouts: _zoneLayouts,
         zoneScenes: _zoneScenes,
-        refreshZoneGroundVisuals,
+        refreshZoneGroundVisuals: window.ZoneRegrowth.refreshZoneGroundVisuals,
         markOutline: _markOutline,
         makeDecorativeFurnitureMesh,
         tileSurfaceYInArea,
