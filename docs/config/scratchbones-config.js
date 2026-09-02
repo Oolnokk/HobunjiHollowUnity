@@ -252,6 +252,11 @@ window.SCRATCHBONES_CONFIG = {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
       "axisPressThreshold": 0.55,
+      "touchJoystick": {
+        "radius": 56,
+        "deadzone": 0.14,
+        "response": 0.82
+      },
       "targeting": {
         "orbitRadiusTiles": 0.62,
         "inputAimDeadzone": 0.08

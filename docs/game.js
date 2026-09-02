@@ -585,9 +585,13 @@
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
       const CARDINAL_BIAS = 0.18; // used by updateMovement(); lower keeps diagonals less sticky.
-      const JOYSTICK_RADIUS = 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
-      const JOYSTICK_DEADZONE = 0.14; // used by updateJoystick() to prevent thumb drift near center.
-      const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
+      // Config-backed (docs/config/scratchbones-config.js game.input.touchJoystick)
+      // alongside the sibling gamepadDeadzone/axisPressThreshold tuning knobs —
+      // falls back to the pre-config defaults if the section is ever missing.
+      const _touchJoystickCfg = window.SCRATCHBONES_CONFIG?.game?.input?.touchJoystick || {};
+      const JOYSTICK_RADIUS = Number(_touchJoystickCfg.radius) || 56; // Fallback radius; updateJoystick() scales to the current viewport-anchored joystick size.
+      const JOYSTICK_DEADZONE = Number(_touchJoystickCfg.deadzone) || 0.14; // used by updateJoystick() to prevent thumb drift near center.
+      const JOYSTICK_RESPONSE = Number(_touchJoystickCfg.response) || 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
       // Floating camera-look joystick (materializes under the thumb on a
       // right-half touch — see cameraDragRequested/updateCameraJoystick).
       // Same deadzone/response shape as the movement joystick, but the knob
@@ -966,9 +970,9 @@
           return;
         }
 
-        const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
+        const footingFrac = entity.maxFooting ? window.FormatUtils.clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
         const lossRange = 1 - maxDurationAtFootingFrac;
-        const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
+        const staggerProgress = lossRange > 0 ? window.FormatUtils.clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
         const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
         const visualMinDurationS = Math.max(0, Number(staggerCfg.visualMinDurationSeconds) || 0);
@@ -996,7 +1000,7 @@
       const FOOTING_SPEED_MUL_MIN = 0.55;
       function getFootingSpeedMul(entity) {
         if (!entity || !(entity.maxFooting > 0)) return 1;
-        const frac = clamp(entity.footing / entity.maxFooting, 0, 1);
+        const frac = window.FormatUtils.clamp(entity.footing / entity.maxFooting, 0, 1);
         return FOOTING_SPEED_MUL_MIN + (1 - FOOTING_SPEED_MUL_MIN) * frac;
       }
 
@@ -1440,7 +1444,7 @@
         // town-workspace-v1.json (unlike the two placeholder zones above), but
         // never got an EXTERIOR_ZONES entry of their own — so their "back to
         // town" ring (which reads zdef.townReturnCol/Row, not zoneData) sent
-        // the player to clamp(undefined, ...) === NaN. townReturnCol/Row below
+        // the player to window.FormatUtils.clamp(undefined, ...) === NaN. townReturnCol/Row below
         // are one tile inside town from that zone's own town-side transition
         // spot (spot_2vsub at col 0, row 25 / spot_d33e9 at col 59, row 25 in
         // hobunji_hollow_town.map.json). entryCol/Row/exitCol/Row match the
@@ -2040,6 +2044,11 @@
         whistle: null,
       };
 
+      // equipmentSlots/TOOL_ITEM_DEFS/actionLabels/calendar are all declared
+      // above this point and only ever mutated in place (never reassigned),
+      // so FormatUtils can hold direct references to them for its lifetime.
+      window.FormatUtils.init({ equipmentSlots, TOOL_ITEM_DEFS, actionLabels, calendar });
+
       function makeDefaultGear() {
         return {
           // Weakest-possible verdigris metal (see VERDIGRIS_METAL_KEYS/
@@ -2154,10 +2163,6 @@
             localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           }
         } catch {}
-      }
-
-      function esc(s) {
-        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       }
 
       // World object system handles sell+supply (see below)
@@ -2521,7 +2526,7 @@
 
       function addProcessedOutputs(outputs, inputStars) {
         outputs.forEach(output => {
-          ensureProcessedItemDef(output);
+          window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
           inventory[output.key] = Math.min(99, previousCount + 1);
           window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
@@ -2568,7 +2573,7 @@
           if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
           const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
           job = { kind: 'timed', outputs, inputStars, inputLabel, source, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
-          saveFarmLayout();
+          window.FarmEditor.saveFarmLayout();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           return { ok: true, started: true, durationS };
         }
@@ -2578,11 +2583,11 @@
           job = null;
           addProcessedOutputs(finished.outputs, finished.inputStars);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
-          saveFarmLayout();
+          window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
-          refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
         }
         function updateVfx(dt) {
           if (!authoredVfx) return;
@@ -2631,11 +2636,11 @@
               return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
             }
             const active = getActiveInventoryItem();
-            const outputs = active ? getProcessingOutputs(def.method, active.key) : null;
+            const outputs = active ? window.ItemProcessing.getProcessingOutputs(def.method, active.key) : null;
             const output = outputs ? outputs[0] : null;
             return [{
               icon: output ? def.icon : '…',
-              label: output ? processButtonLabel(def.method, active.key, output) : methodIdleLabel(def.method),
+              label: output ? window.ItemProcessing.processButtonLabel(def.method, active.key, output) : window.ItemProcessing.methodIdleLabel(def.method),
               action: 'obj_process_' + furnitureKey,
               style: output ? 'primary' : 'secondary',
               allowed: Boolean(output && (inventory[active.key] || 0) > 0),
@@ -2650,19 +2655,19 @@
               const inputStars = job.inputStars;
               job = null;
               addProcessedOutputs(outputs, inputStars);
-              saveFarmLayout();
+              window.FarmEditor.saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: `${def.icon} Collected ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
-            const outputs = getProcessingOutputs(def.method, active.key);
+            const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
             if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
             const inputStars = consumeProcessingInput(active.key); // Used to preserve the selected stack's best available quality.
             if (isAging) {
               job = { kind: 'aging', outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
-              saveFarmLayout();
+              window.FarmEditor.saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
@@ -2676,7 +2681,7 @@
             addProcessedOutputs(outputs, inputStars);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           reset() {
             window.FarmAnimals?.clearVatWorkerPose?.(this.id);
@@ -2720,7 +2725,7 @@
         obj.mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
         worldObjects.set(col + ',' + row, obj);
         window.DewVats?.retargetAssignments(oldId, obj.id);
-        saveFarmLayout();
+        window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} moved.` };
       }
 
@@ -2729,7 +2734,7 @@
         if (!obj) return { ok: false, message: 'Processing furniture not found.' };
         obj.rotYDeg = ((obj.rotYDeg || 0) + degrees + 360) % 360;
         obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
-        saveFarmLayout();
+        window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} rotated 45°.` };
       }
 
@@ -2743,8 +2748,8 @@
         processingFurnitureObjects.delete(obj);
         obj.reset?.();
         if (def?.itemKey) { inventory[def.itemKey] = (inventory[def.itemKey] || 0) + 1; clampInventoryStack(def.itemKey); }
-        saveFarmLayout();
-        refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
+        window.HudUpdate.refreshItemScroll();
         return { ok: true, message: `${def?.icon || '⚙️'} ${def?.name || 'Processing furniture'} returned to inventory.` };
       }
 
@@ -2788,7 +2793,7 @@
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
-            if (currentArea === 'farm' && isHouseFootprint(c, r)) return false;
+            if (currentArea === 'farm' && window.GridTileAccessors.isHouseFootprint(c, r)) return false;
           }
         }
         return !interiorFurnitureObjects.find(o => {
@@ -2938,8 +2943,8 @@
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner });
         if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
         registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
-        refreshItemScroll();
-        saveFarmLayout();
+        window.HudUpdate.refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
       }
 
@@ -2978,7 +2983,7 @@
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
         if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
         registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
-        saveFarmLayout();
+        window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
       }
 
@@ -2987,8 +2992,8 @@
         if (!obj) return { ok: false, message: 'Furniture not found.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         disposeDecorativeFurniture(obj, true);
-        saveFarmLayout();
-        refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
+        window.HudUpdate.refreshItemScroll();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} returned to inventory.` };
       }
 
@@ -3012,7 +3017,7 @@
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
         if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
         registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
-        saveFarmLayout();
+        window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
 
@@ -3178,370 +3183,20 @@
         furniturePlacementGhost.valid = valid;
       }
 
-      // ── Farm editor ───────────────────────────────────────────────
+      // Farm editor (brush-paint) and farm layout save/load persistence now
+      // live in js/farm-editor.js (window.FarmEditor) — call via
+      // window.FarmEditor.toggleFarmEditMode()/.farmEditorSetBrush(type,
+      // value)/.applyFarmEditBrush(col, row)/.farmLayoutKey()/
+      // .window.FarmEditor.saveFarmLayout()/.window.FarmEditor.loadFarmLayout()/.window.FarmEditor.applyFarmLayoutToGrid(layout,
+      // opts)/.window.FarmEditor.cleanupLegacyFarmEntranceRoad()/.window.FarmEditor.applyFarmLayoutObjects(layout).
+      // See its own init(deps) call below for the shared game.js state
+      // it's threaded — farmEditMode/farmEditBrushType/farmEditBrush stay
+      // real game.js `let`s (read from ~15 other places this extraction
+      // doesn't touch), threaded through as getter+setter pairs rather
+      // than owned by the module.
       let farmEditMode = false;
       let farmEditBrushType = 'terrain'; // 'terrain'|'crop'|'object'|'furniture'|'decor'|'erase'
       let farmEditBrush = 'grass';
-      let _editorPainting = false;
-
-      function toggleFarmEditMode() {
-        // The farm editor freely repaints tiles/crops and drops/removes
-        // furniture with no per-brush permission checks, so it's gated at
-        // this single entry point instead — only the farm's owner can open it.
-        if (!farmEditMode && !isFarmOwner()) {
-          showToast("Only the farm's owner can use the farm editor.", false);
-          return;
-        }
-        farmEditMode = !farmEditMode;
-        const panel = document.getElementById('farmEditorPanel');
-        const btn   = document.getElementById('farmEditBtn');
-        if (panel) panel.style.display = farmEditMode ? 'flex' : 'none';
-        if (btn)   btn.classList.toggle('fed-open', farmEditMode);
-        if (farmEditMode) showToast('Farm editor active — click tiles to paint.', true);
-      }
-
-      function farmEditorSetBrush(type, value) {
-        farmEditBrushType = type;
-        farmEditBrush = value;
-        document.querySelectorAll('.fed-btn').forEach(b => b.classList.remove('fed-active'));
-        const sel = document.querySelector(`.fed-btn[data-btype="${type}"][data-bval="${value}"]`);
-        if (sel) sel.classList.add('fed-active');
-      }
-
-      function applyFarmEditBrush(col, row) {
-        if (!farmEditMode) return;
-        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return;
-        const tile = grid[row]?.[col];
-        if (!tile) return;
-
-        if (farmEditBrushType === 'terrain') {
-          const typeMap = {
-            grass: TileType.GRASS, weeds: TileType.WEEDS, rock: TileType.ROCK,
-            shrub: TileType.SHRUB, tilled: TileType.TILLED, raised: TileType.RAISED, trench: TileType.TRENCH
-          };
-          tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
-          if (tile.type === TileType.TRENCH) tile.depth = 1;
-          tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
-        } else if (farmEditBrushType === 'crop') {
-          if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
-          if (tile.type !== TileType.TILLED && tile.type !== TileType.GRASS && tile.type !== TileType.RAISED) tile.type = TileType.TILLED;
-          tile.crop = farmEditBrush; tile.cropAge = 50; tile.cropReady = false;
-          markTileDirty(col, row); saveFarmLayout();
-        } else if (farmEditBrushType === 'object') {
-          _editorMoveObject(col, row, farmEditBrush);
-        } else if (farmEditBrushType === 'furniture') {
-          // Place processing furniture without consuming inventory (editor mode)
-          if (!canPlaceFurnitureAt(col, row)) { showToast('Cannot place furniture here.', false); return; }
-          const def = PROCESSING_FURNITURE_DEFS[farmEditBrush];
-          if (!def) return;
-          const obj = makeProcessingFurniture(col, row, farmEditBrush);
-          if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); saveFarmLayout(); }
-        } else if (farmEditBrushType === 'erase') {
-          const obj = getWorldObjectAt(col, row);
-          if (obj && obj.type === 'processing_furniture') {
-            worldObjects.delete(col + ',' + row); obj.reset && obj.reset(); processingFurnitureObjects.delete(obj);
-          }
-          // Also remove decorative furniture at this tile
-          const decIdx = interiorFurnitureObjects.findIndex(o => o.col === col && o.row === row && o.area === 'farm');
-          if (decIdx >= 0) {
-            const d = interiorFurnitureObjects.splice(decIdx, 1)[0];
-            scene.remove(d.mesh);
-            d.mesh.traverse && d.mesh.traverse(child => {
-              if (child.geometry) child.geometry.dispose();
-              if (child.material) child.material.dispose();
-            });
-            if (d.light) scene.remove(d.light);
-            window.Music?.unregisterFurnitureSfxSource(d.sfxSource);
-            if (DECORATIVE_FURNITURE_DEFS[d.key]?.sit) worldObjects.delete(col + ',' + row);
-            unregisterChairNpcStation(d.key, col, row, 'farm');
-          }
-          tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
-        }
-      }
-
-      function _editorMoveObject(col, row, objectType) {
-        if (isHouseFootprint(col, row)) { showToast('Cannot place objects on house footprint.', false); return; }
-        if (getWorldObjectAt(col, row)) { showToast('Tile already occupied.', false); return; }
-        if (objectType === 'sellCrate' && shippingBoxObject) {
-          const old = shippingBoxObject;
-          worldObjects.delete(old.col + ',' + old.row);
-          if (old.mesh) scene.remove(old.mesh);
-          if (old.lid)  scene.remove(old.lid);
-          const nc = window.FarmCrates.makeSellCrate(col, row);
-          shippingBoxObject = nc; worldObjects.set(col + ',' + row, nc);
-          saveFarmLayout(); showToast('Shipping box moved.', true);
-        } else if (objectType === 'supplyBox' && supplyBoxObject) {
-          const old = supplyBoxObject;
-          worldObjects.delete(old.col + ',' + old.row);
-          if (old.mesh) scene.remove(old.mesh);
-          if (old.lid)  scene.remove(old.lid);
-          const nb = window.FarmCrates.makeSupplyBox(col, row);
-          supplyBoxObject = nb; worldObjects.set(col + ',' + row, nb);
-          saveFarmLayout(); showToast('Supply box moved.', true);
-        }
-      }
-
-      // ── Farm layout persistence ───────────────────────────────────
-      // Namespaced per world so separate worlds never bleed into each other's
-      // farm. worldId isn't known until onboarding's hobunjiPlayerReady event
-      // fires (after this module's synchronous init already ran once), so
-      // early calls fall back to the legacy unnamespaced key — spawnPlayerAvatar
-      // re-reads and re-applies the correctly-namespaced layout once the real
-      // worldId is known (see the resync block there).
-      const FARM_LAYOUT_KEY = 'hobunji_farm_layout_v3';
-
-      function farmLayoutKey() {
-        const worldId = (window.__hobunjiPlayerProfile || _playerData)?.worldId;
-        return worldId ? (FARM_LAYOUT_KEY + ':' + worldId) : FARM_LAYOUT_KEY;
-      }
-
-      function saveFarmLayout() {
-        try {
-          const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [] };
-          if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
-          if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
-          for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-              const t = grid[r][c];
-              const def = createDayOneTile(c, r);
-              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
-                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
-                  cropAge: t.crop && t.crop !== CropType.NONE ? t.cropAge : undefined,
-                  cropReady: t.crop && t.crop !== CropType.NONE ? !!t.cropReady : undefined });
-              }
-            }
-          }
-          processingFurnitureObjects.forEach(obj => {
-            const job = obj.getJob && obj.getJob();
-            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
-          });
-          interiorFurnitureObjects.forEach(obj => {
-            layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
-              rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
-              localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
-              localRow: Number.isFinite(obj.localRow) ? obj.localRow : null });
-          });
-          // Movable buildings — every house piece (starter + built/
-          // foundation deeds) and every barn (foundation or built). Added
-          // as extra fields on the same version-3 shape rather than bumping
-          // the version, so older saves without these fields still load fine.
-          if (housePieces.length) {
-            layout.housePieces = housePieces.map(p => ({
-              id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage, roofAxis: p.roofAxis || null,
-              features: (p.features || []).map(f => ({ id: f.id, type: f.type, lx: f.lx, ly: f.ly, side: f.side, edgeSlot: f.edgeSlot, autoGenerated: !!f.autoGenerated })),
-            }));
-          }
-          // Manual entrances/chimneys removed or displaced by a piece's own
-          // wall, recovered rather than deleted (see house-pieces.js's
-          // architectural features) — independent of any one piece's
-          // position, so saved at the top level, not per piece.
-          const fixtureInventory = window.HousePieces.getFixtureInventory();
-          if (fixtureInventory.length) layout.architecturalInventory = fixtureInventory;
-          if (farmBuildings.length) {
-            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage, ...(b.troughs ? { troughs: b.troughs } : {}) }));
-          }
-          // Preserve map-editor-authored travel data through in-game saves
-          if (worldRoutes.length)      layout.routes      = worldRoutes;
-          if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
-          if (worldTransitions.length) layout.transitions = worldTransitions;
-          localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
-          return true;
-        } catch (error) {
-          console.error('saveFarmLayout:', error);
-          debugLog('Farm layout save failed: ' + (error?.message || error), 'error');
-          return false;
-        }
-      }
-
-      function loadFarmLayout() {
-        try {
-          const raw = localStorage.getItem(farmLayoutKey());
-          return raw ? JSON.parse(raw) : null;
-        } catch { return null; }
-      }
-
-      function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
-        if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady }) => {
-          if (grid[r]?.[c]) {
-            const previousType = grid[r][c].type; // Used below to skip visual refreshes for non-terrain save data.
-            const previousDepth = grid[r][c].depth; // Used below to detect restored trench-depth changes.
-            grid[r][c].type = type;
-            // Older layouts omit depth; treat those trenches as fully dug.
-            grid[r][c].depth = type === TileType.TRENCH
-              ? (Number.isFinite(depth) ? clamp(depth, 0, 1) : 1)
-              : 0;
-            grid[r][c].crop = crop || CropType.NONE;
-            if (crop) {
-              // Older layouts (and any other caller that omits cropAge) predate
-              // persisting real growth progress — fall back to the previous
-              // "fully grown but not yet flagged ready" placeholder, which
-              // self-corrects at the next morning's tickCropDay(). A layout
-              // that does carry real progress must restore it as-is: forcing
-              // cropReady=false here regardless of actual state used to demote
-              // an already-ripe, uncollected crop back to "growing" on every
-              // reload/re-entry, silently blocking harvest until the next day.
-              grid[r][c].cropAge = Number.isFinite(cropAge) ? cropAge : 50;
-              grid[r][c].cropReady = Number.isFinite(cropAge) ? !!cropReady : false;
-            }
-            grid[r][c].dewPile = dewPile || null;
-            if (refreshVisuals && (previousType !== grid[r][c].type || previousDepth !== grid[r][c].depth)) {
-              markTileDirty(c, r);
-            }
-          }
-        });
-      }
-
-      // Cleans up a legacy bug: createInitialGrid() used to stamp a hardcoded
-      // 3x5 raw-tile "north exit to town" road onto every brand-new farm,
-      // duplicating the real farm<->town connector (which is authored as a
-      // proper route with its own paved brick surface — see worldRoutes).
-      // That raw stub got persisted into every save the first time it ran
-      // (its tile.type differs from createDayOneTile's own default, so
-      // saveFarmLayout always wrote it out explicitly), so simply removing
-      // the stamp from createInitialGrid doesn't clear it from saves that
-      // already have it — applyFarmLayoutToGrid would just restore it from
-      // layout.tiles again. Revert each of those exact tiles back to a
-      // fresh default, but only if it still looks untouched (still a bare
-      // path tile, never tilled/planted/dug), so a player who deliberately
-      // built or farmed over that spot keeps whatever they made there.
-      const LEGACY_FARM_ENTRANCE_PATH_TILES = [
-        [16,0],[17,0],[18,0],
-        [16,1],[17,1],[18,1],
-        [16,2],[17,2],[18,2],
-        [16,3],[17,3],[18,3],
-        [16,4],[17,4],[18,4],
-      ];
-      function cleanupLegacyFarmEntranceRoad() {
-        for (const [c, r] of LEGACY_FARM_ENTRANCE_PATH_TILES) {
-          const t = grid[r]?.[c];
-          if (!t || t.type !== TileType.PATH) continue;
-          if (t.crop && t.crop !== CropType.NONE) continue;
-          if (t.dewPile || t.depth) continue;
-          const def = createDayOneTile(c, r);
-          t.type = def.type;
-          t.variation = def.variation;
-        }
-      }
-
-      function applyFarmLayoutObjects(layout) {
-        if (!layout || layout.version !== 3) return;
-        if (layout.objects?.sellCrate) {
-          const [c, r] = layout.objects.sellCrate;
-          if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
-            worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
-            shippingBoxObject.reset && shippingBoxObject.reset();
-            const nc = window.FarmCrates.makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
-          }
-        }
-        if (layout.objects?.supplyBox) {
-          const [c, r] = layout.objects.supplyBox;
-          if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
-            worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
-            supplyBoxObject.reset && supplyBoxObject.reset();
-            const nb = window.FarmCrates.makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
-          }
-        }
-        (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
-          if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-            const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
-            if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
-          }
-        });
-        (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
-          const def = DECORATIVE_FURNITURE_DEFS[key];
-          if (!def) return;
-          const decorArea = area || 'farm';
-          const targetScene = decorArea === 'interior' ? interiorScene : scene;
-          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
-          const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
-          if (result) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-            mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-            ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-            localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
-          if (result && decorArea === 'farm' && def.sit) {
-            const size = decorativeFurnitureSize(key, rotYDeg || 0);
-            registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
-          }
-          if (result) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
-        });
-        // House pieces — initWorldObjects() already seeded the starter piece
-        // at its hard default position before this runs. A modern save's
-        // own housePieces array may have moved the starter (a legacy
-        // "Move Building" save carried forward) and/or built additional
-        // deed pieces; an old pre-modular-house save only ever has the
-        // legacy houseCol/houseRow fields, which just repositions the
-        // starter with nothing else to restore.
-        let starterEntry = housePieces.find(p => p.id === 'house_starter');
-        if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-          const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
-          if (savedStarter) {
-            // Restore the saved records themselves instead of reseeding a
-            // default starter pair and skipping pieceKey:'starter'. The old
-            // path restored the main room but silently reset a rearranged
-            // starter annex to its default position on every reload.
-            window.HousePieces.clearAll();
-            layout.housePieces.forEach(saved => {
-              const def = saved.pieceKey === 'starter' ? HOUSE_PIECE_CATALOG.starter : HOUSE_PIECE_CATALOG[saved.pieceKey];
-              if (!def || !saved.id) return;
-              const entry = {
-                id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-                w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-                roofAxis: saved.roofAxis || null,
-                features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
-              };
-              housePieces.push(entry);
-              window.HousePieces.spawnEntry(entry);
-            });
-            starterEntry = housePieces.find(p => p.id === 'house_starter');
-          } else {
-            // Transitional saves with deeds but no explicit main-room record.
-            layout.housePieces.forEach(saved => {
-              if (saved.pieceKey === 'starter' || !HOUSE_PIECE_CATALOG[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
-              const def = HOUSE_PIECE_CATALOG[saved.pieceKey];
-              const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-                w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-                roofAxis: saved.roofAxis || null, features: saved.features || [] };
-              housePieces.push(entry);
-              window.HousePieces.spawnEntry(entry);
-            });
-          }
-        } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
-                   && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
-          window.HousePieces.clearAll();
-          window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
-        }
-        // Manual entrances/chimneys recovered by removal or a wall junction
-        // — independent of any one piece's position, so restored
-        // unconditionally here rather than inside either branch above.
-        window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
-        // Re-derive global furniture coordinates from the room-local values
-        // only after every room has been restored. This is deliberately a
-        // no-op transform: it repairs old/global coordinates while keeping
-        // the saved local placement unchanged.
-        housePieces.filter(p => p.stage === 'built').forEach(piece => {
-          const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
-          transformFurnitureWithHousePiece(piece.id, rect, rect, false);
-        });
-        rebuildInteriorGeometry();
-        (layout.buildings || []).forEach(saved => {
-          if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
-          if (farmBuildings.some(b => b.id === saved.id)) return;
-          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
-          farmBuildings.push(entry);
-          window.FarmBuildings.spawnEntry(entry);
-        });
-        // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
-        // which always runs first (see the two call sites) — this just builds
-        // the meshes for whatever dew piles are already sitting in the grid,
-        // same two-phase split as furniture (data now, objects/meshes here).
-        window.DewVats.rebuildMeshesFromGrid();
-      }
 
       // Livestock genetics & breeding (fur-color math, pattern layers,
       // Size inheritance, sell-value scoring, crossOffspring) now live in
@@ -3804,7 +3459,7 @@
             cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           if (Math.abs(iy) > 0.001) {
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
           }
           return;
         }
@@ -4104,10 +3759,10 @@
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
         const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
-        const targetScene = optScene || getActiveScene();
-        const targetGrid  = optGrid  || getActiveGrid();
-        const gridCols = optCols || getActiveCols();
-        const gridRows = optRows || getActiveRows();
+        const targetScene = optScene || window.GridTileAccessors.getActiveScene();
+        const targetGrid  = optGrid  || window.GridTileAccessors.getActiveGrid();
+        const gridCols = optCols || window.GridTileAccessors.getActiveCols();
+        const gridRows = optRows || window.GridTileAccessors.getActiveRows();
         const modelWidth = def.modelWidth;
         // New creature art is not required to use the legacy 1375×600 canvas.
         // Definitions with a different source canvas provide its width/height
@@ -4142,8 +3797,8 @@
           const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
           window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
         }
-        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
-        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
+        const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, gridCols - 1);
+        const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + groundLift, y / TILE);
         _markPngPlane(avatarRef.group);
@@ -4241,82 +3896,17 @@
       // alongside every other config load; every consumer below only runs
       // in response to a later gameplay event (a creature dying, a chest
       // spawning, a shop menu opening), so by the time any of them actually
-      // read _lootPools/_shopStock the fetch has long since resolved — same
-      // assumption docs/game.js's other cached config loaders make (see
-      // loadBanditGangConfig).
-      let _lootPools = {};
-      let _shopStock = {};
-      let _lootShopConfigPromise = null;
-      function loadLootShopConfig() {
-        if (_lootShopConfigPromise) return _lootShopConfigPromise;
-        // Routed through window.LocalDBOverrides.loadDatabase() (see
-        // docs/js/local-db-overrides.js) so the onboarding "Database Source"
-        // toggle can swap in a locally-saved loot-shop-editor edit of either
-        // file without touching the repo copy — falls back to a direct fetch
-        // if that module somehow isn't loaded.
-        const loadOne = (id, path) => (window.LocalDBOverrides ? window.LocalDBOverrides.loadDatabase(id) : fetch(path).then(r => r.ok ? r.json() : null)).catch(() => null);
-        _lootShopConfigPromise = Promise.all([
-          loadOne('lootPools', 'config/loot/loot-pools.json'),
-          loadOne('shopStock', 'config/shops/shop-stock.json'),
-        ]).then(([lootData, shopData]) => {
-          _lootPools = lootData?.pools || {};
-          if (shopData?.shops) { _shopStock = shopData.shops; _applyLoadedShopStock(); }
-        });
-        return _lootShopConfigPromise;
-      }
-      loadLootShopConfig();
-
-      // The subset of the dialogue system's shared condition axes (see
-      // docs/js/condition-registry.js) that make sense for loot/shop gating
-      // outside of an NPC conversation — no relationship/encounter/station
-      // concept here, so those axes are simply never supplied/checked.
-      function _lootShopWorldState() {
-        return {
-          weekdays: window.CalendarSystem.currentWeekdayName(),
-          seasons: window.CalendarSystem.currentSeason().name,
-          weather: calendar.weather,
-          timesOfDay: window.Fishing.timeOfDay(),
-          maps: currentArea,
-          playerSpecies: _playerData?.appearance?.speciesId || '',
-        };
-      }
-
-      // Rolls a docs/config/loot/loot-pools.json pool by id: every entry is
-      // independently checked against its conditions and its own `chance`
-      // (default 1 = always, matching every migrated creature/bandit table),
-      // then contributes a `min..max` quantity (or a `min..max` in steps of
-      // `step`, for discrete-increment rolls like the treasure chest's gold).
-      function rollLootPool(poolId) {
-        const pool = _lootPools[poolId];
-        if (!pool) return {};
-        const world = _lootShopWorldState();
-        const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
-        const gained = {};
-        for (const entry of eligible) {
-          if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
-          const min = entry.min || 0, max = entry.max != null ? entry.max : min;
-          let qty;
-          if (entry.step) {
-            const steps = Math.floor((max - min) / entry.step) + 1;
-            qty = min + Math.floor(rnd() * steps) * entry.step;
-          } else {
-            qty = min + Math.floor(rnd() * (max - min + 1));
-          }
-          if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
-        }
-        return gained;
-      }
-
-      // Shared 1-5 star quality roll — fish, harvested crops, and butchered
-      // meat all use this. Weighted toward the middle (3 stars most common)
-      // rather than a flat 20% each, so it doesn't feel like a coin flip;
-      // otherwise deliberately simple/random for now, no per-item tuning.
-      function rollItemStars(skillKey) {
-        return window.SkillSystem?.rollQuality(skillKey) || 3;
-      }
-      function starRatingText(stars) {
-        return window.SkillSystem?.starRatingText(stars) || '★'.repeat(stars) + '☆'.repeat(5 - stars);
-      }
+      // read window.LootRolling's pools/stock the fetch has long since
+      // resolved — same assumption docs/game.js's other cached config
+      // loaders make (see loadBanditGangConfig). Moved into
+      // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
+      window.LootRolling.init({
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        calendar,
+        applyLoadedShopStock: () => _applyLoadedShopStock(),
+      });
+      window.LootRolling.loadLootShopConfig();
 
       // Settled corpses expose the same getButtons()/onAction() shape as
       // farm world objects (see makeSellCrate) so the existing action-bar
@@ -4337,15 +3927,15 @@
           },
           onAction(action) {
             if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const gained = rollLootPool(c.def.lootPool);
+            const gained = window.LootRolling.rollLootPool(c.def.lootPool);
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
               // Meat gets a quality roll same as fish/crops; hides and other
               // butchering byproducts don't.
-              const meatStars = /meat/i.test(key) ? rollItemStars('combat') : null;
+              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null;
               if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
-              parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
+              parts.push((meatStars ? window.LootRolling.starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
@@ -4802,9 +4392,9 @@
           const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
           const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
           if (horizDist < 0.05) return 0;
-          return clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+          return window.FormatUtils.clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
         }
-        return clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
+        return window.FormatUtils.clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
 
       // Shared player melee direction. A hostile under the centered reticle
@@ -4825,7 +4415,7 @@
       }
       function currentPlayerMeleeAimPitch() {
         const direction = currentPlayerMeleeAimDirection();
-        return Math.asin(clamp(Number(direction?.y) || 0, -1, 1));
+        return Math.asin(window.FormatUtils.clamp(Number(direction?.y) || 0, -1, 1));
       }
 
       // Used by updateAmbientCues() to duck exploration/dawn music during a
@@ -4965,7 +4555,7 @@
           const targetAzimuthDeg = wrapAzimuthDeg(-(aimAngle * 180 / Math.PI) - 90 - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
           const diffDeg = angleDiff(THREE.MathUtils.degToRad(targetAzimuthDeg), THREE.MathUtils.degToRad(cameraAzimuthOffsetDeg)) * 180 / Math.PI;
           const maxStepDeg = MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC * dt;
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + clamp(diffDeg, -maxStepDeg, maxStepDeg));
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + window.FormatUtils.clamp(diffDeg, -maxStepDeg, maxStepDeg));
         } else {
           mouseLookAngle = aimAngle;
           targetAimAngle = aimAngle;
@@ -5019,12 +4609,12 @@
         // etc.), eventually crashing far away from where it actually went
         // wrong (see audio-system.js's non-finite .volume guard).
         if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
-        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || isHouseFootprint(col, row))) return false;
-        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return false;
-        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return false;
+        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
+        if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
+        if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
         return true;
       }
 
@@ -5034,7 +4624,7 @@
       // attack lockout.
       function isSwimmingAt(x, y, canSwim, grid) {
         if (canSwim) return false;
-        const g = grid || getActiveGrid();
+        const g = grid || window.GridTileAccessors.getActiveGrid();
         const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
         const type = g[row]?.[col]?.type;
         return type === TileType.RIVER || type === TileType.STREAM;
@@ -5042,7 +4632,7 @@
 
       // The player has no canSwim tag of their own today.
       function isPlayerSwimming() {
-        return isSwimmingAt(player.x, player.y, false, getActiveGrid());
+        return isSwimmingAt(player.x, player.y, false, window.GridTileAccessors.getActiveGrid());
       }
 
       function isCreatureSwimming(c) {
@@ -5055,7 +4645,7 @@
       // scales cliffs at full speed.
       function isCreatureClimbing(c) {
         if (c.def?.canClimb) return false;
-        const g = c.areaGrid || getActiveGrid();
+        const g = c.areaGrid || window.GridTileAccessors.getActiveGrid();
         const col = Math.floor(c.x / TILE), row = Math.floor(c.y / TILE);
         return !!g[row]?.[col]?.incline;
       }
@@ -5189,8 +4779,8 @@
 
       function updateCreatureMesh(c, dt, aimAngle) {
         const g = c.areaGrid || grid;
-        const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
-        const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
+        const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
+        const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
         // spawn) uses that branch's own height instead of terrain-follow —
         // same override the player gets while climbing/on a branch.
@@ -5224,7 +4814,7 @@
         if (c.isBandit) {
           const banditSpeed = Math.hypot(c.vx || 0, c.vy || 0);
           if (banditSpeed > 5) {
-            const bobEffort = clamp(banditSpeed / ((c.def.moveSpeed || MOVE_SPEED) * devGlobalSpeedMul), 0, 1);
+            const bobEffort = window.FormatUtils.clamp(banditSpeed / ((c.def.moveSpeed || MOVE_SPEED) * devGlobalSpeedMul), 0, 1);
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
@@ -5235,7 +4825,7 @@
         // creature or float with it during a pounce crouch.
         if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         if (window.ResourceRings) {
-          const ringRadius = clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
+          const ringRadius = window.FormatUtils.clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
           const ringScene = c.scene || scene;
           // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
           // a red target-lock ring renders around a hostile's resource rings
@@ -6094,8 +5684,8 @@
           // to rest by that block's own unconditional _restoreCompanionHead.
           window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
-          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
-          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           // One line per AI-state transition for den-spawned wildlife (not
           // scripted combat-card creatures, which have no denKey) — lets the
@@ -6328,7 +5918,7 @@
         const state = _fallbackCompanionHeadState(c);
         if (!state) return;
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentDeg += clamp(targetDeg - state.currentDeg, -step, step);
+        state.currentDeg += window.FormatUtils.clamp(targetDeg - state.currentDeg, -step, step);
         const radians = state.currentDeg * Math.PI / 180;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.x = state.baseFrontX + radians;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.x = state.baseBackX + radians;
@@ -6524,9 +6114,9 @@
           }
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentLeanDeg += clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
-        state.currentPitchDeg += clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
-        state.currentYawDeg += clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentLeanDeg += window.FormatUtils.clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
+        state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -7313,8 +6903,8 @@
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
-          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
-          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
@@ -8424,7 +8014,7 @@
         getPlayer: () => player,
         getClimbTarget: window.ClimbSystem.getClimbTarget,
         startClimb: window.ClimbSystem.startClimb,
-        getActiveGrid,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getCurrentArea: () => currentArea,
         enterZone,
         companionObjects,
@@ -8530,20 +8120,9 @@
       // js/bandit-camps.js (window.BanditCamps) -- see
       // window.BanditCamps.init(...) below for the wiring.
 
-      function updatePlayerVitals(dt) {
-        // Health/Stamina regen, Exhausted/black-stamina recovery, and every
-        // affliction's own tick (bleed/poison/congealed/recovery/puke) —
-        // see docs/js/combat/resource-system.js. Passing the existing
-        // per-second constants keeps un-afflicted regen feeling the same
-        // as before this system existed; quiet rest now doubles it.
-        const tickResult = window.ResourceSystem?.tick(player, dt, {
-          staminaRegenPerSec: PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
-          healthRegenPerSec: PLAYER_HEALTH_REGEN,
-        });
-        if (tickResult?.puked) showToast('You feel queasy...', false);
-        if (player.dodgeCooldownT > 0) player.dodgeCooldownT = Math.max(0, player.dodgeCooldownT - dt);
-        refreshVitalsHud();
-      }
+      // Player health/stamina/footing regen tick and the vitals-bar HUD
+      // refresh (updatePlayerVitals/refreshVitalsHud) now live in
+      // js/player-vitals.js — call via window.PlayerVitals.*.
 
       // Dodging never refuses for lack of Stamina — overspending pushes the
       // player into Exhausted (black-stamina debt) instead, mirroring the
@@ -8564,10 +8143,10 @@
       // recovery roll, so there's nothing else to drive here.
       function advancePlayerKnockback(dt) {
         player.knockbackT = Math.max(0, player.knockbackT - dt);
-        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
-        const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+        const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = window.FormatUtils.clamp(player.x + player.knockbackVX * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + player.knockbackVY * dt, minY, maxY);
         const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
         player.x = kbSwept.x; player.y = kbSwept.y;
         if (kbSwept.blockedX) player.knockbackVX = 0;
@@ -8579,10 +8158,10 @@
 
       function advancePlayerProneThrow(dt) {
         player.proneThrowT = Math.max(0, player.proneThrowT - dt);
-        const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-        const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
-        const desiredY = clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
+        const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = window.FormatUtils.clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
         const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
         player.x = swept.x; player.y = swept.y;
         if (swept.blockedX) player.proneThrowVX = 0;
@@ -8736,7 +8315,7 @@
         player.lungeStartY = player.y;
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
-        const aimPitch = Math.asin(clamp(aimDirection.y, -1, 1));
+        const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
         const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
           || { distancePx, hopUnits, pitch: aimPitch };
         player.lungeDirX = Math.cos(aimYaw);
@@ -8770,27 +8349,6 @@
           })) return true;
         }
         return false;
-      }
-
-      const _vbHealthFill  = document.getElementById('vbHealthFill');
-      const _vbStaminaFill = document.getElementById('vbStaminaFill');
-      const _vbFootingFill = document.getElementById('vbFootingFill');
-      // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
-      // rewrite the same style.width value every frame.
-      let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
-      function refreshVitalsHud() {
-        if (_vbHealthFill) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.health / player.maxHealth * 100)));
-          if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
-        }
-        if (_vbStaminaFill) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100)));
-          if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
-        }
-        if (_vbFootingFill && player.maxFooting) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.footing / player.maxFooting * 100)));
-          if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
-        }
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -9048,7 +8606,7 @@
         feedGrinderFurniture: () => ({
           getButtons() {
             const active = getActiveInventoryItem();
-            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            const outputs = active ? window.ItemProcessing.getProcessingOutputs('grindingFeed', active.key) : null;
             if (!outputs) return [{ icon: '⚙️', label: 'Hold a crop, raw meat, or fish to grind', action: 'obj_feed_grind', style: 'secondary', allowed: false }];
             return [{ icon: '⚙️', label: `Grind → ${outputs[0].label}`, action: 'obj_feed_grind', style: 'primary', allowed: true }];
           },
@@ -9056,13 +8614,13 @@
             if (action !== 'obj_feed_grind') return { ok: false, message: 'Unknown action.' };
             if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can use the feed grinder." };
             const active = getActiveInventoryItem();
-            const outputs = active ? getProcessingOutputs('grindingFeed', active.key) : null;
+            const outputs = active ? window.ItemProcessing.getProcessingOutputs('grindingFeed', active.key) : null;
             if (!active || !outputs) return { ok: false, message: 'Hold a crop, raw meat, or fish to grind it into feed.' };
             inventory[active.key] = Math.max(0, (inventory[active.key] || 0) - 1);
             clampInventoryStack(active.key);
             const out = outputs[0];
             inventory[out.key] = Math.min(99, (inventory[out.key] || 0) + 1);
-            refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+            window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
             saveMemberWorldData();
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processHandmill);
             return { ok: true, message: `⚙️ Ground 1 ${ITEM_DEFS[out.key]?.label || out.key}.` };
@@ -9122,6 +8680,32 @@
       // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
       const _zoneBuildingGroups = new Map();
       window._zoneBuildingGroups = _zoneBuildingGroups; // devtools/QA inspection hook
+
+      // Called this early (well ahead of the other window.*.init(...) calls
+      // near the bottom of this file) because several modules' own init()
+      // chains synchronously call window.GridTileAccessors.getActiveScene()
+      // during setup (e.g. sky-dome.js's attachToScene, reached via
+      // CloudForestFog.init → RainPlanes.init) — every dep below is either a
+      // getter closure (safe from any position) or a const/function already
+      // declared above this point.
+      window.GridTileAccessors.init({
+        TileType, CropType, COLS, ROWS, INTERIOR_COLS, INTERIOR_ROWS, EXTERIOR_ZONES,
+        _isBuildingArea, _isZoneArea, _buildingScenes, _zoneScenes, _zoneLayouts, _zoneBuildingGroups,
+        buildZoneScene,
+        getCurrentArea: () => currentArea,
+        getScene: () => scene,
+        getInteriorScene: () => interiorScene,
+        getGrid: () => grid,
+        getInteriorGrid: () => interiorGrid,
+        getTownGrid: () => townGrid,
+        getTownScene: () => townScene,
+        getTownZone: () => _townZone,
+        getHousePieces: () => housePieces,
+        getFarmBuildings: () => farmBuildings,
+        getWorldTownTransitions: () => worldTownTransitions,
+        getTownBuildingGroups: () => _townBuildingGroups,
+        getTownBuildingDefs: () => _townBuildingDefs,
+      });
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
@@ -9325,7 +8909,7 @@
           for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
         }
 
-        const pathNet = options.pathNet || buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
+        const pathNet = options.pathNet || window.TerrainGeometry.buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Shared by every chunk so path-neighbor exclusions stay seam-safe.
         if (includeGlobalPath && pathNet) {
           // Regular ground (grass) covers the path's own footprint too —
           // see the paved brick surface registered below, which is meant to
@@ -9347,8 +8931,8 @@
         if (includeGlobalPath) {
           ensurePathSurfaceReady().then(() => {
             const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
-            const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
-            if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+            const splineData = window.TerrainGeometry.preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
+            if (splineData) window.TerrainGeometry.registerPathBrickChunks(mapId, zScene, splineData);
           }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
         }
 
@@ -9370,9 +8954,9 @@
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
-            const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(c, r);
             if (tile.rockKind === 'diggableRockOre') {
               // Keep resource rocks out of the merged terrain buckets so a
               // completed pick swing can remove exactly one mound without a
@@ -9404,7 +8988,7 @@
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
               tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid, { includeCutWalls: true });
+            const { dirtGeo, grassGeo } = window.TerrainGeometry.buildTerrainTileGeo(c, r, tile.type, zGrid, { includeCutWalls: true });
             const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -9415,7 +8999,7 @@
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (window.FoliageGenerator) {
               // Which generated object this SHRUB tile came from (see
               // terrain-preview.js's floraKind) decides its mesh: a real
@@ -9538,11 +9122,11 @@
           // beneath its separate paved bricks; the route heightfield is what
           // was removed here, not the walkable terrain itself.
           const matKey = tile.type === TileType.PATH ? TileType.GRASS : (tileMats[tile.type] ? tile.type : TileType.GRASS);
-          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
+          _addToBucket(matKey, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
         }
 
         for (const [matKey, entries] of _floorBuckets) {
-          const merged = _mergeTileGeos(entries);
+          const merged = window.TerrainGeometry._mergeTileGeos(entries);
           displaceZoneGeometry(merged, mapId);
           merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
@@ -9696,7 +9280,7 @@
         // once and keep it outside streamed chunks. Ordinary floor tiles,
         // removable rocks, trees, ramps, water and grass are built by the
         // 16x16 chunk factory below.
-        const zonePathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Initial route apron; info.pathNet below becomes its runtime-mutable owner.
+        const zonePathNet = window.TerrainGeometry.buildPathNetworkGeo(zGrid, ZCOLS, ZROWS); // Initial route apron; info.pathNet below becomes its runtime-mutable owner.
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, {
           includeTiles: false,
           includeGlobalPath: true,
@@ -9711,7 +9295,7 @@
         // footprint, smoothly blending down to the tier below across the outer
         // 1-tile margin (exactly how much smaller each plateau sub-map is than its
         // parent, so that margin is the cliff-face band).
-        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
+        _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
@@ -9883,142 +9467,14 @@
         return info;
       }
 
-      // One plateau group's footprint as a continuous heightfield mesa: flat raised
-      // top across the interior, blending smoothly down to ground level over the
-      // outer MARGIN_TILES band — the same seam-hash + blend + steep-face-stone-skin
-      // technique buildZoneBorderTerrain uses for the distant boundary terrain beyond
-      // the playable area, so an in-bounds plateau reads visually like those same
-      // mesas instead of a flat-sided box. The margin band's width matches exactly
-      // how much smaller each plateau's submap is than its parent (see
-      // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
-      // reserved for this cliff-face blend.
-      // Builds every tier-transition mesa for a zone, returning the meshes so
-      // the caller can track and later remove/rebuild them (see
-      // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
-      // and by a runtime tile change on a plateau's flat top.
-      function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
-        const meshes = [];
-        // Rebuilds discard the previous geometry-derived ownership tags before
-        // the current mesa faces mark their exact steep tiles below.
-        for (const row of (zGrid || [])) for (const tile of (row || [])) if (tile) delete tile.mesaCliffFace;
-        plateauMesas.forEach((mesa, i) => {
-          const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
-          if (elevOffset <= 0) return;
-          const mesh = window.ZonePlateauMesa.buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
-          if (mesh) meshes.push(mesh);
-        });
-        return meshes;
-      }
-
-      // Rebuilds a zone's plateau mesa meshes from its current grid — used
-      // after a dig/fill/raise/till/smooth changes a tile that sits on a
-      // plateau's flat top, so a newly-carved CARVED_TILE_TYPES cell's hole
-      // (or a filled-back-in cell's restored solid lid) actually shows up
-      // instead of the mesa staying frozen at whatever it looked like when
-      // the zone first loaded. See refreshZoneGroundVisuals.
-      function rebuildZoneMesaMeshes(mapId) {
-        const zi = _zoneScenes.get(mapId);
-        const zoneData = _zoneLayouts.get(mapId);
-        if (!zi || !zoneData?.mesas?.length) return;
-        const oldMeshes = _zoneMesaMeshGroups.get(mapId);
-        if (oldMeshes) for (const mesh of oldMeshes) { zi.scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); }
-        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
-      }
-
-      // A zone's in-bounds elevated plateau/mesa terrain (buildPlateauMesa)
-      // now lives in js/zone-plateau-mesa.js — call via
-      // window.ZonePlateauMesa.buildPlateauMesa(...).
-
-      // Zone ramp surfaces/curtains (buildZoneRampMeshes/
-      // buildRampCurtainMeshes) and the unioned non-walkable rock layer
-      // (buildRockFormationMeshes) now live in js/zone-terrain-features.js
-      // — call via window.ZoneTerrainFeatures.*.
-
-      // Rounded boulder-mound bump field — the exact same BFS-grown-plateau
-      // algorithm (and the identical seam/roughness noise formulas) that
-      // buildRockTileGeo already uses for every loose rock scattered on
-      // farm/zone ground, generalized from a single 1x1 tile to an arbitrary
-      // col×row footprint so a whole surface (a den face, a cavern wall
-      // panel — see buildAnimalDenMeshes/buildCavernWalls) reads as one
-      // continuous cluster of rounded lobes, matching the farm's rocks,
-      // instead of a flat panel with small edge-only jitter. Boundary
-      // vertices are forced to exactly 0 so adjacent faces/panels that meet
-      // at a shared edge stay crack-free even though each field is grown
-      // independently in its own local coordinate space.
+      // A zone's in-bounds elevated plateau/mesa terrain (buildPlateauMesa),
+      // the per-zone mesa-mesh orchestration (buildZoneMesaMeshes/
+      // rebuildZoneMesaMeshes), and the rounded boulder-mound bump field
+      // (buildRockMoundBumpField/sampleRockMoundBump) now live in
+      // js/zone-plateau-mesa.js — call via window.ZonePlateauMesa.*. The
+      // shared tuning constant stays here since js/zone-den-totem-features.js
+      // also reads it via its own init() deps.
       const ROCK_MOUND_CELLS_PER_TILE = 6;
-      function buildRockMoundBumpField(colsTiles, rowsTiles, worldU0, worldV0, salt, peakScale = 1) {
-        const CX = Math.max(1, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
-        const CZ = Math.max(1, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
-        const VX = CX + 1, VZ = CZ + 1, STEP = 1 / ROCK_MOUND_CELLS_PER_TILE;
-        let _s = ((Math.round(worldU0 * 8) * 374761393) ^ (Math.round(worldV0 * 8) * 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
-        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-        const seamDisp = (vx, vz) => {
-          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-        const roughDisp = (vx, vz) => {
-          const kx = Math.round(vx * 8) | 0, kz = Math.round(vz * 8) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.05;
-        };
-        const Y = new Float32Array(VX * VZ);
-        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(worldU0 + vi * STEP, worldV0 + vj * STEP);
-        if (CX >= 3 && CZ >= 3) {
-          const lobeCount = Math.max(1, Math.round(colsTiles * rowsTiles * 0.7));
-          for (let lobe = 0; lobe < lobeCount; lobe++) {
-            const startCi = 1 + Math.floor(rng() * (CX - 2));
-            const startCj = 1 + Math.floor(rng() * (CZ - 2));
-            const maxSize = 2 + Math.floor(rng() * 12);
-            const group = new Set([startCj * CX + startCi]);
-            const front = [[startCi, startCj]];
-            while (front.length && group.size < maxSize) {
-              const fi = Math.floor(rng() * front.length);
-              const [ci, cj] = front.splice(fi, 1)[0];
-              for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-                const ni = ci + dc, nj = cj + dr;
-                if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
-                const nk = nj * CX + ni;
-                if (group.has(nk)) continue;
-                group.add(nk); front.push([ni, nj]);
-              }
-            }
-            let maxY = -Infinity;
-            const raised = new Set();
-            for (const ck of group) {
-              const ci = ck % CX, cj = (ck / CX) | 0;
-              for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
-                raised.add(vv);
-                if (Y[vv] > maxY) maxY = Y[vv];
-              }
-            }
-            const PEAK = (0.22 + rng() * 0.3) * peakScale;
-            const target = maxY + PEAK;
-            for (const vv of raised) {
-              const vix = vv % VX, viy = (vv / VX) | 0;
-              const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
-              const blend = Math.min(1, edgeDist / 2);
-              if (blend <= 0) continue;
-              const vx = worldU0 + vix * STEP, vz = worldV0 + viy * STEP;
-              const hgt = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
-              if (hgt > Y[vv]) Y[vv] = hgt;
-            }
-          }
-        }
-        for (let vi = 0; vi < VX; vi++) { Y[vi] = 0; Y[(VZ - 1) * VX + vi] = 0; }
-        for (let vj = 0; vj < VZ; vj++) { Y[vj * VX] = 0; Y[vj * VX + VX - 1] = 0; }
-        return { VX, VZ, Y };
-      }
-      function sampleRockMoundBump(field, u, v) {
-        const fx = u * (field.VX - 1), fz = v * (field.VZ - 1);
-        const ix = Math.max(0, Math.min(field.VX - 2, Math.floor(fx))), iz = Math.max(0, Math.min(field.VZ - 2, Math.floor(fz)));
-        const tx = fx - ix, tz = fz - iz;
-        const y00 = field.Y[iz * field.VX + ix], y10 = field.Y[iz * field.VX + ix + 1];
-        const y01 = field.Y[(iz + 1) * field.VX + ix], y11 = field.Y[(iz + 1) * field.VX + ix + 1];
-        return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
-      }
 
       // Animal den rock mounds (buildDenRockMoundGeo/buildAnimalDenMeshes)
       // and root totem meshes (buildRootTotemMeshes) now live in
@@ -10129,21 +9585,21 @@
           enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
-          const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
-          const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, INTERIOR_COLS - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
           player.x = (c + 0.5) * TILE;
           player.y = (r + 0.5) * TILE;
         } else if (t.target === 'town') {
           const tcols = _townZone?.cols || 60, trows = _townZone?.rows || 50;
-          const c = clamp(t.targetCol, 0, tcols - 1);
-          const r = clamp(t.targetRow, 0, trows - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, tcols - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, trows - 1);
           enterTown(c, r);
         } else if (t.target === 'zone') {
           enterZone(t.targetMapId, t.targetCol, t.targetRow);
         } else { // 'farm'
           _returnToFarmMeshes();
-          const c = clamp(t.targetCol, 0, COLS - 1);
-          const r = clamp(t.targetRow, 0, ROWS - 1);
+          const c = window.FormatUtils.clamp(t.targetCol, 0, COLS - 1);
+          const r = window.FormatUtils.clamp(t.targetRow, 0, ROWS - 1);
           player.x = (c + 0.5) * TILE;
           player.y = (r + 0.5) * TILE;
         }
@@ -10243,14 +9699,14 @@
       function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
       function clampDialogueZoomPercent(value) {
         const cfg = dialogueZoomConfig();
-        return clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
+        return window.FormatUtils.clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
       }
       function dialogueZoomFactor() {
         const cfg = dialogueZoomConfig();
         const minPercent = cfg.minPercent ?? 0;
         const maxPercent = cfg.maxPercent ?? 100;
         const range = Math.max(0.001, maxPercent - minPercent);
-        const normalized = clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
+        const normalized = window.FormatUtils.clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
         return 1 + normalized * ((cfg.maxZoomFactor ?? 2.5) - 1);
       }
       function setDialogueCameraZoomPercent(value) {
@@ -10818,8 +10274,8 @@
         TileType,
         worldObjects,
         isSolid,
-        isHouseFootprint,
-        isTownBuildingCollisionTile,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
+        isTownBuildingCollisionTile: window.GridTileAccessors.isTownBuildingCollisionTile,
         isZoneArea: _isZoneArea,
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
@@ -11260,7 +10716,7 @@
                 const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * 0.2;
                 if (this._moveSpeedTiles > 0.05) {
-                  const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                  const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
                   root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
                 }
                 groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
@@ -11408,7 +10864,7 @@
             // above) approaches its own max (cfg.speedTilesPerSecond),
             // rather than a flat distance whenever it's walking at all.
             if (this._moveSpeedTiles > 0.05) {
-              const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+              const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
               root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
             }
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
@@ -12425,7 +11881,7 @@
                 bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
                 bGrid[rock.row][rock.col].oreKind = rock.oreKind;
               }
-              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
               rockMesh.castShadow = rockMesh.receiveShadow = true;
@@ -12522,7 +11978,7 @@
                 tile.oreKey = rock.oreKey || null;
                 tile.mineFloor = mapData.mineFloor;
               }
-              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
               const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
@@ -12710,8 +12166,8 @@
         const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
         const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
         return {
-          col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
-          row: clamp(northRow, 0, fallbackRows - 1)
+          col: window.FormatUtils.clamp(Math.round(avgCol), 0, fallbackCols - 1),
+          row: window.FormatUtils.clamp(northRow, 0, fallbackRows - 1)
         };
       }
 
@@ -12728,7 +12184,7 @@
         const fallback = !!extra.fallback;
         const loading = !!extra.loading;
         const target = extra.target ? ` target=${extra.target}` : '';
-        const heldObjectAttachment = toolHolder?.parent === getActiveScene() ? 'active-scene' : (toolHolder?.parent ? 'wrong-scene' : 'detached');
+        const heldObjectAttachment = toolHolder?.parent === window.GridTileAccessors.getActiveScene() ? 'active-scene' : (toolHolder?.parent ? 'wrong-scene' : 'detached');
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
@@ -12825,7 +12281,7 @@
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
-        const fromScene = getActiveScene();
+        const fromScene = window.GridTileAccessors.getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
@@ -12877,16 +12333,17 @@
       // hue/saturation change per reagent, not the source texture's value.
       const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
       function getReagentPlantMaterial(colorHex) {
-        if (!_grassLeafTex) return null;
+        const grassLeafTex = window.VegetationCropRendering.getGrassLeafTex();
+        if (!grassLeafTex) return null;
         let mat = _reagentPlantMaterials.get(colorHex);
         if (mat) return mat;
         mat = new THREE.ShaderMaterial({
           uniforms: {
-            uGrassTex: { value: _grassLeafTex },
+            uGrassTex: { value: grassLeafTex },
             uTime: { value: 0 }, uStrength: { value: 0.04 },
             uColor: { value: new THREE.Color(colorHex) },
           },
-          vertexShader: _grassBillVert,
+          vertexShader: window.VegetationCropRendering.grassBillVert,
           fragmentShader: `
             uniform sampler2D uGrassTex;
             uniform vec3 uColor;
@@ -13236,139 +12693,11 @@
         return true;
       }
 
-      function updateClearedZoneVegetationVisual(mapId, col, row, previousType) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return false;
-        const removedFoliage = removeZoneVegetationVisual(mapId, col, row);
-        if (previousType !== TileType.WEEDS) return removedFoliage;
-
-        // WEEDS are part of the zone's merged material buckets rather than
-        // individual foliage groups. Cover only the cleared tile with a
-        // grass patch; the next ordinary terrain refresh folds it back into
-        // the merged grass mesh. This keeps a weapon swing O(AoE tiles)
-        // instead of O(the entire wilderness map).
-        const tile = zi.grid?.[row]?.[col];
-        if (!tile) return removedFoliage;
-        const geometry = makeFloorGeo(col, row); // Used by the one-tile grass cover mesh below.
-        displaceZoneGeometry(geometry, mapId, col + 0.5, row + 0.5);
-        const patch = new THREE.Mesh(geometry, resolveTileMat(mapId, TileType.GRASS)); // Covers the stale merged WEEDS surface.
-        patch.receiveShadow = true;
-        patch.position.set(
-          col + 0.5,
-          tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
-          row + 0.5
-        );
-        if (!window.WildernessChunks?.attachObject(mapId, col, row, patch)) zi.scene.add(patch);
-        _markTerrainEdgeId(patch, TileType.GRASS);
-        _zoneFloorMeshGroups.get(mapId)?.push(patch);
-        return true;
-      }
-
-      // Rebuilds just a zone's ground floor + grass tufts (see
-      // _buildZoneFloorMeshes/_buildZoneGrassBillboards) from its current
-      // grid, in place — used after a shovel/pick action changes a tile's
-      // type at runtime (digging/filling/raising — see applyAction) while
-      // standing inside a wilderness zone. A zone's terrain is built once as
-      // merged meshes rather than the farm's per-tile mesh array, so without
-      // this a freshly dug trench would be "physically" real (tile.type/
-      // height read live every frame) while its grass never disappears —
-      // the player would see themselves sink through still-standing grass.
-      // Deliberately narrower than _disposeZoneScene + buildZoneScene: it
-      // leaves buildings/decor/creatures/NPCs/reagents/berries/treasure
-      // alone, so it's safe to call immediately while the player is
-      // standing in the zone (unlike a full zone rebuild — see
-      // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
-      function refreshZoneGroundVisuals(mapId, col = null, row = null) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        if (zi.chunkController && window.WildernessChunks) {
-          // The route network's grass apron is zone-wide, but its index ranges
-          // are recorded per tile when it is first built. Toggle this edited
-          // tile and its one-cell cliff seam instead of regenerating the entire
-          // route heightfield (which previously froze large wilderness maps
-          // for several seconds). Filling/smoothing restores the original
-          // indices through the same path.
-          rebuildZoneMesaMeshes(mapId); // Re-tags exact steep-face ownership before the apron decides whether this tile belongs to rock.
-          const routeApronUpdated = zi.pathNet?.refreshTileAndSeam?.(col, row) || false; // Reported in the mobile-visible debug log below.
-          // The live grid already contains the authoritative edit. Rebuild
-          // only its resident chunk plus one-chunk seam halo; unloaded chunks
-          // will naturally read the updated grid when they are next streamed.
-          const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
-          window.WildTreasure.syncZoneInteractivity(mapId);
-          debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
-          return;
-        }
-        rebuildZoneMesaMeshes(mapId); // Refresh geometry-derived cliff ownership before rebuilding ordinary/path ground.
-        const oldFloor = _zoneFloorMeshGroups.get(mapId);
-        if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
-        const oldGrass = _zoneGrassMeshes.get(mapId);
-        if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
-        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
-        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
-        // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
-        // felled tree's mesh is gone after this rebuild, and leaving its stale
-        // entries around would keep hard-limiting zoom / culling nothing over
-        // an empty stump.
-        const canopyZones = [];
-        zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
-        zi.canopyZones = canopyZones;
-        const cullables = [];
-        zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
-        zi.cullables = cullables;
-        // The mesa rebuild above also keeps a dug/filled plateau-top lid from
-        // covering or exposing the wrong side of a real trench.
-        // A dig/fill/raise here may have just turned a buried chest's tile
-        // into (or out of) a real trench — see syncZoneTreasureInteractivity.
-        window.WildTreasure.syncZoneInteractivity(mapId);
-      }
-
-      // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
-      // passed (see _zoneFelledTreePersist/applyAction's axe branch).
-      // Called once per day from advanceDay()/sleepInBed(), the same
-      // trigger tickCropDay() uses for the farm grid's crop aging.
-      function tickFelledTreeRegrowth() {
-        for (const [mapId, entries] of _zoneFelledTreePersist) {
-          if (!entries.length) { _zoneFelledTreePersist.delete(mapId); continue; }
-          const zi = _zoneScenes.get(mapId);
-          // Zone isn't currently built (never visited this session, or its
-          // scene was disposed) — nothing to mutate live. Leave every entry
-          // exactly as-is; buildZoneScene re-derives due/not-due from
-          // feltDay itself the next time this zone is actually built (see
-          // there), so dropping entries here without a grid to apply them
-          // to would just lose the regrowth timer entirely.
-          if (!zi) continue;
-          const stillFelled = [];
-          let regrewAny = false;
-          for (const entry of entries) {
-            if (calendar.day - entry.feltDay < TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
-            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.SHRUB;
-            regrewAny = true;
-          }
-          if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
-          else _zoneFelledTreePersist.delete(mapId);
-          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
-
-      // Regrows ore rocks broken with the pick once ROCK_REGROWTH_DAYS have
-      // passed — mirrors tickFelledTreeRegrowth above for ROCK/rockKind.
-      function tickMinedRockRegrowth() {
-        for (const [mapId, entries] of _zoneMinedRockPersist) {
-          if (!entries.length) { _zoneMinedRockPersist.delete(mapId); continue; }
-          const zi = _zoneScenes.get(mapId);
-          if (!zi) continue;
-          const stillMined = [];
-          let regrewAny = false;
-          for (const entry of entries) {
-            if (calendar.day - entry.minedDay < ROCK_REGROWTH_DAYS) { stillMined.push(entry); continue; }
-            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.ROCK;
-            regrewAny = true;
-          }
-          if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
-          else _zoneMinedRockPersist.delete(mapId);
-          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
+      // Wilderness zone ground-visual refresh after a runtime tile edit
+      // (updateClearedZoneVegetationVisual/refreshZoneGroundVisuals) and the
+      // daily felled-tree/mined-rock regrowth ticks (tickFelledTreeRegrowth/
+      // tickMinedRockRegrowth) now live in js/zone-regrowth.js — call via
+      // window.ZoneRegrowth.*.
 
       function buildTownScene() {
         if (_townSceneBuilt) return;
@@ -13406,7 +12735,7 @@
         // line independent of the tile grid. Tiles inside its bounding box
         // are skipped below (pathNet.inBounds) except for TRENCH/RAISED/
         // SHRUB/ROCK, which keep their own geometry.
-        const pathNet = buildPathNetworkGeo(townGrid, TCOLS, TROWS);
+        const pathNet = window.TerrainGeometry.buildPathNetworkGeo(townGrid, TCOLS, TROWS);
         let _townPathFallbackMesh = null;
         if (pathNet) {
           // Regular ground (grass) covers the path's own footprint too now —
@@ -13438,8 +12767,8 @@
         // test already used for wilderness tree culling (updateZoneVegetationCulling)
         // — cheap per-frame, no geometry rebuilding.
         ensurePathSurfaceReady().then(() => {
-          const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes, 'town');
-          if (splineData) registerPathBrickChunks('town', townScene, splineData);
+          const splineData = window.TerrainGeometry.preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes, 'town');
+          if (splineData) window.TerrainGeometry.registerPathBrickChunks('town', townScene, splineData);
           else if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
         }).catch(err => {
           debugLog('Town path brick surface error: ' + err.message, 'warn');
@@ -13454,7 +12783,7 @@
           const cx = c + 0.5, cz = r + 0.5;
 
           if (tp === TileType.TRENCH || tp === TileType.RAISED || tp === TileType.RIVER || tp === TileType.STREAM) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tp, townGrid);
+            const { dirtGeo, grassGeo } = window.TerrainGeometry.buildTerrainTileGeo(c, r, tp, townGrid);
             const bedMatKey = (tp === TileType.RIVER || tp === TileType.STREAM) ? tp : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
@@ -13466,7 +12795,7 @@
             continue; // covered by the path network mesh above
           }
           if (tp === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
             if (window.FoliageGenerator) {
               const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
               vegGroup.scale.set(2, 2, 2);
@@ -13478,11 +12807,11 @@
           }
           // GRASS / TILLED / any other flat type — subdivided slab
           const matKey = tileMats[tp] ? tp : TileType.GRASS;
-          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
+          _addToBucket(matKey, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
         }
 
         for (const [matKey, entries] of _floorBuckets) {
-          const merged = _mergeTileGeos(entries);
+          const merged = window.TerrainGeometry._mergeTileGeos(entries);
           const mesh = new THREE.Mesh(merged, resolveTileMat('map_hobunji_town', matKey));
           mesh.receiveShadow = true;
           if (matKey === TileType.GRASS && pathNet) {
@@ -13519,7 +12848,7 @@
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
 
-        _buildTownGrassBillboards(TCOLS, TROWS);
+        window.VegetationCropRendering.buildTownGrassBillboards(TCOLS, TROWS);
         window.BorderTerrain.buildTownBorderTerrain();
 
         // Gold ring markers for town transitions
@@ -13554,7 +12883,7 @@
       }
 
       function enterTown(col, row) {
-        const fromScene = getActiveScene();
+        const fromScene = window.GridTileAccessors.getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
         _currentBuildingMapId = null;
@@ -13586,273 +12915,9 @@
         refreshActionBar();
       }
 
-      function processButtonLabel(methodId, inputKey, output) {
-        const methodVerb = ({ mashing: 'Mash', squeezing: 'Squeeze', grinding: 'Grind', drying: 'Dry', smoking: 'Smoke', barrelAging: 'Age', vaseAging: 'Age' })[methodId] || 'Process';
-        return methodVerb + ' → ' + output.icon;
-      }
-
-      function methodIdleLabel(methodId) {
-        return ({
-          mashing: 'Needs mashable item', squeezing: 'Needs squeezable item', grinding: 'Needs grindable item',
-          drying: 'Needs wet/fresh item', smoking: 'Needs meat/fish', barrelAging: 'Needs juice/dew', vaseAging: 'Needs milk/curd'
-        })[methodId] || 'Needs ingredient';
-      }
-
-      function isBerryKey(key) {
-        return ['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries'].includes(key);
-      }
-
-      function berryBaseName(key) {
-        return ({ redberries: 'Redberry', blueberries: 'Blueberry', yellowberries: 'Yellowberry', whiteberries: 'Whiteberry', blackberries: 'Blackberry' })[key] || (ITEM_DEFS[key]?.label || key);
-      }
-
-      // Berries literally have their color in their name — used to recolor
-      // their Jam (jar_liquid.png) and Wine (bottle_wine.png) sprites.
-      const BERRY_COLORS = {
-        redberries: 0xD93A3A, blueberries: 0x3F63D9, yellowberries: 0xE0C93A,
-        whiteberries: 0xF2EFE6, blackberries: 0x241A2E,
-      };
-
-      // Ingredient colors used by alcohol recipes whose raw item has no
-      // recolorable sprite of its own. These feed mixedIngredientColor below.
-      const ALCOHOL_INGREDIENT_COLORS = {
-        needlegrain: 0x2F4A2E,
-        // Match ripe heftroot: vodka uses the animal-color shade-fill so the
-        // bottle keeps its painted highlights, shadows, and transparency.
-        heftroot: 0xF0D15A,
-      };
-      // Alcohol words accepted by normalizeAlcoholItemDef, shared with the
-      // drinking system's classification so every alcoholic output gets the
-      // same bottle treatment even when a new recipe is added later.
-      const ALCOHOL_ITEM_TERMS = new Set(['alcohol', 'wine', 'sake', 'vodka', 'nectar', 'airag', 'liquor', 'spirit', 'spirits', 'beer', 'ale', 'mead', 'cider']);
-
-      function isAlcoholItemDef(def) {
-        if (!def) return false;
-        // Normalized tags are checked exactly before the label/tag text fallback.
-        const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
-        if (tags.some(tag => ALCOHOL_ITEM_TERMS.has(tag))) return true;
-        // The fallback catches authored alcohol labels that omitted a canonical tag.
-        const searchable = `${def.label || ''} ${tags.join(' ')}`.toLowerCase();
-        return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirits?|beer|ale|mead|cider)\b/.test(searchable);
-      }
-
-      function ingredientColorForItem(key) {
-        // The resolved definition supplies colors for bottled milk/dew ingredients.
-        const def = ITEM_DEFS[key];
-        return def?.spriteColor ?? BERRY_COLORS[key] ?? ALCOHOL_INGREDIENT_COLORS[key] ?? null;
-      }
-
-      function mixedIngredientColor(ingredientKeys, fallback = 0x8A5FB0) {
-        // Valid ingredient colors are averaged here for multi-ingredient alcohol.
-        const colors = (ingredientKeys || []).map(ingredientColorForItem).filter(color => Number.isFinite(color));
-        if (!colors.length) return fallback;
-        // RGB totals are consumed by the average returned below.
-        const totals = colors.reduce((sum, color) => ({
-          r: sum.r + ((color >> 16) & 255),
-          g: sum.g + ((color >> 8) & 255),
-          b: sum.b + (color & 255),
-        }), { r: 0, g: 0, b: 0 });
-        // Count keeps each channel's ingredient average consistent.
-        const count = colors.length;
-        return (Math.round(totals.r / count) << 16)
-          | (Math.round(totals.g / count) << 8)
-          | Math.round(totals.b / count);
-      }
-
-      function normalizeAlcoholItemDef(def) {
-        if (!isAlcoholItemDef(def)) return def;
-        def.swigsPerBottle = Math.max(1, Math.round(Number(def.swigsPerBottle) || 4));
-        def.spriteIcon = 'bottle_wine.png';
-        def.spriteMode = 'keyed';
-        def.spriteColor = mixedIngredientColor(def.ingredientKeys, def.spriteColor ?? 0x8A5FB0);
-        return def;
-      }
-
-      // The 7 Uumkao'ii dew colors and their per-color processed-item keys —
-      // shared by getProcessingOutputs (squeezing dew -> milk+curds) and
-      // getProcessingOutput's barrelAging branch (milk -> nectar). "white"
-      // uses the uumkaoii-prefixed key spelling from the reference cooking
-      // spec (avoids colliding with any future generic "white dairy" family).
-      const DEW_COLOR_KEYS = ['yellow', 'green', 'blue', 'orange', 'red', 'purple', 'white'];
-      function dewItemKey(color) { return color + 'Dew'; }
-      function dewMilkKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewMilk' : color + 'DewMilk'; }
-      function dewCurdsKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewCurds' : color + 'DewCurds'; }
-      function dewColorFromMilkOrCurdsKey(key) {
-        for (const color of DEW_COLOR_KEYS) {
-          if (key === dewMilkKey(color) || key === dewCurdsKey(color)) return color;
-        }
-        return null;
-      }
-
-      // Single-output recipes. getProcessingOutputs (below) wraps this for
-      // the common case and special-cases the one recipe — squeezing
-      // Uumkao'ii dew — that jointly produces two outputs from one input.
-      function getProcessingOutput(methodId, inputKey) {
-        const input = ITEM_DEFS[inputKey];
-        if (!input) return null;
-        if (methodId === 'squeezing' && isBerryKey(inputKey)) {
-          const base = berryBaseName(inputKey);
-          return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.' };
-        }
-        if (methodId === 'squeezing' && inputKey === 'garWolfMilk') {
-          return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
-        }
-        if (methodId === 'mashing' && isBerryKey(inputKey)) {
-          const base = berryBaseName(inputKey);
-          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
-        }
-        if (methodId === 'mashing' && inputKey === 'garWolfMilk') {
-          return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
-        }
-        if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.' };
-        if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.' };
-        if (methodId === 'mashing' && ['heftroot', 'garlink', 'ongyums', 'blackMustard', 'greenMustard'].includes(inputKey)) return { key: inputKey + 'Mash', icon: '🥣', label: 'Mashed ' + input.label, cat: 'processed', sellPrice: Math.max(3, (input.sellPrice || 3) + 3), tags: ['Processed', 'Mash'], desc: 'Mashed crop base for future cooking recipes.' };
-        if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.' };
-        if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
-        if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
-        if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
-        // Feed Grinder (barn interior fixture) — harvested crops grind into
-        // Plant Fodder, raw meat and fish grind into Meat Fodder. Mulch is
-        // deliberately not a valid input (it's clearing waste, not feed).
-        // Checked live off cropData/ITEM_DEFS tags rather than a Set
-        // snapshotted at load — fish items in particular only get merged
-        // into ITEM_DEFS asynchronously (see fish-catalog.js's
-        // registerItems), well after this file's own top-level code runs.
-        // Reuses this same generic "hold a valid item, interact" processing
-        // pipeline rather than a one-off — see PROCESSING_FURNITURE_DEFS.feedGrinder.
-        if (methodId === 'grindingFeed' && cropData[inputKey]) {
-          return { key: 'plantFodder', icon: ITEM_DEFS.plantFodder.icon, label: ITEM_DEFS.plantFodder.label, cat: 'material', sellPrice: ITEM_DEFS.plantFodder.sellPrice, tags: ITEM_DEFS.plantFodder.tags, desc: ITEM_DEFS.plantFodder.desc };
-        }
-        if (methodId === 'grindingFeed' && (input.tags?.includes('Meat') || input.tags?.includes('Fish'))) {
-          return { key: 'meatFodder', icon: ITEM_DEFS.meatFodder.icon, label: ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: ITEM_DEFS.meatFodder.sellPrice, tags: ITEM_DEFS.meatFodder.tags, desc: ITEM_DEFS.meatFodder.desc };
-        }
-        if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
-        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
-          const berryKey = inputKey.replace(/Juice$/, '');
-          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', ingredientKeys: [berryKey], spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
-        }
-        if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
-          const color = dewColorFromMilkOrCurdsKey(inputKey);
-          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
-          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
-        }
-        if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
-          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
-        }
-        if (methodId === 'barrelAging' && inputKey === 'heftroot') {
-          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xF0D15A, spriteMode: 'keyed' };
-        }
-        if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
-          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
-        }
-        if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
-          return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
-        }
-        if (methodId === 'vaseAging' && inputKey === 'garWolfMilk') {
-          return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
-        }
-        return null;
-      }
-
-      // Wraps getProcessingOutput in an array, except for the one recipe that
-      // jointly produces two items from a single input in a single action:
-      // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
-      function getProcessingOutputs(methodId, inputKey) {
-        const input = ITEM_DEFS[inputKey];
-        if (!input) return null;
-        const dewColorMatch = DEW_COLOR_KEYS.find(color => dewItemKey(color) === inputKey);
-        if (methodId === 'squeezing' && dewColorMatch) {
-          const color = dewColorMatch;
-          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
-          const dewColorHex = input.spriteColor;
-          return [
-            { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
-            { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
-          ];
-        }
-        const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
-        if (modularOutputs?.length) return modularOutputs;
-        const single = getProcessingOutput(methodId, inputKey);
-        return single ? [single] : null;
-      }
-
-      // World-object placement items whose only "held" action is being set
-      // up on the ground — see the campfireKitFurniture check in
-      // computeActionButtons' held-item branch. Small and hand-maintained
-      // because nothing else in the file currently follows this pattern
-      // (see the isWheelEligible callers' own audit notes below).
-      const HELD_PLACEMENT_ITEM_KEYS = new Set(['campfireKitFurniture']);
-
-      // Whether `key` belongs on the item wheel/scroller at all — i.e.
-      // whether selecting it as the held item does anything, either
-      // directly (eat/drink/play/plant/flask-throw/read/place) or as the
-      // chosen ingredient for a nearby processing station (press, mill,
-      // drying rack, smoker, aging barrel/vase, feed grinder). Pure
-      // sell-fodder/crafting materials (wood, ore, hides, scrap, treasure
-      // tokens, mystery dyes, uncrafted tools, ...) fail every check here —
-      // they're still fully visible/usable from the Inventory grid (sell,
-      // craft, gift via its own Hold button), just not wheel-cyclable.
-      //
-      // Every consumer of getActiveInventoryItem()/getInventoryStackItems()
-      // was audited before adding this filter (see the commit that
-      // introduced it) to confirm nothing legitimately needs a
-      // wheel-ineligible item wheel-selected — cooking and alchemy brewing
-      // both have their own dedicated ingredient pickers, independent of
-      // the wheel.
-      function isWheelEligible(key) {
-        const def = ITEM_DEFS[key];
-        if (!def) return false;
-        if (def.isCookedFood || def.isInstrument) return true;
-        if (def.alchemyRecipeScrollId) return true;
-        if (HELD_PLACEMENT_ITEM_KEYS.has(key)) return true;
-        if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return true;
-        const potionPayload = window.AlchemySystem?.POTION_ITEMS?.[key];
-        if (potionPayload) {
-          const recipe = window.AlchemySystem?.RECIPE_DEFS?.[potionPayload.recipeId];
-          if (recipe?.useMode === 'throw' || recipe?.useMode === 'drink' || potionPayload.legacyEffects) return true;
-        }
-        const bridge = window.HobunjiDrunkGameplayBridge;
-        if (bridge?.isFood?.(def) || bridge?.isPotionOrDrink?.(key, def)) return true;
-        if (def.seedFor || inventoryItems.find(item => item.key === key)?.seedFor) return true;
-        if (PROCESSING_METHODS.some(method => getProcessingOutputs(method, key))) return true;
-        return false;
-      }
-
-      function ensureProcessedItemDef(output) {
-        const presentationMetadata = {
-          ...(output.icon ? { icon: output.icon } : {}),
-          ...(output.label ? { label: output.label } : {}),
-          ...(output.cat ? { cat: output.cat } : {}),
-          ...(output.sellPrice ? { sellPrice: output.sellPrice } : {}),
-          ...(output.tags ? { tags: [...output.tags] } : {}),
-          ...(output.desc ? { desc: output.desc } : {}),
-          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
-        }; // Used to replace future-source placeholders once an item gains a real processor recipe.
-        const cookingMetadata = {
-          ...(output.cookingCategories ? { cookingCategories: [...output.cookingCategories] } : {}),
-          ...(output.cookingPrimaryEffect ? { cookingPrimaryEffect: output.cookingPrimaryEffect } : {}),
-          ...(output.cookingBaseBoost ? { cookingBaseBoost: output.cookingBaseBoost } : {}),
-          ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
-          ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
-        }; // Used to make dynamically generated fats valid hearth ingredients immediately.
-        if (ITEM_DEFS[output.key]) {
-          if (output.ingredientKeys?.length) ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
-          Object.assign(ITEM_DEFS[output.key], presentationMetadata, cookingMetadata);
-          normalizeAlcoholItemDef(ITEM_DEFS[output.key]);
-          return;
-        }
-        ITEM_DEFS[output.key] = normalizeAlcoholItemDef({
-          icon: output.icon,
-          label: output.label,
-          cat: output.cat || 'processed',
-          sellPrice: output.sellPrice || 1,
-          tags: output.tags || ['Processed'],
-          desc: output.desc || 'Processed food item.',
-          ingredientKeys: output.ingredientKeys || [],
-          ...cookingMetadata,
-          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
-        });
-      }
+      // Processing-station recipe resolution, berry/dew/alcohol key & color
+      // derivation, and item-wheel eligibility now live in
+      // js/item-processing.js — call via window.ItemProcessing.*.
 
       // ── Farm buildings: barns (movable, buildable via the Farm tab) ────
       // A barn instance: { id, kind:'barn', tier, col, row, w, h, stage }.
@@ -13898,6 +12963,7 @@
       // _shopStock.jubmirWares (via deps.getShopStock()) directly instead of
       // a mirrored variable.
       function _applyLoadedShopStock() {
+        const _shopStock = window.LootRolling.getShopStock();
         WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
           [id, { label: shop.label, menuId: shop.menuId }]));
         if (_shopStock.generalStoreWares?.goods) GENERAL_STORE_CATALOG = _shopStock.generalStoreWares.goods;
@@ -13950,7 +13016,7 @@
         worldObjects.set(sb.col + ',' + sb.row, sb);
         // The starter house piece — always present, free, built immediately.
         // Every other house piece (deeds bought from the Carpenter) and every
-        // barn is spawned later by applyFarmLayoutObjects() from the saved
+        // barn is spawned later by window.FarmEditor.applyFarmLayoutObjects() from the saved
         // farm layout, same as a fresh farm's single starter piece here.
         window.HousePieces.seedStarter(HOUSE_STARTER_COL, HOUSE_STARTER_ROW);
         rebuildInteriorGeometry();
@@ -14564,7 +13630,7 @@
 
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
-        normalizeAlcoholItemDef(def);
+        window.ItemProcessing.normalizeAlcoholItemDef(def);
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
@@ -14659,7 +13725,7 @@
         // inventory grid — see isWheelEligible's own comment for what does
         // and doesn't qualify, and its own "Hold" button (selectInventoryItem)
         // for how a non-wheel item still gets offered as a gift.
-        return getInventoryStackKeys('all').filter(isWheelEligible).map(key => inventoryItems.find(item => item.key === key) || {
+        return getInventoryStackKeys('all').filter(window.ItemProcessing.isWheelEligible).map(key => inventoryItems.find(item => item.key === key) || {
           key,
           icon: ITEM_DEFS[key].icon,
           label: ITEM_DEFS[key].label.toUpperCase(),
@@ -14832,7 +13898,7 @@
             mkBtn('🎨 Use', 'equip', () => {
               const result = useMysteryDye(key);
               showToast(result.message, result.ok);
-              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+              if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); saveMemberWorldData(); }
             });
           }
           // Alchemical items follow the same physical held-item language as
@@ -14843,7 +13909,7 @@
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
               heldMode = 'item';
-              refreshItemScroll(); refreshActionBar(); closeMenu();
+              window.HudUpdate.refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
           // Materials/etc that isWheelEligible excludes from the wheel
@@ -14851,7 +13917,7 @@
           // held item, so gifting one (see js/npc-gifting.js) needs its own
           // explicit hold, same mechanism as the Equipment panel's clothing
           // "Hold" button (see selectGearClothing in js/equipment-panel.js).
-          if (!isWheelEligible(key) && count > 0) {
+          if (!window.ItemProcessing.isWheelEligible(key) && count > 0) {
             const heldNow = getManualHeldItem();
             const isHeld = heldNow?.kind === 'bagItem' && heldNow.key === key;
             mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'equip', () => {
@@ -14863,7 +13929,7 @@
             mkBtn('🍲 Eat', 'equip', () => {
               const result = window.CookingSystem.eat(key);
               showToast(result.message, result.ok !== false);
-              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
+              if (result.ok !== false) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
             });
           }
           if (def.sellPrice > 0 && count > 0) {
@@ -14873,7 +13939,7 @@
               delete inventory[key];
               showToast(`Sold all ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
-              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
             mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
@@ -14882,7 +13948,7 @@
               clampInventoryStack(key);
               showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
-              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
           }
@@ -14904,7 +13970,7 @@
             mkBtn('Add to Stable', 'equip', () => {
               const result = window.FarmAnimals.addToStable(key);
               showToast(result.message, result.ok);
-              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); }
+              if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); }
             });
           }
 
@@ -15279,7 +14345,7 @@
       // still-null-at-this-point `scene`/`townScene`/SLAB_H/WATER_UNIT/etc).
       window.WaterSystem.init({
         calendar, TileType, ROWS, COLS, MAX_WATER, RAIN_RATE,
-        clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
+        clamp: window.FormatUtils.clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
         getGrid: () => grid,
         getTownGrid: () => townGrid,
         getTownZone: () => _townZone,
@@ -15292,9 +14358,67 @@
         getNormalTop: () => NORMAL_TOP,
       });
       let grid = createInitialGrid();
+      // Must run before the saved-layout load right below, which calls
+      // window.FarmEditor.loadFarmLayout()/applyFarmLayoutToGrid()/
+      // cleanupLegacyFarmEntranceRoad() immediately — every binding here is
+      // threaded as a getter/setter (same reasoning as window.WaterSystem.
+      // init() just above: several of these, like currentArea/housePieces/
+      // farmBuildings, aren't declared yet at this point in the file, but
+      // none of FarmEditor's functions are actually CALLED before their
+      // backing variables are initialized, so the forward closure reference
+      // is safe).
+      window.FarmEditor.init({
+        getGrid: () => grid,
+        getCurrentArea: () => currentArea,
+        getFarmEditMode: () => farmEditMode,
+        setFarmEditMode: (v) => { farmEditMode = v; },
+        getFarmEditBrushType: () => farmEditBrushType,
+        setFarmEditBrushType: (v) => { farmEditBrushType = v; },
+        getFarmEditBrush: () => farmEditBrush,
+        setFarmEditBrush: (v) => { farmEditBrush = v; },
+        getPlayerData: () => _playerData,
+        getHousePieces: () => housePieces,
+        getFarmBuildings: () => farmBuildings,
+        getWorldRoutes: () => worldRoutes,
+        getWorldNpcPaths: () => worldNpcPaths,
+        getWorldTransitions: () => worldTransitions,
+        getBarnTiers: () => BARN_TIERS,
+        getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
+        getShippingBoxObject: () => shippingBoxObject,
+        setShippingBoxObject: (v) => { shippingBoxObject = v; },
+        getSupplyBoxObject: () => supplyBoxObject,
+        setSupplyBoxObject: (v) => { supplyBoxObject = v; },
+        getArmedFurniturePlacementKey,
+        getArmedFurnitureMoveId,
+        COLS, ROWS, TileType, CropType,
+        worldObjects, processingFurnitureObjects, interiorFurnitureObjects,
+        PROCESSING_FURNITURE_DEFS, DECORATIVE_FURNITURE_DEFS,
+        getScene: () => scene,
+        getInteriorScene: () => interiorScene,
+        threeContainer,
+        showToast,
+        markTileDirty,
+        isFarmOwner,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
+        canPlaceFurnitureAt,
+        getWorldObjectAt,
+        makeProcessingFurniture,
+        unregisterChairNpcStation,
+        makeDecorativeFurnitureMesh,
+        furnitureOwnerFields,
+        decorativeFurnitureSize,
+        registerSitWorldObject,
+        registerChairNpcStation,
+        normalizeNpcArea,
+        transformFurnitureWithHousePiece,
+        rebuildInteriorGeometry,
+        createDayOneTile,
+        _screenToFarmTile,
+        debugLog,
+      });
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
-      { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
-      cleanupLegacyFarmEntranceRoad();
+      { const _savedLayout = window.FarmEditor.loadFarmLayout(); if (_savedLayout) window.FarmEditor.applyFarmLayoutToGrid(_savedLayout); }
+      window.FarmEditor.cleanupLegacyFarmEntranceRoad();
 
       // ── Area-switching state ───────────────────────────────────────
       let currentArea     = 'farm';   // 'farm' | 'interior'
@@ -15304,132 +14428,11 @@
       let sceneTransCb    = null;     // fired once at peak darkness
       let sceneTransFromArea = null;  // area the player was in when the fade started
 
-      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.cols || EXTERIOR_ZONES[currentArea]?.cols || _zoneLayouts.get(currentArea)?.cols) : COLS; }
-      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.rows || EXTERIOR_ZONES[currentArea]?.rows || _zoneLayouts.get(currentArea)?.rows) : ROWS; }
-      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.grid || buildZoneScene(currentArea).grid) : grid; }
-      function getActiveScene() { return _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.scene || buildZoneScene(currentArea).scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene; }
-      function getActiveTileAt(col, row) {
-        const g = getActiveGrid();
-        return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
-      }
-
-      // Whether a farm-grid tile falls inside the house footprint
-      function isHouseFootprint(col, row) {
-        return housePieces.some(p => col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h);
-      }
-      // Barns (any tier, foundation or built) block movement over their
-      // whole registered footprint — stable.json's own footprint.cells is
-      // already a solid rectangle matching w×h, so the piece-less bbox
-      // fallback in _buildingFootprintBlocks (below) gives the identical
-      // result without needing the async-loaded piece JSON on hand here.
-      function isFarmBuildingCollisionTile(col, row) {
-        return farmBuildings.some(b => _buildingFootprintBlocks(b, null, col, row));
-      }
-      // Rotation math lives once in js/building-door.js (shared with the Map
-      // Editor and House Piece Author's door tooling) — this is just the
-      // local name collision detection already used before that file existed.
-      function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
-        return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
-      }
-      // Axis-aligned bbox check using the building's own footprintW/D (or
-      // legacy w/h) — used both when no piece is loaded yet at all, and as
-      // a defensive fallback if a piece IS loaded but its footprint.cells
-      // came back empty (e.g. exported before the House Piece Author's
-      // footprint tool was used). Either way, a real placed/rendered
-      // building should never end up with silently zero collision.
-      function _buildingFootprintBbox(bldg, originX, originZ, col, row) {
-        const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
-        const fbSwap = fbRot === 90 || fbRot === 270;
-        const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
-        const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
-        return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
-      }
-      function _buildingFootprintBlocks(bldg, piece, col, row) {
-        const originX = bldg.gridX ?? bldg.col ?? 0;
-        const originZ = bldg.gridZ ?? bldg.row ?? 0;
-
-        if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
-
-        const structuralCells = piece.footprint.cells || [];
-        const fencePostCells = piece.footprint.extensions?.railings || [];
-        const collisionCells = structuralCells.concat(fencePostCells);
-        if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
-
-        const allBuildingCells = []
-          .concat(piece.footprint.cells || [])
-          .concat(piece.footprint.extensions?.entryTunnels || [])
-          .concat(piece.footprint.extensions?.chimneys || [])
-          .concat(piece.footprint.extensions?.porches || [])
-          .concat(piece.footprint.extensions?.porchStairs || [])
-          .concat(piece.footprint.extensions?.railings || []);
-        const minX = Math.min(...allBuildingCells.map(cell => cell.x));
-        const minY = Math.min(...allBuildingCells.map(cell => cell.y));
-        const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
-        const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
-        const width = maxX - minX + 1;
-        const depth = maxY - minY + 1;
-
-        return collisionCells.some(cell => {
-          const rotated = rotateBuildingCollisionCell(
-            cell.x - minX,
-            cell.y - minY,
-            width,
-            depth,
-            bldg.rotationDeg || bldg.rotation || 0,
-          );
-          return col === originX + rotated.x && row === originZ + rotated.y;
-        });
-      }
-      // `area` defaults to 'town'; any zone mapId with its own merged buildings
-      // (see _spawnZoneBuildings / _zoneBuildingGroups) is also accepted, so the
-      // same collision rules apply to a building placed on a plateau zone map.
-      function isTownBuildingCollisionTile(col, row, area) {
-        area = area || 'town';
-        if (area === 'town') {
-          // Building-entrance transition tiles are always walkable (they ARE the door approach)
-          if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
-          // Every building must be checked regardless of whether ITS OWN piece
-          // has finished loading — _buildingFootprintBlocks already falls back
-          // to a bbox check per-entry when `piece` is null. Previously this
-          // filtered down to only piece-loaded entries once ANY building had
-          // loaded, which silently dropped collision entirely (not even the
-          // bbox fallback) for any building still fetching, whose fetch
-          // failed, or that the GLB-upgrade pass (town-zone-buildings.js)
-          // dropped for not having a piece — see that file's own upgrade loop.
-          const buildingSources = _townBuildingGroups.length
-            ? _townBuildingGroups
-            : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
-          return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
-        }
-
-        const zoneGroups = _zoneBuildingGroups.get(area) || [];
-        const zoneBuildingSources = zoneGroups.length
-          ? zoneGroups
-          : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
-        if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
-        return isAnimalDenCollisionTile(col, row, area);
-      }
-      // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
-      // their south-facing mouth tile, which stays walkable — it's both the
-      // doorway gap in the mesh and the cavern-entrance transition tile.
-      function isAnimalDenCollisionTile(col, row, area) {
-        for (const den of (_zoneLayouts.get(area)?.dens || [])) {
-          if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-          const w = den.w || 1, h = den.h || 1;
-          if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
-          // Doorway gap carved into the south wall, mirroring the mesh's own
-          // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
-          // zone-den-totem-features.js). Without this the footprint box was
-          // fully solid with no way through it at all — mouthAnchor alone
-          // never punched a hole here since it's defined as the tile just
-          // OUTSIDE the footprint, not a tile inside it.
-          const mouthColStart = den.x + Math.floor(w * 0.3);
-          const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
-          if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
-          return true;
-        }
-        return false;
-      }
+      // Active-area grid/scene/dimension accessors (getActiveCols/Rows/
+      // Grid/Scene/TileAt) and building/den footprint collision checks
+      // (isHouseFootprint/isFarmBuildingCollisionTile/
+      // isTownBuildingCollisionTile/isAnimalDenCollisionTile) now live in
+      // js/grid-tile-accessors.js — call via window.GridTileAccessors.*.
       // Interior grid: sized to the whole farm at 2x resolution (see
       // INTERIOR_COLS/INTERIOR_ROWS above); every cell starts as ROCK
       // (blocked) and rebuildInteriorGeometry() flips the currently-built
@@ -15553,7 +14556,7 @@
         _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
-          return { col: clamp(Math.floor(_edHit.x), 0, COLS - 1), row: clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
+          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, COLS - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
         }
         return null;
       }
@@ -15568,7 +14571,7 @@
         _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
-          return { col: clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
+          return { col: window.FormatUtils.clamp(Math.floor(_edHit.x), 0, window.GridTileAccessors.getActiveCols() - 1), row: window.FormatUtils.clamp(Math.floor(_edHit.z), 0, window.GridTileAccessors.getActiveRows() - 1) };
         }
         return null;
       }
@@ -15651,7 +14654,7 @@
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!window.AudioSystem?.footstepAdvance(player, dist, window.AudioSystem.FOOTSTEP_PLAYER_STRIDE_PX)) return;
-        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid());
         window.AudioSystem?.playFootstepSfx(currentArea, tile, 1);
       }
 
@@ -15732,10 +14735,10 @@
 
         if (player.dodging) {
           player.dodgeT -= dt;
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * DODGE_SPEED_PX;
@@ -15743,7 +14746,7 @@
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
@@ -15772,7 +14775,7 @@
             } else {
               player.lunging = false;
               player.lungeHopCurrent = 0;
-              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
               tickPlayerFootsteps(_fsPrevX, _fsPrevY);
               tickLungeTrail(_fsPrevX, _fsPrevY);
               return;
@@ -15801,10 +14804,10 @@
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
-          const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = window.FormatUtils.clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
           // Swept, not a single endpoint check — this recomputes an absolute
           // target from total elapsed progress every frame (ease-out is
           // fastest right at the start), so a big lunge like Charged
@@ -15817,7 +14820,7 @@
           if (player.lungeT <= 0) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           tickLungeTrail(_fsPrevX, _fsPrevY);
@@ -15847,7 +14850,7 @@
         // but preserve joystick throw strength so thumb distance controls walk/run.
         let inputStrength = 0;
         if (inputLen > 0.001) {
-          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
+          inputStrength = usingKeyboard ? 1 : window.FormatUtils.clamp(inputLen, 0, 1);
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
@@ -15933,8 +14936,8 @@
           const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
           const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
-          player.vx += clamp(targetVx - player.vx, -step, step);
-          player.vy += clamp(targetVy - player.vy, -step, step);
+          player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
+          player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
@@ -15949,13 +14952,13 @@
         // ── Axis-separated collision ─────────────────────────
         // Tests the player center plus a tiny radius so corners feel less snaggy.
         const minX = PLAYER_RADIUS;
-        const maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
-        const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = player.x + player.vx * dt;
         const desiredY = player.y + player.vy * dt;
-        const nextX = clamp(desiredX, minX, maxX);
-        const nextY = clamp(desiredY, minY, maxY);
+        const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
+        const nextY = window.FormatUtils.clamp(desiredY, minY, maxY);
         const moveStartX = player.x;
         const moveStartY = player.y;
 
@@ -16026,7 +15029,7 @@
           } else {
             const diff = angleDiff(facingAngle, camFacing);
             if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
-              const targetFacing = camFacing + clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+              const targetFacing = camFacing + window.FormatUtils.clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
               const turnDiff = angleDiff(targetFacing, facingAngle);
               facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
             }
@@ -16066,8 +15069,8 @@
         }
 
         // ── Boundary clamp ────────────────────────────────────
-        player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
-        player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+        player.x = window.FormatUtils.clamp(player.x, PLAYER_RADIUS, window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS);
+        player.y = window.FormatUtils.clamp(player.y, PLAYER_RADIUS, window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS);
 
         tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
@@ -16077,7 +15080,7 @@
       // attacks that need to know when a forced movement (e.g. a pounce leap)
       // has run into something.
       function canOccupyAt(wx, wy, radius) {
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
@@ -16123,8 +15126,8 @@
             // A small forward component rounds corners; the tangent-only
             // fallback still slides along a flat wall when forward is blocked.
             for (const forwardScale of [0.22, 0]) {
-              const candidateX = clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
-              const candidateY = clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
+              const candidateX = window.FormatUtils.clamp(startX + forwardX * travel * forwardScale + tangentX * sideStep * scale, minX, maxX);
+              const candidateY = window.FormatUtils.clamp(startY + forwardY * travel * forwardScale + tangentY * sideStep * scale, minY, maxY);
               if (!canPlayerOccupy(candidateX, candidateY)) continue;
               player.x = candidateX;
               player.y = candidateY;
@@ -16233,7 +15236,7 @@
       // own fallback.
       function isChoppableTreeTile(col, row) {
         if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
-        const tile = getActiveGrid()[row]?.[col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
         return tile.floraKind === 'copse' || !tile.floraKind;
       }
@@ -16254,7 +15257,7 @@
       // all), so unlike a hand-authored wilderness rock, it's always fair
       // game to clear.
       function isMineableRockTile(col, row) {
-        const tile = getActiveGrid()[row]?.[col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.type !== TileType.ROCK) return false;
         if (currentArea === 'farm') return true;
         return tile.rockKind === 'diggableRockOre';
@@ -16275,12 +15278,12 @@
       }
 
       function canUseAction(tool, action, col, row) {
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         // A mineable ore rock is the one ROCK-tile exception to the blanket
         // solid-rock block below — everything else (cliff faces, boulders)
         // stays impassable/inert to every tool, mining included.
         if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
+        if (currentArea === 'farm' && window.GridTileAccessors.isHouseFootprint(col, row)) return false;
         // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are farm-only mechanics.
         if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe')) return false;
         if (tool === 'shovel') {
@@ -16309,7 +15312,7 @@
         }
         if (tool === 'machete' || tool === 'axe') {
           const targets = getMacheteTargets(col, row, action);
-          const tgrid = getActiveGrid();
+          const tgrid = window.GridTileAccessors.getActiveGrid();
           return targets.some(t => {
             const targetTile = tgrid[t.row]?.[t.col];
             return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
@@ -16348,10 +15351,10 @@
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
-        const stars = rollItemStars('farming');
+        const stars = window.LootRolling.rollItemStars('farming');
         window.CookingSystem.recordItemQuality(data.cropKey, stars, 1);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
-        const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
+        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -16361,8 +15364,8 @@
       }
 
       function getMacheteTargets(col, row, action) {
-        const acols = getActiveCols(), arows = getActiveRows();
-        const clampedCenter = { col: clamp(col, 0, acols - 1), row: clamp(row, 0, arows - 1) };
+        const acols = window.GridTileAccessors.getActiveCols(), arows = window.GridTileAccessors.getActiveRows();
+        const clampedCenter = { col: window.FormatUtils.clamp(col, 0, acols - 1), row: window.FormatUtils.clamp(row, 0, arows - 1) };
         if (action !== 'slash' && action !== 'hack') return [clampedCenter];
 
         // Slash uses a simple three-tile cone: the aimed tile plus its two side tiles relative to facing.
@@ -16384,7 +15387,7 @@
 
       function clearVegetationAt(col, row, action) {
         const targets = getMacheteTargets(col, row, action);
-        const tgrid = getActiveGrid();
+        const tgrid = window.GridTileAccessors.getActiveGrid();
         let cleared = 0;
         let zoneVisualsUpdated = true;
         for (const t of targets) {
@@ -16404,7 +15407,7 @@
             // than per cleared tile.
             if (currentArea === 'farm') markTileDirty(t.col, t.row);
             else if (_isZoneArea(currentArea)) {
-              zoneVisualsUpdated = updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
+              zoneVisualsUpdated = window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
             }
             cleared++;
           }
@@ -16417,14 +15420,14 @@
       // the cone's small tile-space AABB, so cost scales with attack area,
       // not map size. Crops and true copse trees are intentionally protected.
       function clearVegetationInAttackCone(fromX, fromY, facingAngle, rangePx, halfConeRad) {
-        const tgrid = getActiveGrid();
-        const cols = getActiveCols(), rows = getActiveRows();
+        const tgrid = window.GridTileAccessors.getActiveGrid();
+        const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const radiusTiles = Math.max(0, rangePx) / TILE;
         const centerCol = fromX / TILE, centerRow = fromY / TILE;
-        const minCol = clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
-        const maxCol = clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
-        const minRow = clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
-        const maxRow = clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
+        const minCol = window.FormatUtils.clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
+        const maxCol = window.FormatUtils.clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
+        const minRow = window.FormatUtils.clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
+        const maxRow = window.FormatUtils.clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
         let cleared = 0;
 
         for (let row = minRow; row <= maxRow; row++) {
@@ -16439,12 +15442,12 @@
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
             if (currentArea === 'farm') markTileDirty(col, row);
-            else if (_isZoneArea(currentArea)) updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
+            else if (_isZoneArea(currentArea)) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
             cleared++;
           }
         }
         if (cleared > 0) {
-          if (currentArea === 'farm') saveFarmLayout();
+          if (currentArea === 'farm') window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           debugLog(`weapon cone cleared ${cleared} non-tree vegetation tile${cleared === 1 ? '' : 's'}`);
         }
@@ -16480,7 +15483,7 @@
 
       function spawnActionParticles(col, row, action, ok) {
         const profile = actionFxProfile(action, ok);
-        const agrid = getActiveGrid();
+        const agrid = window.GridTileAccessors.getActiveGrid();
         const baseY = activeSurfaceYAtWorld(col + 0.5, row + 0.5) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
@@ -16664,7 +15667,7 @@
       // plateau-tier, and subtle visual-height result as the player avatar.
       function activeSurfaceYAtWorld(worldX, worldZ) {
         if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
-        const tile = getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        const tile = window.GridTileAccessors.getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
       }
 
@@ -16910,7 +15913,7 @@
       }
 
       // areaId/grid/sceneObj let this same stamp-builder serve both the
-      // player (currentArea/getActiveGrid()/getActiveScene()) and a
+      // player (currentArea/window.GridTileAccessors.getActiveGrid()/window.GridTileAccessors.getActiveScene()) and a
       // creature (c.areaId/c.areaGrid/c.scene||scene — see
       // tickCreatureLungeTrail) without either caller needing to know how
       // the other resolves its own area context.
@@ -16962,7 +15965,7 @@
 
       function tickLungeTrail(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
-        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, getActiveGrid(), getActiveScene());
+        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, window.GridTileAccessors.getActiveGrid(), window.GridTileAccessors.getActiveScene());
       }
 
       // Pounce's leap (see combat-animal-attacks.js's pounceUpdate) covers
@@ -17003,7 +16006,7 @@
       function drawActionTileEffects() {
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
-          const tile = getActiveGrid()[fx.row][fx.col];
+          const tile = window.GridTileAccessors.getActiveGrid()[fx.row][fx.col];
           const y = activeSurfaceYAtWorld(fx.col + 0.5, fx.row + 0.5) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
           const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
           if (!center.visible) continue;
@@ -17040,19 +16043,19 @@
       }
 
       function applyAction(tool, action, col, row) {
-        if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${actionName(action)} cannot be used on that tile.` };
-        const tile = getActiveGrid()[row][col];
+        if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${window.FormatUtils.actionName(action)} cannot be used on that tile.` };
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
           if (action === 'dig' && tile.dewPile) {
             const colorKey = tile.dewPile;
             tile.dewPile = null;
             window.DewVats.removeMesh(col, row);
-            const dewKey = dewItemKey(colorKey);
+            const dewKey = window.ItemProcessing.dewItemKey(colorKey);
             inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
             awardToolUseMasteryXp('shovel');
             window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, 'dug dew');
-            saveFarmLayout();
+            window.FarmEditor.saveFarmLayout();
             return { ok: true, message: `Dug up 1 ${ITEM_DEFS[dewKey]?.label || dewKey}.` };
           }
           if (action === 'dig' && tile.type === TileType.TRENCH) {
@@ -17066,7 +16069,7 @@
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${window.HudUpdate.contextualActionLabel(action, tile)}.`;
           awardToolUseMasteryXp('shovel');
           window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, action);
           return { ok: true, message: digMsg };
@@ -17115,7 +16118,7 @@
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
-          const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
+          const nutMessage = nutDrop ? `, ${addedNutAmount} ${window.LootRolling.starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
 
@@ -17390,7 +16393,7 @@
           }
           {
             const _chargeReticle = getReticleTile();
-            const _chargeTile = getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
+            const _chargeTile = window.GridTileAccessors.getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
             const _digStages = _chargeTile?.dewPile ? DIG_DEW_PILE_STAGES : DIG_NEW_TRENCH_STAGES;
             startChargeAction(_chargeReticle, activeAction === 'fill' ? FILL_TRENCH_STAGES : _digStages);
           }
@@ -17477,7 +16480,7 @@
           return;
         }
 
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         let result;
         // place_campfire_kit is NOT handled here — it fires immediately from
         // useActiveAction() instead (see its own comment there): this
@@ -17506,12 +16509,12 @@
         if (currentArea === 'farm') {
           window.WaterSystem.recomputeWater(false);
           // dig/fill/raise/till/smooth/plant/harvest/place_* all land here —
-          // previously none of them ever called saveFarmLayout() (only the
+          // previously none of them ever called window.FarmEditor.saveFarmLayout() (only the
           // farm editor's brush path did), so any terraforming or planting
           // done through ordinary gameplay was silently lost on reload, and
           // could get wiped out mid-session by anything that re-applies the
           // (stale, still-unsaved) layout on top of the live grid.
-          if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
+          if (result.ok !== false) { markTileDirty(col, row); window.FarmEditor.saveFarmLayout(); }
         } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // Vegetation-only changes remove/cover their indexed tile visuals
           // directly and report zoneVisualsUpdated, so they skip this costly
@@ -17523,7 +16526,7 @@
           // (not just this one tile) for the change to actually show up. See
           // refreshZoneGroundVisuals.
           recordWildernessChunkTileDelta(currentArea, col, row);
-          refreshZoneGroundVisuals(currentArea, col, row);
+          window.ZoneRegrowth.refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -17612,8 +16615,8 @@
         const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
         const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
-          col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
-          row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
+          col: window.FormatUtils.clamp(Math.floor(probeX / TILE), 0, window.GridTileAccessors.getActiveCols() - 1),
+          row: window.FormatUtils.clamp(Math.floor(probeY / TILE), 0, window.GridTileAccessors.getActiveRows() - 1),
           dir,
           probeX,
           probeY
@@ -17658,11 +16661,11 @@
       // js/music-system.js (window.Music).
 
       function tileSpeedAt(wx, wy) {
-        const aC = getActiveCols(), aR = getActiveRows();
+        const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
         const col  = Math.floor(wx / TILE);
         const row  = Math.floor(wy / TILE);
-        const tile = getActiveGrid()[row][col];
+        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         const type = tile.type;
         if (isSolid(type)) return null;
         // Auto-reserved plateau cliff-face ring — impassable except where a
@@ -17674,9 +16677,9 @@
         // for the matching attack-lockout.
         if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
-        if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
-        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
-        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
+        if (currentArea === 'farm' && (window.GridTileAccessors.isHouseFootprint(col, row) || window.GridTileAccessors.isFarmBuildingCollisionTile(col, row))) return null;
+        if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return null;
+        if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return null;
         if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
@@ -18145,7 +17148,7 @@
       function clearTargetHighlights() {
         for (const m of _targetOutlineMeshes) m.layers.disable(2);
         _targetOutlineMeshes = [];
-        updateCuttableBillboardGlow(0, 0, false);
+        window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
         const i = row * COLS + col;
@@ -18156,10 +17159,12 @@
           if (obj.lid) out.push(obj.lid);
           return out;
         }
+        const cropMeshes = window.VegetationCropRendering.cropMeshes;
         if (cropMeshes[i]) {
           cropMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
           if (out.length) return out;
         }
+        const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
         if (vegFoliageMeshes[i]) {
           vegFoliageMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
         }
@@ -18668,7 +17673,7 @@
               const alpha = 1 - Math.exp(-8 * dt);
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
-            safeDist = clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
             _seatedCameraDebug = {
               idealDistance: dist,
               directHitDistance,
@@ -18684,7 +17689,7 @@
             _seatedCameraDebug = null;
           }
           if (safeDist < dist - 1e-4) {
-            const shrink = clamp(1 - safeDist / dist, 0, 1);
+            const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
             // the wall-only frozen view in the Pixel Probe report.
@@ -18714,7 +17719,7 @@
         if (resultY < minCameraY) {
           const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
           if (dy < -1e-4) {
-            const t = clamp((minCameraY - lookAtY) / dy, 0, 1);
+            const t = window.FormatUtils.clamp((minCameraY - lookAtY) / dy, 0, 1);
             resultX = lookAtX + dx * t;
             resultY = lookAtY + dy * t;
             resultZ = lookAtZ + dz * t;
@@ -19025,7 +18030,7 @@
               const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
               if (distFromPlayer > fadeStartAt) {
                 const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
-                target = Math.min(target, clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+                target = Math.min(target, window.FormatUtils.clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
               }
               outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
             }
@@ -19138,7 +18143,8 @@
         const season = window.CalendarSystem.currentSeason();
         tileMats.grass.color.copy(season.grassColor); // unlit — no .emissive to update, see unlitFloorMat
         vegFloorMat.color.copy(season.grassColor); // also unlit — see its own declaration comment
-        _grassTint.copy(season.grassColor);
+        window.VegetationCropRendering.grassTint.copy(season.grassColor);
+        const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
 
@@ -19180,8 +18186,8 @@
       }
       loadTerrainMaterialConfig();
       function refreshTerrainForLateMaterialConfig() {
-        if (typeof buildTileMeshes === 'function' && typeof grid !== 'undefined' && grid) buildTileMeshes();
-        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) refreshZoneGroundVisuals(mapId);
+        if (window.VegetationCropRendering && typeof grid !== 'undefined' && grid) window.VegetationCropRendering.buildTileMeshes();
+        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) window.ZoneRegrowth.refreshZoneGroundVisuals(mapId);
       }
 
       // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
@@ -19377,7 +18383,7 @@
           float baseAlpha = uDepth;  // opacity = depth fraction exactly
 
           vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+          float finalAlpha  = window.FormatUtils.clamp(baseAlpha + detailAlpha, 0.0, 0.92);
 
           gl_FragColor = vec4(surfaceColor, finalAlpha);
         }
@@ -19427,6 +18433,10 @@
       };
 
       const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
+      // Must match js/vegetation-crop-rendering.js's own VEG_H — both control
+      // the same shrub/weed slab height (one for its geometry, this one for
+      // tileYCenter/tileSurfaceY's Y-placement math).
+      const VEG_H = 0.18;
 
       // Y center of each tile's primary mesh
       function tileYCenter(type) {
@@ -19456,1046 +18466,23 @@
         }
       }
 
-      // Geometry — full 1.0×1.0 footprint, no gaps
-      // Per-tile floor: 2×2 top subdivisions with seam-free vertex displacement.
-      // Displacement key is (round(worldX*2), round(worldZ*2)) so shared edge
-      // vertices between adjacent tiles always hash to the same value.
-      function makeFloorGeo(col, row) {
-        const geo = new THREE.BoxGeometry(1.0, SLAB_H, 1.0, 2, 1, 2);
-        const pa  = geo.attributes.position;
-        const ua  = geo.attributes.uv;
-        const topY = SLAB_H / 2;
-        for (let vi = 0; vi < pa.count; vi++) {
-          if (Math.abs(pa.getY(vi) - topY) < 1e-4) {
-            const kx = Math.round((col + 0.5 + pa.getX(vi)) * 2) | 0;
-            const kz = Math.round((row + 0.5 + pa.getZ(vi)) * 2) | 0;
-            let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-            h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-            pa.setY(vi, topY + (h / 4294967296 - 0.5) * 0.026);
-          }
-          // World-space (X,Z) UV, same convention as _mergeTileGeos — this
-          // geometry is used directly (unmerged) for the farm's individual
-          // tile meshes, so it needs its own real UV rather than BoxGeometry's
-          // default per-face 0..1 square (mesh.position offsets are applied
-          // after this, so bake col/row in here explicitly).
-          ua.setXY(vi, col + 0.5 + pa.getX(vi), row + 0.5 + pa.getZ(vi));
-        }
-        pa.needsUpdate = true;
-        ua.needsUpdate = true;
-        geo.computeVertexNormals();
-        return geo;
-      }
-
-      // Merge many small per-tile geometries (each in local -0.5..0.5 tile space)
-      // into a single BufferGeometry, baking in world-space (x,y,z) offsets per
-      // entry. Lets hundreds/thousands of seam-safe per-tile heightfield tiles
-      // collapse into one draw call per material instead of one mesh per tile.
-      function _mergeTileGeos(entries) {
-        // Recomputing normals on the merged buffer is mathematically the same
-        // as computing them per-entry (entries never share vertex indices, so
-        // there's no cross-entry averaging either way) — EXCEPT it silently
-        // discards any normal attribute an entry already carries. Some entries
-        // (e.g. the path network's pathGeo/grassGeo split) deliberately set a
-        // normal computed jointly across a sibling geometry that lives in a
-        // *different* bucket/material, to avoid a lighting seam where they
-        // meet. Preserve those instead of overwriting them.
-        for (const e of entries) {
-          if (!e.geo.attributes.normal) e.geo.computeVertexNormals();
-        }
-        let vertCount = 0, idxCount = 0;
-        for (const e of entries) {
-          vertCount += e.geo.attributes.position.count;
-          idxCount  += e.geo.index ? e.geo.index.count : e.geo.attributes.position.count;
-        }
-        const positions = new Float32Array(vertCount * 3);
-        const normals = new Float32Array(vertCount * 3);
-        // World-space (X,Z) UV, in raw world units (1 UV unit = 1 game tile) —
-        // resolveTileMat's textures scale via texture.repeat (see
-        // loadTerrainTileTexture) rather than a baked-in UV scale, so the
-        // same merged geometry works no matter what tile size a per-map
-        // override picks, and adjacent tiles' textures line up seamlessly
-        // across the whole merged mesh instead of each tile restarting its
-        // own 0..1 UV square (which is what "doesn't stretch evenly" meant
-        // here — there was no uv attribute at all before this).
-        const uvs = new Float32Array(vertCount * 2);
-        const indices = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
-        let vOff = 0, uOff = 0, iOff = 0, vBase = 0;
-        for (const e of entries) {
-          const pa = e.geo.attributes.position;
-          const na = e.geo.attributes.normal;
-          for (let i = 0; i < pa.count; i++) {
-            const wx = pa.getX(i) + e.x, wz = pa.getZ(i) + e.z;
-            positions[vOff]   = wx;
-            positions[vOff+1] = pa.getY(i) + e.y;
-            positions[vOff+2] = wz;
-            normals[vOff]   = na.getX(i);
-            normals[vOff+1] = na.getY(i);
-            normals[vOff+2] = na.getZ(i);
-            uvs[uOff] = wx; uvs[uOff+1] = wz; uOff += 2;
-            vOff += 3;
-          }
-          const idx = e.geo.index;
-          if (idx) {
-            for (let i = 0; i < idx.count; i++) indices[iOff++] = idx.getX(i) + vBase;
-          } else {
-            for (let i = 0; i < pa.count; i++) indices[iOff++] = i + vBase;
-          }
-          vBase += pa.count;
-        }
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-        g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-        g.setIndex(new THREE.BufferAttribute(indices, 1));
-        return g;
-      }
-
-      // ── Path tile: worn depression with adjacency-aware torn edges ───────────
-      // Same heightfield pipeline as buildTerrainTileGeo (TRENCH/RAISED) but with
-      // a shallow depth (-0.09) so it reads as a foot-worn groove in the earth.
-      // Adjacent PATH tiles open the blend so connected tiles flow into each other.
-      // Geometry is split into pathGeo (depressed cells, path material) and
-      // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
-      // same dual-mesh pattern used by rock and trench tiles.
-      function buildPathTileGeo(col, row, srcGrid = grid) {
-        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
-        const BLEND_V  = 2;
-        const PATH_DY  = -0.045;  // depression depth — shallow, rock-tile-style dip
-
-        // World-space smooth value noise — used to wobble the closed-edge
-        // margin width *continuously along the edge's world coordinate*, so
-        // the dirt/grass line meanders in long, smooth curves (serpentine,
-        // like a worn footpath) instead of either a dead-straight band or
-        // independent per-tile random teeth (which would just look like
-        // sawtooth noise, not a winding path). Because it's keyed off world
-        // position rather than per-tile randomness, the wave lines up
-        // seamlessly across adjacent path tiles.
-        const hash1 = n => {
-          let h = (Math.imul(n | 0, 2654435761) ^ ((n | 0) << 13)) >>> 0;
-          h = Math.imul(h ^ h>>>15, 1274126177) >>> 0;
-          return (h >>> 0) / 4294967296;
-        };
-        const smooth = t => t * t * (3 - 2 * t);
-        const wobble = (coord, seedOff) => {
-          const WAVELEN = 3.4;  // ~3-4 tiles per S-curve — reads as serpentine, not jittery
-          const xs = coord / WAVELEN + seedOff;
-          const xi = Math.floor(xs), t = xs - xi;
-          const a = hash1(xi), b = hash1(xi + 1);
-          const v = a + (b - a) * smooth(t);       // 0..1 smooth value noise
-          return 0.35 + v * 1.3;                    // multiplier range ~0.35..1.65
-        };
-
-        const openN = srcGrid[row - 1]?.[col]?.type === TileType.PATH;
-        const openS = srcGrid[row + 1]?.[col]?.type === TileType.PATH;
-        const openW = srcGrid[row]?.[col - 1]?.type === TileType.PATH;
-        const openE = srcGrid[row]?.[col + 1]?.type === TileType.PATH;
-
-        // Diagonal tiles — used to bevel the inner corner of L-shaped turns
-        // instead of leaving a blocky right-angle notch (same technique as
-        // buildTerrainTileGeo's TRENCH/RAISED corners).
-        const diagNW = srcGrid[row-1]?.[col-1]?.type === TileType.PATH;
-        const diagNE = srcGrid[row-1]?.[col+1]?.type === TileType.PATH;
-        const diagSW = srcGrid[row+1]?.[col-1]?.type === TileType.PATH;
-        const diagSE = srcGrid[row+1]?.[col+1]?.type === TileType.PATH;
-
-        const seamDisp = (vx, vz) => {
-          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        // Extra roughness along the path edge — stronger than trench to get ragged border
-        const roughDisp = (vx, vz) => {
-          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.045;
-        };
-
-        // Isolated 1-tile corner "nubs" — both perpendicular neighbors are
-        // path, the far diagonal isn't, AND the other two sides are closed —
-        // are almost always a one-tile width-step along a wider road's edge,
-        // not an intentional junction. Those get a true 45° diagonal cut
-        // across the whole tile (literally half path / half grass) instead
-        // of just a small rounded nub, so a multi-tile-wide road's outer
-        // edge reads as a chamfered line rather than a sawtooth staircase.
-        // Real junctions (where another side is also open) keep the subtle
-        // small-radius diagonal trim so they don't get chopped in half.
-        const isCornerNW = openW && openN && !diagNW && !openS && !openE;
-        const isCornerNE = openE && openN && !diagNE && !openS && !openW;
-        const isCornerSW = openW && openS && !diagSW && !openN && !openE;
-        const isCornerSE = openE && openS && !diagSE && !openN && !openW;
-        const spanNW = isCornerNW ? CELLS : BLEND_V;
-        const spanNE = isCornerNE ? CELLS : BLEND_V;
-        const spanSW = isCornerSW ? CELLS : BLEND_V;
-        const spanSE = isCornerSE ? CELLS : BLEND_V;
-
-        const Y = new Float32Array(VERTS * VERTS);
-        for (let vj = 0; vj < VERTS; vj++) {
-          for (let vi = 0; vi < VERTS; vi++) {
-            const vx = col + vi * STEP, vz = row + vj * STEP;
-
-            // Closed-edge margin wobbles smoothly along the edge's world
-            // coordinate (vz for W/E, vx for N/S) — a long serpentine curve
-            // rather than a per-tile-random tooth.
-            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * wobble(vz, 0.0)));
-            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * wobble(vz, 17.3)));
-            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * wobble(vx, 41.7)));
-            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * wobble(vx, 89.1)));
-
-            // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
-            // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
-            // whose iso-lines are right-angle brackets).
-            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, (vi + vj)                 / spanNW)) : 1;
-            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, ((CELLS-vi) + vj)         / spanNE)) : 1;
-            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, (vi + (CELLS-vj))         / spanSW)) : 1;
-            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, ((CELLS-vi) + (CELLS-vj)) / spanSE)) : 1;
-
-            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
-            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
-          }
-        }
-
-        // Split: path material where the depression is visible, grass at shallow edges
-        const PATH_THRESH = -0.009;  // scaled with the shallower PATH_DY
-        const pathIdx = [], grassIdx = [];
-        for (let cj = 0; cj < CELLS; cj++)
-          for (let ci = 0; ci < CELLS; ci++) {
-            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
-            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-            const isPath = Math.min(Y[v00], Y[v10], Y[v01], Y[v11]) < PATH_THRESH;
-            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
-          }
-
-        const positions = [], uvs = [];
-        for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++) {
-            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
-            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
-            // directly (unmerged) for the farm's per-tile path mesh.
-            uvs.push(col + vi * STEP, row + vj * STEP);
-          }
-
-        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
-
-        // pathGeo and grassGeo share the position buffer along the wobbling
-        // path/grass boundary — compute one normal set over both face lists
-        // so the boundary shades continuously instead of each geometry only
-        // seeing its own half of the faces.
-        const normAttr = new THREE.Float32BufferAttribute(
-          _sharedSplitNormals(positions, VERTS * VERTS, pathIdx, grassIdx), 3);
-
-        const makeGeo = idx => {
-          if (!idx.length) return null;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', posAttr);
-          g.setAttribute('uv', uvAttr);
-          g.setAttribute('normal', normAttr);
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          return g;
-        };
-        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
-      }
-
-      // Shared helper: compute one normal per vertex from a combined face list
-      // (used so two split geometries that share a position buffer along a
-      // boundary — e.g. path/grass — shade continuously instead of each
-      // computing normals only from its own half of the faces).
-      function _sharedSplitNormals(positions, vertCount, idxA, idxB) {
-        const allIdx = idxA.concat(idxB);
-        const normals = new Float32Array(vertCount * 3);
-        for (let f = 0; f < allIdx.length; f += 3) {
-          const ia = allIdx[f], ib = allIdx[f+1], ic = allIdx[f+2];
-          const ax=positions[ia*3],ay=positions[ia*3+1],az=positions[ia*3+2];
-          const bx=positions[ib*3],by=positions[ib*3+1],bz=positions[ib*3+2];
-          const cx=positions[ic*3],cy=positions[ic*3+1],cz=positions[ic*3+2];
-          const e1x=bx-ax,e1y=by-ay,e1z=bz-az, e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
-          const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
-          for (const vi3 of [ia,ib,ic]) {
-            normals[vi3*3] += nx; normals[vi3*3+1] += ny; normals[vi3*3+2] += nz;
-          }
-        }
-        for (let v = 0; v < vertCount; v++) {
-          const nx=normals[v*3], ny=normals[v*3+1], nz=normals[v*3+2];
-          const len = Math.hypot(nx,ny,nz) || 1;
-          normals[v*3]=nx/len; normals[v*3+1]=ny/len; normals[v*3+2]=nz/len;
-        }
-        return normals;
-      }
-
-      // ── Path network: one continuous heightfield for the whole road system ───
-      // Instead of treating each PATH tile as its own flat, regular slab and
-      // patching the seams between them, the entire path network (bounding box
-      // of all PATH tiles + a margin) is built as ONE shared vertex grid — the
-      // same "no per-tile independence" approach the border terrain uses beyond
-      // the map's edge. A blurred per-tile mask defines where the ground dips
-      // into the path, so the path/grass boundary settles into an organic,
-      // irregular line that ignores the tile grid, and the dip itself reads as
-      // a very shallow inverted cliff rather than a Minecraft-style flat block.
-      // TRENCH/RAISED/SHRUB/ROCK tiles inside the bbox are left to their own
-      // per-tile geometry (skipped here) so they aren't double-covered.
-      function buildPathNetworkGeo(srcGrid, gcols, grows) {
-        let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
-        for (let r = 0; r < grows; r++)
-          for (let c = 0; c < gcols; c++)
-            if (srcGrid[r]?.[c]?.type === TileType.PATH) {
-              if (c < minC) minC = c; if (c > maxC) maxC = c;
-              if (r < minR) minR = r; if (r > maxR) maxR = r;
-            }
-        if (minC === Infinity) return null; // no path tiles at all
-
-        const MARGIN = 2; // tiles of grass apron around the network for the dip to settle into
-        minC = Math.max(0, minC - MARGIN); maxC = Math.min(gcols - 1, maxC + MARGIN);
-        minR = Math.max(0, minR - MARGIN); maxR = Math.min(grows - 1, maxR + MARGIN);
-        const bw = maxC - minC + 1, bh = maxR - minR + 1;
-
-        const CELLS = 6, STEP = 1 / CELLS;
-        const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
-
-        // The path mesh owns a broad grass apron around the route, so every
-        // surface with its own relief/water geometry must punch through that
-        // apron too. Reuse the mesa-lid carve set to keep waterfalls (formerly
-        // omitted here) in parity with rivers/streams/trenches/raised beds;
-        // ramps and paddies likewise own their complete surface.
-        const EXCLUDED = new Set([...CARVED_TILE_TYPES, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RAMP, TileType.PADDY]);
-        const cellAt      = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]; // Used by the apron mask and runtime hole refresh to inspect the complete terrain cell.
-        const cellType    = (ci, cj) => cellAt(ci, cj)?.type;
-        // Every skipFloor cell is already rendered by the mesa's continuous
-        // lid/skin. The route's shared heightfield must also stop in the
-        // one-cell seam around it: boundary vertices are shared, so a triangle
-        // owned by the low neighboring tile can otherwise inherit one raised
-        // mesa vertex and form a grass flap up the cliff. Ordinary per-tile
-        // floor fills that seam; paved path bricks remain independent.
-        const ownsMesaSurface = tile => !!tile?.skipFloor || !!tile?.incline || !!tile?.mesaCliffFace; // Used by the route exclusion halo to identify mesa/cliff geometry owners.
-        const isExcludedCell = (ci, cj) => {
-          const tile = cellAt(ci, cj);
-          if (ownsMesaSurface(tile) || EXCLUDED.has(tile?.type)) return true;
-          for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-            if ((dc || dr) && ownsMesaSurface(cellAt(ci + dc, cj + dr))) return true;
-          }
-          return false;
-        };
-        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
-
-        // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
-        // average their path-membership so the mask starts as a clean 0 /
-        // 0.25 / 0.5 / 0.75 / 1 step instead of guessing a single owner cell.
-        const touching = (g, n) => {
-          if (g % CELLS === 0) {
-            const a = g / CELLS - 1, b = g / CELLS, arr = [];
-            if (a >= 0 && a < n) arr.push(a);
-            if (b >= 0 && b < n) arr.push(b);
-            return arr;
-          }
-          return [Math.floor(g / CELLS)];
-        };
-
-        let mask = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++) {
-          const rows = touching(gj, bh);
-          for (let gi = 0; gi < GW; gi++) {
-            const cols = touching(gi, bw);
-            let sum = 0, n = 0;
-            for (const cj of rows) for (const ci of cols) { n++; if (isPathCell(ci, cj)) sum++; }
-            mask[gj * GW + gi] = n ? sum / n : 0;
-          }
-        }
-
-        // Box-blur the mask a few times to round it into an organic, non-grid
-        // boundary — this is what gives the rim its "more complex/defineable"
-        // character instead of a tile-square hole.
-        for (let pass = 0; pass < 3; pass++) {
-          const next = new Float32Array(GW * GH);
-          for (let gj = 0; gj < GH; gj++)
-            for (let gi = 0; gi < GW; gi++) {
-              let sum = 0, n = 0;
-              for (let dj = -1; dj <= 1; dj++)
-                for (let di = -1; di <= 1; di++) {
-                  const ni = gi+di, nj = gj+dj;
-                  if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
-                  sum += mask[nj*GW+ni]; n++;
-                }
-              next[gj*GW+gi] = sum / n;
-            }
-          mask = next;
-        }
-
-        const seamDisp = (vx, vz) => {
-          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-        const roughDisp = (vx, vz) => {
-          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.045;
-        };
-        const smooth = t => t * t * (3 - 2 * t);
-        const PATH_DY = -0.05; // shallow — a worn groove, not a trench
-
-        // Y[] stays tier-independent (local worn-groove height only) since
-        // PATH_THRESH below is tuned against it — positions[] is what
-        // actually renders, and separately bakes in each vertex's owning
-        // tile's own elevTier so a path network that sits on a plateau
-        // doesn't render pinned to ground level while the plateau ground
-        // around it sits PLATEAU_UNIT higher (previously: a path crossing a
-        // plateau rendered as a hole cut through the mesa, the flat patch
-        // sunk far below the actual elevated surface).
-        const Y = new Float32Array(GW * GH);
-        const positions = new Float32Array(GW * GH * 3);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const vx = minC + gi * STEP, vz = minR + gj * STEP;
-            const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
-            const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
-            const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
-            const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
-            const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Supplies the absolute terrain tier for this route vertex.
-            const tierY = (ownerTile?.elevTier || 0) * PLATEAU_UNIT;
-            const k = gj*GW+gi;
-            Y[k] = localY;
-            positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
-          }
-
-        const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
-        const pathIdx = [], grassIdx = [];
-        for (let cj = 0; cj < GH-1; cj++)
-          for (let ci = 0; ci < GW-1; ci++) {
-            const tci = Math.min(bw-1, Math.floor(ci / CELLS));
-            const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
-            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
-            const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
-            const target = isPath ? pathIdx : grassIdx;
-            target.push(v00, v01, v11, v00, v11, v10);
-          }
-
-        const vertCount = GW * GH;
-        const posAttr  = new THREE.Float32BufferAttribute(positions, 3);
-        const normAttr = new THREE.Float32BufferAttribute(
-          _sharedSplitNormals(positions, vertCount, pathIdx, grassIdx), 3);
-
-        const makeGeo = idx => {
-          if (!idx.length) return null;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', posAttr);
-          g.setAttribute('normal', normAttr);
-          g.setIndex(new THREE.BufferAttribute(
-            vertCount > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-          return g;
-        };
-
-        const network = {
-          pathGeo: makeGeo(pathIdx),
-          grassGeo: makeGeo(grassIdx),
-          inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
-          isExcludedTile: (c, r) => isExcludedCell(c - minC, r - minR),
-          globalGroundMesh: null,
-          globalGroundGeometry: null,
-          originalGroundIndex: null,
-          renderedTileIndexRanges: new Map(),
-          bindGlobalGroundMesh(mesh) {
-            this.globalGroundMesh = mesh;
-            // TerrainRenderChunks replaces and spatially reorders large
-            // terrain index buffers immediately before their first render.
-            // Bind only after that handoff, so runtime digs edit the index
-            // buffer the GPU-facing child meshes actually share.
-            mesh.userData.onTerrainGeometryReady = geometry => this.bindRenderedGroundGeometry(geometry);
-            if (!window.TerrainRenderChunks?.installed) this.bindRenderedGroundGeometry(mesh.geometry);
-          },
-          bindRenderedGroundGeometry(geometry) {
-            const position = geometry?.getAttribute?.('position');
-            const indexAttr = geometry?.index;
-            if (!position || !indexAttr) return false;
-            const ranges = new Map(); // Maps a world tile to triangle starts in the final rendered index order.
-            for (let offset = 0; offset + 2 < indexAttr.count; offset += 3) {
-              const a = indexAttr.getX(offset), b = indexAttr.getX(offset + 1), c = indexAttr.getX(offset + 2);
-              const tileC = Math.floor((position.getX(a) + position.getX(b) + position.getX(c)) / 3);
-              const tileR = Math.floor((position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3);
-              if (tileC < minC || tileC > maxC || tileR < minR || tileR > maxR) continue;
-              const key = `${tileC},${tileR}`;
-              let starts = ranges.get(key);
-              if (!starts) ranges.set(key, starts = []);
-              starts.push(offset);
-            }
-            this.globalGroundGeometry = geometry;
-            this.originalGroundIndex = indexAttr.array.slice();
-            this.renderedTileIndexRanges = ranges;
-            // Collapse authored/generated basins before the first real draw.
-            // Their original triangles remain available for fill/redig.
-            for (const key of ranges.keys()) {
-              const [c, r] = key.split(',').map(Number);
-              if (this.isExcludedTile(c, r)) this.refreshTile(c, r);
-            }
-            return true;
-          },
-          refreshTile(c, r) {
-            const indexAttr = this.globalGroundGeometry?.index;
-            const original = this.originalGroundIndex;
-            const starts = this.renderedTileIndexRanges.get(`${c},${r}`);
-            if (!indexAttr || !original || !starts) return false;
-            const excluded = this.isExcludedTile(c, r);
-            for (const offset of starts) {
-              if (excluded) {
-                const collapsedVertex = original[offset];
-                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = collapsedVertex;
-              } else {
-                for (let i = 0; i < 3; i++) indexAttr.array[offset + i] = original[offset + i];
-              }
-            }
-            indexAttr.needsUpdate = true;
-            return true;
-          },
-          refreshTileAndSeam(c, r) {
-            let updated = false; // Returned to the mobile terrain-refresh log after all nine affected route cells are toggled.
-            for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-              updated = this.refreshTile(c + dc, r + dr) || updated;
-            }
-            return updated;
-          },
-        };
-        return network;
-      }
-
-      // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
-      // Ports the town-path-preview tool's "wall-generated surface" technique:
-      // WallBuilder normally stands its recipe's brick lattice up along a
-      // vertical quad (see panelCorners() in WallBuilder.js — width along local
-      // +X, height along local +Y). Passing an explicit `corners` array bypasses
-      // that vertical-quad derivation entirely, so 4 corners that all share one
-      // Y instead describe a FLAT quad lying in the XZ plane — build()'s own
-      // quadBasis() then derives a +Y-ish normal and u/v axes from those corners
-      // with no other change needed, so the exact same brick-placement math
-      // (generateWallMatricesFromRecipe, which only ever reasons in the panel's
-      // own local width×height grid) ends up laying bricks down flat instead of
-      // upright.
-      //
-      // Paving the whole spline corridor in one WallBuilder panel is fine for a
-      // town-sized route but doesn't scale to a long wilderness road — so
-      // instead of one huge panel (or a streamed window rebuilt as the player
-      // moves, which still pays a geometry-generation cost on every rebuild),
-      // the corridor is chunked into fixed PATH_BRICK_CHUNK_SIZE cells and
-      // every chunk that actually overlaps the corridor is built ONCE, up
-      // front (buildAllPathBrickChunks) — empty cells (most of a route's own
-      // bounding box, since the corridor is a thin strip through it) are
-      // skipped entirely rather than paying to generate-then-discard. From
-      // then on nothing is ever rebuilt: gameLoop's throttled tick just
-      // toggles each chunk's .visible using the exact same camera-aligned-
-      // corridor test already used for wilderness tree culling
-      // (updateZoneVegetationCulling/VEG_CULL_* below) — see
-      // updatePathBrickCulling. The one-time spline math (route selection,
-      // Catmull-Rom sampling, corridor containment test) is prepared once per
-      // zone by preparePathSplineData and reused by every chunk.
-      const PATH_BRICK_CHUNK_SIZE = 10; // world units (≈ tiles) per pre-built chunk
-      function _routeCurvePoints(route) {
-        const pts = (route.nodes || [])
-          .map(n => new THREE.Vector3(Number(n[0]) + 0.5, 0, Number(n[1]) + 0.5))
-          .filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
-        if (pts.length < 2) return [];
-        if (pts.length === 2) {
-          const out = [];
-          for (let i = 0; i <= 24; i++) out.push(pts[0].clone().lerp(pts[1], i / 24));
-          return out;
-        }
-        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.45);
-        return curve.getPoints(Math.max(32, (pts.length - 1) * 28));
-      }
-      function _segDistSq(px, pz, a, b) {
-        const vx = b.x - a.x, vz = b.z - a.z, wx = px - a.x, wz = pz - a.z, c1 = vx * wx + vz * wz;
-        if (c1 <= 0) return wx * wx + wz * wz;
-        const c2 = vx * vx + vz * vz;
-        if (c2 <= c1) { const dx = px - b.x, dz = pz - b.z; return dx * dx + dz * dz; }
-        const t = c1 / c2, dx = px - (a.x + t * vx), dz = pz - (a.z + t * vz);
-        return dx * dx + dz * dz;
-      }
-      // One-time (per zone) spline prep: picks which route(s) to pave and bakes
-      // their sampled centerlines + a corridor containment test + the overall
-      // bounding box, all reused by every streamed rebuild below.
-      function preparePathSplineData(srcGrid, gcols, grows, routes, mapId) {
-        const width = 3.25, tol = 0.05; // matches the preview tool's exported path.pathWidth/edgeTolerance
-        const pathTiles = new Set();
-        let tileMinC = Infinity, tileMaxC = -Infinity, tileMinR = Infinity, tileMaxR = -Infinity;
-        for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++)
-          if (srcGrid[r]?.[c]?.type === TileType.PATH) {
-            pathTiles.add(c + ',' + r);
-            if (c < tileMinC) tileMinC = c; if (c > tileMaxC) tileMaxC = c;
-            if (r < tileMinR) tileMinR = r; if (r > tileMaxR) tileMaxR = r;
-          }
-        // Plateau zones (Northern Cliffs, Southern Cloud Forest, ...) carve a
-        // road across multiple elevation tiers — buildPathNetworkGeo's own
-        // flat mesh already bakes each vertex's owning tile's elevTier into
-        // its Y (see its "positions[] is what actually renders" comment), so
-        // a WallBuilder brick corridor built at one single flat Y would land
-        // underground/off in the air the moment the route crosses onto a
-        // raised tier. Snapped per-instance in buildPathBrickChunkAt below.
-        const elevTierAt = (x, z) => srcGrid[Math.floor(z)]?.[Math.floor(x)]?.elevTier || 0;
-        if (!pathTiles.size) {
-          // Not necessarily a bug — plenty of zones legitimately have no
-          // TileType.PATH tiles at all — but worth a trace-level note since
-          // "why are there no bricks here" always starts by ruling this out.
-          debugLog(`Path brick surface (${mapId}): no PATH tiles in this grid, skipping.`);
-          return null;
-        }
-
-        // Auto-pick whichever route(s) actually overlap the painted path tiles
-        // (same scoring as the preview's selectedRoutes/routeOverlapScore) —
-        // a route authored for something else (an NPC patrol, say) that
-        // happens to share the map shouldn't also get paved.
-        function pointNearPaintedPath(c, r, rad) {
-          for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++)
-            if (pathTiles.has((Math.floor(c) + dc) + ',' + (Math.floor(r) + dr))) return true;
-          return false;
-        }
-        const candidates = (routes || []).filter(r => Array.isArray(r.nodes) && r.nodes.length >= 2);
-        const scored = candidates.map(r => {
-          const nodes = r.nodes || [];
-          let hit = 0;
-          for (const n of nodes) if (Array.isArray(n) && pointNearPaintedPath(Number(n[0]) + 0.5, Number(n[1]) + 0.5, 2)) hit++;
-          return [r, nodes.length ? hit / nodes.length : 0];
-        }).sort((a, b) => b[1] - a[1]);
-        const good = scored.filter(x => x[1] >= 0.45).map(x => x[0]);
-        const selected = good.length ? good : (scored.length ? [scored[0][0]] : []);
-
-        const samples = selected.length ? selected.map(_routeCurvePoints).filter(s => s.length >= 2) : [];
-        if (samples.length) {
-          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-          for (const arr of samples) for (const p of arr) {
-            minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-            minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
-          }
-          const margin = width / 2 + 0.8;
-          minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
-
-          const rr = (width / 2 + tol) * (width / 2 + tol);
-          function containsPoint(x, z) {
-            for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
-              if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
-            return false;
-          }
-          debugLog(`Path brick surface (${mapId}): spline mode, ${selected.length} route(s), ${pathTiles.size} PATH tile(s).`);
-          return { samples, containsPoint, elevTierAt, bounds: { minX, maxX, minZ, maxZ } };
-        }
-
-        // No authored route data overlaps this map's painted path tiles at
-        // all (e.g. the farm's hardcoded day-one path, or a hand-painted
-        // zone path with no route) — fall back to the preview tool's other
-        // mode, "tile-locked": the corridor is exactly the painted PATH
-        // cells themselves instead of a spline distance test. Blockier than
-        // the spline corridor on a curved route, but the farm's own path is
-        // a straight rectangular strip anyway, so it costs nothing there.
-        debugLog(`Path brick surface (${mapId}): no route matched ${pathTiles.size} painted PATH tile(s) (${candidates.length} candidate route(s) checked) — falling back to tile-locked mode.`, candidates.length ? 'warn' : 'info');
-        return {
-          samples: null,
-          containsPoint: (x, z) => pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
-          elevTierAt,
-          bounds: { minX: tileMinC, maxX: tileMaxC + 1, minZ: tileMinR, maxZ: tileMaxR + 1 },
-        };
-      }
-      // Builds one WallBuilder panel covering exactly one fixed grid cell
-      // (chunkMinX..chunkMinX+size, chunkMinZ..chunkMinZ+size), then prunes
-      // instances outside the actual corridor exactly like the original
-      // single-panel version did (see preparePathSplineData.containsPoint).
-      // Returns null if that cell has no corridor overlap at all — the
-      // caller uses that to skip empty cells rather than keep an empty group.
-      function buildPathBrickChunkAt(splineData, chunkMinX, chunkMinZ, size) {
-        const minX = chunkMinX, maxX = chunkMinX + size, minZ = chunkMinZ, maxZ = chunkMinZ + size;
-        const y = NORMAL_TOP + 0.01; // small lift above the flat path/grass mesh beneath, avoids z-fighting
-        const panel = {
-          id: 'path_surface_chunk', width: size, height: size, wallRecipeId: PATH_SURFACE_RECIPE_ID,
-          position: [(minX + maxX) / 2, y, (minZ + maxZ) / 2], rotationDeg: [0, 0, 0],
-          corners: [[minX, y, maxZ], [maxX, y, maxZ], [maxX, y, minZ], [minX, y, minZ]],
-        };
-        const opts = {
-          usePlaceholder: true, unitMult: 0.55, densityMult: 1, rockScale: 1.15,
-          preScale: [1, 1, 0.32], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
-        };
-        const group = pathWallBuilder.build([panel], opts);
-        group.name = 'PathBrickSurfaceChunk';
-
-        const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-        let anyKept = false;
-        group.traverse(o => {
-          if (!o.isInstancedMesh) return;
-          const n = o.count;
-          let kept = 0;
-          for (let i = 0; i < n; i++) {
-            o.getMatrixAt(i, m);
-            m.decompose(p, q, s);
-            if (!splineData.containsPoint(p.x, p.z)) continue;
-            // Re-lift this one instance onto its own tile's elevation tier —
-            // see elevTierAt's comment in preparePathSplineData. The panel
-            // itself was built flat at the zone's base Y, so every brick
-            // needs its own per-instance correction rather than one offset
-            // for the whole chunk.
-            const tier = splineData.elevTierAt ? splineData.elevTierAt(p.x, p.z) : 0;
-            if (tier) { p.y += tier * PLATEAU_UNIT; m.compose(p, q, s); }
-            if (kept !== i) o.setMatrixAt(kept, m);
-            kept++;
-          }
-          o.count = kept;
-          o.instanceMatrix.needsUpdate = true;
-          o.castShadow = true;
-          o.receiveShadow = true;
-          if (kept) anyKept = true;
-        });
-        if (!anyKept) { WallBuilder.disposeGroup(group); return null; }
-        return group;
-      }
-      // Builds every non-empty chunk over the corridor's bounding box, once.
-      // Each surviving chunk is tagged with userData.cullSphere in the exact
-      // shape updateZoneVegetationCulling already expects ({x,z,radius}), so
-      // updatePathBrickCulling below can reuse that same corridor-visibility
-      // formula unmodified.
-      function buildAllPathBrickChunks(splineData, scene) {
-        const b = splineData.bounds, size = PATH_BRICK_CHUNK_SIZE;
-        const chunkRadius = Math.SQRT2 * size / 2; // half-diagonal of a size×size cell
-        const chunks = [];
-        for (let cz = Math.floor(b.minZ / size) * size; cz < b.maxZ; cz += size) {
-          for (let cx = Math.floor(b.minX / size) * size; cx < b.maxX; cx += size) {
-            const group = buildPathBrickChunkAt(splineData, cx, cz, size);
-            if (!group) continue;
-            group.visible = false; // first updatePathBrickCulling pass decides what's actually shown
-            group.userData.cullSphere = { x: cx + size / 2, z: cz + size / 2, radius: chunkRadius };
-            scene.add(group);
-            chunks.push(group);
-          }
-        }
-        return chunks;
-      }
-      // Per-zone chunk list: mapId -> THREE.Group[]. Keyed so town, farm, and
-      // every wilderness zone each keep their own chunk set without fighting
-      // over one slot.
-      const _pathBrickChunkLists = new Map();
-      function registerPathBrickChunks(mapId, scene, splineData) {
-        // Disposes any previous chunk set for this mapId first — a zone can
-        // rebuild its scene (Tothal Shift, cache invalidation) and call this
-        // again, and a stale chunk set left in the scene would otherwise leak
-        // both the GPU buffers and a dangling reference this map's cull pass
-        // still walks every tick.
-        const prev = _pathBrickChunkLists.get(mapId);
-        if (prev) for (const g of prev) { scene.remove(g); WallBuilder.disposeGroup(g); }
-        const chunks = buildAllPathBrickChunks(splineData, scene);
-        _pathBrickChunkLists.set(mapId, chunks);
-        if (chunks.length) {
-          const total = chunks.reduce((sum, g) => sum + g.children.reduce((s2, o) => s2 + (o.isInstancedMesh ? o.count : 0), 0), 0);
-          debugLog(`Path brick surface (${mapId}): ${chunks.length} chunk(s), ${total} brick instance(s).`);
-        } else {
-          // splineData always has a real corridor by this point (see
-          // preparePathSplineData — it only ever returns null, which callers
-          // check before reaching here) — zero chunks means every single
-          // per-chunk WallBuilder generate-then-filter pass came up empty,
-          // which points at the corridor math or recipe/unitMult, not at
-          // "this map just has no path."
-          debugLog(`Path brick surface (${mapId}): corridor bounds ${JSON.stringify(splineData.bounds)} produced 0 chunks — recipe/corridor mismatch?`, 'warn');
-        }
-      }
-      // Called from the throttled tick below for whichever zone is currently
-      // active. Identical corridor test to updateZoneVegetationCulling
-      // (camera-aligned forward/rear/width box around VEG_CULL_* tiles, with
-      // hysteresis so a chunk right at the boundary doesn't flicker every
-      // tick) — same technique, just toggling pre-built path chunks instead
-      // of pre-built tree groups, so it costs nothing beyond that dot-product
-      // test per chunk regardless of how long the corridor is.
-      function updatePathBrickCulling(mapId, force) {
-        const chunks = _pathBrickChunkLists.get(mapId);
-        if (!chunks || !chunks.length) return;
-        const camX = camera.position.x, camZ = camera.position.z;
-        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
-        let viewLen = Math.hypot(viewX, viewZ);
-        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
-        viewX /= viewLen; viewZ /= viewLen;
-        const rightX = viewZ, rightZ = -viewX;
-        const forwardRange = VEG_CULL_FORWARD_TILES, rearRange = VEG_CULL_REAR_TILES;
-        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5, hysteresis = VEG_CULL_HYSTERESIS_TILES;
-        for (const chunk of chunks) {
-          const s = chunk.userData.cullSphere;
-          const dx = s.x - camX, dz = s.z - camZ;
-          const along = dx * viewX + dz * viewZ;
-          const side = Math.abs(dx * rightX + dz * rightZ);
-          const sticky = chunk.visible ? hysteresis : 0;
-          const expandedRadius = s.radius + sticky;
-          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
-            && side <= halfWidth + expandedRadius;
-          if (force || show !== chunk.visible) chunk.visible = show;
-        }
-      }
-
-      // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
-      // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
-      // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
-      function buildRockTileGeo(col, row) {
-        const VERTS = 7, CELLS = 6;
-        const STEP = 1.0 / CELLS;
-
-        let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        // Same hash formula as makeFloorGeo — seam-safe at tile edges
-        const seamDisp = (vx, vz) => {
-          const kx = Math.round(vx * 2) | 0;
-          const kz = Math.round(vz * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        // Finer roughness detail for the mound surface
-        const roughDisp = (vx, vz) => {
-          const kx = Math.round(vx * 8) | 0;
-          const kz = Math.round(vz * 8) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.05;
-        };
-
-        const Y = new Float32Array(VERTS * VERTS);
-        for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++)
-            Y[vj*VERTS+vi] = seamDisp(col + vi*STEP, row + vj*STEP);
-
-        // BFS plateau from a random interior starting cell (never touches edge cells)
-        const startCi = 1 + Math.floor(rng() * (CELLS - 2));
-        const startCj = 1 + Math.floor(rng() * (CELLS - 2));
-        const maxSize = 2 + Math.floor(rng() * 12);  // scaled for the smaller CELLS=6 interior
-        const group = new Set([startCj * CELLS + startCi]);
-        const front = [[startCi, startCj]];
-
-        while (front.length && group.size < maxSize) {
-          const fi = Math.floor(rng() * front.length);
-          const [ci, cj] = front.splice(fi, 1)[0];
-          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const ni = ci+dc, nj = cj+dr;
-            if (ni < 1 || ni > CELLS-2 || nj < 1 || nj > CELLS-2) continue;
-            const nk = nj*CELLS+ni;
-            if (group.has(nk)) continue;
-            group.add(nk); front.push([ni, nj]);
-          }
-        }
-
-        // Collect plateau vertex indices and find peak
-        let maxY = -Infinity;
-        const raised = new Set();
-        for (const ck of group) {
-          const ci = ck % CELLS, cj = (ck / CELLS) | 0;
-          for (const vi of [cj*VERTS+ci, cj*VERTS+ci+1, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1]) {
-            raised.add(vi);
-            if (Y[vi] > maxY) maxY = Y[vi];
-          }
-        }
-
-        const PEAK = 0.32 + rng() * 0.38;
-        const target = maxY + PEAK;
-
-        // Raise plateau verts, blending to zero at tile edges
-        for (const vi of raised) {
-          const vix = vi % VERTS, viy = (vi / VERTS) | 0;
-          const edgeDist = Math.min(vix, VERTS-1-vix, viy, VERTS-1-viy);
-          const blend = Math.min(1, edgeDist / 2);
-          if (blend <= 0) continue;
-          const vx = col + vix*STEP, vz = row + viy*STEP;
-          const h = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
-          if (h > Y[vi]) Y[vi] = h;
-        }
-
-        const positions = [], uvs = [];
-        for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++) {
-            positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
-            // World-space (X,Z) UV, same convention as _mergeTileGeos — this
-            // geometry is used directly (unmerged) for the farm's per-tile
-            // rock mound mesh, so it needs real UV of its own.
-            uvs.push(col + vi*STEP, row + vj*STEP);
-          }
-
-        // Split cells: stone if any corner is elevated (plateau or cliff face),
-        // grass if all corners are at ground level. Threshold 0.05u sits above
-        // the ±0.013u seam noise so ground cells always go green.
-        const stoneIdx = [], grassIdx = [];
-        for (let cj = 0; cj < CELLS; cj++)
-          for (let ci = 0; ci < CELLS; ci++) {
-            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
-            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-            const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
-              ? stoneIdx : grassIdx;
-            tgt.push(v00, v01, v11, v00, v11, v10);
-          }
-
-        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
-        const makeGeo = (idx) => {
-          if (!idx.length) return null;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', posAttr);
-          g.setAttribute('uv', uvAttr);
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          g.computeVertexNormals();
-          return g;
-        };
-        return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
-      }
-
-      // ── Terrain tile heightfield: TRENCH ditch and RAISED bed ──────────────────
-      // Adjacency-driven shape with three refinements vs. the first version:
-      //   1. PLATEAU factor expands the fully-blended interior (more plateau, less peak)
-      //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
-      //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
-      //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
-      function buildTerrainTileGeo(col, row, type, srcGrid = grid, options = {}) {
-        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
-        const BLEND_V  = 2;
-        // Trench is a dug pit meant to mirror the raised bed's wide flat top
-        // (just inverted) — same wide-plateau factor as RAISED. The natural
-        // waterway types (river/stream/waterfall) keep the narrower, more
-        // tapered 1.5 blend since those should still read as carved channels.
-        const PLATEAU  = (type === TileType.RAISED || type === TileType.TRENCH) ? 3.0 : 1.5;
-        const depressionTop = DEPRESSION_TOP[type];
-        const isDepression = depressionTop !== undefined;
-        const targetDY = isDepression
-          ? depressionTop - NORMAL_TOP
-          : RAISED_TOP - NORMAL_TOP;  // +0.5
-
-        // A dug TRENCH is a deliberate, hand-cut square pit — full depth to
-        // every edge. Wilderness waterways opt into the same basin profile
-        // through includeCutWalls, while town waterways retain their softer
-        // bank blend. Adjacent basin cells omit their internal walls below,
-        // leaving one continuous bottom with walls only along the outer bank.
-        const isTrench = type === TileType.TRENCH;
-        const isCutWaterBasin = options.includeCutWalls && WATERWAY_TYPES.has(type); // Gives wilderness water the same full-depth basin treatment as its trenches.
-        const isCutBasin = isTrench || isCutWaterBasin;
-        const openN = isCutBasin || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
-        const openS = isCutBasin || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
-        const openW = isCutBasin || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
-        const openE = isCutBasin || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
-
-        // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = isCutBasin || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
-        const diagNE = isCutBasin || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
-        const diagSW = isCutBasin || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
-        const diagSE = isCutBasin || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
-
-        const seamDisp = (vx, vz) => {
-          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        const roughDisp = (vx, vz) => {
-          const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.035;
-        };
-
-        const smooth = t => t * t * (3 - 2 * t);
-
-        const Y = new Float32Array(VERTS * VERTS);
-        for (let vj = 0; vj < VERTS; vj++) {
-          for (let vi = 0; vi < VERTS; vi++) {
-            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
-            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
-            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
-            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
-
-            // Diagonal correction: if both open sides share an outer (non-matching) diagonal,
-            // fade the inner corner vertex back to NORMAL_TOP. Uses max() so only the exact
-            // corner region (within BLEND_V steps of BOTH adjacent open edges) is affected.
-            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)           / BLEND_V)) : 1;
-            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)     / BLEND_V)) : 1;
-            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)     / BLEND_V)) : 1;
-            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
-
-            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
-            const vx = col + vi * STEP, vz = row + vj * STEP;
-            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
-          }
-        }
-
-        const positions = [], uvs = [];
-        for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++) {
-            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
-            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
-            // directly (unmerged) for the farm's per-tile trench/raised mesh.
-            uvs.push(col + vi * STEP, row + vj * STEP);
-          }
-
-        // Farm ground uses individual box slabs, whose exposed side faces
-        // naturally wall an adjacent trench. Wilderness route/mesa surfaces
-        // are top-only heightfields, so removing their grass quad would expose
-        // an empty vertical gap around the trench. Add segmented dirt cut walls
-        // to the trench geometry itself for that renderer. Ordered samples keep
-        // each quad front-facing toward the surrounding ground and share edge
-        // vertices so normals remain smooth along the wall.
-        const wallIdx = [];
-        if (isDepression && options.includeCutWalls) {
-          const sharesBasin = neighborType => isTrench
-            ? neighborType === TileType.TRENCH
-            : WATERWAY_TYPES.has(neighborType);
-          const appendWall = (samples, horizontal) => {
-            const first = positions.length / 3;
-            for (let i = 0; i < samples.length; i++) {
-              const { vi, vj } = samples[i];
-              const x = vi * STEP - 0.5, z = vj * STEP - 0.5;
-              const worldX = col + vi * STEP, worldZ = row + vj * STEP;
-              const bottomY = Y[vj * VERTS + vi];
-              const topY = seamDisp(worldX, worldZ);
-              const along = horizontal ? worldX : worldZ;
-              positions.push(x, topY, z, x, bottomY, z);
-              uvs.push(along, topY, along, bottomY);
-            }
-            for (let i = 0; i < samples.length - 1; i++) {
-              const top0 = first + i * 2, bottom0 = top0 + 1;
-              const top1 = top0 + 2, bottom1 = top0 + 3;
-              // Faces point into the basin, where the camera sees them from
-              // above. The opposite winding points out into the surrounding
-              // solid ground and gets removed by normal backface culling.
-              wallIdx.push(top0, bottom1, bottom0, top0, top1, bottom1);
-            }
-          };
-          if (!sharesBasin(srcGrid[row - 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
-          if (!sharesBasin(srcGrid[row + 1]?.[col]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
-          if (!sharesBasin(srcGrid[row]?.[col - 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
-          if (!sharesBasin(srcGrid[row]?.[col + 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
-        }
-
-        // Split cells: dirt where significantly depressed (trench) or elevated (raised);
-        // grass on flat edge cells that blend back to ground level.
-        const DIRT_THRESH = 0.05;
-        const dirtIdx = [], grassIdx = [];
-        for (let cj = 0; cj < CELLS; cj++)
-          for (let ci = 0; ci < CELLS; ci++) {
-            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
-            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-            const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
-            const isDirt = isDepression
-              ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
-              : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
-            (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
-          }
-
-        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
-        dirtIdx.push(...wallIdx);
-        const makeGeo = idx => {
-          if (!idx.length) return null;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', posAttr);
-          g.setAttribute('uv', uvAttr);
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          g.computeVertexNormals();
-          return g;
-        };
-        return { dirtGeo: makeGeo(dirtIdx), grassGeo: makeGeo(grassIdx) };
-      }
+      // Terrain/path tile geometry builders (floor slabs, dug/raised tile
+      // heightfields, per-tile and network-wide path meshes, the paved brick
+      // path surface pipeline, rock tile heightfields) now live in
+      // js/terrain-geometry.js (window.TerrainGeometry). tileYCenter/
+      // tileSurfaceY above stay here (called synchronously during
+      // window.WaterSystem.init(), before TerrainGeometry's own init()
+      // could plausibly run, and read from 15+ other places).
+      window.TerrainGeometry.init({
+        getGrid: () => grid,
+        getCamTargetX: () => camTargetX,
+        getCamTargetZ: () => camTargetZ,
+        TileType, CARVED_TILE_TYPES, WATERWAY_TYPES, sameWaterway,
+        SLAB_H, NORMAL_TOP, RAISED_TOP, ROCK_H, DEPRESSION_TOP, PLATEAU_UNIT,
+        PATH_SURFACE_RECIPE_ID, pathWallBuilder,
+        VEG_CULL_FORWARD_TILES, VEG_CULL_REAR_TILES, VEG_CULL_WIDTH_TILES, VEG_CULL_HYSTERESIS_TILES,
+        camera, debugLog,
+      });
 
       // Procedural farm/town border terrain (buildBorderTerrain/
       // buildTownBorderTerrain/its grass billboard belt) now lives in
@@ -20536,8 +18523,8 @@
       // the simulation remains tile-based, but every wet tile contributes its
       // four height-aware vertices to one world-UV merged surface mesh (the
       // farm/town dynamic water meshes and far-terrain south aprons now live
-      // as private state in js/water-system.js).
-      const tileMeshes  = new Array(ROWS * COLS).fill(null);
+      // as private state in js/water-system.js). tileMeshes itself now lives
+      // as private state in js/vegetation-crop-rendering.js (see below).
 
       // Static river/stream water-surface meshes built once in buildTownScene
       // (not part of the rain-fed water sim — rivers always flow).
@@ -20558,7 +18545,7 @@
         THREE,
         camera,
         playerRoot: playerMesh,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
       });
       // ambientDialogueRuntime owns only lightweight proximity checks and
       // its temporary world-space speech planes. Game state, NPC routing,
@@ -20577,7 +18564,7 @@
       const ambientDialogueRuntime = window.AmbientDialogue?.init({
         THREE,
         camera,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getDay: () => calendar.day,
         getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
         getSeason: () => window.CalendarSystem.currentSeason?.().name || null,
@@ -20818,7 +18805,7 @@
         const resolved = resolveDigFillAction(tool, action, reticle);
         if (!canUseAction(tool, resolved, reticle.col, reticle.row)) return false;
         if (resolved === 'fill') return true; // canUseAction already required an existing trench
-        const tile = getActiveGrid()[reticle.row][reticle.col];
+        const tile = window.GridTileAccessors.getActiveGrid()[reticle.row][reticle.col];
         return tile.type !== TileType.TRENCH;
       }
 
@@ -20959,7 +18946,7 @@
           rangePx,
           halfConeRad: halfConeRad ?? 0,
           angle: angle ?? Math.atan2(aimDirection.z, aimDirection.x),
-          pitch: pitch ?? Math.asin(clamp(aimDirection.y, -1, 1)),
+          pitch: pitch ?? Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1)),
         };
       }
 
@@ -21018,15 +19005,15 @@
         if (currentArea === 'farm') {
           window.WaterSystem.recomputeWater(false);
           // See the matching branch in firePendingAction — a completed dig/
-          // fill charge (new trench, fill-in) needs the same saveFarmLayout()
+          // fill charge (new trench, fill-in) needs the same window.FarmEditor.saveFarmLayout()
           // fix, or it's just as silently lost as a single-tap action.
-          if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
+          if (result.ok !== false) { markTileDirty(col, row); window.FarmEditor.saveFarmLayout(); }
         } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
           recordWildernessChunkTileDelta(currentArea, col, row);
-          refreshZoneGroundVisuals(currentArea, col, row);
+          window.ZoneRegrowth.refreshZoneGroundVisuals(currentArea, col, row);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -21254,7 +19241,7 @@
         if (!item) return null;
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
-        normalizeAlcoholItemDef(def);
+        window.ItemProcessing.normalizeAlcoholItemDef(def);
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
         const geo = new THREE.PlaneGeometry(w, w);
@@ -21323,7 +19310,7 @@
         return item.key.startsWith('potion_')
           || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
           || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
-          || isAlcoholItemDef(def);
+          || window.ItemProcessing.isAlcoholItemDef(def);
       }
 
       // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
@@ -21347,9 +19334,9 @@
       let _heldDrinkAnimDuration = 0;
 
       function heldActionPoseAt(animation, progress) {
-        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
-        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
-        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const windupFrac = window.FormatUtils.clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = window.FormatUtils.clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = window.FormatUtils.clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
         const neutral = animation.poses?.neutral || {};
         const windup = animation.poses?.windup || neutral;
         const strike = animation.poses?.strike || windup;
@@ -21423,10 +19410,10 @@
         actionLocks: window.CharacterActionLocks,
         playerParticipantId: PLAYER_ACTION_LOCK_ID,
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         getCurrentArea: () => currentArea,
         getActiveTool: () => activeTool,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
         getItemDef: itemKey => ITEM_DEFS[itemKey],
         poseAt: heldActionPoseAt,
@@ -21516,7 +19503,7 @@
       // Pixel Probe reads this snapshot so interior attachment failures can
       // be diagnosed from its mobile-friendly copied report.
       function getHeldObjectDebug() {
-        const activeScene = getActiveScene();
+        const activeScene = window.GridTileAccessors.getActiveScene();
         // Captures the five mobile arch slots after refreshActionBar populates them.
         const actionArch = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']
           .map(id => document.getElementById(id))
@@ -22083,713 +20070,10 @@
 
 
 
-      // ── Build/update tile meshes ───────────────────────────────────
-
-      // ── Vegetation slab geometry + wind shader ────────────────────
-      const VEG_H = 0.18;  // slab height for shrubs/weeds
-      const vegGeo = new THREE.BoxGeometry(0.88, VEG_H, 0.88);
-
-      // Wind vertex shader — displaces top vertices horizontally by sin(time + phase)
-      const windVert = `
-        uniform float uTime;
-        uniform float uPhase;
-        uniform float uStrength;
-        varying vec3 vNormal;
-        varying vec3 vViewPos;
-        void main() {
-          vNormal = normalMatrix * normal;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          // Only sway the top half (position.y > 0)
-          float topFactor = max(0.0, position.y / ${VEG_H.toFixed(3)});
-          float sway = sin(uTime * 1.8 + uPhase) * uStrength * topFactor;
-          float sway2 = cos(uTime * 1.2 + uPhase * 1.3) * uStrength * 0.5 * topFactor;
-          worldPos.x += sway;
-          worldPos.z += sway2;
-          vec4 mvPos = viewMatrix * worldPos;
-          vViewPos = mvPos.xyz;
-          gl_Position = projectionMatrix * mvPos;
-        }
-      `;
-      const windFrag = `
-        uniform vec3 uColor;
-        varying vec3 vNormal;
-        varying vec3 vViewPos;
-        void main() {
-          vec3 lightDir = normalize(vec3(0.4, 1.0, 0.3));
-          float diff = max(dot(normalize(vNormal), lightDir), 0.0) * 0.6 + 0.4;
-          gl_FragColor = vec4(uColor * diff, 1.0);
-        }
-      `;
-
-      // Shared time uniform — updated every frame
-      const windUniforms = { uTime: { value: 0 }, uPhase: { value: 0 }, uStrength: { value: 0.04 }, uColor: { value: new THREE.Color(0x247c3c) } };
-
-      function makeVegMaterial(color, phase) {
-        return new THREE.ShaderMaterial({
-          uniforms: {
-            uTime:     { value: 0 },
-            uPhase:    { value: phase },
-            uStrength: { value: 0.04 },
-            uColor:    { value: new THREE.Color(color) },
-          },
-          vertexShader:   windVert,
-          fragmentShader: windFrag,
-          side: THREE.DoubleSide,
-        });
-      }
-
-      // Track all vegetation meshes for wind animation
-      const vegMeshes = [];
-      // Track foliage-generator groups by tile index for rotation-based sway
-      const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
-      // Sparse index of occupied vegFoliageMeshes slots, kept in sync by setVegFoliageMesh(),
-      // so the per-frame wind-sway loop only visits live entries instead of all 936 slots.
-      const _vegFoliageActive = new Set();
-      function setVegFoliageMesh(i, val) {
-        vegFoliageMeshes[i] = val;
-        if (val) _vegFoliageActive.add(i); else _vegFoliageActive.delete(i);
-      }
-
-      // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
-      // Rendered via InstancedMesh (one draw call per category) instead of one
-      // Mesh pair per blade — at 14 crosses × 2 blades per tile, a per-Mesh
-      // approach would cost tens of thousands of draw calls across the farm's
-      // WEEDS-majority default tile pattern, which is the real cause of janky
-      // frame pacing during movement (not the per-tile speed multiplier).
-
-      function _mbRng(seed) {
-        let s = seed >>> 0;
-        return () => {
-          s += 0x6D2B79F5;
-          let t = Math.imul(s ^ (s >>> 15), s | 1);
-          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-      }
-
-      // Shared blade geometry: 1×1 PlaneGeometry anchored at Y=0
-      const _grassBladeGeo = (() => {
-        const g = new THREE.PlaneGeometry(1, 1);
-        g.translate(0, 0.5, 0);
-        return g;
-      })();
-
-      const _grassBillVert = `
-        uniform float uTime;
-        uniform float uStrength;
-        #ifdef USE_FOG
-          #ifdef FOG_EXP2
-            uniform float fogDensity;
-          #else
-            uniform float fogNear;
-            uniform float fogFar;
-          #endif
-          varying float vGrassFogFactor;
-        #endif
-        varying vec2 vUv;
-        varying float vRandom;
-        void main() {
-          vUv = uv;
-          #ifdef USE_INSTANCING
-            vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-          #else
-            vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          #endif
-          // Stable per-blade pseudo-random value from its (fixed) ground
-          // position — used by the fragment shader to thin the tuft count
-          // seasonally (Deadgrass/Coldmuck) without touching the instance
-          // buffer itself, so density can change with a single uniform.
-          vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
-          float topFactor = uv.y;
-          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
-          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
-          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
-          worldPos.x += sway;
-          worldPos.z += sway2;
-          vec4 mvPosition = viewMatrix * worldPos;
-          #ifdef USE_FOG
-            // Evaluate fog four times per blade plane and interpolate it, rather
-            // than running exp() for every overlapping grass fragment.
-            float fogDepth = -mvPosition.z;
-            #ifdef FOG_EXP2
-              vGrassFogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDepth * fogDepth);
-            #else
-              vGrassFogFactor = smoothstep(fogNear, fogFar, fogDepth);
-            #endif
-          #endif
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `;
-
-      const _grassBillFrag = `
-        uniform sampler2D uGrassTex;
-        uniform vec3 uTint;
-        uniform float uDensity;
-        uniform vec3 fogColor;
-        #ifdef USE_FOG
-          varying float vGrassFogFactor;
-        #endif
-        varying vec2 vUv;
-        varying float vRandom;
-        void main() {
-          if (vRandom > uDensity) discard;
-          vec4 texel = texture2D(uGrassTex, vUv);
-          if (texel.a < 0.5) discard;
-          // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
-          float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          // Unlit, same as the ground tiles' MeshBasicMaterial (see
-          // unlitFloorMat/tileMats.grass) — blades read at one consistent
-          // painted brightness day or night/storm instead of dimming with
-          // ambientLight/sunLight, so a blade never goes darker than the
-          // grass surface it's standing on.
-          vec3 tinted = uTint * (0.7 + lum * 0.8);
-          // Drawn outline pixels (near-black source) stay pure black; tint the rest
-          vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
-          #ifdef USE_FOG
-            col = mix(col, fogColor, vGrassFogFactor);
-          #endif
-          gl_FragColor = vec4(col, texel.a);
-        }
-      `;
-
-      const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
-      let grassBillboardMat = null;
-      let cuttableBillboardGlowMat = null;
-      let cuttableBillboardGlowMesh = null;
-      // Cached grass-leaf silhouette texture, reused (re-tinted per reagent)
-      // by getReagentPlantMaterial for alchemy reagent plant billboards.
-      let _grassLeafTex = null;
-
-      new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        _grassLeafTex = tex;
-        const sharedUniforms = () => ({
-          uGrassTex:   { value: tex },
-          uTint:       { value: _grassTint },
-          uTime:       { value: 0 },
-          uStrength:   { value: 0.04 },
-          uDensity:    { value: 1 },
-          // Fog uniform slots _grassBillFrag's USE_FOG block reads, refreshed
-          // every frame from whichever scene is active — declared directly
-          // here rather than via THREE.UniformsUtils.merge(UniformsLib.fog):
-          // merge() deep-clones every merged uniform, and cloning uGrassTex
-          // (a real Texture, not a Color/number) here somehow left the
-          // resulting InstancedMesh instances rendering nothing at all —
-          // confirmed live (every farm grass tuft vanished) and isolated to
-          // this specific clone call, not fog itself or the shader changes.
-          fogColor:    { value: new THREE.Color() },
-          fogDensity:  { value: 0 },
-          fogNear:     { value: 1 },
-          fogFar:      { value: 1000 },
-        });
-        grassBillboardMat = new THREE.ShaderMaterial({
-          fog: true, // see _grassBillFrag's USE_FOG block — refreshed from whichever scene is active
-          uniforms:       sharedUniforms(),
-          vertexShader:   _grassBillVert,
-          fragmentShader: _grassBillFrag,
-          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
-        });
-        applySeasonalGrassAppearance();
-        cuttableBillboardGlowMat = new THREE.ShaderMaterial({
-          uniforms: {
-            uGrassTex: { value: tex },
-            uColor: { value: new THREE.Color(combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
-            uAlpha: { value: Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
-          },
-          vertexShader: _grassBillVert,
-          fragmentShader: `
-            uniform sampler2D uGrassTex;
-            uniform vec3 uColor;
-            uniform float uAlpha;
-            varying vec2 vUv;
-            void main() {
-              vec4 texel = texture2D(uGrassTex, vUv);
-              if (texel.a < 0.5) discard;
-              gl_FragColor = vec4(uColor, uAlpha * texel.a);
-            }
-          `,
-          transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-        });
-        _rebuildFarmBillboards();
-        if (_townSceneBuilt) {
-          _buildTownGrassBillboards(_townZone?.cols || 60, _townZone?.rows || 50);
-          window.BorderTerrain.buildTownBorderGrassBillboards();
-        }
-      });
-
-      // Fills 14 crosses (28 blades) worth of instance matrices for one tile
-      // into `mesh` starting at `startIdx`; returns the next free index.
-      function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0) {
-        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
-        const baseY = tileSurfaceY(TileType.GRASS) + yOffset;
-        let idx = startIdx;
-        for (let b = 0; b < 14; b++) {
-          const ox  = (rand() - 0.5) * 0.9;
-          const oz  = (rand() - 0.5) * 0.9;
-          const w   = (0.16 + rand() * 0.10) * sizeMul;
-          const h   = (0.22 + rand() * 0.14) * sizeMul;
-          const rot = rand() * Math.PI;
-          const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
-
-          dummy.position.set(px, baseY, pz);
-          dummy.rotation.set(0, rot, 0);
-          dummy.scale.set(w, h, 1);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-
-          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-        }
-        return idx;
-      }
-
-      function updateCuttableBillboardGlow(col, row, visible) {
-        if (!cuttableBillboardGlowMesh || !cuttableBillboardGlowMat) return;
-        if (!visible || combatConfig().cuttableTargetGlow?.enabled === false) {
-          cuttableBillboardGlowMesh.count = 0;
-          return;
-        }
-        cuttableBillboardGlowMat.uniforms.uColor.value.set(combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
-        cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42;
-        const dummy = new THREE.Object3D();
-        cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
-        cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
-      }
-
-      // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
-      // Mode A, always on) each get one InstancedMesh sized for the worst case
-      // (every farm tile being that type), so edits just refill the buffer and
-      // adjust .count rather than recreating the mesh.
-      let farmGrassBillMesh = null, farmWeedBillMesh = null;
-      function _ensureFarmBillboardMeshes() {
-        if (farmGrassBillMesh) return;
-        const cap = ROWS * COLS * 28;
-        farmGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
-        farmGrassBillMesh.frustumCulled = false;
-        farmGrassBillMesh.count = 0;
-        farmGrassBillMesh.visible = s_grass;
-        farmGrassBillMesh.userData.isBillboard = true;
-        scene.add(farmGrassBillMesh);
-
-        farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
-        farmWeedBillMesh.frustumCulled = false;
-        farmWeedBillMesh.count = 0;
-        farmWeedBillMesh.userData.isBillboard = true;
-        scene.add(farmWeedBillMesh);
-
-        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
-        cuttableBillboardGlowMesh.frustumCulled = false;
-        cuttableBillboardGlowMesh.count = 0;
-        cuttableBillboardGlowMesh.userData.isBillboard = true;
-        scene.add(cuttableBillboardGlowMesh);
-      }
-
-      function _rebuildFarmBillboards() {
-        if (!grassBillboardMat) return;
-        _ensureFarmBillboardMeshes();
-        const dummy = new THREE.Object3D();
-        let gi = 0, wi = 0;
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-            if (tile.type === TileType.GRASS) {
-              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
-            } else if (tile.type === TileType.WEEDS && !s_weed3D) {
-              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
-            }
-          }
-        }
-        farmGrassBillMesh.count = gi;
-        farmWeedBillMesh.count  = wi;
-        farmGrassBillMesh.instanceMatrix.needsUpdate = true;
-        farmWeedBillMesh.instanceMatrix.needsUpdate  = true;
-      }
-
-      // Town's grass billboards — built once when entering town (town tiles
-      // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
-      let townGrassBillMesh = null;
-      function _buildTownGrassBillboards(tcols, trows) {
-        if (!grassBillboardMat) return;
-        if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
-        let count = 0;
-        for (let row = 0; row < trows; row++)
-          for (let col = 0; col < tcols; col++)
-            if (townGrid[row]?.[col]?.type === TileType.GRASS) count++;
-        if (count === 0) return;
-
-        townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
-        townGrassBillMesh.frustumCulled = false;
-        townGrassBillMesh.visible = s_grass;
-        townGrassBillMesh.userData.isBillboard = true;
-        const dummy = new THREE.Object3D();
-        let idx = 0;
-        for (let row = 0; row < trows; row++) {
-          for (let col = 0; col < tcols; col++) {
-            const tile = townGrid[row]?.[col];
-            if (tile?.type !== TileType.GRASS) continue;
-            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
-          }
-        }
-        townGrassBillMesh.count = idx;
-        townGrassBillMesh.instanceMatrix.needsUpdate = true;
-        townScene.add(townGrassBillMesh);
-      }
-
-      function _rebuildWeedTiles() {
-        for (let r = 0; r < ROWS; r++)
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r][c].type !== TileType.WEEDS) continue;
-            const i = r * COLS + c;
-            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); setVegFoliageMesh(i, null); }
-            _buildOneTileMesh(c, r);
-          }
-        _rebuildFarmBillboards();
-      }
-
-      // ── Crop mesh system ──────────────────────────────────────────
-      // Needlegrain and heftroot use procedural foliage geometry.
-      // All other crops use a simple colored cube (unchanged).
-      const CROP_COLORS = {
-        needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
-        heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
-        garlink:       { body: 0xd8d0b0, ripe: 0xf2ead0, sprout: 0x8bbf6a },
-        ongyums:       { body: 0xc07a3d, ripe: 0xe09a4b, sprout: 0x86b95a },
-        redberries:    { body: 0xb83b42, ripe: 0xff4f62, sprout: 0x4c9b43 },
-        blueberries:   { body: 0x3d62c8, ripe: 0x5f80ff, sprout: 0x4c9b74 },
-        yellowberries: { body: 0xd6c345, ripe: 0xffe86a, sprout: 0x7ca84b },
-        whiteberries:  { body: 0xdcded2, ripe: 0xffffff, sprout: 0x8bbf8a },
-        blackberries:  { body: 0x3d2a52, ripe: 0x17121f, sprout: 0x4d8a4a },
-        blackMustard:  { body: 0x4a3b2f, ripe: 0x1f1812, sprout: 0x789b3a },
-        greenMustard:  { body: 0x6da64a, ripe: 0x9bd66b, sprout: 0x75b957 },
-      };
-      const CROP_MAX_SCALE = 0.96;
-      const CROP_MIN_SCALE = 0.16;
-      const cropMeshes = new Array(ROWS * COLS).fill(null);
-
-      // Tracks which growth bucket (0–3) each foliage crop was built at,
-      // so we only rebuild when the plant crosses a threshold.
-      const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
-
-      // Indices of tiles that currently have a crop — rebuilt lazily whenever
-      // a tile changes so updateCropMeshes() doesn't scan all 936 tiles.
-      let _cropTileIndices = null;
-      function _invalidateCropList() { _cropTileIndices = null; }
-      function _ensureCropList() {
-        if (_cropTileIndices !== null) return;
-        _cropTileIndices = [];
-        for (let row = 0; row < ROWS; row++)
-          for (let col = 0; col < COLS; col++)
-            if (grid[row][col].crop) _cropTileIndices.push(row * COLS + col);
-      }
-
-      const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
-      const FG = window.FoliageGenerator;
-
-      function _growthBucket(growth) {
-        // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
-        if (growth < 0.15) return 0;
-        if (growth < 0.45) return 1;
-        if (growth < 0.80) return 2;
-        return 3;
-      }
-
-      function _buildFoliageMesh(crop, growth, col, row) {
-        if (!FG) return null;
-        if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
-        if (crop === 'heftroot') {
-          // Three plants in a triangle cluster, each with a unique seed offset
-          const wrapper = new THREE.Group();
-          const offsets = [[-0.20, 0, 0.14], [0.22, 0, 0.14], [0.0, 0, -0.22]];
-          for (let idx = 0; idx < 3; idx++) {
-            const [ox, oy, oz] = offsets[idx];
-            const plant = FG.buildHeftrootMesh(growth, col + idx * 127, row + idx * 61);
-            plant.position.set(ox, oy, oz);
-            plant.scale.setScalar(0.68);
-            wrapper.add(plant);
-          }
-          return wrapper;
-        }
-        return null;
-      }
-
-      function updateCropMeshes() {
-        _ensureCropList();
-        const _now = performance.now();
-        for (const i of _cropTileIndices) {
-          const col  = i % COLS;
-          const row  = (i / COLS) | 0;
-          const tile = grid[row][col];
-
-          // Stale entry (crop was harvested since last list rebuild) — clean up.
-          if (!tile.crop) {
-            if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
-            cropGrowthBucket[i] = -1;
-            _invalidateCropList();
-            continue;
-          }
-
-            const data   = cropData[tile.crop];
-            const growth = Math.min(tile.cropAge / data.growDays, 1.0);
-            const surfY  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-
-            if (FOLIAGE_CROPS.has(tile.crop)) {
-              // ── Procedural foliage mesh ──────────────────────────────
-              const bucket = _growthBucket(growth);
-              if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
-                // Growth crossed a threshold — rebuild.
-                scene.remove(cropMeshes[i]);
-                cropMeshes[i] = null;
-              }
-              if (!cropMeshes[i]) {
-                const group = _buildFoliageMesh(tile.crop, growth, col, row);
-                if (group) {
-                  scene.add(group);
-                  _markOutline(group);
-                  cropMeshes[i]       = group;
-                  cropGrowthBucket[i] = bucket;
-                }
-              }
-              const mesh = cropMeshes[i];
-              if (!mesh) continue;
-
-              // Scale: foliage group base is at y=0, grows +Y about 0.5 units at full.
-              // Map to the same visual range as the old box (0.08..0.48).
-              const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
-              mesh.scale.setScalar(scale);
-
-              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
-              mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = _now / 2200 + col;
-
-            } else {
-              // ── Simple colored cube (all other crops) ────────────────
-              const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
-              const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
-              const color  = tile.cropReady ? colors.ripe
-                           : growth < 0.15  ? colors.sprout
-                           : colors.body;
-
-              if (!cropMeshes[i]) {
-                const geo  = new THREE.BoxGeometry(1, 1, 1);
-                const mat  = new THREE.MeshLambertMaterial({ color });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.castShadow = true;
-                scene.add(mesh);
-                mesh.layers.enable(1);
-                cropMeshes[i] = mesh;
-              }
-
-              const mesh = cropMeshes[i];
-              mesh.material.color.setHex(color);
-              mesh.scale.setScalar(size);
-              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.03 : 0;
-              mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = _now / 1200 + col;
-            }
-        }
-      }
-
-      // Update a single tile mesh (called after shovel actions)
-      function _buildOneTileMesh(col, row) {
-        const i    = row * COLS + col;
-        const tile = grid[row][col];
-        const mat  = resolveTileMat('farm', tile.type);
-
-        if (tile.type === TileType.ROCK) {
-          // Floor slab — grass so it blends with surrounding tiles
-          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), resolveTileMat('farm', TileType.GRASS));
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-          // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
-          const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
-          let moundRoot = null;
-          if (stoneGeo) {
-            const m = new THREE.Mesh(stoneGeo, resolveTileMat('farm', TileType.ROCK));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.ROCK);
-            moundRoot = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            if (!moundRoot) moundRoot = m;
-          }
-          if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
-          setVegFoliageMesh(i, moundRoot || { _windAmp: 0 });
-          _markOutline(moundRoot);
-          return;
-        }
-
-        if (tile.type === TileType.SHRUB && window.FoliageGenerator) {
-          // Grass floor slab underneath the shrub
-          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-
-          const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
-          vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-          vegGroup._windAmp   = 0.06;
-          // buildShrubMesh now returns TREE_PRESETS.bush, so its native scale
-          // is already the regular wilderness-bush size. Do not apply the old
-          // generic shrub x2 farm boost here.
-          vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
-          scene.add(vegGroup);
-          setVegFoliageMesh(i, vegGroup);
-          _markOutline(vegGroup);
-          return;
-        }
-
-        if (tile.type === TileType.WEEDS) {
-          // Grass floor slab underneath
-          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
-          floorMesh.castShadow = floorMesh.receiveShadow = true;
-          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
-          scene.add(floorMesh);
-          tileMeshes[i] = floorMesh;
-          _markTerrainEdgeId(floorMesh, TileType.GRASS);
-
-          if (s_weed3D && window.FoliageGenerator) {
-            // Mode B: procedural 3D weeds, subject to shell outline
-            const vegGroup = new THREE.Group();
-            vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
-            const rng   = _mbRng(((col * 31337 + row * 1009) >>> 0));
-            const count = 3 + ((col * 7 + row * 13) % 3);  // 3–5 plants
-            for (let p = 0; p < count; p++) {
-              const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
-              if (wm) {
-                wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
-                vegGroup.add(wm);
-              }
-            }
-            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-            vegGroup._windAmp   = 0.10;
-            scene.add(vegGroup);
-            setVegFoliageMesh(i, vegGroup);
-            _markOutline(vegGroup);
-          }
-          return;
-        }
-
-        if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
-          const { dirtGeo, grassGeo } = buildTerrainTileGeo(col, row, tile.type);
-          let primary = null;
-          if (dirtGeo) {
-            // Both types use trench brown — raised earth is the same dug-soil colour
-            const m = new THREE.Mesh(dirtGeo, resolveTileMat('farm', TileType.TRENCH));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            m.layers.enable(1);  // material transition outline
-            _markTerrainEdgeId(m, TileType.TRENCH);
-            primary = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            m._windAmp = 0;
-            scene.add(m);
-            m.layers.enable(1);  // material transition outline
-            _markTerrainEdgeId(m, TileType.GRASS);
-            setVegFoliageMesh(i, m);
-            if (!primary) primary = m;
-          }
-          tileMeshes[i] = primary;
-          return;
-        }
-
-        if (tile.type === TileType.PATH) {
-          const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
-          let primary = null;
-          if (pathGeo) {
-            // Regular ground (grass) under the path — the paved brick
-            // surface (see "Path: paved brick surface" / registerPathBrickChunks
-            // for 'farm') overlays ordinary ground rather than a separately-
-            // colored path patch, same treatment as the town path.
-            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            scene.add(m);
-            primary = m;
-          }
-          if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
-            m.castShadow = m.receiveShadow = true;
-            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            scene.add(m);
-            _markTerrainEdgeId(m, TileType.GRASS);
-            if (!primary) primary = m;
-          }
-          tileMeshes[i] = primary;
-          return;
-        }
-
-        let mesh;
-        if (tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
-          // Fallback: foliage generator not available
-          const phase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-          const color = tile.type === TileType.SHRUB ? 0x356e36 : 0x247c3c;
-          mesh = new THREE.Mesh(vegGeo, makeVegMaterial(color, phase));
-          vegMeshes.push(mesh);
-        } else {
-          mesh = new THREE.Mesh(tile.type === TileType.ROCK ? rockGeo : makeFloorGeo(col, row), mat);
-        }
-        mesh.castShadow = mesh.receiveShadow = true;
-        mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
-        scene.add(mesh);
-        tileMeshes[i] = mesh;
-        // Rock and fallback vegetation get outlines; flat floor tiles do not.
-        if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
-          mesh.layers.enable(1);
-        } else {
-          // Flat ground tiles (grass/tilled/paddy/river/stream bed) — fallback
-          // foliage billboards above are skipped since they aren't flat ground.
-          _markTerrainEdgeId(mesh, _terrainCategoryFor(tile.type));
-        }
-      }
-
-      function buildTileMeshes() {
-        window.WaterSystem.resetFarmWaterMesh();
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const i = row * COLS + col;
-            if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-            if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
-            cropGrowthBucket[i] = -1;
-            _buildOneTileMesh(col, row);
-          }
-        }
-        _rebuildFarmBillboards();
-      }
-
-      // Update a single tile mesh (called after shovel actions)
-      function refreshTileMesh(col, row) {
-        const i = row * COLS + col;
-        if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-        if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
-        cropGrowthBucket[i] = -1;
-        _buildOneTileMesh(col, row);
-        _rebuildFarmBillboards();
-      }
+      // Farm/town grass billboards, crop growth meshes, and per-tile
+      // ground+vegetation mesh building now live in
+      // js/vegetation-crop-rendering.js — called from gameLoop and elsewhere
+      // via window.VegetationCropRendering.*.
 
       // Merged-water-surface collection/rendering (_collectDynamicWaterCells,
       // _buildFarAquiferApron, updateWaterMeshes, updateTownWaterMeshes,
@@ -22807,9 +20091,9 @@
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
-        const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
-        const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
-        const tile = getActiveTileAt(col, row);
+        const col = window.FormatUtils.clamp(Math.floor(wx), 0, window.GridTileAccessors.getActiveCols()-1);
+        const row = window.FormatUtils.clamp(Math.floor(wz), 0, window.GridTileAccessors.getActiveRows()-1);
+        const tile = window.GridTileAccessors.getActiveTileAt(col, row);
         // While climbing, the player is mid-crossing through impassable
         // incline tiles — use the scripted start->landing blend from
         // updateClimb instead of a raw tile lookup, which would pop between
@@ -22876,7 +20160,7 @@
         // hardcoding `scene` here left the ring parented into a scene that
         // wasn't the one actually being rendered.
         if (window.ResourceRings) {
-          const ringHud = window.ResourceRings.updateRingHud(player, getActiveScene(), .62);
+          const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
           ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         }
 
@@ -22945,7 +20229,7 @@
         // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
-          const bobEffort = clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
+          const bobEffort = window.FormatUtils.clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
           playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
         }
         // Suppressed (legs stay visible but just hang straight down from
@@ -22987,7 +20271,7 @@
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
         const reticle = getReticleTile();
-        const tile    = getActiveGrid()[reticle.row]?.[reticle.col];
+        const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row]?.[reticle.col];
         if (!tile) {
           reticleCircleMesh.visible = false;
           reticleRingMesh.visible   = false;
@@ -23008,6 +20292,7 @@
         const showTile   = isExcavate || isHoeWork;
         const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
         const i = reticle.row * COLS + reticle.col;
+        const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
         const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
         const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
                          && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
@@ -23047,10 +20332,10 @@
             for (const m of meshes) m.layers.enable(2);
             _targetOutlineMeshes = meshes;
             _targetOutlineAllowed = isObjTarget;
-            updateCuttableBillboardGlow(0, 0, false);
+            window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
             reticleRingMesh.visible = false;
           } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
-            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
+            window.VegetationCropRendering.updateCuttableBillboardGlow(reticle.col, reticle.row, true);
             reticleRingMesh.visible = false;
           } else {
             // No specific mesh — fall back to floating ring
@@ -23224,7 +20509,32 @@
 
       let _pathBrickCullAccum = 0;
 
-      buildTileMeshes();
+      // Called here (ahead of the other window.*?.init(...) calls near the
+      // bottom of this file, which run too late) since the farm's very first
+      // ground build (buildTileMeshes() below) and buildBorderTerrain()
+      // further down both need it immediately — every dep it captures
+      // (COLS/ROWS/scene/NORMAL_TOP/SLAB_H/PLATEAU_UNIT/WATER_UNIT/TileType/
+      // resolveTileMat/rockGeo/vegFloorMat/cropData/tileYCenter/tileSurfaceY/
+      // combatConfig/applySeasonalGrassAppearance/_markOutline/
+      // _markTerrainEdgeId/_terrainCategoryFor) is already declared above
+      // this point, same forward-reference-safe ordering as
+      // window.WaterSystem.init()/window.FarmEditor.init() one block above.
+      window.VegetationCropRendering.init({
+        COLS, ROWS, NORMAL_TOP, SLAB_H, PLATEAU_UNIT, WATER_UNIT, TileType,
+        scene, resolveTileMat, rockGeo, vegFloorMat, cropData,
+        tileYCenter, tileSurfaceY, combatConfig, applySeasonalGrassAppearance,
+        markOutline: _markOutline,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+        getGrid: () => grid,
+        getWeed3D: () => s_weed3D,
+        getGrassEnabled: () => s_grass,
+        getTownScene: () => townScene,
+        getTownGrid: () => townGrid,
+        getTownZone: () => _townZone,
+        getTownSceneBuilt: () => _townSceneBuilt,
+      });
+      window.VegetationCropRendering.buildTileMeshes();
 
       // Paved brick surface over the farm's path, if it has one — same
       // technique as the town path (see "Path: paved brick surface" below):
@@ -23234,24 +20544,25 @@
       // rather than captured now.
       ensurePathSurfaceReady().then(() => {
         const farmRoutes = worldRoutes.filter(r => (r.area || 'farm') === 'farm');
-        const splineData = preparePathSplineData(grid, COLS, ROWS, farmRoutes, 'farm');
-        if (splineData) registerPathBrickChunks('farm', scene, splineData);
+        const splineData = window.TerrainGeometry.preparePathSplineData(grid, COLS, ROWS, farmRoutes, 'farm');
+        if (splineData) window.TerrainGeometry.registerPathBrickChunks('farm', scene, splineData);
       }).catch(err => debugLog('Farm path brick surface error: ' + err.message, 'warn'));
 
       // Called here (ahead of the other window.*?.init(...) calls near the
       // bottom of this file, which run too late) since buildBorderTerrain()
       // below needs it immediately — every other dep it captures by closure
       // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
-      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass/clamp)
-      // is already declared above this point, or (clamp, a function
-      // declaration) hoisted regardless of where it's written.
+      // _mbRng/_markOutline/window.VegetationCropRendering's grass state/
+      // s_grass) is already declared above this point, or
+      // (window.FormatUtils.clamp, loaded via its own <script> tag before
+      // game.js) already available regardless of where it's written.
       window.BorderTerrain?.init({
         COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
-        resolveTileMat, resolveCliffMat, clamp,
-        mbRng: _mbRng,
+        resolveTileMat, resolveCliffMat, clamp: window.FormatUtils.clamp,
+        mbRng: window.VegetationCropRendering.mbRng,
         markOutline: _markOutline,
-        grassBladeGeo: _grassBladeGeo,
-        getGrassBillboardMat: () => grassBillboardMat,
+        grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
+        getGrassBillboardMat: () => window.VegetationCropRendering.getGrassBillboardMat(),
         getGrassEnabled: () => s_grass,
         getTownScene: () => townScene,
         getTownZone: () => _townZone,
@@ -23312,7 +20623,9 @@
         s_grass = !!visible;
         const settingCheckbox = document.getElementById('settingGrass');
         if (settingCheckbox) settingCheckbox.checked = s_grass;
+        const farmGrassBillMesh = window.VegetationCropRendering.getFarmGrassBillMesh();
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
+        const townGrassBillMesh = window.VegetationCropRendering.getTownGrassBillMesh();
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
         // Streamed zone grass/rich-foliage groups live below their owning
         // chunk groups, so traverse rather than assuming direct scene children.
@@ -23332,7 +20645,7 @@
       });
       document.getElementById('settingWeed3D').addEventListener('change', e => {
         s_weed3D = e.target.checked;
-        _rebuildWeedTiles();
+        window.VegetationCropRendering.rebuildWeedTiles();
       });
       // Cloud Forest perf-testing toggles — each takes effect immediately,
       // no zone reload needed (see s_cloudForestFog/WideCull/BgForest's
@@ -23548,89 +20861,12 @@
         window.DevSpawner?.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
       });
-      // Cycles through a zone's dens in a shuffled, non-repeating order
-      // (per zone) instead of an independent random pick every press —
-      // with only a handful of dens per zone, plain Math.random() made it
-      // easy to land on the same 1-2 dens over and over by chance.
-      // Reshuffles whenever the den count changes (e.g. after a Tothal
-      // Shift), so a full lap always visits every den on the map exactly
-      // once before any repeat.
-      const _denTeleportCycle = new Map(); // zoneId -> { order: number[], idx: number, length: number }
-      function _pickCycledDen(zoneId, dens) {
-        let state = _denTeleportCycle.get(zoneId);
-        if (!state || state.length !== dens.length) {
-          const order = dens.map((_, i) => i);
-          for (let i = order.length - 1; i > 0; i--) {
-            const j = Math.floor(rnd() * (i + 1));
-            [order[i], order[j]] = [order[j], order[i]];
-          }
-          state = { order, idx: 0, length: dens.length };
-          _denTeleportCycle.set(zoneId, state);
-          window.__farmLog?.(`[wildlife] den teleport cycle rebuilt for ${zoneId}: ${dens.length} dens, order [${order.join(',')}]`, 'wildlife');
-        }
-        const den = dens[state.order[state.idx]];
-        window.__farmLog?.(`[wildlife] den teleport ${zoneId}: picking cycle slot ${state.idx + 1}/${state.order.length} -> den ${den.id}`, 'wildlife');
-        state.idx = (state.idx + 1) % state.order.length;
-        return den;
-      }
-      // Dev Tools: warp to a den's mouth on the CURRENT map only — no
-      // zone-switching, since the request is specifically "does this map
-      // have one" (farm/town/buildings never do; a wilderness zone does once
-      // its Tothal Shift has run — see _zoneLayouts' `dens` field).
-      function teleportToRandomDen() {
-        // Called from inside a den's own cavern (dark, no landmarks, and
-        // "no dens on this map" made no sense there since a cavern's own
-        // _zoneLayouts entry doesn't exist) — resolve the exterior zone
-        // this cavern belongs to (see _denCavernZoneOf) and warp there,
-        // landing at a den mouth like the zone-side path below instead of
-        // requiring a separate exit step first.
-        if (_isCavernBuildingArea(currentArea)) {
-          const zoneId = window.WildlifeSpawn.denCavernZoneOf(currentArea);
-          const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
-          if (!zoneId || !dens || !dens.length) {
-            showToast("No dens found for this burrow's map.", false);
-            return;
-          }
-          const den = _pickCycledDen(zoneId, dens);
-          const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-          startSceneTransition(() => {
-            const fromScene = _buildingScenes.get(currentArea)?.scene || null;
-            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-            _currentBuildingMapId = null;
-            currentArea = zoneId;
-            player.x = (anchor.x + 0.5) * TILE;
-            player.y = (anchor.y + 0.5) * TILE;
-            player.vx = 0; player.vy = 0;
-            _snapCameraTarget();
-            const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
-            if (toScene) {
-              toScene.add(playerMesh); toScene.add(playerGroundShadow);
-              toScene.add(toolHolder); toScene.add(reticleMesh);
-              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-              toScene.add(reticleWavyGroup);
-            }
-            refreshActionBar();
-            showToast(`Teleported to a den (${dens.length} on this map).`, true);
-            closeMenu();
-          });
-          return;
-        }
-        const dens = _zoneLayouts.get(currentArea)?.dens;
-        if (!dens || !dens.length) {
-          showToast('No dens on this map.', false);
-          return;
-        }
-        const den = _pickCycledDen(currentArea, dens);
-        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-        player.x = (anchor.x + 0.5) * TILE;
-        player.y = (anchor.y + 0.5) * TILE;
-        player.vx = 0; player.vy = 0;
-        _snapCameraTarget();
-        window.WildernessChunks?.primeZone(currentArea, anchor.x, anchor.y);
-        showToast(`Teleported to a den (${dens.length} on this map).`, true);
-        closeMenu();
-      }
-      document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+      // Wilderness den teleport (Dev Tools + Wildlife panel per-den button)
+      // now lives in js/den-nest-system.js — call via
+      // window.DenNestSystem.teleportToRandomDen()/.warpToDenAnchor(...).
+      // See its own init(deps) call below for the shared game.js state it's
+      // threaded (playerMesh/toolHolder/reticle* bundle, getCurrentArea/
+      // setCurrentArea + setCurrentBuildingMapId, same as js/dev-spawner.js).
 
       // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
       // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
@@ -23639,58 +20875,6 @@
         await checkTothalShift(true);
         window.WildlifeDebugPanel.render();
       });
-      // Delegated so it keeps working across every re-render of the list
-      // (container.innerHTML replacement would otherwise drop per-button
-      // listeners each time).
-      document.getElementById('wildlifeDenList')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.wildlife-den-teleport-btn');
-        if (!btn) return;
-        const zoneId = btn.dataset.zone, denId = btn.dataset.den;
-        const den = _zoneLayouts.get(zoneId)?.dens?.find(d => d.id === denId);
-        if (!den) { showToast('That den no longer exists on the current map.', false); return; }
-        warpToDenAnchor(zoneId, den);
-      });
-      // Warps the player straight to a specific den's mouth on its own
-      // zone, from anywhere (farm, town, another zone, or inside any
-      // building/cavern) — used by the Wildlife panel's per-den Teleport
-      // button. Unlike teleportToRandomDen (which only ever targets
-      // "whichever map you're currently on"), this always resolves the
-      // exact zone the picked den belongs to and does a full scene swap
-      // if that's not where the player already is.
-      function warpToDenAnchor(zoneId, den) {
-        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-        const land = () => {
-          player.x = (anchor.x + 0.5) * TILE;
-          player.y = (anchor.y + 0.5) * TILE;
-          player.vx = 0; player.vy = 0;
-          _snapCameraTarget();
-          window.WildernessChunks?.primeZone(zoneId, anchor.x, anchor.y);
-        };
-        if (currentArea === zoneId) {
-          land();
-          showToast(`Teleported to den ${den.id}.`, true);
-          closeMenu();
-          return;
-        }
-        startSceneTransition(() => {
-          const fromScene = getActiveScene();
-          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-          currentArea = zoneId;
-          land();
-          const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
-          if (toScene) {
-            toScene.add(playerMesh); toScene.add(playerGroundShadow);
-            toScene.add(toolHolder); toScene.add(reticleMesh);
-            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-            toScene.add(reticleWavyGroup);
-          }
-          refreshActionBar();
-          showToast(`Teleported to den ${den.id}.`, true);
-          closeMenu();
-        });
-      }
-
       // Dev Tools: Testing Arena teleport + creature/bandit/foliage
       // spawner panel now lives in js/dev-spawner.js (window.DevSpawner)
       // — see its init(deps) call below for the shared game.js state
@@ -23701,7 +20885,7 @@
       // window.BanditCombatLog.captureSnapshotText() if needed elsewhere.
 
       document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
-        devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
+        devGlobalSpeedMul = window.FormatUtils.clamp(Number(e.target.value) || 100, 25, 300) / 100;
         const label = document.getElementById('devSpeedMulLabel');
         if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
       });
@@ -23710,78 +20894,21 @@
       // js/dev-spawner.js (window.DevSpawner) — call via
       // window.DevSpawner.toggle()/.refreshEditorButtonVisibility().
 
-      // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
-      // in loadBuildingScene) ──────────────────────────────────────────
-      const NEST_TAKE_HOLD_S = 5;
+      // Den-Mother nest hold-to-take egg/baby interaction now lives in
+      // js/den-nest-system.js — call via window.DenNestSystem.
+      // isPlayerNearDenNest/.aimedCavernNest/.currentAimedNest/
+      // .refreshInteractionFocusDebug/.updateNestInteraction(dt). See its
+      // own init(deps) call below for the shared game.js state it's
+      // threaded (_denNests, player, inventory, etc.). _nestHoldT itself
+      // stays here (not module-private) — it's also reset by branch-fall
+      // damage and player-hit interrupts elsewhere in game.js, and read by
+      // another module's getNestHoldT() getter below.
       let _nestHoldT = 0;
-      const _nestTakeHudEl = document.getElementById('nestTakeHud');
-      const _nestTakeLabelEl = document.getElementById('nestTakeLabel');
-      const _nestTakeFillEl = document.getElementById('nestTakeFill');
-      function isPlayerNearDenNest(nest) {
-        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
-        return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
-      }
-      function aimedCavernNest(nest) {
-        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
-        const interactionRay = currentPlayerInteractionRay();
-        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
-        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
-        const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
-        const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
-        const box = new THREE.Box3(
-          new THREE.Vector3(cx / TILE - halfW, groundY, cy / TILE - halfH),
-          new THREE.Vector3(cx / TILE + halfW, groundY + 0.75, cy / TILE + halfH),
-        );
-        const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
-        if (!focus) return null;
-        const hostile = window.RangedWeapons.focusedHostile?.(24);
-        if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
-        window.DebugHitboxes?.noteInteractionFocus?.(focus);
-        return nest;
-      }
-      function currentAimedNest() {
-        const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
-        if (branchNest) return branchNest;
-        return aimedCavernNest(_denNests.get(currentArea));
-      }
-      function refreshInteractionFocusDebug() {
-        if (!s_showInteractionRaycast) return;
-        // Match computeActionButtons priority: a nest owns the shared input
-        // before branch climbing is considered.
-        if (currentAimedNest()) return;
-        if (_isZoneArea(currentArea) && !player.climbing) window.ClimbSystem?.getClimbTarget?.();
-      }
-      function updateNestInteraction(dt) {
-        const nest = currentAimedNest();
-        const taking = nest && activeAction === 'nest_take' && actionHeldDown;
-        player._nestTakeActive = !!taking;
-        if (!taking) {
-          if (_nestHoldT > 0) _nestHoldT = 0;
-          if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
-          return;
-        }
-        _nestHoldT += dt;
-        if (_nestTakeLabelEl) _nestTakeLabelEl.textContent = nest.liveBirth ? 'Taking Baby...' : 'Taking Egg...';
-        if (_nestTakeFillEl) _nestTakeFillEl.style.width = Math.min(100, (_nestHoldT / NEST_TAKE_HOLD_S) * 100) + '%';
-        _nestTakeHudEl?.classList.add('visible');
-        if (_nestHoldT >= NEST_TAKE_HOLD_S) {
-          _nestHoldT = 0;
-          player._nestTakeActive = false;
-          _nestTakeHudEl?.classList.remove('visible');
-          nest.remaining--;
-          inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
-          window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
-          clampInventoryStack(nest.itemKey);
-          buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
-          saveMemberWorldData();
-          showToast(`${itemIconForKey(nest.itemKey)} Took ${ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
-        }
-      }
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
         const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
-        s_zoomScale = clamp(Number(value) || 1.5, min, max);
+        s_zoomScale = window.FormatUtils.clamp(Number(value) || 1.5, min, max);
         const zoomSetting = document.getElementById('settingZoom');
         if (zoomSetting) zoomSetting.value = String(s_zoomScale);
         updateCameraPosition();
@@ -23900,7 +21027,7 @@
           window.PerfProfiler?.end(wildernessChunkPerf);
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
-          updatePlayerVitals(dt);
+          window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
@@ -23938,7 +21065,7 @@
           }
 
           window.ClimbSystem?.updateFallenNests?.(dt);
-          updateNestInteraction(dt);
+          window.DenNestSystem.updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -24059,12 +21186,12 @@
             const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
-              : clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
             // Inverted relative to X on purpose — matches the desktop
             // Shift-drag/plain-mouselook convention just below (+movementY
             // pitches the same way), whereas the raw touch delta this knob
             // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -24098,7 +21225,7 @@
         if (_pathBrickCullAccum >= 0.14) {
           const force = _pathBrickCullAccum >= 900;
           _pathBrickCullAccum = 0;
-          if (_pathBrickChunkLists.size) updatePathBrickCulling(currentArea, force);
+          window.TerrainGeometry.updatePathBrickCulling(currentArea, force);
         }
 
         // ── Three.js updates ─────────────────────────────────────
@@ -24140,7 +21267,7 @@
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
-          updateCropMeshes();
+          window.VegetationCropRendering.updateCropMeshes();
           window.FarmAnimals.updateAnimalMeshes(dt);
           updateThreeLighting();
 
@@ -24151,7 +21278,7 @@
             : 0.03;
           const _playerTX = player.x / TILE;
           const _playerTZ = player.y / TILE;
-          for (const vm of vegMeshes) {
+          for (const vm of window.VegetationCropRendering.vegMeshes) {
             if (vm.material && vm.material.uniforms) {
               vm.material.uniforms.uTime.value = windTime;
               // Proximity boost only triggers within 1.2 tiles. Use cheap
@@ -24169,7 +21296,8 @@
             }
           }
           const windScale = windStrBase / 0.03;
-          for (const _vfi of _vegFoliageActive) {
+          const vegFoliageMeshes = window.VegetationCropRendering.vegFoliageMeshes;
+          for (const _vfi of window.VegetationCropRendering.vegFoliageActive) {
             const fg = vegFoliageMeshes[_vfi];
             if (!fg || !fg._windAmp) continue;
             // Skip foliage well outside the camera view — it won't be visible.
@@ -24178,17 +21306,21 @@
             fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
             fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
           }
+          const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
           if (grassBillboardMat) {
             grassBillboardMat.uniforms.uTime.value     = windTime;
             grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
           }
         }
-        if (currentArea === 'town' && grassBillboardMat) {
-          // Town grass billboards share the farm's wind shader/material, so keep
-          // them swaying too — farm's block above only runs while on the farm.
-          const windTime = performance.now() / 1000;
-          grassBillboardMat.uniforms.uTime.value     = windTime;
-          grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+        if (currentArea === 'town') {
+          const grassBillboardMat = window.VegetationCropRendering.getGrassBillboardMat();
+          if (grassBillboardMat) {
+            // Town grass billboards share the farm's wind shader/material, so keep
+            // them swaying too — farm's block above only runs while on the farm.
+            const windTime = performance.now() / 1000;
+            grassBillboardMat.uniforms.uTime.value     = windTime;
+            grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+          }
         }
 
         // Constant-cost world rain: three UV/yaw updates regardless of density.
@@ -24196,7 +21328,7 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
 
         // ── Render active scene ──────────────────────────────────
-        const activeScene = getActiveScene();
+        const activeScene = window.GridTileAccessors.getActiveScene();
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
@@ -24303,7 +21435,7 @@
         window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
-        updateHud();
+        window.HudUpdate.updateHud();
         requestAnimationFrame(gameLoop);
       }
 
@@ -24344,14 +21476,14 @@
       }
 
       function markTileDirty(col, row) {
-        _invalidateCropList();
-        refreshTileMesh(col, row);
+        window.VegetationCropRendering.invalidateCropList();
+        window.VegetationCropRendering.refreshTileMesh(col, row);
         // TRENCH/RAISED shape depends on which neighbors share their type, so any
         // change that could alter those connections must also refresh those neighbors.
         for (const [dc, dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
           const nt = grid[row + dr]?.[col + dc]?.type;
           if (nt === TileType.TRENCH || nt === TileType.RAISED)
-            refreshTileMesh(col + dc, row + dr);
+            window.VegetationCropRendering.refreshTileMesh(col + dc, row + dr);
         }
       }
 
@@ -24400,8 +21532,8 @@
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildBerries.respawnAll();
         window.WildTreasure.respawnAll();
-        tickFelledTreeRegrowth();
-        tickMinedRockRegrowth();
+        window.ZoneRegrowth.tickFelledTreeRegrowth();
+        window.ZoneRegrowth.tickMinedRockRegrowth();
         _saveWorldCalendar();
       }
 
@@ -24430,8 +21562,8 @@
         window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildTreasure.respawnAll();
-        tickFelledTreeRegrowth();
-        tickMinedRockRegrowth();
+        window.ZoneRegrowth.tickFelledTreeRegrowth();
+        window.ZoneRegrowth.tickMinedRockRegrowth();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -24590,592 +21722,12 @@
       // toggle swaps weapon↔ranged without putting either in the farm-tool cycle.
       const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
 
-      // ── Outer arch — tool & item arc-dial ─────────────────
-      {
-        const _itemBtn = document.getElementById('itemBtn');
-        const ARC_S = 175, ARC_E = 95;
-        const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
-        const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
-        const SAFE_M = Number.isFinite(configuredSafeMarginPx) ? configuredSafeMarginPx : 0;
-        const actionArchRadiusClamp = mobileControls.actionArch?.radiusClamp || {};
-        const outerArchRadiusClamp = mobileControls.outerArch?.radiusClamp || {};
-
-        function _clampedVmin({ minPx, vmin, maxPx }) {
-          const viewportMin = Math.min(window.innerWidth, window.innerHeight);
-          const configuredVmin = Number(vmin);
-          const preferredPx = viewportMin * (Number.isFinite(configuredVmin) ? configuredVmin : 0) / 100;
-          const lowerPx = Number(minPx);
-          const upperPx = Number(maxPx);
-          if (![preferredPx, lowerPx, upperPx].every(Number.isFinite)) return 0;
-          return Math.min(upperPx, Math.max(lowerPx, preferredPx));
-        }
-
-        function _outerR() {
-          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
-          return Number.isFinite(colPx) && colPx > 0 ? colPx * 10 : _clampedVmin(outerArchRadiusClamp);
-        }
-        function _innerR() {
-          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
-          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.6 : _clampedVmin(actionArchRadiusClamp);
-        }
-        function _arcPt(deg, radius = _outerR()) {
-          const r = radius, a = deg * Math.PI / 180;
-          return { x: window.innerWidth  + Math.cos(a) * r - SAFE_M,
-                   y: window.innerHeight - Math.sin(a) * r - SAFE_M };
-        }
-        function _cornerAng(px, py) {
-          return Math.atan2(-(py - window.innerHeight), px - window.innerWidth) * 180 / Math.PI;
-        }
-
-        let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
-        let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
-        let _fadingEls = [];
-
-        function _clearArc(keepBackdrop = false) {
-          if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
-          _arcEls.forEach(e => e.remove()); _arcEls = [];
-          _fadingEls.forEach(e => e.remove()); _fadingEls = [];
-          _arcSlots = []; _arcActive = -1; _arcOpen = null;
-          toolBtn.style.visibility = '';
-          if (_itemBtn) _itemBtn.style.visibility = '';
-        }
-
-        function _mkSlot(deg, icon, label, extra, radius = _outerR()) {
-          const pt = _arcPt(deg, radius);
-          const el = document.createElement('div');
-          el.className = 'arc-slot' + (extra ? ' ' + extra : '');
-          el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;`;
-          el.innerHTML = `<span class="arc-icon">${icon}</span>`
-                       + (label ? `<span class="arc-label">${label}</span>` : '');
-          document.body.appendChild(el);
-          _arcEls.push(el);
-          return el;
-        }
-
-        function _setActive(idx) {
-          if (_arcActive === idx) return;
-          if (_arcSlots[_arcActive]) _arcSlots[_arcActive].el.classList.remove('arc-active');
-          _arcActive = idx;
-          if (_arcSlots[idx]) _arcSlots[idx].el.classList.add('arc-active');
-        }
-
-        function _openToolArc() {
-          _clearArc(); _arcOpen = 'tool';
-          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
-          _arcBd = document.createElement('div');
-          _arcBd.className = 'arc-backdrop';
-          document.body.appendChild(_arcBd);
-          const n = WHEEL_SLOTS.length, step = (ARC_S - ARC_E) / (n - 1);
-          WHEEL_SLOTS.forEach((slot, i) => {
-            const deg = ARC_S - i * step;
-            const eq = equipmentSlots[slot], def = eq ? TOOL_ITEM_DEFS[eq] : null;
-            const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
-            const icon  = toolSelectIconHTML(def, fallbackIcon, '1.4em');
-            const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
-            const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
-            _arcSlots.push({ angle: deg, el, data: slot });
-            if (activeTool === slot) _arcActive = i;
-          });
-        }
-
-        function _openAmmoArc() {
-          const choices = window.RangedWeapons?.ammoChoices?.(equipmentSlots.ranged) || [];
-          const activeAmmo = window.RangedWeapons?.activeAmmoId?.(equipmentSlots.ranged) || 'basic';
-          _openEntries('ammo', choices.map(choice => ({
-            id: choice.id, icon: choice.icon, label: choice.available ? choice.label : `${choice.label} · 0/8`,
-            disabled: !choice.available, active: choice.id === activeAmmo,
-            onSelect: () => window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, choice.id),
-          }))); // Special ammo uses the same ordinary-radius arch primitive.
-        }
-
-        // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
-        // openDesktopHoldArc below), for quick actions that don't belong on
-        // the per-tile action bar: warping back to a placed wilderness
-        // campfire or the farm, quick-selecting a Campfire Kit without
-        // scrolling the item wheel, or orbiting around the stationary player.
-        function _openUtilitiesArc() {
-          // A placed campfire now persists indefinitely, including outside
-          // its own zone (see wilderness-campfire.js's header comment) —
-          // serialize() is the "does one exist, and where" query for that;
-          // isHere() only ever answers "is it in the CURRENT zone", which
-          // used to be the same question back when leaving destroyed it.
-          const campfire = window.WildernessCampfire?.serialize?.();
-          const kitCount = inventory.campfireKitFurniture || 0;
-          _openEntries('utilities', [
-            {
-              id: 'character-view', icon: '👁️', label: characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
-              active: characterViewMode.enabled,
-              onSelect: () => setCharacterViewMode(!characterViewMode.enabled),
-            },
-            {
-              id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
-              disabled: !campfire,
-              onSelect: () => {
-                if (!campfire) return;
-                if (campfire.mapId === currentArea) {
-                  // Already in the right zone — just reposition onto the tile.
-                  const result = window.WildernessCampfire.returnToCampfire();
-                  showToast(result.message, result.ok);
-                  refreshActionBar();
-                } else {
-                  // A different zone (or the farm/town/a building) — travel
-                  // there first, landing exactly on the campfire's own tile
-                  // since its saved x/z are passed straight through as the
-                  // entry col/row (same fire-and-forget async-inside-
-                  // startSceneTransition pattern performTravel's own 'zone'
-                  // case uses for an ordinary authored zone transition).
-                  if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
-                    window.WildernessCampfire?.requestReturnToCampfire?.();
-                    startSceneTransition(() => enterBuilding(campfire.mapId));
-                  } else {
-                    startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
-                  }
-                }
-              },
-            },
-            {
-              id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
-              disabled: kitCount <= 0,
-              onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
-            },
-            {
-              id: 'return-farm', icon: '🏡', label: currentArea === 'farm' ? 'Already on Farm' : 'Return to Farm',
-              disabled: currentArea === 'farm',
-              onSelect: () => startSceneTransition(() => performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
-            },
-          ]);
-        }
-
-        function _openEntries(mode, entries, radius = _outerR()) {
-          const keepBackdrop = Boolean(_arcBd && _arcOpen?.startsWith('entries:')); // Keeps one continuous drag alive while potion branches unfold.
-          _clearArc(keepBackdrop); _arcOpen = `entries:${mode}`;
-          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
-          toolBtn.style.visibility = 'hidden';
-          if (!_arcBd) {
-            _arcBd = document.createElement('div');
-            _arcBd.className = 'arc-backdrop';
-            let pointerId = null; // One pointer owns general entry-arch navigation until commit/cancel.
-            _arcBd.addEventListener('pointerdown', event => {
-              pointerId = event.pointerId;
-              try { _arcBd.setPointerCapture(pointerId); } catch (error) { /* Pointer capture is an optional enhancement. */ }
-              _arcMove(event.clientX, event.clientY);
-              event.preventDefault();
-            });
-            _arcBd.addEventListener('pointermove', event => { if (event.pointerId === pointerId) _arcMove(event.clientX, event.clientY); });
-            _arcBd.addEventListener('pointerup', event => { if (event.pointerId === pointerId) { pointerId = null; _arcUp(); } });
-            _arcBd.addEventListener('pointercancel', event => { if (event.pointerId === pointerId) { pointerId = null; _clearArc(); } });
-            document.body.appendChild(_arcBd);
-          }
-          const n = entries.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
-          entries.forEach((entry, index) => {
-            const deg = ARC_S - index * step;
-            const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
-            const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
-            _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
-            if (entry.active) _arcActive = index;
-          });
-          if (_arcActive < 0 && entries.length) _setActive(Math.floor((entries.length - 1) / 2));
-        }
-
-        function _selectHeldInventoryKey(itemKey) {
-          const index = getInventoryStackItems().findIndex(item => item.key === itemKey);
-          if (index < 0) return;
-          activeItemIndex = index;
-          heldMode = 'item';
-          refreshItemScroll(); refreshActionBar();
-        }
-
-        const CURE_FAMILY_ICONS = { damage: '🩸', control: '🌀', offensiveDebuff: '⚔️', defensiveDebuff: '🛡️' }; // Four-family selector vocabulary.
-        function _cureCoverageIcon(coverage, urgent = true) {
-          return `<span class="cure-family-grid">${window.AlchemySystem.FAMILY_ORDER.map(family => {
-            const state = coverage[family] || {};
-            const severity = state.activeAmount >= 45 ? ' severe' : state.activeAmount > 0 ? ' active' : '';
-            const missing = state.owned ? '' : `<b class="cure-family-x${state.urgentMissing && urgent ? ' urgent' : ''}">×</b>`;
-            return `<span class="cure-family${severity}" data-family="${family}">${CURE_FAMILY_ICONS[family]}${missing}</span>`;
-          }).join('')}</span>`;
-        }
-
-        function _openPotionRoot() {
-          _openEntries('potion-root', [
-            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:() => _openPotionBranch('medicine') },
-            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:() => _openPotionBranch('utility') },
-          ], _outerR());
-        }
-
-        function _openPotionBranch(branch) {
-          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
-          const healing = state.healing || {}, cures = state.cures || {}, buffs = state.buffs || {}, flasks = state.flasks || {};
-          const urgent = state.inCombat !== false; // Outside combat, unavailable marks stay muted.
-          const healingClass = `potion-category${healing.needed ? '' : ' muted'}${healing.urgentMissing ? ` unavailable${urgent ? ' urgent' : ''}` : ''}`;
-          const curesUseful = (cures.usefulItems || []).length > 0;
-          const buffsUseful = (buffs.usefulItems || []).length > 0;
-          const entries = branch === 'medicine' ? [
-            { id:'healing', icon:`💚${healing.urgentMissing ? '<b class="category-x red">×</b>' : ''}`, label:'Healing', className:healingClass, disabled:!(healing.needed && healing.owned), onSelect:() => _openPotionItems('healing') },
-            { id:'medicine', icon:'✚', label:'Medicine', className:'potion-branch medicine', onSelect:_openPotionRoot },
-            { id:'cures', icon:_cureCoverageIcon(cures.coverage || {}, urgent), label:'Cures', className:`potion-category${curesUseful ? '' : ' muted'}`, disabled:!curesUseful, onSelect:() => _openPotionItems('cures') },
-          ] : [
-            { id:'buffs', icon:`✨${buffs.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Buffs', className:`potion-category${buffsUseful ? '' : ' muted'}`, disabled:!buffsUseful, onSelect:() => _openPotionItems('buffs') },
-            { id:'utility', icon:'⚗️', label:'Utility', className:'potion-branch utility', onSelect:_openPotionRoot },
-            { id:'flasks', icon:`🫙${flasks.owned ? '' : '<b class="category-x white">×</b>'}`, label:'Flasks', className:`potion-category${flasks.owned ? '' : ' muted'}`, disabled:!flasks.owned, onSelect:() => _openPotionItems('flasks') },
-          ];
-          _openEntries(`potion-${branch}`, entries, _outerR());
-        }
-
-        function _openPotionItems(category) {
-          const state = window.AlchemySystem?.potionCategoryState?.(player) || {};
-          const items = category === 'healing' ? state.healing?.usefulItems
-            : category === 'cures' ? state.cures?.usefulItems
-              : category === 'buffs' ? state.buffs?.items : state.flasks?.items;
-          const itemEntries = (items || []).map(entry => {
-            const definition = entry.recipe || window.AlchemySystem.RECIPE_DEFS[entry.payload.recipeId];
-            const active = category === 'buffs' && window.AlchemySystem.activeEffects.some(effect => effect.recipeId === definition.id);
-            return { id:entry.itemKey, icon:definition.icon, label:`${definition.label} ×${entry.count}`, className:active?'redundant':'', disabled:false, onSelect:() => _selectHeldInventoryKey(entry.itemKey) };
-          });
-          const cancelEntry = { id:`cancel-${category}`, icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:() => _clearArc() }; // Occupies the focused category's former angle and closes only when the held selector is released on it.
-          if (category === 'healing' || category === 'buffs') itemEntries.unshift(cancelEntry);
-          else itemEntries.push(cancelEntry);
-          _openEntries(`potion-items-${category}`, itemEntries, _outerR());
-        }
-
-        let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
-        const ITEM_VIS = 5;
-
-        function _buildItemSlots() {
-          const stacks = getInventoryStackItems(), total = stacks.length;
-          const slots = [];
-          if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
-          for (let i = 0; i < ITEM_VIS && _iScroll + i < total; i++)
-            slots.push({ type:'item', index:_iScroll+i, key:stacks[_iScroll+i].key, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
-          if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
-          const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
-
-          const oldByKey = new Map(_arcSlots.map(s => [
-            s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`, s
-          ]));
-          const kept = new Set(), newSlots = [];
-
-          slots.forEach((s, i) => {
-            const deg = ARC_S - i * step, pt = _arcPt(deg);
-            const k = s.type === 'arrow' ? `a${s.dir}` : `i${s.index}`;
-            const extra = s.type === 'arrow' ? 'arc-arrow' : (s.index === activeItemIndex ? 'arc-active' : '');
-            if (oldByKey.has(k)) {
-              const old = oldByKey.get(k); kept.add(k);
-              old.el.style.left = pt.x + 'px'; old.el.style.top = pt.y + 'px';
-              old.el.className = 'arc-slot' + (extra ? ' ' + extra : '');
-              newSlots.push({ angle: deg, el: old.el, data: s });
-            } else {
-              const el = document.createElement('div');
-              el.className = 'arc-slot' + (extra ? ' ' + extra : '');
-              el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;opacity:0;`;
-              el.innerHTML = `<span class="arc-icon">${s.icon}</span>`
-                           + (s.label ? `<span class="arc-label">${s.label}</span>` : '');
-              document.body.appendChild(el);
-              _arcEls.push(el);
-              requestAnimationFrame(() => { el.style.opacity = '1'; });
-              newSlots.push({ angle: deg, el, data: s });
-            }
-            const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
-            if (s.type === 'item') {
-              applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key], s.key);
-            }
-            else clearItemSpriteIcon(iconEl);
-          });
-
-          _arcSlots.forEach(s => {
-            const k = s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`;
-            if (!kept.has(k)) {
-              s.el.style.opacity = '0';
-              _arcEls = _arcEls.filter(e => e !== s.el);
-              _fadingEls.push(s.el);
-              const _el = s.el;
-              setTimeout(() => { _el.remove(); _fadingEls = _fadingEls.filter(f => f !== _el); }, 150);
-            }
-          });
-
-          _arcSlots = newSlots;
-          _arcActive = newSlots.findIndex(s => s.data.type === 'item' && s.data.index === activeItemIndex);
-        }
-
-        function _openItemArc() {
-          _clearArc(); _arcOpen = 'item';
-          toolBtn.style.visibility = 'hidden';
-          _arcBd = document.createElement('div');
-          _arcBd.className = 'arc-backdrop';
-          document.body.appendChild(_arcBd);
-          _iScroll = Math.max(0, activeItemIndex - Math.floor(ITEM_VIS / 2));
-          _iScrollDir = 0;
-          _buildItemSlots();
-        }
-
-        function _arcMove(px, py) {
-          if (!_arcOpen || !_arcSlots.length) return;
-          const ang = Math.max(ARC_E, Math.min(ARC_S, _cornerAng(px, py)));
-          let best = 0, bd = Infinity;
-          _arcSlots.forEach((s, i) => { const d = Math.abs(s.angle - ang); if (d < bd) { bd = d; best = i; } });
-          if (_arcOpen === 'item') {
-            const newDir = _arcSlots[best]?.data.type === 'arrow' ? _arcSlots[best].data.dir : 0;
-            if (newDir !== _iScrollDir) {
-              _iScrollDir = newDir;
-              if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
-              if (newDir !== 0) {
-                _iScrollT = setInterval(() => {
-                  _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, _iScroll + _iScrollDir));
-                  _buildItemSlots();
-                }, 200);
-              }
-            }
-          }
-          _setActive(best);
-          if (_arcOpen === 'entries:potion-root') {
-            const branch = _arcSlots[best]?.data.id;
-            if (branch === 'medicine' || branch === 'utility') {
-              _openPotionBranch(branch); // Dragging toward a side fluidly unfolds it.
-              _arcMove(px, py); // Re-evaluate the same continuous drag against the newly populated category arch.
-            }
-          } else if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
-            const category = _arcSlots[best]?.data;
-            if (category && !category.disabled && ['healing', 'cures', 'buffs', 'flasks'].includes(category.id)) {
-              _openPotionItems(category.id);
-              _arcMove(px, py); // The replacement Cancel button becomes selected immediately under the uninterrupted drag.
-            }
-          }
-        }
-
-        function _arcUp() {
-          if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
-          if (!_arcOpen) return;
-          const slot = _arcSlots[_arcActive];
-          if (_arcOpen === 'tool' && slot) {
-            heldMode = 'tool'; lastHeldFarmTool = slot.data;
-            setActiveTool(slot.data); // calls refreshActionBar internally
-          } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
-            heldMode = 'item';
-            activeItemIndex = slot.data.index;
-            refreshItemScroll(); refreshActionBar();
-          } else if (_arcOpen?.startsWith('entries:') && slot && !slot.data.disabled) {
-            const select = slot.data.onSelect;
-            if (typeof select === 'function') {
-              const previousMode = _arcOpen; // Branch callbacks replace the current arch; item callbacks do not.
-              select();
-              if (_arcOpen !== previousMode) return;
-            }
-          }
-          _clearArc();
-        }
-
-        window._desktopSelectionArc = {
-          openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
-          openItem() { if (_arcOpen !== 'item') _openItemArc(); },
-          openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
-          openPotions() { _openPotionRoot(); },
-          openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
-          openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
-          recallLastTool() {
-            const fallback = WHEEL_SLOTS.find(slot => equipmentSlots[slot]) || WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
-            const recalled = WHEEL_SLOTS.includes(lastHeldFarmTool) && equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
-            lastHeldFarmTool = recalled;
-            heldMode = 'tool';
-            setActiveTool(recalled);
-            return recalled;
-          },
-          scrollTool(dir) {
-            if (_arcOpen !== 'tool') _openToolArc();
-            const idx = WHEEL_SLOTS.indexOf(activeTool);
-            const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
-            heldMode = 'tool';
-            lastHeldFarmTool = WHEEL_SLOTS[next];
-            setActiveTool(WHEEL_SLOTS[next]);
-            _arcSlots.forEach((s, i) => {
-              const active = s.data === activeTool;
-              s.el.classList.toggle('arc-active', active);
-              if (active) _arcActive = i;
-            });
-          },
-          scrollItem(dir) {
-            if (_arcOpen !== 'item') _openItemArc();
-            heldMode = 'item';
-            cycleActiveInventoryItem(dir);
-            refreshItemScroll(); refreshActionBar();
-            _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
-            _buildItemSlots();
-            _arcSlots.forEach((s, i) => {
-              const active = s.data.type === 'item' && s.data.index === activeItemIndex;
-              s.el.classList.toggle('arc-active', active);
-              if (active) _arcActive = i;
-            });
-          },
-          scrollAmmo(dir) {
-            if (_arcOpen !== 'entries:ammo') _openAmmoArc();
-            const available = _arcSlots.map((slot, index) => ({ slot, index })).filter(entry => !entry.slot.data.disabled);
-            if (!available.length) return false;
-            let position = available.findIndex(entry => entry.index === _arcActive);
-            position = (position + (dir < 0 ? -1 : 1) + available.length) % available.length;
-            _setActive(available[position].index); // Highlight only; the held input's release commits setActiveAmmo.
-            return true;
-          },
-          scrollEntries(dir) {
-            if (!_arcOpen?.startsWith('entries:') || !_arcSlots.length) return false;
-            if (_arcOpen === 'entries:potion-root') {
-              _openPotionBranch(dir < 0 ? 'medicine' : 'utility'); // Direction itself chooses the first hierarchical branch.
-              return true;
-            }
-            if (_arcOpen === 'entries:potion-medicine' || _arcOpen === 'entries:potion-utility') {
-              const categoryId = _arcOpen.endsWith('medicine') ? (dir < 0 ? 'healing' : 'cures') : (dir < 0 ? 'buffs' : 'flasks');
-              const category = _arcSlots.find(slot => slot.data.id === categoryId);
-              if (category && !category.data.disabled) _openPotionItems(categoryId);
-              else if (category) _setActive(_arcSlots.indexOf(category));
-              return true;
-            }
-            const nextIndex = _arcActive + (dir < 0 ? -1 : 1);
-            if (_arcOpen.startsWith('entries:potion-items-')) {
-              _setActive(Math.max(0, Math.min(_arcSlots.length - 1, nextIndex))); // Final lists stop at Cancel instead of wrapping past it on repeated wheel events.
-            } else {
-              _setActive((nextIndex + _arcSlots.length) % _arcSlots.length);
-            }
-            return true;
-          },
-          movePointer(x, y) { _arcMove(x, y); },
-          commit() { _arcUp(); },
-          releaseSelection() {
-            if (_arcOpen?.startsWith('entries:potion-') && !_arcOpen.startsWith('entries:potion-items-')) _clearArc();
-            else _arcUp();
-          }, // Releasing a held selector commits only a concrete item/ammo choice, never a hierarchy branch.
-          beginHeldSelection(kind) { _heldEntrySelectorKind = kind === 'ammo' ? 'ammo' : kind === 'potions' ? 'potions' : null; },
-          endHeldSelection() { _heldEntrySelectorKind = null; },
-          heldSelectionKind() { return _heldEntrySelectorKind; },
-          close() { _clearArc(); },
-          entryMenuOpen() { return Boolean(_arcOpen?.startsWith('entries:')); },
-          toolMenuOpen() { return _arcOpen === 'tool'; }
-        };
-        window.SharedSelectionArch = window._desktopSelectionArc; // One configurable arch presenter for tools/items/ammo/potions.
-        document.addEventListener('hobunji-alchemy-change', () => {
-          if (_arcOpen === 'entries:potion-medicine') _openPotionBranch('medicine');
-          else if (_arcOpen === 'entries:potion-utility') _openPotionBranch('utility');
-          else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
-        }); // Refresh the open hierarchy only when its thresholded context changes.
-
-        let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
-        toolBtn.addEventListener('pointerdown', ev => {
-          if (_tPtId !== null) return;
-          _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
-          _tDx = ev.clientX; _tDy = ev.clientY;
-          // See handleJoystickPointerDown's comment: an uncaught throw here
-          // (possible for a touch starting before the browser considers the
-          // pointer fully active) would skip the rest of this handler and
-          // leave _tPtId stuck non-null, permanently blocking this button
-          // via the pointerdown guard above.
-          try { toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-          _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
-          ev.preventDefault();
-        });
-        toolBtn.addEventListener('pointermove', ev => {
-          if (ev.pointerId !== _tPtId) return;
-          if (!_tMoved && Math.hypot(ev.clientX - _tDx, ev.clientY - _tDy) > 6) _tMoved = true;
-          if (_arcOpen === 'tool') _arcMove(ev.clientX, ev.clientY);
-        });
-        toolBtn.addEventListener('pointerup', ev => {
-          if (ev.pointerId !== _tPtId) return;
-          _tPtId = null;
-          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-          if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld && !_tMoved) {
-            // A Tool Select tap recalls the last valid held tool — unless a
-            // tool is already out, in which case the same tap now dequips
-            // instead (replacing the removed dedicated put-away button; see
-            // its matching case in itemBtn's own pointerup below).
-            if (heldMode === 'tool') putAwayHeldEquipment();
-            else window._desktopSelectionArc.recallLastTool();
-          }
-          _tHeld = false; _tMoved = false;
-        });
-        toolBtn.addEventListener('pointercancel', ev => {
-          if (ev.pointerId !== _tPtId) return;
-          _tPtId = null;
-          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-          _clearArc(); _tHeld = false; _tMoved = false;
-        });
-
-        if (_itemBtn) {
-          let _iPtId = null, _iHeld = false, _iTimer = null, _iDx = 0, _iDy = 0, _iMoved = false;
-          _itemBtn.addEventListener('pointerdown', ev => {
-            if (_iPtId !== null) return;
-            _iPtId = ev.pointerId; _iHeld = false; _iMoved = false;
-            _iDx = ev.clientX; _iDy = ev.clientY;
-            // See handleJoystickPointerDown's comment.
-            try { _itemBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-            _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 350);
-            ev.preventDefault();
-          });
-          _itemBtn.addEventListener('pointermove', ev => {
-            if (ev.pointerId !== _iPtId) return;
-            if (!_iMoved && Math.hypot(ev.clientX - _iDx, ev.clientY - _iDy) > 6) _iMoved = true;
-            if (_arcOpen === 'item') _arcMove(ev.clientX, ev.clientY);
-          });
-          _itemBtn.addEventListener('pointerup', ev => {
-            if (ev.pointerId !== _iPtId) return;
-            _iPtId = null;
-            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
-            if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved) {
-              if (heldMode === 'item') {
-                // An item is already selected — the same tap now dequips
-                // instead (replacing the removed dedicated put-away button;
-                // see its matching case in toolBtn's own pointerup above).
-                putAwayHeldEquipment();
-              } else {
-                // Tap while holding a tool or hands-free → switch to item mode.
-                if (heldMode === 'tool' && WHEEL_SLOTS.includes(activeTool)) lastHeldFarmTool = activeTool;
-                heldMode = 'item';
-                refreshItemScroll(); refreshActionBar();
-              }
-            }
-            _iHeld = false; _iMoved = false;
-          });
-          _itemBtn.addEventListener('pointercancel', ev => {
-            if (ev.pointerId !== _iPtId) return;
-            _iPtId = null;
-            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
-            if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
-            _clearArc(); _iHeld = false; _iMoved = false;
-          });
-        }
-
-        // Utility menu button: sixth/new outer-ring control, replacing the
-        // removed put-away button's old slot (see the CSS angle comment on
-        // #btnUtilityMenu). No tap behavior at all, unlike toolBtn/itemBtn
-        // above — it only ever does anything while held, exactly like the
-        // desktop 'c' key equivalent (see desktopHoldKeys.c) — so this
-        // mirrors their hold-then-drag-to-select pattern but skips their
-        // "what does a plain tap do" branch entirely.
-        const btnUtilityMenu = document.getElementById('btnUtilityMenu');
-        if (btnUtilityMenu) {
-          let _uPtId = null, _uHeld = false, _uTimer = null;
-          btnUtilityMenu.addEventListener('pointerdown', ev => {
-            if (_uPtId !== null) return;
-            _uPtId = ev.pointerId; _uHeld = false;
-            try { btnUtilityMenu.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-            _uTimer = setTimeout(() => { _uHeld = true; _openUtilitiesArc(); }, 350);
-            ev.preventDefault();
-          });
-          btnUtilityMenu.addEventListener('pointermove', ev => {
-            if (ev.pointerId !== _uPtId) return;
-            if (_arcOpen === 'entries:utilities') _arcMove(ev.clientX, ev.clientY);
-          });
-          btnUtilityMenu.addEventListener('pointerup', ev => {
-            if (ev.pointerId !== _uPtId) return;
-            _uPtId = null;
-            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
-            if (_arcOpen === 'entries:utilities') _arcUp();
-            _uHeld = false;
-          });
-          btnUtilityMenu.addEventListener('pointercancel', ev => {
-            if (ev.pointerId !== _uPtId) return;
-            _uPtId = null;
-            if (_uTimer) { clearTimeout(_uTimer); _uTimer = null; }
-            _clearArc(); _uHeld = false;
-          });
-        }
-      }
+      // Desktop/touch radial arc selector (tool wheel, item wheel, ammo/
+      // potion entry menus, utilities wheel) now lives in
+      // js/action-arc-ui.js (window.ActionArcUI) — see its own init(deps)
+      // call below for the shared game.js state it's threaded. It still
+      // sets window._desktopSelectionArc/window.SharedSelectionArch itself
+      // exactly as before, since other code already calls those directly.
 
       // ── Action bar update ──────────────────────────────────
       // ── Dynamic action stack ────────────────────────────────────────
@@ -25281,7 +21833,7 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const nest = currentAimedNest();
+          const nest = window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
@@ -25295,14 +21847,14 @@
           // the farm/zone branch wholesale.
           if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
             const cavernReticle = getReticleTile();
-            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernTile = window.GridTileAccessors.getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
             const cavernBtns = [];
             (toolActions[activeTool] || []).forEach((action, i) => {
               const [fallbackIcon] = actionLabels[action];
               const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
               const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
               cavernBtns.push({
-                icon, label: contextualActionLabel(action, cavernTile),
+                icon, label: window.HudUpdate.contextualActionLabel(action, cavernTile),
                 action, style: i === 0 ? 'primary' : 'secondary', allowed,
               });
             });
@@ -25362,7 +21914,7 @@
 
         // A branch nest claims Action 1 only while its 3D volume is under
         // the centered reticle and its Nestmother is no longer guarding it.
-        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        const zoneNest = _isZoneArea(currentArea) ? window.DenNestSystem.currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
@@ -25390,7 +21942,7 @@
         // nearby trunk by accident — but a facing climb target also gets a
         // listed prompt here purely for discoverability, since the dodge
         // trigger itself is otherwise silent/undiscoverable.
-        const tile    = getActiveGrid()[reticle.row][reticle.col];
+        const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
         if (_isZoneArea(currentArea) && !player.climbing) {
@@ -25448,7 +22000,7 @@
             const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
             btns.push({
-              icon, label: contextualActionLabel(action, tile),
+              icon, label: window.HudUpdate.contextualActionLabel(action, tile),
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
             });
           });
@@ -25523,7 +22075,7 @@
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
-        const tile    = getActiveTileAt(reticle.col, reticle.row);
+        const tile    = window.GridTileAccessors.getActiveTileAt(reticle.col, reticle.row);
 
         // Was farm-only (world objects didn't exist elsewhere) — now
         // unconditional so a lootable corpse's identity in any area (zones
@@ -25572,15 +22124,15 @@
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
-            label: actionPromptGlyph(actionId, touchLabel),
-            color: actionPromptColor(actionId),
+            label: window.ActionPromptUI.actionPromptGlyph(actionId, touchLabel),
+            color: window.ActionPromptUI.actionPromptColor(actionId),
           };
         });
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: btns,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
-          scene: getActiveScene(),
+          scene: window.GridTileAccessors.getActiveScene(),
           promptInputs,
           showInputHints: true,
           isWorldInteraction,
@@ -25866,349 +22418,17 @@
           applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
         }
 
-        if (isDesktop) refreshKeyHud(btns);
+        if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }
 
-      function refreshKeyHud(btns) {
-        if (!keyHudEl) return;
-        const item = getActiveInventoryItem();
-        const reticle = getReticleTile();
-        const tile = grid[reticle.row][reticle.col];
-        const obj  = getWorldObjectAt(reticle.col, reticle.row);
-
-        const parts = [];
-
-        // Tool
-        const _eqItem = equipmentSlots[activeTool];
-        const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
-        const _khFallback = ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
-        const toolInfo = [toolSelectIconHTML(_eqDef, _khFallback[0], '13px'), _eqDef?.label || _khFallback[1]];
-        parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
-        parts.push('<div class="kh-div"></div>');
-
-        // Action buttons → key prompts: first = [Space/E], second = [Q]
-        btns.forEach((b, idx) => {
-          const keyLabel = idx === 0 ? 'E' : idx === 1 ? 'Q' : `F${idx}`;
-          const blocked  = !b.allowed;
-          parts.push(
-            `<div class="kh-group">` +
-            `<span class="kh-key${blocked ? '" style="opacity:0.35' : ''}">${keyLabel}</span>` +
-            `<span class="kh-action ${b.style}${blocked ? ' blocked' : ''}">${b.icon} ${b.label}</span>` +
-            `</div>`
-          );
-        });
-
-        parts.push('<div class="kh-div"></div>');
-
-        // Item scroll
-        if (item) {
-          const count = inventory[item.key] || 0;
-          parts.push(
-            `<div class="kh-group">` +
-            `<span class="kh-key">,</span><span class="kh-label"> </span>` +
-            `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
-            `<span class="kh-label"> </span><span class="kh-key">.</span>` +
-            `</div>`
-          );
-        }
-
-        parts.push('<div class="kh-div"></div>');
-
-        // Tile info
-        const tileStyle = tileStyles[tile.type] || tileStyles.grass;
-        const waterPct  = Math.round((tile.water / MAX_WATER) * 100);
-        parts.push(
-          `<div class="kh-group">` +
-          `<span class="kh-label">${tileStyle.label}` +
-          (obj ? ` · ${obj.label}` : '') +
-          ` · 💧${waterPct}%</span>` +
-          `</div>`
-        );
-
-        parts.push('<div class="kh-div"></div>');
-        parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
-
-        keyHudEl.innerHTML = parts.join('');
-        if (item) {
-          applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key], item.key);
-        }
-      }
-
-      function contextualActionLabel(action, tile) {
-        if (action === 'dig')   return tile.type === TileType.TRENCH ? 'Redig' : 'Dig';
-        if (action === 'fill')  return 'Fill';
-        if (action === 'raise') return tile.type === TileType.RAISED ? 'Lower' : 'Raise';
-        if (action === 'till')  return tile.type === TileType.TILLED ? 'Untill' : 'Till';
-        if (action === 'smooth') return 'Smooth';
-        if (action === 'cut')   return 'Cut';
-        if (action === 'slash') return 'Slash 3×';
-        if (action === 'chop')  return 'Chop';
-        if (action === 'hack')  return 'Hack 3×';
-        if (action === 'mine')  return 'Mine';
-        if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
-        if (action === 'fish') return 'Fish';
-        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
-        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
-        if (action === 'potion_select') return 'Potions';
-        if (action.startsWith('place_')) return 'Place';
-        if (action.startsWith('obj_process_')) return 'Process';
-        return action;
-      }
-
-      // ── Item scroll ────────────────────────────────────────
-      let _lastItemScrollKey = null;
-      function refreshItemScroll(stacks = getInventoryStackItems()) {
-        const n = stacks.length;
-        const iBtnEl = itemBtnEl;
-        if (n === 0) {
-          if (_lastItemScrollKey === 'empty') return;
-          _lastItemScrollKey = 'empty';
-          itemIcon.textContent  = '□';
-          itemName.textContent  = 'EMPTY';
-          itemCount.textContent = '×0';
-          itemCount.className   = 'is-count empty';
-          if (iBtnEl) iBtnEl.textContent = '□';
-          const prevEl = isPrevIconEl;
-          const nextEl = isNextIconEl;
-          clearItemSpriteIcon(itemIcon);
-          clearItemSpriteIcon(iBtnEl);
-          if (prevEl) prevEl.textContent = '□';
-          if (nextEl) nextEl.textContent = '□';
-          clearItemSpriteIcon(prevEl);
-          clearItemSpriteIcon(nextEl);
-          return;
-        }
-        if (activeItemIndex >= n) activeItemIndex = 0;
-        if (activeItemIndex < 0) activeItemIndex = n - 1;
-        const curr = stacks[activeItemIndex];
-        const prev = stacks[(activeItemIndex - 1 + n) % n];
-        const next = stacks[(activeItemIndex + 1) % n];
-        const count = inventory[curr.key] || 0;
-        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
-        if (key === _lastItemScrollKey) return;
-        _lastItemScrollKey = key;
-        // Current item
-        itemIcon.textContent  = curr.icon;
-        itemName.textContent  = curr.label;
-        if (iBtnEl) iBtnEl.textContent = curr.icon;
-        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key], curr.key);
-        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key], curr.key);
-        itemCount.textContent = `×${count}`;
-        itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
-        // Peek icons (prev/next previews)
-        const prevEl = isPrevIconEl;
-        const nextEl = isNextIconEl;
-        if (prevEl) {
-          prevEl.textContent = prev.icon;
-          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
-        }
-        if (nextEl) {
-          nextEl.textContent = next.icon;
-          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key], next.key);
-        }
-      }
-      itemPrev.addEventListener('click', () => {
-        cycleActiveInventoryItem(-1);
-        refreshItemScroll();
-        refreshActionBar();
-      });
-      itemNext.addEventListener('click', () => {
-        cycleActiveInventoryItem(1);
-        refreshItemScroll();
-        refreshActionBar();
-      });
-
-      // Status-pill fields only actually change a few times a (real) second
-      // at most (season/weather/day/gold on world-state events, time once a
-      // simulated minute, tool/tile/water on reticle or equip changes) —
-      // updateHud runs every frame, so each field caches its last-written
-      // string/color and skips the DOM write (and, for spTile/spWater,
-      // the string-building) when nothing changed.
-      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
-
-      function updateHud() {
-        const season = window.CalendarSystem.currentSeason();
-        const clock  = formatClock(window.CalendarSystem.getHour());
-
-        // Season (changes slowly)
-        const seasonText = season.emoji + ' ' + season.name;
-        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
-
-        // Current weather + precipitation rate
-        let weatherText, precipText;
-        if (calendar.isRaining) {
-          const str = calendar.rainStrength;
-          if (str >= 3) {
-            weatherText = '⛈️ Storm';
-            precipText  = '⬇️ heavy';
-          } else {
-            weatherText = '🌧️ Rain';
-            // RAIN_RATE * str * ticks/hr ≈ mm equivalent display
-            const mmEq  = (RAIN_RATE * str * 51).toFixed(1); // ~51 ticks/hr at 0.7s/tick
-            precipText  = `⬇️ ${mmEq}mm/hr`;
-          }
-        } else {
-          weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
-          precipText  = '⬇️ none';
-        }
-        const weatherFull = weatherText + ' ' + precipText;
-        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
-
-        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
-        if (spDay) {
-          const dayText = window.CalendarSystem.formatCalendarDate();
-          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
-        }
-        const toolText = heldMode === 'none' ? '✋ Hands free' : toolEmoji(activeTool) + ' ' + actionName(activeAction);
-        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
-
-        // Reticle tile info
-        const reticle  = getReticleTile();
-        const tile     = getActiveTileAt(reticle.col, reticle.row);
-        const tStyle   = tileStyles[tile.type] || tileStyles.grass;
-        const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
-        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
-
-        const waterPct = Math.round((tile.water / MAX_WATER) * 100);
-        const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
-        const waterText = '💧 ' + depthStr;
-        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
-        const waterColor = waterPct > 80 ? '#4488ff'
-                          : waterPct > 40 ? '#6ec6f0'
-                          : waterPct > 10 ? '#aaddee' : '#888';
-        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
-        if (spGoldAmount && inventory.gold !== _hud.gold) { _hud.gold = inventory.gold; spGoldAmount.textContent = inventory.gold; }
-
-        // Computed once and threaded through below instead of letting
-        // refreshItemScroll/refreshActionBar (and the desktop item pill)
-        // each re-filter-and-sort the whole inventory from scratch — this
-        // runs every frame, and inventory contents don't change nearly
-        // that often.
-        const stacks = getInventoryStackItems();
-
-        // Desktop: show active item in status pill (item scroll is hidden)
-        if (isDesktop) {
-          const item = getActiveInventoryItem(stacks);
-          if (spItem && item) {
-            spItem.style.display = '';
-            spItemDiv.style.display = '';
-            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
-            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
-          }
-        }
-
-        refreshItemScroll(stacks);
-        // refreshActionBar is called after actions and on tool/item change;
-        // the dirty-key check makes it cheap to call here too for reticle updates
-        refreshActionBar(stacks);
-        if (menuOpen) {
-          // Keep wallet display live while menu is open
-          const wd = document.getElementById('invWalletAmount');
-          if (wd) wd.textContent = (inventory.gold || 0);
-        }
-      }
+      // Key HUD row, item-scroll widget, and the per-frame status-pill HUD
+      // refresh now live in js/hud-update.js (window.HudUpdate) — see its
+      // own init(deps) call below for the shared game.js state it's
+      // threaded.
 
       function updateMenuContent() { /* replaced by buildInventoryGrid() */ }
 
       function updateDebugPage() { /* debug panel removed from menu */ }
-
-      function toolEmoji(tool) {
-        const equipped = equipmentSlots[tool];
-        if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
-        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
-      }
-
-      function nextRainText() {
-        if (!calendar.nextRainWindows.length) return 'No rain scheduled today';
-        const hour = window.CalendarSystem.getHour();
-        const next = calendar.nextRainWindows.find((window) => hour < window.end);
-        if (!next) return 'Rain has passed for today';
-        return `Next flow ${formatClock(next.start)}-${formatClock(next.end)}`;
-      }
-
-      function formatClock(hourValue) {
-        const hour = Math.floor(hourValue);
-        const minute = Math.floor((hourValue - hour) * 60 / 10) * 10;
-        const suffix = hour >= 12 ? 'PM' : 'AM';
-        const displayHour = ((hour + 11) % 12) + 1;
-        return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
-      }
-
-      function actionEmoji(action) {
-        return actionLabels[action]?.[0] || '❔';
-      }
-
-      function actionName(action) {
-        if (action.startsWith('place_')) return 'Place';
-        if (action.startsWith('obj_process_')) return 'Process';
-        return actionLabels[action]?.[1] || action;
-      }
-
-      function toolName(tool) {
-        const equipped = equipmentSlots[tool];
-        const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
-        if (def) return `${def.icon} ${def.label}`;
-        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
-      }
-
-      function seededRandom(seed) {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      }
-
-      function handleJoystickPointerDown(event) {
-        input.joystickPointerId = event.pointerId;
-        // setPointerCapture can throw ("No active pointer with the given id
-        // is found") if the browser doesn't consider this pointer fully
-        // active yet — seen in practice on a touch that starts while the
-        // page/layout is still settling right after load. Uncaught, that
-        // exception used to abort this function before updateJoystick()
-        // ran, permanently stranding joystickPointerId pointed at a pointer
-        // that would never get a matching pointerup — every real touch
-        // after that got silently ignored (input.joystickPointerId !==
-        // event.pointerId in handleJoystickPointerMove/Up) until a full
-        // page reload reset the state. Without capture the joystick still
-        // works normally; the only loss is that a drag which leaves
-        // joystickZone's own DOM bounds stops being tracked.
-        try { joystickZone.setPointerCapture(event.pointerId); } catch (e) { /* see above — degrade gracefully, don't skip updateJoystick */ }
-        updateJoystick(event);
-      }
-
-      function handleJoystickPointerMove(event) {
-        if (input.joystickPointerId !== event.pointerId) return;
-        updateJoystick(event);
-      }
-
-      function handleJoystickPointerUp(event) {
-        if (input.joystickPointerId !== event.pointerId) return;
-        input.joystickPointerId = null;
-        input.x = 0;
-        input.y = 0;
-        joystickKnob.style.transform = 'translate(-50%,-50%) translate(0px, 0px)';
-      }
-
-      function updateJoystick(event) {
-        const rect = joystickZone.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const rawX = event.clientX - centerX;
-        const rawY = event.clientY - centerY;
-        const distance = Math.hypot(rawX, rawY);
-        const activeRadius = Math.max(32, Math.min(JOYSTICK_RADIUS, rect.width * 0.42)); // Used below to clamp knob travel for the current screen-sized joystick.
-        const angle = Math.atan2(rawY, rawX);
-        const clamped = Math.min(distance, activeRadius);
-        const rawMagnitude = clamp(clamped / activeRadius, 0, 1);
-        const remapped = rawMagnitude <= JOYSTICK_DEADZONE
-          ? 0
-          : Math.pow((rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE), JOYSTICK_RESPONSE);
-        const knobX = Math.cos(angle) * clamped;
-        const knobY = Math.sin(angle) * clamped;
-
-        input.x = remapped > 0 ? Math.cos(angle) * remapped : 0;
-        input.y = remapped > 0 ? Math.sin(angle) * remapped : 0;
-        joystickKnob.style.transform = `translate(-50%,-50%) translate(${knobX}px, ${knobY}px)`;
-      }
 
       async function copyDebugLog() {
         const reticle = getReticleTile();
@@ -26227,8 +22447,8 @@
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
-          `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
+          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
+          `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
@@ -26253,20 +22473,6 @@
           showToast('Copy failed — log visible in Debug tab.', false);
           debugLog(`copy debug log failed: ${error.message}`, 'error');
         }
-      }
-
-      function clamp(value, min, max) {
-        return Math.max(min, Math.min(max, value));
-      }
-
-      function roundRect(context, x, y, width, height, radius) {
-        context.beginPath();
-        context.moveTo(x + radius, y);
-        context.arcTo(x + width, y, x + width, y + height, radius);
-        context.arcTo(x + width, y + height, x, y + height, radius);
-        context.arcTo(x, y + height, x, y, radius);
-        context.arcTo(x, y, x + width, y, radius);
-        context.closePath();
       }
 
       function doReset() {
@@ -26296,7 +22502,7 @@
         despawnCompanions();
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
-        { const _sl = loadFarmLayout(); if (_sl) applyFarmLayoutToGrid(_sl); }
+        { const _sl = window.FarmEditor.loadFarmLayout(); if (_sl) window.FarmEditor.applyFarmLayoutToGrid(_sl); }
         player.x = COLS * TILE * 0.5;
         player.y = ROWS * TILE * 0.72;
         player.angle = -Math.PI / 2;
@@ -26325,7 +22531,7 @@
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
         // Re-apply saved processing furniture from layout (crates keep their current position)
         try {
-          const _rl = loadFarmLayout();
+          const _rl = window.FarmEditor.loadFarmLayout();
           if (_rl) {
             (_rl.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
               if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
@@ -26362,7 +22568,7 @@
         showToast('Farm reset to Stormtide.', true);
         debugLog('prototype reset');
         refreshActionBar();
-        refreshItemScroll();
+        window.HudUpdate.refreshItemScroll();
         closeMenu();
       }
 
@@ -26377,10 +22583,11 @@
       document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) window.DialogueContent?.advanceNpcDialogue(); });
       document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
 
-      joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
-      joystickZone.addEventListener('pointermove', handleJoystickPointerMove);
-      joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
-      joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
+      window.VirtualJoystick.init({ input, joystickZone, joystickKnob, JOYSTICK_RADIUS, JOYSTICK_DEADZONE, JOYSTICK_RESPONSE });
+      joystickZone.addEventListener('pointerdown', window.VirtualJoystick.handleJoystickPointerDown);
+      joystickZone.addEventListener('pointermove', window.VirtualJoystick.handleJoystickPointerMove);
+      joystickZone.addEventListener('pointerup', window.VirtualJoystick.handleJoystickPointerUp);
+      joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
       // Dodge button: a plain tap, dodging in the current facing direction.
       // Always visible on touch (see #dodgeBtn in style.css); hidden only
@@ -26540,7 +22747,9 @@
           modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
         };
       })();
-      const inputBindings = loadInputBindings();
+      window.InputBindings.init({ INPUT_DEFAULTS });
+      const inputBindings = window.InputBindings.loadInputBindings();
+      window.InputBindings.init({ INPUT_DEFAULTS, getInputBindings: () => inputBindings });
       const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
@@ -26549,42 +22758,6 @@
         'Button12', 'Button13', 'Button14', 'Button15',
         'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
       ];
-
-      function loadInputBindings() {
-        try {
-          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
-          return {
-            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
-            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
-            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
-          };
-        } catch (_err) {
-          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
-        }
-      }
-      function saveInputBindings() {
-        localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
-      }
-      function bindingConflict(device, button, actionId, modeShift = null) {
-        if (!button) return '';
-        if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
-        const bindings = inputBindings[device] || {};
-        for (const [otherAction, otherButton] of Object.entries(bindings)) {
-          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
-        }
-        if (!modeShift) return '';
-        for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
-          if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
-        }
-        return '';
-      }
-      function actionLabel(id) {
-        return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
-      }
-      function buttonLabel(code) {
-        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
-        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
-      }
 
       // ── Last-used input device tracking ─────────────────────────────
       // Nothing else in the game tracks "what device is the player actually
@@ -26603,88 +22776,7 @@
       // below), since that's the only place an actual button-down edge is
       // detected rather than just continuous stick state.
 
-      // ── Contextual bottom-of-screen action prompt ───────────────────
-      // Generic "press X to do Y" prompt shared across the game (fishing is
-      // the first caller, see beginFishingCast/renderFishingOverlay) —
-      // resolves its own key/button/icon label from lastInputDevice so
-      // callers only ever describe *what* the action does, never how to
-      // trigger it on any particular device.
-      let actionPromptEls = null;
-      function buildActionPromptDom() {
-        if (actionPromptEls) return;
-        const el = document.getElementById('actionPrompt');
-        if (!el) return;
-        // World prompts use the same stacked list-row treatment as merchant
-        // dialogue choices, including when there is only one available action.
-        el.innerHTML = `
-          <div class="ap-list">
-            <button class="dlg-opt dlg-opt-visible ap-world-option ap-btn" id="apBtn"></button>
-            <button class="dlg-opt dlg-opt-visible ap-world-option ap-cancel" id="apCancel"></button>
-          </div>
-          <div class="ap-status" id="apStatus"></div>
-          <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
-        actionPromptEls = {
-          el,
-          btn: document.getElementById('apBtn'),
-          cancel: document.getElementById('apCancel'),
-          status: document.getElementById('apStatus'),
-          panicWrap: document.getElementById('apPanicWrap'),
-          panicFill: document.getElementById('apPanicFill'),
-        };
-      }
-      // Real key/button label on desktop/controller, taken from the
-      // player's actual current bindings (not just the defaults) so a
-      // rebound key shows correctly here too. Touch has no key to name, so
-      // callers pass the same icon already shown for that action in the
-      // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
-      function actionPromptGlyph(actionId, touchIcon) {
-        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
-        if (lastInputDevice === 'touch') return touchIcon || '👆';
-        return buttonLabel(inputBindings.desktop[actionId]);
-      }
-      function actionPromptColor(actionId) {
-        return window.ActionArchSlotColors?.inputColors?.[actionId] || '#B8C5C0';
-      }
-      function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
-        buildActionPromptDom();
-        if (!actionPromptEls) return;
-        const glyph = actionPromptGlyph(actionId, touchIcon);
-        // innerHTML, not textContent: touchIcon may be a real <img> tag (see
-        // attackActionIconHTML) when the caller wants this to mirror the
-        // arc button's actual equipped-tool sprite instead of a plain emoji
-        // — callers only ever pass static developer strings here, never
-        // untrusted input, so this is safe.
-        actionPromptEls.btn.innerHTML = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
-        actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
-        if (cancelText && onCancel) {
-          actionPromptEls.cancel.textContent = cancelText;
-          actionPromptEls.cancel.style.display = '';
-          actionPromptEls.cancel.onpointerup = (e) => { e.stopPropagation(); onCancel(); };
-        } else {
-          actionPromptEls.cancel.style.display = 'none';
-          actionPromptEls.cancel.onpointerup = null;
-        }
-        if (statusText) {
-          actionPromptEls.status.textContent = statusText;
-          actionPromptEls.status.className = 'ap-status' + (statusType ? ' ' + statusType : '');
-          actionPromptEls.status.style.display = '';
-        } else {
-          actionPromptEls.status.style.display = 'none';
-        }
-        if (panicPercent != null) {
-          actionPromptEls.panicWrap.style.display = '';
-          actionPromptEls.panicFill.style.width = panicPercent + '%';
-        } else {
-          actionPromptEls.panicWrap.style.display = 'none';
-        }
-        actionPromptEls.el.classList.add('open');
-      }
-      function hideActionPrompt() {
-        if (!actionPromptEls) return;
-        actionPromptEls.el.classList.remove('open');
-        actionPromptEls.btn.onpointerup = null;
-        actionPromptEls.cancel.onpointerup = null;
-      }
+      window.ActionPromptUI.init({ getLastInputDevice: () => lastInputDevice, inputBindings });
       // Resolve the action currently rendered in the physical arch button.
       // The visible stack is split into tool/item rows, so computeActionButtons()
       // index 0 is not necessarily btnAction1 anymore.
@@ -26878,7 +22970,7 @@
         }
         if (actionId === 'itemPrev' || actionId === 'itemNext') {
           cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
-          refreshItemScroll(); refreshActionBar(); return;
+          window.HudUpdate.refreshItemScroll(); refreshActionBar(); return;
         }
         if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
         if (actionId === 'weaponSwitch') { toggleQuickWeaponSwitch(); return; }
@@ -26995,14 +23087,14 @@
       // init()'d here rather than down with the other window.<Namespace>
       // modules, since (unlike them) this one is rendered once immediately
       // at boot rather than lazily on first tab open.
-      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); window.InputBindings.saveInputBindings(); window.InputSettingsPanel.render(); });
       window.InputSettingsPanel?.init({
         INPUT_DEFAULTS,
         inputBindings,
         CONTROLLER_INPUT_OPTIONS,
-        buttonLabel,
-        bindingConflict,
-        saveInputBindings,
+        buttonLabel: window.InputBindings.buttonLabel,
+        bindingConflict: window.InputBindings.bindingConflict,
+        saveInputBindings: window.InputBindings.saveInputBindings,
       });
       window.InputSettingsPanel.render();
       window.MusicMinigame?.renderNoteKeySettings();
@@ -27140,12 +23232,12 @@
         // menu (see the keydown handler above) so both are free here.
         if (key === ',' || key === '[') {
           cycleActiveInventoryItem(-1);
-          refreshItemScroll(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); refreshActionBar();
         }
         if (key === '.' || key === ']') {
           event.preventDefault();
           cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
-          refreshItemScroll(); refreshActionBar();
+          window.HudUpdate.refreshItemScroll(); refreshActionBar();
         }
 
         // X: context action — climbs/cliff-dives a wall in the current
@@ -27416,7 +23508,7 @@
         const distance = Math.hypot(rawX, rawY);
         const angle = Math.atan2(rawY, rawX);
         const clamped = Math.min(distance, CAMERA_JOYSTICK_RADIUS);
-        const rawMagnitude = clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
+        const rawMagnitude = window.FormatUtils.clamp(clamped / CAMERA_JOYSTICK_RADIUS, 0, 1);
         const remapped = rawMagnitude <= CAMERA_JOYSTICK_DEADZONE
           ? 0
           : Math.pow((rawMagnitude - CAMERA_JOYSTICK_DEADZONE) / (1 - CAMERA_JOYSTICK_DEADZONE), CAMERA_JOYSTICK_RESPONSE);
@@ -27574,8 +23666,8 @@
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
-              : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
             return;
           }
@@ -27655,8 +23747,8 @@
           showToast(result.message, result.ok);
           window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
           if (result.ok && processingKey) {
-            refreshItemScroll();
-            saveFarmLayout();
+            window.HudUpdate.refreshItemScroll();
+            window.FarmEditor.saveFarmLayout();
             saveMemberWorldData();
           }
           if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
@@ -27671,32 +23763,9 @@
         clearFurniturePlacementGhost();
       }, { capture: true });
 
-      // ── Farm editor pointer handlers ──────────────────────────────
-      threeContainer.addEventListener('pointerdown', (e) => {
-        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm') return;
-        e.stopPropagation();
-        _editorPainting = true;
-        const t = _screenToFarmTile(e.clientX, e.clientY);
-        if (t) applyFarmEditBrush(t.col, t.row);
-      });
-      threeContainer.addEventListener('pointermove', (e) => {
-        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
-        e.stopPropagation();
-        const t = _screenToFarmTile(e.clientX, e.clientY);
-        if (t) applyFarmEditBrush(t.col, t.row);
-      });
-      window.addEventListener('pointerup', () => { _editorPainting = false; });
-
-      // Expose farm editor to the HTML panel buttons
-      window._farmEditor = {
-        toggle: toggleFarmEditMode,
-        setBrush: farmEditorSetBrush,
-        save: saveFarmLayout,
-        clearLayout: () => {
-          try { localStorage.removeItem(farmLayoutKey()); } catch {}
-          showToast('Saved layout cleared. Reset the farm to apply.', true);
-        },
-      };
+      // Farm editor pointer handlers + window._farmEditor now live in
+      // js/farm-editor.js — see its own _bindListeners(), run from its
+      // init(deps) call below.
 
       // QA/devtools hook for the furniture placement + sitting systems,
       // mirroring window._devSpawner/_farmEditor above — no in-game UI path
@@ -27799,7 +23868,7 @@
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
       function flushSessionPersistence() {
-        try { saveFarmLayout(); saveMemberWorldData(); _saveWorldCalendar(); } catch {}
+        try { window.FarmEditor.saveFarmLayout(); saveMemberWorldData(); _saveWorldCalendar(); } catch {}
       }
       window.addEventListener('beforeunload', flushSessionPersistence);
       window.addEventListener('pagehide', flushSessionPersistence);
@@ -27834,7 +23903,7 @@
         companionObjects,
         npcWalkers,
         player,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         getPlayerGroundY: _playerGroundY,
@@ -27859,7 +23928,7 @@
         calendar,
         player,
         TILE,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         debugLog,
         getCurrentArea: () => currentArea,
         getPaused: () => paused,
@@ -27880,7 +23949,7 @@
         TileType,
         TILE,
         MAX_WATER,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
         _isBuildingArea,
@@ -27914,7 +23983,7 @@
           return 0.4;
         },
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
         getHeldMode: () => heldMode,
@@ -28001,7 +24070,7 @@
         THREE,
         TILE,
         player,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         isCombatActive: () => isPlayerInCombat() ||
@@ -28022,7 +24091,7 @@
         hostileObjects,
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         // Same live render-height lookup Combat.init supplies for named
         // animal projectiles (see its own getActorWorldY) — a shooter or
         // target standing somewhere other than flat ground (a tree branch)
@@ -28047,9 +24116,9 @@
           return avatarGroup;
         },
         worldSurfaceY: (x, y) => {
-          const grid = getActiveGrid();
-          const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
-          const row = clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          const grid = window.GridTileAccessors.getActiveGrid();
+          const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
+          const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);
           return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
         },
         canOccupyAt,
@@ -28096,7 +24165,7 @@
         MOUSE_IDLE_MS,
         isDesktop,
         rnd,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         angleDiff,
         canPlayerOccupy,
         getAlchemySpeedMul: window.AlchemySystem.getSpeedMul,
@@ -28108,10 +24177,10 @@
         updateCreatureAnimFrame,
         tileSurfaceYInArea,
         characterGroundShadowSurfaceOffset,
-        getActiveScene,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         _isZoneArea,
         _isCavernBuildingArea,
         showToast,
@@ -28131,25 +24200,25 @@
       });
 
       window.Fishing?.init({
-        clamp,
-        getActiveScene,
+        clamp: window.FormatUtils.clamp,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         currentSeason: window.CalendarSystem.currentSeason,
         getHour: window.CalendarSystem.getHour,
         FISH_DEFS,
         getReticleTile,
-        getActiveTileAt,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceYInArea,
         playerMesh,
         showToast,
         refreshActionBar,
-        hideActionPrompt,
-        showActionPrompt,
+        hideActionPrompt: window.ActionPromptUI.hideActionPrompt,
+        showActionPrompt: window.ActionPromptUI.showActionPrompt,
         attackActionIconHTML,
         worldToOverlay,
         inventory,
         equipmentSlots,
-        rollItemStars,
-        starRatingText,
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
         getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
@@ -28241,7 +24310,7 @@
 
       window.BanditCombat?.init({
         rnd,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         debugLog,
         TILE,
         // Used only for the "Show Interaction Raycast" debug overlay's
@@ -28274,10 +24343,10 @@
         tickCreatureLungeTrail,
         tickCreatureFootsteps,
         hostileObjects,
-        getActiveScene,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         tileSurfaceYInArea,
         makeCharacterGroundShadow,
         creatureGroundShadowRadii,
@@ -28295,14 +24364,14 @@
         getCurrentArea: () => currentArea,
       });
 
-      window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+      window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
 
       window.CookingSystem?.init({
         ITEM_DEFS,
         inventoryItems,
         inventory,
         clampInventoryStack,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         showToast,
@@ -28337,7 +24406,7 @@
         ITEM_DEFS,
         inventory,
         clampInventoryStack,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         showToast,
@@ -28355,7 +24424,7 @@
         clampInventoryStack,
         getPlayer: () => player,
         getCurrentArea: () => currentArea,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
         getGroundY: () => _playerGroundY() + 0.025,
         getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
@@ -28377,7 +24446,7 @@
         startThrowWindup: () => { _heldThrowAimT = 1; },
         confirmThrowAnimation: () => { _heldThrowAimT = 2; },
         cancelThrowWindup: () => { _heldThrowAimT = 0; },
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
       });
@@ -28392,14 +24461,14 @@
         buildInventoryGrid,
         saveMemberWorldData,
         getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
-        lootShopWorldState: _lootShopWorldState,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
         calendar,
-        esc,
+        esc: window.FormatUtils.esc,
         getPackClothing: () => packClothing,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
-        seededRandom,
+        seededRandom: window.FormatUtils.seededRandom,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
       });
 
@@ -28411,8 +24480,8 @@
         getBarnTiers: () => BARN_TIERS,
         getHousePieceDeeds: () => Object.fromEntries(Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem)),
         FURNITURE_BLUEPRINT_CATALOG,
-        lootShopWorldState: _lootShopWorldState,
-        esc,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
+        esc: window.FormatUtils.esc,
       });
 
       // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
@@ -28423,11 +24492,11 @@
 
       window.WeatherFX?.init({
         calendar,
-        seededRandom,
+        seededRandom: window.FormatUtils.seededRandom,
         getGrid: () => grid,
         ROWS, COLS,
         TileType,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         showToast,
         debugLog,
         worldToOverlay,
@@ -28442,7 +24511,7 @@
         getSceneTransAlpha: () => sceneTransAlpha,
         getThreeRect: () => _threeRect,
         _isBuildingArea,
-        getActiveGrid, getActiveCols, getActiveRows,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid, getActiveCols: window.GridTileAccessors.getActiveCols, getActiveRows: window.GridTileAccessors.getActiveRows,
         getFlowingTrenchTiles: () => window.WaterSystem.getFlowingTrenchTiles(),
         getTownFlowingTrenchTiles: () => window.WaterSystem.getTownFlowingTrenchTiles(),
         threeContainer,
@@ -28464,7 +24533,7 @@
         // track furniture add/remove sites to invalidate it precisely.
         getFurnitureLightSources: () => {
           const cache = _furnitureLightScanCache;
-          const scene = getActiveScene();
+          const scene = window.GridTileAccessors.getActiveScene();
           const now = performance.now();
           if (cache.scene !== scene || now - cache.lastScan >= 2000) {
             const objs = [];
@@ -28500,7 +24569,7 @@
         player,
         TILE,
         getPlayerGroundY: _playerGroundY,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
       });
@@ -28510,7 +24579,7 @@
         player,
         TILE,
         getPlayerGroundY: _playerGroundY,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
       });
 
@@ -28527,14 +24596,14 @@
         TileType,
         COLS, ROWS,
         getGrid: () => grid,
-        isHouseFootprint,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
         processingFurnitureObjects,
         interiorFurnitureObjects,
         DECORATIVE_FURNITURE_DEFS,
         _loadWorldLivestock,
         worldObjects,
         animalObjects,
-        esc,
+        esc: window.FormatUtils.esc,
         hasFarmPermission,
         getBarnTiers: () => BARN_TIERS,
         getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
@@ -28571,7 +24640,7 @@
         _loadWorldStorage,
         _saveWorldStorage,
         ITEM_DEFS,
-        dewItemKey,
+        dewItemKey: window.ItemProcessing.dewItemKey,
         clampInventoryStack,
         getActiveMountId: () => activeMountId,
         setActiveMountId: (v) => { activeMountId = v; },
@@ -28583,7 +24652,7 @@
 
       window.TasksPanel?.init({
         ITEM_DEFS,
-        esc,
+        esc: window.FormatUtils.esc,
         WMAP_ZONE_LABELS,
         getQuestProgress: () => questProgress,
         inventory,
@@ -28622,7 +24691,7 @@
         toolMasteryLevel,
         devBumpToolMasteryLevel,
         metalToolImgSrc,
-        esc,
+        esc: window.FormatUtils.esc,
         refreshPlayerAvatar,
         buildInventoryGrid,
         clearInventoryDetail,
@@ -28651,7 +24720,7 @@
         inventory,
         clampInventoryStack,
         showToast,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(),
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
@@ -28675,7 +24744,7 @@
       });
 
       window.WildlifeDebugPanel?.init({
-        esc,
+        esc: window.FormatUtils.esc,
         _zoneLayouts,
         hostileObjects,
         getCurrentArea: () => currentArea,
@@ -28701,7 +24770,7 @@
         hasFarmPermission,
         clampInventoryStack,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
       });
@@ -28720,13 +24789,13 @@
         showToast,
         buildInventoryGrid,
         saveMemberWorldData,
-        esc,
+        esc: window.FormatUtils.esc,
       });
 
       window.DevSpawner?.init({
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
         _isBuildingArea,
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
@@ -28741,24 +24810,127 @@
         buildZoneScene,
         COLS, ROWS, TILE,
         CREATURE_DB,
-        esc,
-        clamp,
+        esc: window.FormatUtils.esc,
+        clamp: window.FormatUtils.clamp,
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
-        getActiveGrid,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         markOutline: _markOutline,
         zoneScenes: _zoneScenes,
         treeFadeActive: _treeFadeActive,
         isFarmOwner,
         getFarmEditMode: () => farmEditMode,
-        toggleFarmEditMode,
+        toggleFarmEditMode: window.FarmEditor.toggleFarmEditMode,
         setDebugWeather: window.WeatherFX.setDebugWeather,
         getDebugWeather: window.WeatherFX.getDebugWeather,
         getRainPlaneSettings: window.RainPlanes.getSettings,
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
+      });
+
+      window.DenNestSystem?.init({
+        getCurrentArea: () => currentArea,
+        setCurrentArea: (v) => { currentArea = v; },
+        setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        _isBuildingArea,
+        _isCavernBuildingArea,
+        _isZoneArea,
+        startSceneTransition,
+        player,
+        _snapCameraTarget,
+        refreshActionBar,
+        showToast,
+        closeMenu,
+        buildZoneScene,
+        TILE,
+        _zoneLayouts,
+        _buildingScenes,
+        _denNests,
+        getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getActiveAction: () => activeAction,
+        getActionHeldDown: () => actionHeldDown,
+        getNestHoldT: () => _nestHoldT,
+        setNestHoldT: (v) => { _nestHoldT = v; },
+        currentPlayerInteractionRay,
+        activeSurfaceYAtWorld,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
+        saveMemberWorldData,
+        itemIconForKey,
+        ITEM_DEFS,
+      });
+
+      window.HudUpdate.init({
+        getGrid: () => grid,
+        getWorldObjectAt,
+        equipmentSlots,
+        getActiveTool: () => activeTool,
+        TOOL_ITEM_DEFS,
+        toolSelectIconHTML,
+        inventory,
+        tileStyles,
+        MAX_WATER,
+        ITEM_DEFS,
+        applyItemSpriteIcon,
+        clearItemSpriteIcon,
+        TileType,
+        getInventoryStackItems,
+        getActiveInventoryItem,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
+        getReticleTile,
+        getActiveItemIndex: () => activeItemIndex,
+        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        cycleActiveInventoryItem,
+        getHeldMode: () => heldMode,
+        getActiveAction: () => activeAction,
+        getCurrentArea: () => currentArea,
+        isMenuOpen: () => menuOpen,
+        calendar,
+        RAIN_RATE,
+        isDesktop,
+        refreshActionBar,
+        keyHudEl, itemBtnEl, itemIcon, itemName, itemCount, isPrevIconEl, isNextIconEl,
+        spSeason, spWeather, spTime, spDay, spTool, spTile, spWater, spGoldAmount, spItem, spItemDiv,
+        itemPrev, itemNext,
+      });
+
+      window.ActionArcUI.init({
+        toolBtn,
+        WHEEL_SLOTS,
+        equipmentSlots,
+        TOOL_ITEM_DEFS,
+        toolSelectIconHTML,
+        getActiveTool: () => activeTool,
+        inventory,
+        characterViewMode,
+        setCharacterViewMode,
+        getCurrentArea: () => currentArea,
+        showToast,
+        refreshActionBar,
+        startSceneTransition,
+        enterBuilding,
+        enterZone,
+        performTravel,
+        player,
+        getInventoryStackItems,
+        getActiveItemIndex: () => activeItemIndex,
+        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        ITEM_DEFS,
+        applyItemSpriteIcon,
+        clearItemSpriteIcon,
+        getHeldMode: () => heldMode,
+        setHeldMode: (v) => { heldMode = v; },
+        getLastHeldFarmTool: () => lastHeldFarmTool,
+        setLastHeldFarmTool: (v) => { lastHeldFarmTool = v; },
+        setActiveTool,
+        putAwayHeldEquipment,
+        cycleActiveInventoryItem,
       });
 
       window.FurniturePlacer?.init({
@@ -28778,7 +24950,7 @@
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
-        esc,
+        esc: window.FormatUtils.esc,
         isPaused: () => paused,
         isDevMode: () => s_devMode,
       });
@@ -28788,7 +24960,7 @@
         isZoneArea: _isZoneArea,
         isMineArea: area => !!window.TownMine?.floorFromMapId?.(area),
         isAreaSceneReady: area => !_isBuildingArea(area) || !!_buildingScenes.get(area)?.scene,
-        getActiveScene,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
         getPlayer: () => player,
         getFacingAngle: () => facingAngle,
         surfaceYAt: activeSurfaceYAtWorld,
@@ -28801,7 +24973,7 @@
         inventory,
         clampInventoryStack,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
       });
 
       window.TownZoneBuildings?.init({
@@ -28890,7 +25062,7 @@
         metalBarItemKey,
         metalLabel: metalKey => METAL_DEFS[metalKey]?.label || metalKey,
         showToast,
-        refreshInventory: () => { refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+        refreshInventory: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
         save: saveMemberWorldData,
         travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
       });
@@ -28898,6 +25070,28 @@
       window.ZonePlateauMesa?.init({
         NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
         resolveTileMat, displaceZoneGeometry,
+        ROCK_MOUND_CELLS_PER_TILE,
+        _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
+      });
+
+      window.ZoneRegrowth?.init({
+        TileType, PLATEAU_UNIT, TREE_REGROWTH_DAYS, ROCK_REGROWTH_DAYS,
+        _zoneScenes, _zoneFloorMeshGroups, _zoneGrassMeshes,
+        _zoneFelledTreePersist, _zoneMinedRockPersist,
+        calendar, debugLog,
+        resolveTileMat, tileYCenter, displaceZoneGeometry,
+        removeZoneVegetationVisual, _buildZoneFloorMeshes,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        getCurrentArea: () => currentArea,
+      });
+
+      window.PlayerVitals?.init({
+        player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
+      });
+
+      window.ItemProcessing?.init({
+        ITEM_DEFS, cropData, PROCESSING_METHODS,
+        getInventoryItems: () => inventoryItems,
       });
 
       window.ZoneTerrainFeatures?.init({
@@ -28921,11 +25115,11 @@
 
       window.ZoneGrassBillboards?.init({
         TileType, PLATEAU_UNIT,
-        grassBladeGeo: _grassBladeGeo,
-        getGrassBillboardMat: () => grassBillboardMat,
+        grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
+        getGrassBillboardMat: () => window.VegetationCropRendering.getGrassBillboardMat(),
         getGrassEnabled: () => s_grass,
-        fillBillboardInstances: _fillBillboardInstances,
-        mbRng: _mbRng,
+        fillBillboardInstances: window.VegetationCropRendering.fillBillboardInstances,
+        mbRng: window.VegetationCropRendering.mbRng,
         tileSurfaceY,
       });
 
@@ -28936,7 +25130,7 @@
         buildInventoryGrid,
         buildEquipmentSlots: window.EquipmentPanel.buildEquipmentSlots,
         saveMemberWorldData,
-        esc,
+        esc: window.FormatUtils.esc,
         getGearInventory: () => gearInventory,
         saveGearInventory,
         metalBarItemKey,
@@ -28985,13 +25179,13 @@
         hostileObjects,
         companionObjects,
         facingCardinal,
-        getActiveGrid,
-        getActiveCols,
-        getActiveRows,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
         TILE,
         isSolid,
         tileSurfaceYInArea,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         getMountRideState: () => window.Mounts?.rideState ?? 'none',
         showToast,
         setFacingAngle: (v) => { facingAngle = v; },
@@ -29029,7 +25223,7 @@
       });
 
       window.DebugHitboxes?.init({
-        getActiveTileAt,
+        getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceY,
         surfaceYAtWorld: activeSurfaceYAtWorld,
         worldToOverlay,
@@ -29045,13 +25239,13 @@
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
-        refreshInteractionFocusDebug,
+        refreshInteractionFocusDebug: window.DenNestSystem.refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
       });
 
       window.RelationshipsPanel?.init({
         npcWalkers,
-        esc,
+        esc: window.FormatUtils.esc,
       });
 
       window.CalendarSystem?.init({
@@ -29067,12 +25261,12 @@
 
       window.JubmirShop?.init({
         tothalWorldId: _tothalWorldId,
-        getShopStock: () => _shopStock,
-        lootShopWorldState: _lootShopWorldState,
+        getShopStock: window.LootRolling.getShopStock,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         calendar,
         inventory,
         showToast,
-        esc,
+        esc: window.FormatUtils.esc,
         buildInventoryGrid,
         saveMemberWorldData,
       });
@@ -29086,14 +25280,14 @@
         calendar,
         inventory,
         debugLog,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
         NORMAL_TOP,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         findZoneFlatEmptyTiles,
         getReagentPlantMaterial,
-        _grassBladeGeo,
+        _grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
         _zoneScenes,
         _zoneReagentObjects,
         _zoneReagentMeshGroups,
@@ -29112,36 +25306,36 @@
         PROCESSING_FURNITURE_DEFS,
         PROCESSING_SFX_KEY,
         getGrid: () => grid,
-        rollItemStars,
-        starRatingText,
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
-        getScene: getActiveScene,
+        getScene: window.GridTileAccessors.getActiveScene,
         getWorldObjectAt,
-        isHouseFootprint,
+        isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
         tileSurfaceY,
         creaturePlaneGroundOffset,
         nearestAngleAmong,
         cameraRelativePerps,
         perpClamp: window.PerpRotation.perpClamp,
         angleDiff,
-        dewItemKey,
-        ensureProcessedItemDef,
-        getProcessingOutputs,
+        dewItemKey: window.ItemProcessing.dewItemKey,
+        ensureProcessedItemDef: window.ItemProcessing.ensureProcessedItemDef,
+        getProcessingOutputs: window.ItemProcessing.getProcessingOutputs,
         hasFarmPermission,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
-        saveFarmLayout,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout,
         rnd,
       });
 
       window.WildBerries?.init({
-        BERRY_COLORS,
+        BERRY_COLORS: window.ItemProcessing.BERRY_COLORS,
         ITEM_DEFS,
         NORMAL_TOP,
         cropData,
         inventory,
-        _grassBladeGeo,
+        _grassBladeGeo: window.VegetationCropRendering.grassBladeGeo,
         _zoneScenes,
         _zoneBerryMeshGroups,
         _zoneBerryObjects,
@@ -29151,11 +25345,11 @@
         debugLog,
         getCurrentArea: () => currentArea,
         isZoneArea: _isZoneArea,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         findZoneFlatEmptyTiles,
         getReagentPlantMaterial,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
       });
 
@@ -29163,13 +25357,13 @@
         calendar,
         rnd,
         VERDIGRIS_METAL_KEYS,
-        getLootPools: () => _lootPools,
-        lootShopWorldState: _lootShopWorldState,
+        getLootPools: window.LootRolling.getLootPools,
+        lootShopWorldState: window.LootRolling.lootShopWorldState,
         MYSTERY_DYE_ITEM_KEY_BY_POOL,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
         _zoneScenes,
-        _mbRng,
+        _mbRng: window.VegetationCropRendering.mbRng,
         _seedFromString,
         _zoneReagentPersist,
         _zoneBerryPersist,
@@ -29186,7 +25380,7 @@
         _zoneTreasureMeshGroups,
         _zoneTreasureObjects,
         _zoneTreasurePersist,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         debugLog,
@@ -29242,7 +25436,7 @@
         cameraRelativePerps,
         clampInventoryStack,
         getHeldItemKey: () => heldMode === 'item' ? getActiveInventoryItem()?.key || null : null,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
         companionAiTypeForKind,
@@ -29265,7 +25459,7 @@
         _saveWorldBreedingPairs,
         loadWorldLivestock: _loadWorldLivestock,
         saveWorldLivestock: _saveWorldLivestock,
-        saveFarmLayout,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout,
         getBarnTiers: () => BARN_TIERS,
         getPlayerData: () => _playerData,
         getGrid: () => grid,
@@ -29287,7 +25481,7 @@
         getFarmBuildings: () => farmBuildings,
         inventory,
         ITEM_DEFS,
-        esc,
+        esc: window.FormatUtils.esc,
         showToast,
         buildInventoryGrid,
         refreshActionBar,
@@ -29308,7 +25502,7 @@
         markTileDirty,
         openMenu,
         recomputeWater: window.WaterSystem.recomputeWater,
-        saveFarmLayout,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout,
         saveMemberWorldData,
         scene,
         worldObjects,
@@ -29338,7 +25532,7 @@
         openMenu,
         recomputeWater: window.WaterSystem.recomputeWater,
         getGrid: () => grid,
-        saveFarmLayout,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout,
         saveMemberWorldData,
         scene,
         worldObjects,
@@ -29358,7 +25552,7 @@
         TILE,
         COLS,
         ROWS,
-        clamp,
+        clamp: window.FormatUtils.clamp,
         canOccupyAt,
         characterGroundShadowSurfaceOffset,
         tileSurfaceYInArea,
@@ -29387,7 +25581,7 @@
         showToast,
         saveMemberWorldData,
         buildInventoryGrid,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         buildShippingTransferUI: () => window.ShippingPanel.build(),
         tileSurfaceY,
@@ -29401,7 +25595,7 @@
       window.ProceduralTasks?.init({
         FISH_DEFS,
         CREATURE_DB,
-        getLootPools: () => _lootPools,
+        getLootPools: window.LootRolling.getLootPools,
         ITEM_DEFS,
         toolMasteryLevel,
         equipmentSlots,
@@ -29427,7 +25621,7 @@
       });
 
       window.BanditCamps?.init({
-        clamp,
+        clamp: window.FormatUtils.clamp,
         rnd,
         debugLog,
         TILE,
@@ -29437,7 +25631,7 @@
         NORMAL_TOP,
         zoneLayouts: _zoneLayouts,
         zoneScenes: _zoneScenes,
-        refreshZoneGroundVisuals,
+        refreshZoneGroundVisuals: window.ZoneRegrowth.refreshZoneGroundVisuals,
         markOutline: _markOutline,
         makeDecorativeFurnitureMesh,
         tileSurfaceYInArea,
@@ -29452,11 +25646,11 @@
         showToast,
         requestCompanionDiscovery: (c, reason) => window.AnimalVocalizations?.companionDiscovery?.(c, reason)
           || window.AudioSystem?.playCreatureTreasureAlert?.(c),
-        rollLootPool,
+        rollLootPool: window.LootRolling.rollLootPool,
         inventory,
         clampInventoryStack,
         itemIconForKey,
-        refreshItemScroll,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
         buildInventoryGrid,
         refreshActionBar,
         saveMemberWorldData,
@@ -29476,12 +25670,12 @@
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
-      refreshItemScroll();
+      window.HudUpdate.refreshItemScroll();
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
-      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + shared NPC routes from the map editor
-      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      try { initWorldTravel(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
       // Ensure a farm→town transition always exists even without map editor data
       if (!worldTransitions.some(t => t.target === 'town')) {
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
@@ -29554,9 +25748,9 @@
           const nb = window.FarmCrates.makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
           supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
         }
-        const _worldLayout = loadFarmLayout();
-        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
-        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        const _worldLayout = window.FarmEditor.loadFarmLayout();
+        if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        window.FarmEditor.applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
@@ -29578,7 +25772,7 @@
               interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
                 mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
                 ...furnitureOwnerFields(bedCol, bedRow) });
-              saveFarmLayout();
+              window.FarmEditor.saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }
         }
@@ -29822,184 +26016,15 @@
 
       let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
 
-      function cutscenePreviewBanner(text, isError) {
-        let el = document.getElementById('cutscenePreviewBanner');
-        if (!el) {
-          el = document.createElement('div');
-          el.id = 'cutscenePreviewBanner';
-          el.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:99999;'
-            + 'padding:8px 16px;border-radius:10px;font:600 14px/1.3 system-ui,sans-serif;color:#fff;'
-            + 'background:rgba(20,14,10,.86);border:2px solid #f2b755;box-shadow:0 6px 18px rgba(0,0,0,.4);'
-            + 'display:flex;gap:10px;align-items:center;pointer-events:auto;';
-          const label = document.createElement('span');
-          label.id = 'cutscenePreviewBannerLabel';
-          el.appendChild(label);
-          const closeBtn = document.createElement('button');
-          closeBtn.textContent = 'Exit preview';
-          closeBtn.style.cssText = 'font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;'
-            + 'border:1px solid #f2b755;background:#3a2c22;color:#fff;cursor:pointer;';
-          // A plain reload is enough to leave preview mode cleanly: the
-          // handoff key is one-shot (already consumed) and the ephemeral
-          // profile only ever lived in window.__hobunjiPlayerProfile, never
-          // written to the real hobunjiPlayerProfile/hobunjiSaveMeta keys.
-          closeBtn.addEventListener('click', () => location.reload());
-          el.appendChild(closeBtn);
-          document.body.appendChild(el);
-        }
-        el.style.borderColor = isError ? '#d66b68' : '#f2b755';
-        document.getElementById('cutscenePreviewBannerLabel').textContent = text;
-      }
-
-      function cutscenePreviewFadeEl() {
-        let el = document.getElementById('cutscenePreviewFade');
-        if (!el) {
-          el = document.createElement('div');
-          el.id = 'cutscenePreviewFade';
-          el.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000;opacity:0;'
-            + 'pointer-events:none;transition:opacity 1s linear;';
-          document.body.appendChild(el);
-        }
-        return el;
-      }
-
-      async function cutscenePreviewWaitForArea(area, timeoutMs, predicate) {
-        const check = predicate || (() => !!(sceneForNpcArea(area) && npcGridForArea(area)));
-        const start = performance.now();
-        while (performance.now() - start < timeoutMs) {
-          if (check()) return true;
-          await new Promise(r => setTimeout(r, 100));
-        }
-        return false;
-      }
-
-      // Scans a generated wilderness zone's real tile grid for a clear, flat
-      // w×h rectangle to drop an authored scene's whole local footprint onto
-      // — same tile-level exclusion checklist wilderness-map-generator.js's
-      // own areaFree/randomFreeArea use (uniform elevation tier, no incline/
-      // ramp/water/solid tiles), plus building/decor/furniture/den occupancy
-      // that live outside the tile grid itself (see buildZoneScene /
-      // _spawnZoneDecorFurniture / performTothalShift's `dens`). Searches
-      // outward in Chebyshev rings from the zone's center so a found spot is
-      // never farther from the middle of the map than it has to be.
-      function findZonePlacementFootprint(area, w, h) {
-        const zi = _zoneScenes.get(area);
-        const grid = zi?.grid;
-        if (!grid) return null;
-        const cols = zi.cols, rows = zi.rows;
-        const zoneData = _zoneLayouts.get(area);
-        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
-        const markOccupied = (col, row, ow, oh) => {
-          for (let r = Math.max(0, row); r < Math.min(rows, row + oh); r++)
-            for (let c = Math.max(0, col); c < Math.min(cols, col + ow); c++) occupied[r][c] = true;
-        };
-        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
-        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
-        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
-        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
-
-        function rectOk(col, row) {
-          if (col < 1 || row < 1 || col + w > cols - 1 || row + h > rows - 1) return false; // stay off the border terrain skirt
-          let elevTier = null;
-          for (let r = row; r < row + h; r++) {
-            for (let c = col; c < col + w; c++) {
-              if (occupied[r][c]) return false;
-              const tile = grid[r][c];
-              if (!tile) return false;
-              if (tile.water) return false;
-              if (tile.incline) return false;
-              if (tile.type === TileType.RAMP) return false;
-              if (isSolid(tile.type)) return false;
-              const tier = tile.elevTier || 0;
-              if (elevTier === null) elevTier = tier;
-              else if (tier !== elevTier) return false;
-            }
-          }
-          return true;
-        }
-
-        const centerCol = Math.floor((cols - w) / 2), centerRow = Math.floor((rows - h) / 2);
-        const maxRadius = Math.max(cols, rows);
-        for (let radius = 0; radius <= maxRadius; radius++) {
-          for (let dr = -radius; dr <= radius; dr++) {
-            for (let dc = -radius; dc <= radius; dc++) {
-              if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue; // ring only — interior already checked at smaller radii
-              const col = centerCol + dc, row = centerRow + dr;
-              if (rectOk(col, row)) return { col, row };
-            }
-          }
-        }
-        return null;
-      }
-
-      // Freeform ("custom") actors, and any actor whose real NPC/creature
-      // spawn failed, fall back to a plain placeholder mesh — same
-      // graceful-degradation policy the Cutscene Director tool's own
-      // standalone preview uses for the same cases.
-      function cutscenePreviewMakePlaceholder(actor, area, targetScene) {
-        const group = new THREE.Group();
-        const mat = new THREE.MeshLambertMaterial({ color: actor.color || '#cccccc' });
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.85, 10), mat);
-        body.position.y = 0.28 + 0.85 / 2;
-        group.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mat);
-        head.position.y = 0.28 + 0.85 + 0.18;
-        group.add(head);
-        const surfY = npcSurfaceY(area, actor.worldC, actor.worldR);
-        group.position.set(actor.worldC + 0.5, surfY, actor.worldR + 0.5);
-        group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
-        targetScene.add(group);
-        return { kind: 'placeholder', root: group };
-      }
-
-      const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
-
-      function cutscenePreviewApplyState(entity, area, st) {
-        const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
-        if (entity.kind === 'creature') {
-          const c = entity.creature;
-          c.x = st.c * TILE; c.y = st.r * TILE;
-          c.avatarRef.group.position.set(st.c + 0.5, surfY + (c.groundLift ?? c.halfHeight), st.r + 0.5);
-          c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
-          // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
-          // real tick (see below) starts an angleDiff of exactly 0 instead
-          // of smoothly sweeping in from wherever makeCreatureEntity's
-          // groupRot:0 default left them.
-          c.groupRot = c.pngRot = THREE.MathUtils.degToRad(st.rotation);
-          c.groundShadow?.position.set(st.c + 0.5, surfY + characterGroundShadowSurfaceOffset(), st.r + 0.5);
-          c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
-        } else if (entity.kind === 'npc') {
-          entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
-          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
-          entity.root.rotation.y = entity.walker.rot;
-          entity.root.scale.setScalar(1);
-          // Prone tips the flat portrait plane down onto its back instead of
-          // just shrinking a standing figure — this walker is scripted
-          // entirely by the director (pause:Infinity, see the actor-spawn
-          // loop) and never dialogue-staged (guarded by cutscenePreviewActive
-          // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
-          // nothing else re-asserts a standing transform over this pose.
-          const avatarGroup = entity.walker.avatarGroup;
-          if (avatarGroup) {
-            const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1;
-            if (st.pose === 'prone') {
-              avatarGroup.rotation.x = Math.PI / 2;
-              avatarGroup.position.y = avatarHeight * 0.06;
-            } else {
-              avatarGroup.rotation.x = 0;
-              avatarGroup.position.y = avatarHeight / 2;
-            }
-          }
-        } else {
-          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
-          entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
-          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
-        }
-      }
+      window.CutscenePreviewHelpers.init({
+        TILE, TileType, isSolid, npcSurfaceY, sceneForNpcArea, npcGridForArea,
+        characterGroundShadowSurfaceOffset, _zoneScenes, _zoneLayouts,
+      });
 
       async function runCutscenePreview(payload) {
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
-        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
 
         const area = normalizeNpcArea(payload.mapId);
         if (_isBuildingArea(area)) {
@@ -30015,7 +26040,7 @@
           // the standalone, player-untouched half of that, so it's called
           // directly here instead of enterTown().
           try {
-            if (!townGrid) await cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+            if (!townGrid) await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
             buildTownScene();
           } catch (e) { console.error('[cutscene preview] buildTownScene failed:', e); }
         } else if (payload.wilderness && _isZoneArea(area)) {
@@ -30033,14 +26058,14 @@
             if (_tothalShiftPromise) await _tothalShiftPromise;
             if (!_zoneLayouts.has(area)) {
               checkTothalShift();
-              await cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
+              await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
             }
             buildZoneScene(area);
             const fp = payload.footprint || {};
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
-            const anchor = findZonePlacementFootprint(area, fw, fh);
+            const anchor = window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
             if (!anchor) {
-              cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
               cutscenePreviewActive = false;
               return;
             }
@@ -30072,9 +26097,9 @@
             debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
           } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
         }
-        const ready = await cutscenePreviewWaitForArea(area, 20000);
+        const ready = await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000);
         if (!ready) {
-          cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
           cutscenePreviewActive = false;
           return;
         }
@@ -30090,8 +26115,8 @@
 
         const targetScene = sceneForNpcArea(area);
         const targetGrid  = npcGridForArea(area);
-        const targetCols  = getActiveCols();
-        const targetRows  = getActiveRows();
+        const targetCols  = window.GridTileAccessors.getActiveCols();
+        const targetRows  = window.GridTileAccessors.getActiveRows();
 
         // ── Camera: an "establishing" mode for everything except active
         //    dialogue, computed from the Director's captured shot (already
@@ -30144,7 +26169,7 @@
           const p = payload.camera3d.worldPos, t = payload.camera3d.worldTarget;
           const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z;
           const distance = Math.max(0.5, Math.hypot(dx, dy, dz));
-          const angleFromGroundDeg = Math.asin(clamp(dy / distance, -1, 1)) * 180 / Math.PI;
+          const angleFromGroundDeg = Math.asin(window.FormatUtils.clamp(dy / distance, -1, 1)) * 180 / Math.PI;
           const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
           const shotModeKey = 'cutscenePreviewShot';
           window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
@@ -30216,7 +26241,7 @@
               }
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
-          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
           entities.set(actor.id, entity);
         }
 
@@ -30266,7 +26291,7 @@
           if (requestedNext && requestedNext !== '__next__') return stagesById.has(requestedNext) ? requestedNext : null;
           return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
         };
-        const angleTowardState = cutscenePreviewAngleToward;
+        const angleTowardState = window.CutscenePreviewHelpers.cutscenePreviewAngleToward;
         const buildGridPath = (start, goal) => {
           const path = [{ c: start.c, r: start.r }];
           let c = start.c, r = start.r, horizontalTurn = true;
@@ -30278,7 +26303,7 @@
           }
           return path;
         };
-        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) cutscenePreviewApplyState(entity, area, st); };
+        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st); };
 
         // Per-frame travel toward a tile-center target, reusing the real
         // game's own locomotion instead of the discrete grid-hop stepping
@@ -30342,7 +26367,7 @@
           cutscenePreviewDialogueSpeaker = null;
           enterDefaultCameraMode();
           activeCameraTarget = null;
-          cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+          window.CutscenePreviewHelpers.cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
         };
 
         async function openLine(entity, speakerName, text) {
@@ -30407,7 +26432,7 @@
           if (!running) return;
           const stage = stagesById.get(stageId);
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
-          cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+          window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
           if (stage.type === 'move') return runMove(stage);
           if (stage.type === 'animation') return runAnimation(stage);
@@ -30622,7 +26647,7 @@
         }
 
         function runFade(stage) {
-          const fadeEl = cutscenePreviewFadeEl();
+          const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl();
           const targetOpacity = stage.direction === 'out' ? 1 : 0;
           fadeEl.style.transitionDuration = `${stage.duration || 0}s`;
           requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
@@ -30721,7 +26746,7 @@
         cutsceneRotationTick();
 
         if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
-        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
         runStage(stageOrder[0]);
       }
 
@@ -30729,7 +26754,7 @@
         runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
           console.error('[cutscene preview] failed to start:', err);
           cutscenePreviewActive = false;
-          cutscenePreviewBanner('Preview failed to start — see console.', true);
+          window.CutscenePreviewHelpers.cutscenePreviewBanner('Preview failed to start — see console.', true);
         });
       }
 
