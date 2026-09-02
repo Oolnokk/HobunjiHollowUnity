@@ -1,4 +1,4 @@
-name: Inspect dialogue staging temp
+name: Fix livestock dialogue staging
 
 on:
   push:
@@ -7,31 +7,241 @@ on:
       - .github/workflows/inspect-dialogue-staging-temp.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  fix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: codex/animal-chathead-framing
-      - name: Print focused dialogue transition context
+          fetch-depth: 0
+      - name: Restore shared dialogue staging safely for livestock
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          lines = Path('docs/game.js').read_text().splitlines()
-          for lo, hi, title in [
-            (10416, 10680, 'dialogue staging'),
-          ]:
-            print(f'===== {title} {lo}:{hi} =====')
-            print('\n'.join(f'{i+1}: {lines[i]}' for i in range(lo-1, min(hi, len(lines)))))
-          for needle in ['dialogueZoomFactor()', 'activeCameraTarget', 'cameraAzimuthOffsetDeg', 'faceNpcDialogueParticipants()', 'updateNpcDialogueStaging(dt)']:
-            print(f'\n===== {needle} =====')
-            hits = [i for i,l in enumerate(lines) if needle in l]
-            print('hits', [i+1 for i in hits])
-            for i in hits[:12]:
-              lo=max(0,i-20); hi=min(len(lines),i+45)
-              print(f'--- {lo+1}:{hi} ---')
-              print('\n'.join(f'{j+1}: {lines[j]}' for j in range(lo,hi)))
+          import re
+
+          p = Path('docs/game.js')
+          s = p.read_text()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          # Preserve the dialogue options on the synthetic speaker so the shared
+          # per-frame staging/facing path can distinguish animal speakers from humanoids.
+          s = replace_once(
+              s,
+              """        dialogueOpen    = true;
+                  _dialogueWalker = walker;
+                  activeCameraMode   = npcDialogueCameraMode();
+              """,
+              """        dialogueOpen    = true;
+                  _dialogueWalker = walker;
+                  walker._dialogueOptions = options;
+                  activeCameraMode   = npcDialogueCameraMode();
+              """,
+              'dialogue options handoff',
+          )
+
+          # Keep player auto-approach/facing for every dialogue speaker, but guard the
+          # NPC-only body-facing/neck machinery and let animal speakers refresh their
+          # authored head-frame camera target every frame.
+          face_start = s.index('      function faceNpcDialogueParticipants() {')
+          face_end = s.index('      function updateNpcDialogueStaging(dt) {', face_start)
+          face = s[face_start:face_end]
+          face = replace_once(
+              face,
+              """        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+                  if (!walker?.root) return;
+                  const cfg = npcDialogueStagingConfig();
+              """,
+              """        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+                  if (!walker?.root) return;
+                  try { walker._onDialogueFrame?.(); }
+                  catch (err) { console.warn('[dialogue] frame hook failed', err); }
+                  const dialogueOptions = walker._dialogueOptions || {};
+                  const cfg = npcDialogueStagingConfig();
+              """,
+              'dialogue frame hook',
+          )
+          face = replace_once(
+              face,
+              """        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+                  const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+                  walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+              """,
+              """        if (dialogueOptions.skipSpeakerFacing !== true && typeof walker.applyFacingDeadzone === 'function') {
+                    const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+                    const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+                    walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+                  }
+              """,
+              'guard humanoid speaker facing',
+          )
+          face = replace_once(
+              face,
+              """        walker.root.updateMatrixWorld(true);
+                  playerMesh.updateMatrixWorld(true);
+              """,
+              """        if (dialogueOptions.skipEyeContact === true) return;
+                  walker.root.updateMatrixWorld(true);
+                  playerMesh.updateMatrixWorld(true);
+              """,
+              'guard humanoid eye contact',
+          )
+          s = s[:face_start] + face + s[face_end:]
+
+          # Make the camera target remain a scene-space object (camera follow expects
+          # target.position in world coordinates), but recompute that position from the
+          # animal's authored head frame every dialogue frame rather than snapshotting it.
+          target_start = s.index('      function createLivestockDialogueCameraTarget(animal, kind) {')
+          target_end = s.index('      async function openLivestockDialogue(', target_start)
+          target_fn = """      function createLivestockDialogueCameraTarget(animal, kind) {
+                const focus = new THREE.Object3D();
+                focus.name = `livestock_dialogue_head_${animal?.id || kind || 'animal'}`;
+                const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
+                const plane = animal?.avatarRef?.frontPlane || null;
+                const modelWidth = Number(animal?.modelWidth);
+                const modelHeight = Number(animal?.modelHeight);
+                const localHead = frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)
+                  ? new THREE.Vector3(
+                      (frame.x + frame.width * 0.5 - 0.5) * modelWidth,
+                      (0.5 - (frame.y + frame.height * 0.5)) * modelHeight,
+                      0,
+                    )
+                  : null;
+                const worldHead = new THREE.Vector3();
+                const update = () => {
+                  if (localHead && plane?.localToWorld) {
+                    plane.updateWorldMatrix?.(true, false);
+                    worldHead.copy(localHead);
+                    plane.localToWorld(worldHead);
+                    focus.position.copy(worldHead);
+                    return;
+                  }
+                  if (animal?.avatarRef?.group?.getWorldPosition) {
+                    animal.avatarRef.group.getWorldPosition(focus.position);
+                    focus.position.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
+                  }
+                };
+                update();
+                scene.add(focus);
+                return { focus, update };
+              }
+
+          """
+          s = s[:target_start] + target_fn + s[target_end:]
+
+          livestock_start = s.index('      async function openLivestockDialogue(')
+          livestock_end = s.index('      // advanceNpcDialogue now lives', livestock_start)
+          livestock = s[livestock_start:livestock_end]
+          livestock = replace_once(
+              livestock,
+              '        const focus = createLivestockDialogueCameraTarget(animal, kind);',
+              """        const cameraFocus = createLivestockDialogueCameraTarget(animal, kind);
+                  const focus = cameraFocus.focus;""",
+              'live livestock camera target',
+          )
+          livestock = replace_once(
+              livestock,
+              """          root: animal.avatarRef?.group,
+                    pause: 0,
+              """,
+              """          root: animal.avatarRef?.group,
+                    pause: 0,
+                    _onDialogueFrame: cameraFocus.update,
+              """,
+              'livestock frame hook wiring',
+          )
+          livestock = replace_once(
+              livestock,
+              """          cameraTarget: focus,
+                    skipStaging: true,
+                    skipNpcMeta: true,
+              """,
+              """          cameraTarget: focus,
+                    skipSpeakerFacing: true,
+                    skipEyeContact: true,
+                    skipNpcMeta: true,
+              """,
+              'restore livestock staging',
+          )
+          s = s[:livestock_start] + livestock + s[livestock_end:]
+
+          # Clear synthetic-speaker hooks on close. The normal camera restore remains
+          # untouched so livestock exits follow exactly the same heading path as NPCs.
+          s = replace_once(
+              s,
+              """          _dialogueWalker.pause = 0;
+                  try { _dialogueWalker._onDialogueClose?.(); }
+              """,
+              """          _dialogueWalker.pause = 0;
+                  _dialogueWalker._dialogueOptions = null;
+                  _dialogueWalker._onDialogueFrame = null;
+                  try { _dialogueWalker._onDialogueClose?.(); }
+              """,
+              'clear dialogue speaker hooks',
+          )
+          p.write_text(s)
+
+          # Cache-bust only game.js because this fix is entirely in game.js.
+          p = Path('docs/index.html')
+          s = p.read_text()
+          s, n = re.subn(r'<script src="game\.js\?v=[^"]+"></script>', '<script src="game.js?v=20260902livestock2"></script>', s, count=1)
+          if n != 1:
+              raise SystemExit(f'game.js cache-bust expected 1 match, found {n}')
+          p.write_text(s)
+
+          # Strengthen the regression test so the exact freeze cannot come back:
+          # livestock must use shared approach staging, while animal-only guards prevent
+          # the missing applyFacingDeadzone method from throwing out of the game loop.
+          p = Path('scripts/test-livestock-dialogue-chatheads.js')
+          t = p.read_text()
+          t = t.replace(
+              "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'livestock must skip humanoid staging');",
+              "assert(game.includes('if (options.skipStaging !== true) beginNpcDialogueStaging(walker);'), 'shared NPC dialogue shell must retain auto-approach staging');",
+              1,
+          )
+          anchor = "assert(game.includes('openLivestockDialogue,'), 'FarmAnimals must receive shared dialogue opener');\n"
+          if t.count(anchor) != 1:
+              raise SystemExit('test insertion anchor mismatch')
+          extra = """
+          const livestockStart = game.indexOf('async function openLivestockDialogue');
+          const livestockEnd = game.indexOf('// advanceNpcDialogue now lives', livestockStart);
+          const livestockDialogue = game.slice(livestockStart, livestockEnd);
+          assert(livestockStart >= 0 && livestockEnd > livestockStart, 'livestock dialogue block must be discoverable');
+          assert(!livestockDialogue.includes('skipStaging: true'), 'livestock must use the same player auto-approach staging as NPC dialogue');
+          assert(livestockDialogue.includes('skipSpeakerFacing: true'), 'animal dialogue must skip humanoid speaker body-facing only');
+          assert(livestockDialogue.includes('skipEyeContact: true'), 'animal dialogue must skip humanoid neck eye-contact only');
+          assert(livestockDialogue.includes('_onDialogueFrame: cameraFocus.update'), 'animal head focus must refresh during dialogue');
+          assert(game.includes("typeof walker.applyFacingDeadzone === 'function'"), 'dialogue facing must not throw for animal speakers without NPC methods');
+          assert(game.includes('walker._onDialogueFrame?.()'), 'shared dialogue frame loop must refresh animal camera focus');
+          assert(game.includes('plane.localToWorld(worldHead)'), 'head-frame focus must be recomputed in world space');
+          assert(game.includes('walker._dialogueOptions = options;'), 'shared dialogue must expose speaker-specific staging guards');
+          assert(game.includes('enterDefaultCameraMode();'), 'livestock must retain the ordinary NPC dialogue camera restore path');
+          """
+          t = t.replace(anchor, anchor + extra, 1)
+          p.write_text(t)
           PY
+      - name: Run final regressions
+        run: |
+          node --check docs/game.js
+          node --check docs/js/farm-animals.js
+          node --check docs/js/animal-vocalizations.js
+          node scripts/test-animal-chathead-framing.js
+          node scripts/test-animal-chathead-ambient.js
+          node scripts/test-animal-head-rig-runtime.js
+          node scripts/test-livestock-dialogue-chatheads.js
+      - name: Remove temporary inspector and commit fix
+        run: |
+          git rm .github/workflows/inspect-dialogue-staging-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/game.js docs/index.html scripts/test-livestock-dialogue-chatheads.js
+          git commit -m "Fix livestock dialogue staging and camera focus"
+          git push origin HEAD:codex/animal-chathead-framing
