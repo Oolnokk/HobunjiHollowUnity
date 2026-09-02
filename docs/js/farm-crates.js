@@ -19,6 +19,7 @@
     deps = injectedDeps;
     lastObservedDay = currentCalendarDay();
     installFarmPanelShippingIntegration();
+    installShippingPlacementGuard();
     installShippingLifecycle();
   }
 
@@ -115,7 +116,8 @@
     const area = currentArea();
 
     // If midnight arrives while the player is already away from the farm,
-    // there is nothing to defer: resolve the shipment at the cutoff itself.
+    // there is nothing to defer: the earlier departure already satisfied the
+    // hand-off condition, so resolve the now-eligible shipment at the cutoff.
     if (crossedMidnight && area && !isFarmContext(area)) {
       settlePendingShippingSale('player already away from farm');
     }
@@ -141,20 +143,62 @@
     shippingLifecycleTimer = window.setInterval(shippingLifecyclePulse, 500);
   }
 
+  function patchFarmPanel(panel) {
+    if (!panel?.init || panel.__shippingBoxFarmUiPatched) return;
+    const originalInit = panel.init.bind(panel); // Used to preserve FarmPanel initialization while retaining the exact dependency bundle game.js already supplies.
+    panel.init = function shippingAwareFarmPanelInit(injectedDeps, ...rest) {
+      farmPanelDeps = injectedDeps;
+      const result = originalInit(injectedDeps, ...rest);
+      bindFarmBuildingUiHooks();
+      return result;
+    };
+    panel.__shippingBoxFarmUiPatched = true;
+  }
+
   function installFarmPanelShippingIntegration() {
-    const panel = window.FarmPanel;
-    if (!panel) return;
-    if (!panel.__shippingBoxFarmUiPatched) {
-      const originalInit = panel.init; // Used to capture the same dependency bundle FarmPanel already receives from game.js.
-      panel.init = function shippingAwareFarmPanelInit(injectedDeps) {
-        farmPanelDeps = injectedDeps;
-        const result = originalInit.apply(this, arguments);
-        bindFarmBuildingUiHooks();
-        return result;
-      };
-      panel.__shippingBoxFarmUiPatched = true;
+    if (window.FarmPanel) {
+      patchFarmPanel(window.FarmPanel);
+      bindFarmBuildingUiHooks();
+      return;
     }
-    bindFarmBuildingUiHooks();
+
+    // farm-crates.js and farm-panel.js are both loaded before game.js, but do
+    // not rely on their relative script order. This accessor follows the same
+    // lazy FarmPanel-hook pattern already used by crop-billboard-presentation.
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel'); // Used to chain with any earlier lazy/global FarmPanel owner instead of replacing it.
+    if (descriptor && !descriptor.configurable) return;
+    const previousGet = descriptor?.get; // Used to preserve a previously installed FarmPanel getter.
+    const previousSet = descriptor?.set; // Used to preserve a previously installed FarmPanel setter.
+    let value = descriptor?.value; // Used as local storage only when no earlier accessor owns the global.
+    Object.defineProperty(window, 'FarmPanel', {
+      configurable: true,
+      get() {
+        return previousGet ? previousGet.call(window) : value;
+      },
+      set(next) {
+        if (previousSet) previousSet.call(window, next);
+        else value = next;
+        const current = previousGet ? previousGet.call(window) : value;
+        patchFarmPanel(current);
+      },
+    });
+  }
+
+  function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
+    return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
+  }
+
+  function installShippingPlacementGuard() {
+    const buildings = window.FarmBuildings;
+    if (!buildings?.canPlaceAt || buildings.__shippingBoxPlacementGuarded) return;
+    const originalCanPlaceAt = buildings.canPlaceAt.bind(buildings); // Used to keep all existing terrain/house/barn validation authoritative before adding the service-box footprint.
+    buildings.canPlaceAt = function shippingAwareCanPlaceAt(col, row, w, h, excludeId) {
+      if (!originalCanPlaceAt(col, row, w, h, excludeId)) return false;
+      const box = shippingBoxInstance;
+      if (!box || excludeId === box.id) return true;
+      return !rectsOverlap(col, row, w, h, box.col, box.row, box.w || 2, box.h || 1);
+    };
+    buildings.__shippingBoxPlacementGuarded = true;
   }
 
   function bindFarmBuildingUiHooks() {
@@ -177,7 +221,7 @@
         const col = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width) / px);
         const row = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height) / py);
         const result = moveShippingBoxFromFarmPanel(col, row);
-        (farmPanelDeps?.showToast || deps.showToast)(result.message, result.ok);
+        (farmPanelDeps?.showToast || deps?.showToast)?.(result.message, result.ok);
         if (result.ok) shippingMoveArmed = false;
         window.FarmPanel?.render?.();
         ensureShippingFarmBuildingRow();
@@ -201,8 +245,11 @@
           ensureShippingFarmBuildingRow();
         };
       }
-    } else if (note && note.textContent === 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.') {
-      note.textContent = 'Move a barn or the Shipping Box by clicking the map above. Place owned barn plans here, or open House Layout to edit your house.';
+    } else {
+      if (canvas) canvas.style.cursor = '';
+      if (note && note.textContent === 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.') {
+        note.textContent = 'Move a barn or the Shipping Box by clicking the map above. Place owned barn plans here, or open House Layout to edit your house.';
+      }
     }
   }
 
@@ -241,6 +288,7 @@
     const worldObjects = farmPanelDeps?.worldObjects;
     if (!box || !worldObjects) return { ok: false, message: 'Shipping Box move system is not ready.' };
     if (!Number.isFinite(col) || !Number.isFinite(row)) return { ok: false, message: 'Choose a valid farm tile.' };
+    installShippingPlacementGuard();
     const canPlace = window.FarmBuildings?.canPlaceAt?.(col, row, box.w || 2, box.h || 1, box.id);
     if (!canPlace) return { ok: false, message: 'The Shipping Box will not fit there.' };
 
@@ -439,6 +487,7 @@
       },
     };
     shippingBoxInstance = worldObject;
+    installShippingPlacementGuard();
     ensureShippingFarmBuildingRow();
     return worldObject;
   }
@@ -493,6 +542,11 @@
       reset() { Object.keys(qtys).forEach(k => { qtys[k] = 0; }); },
     };
   }
+
+  // Install the FarmPanel hook as soon as this module loads, not only when
+  // game.js later initializes FarmCrates. This makes dependency capture
+  // independent of whether FarmPanel.init happens before or after FarmCrates.init.
+  installFarmPanelShippingIntegration();
 
   window.FarmCrates = {
     init,
