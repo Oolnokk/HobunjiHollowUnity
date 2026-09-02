@@ -1,4 +1,4 @@
-name: Implement livestock dialogue v5
+name: Implement livestock dialogue v6
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
           ref: codex/animal-chathead-framing
           fetch-depth: 0
       - name: Apply feature
-        run: python3 scripts/apply-livestock-dialogue-temp.py
+        run: python3 scripts/run-livestock-dialogue-temp-v2.py
       - name: Run scoped regressions
         run: |
           node --check docs/config/attachment-rig-profiles.js
