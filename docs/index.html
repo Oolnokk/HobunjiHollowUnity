@@ -89,6 +89,11 @@
        calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
        from its own init() call further down game.js. -->
   <script src="js/zone-regrowth.js?v=20260902mod1"></script>
+  <!-- Player health/stamina/footing regen tick and the vitals-bar HUD
+       refresh, extracted out of game.js. Must load before game.js, which
+       calls window.PlayerVitals.init(...) alongside the other
+       window.*.init(...) calls. -->
+  <script src="js/player-vitals.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

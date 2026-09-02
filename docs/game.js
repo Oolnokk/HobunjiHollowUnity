@@ -8104,20 +8104,9 @@
       // js/bandit-camps.js (window.BanditCamps) -- see
       // window.BanditCamps.init(...) below for the wiring.
 
-      function updatePlayerVitals(dt) {
-        // Health/Stamina regen, Exhausted/black-stamina recovery, and every
-        // affliction's own tick (bleed/poison/congealed/recovery/puke) —
-        // see docs/js/combat/resource-system.js. Passing the existing
-        // per-second constants keeps un-afflicted regen feeling the same
-        // as before this system existed; quiet rest now doubles it.
-        const tickResult = window.ResourceSystem?.tick(player, dt, {
-          staminaRegenPerSec: PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
-          healthRegenPerSec: PLAYER_HEALTH_REGEN,
-        });
-        if (tickResult?.puked) showToast('You feel queasy...', false);
-        if (player.dodgeCooldownT > 0) player.dodgeCooldownT = Math.max(0, player.dodgeCooldownT - dt);
-        refreshVitalsHud();
-      }
+      // Player health/stamina/footing regen tick and the vitals-bar HUD
+      // refresh (updatePlayerVitals/refreshVitalsHud) now live in
+      // js/player-vitals.js — call via window.PlayerVitals.*.
 
       // Dodging never refuses for lack of Stamina — overspending pushes the
       // player into Exhausted (black-stamina debt) instead, mirroring the
@@ -8344,27 +8333,6 @@
           })) return true;
         }
         return false;
-      }
-
-      const _vbHealthFill  = document.getElementById('vbHealthFill');
-      const _vbStaminaFill = document.getElementById('vbStaminaFill');
-      const _vbFootingFill = document.getElementById('vbFootingFill');
-      // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
-      // rewrite the same style.width value every frame.
-      let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
-      function refreshVitalsHud() {
-        if (_vbHealthFill) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.health / player.maxHealth * 100)));
-          if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
-        }
-        if (_vbStaminaFill) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100)));
-          if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
-        }
-        if (_vbFootingFill && player.maxFooting) {
-          const pct = Math.round(Math.max(0, Math.min(100, player.footing / player.maxFooting * 100)));
-          if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
-        }
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -21306,7 +21274,7 @@
           window.PerfProfiler?.end(wildernessChunkPerf);
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
-          updatePlayerVitals(dt);
+          window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
@@ -25360,6 +25328,10 @@
         removeZoneVegetationVisual, _buildZoneFloorMeshes,
         markTerrainEdgeId: _markTerrainEdgeId,
         getCurrentArea: () => currentArea,
+      });
+
+      window.PlayerVitals?.init({
+        player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
       });
 
       window.ZoneTerrainFeatures?.init({

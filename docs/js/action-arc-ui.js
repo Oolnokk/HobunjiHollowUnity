@@ -24,7 +24,11 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  const _itemBtn = document.getElementById('itemBtn');
+  // Resolved in _bindListeners() (called from init(), after game.js's own
+  // script tag runs), not here at module top-level — this script loads in
+  // <head> before <body> exists, so a top-level getElementById() here would
+  // always capture null.
+  let _itemBtn = null;
   const ARC_S = 175, ARC_E = 95;
   const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
   const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
@@ -398,6 +402,7 @@
   }
 
   function _bindListeners() {
+    _itemBtn = document.getElementById('itemBtn');
     window._desktopSelectionArc = {
       openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
       openItem() { if (_arcOpen !== 'item') _openItemArc(); },
