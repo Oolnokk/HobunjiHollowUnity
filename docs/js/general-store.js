@@ -208,5 +208,5 @@
 // world adapter in its own module, but synchronously include it here during
 // document parsing so FarmCrates.makeSellCrate is patched before world boot.
 if (document.readyState === 'loading' && !window.__shippingBoxWorldInstalled) {
-  document.write('<script src="js/shipping-box-world.js?v=20260902shipping4"><\\/script>');
+  document.write('<script src="js/shipping-box-world.js?v=20260902shipping4"></scr' + 'ipt>');
 }
