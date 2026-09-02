@@ -1,33 +1,31 @@
 (() => {
   'use strict';
 
-  // A player-craftable campfire that can be set up anywhere in the wilderness
-  // (any zone area — not farm/town/interior). Reuses the "campfire" authored
-  // furniture piece (docs/config/furniture-authored/campfire.json). Crafted
-  // as an ordinary "Campfire Kit" item (DECORATIVE_FURNITURE_DEFS.campfire
-  // in game.js — buy the blueprint from the carpenter, build it from Wood
-  // + Stone in the Inventory's Crafting tab), then placed by selecting it,
-  // aiming at a tile, and using Action 1 (see computeActionButtons' campfire
-  // branch and useActiveAction's own place_campfire_kit case in game.js,
-  // which calls placeFromKit(col, row) below immediately rather than through
-  // the generic pendingAction path — see that case's own comment for why).
-  // Only one can exist at a time — placing a new one silently replaces it —
-  // and it now persists indefinitely once placed, across leaving its map,
-  // other zones, the farm, and an ordinary save/reload (see serialize/
-  // restore), until the player either places a new one or a Tothal Shift
-  // reshapes its own zone's terrain out from under it (see clearIfZone,
-  // called from the shift loop for exactly that reason). The utilities
-  // wheel's Return to Camp travels there from anywhere via game.js's
-  // enterZone when it isn't the current area (see _openUtilitiesArc).
+  // One player-owned portable campfire may exist at a time. It can be placed
+  // in a wilderness zone or on a procedural Town Mine floor, persists as
+  // world-member state across map changes and game sessions, and silently
+  // replaces the previous campfire when a new kit is used. Mine-floor camps
+  // are the one exception to indefinite persistence: dying anywhere in the
+  // Town Mine destroys the currently placed campfire if that campfire is
+  // underground. Reuses the authored campfire furniture + its existing
+  // Save/Cook/Brew/Return-to-Camp interactions rather than creating a second
+  // underground-only camp system.
   const KIT_ITEM_KEY = 'campfireKitFurniture';
 
   let deps = null;
-  let group = null; // Live THREE.Group in the scene, or null when not spawned/visible.
-  let emitterVisuals = []; // Live fire/smoke THREE.Points, one per campfire.json particleEmitters entry — see updateVfx.
-  let state = null; // { mapId, x, y, z, ry } in tile-units, or null when no campfire is placed.
+  let group = null; // Live campfire THREE.Group in whichever scene currently owns the saved campfire map.
+  let visualArea = null; // Map id whose scene currently owns group; kept separate from persistent state.
+  let visualSpawnPending = false; // Prevents repeated promise callbacks while authored furniture is still loading.
+  let emitterVisuals = []; // Live fire/smoke THREE.Points, one per authored particle emitter.
+  let state = null; // Persistent { mapId, x, y, z, ry } placement in tile units.
+  let returnPending = false; // Used when Return to Camp must first load/regenerate another map (notably a mine floor).
   let campfireDataPromise = null;
 
   function init(injectedDeps) { deps = injectedDeps; }
+
+  function supportsArea(area = deps?.getCurrentArea?.()) {
+    return !!(area && (deps?.isZoneArea?.(area) || deps?.isMineArea?.(area)));
+  }
 
   function ensureLoaded() {
     if (!campfireDataPromise) campfireDataPromise = deps.AuthoredFurniture.load('campfire');
@@ -37,54 +35,90 @@
   function removeVisual() {
     emitterVisuals.forEach(visual => visual?.dispose?.());
     emitterVisuals = [];
-    if (group) { group.parent?.remove(group); group = null; }
+    if (group) group.parent?.remove?.(group);
+    group = null;
+    visualArea = null;
+  }
+
+  function isHere() { return !!(state && state.mapId === deps?.getCurrentArea?.()); }
+
+  function returnToCampfire() {
+    if (!isHere()) return { ok: false, message: 'No campfire here to return to.' };
+    const player = deps.getPlayer();
+    player.x = state.x * deps.TILE;
+    player.y = state.z * deps.TILE;
+    player.vx = 0;
+    player.vy = 0;
+    returnPending = false;
+    return { ok: true, message: 'You return to your campfire.' };
   }
 
   function spawnVisual() {
     removeVisual();
-    if (!state) return;
+    if (!state || state.mapId !== deps.getCurrentArea()) return;
+    if (deps.isAreaSceneReady?.(state.mapId) === false) return;
     const data = deps.AuthoredFurniture.peek('campfire');
-    if (!data) { ensureLoaded().then(spawnVisual); return; }
+    if (!data) return;
+    const targetScene = deps.getActiveScene?.();
+    if (!targetScene?.add) return;
+    const surfaceY = Number(deps.surfaceYAt?.(state.x, state.z)); // Re-sampled after map regeneration so restored mine fires sit on the rebuilt floor.
+    if (Number.isFinite(surfaceY)) state.y = surfaceY;
     const built = deps.AuthoredFurniture.buildGroup(data);
     built.position.set(state.x, state.y, state.z);
     built.rotation.y = state.ry || 0;
-    deps.getActiveScene().add(built);
+    targetScene.add(built);
     group = built;
-    // buildGroup only builds the geometry (data.parts) — the fire/smoke
-    // particle systems are a separate live THREE.Points each, driven every
-    // frame by updateVfx below (see makeProcessingFurniture's identical
-    // pattern in game.js, which this mirrors for an always-on, never-job-
-    // gated campfire instead of a processing station's burst/timed VFX).
+    visualArea = state.mapId;
     emitterVisuals = (data.particleEmitters || []).map(record => deps.AuthoredFurniture.createEmitterVisual(built, record));
+    if (returnPending) returnToCampfire(); // Deferred until the destination scene actually exists, so generated mine entry does not overwrite the teleport.
   }
 
-  // Called every frame (see game.js's main loop) so the fire/smoke keep
-  // animating regardless of area — always "active" (unlike a processing
-  // station's job-gated burst) since a lit campfire has no on/off state.
+  function ensureVisualForCurrentArea() {
+    const area = deps?.getCurrentArea?.();
+    if (!state || state.mapId !== area) {
+      if (group) removeVisual(); // Remove only the scene object; persistent placement survives leaving its map.
+      return;
+    }
+    if (deps.isAreaSceneReady?.(area) === false) return;
+    const targetScene = deps.getActiveScene?.();
+    if (group && visualArea === area && group.parent === targetScene) return;
+    if (group) removeVisual();
+    if (deps.AuthoredFurniture.peek('campfire')) {
+      spawnVisual();
+      return;
+    }
+    if (visualSpawnPending) return;
+    visualSpawnPending = true;
+    ensureLoaded().then(() => {
+      visualSpawnPending = false;
+      if (state?.mapId === deps?.getCurrentArea?.()) spawnVisual();
+    }).catch(() => { visualSpawnPending = false; });
+  }
+
+  // Called every frame so a saved fire automatically reattaches after any
+  // scene/map change, including a cold-session restore followed by returning
+  // to its old map. This removes the old wilderness-only entry dependency.
   function updateVfx(dt) {
+    ensureVisualForCurrentArea();
     for (const visual of emitterVisuals) visual?.update?.(dt, true);
   }
 
-  // Places the campfire at an explicit tile (col, row — the aimed reticle
-  // tile, same tile-unit convention docs/js/reagent-plants.js uses: world
-  // x/z is col+0.5/row+0.5, no TILE division). Internal — callers go
-  // through placeFromKit(), which also consumes the held item.
   function place(col, row) {
     const area = deps.getCurrentArea();
-    if (!deps.isZoneArea(area)) return { ok: false, message: "You can only set up a campfire out in the wilderness." };
-    const wx = col + 0.5, wz = row + 0.5;
+    if (!supportsArea(area)) return { ok: false, message: 'You can only set up a campfire in the wilderness or on a mine floor.' };
+    const wx = col + 0.5;
+    const wz = row + 0.5;
+    removeVisual(); // Placing one new fire destroys the old visual globally before replacing its persistent record.
     state = { mapId: area, x: wx, y: deps.surfaceYAt(wx, wz), z: wz, ry: deps.getFacingAngle() };
-    ensureLoaded().then(spawnVisual);
+    returnPending = false;
+    ensureVisualForCurrentArea();
     deps.persist?.();
-    return { ok: true, message: "🔥 Campfire set up. You can save, cook, mix potions, and return here." };
+    return { ok: true, message: '🔥 Campfire set up. You can save, cook, mix potions, and return here.' };
   }
 
-  // Consumes one Campfire Kit from inventory and places it at (col, row) —
-  // called from game.js's useActiveAction when the player aims at a tile
-  // and uses Action 1 while holding the kit.
   function placeFromKit(col, row) {
     const area = deps.getCurrentArea();
-    if (!deps.isZoneArea(area)) return { ok: false, message: "You can only set up a campfire out in the wilderness." };
+    if (!supportsArea(area)) return { ok: false, message: 'You can only set up a campfire in the wilderness or on a mine floor.' };
     if ((deps.inventory[KIT_ITEM_KEY] || 0) < 1) return { ok: false, message: 'No Campfire Kit to use.' };
     deps.inventory[KIT_ITEM_KEY] -= 1;
     deps.clampInventoryStack?.(KIT_ITEM_KEY);
@@ -94,32 +128,57 @@
   }
 
   function clear() {
-    if (!state) return;
+    if (!state) return false;
     state = null;
+    returnPending = false;
     removeVisual();
     deps.persist?.();
+    return true;
   }
 
-  // Called from the Tothal Shift reshape loop for whichever zoneId just got
-  // regenerated, regardless of whether the player is standing in it right
-  // now — a still-active campfire's exact (x,z) is only meaningful against
-  // the terrain it was placed on, and that terrain no longer exists once
-  // this fires. Losing the campfire here (rather than leaving a stale
-  // reference to it) matches how bandit camps/wildlife dens already handle
-  // the same event (see their own forgetZoneState/forgetZoneDenState calls
-  // right next to this one in the shift loop).
+  // Tothal Shift only passes wilderness zone ids. The persistent record is
+  // destroyed when that specific terrain is replaced, just as before.
   function clearIfZone(mapId) {
-    if (state && state.mapId === mapId) clear();
+    if (state && state.mapId === mapId && deps.isZoneArea?.(mapId)) return clear();
+    return false;
   }
 
-  // Called once a wilderness zone scene finishes building, to re-attach a
-  // surviving campfire's visual (e.g. after a same-session save/reload that
-  // lands the player back on the same map they camped on).
+  // A death anywhere on a Town Mine floor ends the underground camp. A
+  // wilderness camp remains untouched by a mine death.
+  function clearMineCampfireOnDeath() {
+    if (state && deps.isMineArea?.(state.mapId)) return clear();
+    return false;
+  }
+
+  // Town Mine floors regenerate their cavern layout on re-entry. Keep the
+  // persistent campfire on the same floor, but if its exact old tile no
+  // longer exists, move it to the nearest geometry-safe floor tile. The mine
+  // generator separately excludes that resulting tile from rocks/enemies.
+  function relocateForGeneratedMineFloor(mapId, floorTiles) {
+    if (!state || state.mapId !== mapId || !deps.isMineArea?.(mapId) || !Array.isArray(floorTiles) || !floorTiles.length) return false;
+    const targetCol = Math.floor(state.x);
+    const targetRow = Math.floor(state.z);
+    let best = floorTiles[0];
+    let bestDistance = Infinity;
+    for (const tile of floorTiles) {
+      const distance = (tile[0] - targetCol) ** 2 + (tile[1] - targetRow) ** 2;
+      if (distance < bestDistance) { bestDistance = distance; best = tile; }
+      if (distance === 0) break;
+    }
+    const nextX = best[0] + 0.5;
+    const nextZ = best[1] + 0.5;
+    if (nextX === state.x && nextZ === state.z) return false;
+    state.x = nextX;
+    state.z = nextZ;
+    state.y = 0; // Re-sampled from the active regenerated scene by spawnVisual().
+    return true;
+  }
+
+  // Existing wilderness entry callers can keep using this hook, while the
+  // per-frame scene reconciliation above also covers mines and cold restores.
   function onZoneEntered(mapId) {
-    if (state && state.mapId === mapId && !group) ensureLoaded().then(spawnVisual);
+    if (state?.mapId === mapId) ensureVisualForCurrentArea();
   }
-
-  function isHere() { return !!(state && state.mapId === deps.getCurrentArea()); }
 
   function distanceToPlayerTiles() {
     if (!state) return Infinity;
@@ -127,14 +186,8 @@
     return Math.hypot(player.x / deps.TILE - state.x, player.y / deps.TILE - state.z);
   }
 
-  const NEARBY_TILES = 1.75; // "at the campfire" radius for the interact-list actions below.
+  const NEARBY_TILES = 1.75;
 
-  // Walk-up interact buttons — mirrors bandit-camps.js's getNearbyTentAction
-  // (the established pattern for a wilderness-zone proximity interactable),
-  // but returns up to three buttons at once instead of one, so Save/Cook/
-  // Brew each land on their own action-bar slot (see useActiveAction's
-  // campfire_save/campfire_cook/campfire_brew cases in game.js) instead of
-  // behind a single button that used to open a floating panel.
   function getNearbyActions() {
     if (!isHere() || distanceToPlayerTiles() > NEARBY_TILES) return null;
     const cookRank = window.PerkSystem?.rank('foraging', 'survivalist') || 0;
@@ -164,31 +217,24 @@
     deps.openMenu('alchemy');
   }
 
-  // Repositions the player onto the campfire's exact tile — only valid
-  // while already standing in its zone (isHere()). Traveling there from a
-  // different zone/the farm is a separate concern the utility wheel handles
-  // itself (see _openUtilitiesArc's return-camp entry in game.js): it reads
-  // serialize() to get the mapId, calls game.js's own enterZone to actually
-  // travel, and only falls back to this function once already there.
-  function returnToCampfire() {
-    if (!isHere()) return { ok: false, message: "No campfire here to return to." };
-    const player = deps.getPlayer();
-    player.x = state.x * deps.TILE;
-    player.y = state.z * deps.TILE;
-    player.vx = 0; player.vy = 0;
-    return { ok: true, message: "You return to your campfire." };
+  function requestReturnToCampfire() {
+    if (!state) return null;
+    returnPending = true;
+    return { ...state };
   }
 
   function serialize() { return state ? { ...state } : null; }
 
   function restore(saved) {
     state = saved && saved.mapId ? { ...saved } : null;
-    removeVisual(); // The visual spawns lazily the next time onZoneEntered fires for this map.
+    returnPending = false;
+    removeVisual();
   }
 
   window.WildernessCampfire = {
-    init, place, placeFromKit, clear, clearIfZone, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
-    getNearbyActions, returnToCampfire, doSave, doCook, doBrew,
+    init, supportsArea, place, placeFromKit, clear, clearIfZone, clearMineCampfireOnDeath,
+    relocateForGeneratedMineFloor, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
+    getNearbyActions, returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
     serialize, restore, ensureLoaded,
   };
 })();

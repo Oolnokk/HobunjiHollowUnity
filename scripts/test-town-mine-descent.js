@@ -35,6 +35,18 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
 
 (async () => {
   const mine = context.window.TownMine;
+  let mineSaveCalls = 0;
+  mine.init({ save: () => { mineSaveCalls += 1; } });
+  mine.restore({ deepestFloor: 4, unlockedShortcutTiers: [], townValue: 0, discoveredOreKeys: [] });
+  assert.strictEqual(mine.recordFloorReached(5), true, 'Reaching a new deepest floor should report progression');
+  assert.strictEqual(mineSaveCalls, 1, 'Reaching a new deepest floor should save immediately');
+  assert.strictEqual(mine.recordFloorReached(3), false, 'Revisiting a shallower floor should not count as new progression');
+  assert.strictEqual(mineSaveCalls, 1, 'Revisiting an older floor should not cause redundant saves');
+  const progressionRoundTrip = mine.serialize();
+  mine.restore(null);
+  assert.strictEqual(mine.serialize().deepestFloor, 0, 'A blank restore should reset mine progression');
+  mine.restore(progressionRoundTrip);
+  assert.strictEqual(mine.serialize().deepestFloor, 5, 'Serialized deepest floor should survive a restore round trip');
   const entrance = townMap.buildings.find(building => building.id === 'bldg_town_mine_entry');
   assert.strictEqual(entrance?.pieceFile, 'config/pieces/mine_entrance.json', 'Town should persist the supplied movable mine entrance building');
   assert.ok(townMap.transitions.some(transition => transition.buildingId === entrance.id && transition.targetMapId === safeRoom.id), 'The movable entrance should own the safe-room transition');
@@ -96,6 +108,8 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.strictEqual(perkContext.window.SkillSystem.actionSpeedMultiplier('mining'), 1, 'Mining level alone should no longer grant speed');
 
   const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+  assert.ok(gameSource.includes('member.townMineState = window.TownMine?.serialize?.() || null;'), 'Member-world saves must include Town Mine progression');
+  assert.ok(gameSource.includes('window.TownMine?.restore?.(playerData.townMineState);'), 'Player startup must restore Town Mine progression');
   const oreDefsMatch = gameSource.match(/const ORE_DEFS = (\{[\s\S]*?\n      \}); \/\/ Used by mine drops/);
   const recipesMatch = gameSource.match(/const METAL_BAR_RECIPES = (\{[\s\S]*?\n      \}); \/\/ Used by the Crafting pane/);
   assert.ok(oreDefsMatch && recipesMatch, 'Metallurgy definitions should remain test-readable in game.js');

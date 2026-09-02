@@ -341,7 +341,8 @@
     installAccountShim();
     activeNpcForShim = npc;
     const appearance = npc.appearance || {};
-    const profile = randomProfile(`npc-json:${npc.name || ''}:${JSON.stringify(appearance.cosmetics || {})}`, {
+    const profileSeed = appearance.randomSeed || `npc-json:${npc.name || ''}:${JSON.stringify(appearance.cosmetics || {})}`; // Lets generated NPCs vary authored species palettes without changing their visible names.
+    const profile = randomProfile(profileSeed, {
       speciesId: appearance.speciesId,
       gender: appearance.gender,
     });

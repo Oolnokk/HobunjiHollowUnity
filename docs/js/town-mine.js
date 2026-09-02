@@ -9,7 +9,7 @@
   let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0, discoveredOreKeys: [] }; // Used as the world-member mine progression and permanent ore-recipe discovery saved alongside inventory and quests.
   const floorVisitCounts = new Map(); // Used to give every entry a fresh layout/content seed instead of treating a numbered floor as a permanent map.
   const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
-  const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
+  const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg', volumeMultiplier: 2 }; // Ghoul-floor music deliberately plays at twice the ordinary BGM base level.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -99,6 +99,9 @@
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
     const excluded = new Set(generated.exitTiles.map(([col, row]) => `${col},${row}`)); // Used to keep the entrance clear of rocks and enemies.
     const safePlacementFloor = placementSafeTiles(generated.floor); // Used for content only; every generated floor tile remains walkable, but edge-adjacent cells no longer hide rocks inside sculpted geometry.
+    window.WildernessCampfire?.relocateForGeneratedMineFloor?.(mapId, safePlacementFloor); // Keeps a persistent underground camp on this regenerated floor, snapping only when its old tile no longer exists.
+    const persistedCampfire = window.WildernessCampfire?.serialize?.(); // Used to reserve the restored camp tile from this visit's rocks and enemies.
+    if (persistedCampfire?.mapId === mapId) excluded.add(`${Math.floor(persistedCampfire.x)},${Math.floor(persistedCampfire.z)}`);
     const ordinaryRockCount = Math.min(safePlacementFloor.length, Math.max(8, Math.min(24, Math.round(generated.floor.length / 7)))); // Used to make searching for a weak patch a real mining process without sealing the cave.
     const ordinaryTiles = pickSeparatedTiles(rng, safePlacementFloor, excluded, ordinaryRockCount);
     const tierOreKeys = config.oreTierOreKeys?.[tier - 1] || ['copper']; // Used to provide elemental ores rather than impossible alloy-bearing rocks.
@@ -180,7 +183,11 @@
   }
 
   function recordFloorReached(floor) {
-    progression.deepestFloor = Math.max(progression.deepestFloor, Math.max(0, Math.min(100, Math.floor(Number(floor) || 0))));
+    const reachedFloor = Math.max(0, Math.min(100, Math.floor(Number(floor) || 0))); // Normalized before comparing so malformed map data can never lower/corrupt progression.
+    if (reachedFloor <= progression.deepestFloor) return false;
+    progression.deepestFloor = reachedFloor;
+    deps?.save?.(); // Reaching a new personal best is progression itself, so persist immediately instead of waiting for an unrelated later save.
+    return true;
   }
 
   function serialize() {

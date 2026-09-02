@@ -4552,6 +4552,7 @@
 
       function respawnPlayer() {
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
+          window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
           const root = window.TownMine.farmRootTotem?.(COLS, ROWS) || { spawnX: Math.floor(COLS * 0.5), spawnY: Math.floor(ROWS * 0.72) };
           player.x = (root.spawnX + 0.5) * TILE;
@@ -12528,7 +12529,7 @@
               const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
               const rosterOverride = {
                 name: 'Ghoul',
-                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, bodyColors: { A: { h: 0, s: -0.82, v: 0.38 }, B: { h: 6, s: -0.78, v: 0.28 }, C: { h: -4, s: -0.7, v: 0.22 } } },
+                appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `mine-ghoul:${mapData.mineFloor}:${spawn.col}:${spawn.row}` }, // Use Ghoul's authored pink skin palette instead of the old bright desaturated white override.
                 equippedCosmetics: [],
                 appliedDyes: {},
               };
@@ -24706,7 +24707,12 @@
                   // entry col/row (same fire-and-forget async-inside-
                   // startSceneTransition pattern performTravel's own 'zone'
                   // case uses for an ordinary authored zone transition).
-                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
+                    window.WildernessCampfire?.requestReturnToCampfire?.();
+                    startSceneTransition(() => enterBuilding(campfire.mapId));
+                  } else {
+                    startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  }
                 }
               },
             },
@@ -25288,6 +25294,14 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Procedural mine floors are building interiors, so they return from
+          // this branch before the general wilderness/town action block below.
+          // Surface campfires are handled there; mine campfires must expose the
+          // same nearby Save/Cook/Brew actions here instead.
+          const mineCampfireActions = window.TownMine?.floorFromMapId?.(currentArea)
+            ? window.WildernessCampfire?.getNearbyActions?.()
+            : null;
+          if (mineCampfireActions?.length) return mineCampfireActions;
           // Building interiors return early above and never reach the
           // farm/zone/town item-context block further down (it also relies
           // on a reticle/tile pair this branch never computes) — without
@@ -25298,6 +25312,13 @@
           // indoors so isn't duplicated here.
           if (heldMode === 'item') {
             const heldItem = getActiveInventoryItem();
+            // Mine floors are building interiors, so the general held-item
+            // campfire-kit branch below is unreachable here. Mirror it in this
+            // early-return branch so Action 1 can actually set up a campfire
+            // underground instead of silently omitting the button.
+            if (heldItem && heldItem.key === 'campfireKitFurniture' && window.WildernessCampfire?.supportsArea?.(currentArea)) {
+              return [{ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            }
             const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
             if (flaskActions.length) return flaskActions;
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
@@ -25342,7 +25363,7 @@
         // tents above — walking up to it puts Save/Cook/Brew each on their
         // own action-bar slot (Return to Camp lives on the utilities wheel
         // instead — see the 'c' hold-key handling further down).
-        const campfireActions = _isZoneArea(currentArea)
+        const campfireActions = window.WildernessCampfire?.supportsArea?.(currentArea)
           ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
         if (campfireActions?.length) return campfireActions;
@@ -25428,7 +25449,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -28746,6 +28767,8 @@
       window.WildernessCampfire?.init({
         getCurrentArea: () => currentArea,
         isZoneArea: _isZoneArea,
+        isMineArea: area => !!window.TownMine?.floorFromMapId?.(area),
+        isAreaSceneReady: area => !_isBuildingArea(area) || !!_buildingScenes.get(area)?.scene,
         getActiveScene,
         getPlayer: () => player,
         getFacingAngle: () => facingAngle,
