@@ -1,0 +1,37 @@
+name: Fix mine campfire placement
+on:
+  push:
+    branches:
+      - codex/persistent-mine-campfires-20260902
+    paths:
+      - .github/codex/fix-mine-campfire-placement.py
+      - .github/workflows/codex-fix-mine-campfire-placement.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/persistent-mine-campfires-20260902
+          fetch-depth: 0
+      - name: Apply source fix
+        run: python3 .github/codex/fix-mine-campfire-placement.py
+      - name: Validate
+        run: |
+          node --check docs/game.js
+          node scripts/test-persistent-mine-campfires.js
+          grep -q "const mineCampfireActions" docs/game.js
+          grep -q "heldItem.key === 'campfireKitFurniture' && window.WildernessCampfire?.supportsArea?.(currentArea)" docs/game.js
+      - name: Remove temporary machinery
+        run: |
+          rm -f .github/codex/fix-mine-campfire-placement.py
+          rm -f .github/workflows/codex-fix-mine-campfire-placement.yml
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix campfire placement on mine floors"
+          git push origin HEAD:codex/persistent-mine-campfires-20260902
