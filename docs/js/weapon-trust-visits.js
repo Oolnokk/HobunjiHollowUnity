@@ -10,6 +10,9 @@
     return;
   }
 
+  const IS_DIALOGUE_EDITOR = String(global.location?.pathname || '').includes('/tools/dialogue-editor');
+  const NATURAL_END_MARKER = '\u2063'; // Invisible separator appended only to runtime visitor terminal text so Continue can be distinguished from Leave/Escape.
+
   let dialogueDeps = null; // DialogueContent's narrow adapters; used only for natural dialogue close integration.
   let scheduleDeps = null; // NpcScheduling adapters; authoritative live npcWalkers array.
   let craftDeps = null; // MetalCraftShop adapters; authoritative gear/smithing/save functions.
@@ -19,6 +22,7 @@
   let lastArea = null;
   let lastSyncAt = 0;
   let frameHandle = 0;
+  let editorObserver = null;
   const patchedApis = new WeakSet();
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -114,6 +118,8 @@
       const rec = source?.rec;
       if (!rec) continue;
       if (!Array.isArray(rec.dialogueTrees)) rec.dialogueTrees = [];
+      // A tree authored/exported from the Dialogue Editor wins over the
+      // config-generated fallback by ID; never overwrite authored content.
       if (!rec.dialogueTrees.some(tree => tree?.id === gift.dialogueTreeId)) rec.dialogueTrees.push(dialogueTreeFromGift(gift));
     }
   }
@@ -121,14 +127,59 @@
   function removeStarterGiftItems(playerData) {
     const remove = cfg.onboarding?.removeStarterItemKeys || [];
     const gear = playerData?.gearInventory || playerData?.gear || null;
-    if (!gear || !remove.length) return;
-    if (gear.tools) for (const itemKey of remove) delete gear.tools[itemKey];
+    if (!gear || !remove.length) return false;
+    let changed = false;
+    if (gear.tools) {
+      for (const itemKey of remove) {
+        if (!Object.prototype.hasOwnProperty.call(gear.tools, itemKey)) continue;
+        delete gear.tools[itemKey];
+        changed = true;
+      }
+    }
     const slots = gear.equipmentSlots || playerData?.equipmentSlots || null;
     if (slots) {
       for (const [slot, itemKey] of Object.entries(slots)) {
-        if (remove.includes(itemKey)) slots[slot] = null;
+        if (!remove.includes(itemKey)) continue;
+        slots[slot] = null;
+        changed = true;
       }
     }
+    return changed;
+  }
+
+  function readSaveMeta() {
+    try { return JSON.parse(global.localStorage?.getItem('hobunjiSaveMeta') || 'null'); }
+    catch (_) { return null; }
+  }
+
+  function isFreshlyCreatedCharacter(playerData) {
+    // isNewWorld alone is insufficient: an old character can create a new
+    // world and must keep gear that travels with that character. The new-
+    // character path creates its character and first world together, so
+    // their persisted creation timestamps are effectively identical.
+    if (!playerData?.characterId || !playerData?.worldId || playerData?.isNewWorld !== true) return false;
+    const meta = readSaveMeta();
+    const character = meta?.characters?.find?.(entry => entry?.id === playerData.characterId);
+    const world = meta?.worlds?.find?.(entry => entry?.id === playerData.worldId);
+    const characterCreatedAt = Number(character?.createdAt);
+    const worldCreatedAt = Number(world?.createdAt);
+    const toleranceMs = Math.max(0, Number(cfg.onboarding?.newCharacterCreationToleranceMs) || 5000);
+    return Number.isFinite(characterCreatedAt)
+      && Number.isFinite(worldCreatedAt)
+      && Math.abs(characterCreatedAt - worldCreatedAt) <= toleranceMs;
+  }
+
+  function removeStarterGiftItemsFromNewCharacter(playerData) {
+    if (!isFreshlyCreatedCharacter(playerData)) return false;
+    const changedLive = removeStarterGiftItems(playerData);
+    const meta = readSaveMeta();
+    const character = meta?.characters?.find?.(entry => entry?.id === playerData.characterId);
+    const changedPersisted = removeStarterGiftItems(character ? { gearInventory: character.gearInventory } : null);
+    if (changedPersisted && meta) {
+      try { global.localStorage?.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
+      catch (_) {}
+    }
+    return changedLive || changedPersisted;
   }
 
   function syncSmithingShapeUnlocks() {
@@ -263,6 +314,18 @@
     return (scheduleDeps?.npcWalkers || []).find(walker => !walker?._weaponTrustVisitor && walker?.rec?.id === gift.npcId) || null;
   }
 
+  function markNaturalTerminalText(tree) {
+    const nodeMap = new Map((tree?.nodes || []).map(node => [node.id, node]));
+    for (const node of (tree?.nodes || [])) {
+      if (node?.type !== 'text') continue;
+      const nextNode = node.next ? nodeMap.get(node.next) : null;
+      const naturallyCloses = !node.next || nextNode?.type === 'end';
+      if (!naturallyCloses) continue;
+      const text = String(node.text ?? '');
+      if (!text.includes(NATURAL_END_MARKER)) node.text = `${text}${NATURAL_END_MARKER}`;
+    }
+  }
+
   function visitorTree(source, gift) {
     const authored = source?.rec?.dialogueTrees?.find(tree => tree?.id === gift.dialogueTreeId) || dialogueTreeFromGift(gift);
     const tree = clone(authored);
@@ -274,6 +337,7 @@
     tree.conditions = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [], relationship: { min: null, max: null } };
     tree.excludeConditions = clone(tree.conditions);
     tree.weaponTrustGiftId = gift.id;
+    markNaturalTerminalText(tree);
     return tree;
   }
 
@@ -330,11 +394,16 @@
       rot: root.rotation.y,
       _weaponTrustVisitor: true,
       _weaponTrustGiftId: gift.id,
-      update() {},
+      update() {}, // The visitor is deliberately stationary and never enters the normal schedule resolver.
       dispose() { root.parent?.remove?.(root); },
     };
     scheduleDeps.npcWalkers.push(proxy);
-    activeVisit = { gift, source, proxy, root, door, spot, dialogueStarted: false, completed: false };
+    activeVisit = {
+      gift, source, proxy, root, door, spot,
+      dialogueStarted: false,
+      naturalEndArmed: false,
+      completed: false,
+    };
     global.__farmLog?.(`[weapon-trust-visits] spawned ${gift.npcId} for ${gift.shapeKey} near farmhouse door`, 'npc');
     return true;
   }
@@ -397,9 +466,11 @@
       const close = injectedDeps?.closeNpcDialogue;
       if (typeof close === 'function' && !close.__weaponTrustNaturalClose) {
         const wrappedClose = function weaponTrustNaturalDialogueClose(...args) {
-          const shouldComplete = !!activeVisit?.dialogueStarted && !activeVisit?.completed;
-          const gift = activeVisit?.gift || null;
+          const visit = activeVisit;
+          const shouldComplete = !!visit?.dialogueStarted && !!visit?.naturalEndArmed && !visit?.completed;
+          const gift = visit?.gift || null;
           const result = close.apply(this, args);
+          if (visit) visit.naturalEndArmed = false;
           if (shouldComplete && gift) completeGift(gift);
           return result;
         };
@@ -412,8 +483,23 @@
     };
     const originalBegin = api.beginNpcConversation?.bind(api);
     if (originalBegin) api.beginNpcConversation = function weaponTrustBeginConversation(rec, ...rest) {
-      if (activeVisit && rec?.weaponTrustGiftId === activeVisit.gift.id) activeVisit.dialogueStarted = true;
+      if (activeVisit && rec?.weaponTrustGiftId === activeVisit.gift.id) {
+        activeVisit.dialogueStarted = true;
+        activeVisit.naturalEndArmed = false;
+      }
       return originalBegin(rec, ...rest);
+    };
+    const originalAdvance = api.advanceNpcDialogue?.bind(api);
+    if (originalAdvance) api.advanceNpcDialogue = function weaponTrustAdvanceConversation(...args) {
+      if (activeVisit?.dialogueStarted && !activeVisit?.completed) {
+        // The invisible marker exists only after a terminal line has fully
+        // revealed. Clicking Continue while the typewriter is still running
+        // therefore merely reveals the line; only the following Continue
+        // arms completion. Leave/Escape never calls this wrapper at all.
+        const visibleText = document.getElementById('npcDialogueText')?.textContent || '';
+        activeVisit.naturalEndArmed = visibleText.includes(NATURAL_END_MARKER);
+      }
+      return originalAdvance(...args);
     };
   }
 
@@ -479,17 +565,30 @@
     });
   }
 
-  // New-profile correction runs in capture phase so game/profile consumers see
-  // the Fishing Mace already removed. Existing saves are intentionally untouched.
-  document.addEventListener('hobunjiPlayerReady', event => {
-    removeStarterGiftItems(event.detail);
-    setTimeout(() => { ensureDialogueTreesOnWalkers(); syncSmithingShapeUnlocks(); }, 0);
-  }, { capture: true });
+  function ensureDialogueEditorTriggerOption() {
+    const select = document.getElementById('editTreeTrigger');
+    if (!select) return;
+    let option = [...select.options].find(entry => entry.value === 'weaponTrustVisit');
+    if (!option) {
+      option = document.createElement('option');
+      option.value = 'weaponTrustVisit';
+      option.textContent = 'weaponTrustVisit';
+      select.appendChild(option);
+    }
+    const tree = typeof global.currentTree === 'function' ? global.currentTree() : null;
+    if (tree?.trigger === 'weaponTrustVisit') select.value = 'weaponTrustVisit';
+  }
 
-  patchApiWhenAssigned('DialogueContent', patchDialogueContent);
-  patchApiWhenAssigned('NpcScheduling', patchNpcScheduling);
-  patchApiWhenAssigned('MetalCraftShop', patchMetalCraftShop);
-  patchApiWhenAssigned('BanditCombat', patchBanditCombat);
+  function installDialogueEditorSupport() {
+    const start = () => {
+      ensureDialogueEditorTriggerOption();
+      editorObserver?.disconnect?.();
+      editorObserver = new MutationObserver(ensureDialogueEditorTriggerOption);
+      editorObserver.observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  }
 
   global.WeaponTrustVisits = Object.freeze({
     config: cfg,
@@ -499,22 +598,46 @@
     pendingGifts,
     giftEligible,
     giftCompleted,
+    isFreshlyCreatedCharacter,
+    removeStarterGiftItems,
+    removeStarterGiftItemsFromNewCharacter,
     syncSmithingShapeUnlocks,
     spawnVisitor,
     removeActiveVisitor,
     completeGift,
     debugSnapshot() {
       return {
+        mode: IS_DIALOGUE_EDITOR ? 'dialogue-editor' : 'game',
         currentArea: currentArea(),
         pendingGiftIds: pendingGifts().map(gift => gift.id),
         activeGiftId: activeVisit?.gift?.id || null,
         activeNpcId: activeVisit?.gift?.npcId || null,
         activeDialogueStarted: !!activeVisit?.dialogueStarted,
+        activeNaturalEndArmed: !!activeVisit?.naturalEndArmed,
         smithShapes: craftDeps?.UNLOCKED_TOOL_SHAPES ? [...craftDeps.UNLOCKED_TOOL_SHAPES] : null,
         configuredBanditShapes: [...banditShapeKeys],
       };
     },
   });
 
-  frameHandle = global.requestAnimationFrame(update);
+  if (IS_DIALOGUE_EDITOR) {
+    // Editor only needs the generated-tree overlay and trigger UI. Do not run
+    // the live game's frame loop or install setters for gameplay singleton APIs.
+    installDialogueEditorSupport();
+  } else {
+    // New-character correction runs in capture phase so game/profile consumers
+    // see the Fishing Mace already removed. Existing characters — including
+    // those starting/joining another world — are deliberately untouched.
+    document.addEventListener('hobunjiPlayerReady', event => {
+      removeStarterGiftItemsFromNewCharacter(event.detail);
+      setTimeout(() => { ensureDialogueTreesOnWalkers(); syncSmithingShapeUnlocks(); }, 0);
+    }, { capture: true });
+
+    patchApiWhenAssigned('DialogueContent', patchDialogueContent);
+    patchApiWhenAssigned('NpcScheduling', patchNpcScheduling);
+    patchApiWhenAssigned('MetalCraftShop', patchMetalCraftShop);
+    patchApiWhenAssigned('BanditCombat', patchBanditCombat);
+
+    frameHandle = global.requestAnimationFrame(update);
+  }
 })(window);
