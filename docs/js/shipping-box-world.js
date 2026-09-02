@@ -16,9 +16,9 @@
   const footprintCfg = () => objectCfg().footprint;
   const worldCfg = () => config().world;
 
-  let panelDeps = null; // Used for the Farm tab's authoritative worldObjects map.
-  const boxes = new Set(); // Used to register boxes created before FarmPanel.init runs.
-  const texturePromises = new Map(); // Used to load each configured PNG once, then clone per material.
+  let panelDeps = null;
+  const boxes = new Set();
+  const texturePromises = new Map();
 
   function footprintSize() {
     const footprint = footprintCfg();
@@ -135,6 +135,22 @@
     return promise;
   }
 
+  function geometryOnlyAuthoredData(data) {
+    // AuthoredFurniture normally starts its own asynchronous texture requests.
+    // ShippingBoxWorld is the sole material owner for this asset, so suppress
+    // those generic requests before building the geometry. This prevents a
+    // late generic callback from replacing the already-correct lid/body map.
+    return {
+      ...data,
+      parts: data.parts.map(part => ({
+        ...part,
+        materialTexture: null,
+        materialCapTexture: null,
+        textureDataUrl: null,
+      })),
+    };
+  }
+
   async function enforceConfiguredMaterials(group) {
     const material = materialCfg();
     const jobs = group.children.map(async mesh => {
@@ -144,7 +160,7 @@
       if (!filename) return;
       const base = await loadBaseTexture(filename);
       materialList(mesh).forEach(meshMaterial => {
-        if (meshMaterial.map && meshMaterial.map !== base) meshMaterial.map.dispose?.();
+        if (meshMaterial.map) meshMaterial.map.dispose?.();
         const texture = base.clone();
         texture.needsUpdate = true;
         meshMaterial.map = texture;
@@ -177,14 +193,12 @@
 
     authored.load(object.authoredFurnitureKey).then(async data => {
       if (!boxes.has(box) || !box.mesh?.parent || !Array.isArray(data?.parts)) return;
-      const group = authored.buildGroup(data, object.fallback.baseColor);
+      const group = authored.buildGroup(geometryOnlyAuthoredData(data), object.fallback.baseColor);
       if (!group.children.length) return;
 
-      // Generic furniture applies texture images asynchronously and may reset
-      // the diffuse color. Shipping waits for its configured PNG to resolve,
-      // replaces every part's map with a resolved clone, then reapplies that
-      // part's authored tint. Body + lid therefore share one visible wood
-      // texture/tint and rim + lock share the same PNG under verdigris tint.
+      // The dedicated renderer now owns the only texture request for this
+      // instance: wait for the configured PNG, assign it to every surface,
+      // then restore the authored tint. No generic callback can overwrite it.
       await enforceConfiguredMaterials(group);
       if (!boxes.has(box) || !box.mesh?.parent) { disposeRoot(group); return; }
 
