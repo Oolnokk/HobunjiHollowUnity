@@ -7,7 +7,7 @@
   // Geometry/per-part authored colors remain in config/furniture-authored/
   // shippingBox.json because that file is the furniture database itself.
   window.ShippingBoxConfig = {
-    version: '2026-09-02.1',
+    version: '2026-09-02.2',
 
     object: {
       id: 'sell_crate',
@@ -37,6 +37,10 @@
       },
     },
 
+    world: {
+      syncAfterMethods: ['refreshVisual', 'depositItem', 'withdrawItem', 'tick', 'onAction', 'reset'],
+    },
+
     material: {
       // Every authored Shipping Box surface is forced onto this PNG after the
       // async load completes, then multiplied by its authored part color.
@@ -55,6 +59,7 @@
     },
 
     lifecycle: {
+      cutoffMode: 'calendar-day-change',
       minCalendarDay: 1,
       pollMs: 500,
       timePassageEvent: 'hobunji-time-passage',
@@ -110,6 +115,10 @@
     },
 
     interactionUi: {
+      shipVerb: 'Ship ',
+      deliveryLogType: 'sale',
+      deliveryLogLabel: 'midnight shipment',
+      saleToastPrefix: 'Midnight shipment sold! +',
       labels: {
         emptyFastAction: 'None',
         openOccupied: 'Open Box',
@@ -141,6 +150,9 @@
       closeAriaLabel: 'Close shipping box',
       cameraBlockedText: 'camera input blocked',
       midnightReadyLabel: 'midnight-ready',
+      boxBadge: 'BOX',
+      pendingTag: 'Midnight cutoff',
+      transferTag: 'Player ↔ Box',
       pointerBlockedEvents: ['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','touchstart','touchmove','touchend','wheel','contextmenu','click'],
       escapeKey: 'Escape',
       style: {
@@ -157,7 +169,9 @@
         mediumFont: 'clamp(13px, 1.65vmin, 17px)',
         titleFont: 'clamp(16px, 2.05vmin, 20px)',
         buttonFont: 'clamp(12px, 1.45vmin, 15px)',
+        transferButtonFont: 'clamp(12px, 1.5vmin, 16px)',
         iconFont: 'clamp(20px, 3vmin, 30px)',
+        debugFont: 'clamp(11px, 1.3vmin, 13px)',
         mobileBreakpointPx: 740,
       },
       text: {
@@ -178,6 +192,8 @@
         takeHalf: 'Take Half',
         shipStack: 'Ship Stack',
         takeStack: 'Take Stack',
+        statusInBox: 'in box',
+        valueEachSuffix: 'g each',
       },
     },
 
