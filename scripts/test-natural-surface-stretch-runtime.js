@@ -2,10 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-class Scene {
-  constructor() { this.children = []; } // Used to exercise the production Scene.add wrapper.
-  add(...objects) { this.children.push(...objects); return this; }
+class Object3D {
+  constructor() { this.children = []; this.parent = null; }
+  add(...objects) {
+    for (const object of objects) {
+      if (object) object.parent = this;
+      this.children.push(object);
+    }
+    return this;
+  }
+  traverse(callback) {
+    callback(this);
+    for (const child of this.children) child?.traverse?.(callback);
+  }
 }
+
+class Scene extends Object3D {
+  constructor() { super(); this.isScene = true; } // Used to exercise the production Scene.add wrapper.
+}
+
+class Group extends Object3D {} // Used to reproduce terrain meshes attached after their parent group is already in the scene.
 
 class FakeImage {
   constructor() {
@@ -33,7 +49,7 @@ class FakeImage {
 const logs = []; // Used to verify the self-heal reports through the mobile-visible render log.
 const remaps = []; // Used to verify the legacy cliff UV marker is invalidated before the island mapper is re-run.
 const windowMock = {
-  THREE: { Scene },
+  THREE: { Scene, Object3D },
   NaturalSurfaceMaterialConfig: {
     texture: 'assets/textures/carved_smooth.png',
     surfaces: {
@@ -81,7 +97,7 @@ vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), {
   Error,
 });
 
-async function run() {
+function makeReportedMesh(surface = 'cliffs') {
   const texture = {
     name: 'natural_#808080_clamp', // Matches the Pixel Probe texture name from the reported broken rock.
     image: { width: 4, height: 4 }, // Recreates the exact flat placeholder seen in the report.
@@ -90,7 +106,7 @@ async function run() {
   };
   const material = {
     map: texture,
-    userData: { naturalSurface: 'cliffs' }, // Used to reconstruct the missing texture metadata from central config.
+    userData: { naturalSurface: surface }, // Used to reconstruct the missing texture metadata from central config.
   };
   const geometry = {
     userData: {
@@ -101,51 +117,77 @@ async function run() {
   };
   const mesh = {
     isMesh: true,
-    name: 'reported-cliff',
+    name: `reported-${surface}`,
     material,
     geometry,
-    userData: { naturalSurface: 'cliffs' },
+    userData: { naturalSurface: surface },
+    children: [],
     traverse(callback) { callback(this); },
   };
+  return { texture, material, geometry, mesh };
+}
 
-  const scene = new Scene(); // Used to trigger the same post-Scene.add repair path as runtime terrain creation.
-  scene.add(mesh);
+async function run() {
+  const direct = makeReportedMesh('cliffs'); // Used to retain coverage of the direct Scene.add path.
+  const scene = new Scene();
+  scene.add(direct.mesh);
   await new Promise(resolve => setImmediate(resolve));
 
-  if (texture.image.width !== 64 || texture.image.height !== 64) {
-    throw new Error(`Expected repaired 64x64 authored texture, got ${texture.image.width}x${texture.image.height}`);
+  if (direct.texture.image.width !== 64 || direct.texture.image.height !== 64) {
+    throw new Error(`Expected repaired 64x64 authored texture, got ${direct.texture.image.width}x${direct.texture.image.height}`);
   }
-  if (texture.userData.hobunjiAuthoredSurfacePath !== 'assets/textures/carved_smooth.png') {
-    throw new Error(`Texture source metadata was not reconstructed: ${JSON.stringify(texture.userData)}`);
+  if (direct.texture.userData.hobunjiAuthoredSurfacePath !== 'assets/textures/carved_smooth.png') {
+    throw new Error(`Texture source metadata was not reconstructed: ${JSON.stringify(direct.texture.userData)}`);
   }
-  if (texture.userData.hobunjiAuthoredSurfaceState !== 'authored-png-tinted-repair') {
-    throw new Error(`Texture did not reach repaired state: ${texture.userData.hobunjiAuthoredSurfaceState}`);
+  if (direct.texture.userData.hobunjiAuthoredSurfaceState !== 'authored-png-tinted-repair') {
+    throw new Error(`Texture did not reach repaired state: ${direct.texture.userData.hobunjiAuthoredSurfaceState}`);
   }
-  if (!String(texture.userData.hobunjiAuthoredSurfaceImageSize).includes('64x64')) {
-    throw new Error(`Texture source image size was not recorded: ${texture.userData.hobunjiAuthoredSurfaceImageSize}`);
+  if (!String(direct.texture.userData.hobunjiAuthoredSurfaceImageSize).includes('64x64')) {
+    throw new Error(`Texture source image size was not recorded: ${direct.texture.userData.hobunjiAuthoredSurfaceImageSize}`);
   }
-  if (!texture.needsUpdate) throw new Error('Repaired texture was not marked needsUpdate');
+  if (!direct.texture.needsUpdate) throw new Error('Repaired texture was not marked needsUpdate');
   if (remaps.length !== 1) throw new Error(`Expected one final island-UV reassertion, got ${remaps.length}`);
   if (remaps[0].signatureBeforeRemap !== undefined) {
     throw new Error('Legacy cliff UV overwrite did not invalidate the stale island signature before remapping');
   }
-  if (geometry.userData.hobunjiSurfaceStretchSignature !== 'surface-island-v1|runtime-test') {
+  if (direct.geometry.userData.hobunjiSurfaceStretchSignature !== 'surface-island-v1|runtime-test') {
     throw new Error('Island mapper did not regain authoritative geometry metadata');
   }
+
+  // Reproduce the path the second Pixel Probe exposed: the parent group enters
+  // the scene first, then a terrain rock is attached to that already-live group.
+  const group = new Group();
+  scene.add(group);
+  const nested = makeReportedMesh('rocks');
+  group.add(nested.mesh);
+  await new Promise(resolve => setImmediate(resolve));
+  if (nested.texture.image.width !== 64 || nested.texture.image.height !== 64) {
+    throw new Error(`Nested Object3D.add rock was not repaired: ${nested.texture.image.width}x${nested.texture.image.height}`);
+  }
+  if (nested.texture.userData.hobunjiAuthoredSurfaceState !== 'authored-png-tinted-repair') {
+    throw new Error(`Nested rock did not reach repaired state: ${nested.texture.userData.hobunjiAuthoredSurfaceState}`);
+  }
+
   if (!logs.some(entry => entry.category === 'render' && /texture repaired/.test(entry.message))) {
     throw new Error('Expected mobile-visible texture repair diagnostic');
   }
 
   const snapshot = windowMock.NaturalSurfaceStretchRuntime?.snapshot?.(); // Used to assert the module exposes mobile-friendly counters after repair.
-  if (!snapshot || snapshot.textureRepairsCompleted !== 1 || snapshot.legacyCliffUvOverridesFound !== 1) {
+  if (!snapshot || snapshot.textureRepairsCompleted !== 2 || snapshot.legacyCliffUvOverridesFound < 2 || snapshot.nestedAddsInspected < 1) {
     throw new Error(`Unexpected runtime repair snapshot: ${JSON.stringify(snapshot)}`);
   }
 
   console.log(JSON.stringify({
-    source: texture.userData.hobunjiAuthoredSurfacePath,
-    state: texture.userData.hobunjiAuthoredSurfaceState,
-    imageSize: texture.userData.hobunjiAuthoredSurfaceImageSize,
-    resolvedUrl: texture.image.repairedTintCanvas ? 'tinted-canvas' : 'raw-image',
+    direct: {
+      source: direct.texture.userData.hobunjiAuthoredSurfacePath,
+      state: direct.texture.userData.hobunjiAuthoredSurfaceState,
+      imageSize: direct.texture.userData.hobunjiAuthoredSurfaceImageSize,
+    },
+    nested: {
+      source: nested.texture.userData.hobunjiAuthoredSurfacePath,
+      state: nested.texture.userData.hobunjiAuthoredSurfaceState,
+      imageSize: nested.texture.userData.hobunjiAuthoredSurfaceImageSize,
+    },
     remaps,
     snapshot,
   }, null, 2));
