@@ -552,9 +552,14 @@
     return isAudioEntryEligible(track, area) && !audioUrlFailed(track.url);
   }
 
+  function areaBgmTracks(area) {
+    const mineTracks = window.TownMine?.bgmTracksForArea?.(area);
+    if (Array.isArray(mineTracks)) return mineTracks;
+    return window.AudioSystem?.gameAudioConfig().areaBgm?.[area] || [];
+  }
+
   function resolveAreaBgm(area) {
-    const sets = window.AudioSystem?.gameAudioConfig().areaBgm || {};
-    const all = (sets[area] || []).filter(track => track?.url);
+    const all = areaBgmTracks(area).filter(track => track?.url);
     const playable = all.filter(track => isBgmTrackEligible(track, area));
     if (!playable.length) {
       if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000, 'bgm');
@@ -574,7 +579,7 @@
     const trackUrl = snd?._trackUrl;
     if (!trackUrl) return false;
     const resolved = resolveAudioUrl(trackUrl);
-    const list = window.AudioSystem?.gameAudioConfig().areaBgm?.[area] || [];
+    const list = areaBgmTracks(area);
     return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved && isBgmTrackEligible(t, area, { alreadyPlaying: true }));
   }
 
