@@ -158,19 +158,6 @@ jobs:
               1,
           )
           s = s[:livestock_start] + livestock + s[livestock_end:]
-
-          s = replace_once(
-              s,
-              """          _dialogueWalker.pause = 0;
-                  try { _dialogueWalker._onDialogueClose?.(); }
-              """,
-              """          _dialogueWalker.pause = 0;
-                  _dialogueWalker._dialogueOptions = null;
-                  _dialogueWalker._onDialogueFrame = null;
-                  try { _dialogueWalker._onDialogueClose?.(); }
-              """,
-              'clear dialogue speaker hooks',
-          )
           p.write_text(s)
 
           p = Path('docs/index.html')
