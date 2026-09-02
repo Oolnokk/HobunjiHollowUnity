@@ -63,8 +63,7 @@
     if (!texture || (surface !== 'rocks' && surface !== 'cliffs')) return false;
     const userData = texture.userData || {}; // Used to recognize both intact and metadata-stripped natural-surface textures.
     if (userData.naturalSurfaceBodySpriteTint) return true;
-    if (/^natural_#?[0-9a-f]{6}_(?:clamp|repeat)$/i.test(String(texture.name || ''))) return true;
-    return configuredSurface(surface).tintTreatment === 'body-sprite-tint';
+    return /^natural_#?[0-9a-f]{6}_(?:clamp|repeat)$/i.test(String(texture.name || ''));
   }
 
   function textureNeedsRepair(texture, surface) {
@@ -73,7 +72,6 @@
     const state = String(texture.userData?.hobunjiAuthoredSurfaceState || ''); // Used to retry explicit loading/failure states even if dimensions are unusual.
     return dimensions.width <= 4
       || dimensions.height <= 4
-      || !state
       || state === 'flat-loading'
       || state === 'flat-load-failure'
       || state === 'repair-loading'
@@ -165,7 +163,7 @@
       });
       texture.needsUpdate = true;
       stats.textureRepairsCompleted++;
-      debugLog(`${surface} texture repaired from flat ${sourceWidth}x${sourceHeight} source ${path}.`);
+      debugLog(`${surface} texture repaired from flat fallback using ${sourceWidth}x${sourceHeight} source ${path}.`);
       return true;
     }).catch(error => {
       texture.userData = Object.assign({}, texture.userData, {
@@ -205,9 +203,12 @@
   function inspectMesh(mesh) {
     if (!mesh?.isMesh) return;
     stats.inspectedMeshes++;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Used to repair every natural-surface material slot on one terrain mesh.
-    for (const material of materials) {
-      const surface = naturalSurfaceFor(mesh, material); // Used to infer missing texture metadata from the owning rock/cliff material.
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Used to repair only the owning natural-surface slot(s) on one terrain mesh.
+    const cliffSlot = mesh.userData?.naturalSurfaceCliffSlot == null ? null : Number(mesh.userData.naturalSurfaceCliffSlot); // Used to avoid ever treating a shared plateau's grass slot as its cliff texture.
+    for (let materialIndex = 0; materialIndex < materials.length; materialIndex++) {
+      const material = materials[materialIndex]; // Used as the current material candidate for texture self-healing.
+      let surface = material?.userData?.naturalSurface || mesh.userData?.naturalSurface || null; // Used to prefer explicit per-material/per-mesh surface ownership.
+      if (!surface && cliffSlot === materialIndex) surface = 'cliffs';
       if (surface !== 'rocks' && surface !== 'cliffs') continue;
       if (material?.map) repairTexture(material.map, surface);
     }
@@ -241,7 +242,7 @@
     repairTexture,
     snapshot() {
       return Object.assign({}, stats, {
-        pendingTextureRepairs: imagePromises.size,
+        cachedSourceImages: imagePromises.size,
         surfaceStretch: window.HobunjiSurfaceStretchUV?.snapshot?.() || null,
       });
     },
