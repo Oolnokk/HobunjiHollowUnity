@@ -93,7 +93,7 @@ replace_once(
     test,
     "assert.match(alchemySource, /registerProvider\\('alchemy'/, 'alchemy contributes to the shared effect HUD');\n",
     "assert.match(alchemySource, /registerProvider\\('alchemy'/, 'alchemy contributes to the shared effect HUD');\n"
-    "assert.match(alchemySource, /potionOfStrength[\\s\\S]{0,240}magnitude: 0\\.5/, 'Strength grants half of Fury\'s base outgoing-damage bonus');\n"
+    "assert.match(alchemySource, /potionOfStrength[\\s\\S]{0,240}magnitude: 0\\.5/, 'Strength grants half of Fury base outgoing-damage bonus');\n"
     "assert.match(alchemySource, /STRENGTH_FOOTING_DAMAGE_RATIO = 1\\.5/, 'Strength grants +75% base Footing damage through its secondary ratio');\n"
     "assert.match(alchemySource, /STRENGTH_WORK_SPEED_RATIO = 1\\.5/, 'Strength grants +75% base chop, dig, and mine speed through its secondary ratio');\n"
     "assert.match(fishCatalogSource, /gurumahi: 'strength'[\\s\\S]{0,80}rockscale: 'fortitude'[\\s\\S]{0,80}sixfin: 'speed'/, 'fish species carry distinct authored cooking buffs');\n"
