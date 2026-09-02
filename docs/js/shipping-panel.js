@@ -1,60 +1,73 @@
 (() => {
   'use strict';
 
-  // Shipping box transfer UI (Pack <-> box) plus the standalone floating
-  // window used when the in-world Shipping Box is opened.
+  // Pack <-> Shipping Box transfer UI plus its standalone floating window.
+  // ShippingBoxConfig owns the feature's tuning/labels/style values.
   let deps = null;
-  let standaloneOpen = false; // Used to suppress camera/game input while the shipping window is visible.
-  let standaloneRoot = null; // Used to host #mpShipping outside the main menu panel.
-  let standalonePreviousFocus = null; // Used to restore keyboard focus after closing the shipping window.
-  let standaloneDebugVisible = false; // Used by the in-window mobile-friendly diagnostics toggle.
+  let standaloneOpen = false;
+  let standaloneRoot = null;
+  let standalonePreviousFocus = null;
+  let standaloneDebugVisible = false;
+  let shippingSelected = { side: null, key: null };
+  let shippingAmount = 0;
+  const shippingActiveCat = Object.create(null);
 
-  function init(injectedDeps) {
-    deps = injectedDeps;
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', ensureStandaloneWindow, { once: true });
-    } else {
-      ensureStandaloneWindow();
-    }
+  function config() {
+    if (!window.ShippingBoxConfig) throw new Error('ShippingBoxConfig must load before ShippingPanel.init');
+    return window.ShippingBoxConfig;
+  }
+  const panelCfg = () => config().panel;
+  const inventoryCfg = () => config().inventory;
+  const storeCfg = () => config().store;
+
+  function initializeConfiguredState() {
+    const panel = panelCfg();
+    if (!shippingSelected.side) shippingSelected.side = panel.defaultSide;
+    if (shippingAmount < 1) shippingAmount = Number(panel.defaultAmount);
+    if (!shippingActiveCat[panel.defaultSide]) shippingActiveCat[panel.defaultSide] = panel.allCategory;
+    if (!shippingActiveCat[panel.boxSide]) shippingActiveCat[panel.boxSide] = panel.allCategory;
   }
 
-  // Narrow bridge for modular content catalogs. ITEM_DEFS and BASE_PRICES are
-  // live objects owned by game.js; mutating them here keeps inventory, item
-  // info, shipping, and every other reader on the same canonical records.
+  function init(injectedDeps) {
+    config();
+    initializeConfiguredState();
+    deps = injectedDeps;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureStandaloneWindow, { once: true });
+    else ensureStandaloneWindow();
+  }
+
   function registerItemDefinitions(definitions = {}, basePrices = {}) {
     if (!deps?.ITEM_DEFS || !deps?.BASE_PRICES) return false;
     Object.entries(definitions).forEach(([key, definition]) => {
       deps.ITEM_DEFS[key] = { ...(deps.ITEM_DEFS[key] || {}), ...definition };
     });
-    Object.entries(basePrices).forEach(([key, price]) => {
-      deps.BASE_PRICES[key] = price;
-    });
+    Object.entries(basePrices).forEach(([key, price]) => { deps.BASE_PRICES[key] = price; });
     return true;
   }
 
-  let shippingSelected = { side: 'left', key: null }; // Used by the transfer controls.
-  let shippingAmount = 1; // Used by the stepper and transfer buttons.
-  const shippingActiveCat = { left: 'all', right: 'all' }; // Used by the category filters.
-
   function getShippingBoxContents() {
-    const shippingBoxObject = deps?.getShippingBoxObject?.();
-    return shippingBoxObject?.getContents?.() || {};
+    return deps?.getShippingBoxObject?.()?.getContents?.() || {};
+  }
+
+  function isBoxSide(side) {
+    return side === panelCfg().boxSide;
   }
 
   function getShippingKeys(side) {
     if (!deps) return [];
-    const source = side === 'right' ? getShippingBoxContents() : deps.inventory;
+    initializeConfiguredState();
+    const source = isBoxSide(side) ? getShippingBoxContents() : deps.inventory;
     return Object.keys(deps.ITEM_DEFS).filter(key => {
       const def = deps.ITEM_DEFS[key];
       const cat = shippingActiveCat[side];
-      if (cat !== 'all' && def.cat !== cat) return false;
+      if (cat !== panelCfg().allCategory && def.cat !== cat) return false;
       return (source[key] || 0) > 0;
     });
   }
 
   function getShippingCount(side, key) {
     if (!deps) return 0;
-    return side === 'right' ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
+    return isBoxSide(side) ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
   }
 
   function canShipKey(key) {
@@ -62,6 +75,7 @@
   }
 
   function selectShippingItem(side, key) {
+    initializeConfiguredState();
     shippingSelected = { side, key };
     shippingAmount = Math.max(1, Math.min(shippingAmount, getShippingCount(side, key) || 1));
     buildShippingTransferUI();
@@ -76,36 +90,35 @@
   }
 
   function transferShippingAmount(mode) {
+    initializeConfiguredState();
+    const panel = panelCfg();
     const key = shippingSelected.key;
     const shippingBoxObject = deps?.getShippingBoxObject?.();
     if (!key || !shippingBoxObject) return;
     const count = getShippingCount(shippingSelected.side, key);
     if (count < 1) return;
     let qty = shippingAmount;
-    if (mode === 'half') qty = Math.max(1, Math.floor(count / 2));
-    if (mode === 'stack') qty = count;
+    if (mode === 'half') qty = Math.max(1, Math.floor(count / Number(panel.halfDivisor)));
+    if (mode === storeCfg().stackQuantityToken) qty = count;
     qty = Math.max(1, Math.min(qty, count));
 
     let moved = 0;
-    if (shippingSelected.side === 'left') {
-      if (!canShipKey(key)) { deps.showToast('That item cannot be shipped.', false); return; }
+    if (!isBoxSide(shippingSelected.side)) {
+      if (!canShipKey(key)) { deps.showToast(panel.text.cannotShip, false); return; }
       moved = shippingBoxObject.depositItem(key, qty);
-      if (moved > 0) deps.showToast(`📦 Shipped ${moved}× ${deps.ITEM_DEFS[key].label}`, true);
+      if (moved > 0) deps.showToast(`${config().object.icon} ${config().interactionUi.shipVerb}${moved}× ${deps.ITEM_DEFS[key].label}`, true);
     } else {
-      // Taking items back OUT of storage is owner/granted-farmhand only —
-      // depositing into it is always allowed.
-      if (!deps.hasFarmPermission('storage')) {
-        deps.showToast("Only the farm's owner (or a granted farmhand) can take from storage.", false);
+      if (!deps.hasFarmPermission(inventoryCfg().permissions.withdraw)) {
+        deps.showToast(panel.text.withdrawDenied, false);
         return;
       }
       moved = shippingBoxObject.withdrawItem(key, qty);
-      if (moved > 0) deps.showToast(`↩ Took back ${moved}× ${deps.ITEM_DEFS[key].label}`, true);
+      if (moved > 0) deps.showToast(`↩ ${panel.text.takeBackPrefix}${moved}× ${deps.ITEM_DEFS[key].label}`, true);
     }
     if (moved < 1) return;
     deps.clampInventoryStack(key);
-    const remaining = getShippingCount(shippingSelected.side, key);
-    if (remaining < 1) shippingSelected.key = null;
-    shippingAmount = 1;
+    if (getShippingCount(shippingSelected.side, key) < 1) shippingSelected.key = null;
+    shippingAmount = Number(panel.defaultAmount);
     deps.buildInventoryGrid();
     buildShippingTransferUI();
     deps.refreshItemScroll();
@@ -113,34 +126,37 @@
   }
 
   function renderShippingGrid(side) {
-    const grid = document.getElementById(side === 'left' ? 'shipLeftGrid' : 'shipRightGrid');
+    const panel = panelCfg();
+    const grid = document.getElementById(isBoxSide(side) ? 'shipRightGrid' : 'shipLeftGrid');
     if (!grid || !deps) return;
     grid.innerHTML = '';
     const keys = getShippingKeys(side);
     keys.forEach(key => {
       const def = deps.ITEM_DEFS[key];
       const count = getShippingCount(side, key);
-      const blocked = side === 'left' && !canShipKey(key);
+      const blocked = !isBoxSide(side) && !canShipKey(key);
       const slot = document.createElement('button');
       slot.className = 'ship-slot' + (shippingSelected.side === side && shippingSelected.key === key ? ' selected' : '') + (blocked ? ' blocked' : '');
       slot.dataset.side = side;
       slot.dataset.key = key;
-      slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${side === 'right' ? '<span class="ship-slot-pending">BOX</span>' : ''}`;
+      slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${isBoxSide(side) ? `<span class="ship-slot-pending">${panel.boxBadge}</span>` : ''}`;
       slot.addEventListener('click', () => selectShippingItem(side, key));
       grid.appendChild(slot);
     });
-    if (keys.length === 0) {
+    if (!keys.length) {
       const empty = document.createElement('div');
       empty.className = 'ship-footer';
-      empty.textContent = side === 'right' ? 'Shipping box is empty.' : 'No items in this filter.';
+      empty.textContent = isBoxSide(side) ? panel.text.boxEmpty : panel.text.noFilterItems;
       grid.appendChild(empty);
     }
   }
 
   function buildShippingTransferUI() {
     if (!document.getElementById('mpShipping') || !deps) return;
-    renderShippingGrid('left');
-    renderShippingGrid('right');
+    initializeConfiguredState();
+    const panel = panelCfg();
+    renderShippingGrid(panel.defaultSide);
+    renderShippingGrid(panel.boxSide);
 
     const leftStacks = Object.keys(deps.ITEM_DEFS).filter(k => (deps.inventory[k] || 0) > 0).length;
     const shippingBoxObject = deps.getShippingBoxObject();
@@ -148,172 +164,88 @@
     const pendingTotal = shippingBoxObject?.getPendingSaleTotal?.() || 0;
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     setText('shipLeftCap', `${leftStacks} stacks`);
-    setText('shipRightCap', boxTotal > 0 ? `${boxTotal} in box${pendingTotal > 0 ? ` · ${pendingTotal} midnight-ready` : ''}` : 'Empty');
+    setText('shipRightCap', boxTotal > 0 ? `${boxTotal} ${panel.text.statusInBox}${pendingTotal > 0 ? ` · ${pendingTotal} ${panel.midnightReadyLabel}` : ''}` : config().interactionUi.labels.emptyContents);
 
     const key = shippingSelected.key;
     const def = key ? deps.ITEM_DEFS[key] : null;
     const count = key ? getShippingCount(shippingSelected.side, key) : 0;
     const max = Math.max(1, count);
     shippingAmount = Math.max(1, Math.min(shippingAmount, max));
-    const blocked = key && shippingSelected.side === 'left' && !canShipKey(key);
-    const direction = !key ? '↔' : (shippingSelected.side === 'left' ? '→ Box' : '← Bag');
+    const blocked = key && !isBoxSide(shippingSelected.side) && !canShipKey(key);
+    const direction = !key ? panel.directionEmpty : (!isBoxSide(shippingSelected.side) ? panel.directionToBox : panel.directionToBag);
 
-    setText('shipPreviewIcon', def ? def.icon : '📦');
-    setText('shipPreviewName', def ? `${def.label} ×${count}` : 'Select item');
-    setText('shipDirection', blocked ? 'Blocked' : direction);
+    setText('shipPreviewIcon', def ? def.icon : panel.iconFallback);
+    setText('shipPreviewName', def ? `${def.label} ×${count}` : panel.text.selectItem);
+    setText('shipDirection', blocked ? panel.blockedLabel : direction);
     setText('shipAmount', String(shippingAmount));
-    setText('shipLeftFooter', shippingSelected.side === 'left' && def ? `${def.label} ×${count}` : 'Select an item from your pack.');
-    setText('shipRightFooter', shippingSelected.side === 'right' && def ? `${def.label} ×${count}` : 'Midnight marks items for sale. Leave the farm, Wait, or Sleep to resolve it.');
-    setText('shipDetailIcon', def ? def.icon : '📦');
-    setText('shipDetailName', def ? def.label : 'Shipping Box Transfer');
-    setText('shipDetailValue', def && canShipKey(key) ? `${deps.BASE_PRICES[key]}g each` : (def ? 'Not sellable' : '—'));
-    setText('shipDetailDesc', def
-      ? `${def.desc}${blocked ? ' This item stays in your bag because the Shipping Box only accepts sellable goods.' : ''}`
-      : 'Move sellable goods from your pack into the Shipping Box. Each midnight marks everything already inside for sale; the marked shipment is actually collected when you leave the farm, Wait, or Sleep. Goods added after midnight wait for the next cutoff.');
+    setText('shipLeftFooter', !isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.selectPackItem);
+    setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
+    setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
+    setText('shipDetailName', def ? def.label : panel.text.detailName);
+    setText('shipDetailValue', def && canShipKey(key) ? `${deps.BASE_PRICES[key]}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
-    if (tags) tags.innerHTML = def ? def.tags.map(t => `<span class="ship-tag">${t}</span>`).join('') : '<span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Midnight cutoff</span>';
+    if (tags) tags.innerHTML = def
+      ? (def.tags || []).map(tag => `<span class="ship-tag">${tag}</span>`).join('')
+      : `<span class="ship-tag">${panel.transferTag}</span><span class="ship-tag">${panel.pendingTag}</span>`;
 
     const hasTransfer = !!key && count > 0 && !blocked;
-    ['shipAmtMinus','shipAmtPlus','shipTransferOne','shipTransferHalf','shipTransferStack'].forEach(id => {
+    panel.transferControlIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = !hasTransfer;
     });
-    setText('shipTransferOne', shippingSelected.side === 'left' ? 'Ship 1' : 'Take 1');
-    setText('shipTransferHalf', shippingSelected.side === 'left' ? 'Ship Half' : 'Take Half');
-    setText('shipTransferStack', shippingSelected.side === 'left' ? 'Ship Stack' : 'Take Stack');
+    const towardBox = !isBoxSide(shippingSelected.side);
+    setText('shipTransferOne', towardBox ? panel.text.shipOne : panel.text.takeOne);
+    setText('shipTransferHalf', towardBox ? panel.text.shipHalf : panel.text.takeHalf);
+    setText('shipTransferStack', towardBox ? panel.text.shipStack : panel.text.takeStack);
     updateStandaloneChrome();
   }
 
   function injectStandaloneStyles() {
     if (document.getElementById('shippingStandaloneStyles')) return;
+    const panel = panelCfg();
+    const s = panel.style;
     const style = document.createElement('style');
     style.id = 'shippingStandaloneStyles';
     style.textContent = `
       #shippingStandaloneRoot {
-        --shipping-pane-w: min(96vw, calc(30 * var(--col)));
-        --shipping-pane-h: min(82vh, calc(16 * var(--row)));
-        position: fixed;
-        inset: 0;
-        z-index: 120;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
-        background: rgba(0, 0, 0, 0.22);
-        touch-action: none;
+        --shipping-pane-w:${s.paneWidth}; --shipping-pane-h:${s.paneHeight};
+        position:fixed; inset:0; z-index:${s.zIndex}; display:flex; align-items:center; justify-content:center;
+        padding:${s.rootPadding}; background:${s.backdrop}; touch-action:none;
       }
-      #shippingStandaloneRoot[hidden] { display: none !important; }
+      #shippingStandaloneRoot[hidden]{display:none!important}
       #shippingStandaloneWindow {
-        width: calc(var(--shipping-pane-w) + 16px);
-        max-width: 97vw;
-        max-height: 94vh;
-        display: grid;
-        grid-template-rows: auto minmax(0, var(--shipping-pane-h)) auto;
-        overflow: hidden;
-        border: 1px solid var(--border-bright);
-        border-radius: 16px;
-        background: var(--glass-2);
-        box-shadow: 0 18px 60px rgba(0,0,0,.58);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        outline: none;
-        color: var(--text);
-        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace;
-        font-size: clamp(12px, 1.55vmin, 16px);
+        width:${s.windowWidth}; max-width:${s.windowMaxWidth}; max-height:${s.windowMaxHeight};
+        display:grid; grid-template-rows:auto minmax(0,var(--shipping-pane-h)) auto; overflow:hidden;
+        border:${s.windowBorder}; border-radius:${s.borderRadiusPx}px; background:var(--glass-2);
+        box-shadow:${s.windowShadow}; backdrop-filter:blur(${s.blurPx}px); -webkit-backdrop-filter:blur(${s.blurPx}px);
+        outline:none; color:var(--text); font-family:${panel.fontStack}; font-size:${s.baseFont};
       }
-      #shippingStandaloneWindow button,
-      #shippingStandaloneWindow input {
-        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace;
-      }
-      .shipping-window-bar {
-        min-height: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 8px 10px 8px 14px;
-        border-bottom: 1px solid var(--border);
-        background: rgba(255,255,255,.035);
-      }
-      .shipping-window-heading { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-      #shippingStandaloneTitle { color: var(--accent); font-size: clamp(16px, 2.05vmin, 20px); line-height: 1.15; }
-      #shippingWindowStatus { color: var(--muted); font-size: clamp(11px, 1.35vmin, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .shipping-window-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-      .shipping-window-btn {
-        min-width: 40px;
-        min-height: 34px;
-        padding: 5px 10px;
-        border: 1px solid var(--border-bright);
-        border-radius: 8px;
-        background: rgba(255,255,255,.055);
-        color: var(--text);
-        font-size: clamp(12px, 1.45vmin, 15px);
-      }
-      .shipping-window-btn:hover, .shipping-window-btn:focus-visible { border-color: var(--accent); color: var(--accent); }
-      #shippingWindowClose { font-size: 21px; line-height: 1; }
-      #shippingStandaloneBody { position: relative; min-width: 0; min-height: 0; padding: 8px; overflow: hidden; }
-      #shippingStandaloneBody #mpShipping {
-        --tr-col: calc(var(--shipping-pane-w) / 60);
-        --tr-row: calc(var(--shipping-pane-h) / 32);
-        --tr-font-xs: clamp(11px, 1.35vmin, 14px);
-        --tr-font-sm: clamp(13px, 1.65vmin, 17px);
-        width: var(--shipping-pane-w);
-        height: var(--shipping-pane-h) !important;
-        display: block !important;
-        position: relative;
-        font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', 'DM Mono', monospace !important;
-        font-size: var(--tr-font-sm);
-      }
-      #shippingStandaloneBody #mpShipping .ship-title,
-      #shippingStandaloneBody #mpShipping .ship-transfer-title,
-      #shippingStandaloneBody #mpShipping .ship-preview-name,
-      #shippingStandaloneBody #mpShipping .ship-direction,
-      #shippingStandaloneBody #mpShipping .ship-detail-name {
-        font-size: var(--tr-font-sm) !important;
-        line-height: 1.2;
-      }
-      #shippingStandaloneBody #mpShipping .ship-capacity,
-      #shippingStandaloneBody #mpShipping .ship-cat,
-      #shippingStandaloneBody #mpShipping .ship-slot-count,
-      #shippingStandaloneBody #mpShipping .ship-slot-pending,
-      #shippingStandaloneBody #mpShipping .ship-footer,
-      #shippingStandaloneBody #mpShipping .ship-detail-value,
-      #shippingStandaloneBody #mpShipping .ship-detail-desc,
-      #shippingStandaloneBody #mpShipping .ship-tag {
-        font-size: var(--tr-font-xs) !important;
-        line-height: 1.3;
-      }
-      #shippingStandaloneBody #mpShipping .ship-transfer-btn,
-      #shippingStandaloneBody #mpShipping .ship-amt-btn,
-      #shippingStandaloneBody #mpShipping .ship-amount {
-        font-size: clamp(12px, 1.5vmin, 16px) !important;
-      }
-      #shippingStandaloneBody #mpShipping .ship-slot-icon { font-size: clamp(20px, 3vmin, 30px) !important; }
-      #shippingWindowDebugPanel {
-        max-height: 25vh;
-        overflow: auto;
-        margin: 0;
-        padding: 8px 12px;
-        border-top: 1px solid var(--border);
-        background: rgba(0,0,0,.24);
-        color: var(--muted);
-        font: clamp(11px, 1.3vmin, 13px)/1.4 'DM Mono', monospace;
-        white-space: pre-wrap;
-      }
-      #shippingWindowDebugPanel[hidden] { display: none !important; }
-      /* Ordinary pack inspection is no longer a point-of-sale surface. */
-      #iiActions .ii-btn.sell { display: none !important; }
-      @media (max-width: 740px) {
-        #shippingStandaloneRoot {
-          --shipping-pane-w: 96vw;
-          --shipping-pane-h: min(84vh, calc(16 * var(--row)));
-          align-items: flex-start;
-        }
-        #shippingStandaloneWindow { margin-top: max(4px, env(safe-area-inset-top)); width: 98vw; max-height: 96vh; }
-        .shipping-window-bar { min-height: 44px; padding: 6px 8px 6px 10px; }
-        #shippingStandaloneTitle { font-size: 16px; }
-        #shippingWindowStatus { font-size: 11px; }
-        .shipping-window-btn { min-height: 32px; padding-inline: 8px; font-size: 12px; }
+      #shippingStandaloneWindow button,#shippingStandaloneWindow input{font-family:${panel.fontStack}}
+      .shipping-window-bar{min-height:${s.headerMinHeight};display:flex;align-items:center;justify-content:space-between;gap:${s.headerGap};padding:${s.headerPadding};border-bottom:1px solid var(--border);background:${s.headerBackground}}
+      .shipping-window-heading{min-width:0;display:flex;flex-direction:column;gap:${s.headingGap}}
+      #shippingStandaloneTitle{color:var(--accent);font-size:${s.titleFont};line-height:${s.titleLineHeight}}
+      #shippingWindowStatus{color:var(--muted);font-size:${s.smallFont};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .shipping-window-actions{display:flex;align-items:center;gap:${s.actionGap};flex:0 0 auto}
+      .shipping-window-btn{min-width:${s.buttonMinWidth};min-height:${s.buttonMinHeight};padding:${s.buttonPadding};border:1px solid var(--border-bright);border-radius:${s.buttonRadius};background:${s.buttonBackground};color:var(--text);font-size:${s.buttonFont}}
+      .shipping-window-btn:hover,.shipping-window-btn:focus-visible{border-color:var(--accent);color:var(--accent)}
+      #shippingWindowClose{font-size:${s.closeFont};line-height:1}
+      #shippingStandaloneBody{position:relative;min-width:0;min-height:0;padding:${s.bodyPadding};overflow:hidden}
+      #shippingStandaloneBody #mpShipping{--tr-col:calc(var(--shipping-pane-w)/60);--tr-row:calc(var(--shipping-pane-h)/32);--tr-font-xs:${s.smallFont};--tr-font-sm:${s.mediumFont};width:var(--shipping-pane-w);height:var(--shipping-pane-h)!important;display:block!important;position:relative;font-family:${panel.fontStack}!important;font-size:var(--tr-font-sm)}
+      #shippingStandaloneBody #mpShipping .ship-title,#shippingStandaloneBody #mpShipping .ship-transfer-title,#shippingStandaloneBody #mpShipping .ship-preview-name,#shippingStandaloneBody #mpShipping .ship-direction,#shippingStandaloneBody #mpShipping .ship-detail-name{font-size:var(--tr-font-sm)!important;line-height:${s.mediumLineHeight}}
+      #shippingStandaloneBody #mpShipping .ship-capacity,#shippingStandaloneBody #mpShipping .ship-cat,#shippingStandaloneBody #mpShipping .ship-slot-count,#shippingStandaloneBody #mpShipping .ship-slot-pending,#shippingStandaloneBody #mpShipping .ship-footer,#shippingStandaloneBody #mpShipping .ship-detail-value,#shippingStandaloneBody #mpShipping .ship-detail-desc,#shippingStandaloneBody #mpShipping .ship-tag{font-size:var(--tr-font-xs)!important;line-height:${s.smallLineHeight}}
+      #shippingStandaloneBody #mpShipping .ship-transfer-btn,#shippingStandaloneBody #mpShipping .ship-amt-btn,#shippingStandaloneBody #mpShipping .ship-amount{font-size:${s.transferButtonFont}!important}
+      #shippingStandaloneBody #mpShipping .ship-slot-icon{font-size:${s.iconFont}!important}
+      #shippingWindowDebugPanel{max-height:${s.debugMaxHeight};overflow:auto;margin:0;padding:${s.debugPadding};border-top:1px solid var(--border);background:${s.debugBackground};color:var(--muted);font:${s.debugFont}/${s.debugLineHeight} ${panel.monoFontStack};white-space:pre-wrap}
+      #shippingWindowDebugPanel[hidden]{display:none!important}
+      #iiActions .ii-btn.sell{display:none!important}
+      @media(max-width:${s.mobileBreakpointPx}px){
+        #shippingStandaloneRoot{--shipping-pane-w:${s.mobilePaneWidth};--shipping-pane-h:${s.mobilePaneHeight};align-items:flex-start}
+        #shippingStandaloneWindow{margin-top:${s.mobileMarginTop};width:${s.mobileWindowWidth};max-height:${s.mobileWindowMaxHeight}}
+        .shipping-window-bar{min-height:${s.mobileHeaderMinHeight};padding:${s.mobileHeaderPadding}}
+        #shippingStandaloneTitle{font-size:${s.mobileTitleFont}}
+        #shippingWindowStatus{font-size:${s.mobileStatusFont}}
+        .shipping-window-btn{min-height:${s.mobileButtonMinHeight};padding-inline:${s.mobileButtonPaddingInline};font-size:${s.mobileButtonFont}}
       }
     `;
     document.head.appendChild(style);
@@ -330,19 +262,20 @@
 
   function getSellableInventory() {
     if (!deps) return [];
+    const fallbackIcon = panelCfg().iconFallback;
     return Object.keys(deps.ITEM_DEFS).flatMap(key => {
       const count = Math.max(0, Number(deps.inventory[key]) || 0);
       const price = Number(deps.BASE_PRICES[key]);
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
-      return [{ key, count, price, icon: def.icon || '📦', label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+      return [{ key, count, price, icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
     });
   }
 
   function sellInventoryAtStore(key, quantity = 1) {
     if (!deps || deps.BASE_PRICES[key] === undefined) return { moved: 0, earned: 0 };
     const available = Math.max(0, Number(deps.inventory[key]) || 0);
-    const requested = quantity === 'stack' ? available : Math.max(1, Math.floor(Number(quantity) || 1));
+    const requested = quantity === storeCfg().stackQuantityToken ? available : Math.max(1, Math.floor(Number(quantity) || 1));
     const moved = Math.min(available, requested);
     if (moved < 1) return { moved: 0, earned: 0 };
     const price = Math.max(0, Number(deps.BASE_PRICES[key]) || 0);
@@ -357,9 +290,11 @@
   }
 
   function getDebugState() {
+    initializeConfiguredState();
     const box = deps?.getShippingBoxObject?.();
     const pane = document.getElementById('mpShipping');
     return {
+      configVersion: config().version,
       open: standaloneOpen,
       pointerLocked: !!document.pointerLockElement,
       panelParent: pane?.parentElement?.id || null,
@@ -369,15 +304,16 @@
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
-      boxPosition: box ? { col: box.col, row: box.row, width: box.w || 1, height: box.h || 1 } : null,
+      boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
   }
 
   function updateStandaloneChrome() {
     if (!standaloneRoot) return;
     const state = getDebugState();
+    const panel = panelCfg();
     const status = document.getElementById('shippingWindowStatus');
-    if (status) status.textContent = `${state.queuedItems} in box · ${state.midnightReadyItems} midnight-ready · camera input blocked`;
+    if (status) status.textContent = `${state.queuedItems} ${panel.text.statusInBox} · ${state.midnightReadyItems} ${panel.midnightReadyLabel} · ${panel.cameraBlockedText}`;
     const debugPanel = document.getElementById('shippingWindowDebugPanel');
     if (debugPanel && standaloneDebugVisible) debugPanel.textContent = JSON.stringify(state, null, 2);
   }
@@ -389,8 +325,7 @@
       standaloneRoot.hidden = true;
       standaloneRoot.setAttribute('aria-hidden', 'true');
     }
-    const pane = document.getElementById('mpShipping');
-    pane?.classList.remove('shipping-standalone-pane');
+    document.getElementById('mpShipping')?.classList.remove('shipping-standalone-pane');
     updateStandaloneChrome();
     const restore = standalonePreviousFocus;
     standalonePreviousFocus = null;
@@ -421,9 +356,12 @@
 
   function ensureStandaloneWindow() {
     if (standaloneRoot) return standaloneRoot;
+    if (!window.ShippingBoxConfig) return null;
     const pane = document.getElementById('mpShipping');
     if (!pane || !document.body) return null;
+    initializeConfiguredState();
     injectStandaloneStyles();
+    const panel = panelCfg();
 
     const root = document.createElement('div');
     root.id = 'shippingStandaloneRoot';
@@ -433,12 +371,12 @@
       <section id="shippingStandaloneWindow" role="dialog" aria-modal="true" aria-labelledby="shippingStandaloneTitle" tabindex="-1">
         <header class="shipping-window-bar">
           <div class="shipping-window-heading">
-            <strong id="shippingStandaloneTitle">📦 Shipping Box</strong>
-            <span id="shippingWindowStatus">0 in box · 0 midnight-ready · camera input blocked</span>
+            <strong id="shippingStandaloneTitle">${panel.title}</strong>
+            <span id="shippingWindowStatus">0 ${panel.text.statusInBox} · 0 ${panel.midnightReadyLabel} · ${panel.cameraBlockedText}</span>
           </div>
           <div class="shipping-window-actions">
-            <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">Debug</button>
-            <button type="button" class="shipping-window-btn" id="shippingWindowClose" aria-label="Close shipping box">×</button>
+            <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">${panel.debugButton}</button>
+            <button type="button" class="shipping-window-btn" id="shippingWindowClose" aria-label="${panel.closeAriaLabel}">${panel.closeGlyph}</button>
           </div>
         </header>
         <div id="shippingStandaloneBody"></div>
@@ -448,9 +386,6 @@
     document.getElementById('shippingStandaloneBody').appendChild(pane);
     standaloneRoot = root;
 
-    // The legacy pane's own Close button is wired by game.js to closeMenu().
-    // Capture it before that target listener runs so standalone shipping never
-    // changes main-menu pause/pointer-lock state as a side effect of closing.
     root.addEventListener('click', event => {
       if (!event.target?.closest?.('#shipCloseBtn')) return;
       event.preventDefault();
@@ -458,15 +393,11 @@
       closeStandalone();
     }, true);
 
-    // Bubble-phase blockers let the shipping controls receive input normally,
-    // then prevent the hidden canvas camera/action listeners from seeing it.
-    ['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','touchstart','touchmove','touchend','wheel','contextmenu','click'].forEach(type => {
-      root.addEventListener(type, stopStandaloneInputPropagation);
-    });
+    panel.pointerBlockedEvents.forEach(type => root.addEventListener(type, stopStandaloneInputPropagation));
     const dialog = document.getElementById('shippingStandaloneWindow');
     dialog.addEventListener('keydown', event => {
       if (!standaloneOpen) return;
-      if (event.key === 'Escape') {
+      if (event.key === panel.escapeKey) {
         event.preventDefault();
         closeStandalone();
       }
@@ -477,13 +408,11 @@
     document.getElementById('shippingWindowDebug').addEventListener('click', event => {
       standaloneDebugVisible = !standaloneDebugVisible;
       event.currentTarget.setAttribute('aria-expanded', String(standaloneDebugVisible));
-      const panel = document.getElementById('shippingWindowDebugPanel');
-      panel.hidden = !standaloneDebugVisible;
+      const debugPanel = document.getElementById('shippingWindowDebugPanel');
+      debugPanel.hidden = !standaloneDebugVisible;
       updateStandaloneChrome();
     });
-    root.addEventListener('click', event => {
-      if (event.target === root) closeStandalone();
-    });
+    root.addEventListener('click', event => { if (event.target === root) closeStandalone(); });
     document.addEventListener('pointerlockchange', () => {
       if (standaloneOpen && document.pointerLockElement) releasePointerLock();
       updateStandaloneChrome();
@@ -499,12 +428,13 @@
     bumpAmount: bumpShippingAmount,
     transferAmount: transferShippingAmount,
     setActiveCat: (side, cat) => { shippingActiveCat[side] = cat; },
-    getActiveCat: (side) => shippingActiveCat[side],
+    getActiveCat: side => shippingActiveCat[side],
     open: openStandalone,
     close: closeStandalone,
     isOpen: () => standaloneOpen,
     getDebugState,
     getSellableInventory,
     sellInventoryAtStore,
+    getConfig: config,
   };
 })();
