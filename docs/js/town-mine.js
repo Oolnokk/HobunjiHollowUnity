@@ -183,7 +183,11 @@
   }
 
   function recordFloorReached(floor) {
-    progression.deepestFloor = Math.max(progression.deepestFloor, Math.max(0, Math.min(100, Math.floor(Number(floor) || 0))));
+    const reachedFloor = Math.max(0, Math.min(100, Math.floor(Number(floor) || 0))); // Normalized before comparing so malformed map data can never lower/corrupt progression.
+    if (reachedFloor <= progression.deepestFloor) return false;
+    progression.deepestFloor = reachedFloor;
+    deps?.save?.(); // Reaching a new personal best is progression itself, so persist immediately instead of waiting for an unrelated later save.
+    return true;
   }
 
   function serialize() {
