@@ -14,6 +14,8 @@
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
+  let lastFootstepSfxDebug = null; // Exposed by footstepSfxDebugSnapshot and mirrored into the in-game debug log on surface changes.
+  let lastFootstepDebugSurface = null; // Prevents the mobile-readable debug log from receiving one line for every individual footfall.
   function init(injectedDeps) {
     deps = injectedDeps;
     preloadConfiguredObjectSfx();
@@ -31,22 +33,29 @@
   // Real recordings (docs/assets/audio/sfx/footsteps), keyed by a coarse
   // "surface" rather than raw TileType — several tile types share a
   // footstep (e.g. grass and weeds both sound like grass underfoot).
-  // Interior floors always map to 'gravel' regardless of the
-  // (irrelevant) tile type beneath them, until interiors get their own
-  // recorded surface.
+  // Ordinary building interiors currently map to gravel; natural dens and
+  // the mine use the dedicated hard-step recording pool below.
   //
   // Each surface's clip list normally comes from config
   // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
-  // FOOTSTEP_POST_FX below only carries the oscillator+noise synth
-  // fallback tuning (filter shape/cutoff/Q, pitch, decay length) used
-  // when no urls are configured for a surface.
+  // FOOTSTEP_POST_FX also carries the dedicated hard-step URLs so the newly
+  // authored recordings work immediately without duplicating the rest of
+  // the large audio config. The remaining fields are oscillator+noise synth
+  // fallback tuning used when no urls are configured for a surface.
   const FOOTSTEP_BASE = Object.freeze({
     waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
   });
 
+  const HARD_FOOTSTEP_URLS = Object.freeze([
+    'assets/audio/sfx/footsteps/hardstep_1.mp3',
+    'assets/audio/sfx/footsteps/hardstep_2.mp3',
+    'assets/audio/sfx/footsteps/hardstep_3.mp3',
+  ]);
+
   const FOOTSTEP_POST_FX = Object.freeze({
     grass:  {},
     gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
+    hard:   { urls: HARD_FOOTSTEP_URLS, volumeMul: 1.0 },
     water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
   });
 
@@ -68,21 +77,29 @@
   // silent even standing right next to the player.
   const FOOTSTEP_QUIET_SCALE = 0.7;
 
-  // Grass = grasstep. Path (and everything else that's hard-packed/
-  // exposed ground rather than turf — tilled/raised soil, dug trenches,
-  // rock, shrub, ramps) = gravelstep. Anything that actually holds
-  // standing water (river/stream/waterfall/paddy) = waterstep — this is
-  // "swimming" territory, not a moisture blend (see playFootstepSfx for
-  // the blend applied to grass/gravel ground tiles instead).
+  function isHardFootstepArea(area) {
+    const areaId = String(area || '');
+    return areaId === 'map_i_town_mine_safe'
+      || areaId.startsWith('map_i_town_mine_f_')
+      || areaId.startsWith('map_i_den_');
+  }
+
+  // Grass = grassstep. Roads (TileType.PATH), natural dens, and every mine
+  // floor/safe room = hardstep. Other hard-packed/exposed ground — tilled or
+  // raised soil, dug trenches, rock, shrub, ramps — remains gravelstep.
+  // Anything that actually holds standing water (river/stream/waterfall/
+  // paddy) = waterstep — this is "swimming" territory, not a moisture blend
+  // (see playFootstepSfx for the blend applied to non-water ground tiles).
   function footstepSurfaceKey(area, type) {
-    if (area === 'interior' || deps._isBuildingArea(area)) return 'gravel'; // temporary — no dedicated interior surface yet
+    if (isHardFootstepArea(area)) return 'hard';
+    if (area === 'interior' || deps._isBuildingArea(area)) return 'gravel';
     const TileType = deps.TileType;
     switch (type) {
       case TileType.PADDY:
       case TileType.RIVER:
       case TileType.STREAM:
       case TileType.WATERFALL: return 'water';
-      case TileType.PATH:
+      case TileType.PATH:      return 'hard';
       case TileType.RAMP:
       case TileType.TILLED:
       case TileType.RAISED:
@@ -171,6 +188,7 @@
       const url = urls[Math.floor(Math.random() * urls.length)];
       const snd = new Audio(url);
       snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
+      if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) lastFootstepSfxDebug.url = url;
       if (heavy) playHeavyFilteredClip(snd, finalVolume);
       else { snd.volume = finalVolume; snd.play().catch(() => {}); }
       return;
@@ -235,7 +253,7 @@
   // playHeavyLandingSfx — plays both layers through playFootstepSurface's
   // heavy (louder, pitched-down/filtered) mode instead of a plain stride.
   //
-  // Ground surfaces (grass/gravel) layer in a second, simultaneous
+  // Ground surfaces (grass/gravel/hard) layer in a second, simultaneous
   // waterstep clip scaled by the tile's moisture (tile.water, 0..
   // MAX_WATER) — a bone-dry tile blends none in, a fully flooded one
   // blends it in at FOOTSTEP_WATER_BLEND_MAX (80%) of the footstep's own
@@ -249,15 +267,32 @@
     if (footstepCfg.enabled === false) return;
     const heavy = !!opts.heavy;
     const surfaceKey = footstepSurfaceKey(area, tile?.type ?? null);
+    const wetFraction = deps.clamp((Number(tile?.water) || 0) / deps.MAX_WATER, 0, 1);
+    lastFootstepSfxDebug = {
+      area: String(area || ''),
+      tileType: tile?.type ?? null,
+      surfaceKey,
+      wetFraction,
+      heavy,
+      url: null,
+      atMs: Math.round(performance.now()),
+    };
+    if (surfaceKey !== lastFootstepDebugSurface) {
+      lastFootstepDebugSurface = surfaceKey;
+      window.__farmLog?.(`[footstep] area=${String(area || '-')} surface=${surfaceKey} tile=${String(tile?.type ?? '-')} wet=${wetFraction.toFixed(2)}`, 'audio');
+    }
     const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
     const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
       * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
     playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
 
     if (surfaceKey !== 'water') {
-      const wetFraction = deps.clamp((Number(tile?.water) || 0) / deps.MAX_WATER, 0, 1);
       playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
     }
+  }
+
+  function footstepSfxDebugSnapshot() {
+    return lastFootstepSfxDebug ? { ...lastFootstepSfxDebug } : null;
   }
 
   // Heavy "landing thud" used when a dodge or attack lunge comes to a
@@ -794,6 +829,7 @@
     footstepTileAt,
     footstepAdvance,
     playFootstepSfx,
+    footstepSfxDebugSnapshot,
     playHeavyLandingSfx,
     combatSfxConfig,
     playOneShotSfx,
