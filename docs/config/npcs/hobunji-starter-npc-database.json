@@ -2968,7 +2968,7 @@
                                     "from": "10:00",
                                     "to": "18:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_14_11",
+                                    "stationId": "furniture_chair_map_i_inn_15_11",
                                     "activity": "relaxing at the inn"
                               },
                               {
@@ -2984,8 +2984,26 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_14_11"
+                        "defaultStationId": "furniture_chair_map_i_inn_15_11"
                   },
+                  "agenda": [
+                        {
+                              "id": "inn",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["10:00", "18:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_15_11",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "relaxing at the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "freeTime",
+                              "obligation": "leisure",
+                              "window": ["18:00", "10:00"],
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>",
                   "phrasePools": [
                         {
@@ -3471,14 +3489,14 @@
                                     "from": "08:00",
                                     "to": "14:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_4_7",
+                                    "stationId": "furniture_chair_map_i_inn_4_8",
                                     "activity": "socializing at the inn"
                               },
                               {
                                     "from": "14:00",
                                     "to": "20:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "furniture_chair_map_i_inn_4_11",
+                                    "stationId": "furniture_chair_map_i_inn_3_11",
                                     "activity": "enjoying the inn"
                               },
                               {
@@ -3494,8 +3512,35 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_4_11"
+                        "defaultStationId": "furniture_chair_map_i_inn_3_11"
                   },
+                  "agenda": [
+                        {
+                              "id": "morning-social",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["08:00", "14:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_4_8",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "socializing at the inn"
+                        },
+                        {
+                              "id": "afternoon-inn",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["14:00", "20:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_3_11",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "enjoying the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "freeTime",
+                              "obligation": "leisure",
+                              "window": ["20:00", "08:00"],
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_pahu_greetings",
@@ -5476,10 +5521,11 @@
                         },
                         {
                               "id": "home",
-                              "activity": "sleep",
+                              "activity": "goToRole",
                               "obligation": "plan",
                               "window": ["18:00", "07:00"],
-                              "destinationStationId": "station_smi_evening_kzubug",
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
                               "activityLabel": "home"
                         },
                         {
@@ -5488,7 +5534,8 @@
                               "obligation": "plan",
                               "days": ["Tothu"],
                               "window": ["07:00", "18:00"],
-                              "destinationStationId": "station_smi_evening_kzubug",
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
                               "activityLabel": "resting at home, forge cold"
                         }
                   ],
@@ -5955,6 +6002,42 @@
                         ],
                         "defaultStationId": "station_smi_apprentice"
                   },
+                  "agenda": [
+                        {
+                              "id": "apprentice-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:30", "12:00"],
+                              "destinationStationId": "station_smi_apprentice",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "apprentice smithing"
+                        },
+                        {
+                              "id": "break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "window": ["12:00", "13:00"],
+                              "activityLabel": "break"
+                        },
+                        {
+                              "id": "apprentice-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["13:00", "17:30"],
+                              "destinationStationId": "station_smi_apprentice",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "apprentice smithing"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:30", "07:30"],
+                              "destinationRole": "smithy-home",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "See Kzubug's loreBackground for the full secret — Sloomi is Jubmir's half-sister and doesn't know it. <suggestion: dialogue writing — how close dialogue can get to the truth before it would need to actually reveal it, and whether there's a reveal questline planned>",
                   "phrasePools": [
                         {
@@ -6447,6 +6530,35 @@
                         ],
                         "defaultStationId": "station_inn_dorm_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "bar-stand",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["06:00", "16:00"],
+                              "destinationStationId": "station_inn_bar_stand",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "standing behind bar"
+                        },
+                        {
+                              "id": "kegs",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["16:00", "22:00"],
+                              "destinationStationId": "station_inn_bar_kegs",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "checking kegs"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "06:00"],
+                              "destinationStationId": "station_inn_dorm_bed",
+                              "destinationArea": "map_i_inn_F2",
+                              "activityLabel": "resting"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_hreesh_greetings",
@@ -9194,7 +9306,7 @@
                                     "preferArea": "map_i_carpenters",
                                     "preferRole": "khibu-living-room",
                                     "avoidNpcIds": ["kinami_kunji"],
-                                    "fallbackStationId": "furniture_chair_map_i_inn_16_9",
+                                    "fallbackStationId": "furniture_chair_map_i_inn_16_8",
                                     "fallbackArea": "map_i_inn"
                               },
                               "activityLabel": "visiting family / staying out of Kinami's way"

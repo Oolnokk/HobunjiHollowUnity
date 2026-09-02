@@ -101,6 +101,25 @@ for (const src of (dynamicSources.sources || [])) {
 // 'sit' is additionally granted at runtime to every placed decorative chair
 // (registerChairNpcStation) — never assumed empty by the editor's own check.
 
+// Shared by both a beat's own destinationStationId/destinationRole and its
+// preferences.{prefer,fallback}{StationId,Role} — the socialize/visit
+// activity resolves those exactly the same way (see npc-activities.js's
+// socialize()), so a typo in a fallback is just as capable of silently
+// stranding an NPC as one in the beat's primary destination.
+function checkStationRef(tag, whichLabel, stationId, role) {
+  const issues = [];
+  if (stationId && !stationIds.has(stationId)) {
+    issues.push(`${tag}: ${whichLabel} "${stationId}" doesn't match any known station.`);
+  }
+  if (role) {
+    const candidates = roleIndex.get(role);
+    if ((!candidates || !candidates.size) && role !== 'sit') {
+      issues.push(`${tag}: ${whichLabel} role "${role}" — no known station advertises it.`);
+    }
+  }
+  return issues;
+}
+
 function issuesFor(npc) {
   const issues = [];
   const label = i => `${npc.name || npc.id}, agenda beat ${i + 1}`;
@@ -112,16 +131,14 @@ function issuesFor(npc) {
     if (ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION.has(beat.activity) && !beat.destinationStationId && !beat.destinationRole) {
       issues.push(`${tag}: activity "${beat.activity}" needs destinationStationId or destinationRole.`);
     }
-    if (beat.destinationStationId && !stationIds.has(beat.destinationStationId)) {
-      issues.push(`${tag}: destinationStationId "${beat.destinationStationId}" doesn't match any known station.`);
-    }
-    if (beat.destinationRole) {
-      const candidates = roleIndex.get(beat.destinationRole);
-      if (!candidates || !candidates.size) {
-        // 'sit' is always dynamically populated by placed furniture at runtime —
-        // never actually empty in practice even though no map authors it statically.
-        if (beat.destinationRole !== 'sit') issues.push(`${tag}: no known station advertises role "${beat.destinationRole}".`);
-      }
+    issues.push(...checkStationRef(tag, 'destinationStationId', beat.destinationStationId, null));
+    issues.push(...checkStationRef(tag, 'destinationRole', null, beat.destinationRole));
+    if (beat.preferences) {
+      const p = beat.preferences;
+      issues.push(...checkStationRef(tag, 'preferences.preferStationId', p.preferStationId, null));
+      issues.push(...checkStationRef(tag, 'preferences.preferRole', null, p.preferRole));
+      issues.push(...checkStationRef(tag, 'preferences.fallbackStationId', p.fallbackStationId, null));
+      issues.push(...checkStationRef(tag, 'preferences.fallbackRole', null, p.fallbackRole));
     }
     if (beat.destinationArea && !mapIds.has(beat.destinationArea)) {
       issues.push(`${tag}: destinationArea "${beat.destinationArea}" isn't a known map id.`);

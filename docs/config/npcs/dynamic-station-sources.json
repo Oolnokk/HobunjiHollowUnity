@@ -67,11 +67,32 @@
       "roles": ["khibu-living-room"]
     },
     {
-      "idPattern": "furniture_chair_map_i_inn_16_9",
+      "idPattern": "furniture_chair_map_i_inn_16_8",
       "label": "Inn Patron Stool",
       "system": "Inn seating",
       "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
-      "description": "Existing authored stool at (16,9), used by Kaboku when he is avoiding Kinami and no family visit is available."
+      "description": "Existing authored stool at (16,8), used by Kaboku when he is avoiding Kinami and no family visit is available. (Corrected from a stale (16,9) reference that matched no placed furniture — see hobunji-starter-npc-database.json and schedule-overrides.json.)"
+    },
+    {
+      "idPattern": "furniture_chair_map_i_inn_15_11",
+      "label": "Inn Patron Stool",
+      "system": "Inn seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Existing authored stool at (15,11), where Leaf relaxes at the inn. (Corrected from a stale (14,11) reference that matched no placed furniture.)"
+    },
+    {
+      "idPattern": "furniture_chair_map_i_inn_4_8",
+      "label": "Inn Patron Stool",
+      "system": "Inn seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Existing authored stool at (4,8), where Pahu socializes in the morning. (Corrected from a stale (4,7) reference that matched no placed furniture.)"
+    },
+    {
+      "idPattern": "furniture_chair_map_i_inn_3_11",
+      "label": "Inn Patron Stool",
+      "system": "Inn seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Existing authored stool at (3,11), where Pahu spends the afternoon. (Corrected from a stale (4,11) reference that matched no placed furniture.)"
     }
   ]
 }
