@@ -7,6 +7,8 @@
   let configPromise = null; // Used to share the single mine-config request among map loading, loot gating, and diagnostics.
   let deps = null; // Used by runtime progression helpers while pure generation remains independently testable.
   let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0 }; // Used as the world-member mine progression saved alongside inventory and quests.
+  const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
+  const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -96,6 +98,8 @@
     const enemyKinds = enemyPlan(floorNumber, rng); // Used to apply the requested quiet opening followed by increasingly large ghoul groups.
     const enemyTiles = pickSeparatedTiles(rng, generated.floor, excluded, enemyKinds.length);
     const mineEnemySpawns = enemyTiles.map(([col, row], index) => ({ col, row, kind: enemyKinds[index] }));
+    if (mineEnemySpawns.some(spawn => spawn.kind === 'ghoul')) ghoulBgmFloorIds.add(mapId);
+    else ghoulBgmFloorIds.delete(mapId);
 
     const exits = [{ id: `mine_floor_${floorNumber}_retreat`, label: 'Retreat to the ladder room', tiles: generated.exitTiles, targetMap: SAFE_ROOM_ID, spawnCol: 4, spawnRow: 3 }]; // Used to let players deliberately bank a run instead of requiring death.
     if (floorNumber < config.floorCount) {
@@ -174,6 +178,11 @@
   }
 
   function getTownValue() { return progression.townValue; }
+
+  function bgmTracksForArea(mapId) {
+    if (!floorFromMapId(mapId)) return null;
+    return ghoulBgmFloorIds.has(mapId) ? [GHOUL_BGM_TRACK] : [];
+  }
 
   function completedTier(tier) {
     return progression.deepestFloor >= Math.max(1, Math.min(9, Number(tier) || 1)) * 10;
@@ -326,6 +335,7 @@
     serialize,
     restore,
     getTownValue,
+    bgmTracksForArea,
     ladderRows,
     buildLadderTier,
     openLadderPanel,
