@@ -1,24 +1,44 @@
 (() => {
   'use strict';
 
-  // Funji & Son's General Store: goods + a daily-rotating clothing rack.
-  // Extracted out of game.js following the same window.<Namespace> +
-  // init(deps) pattern as its sibling shop modules (most directly mirrors
-  // js/jubmir-shop.js). GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
-  // GENERAL_STORE_CLOTHING_SLOTS are threaded as getters since
-  // _applyLoadedShopStock (game.js) reassigns them wholesale once
-  // docs/config/shops/shop-stock.json loads; packClothing/gearInventory
-  // likewise, since character load/logout reassigns those wholesale too.
+  // Funji & Son's General Store: goods + a daily-rotating clothing rack +
+  // immediate player-pack sales. ShippingPanel owns the canonical sale-price
+  // bridge so the store and Shipping Box cannot drift onto different values.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
   let generalStoreActiveCategory = 'goods'; // Mirrors the Supply Shop's own category tabs.
 
   function getGeneralStoreCategoryLabel(category) {
-    return ({ all: 'All', goods: 'Goods', clothing: 'Clothing' })[category] || 'General Store';
+    return ({ all: 'All', goods: 'Goods', clothing: 'Clothing', sell: 'Sell' })[category] || 'General Store';
+  }
+
+  function ensureGeneralStoreSellUi() {
+    const tabs = document.querySelector('.general-store-tab')?.parentElement; // Used to add the missing point-of-sale category without duplicating index markup.
+    if (tabs && !tabs.querySelector('[data-general-store-cat="sell"]')) {
+      const sellTab = document.createElement('button'); // Used as the General Store's dedicated player-item selling tab.
+      sellTab.className = 'supply-tab general-store-tab';
+      sellTab.dataset.generalStoreCat = 'sell';
+      sellTab.type = 'button';
+      sellTab.textContent = 'Sell';
+      const allTab = tabs.querySelector('[data-general-store-cat="all"]'); // Used to keep Sell beside the other specific categories, before All.
+      tabs.insertBefore(sellTab, allTab || null);
+    }
+    if (!document.getElementById('generalStoreSellStyles')) {
+      const style = document.createElement('style'); // Used for compact two-button sell controls on desktop and mobile.
+      style.id = 'generalStoreSellStyles';
+      style.textContent = `
+        #mpGeneralStore .gs-sell-actions { display:flex; flex:0 0 auto; gap:4px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+        #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:74px; padding-inline:7px; }
+        #mpGeneralStore .gs-sell-empty { color:var(--muted); font-size:11px; padding:12px; text-align:center; border:1px dashed var(--border); border-radius:10px; }
+        @media (max-width:760px) { #mpGeneralStore .gs-sell-actions { flex-direction:column; align-items:stretch; } #mpGeneralStore .gs-sell-actions .shop-buy-btn { min-width:68px; } }
+      `;
+      document.head.appendChild(style);
+    }
   }
 
   function bindGeneralStoreTabs() {
+    ensureGeneralStoreSellUi();
     document.querySelectorAll('.general-store-tab').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.generalStoreCat === generalStoreActiveCategory);
       btn.onclick = () => {
@@ -33,8 +53,8 @@
     if (gold < item.price) { deps.showToast('Not enough gold.', false); return; }
     deps.inventory.gold = gold - item.price;
     if (item.gives) {
-      Object.entries(item.gives).forEach(([k, v]) => {
-        deps.inventory[k] = Math.min(99, (deps.inventory[k] || 0) + v);
+      Object.entries(item.gives).forEach(([key, value]) => {
+        deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + value);
       });
     }
     deps.showToast('Bought ' + item.name + '!', true);
@@ -62,6 +82,43 @@
     });
   }
 
+  function sellGeneralStoreItem(item, quantity) {
+    const result = window.ShippingPanel?.sellInventoryAtStore?.(item.key, quantity); // Used to route immediate store sales through the same canonical economy bridge as shipping.
+    if (!result?.moved) { deps.showToast('Nothing to sell.', false); return; }
+    deps.showToast(`Sold ${result.moved}× ${item.label} for ${result.earned}g`, true);
+    renderGeneralStorePage();
+  }
+
+  function renderGeneralStoreSell(list) {
+    const sellable = window.ShippingPanel?.getSellableInventory?.() || []; // Used to show only pack stacks accepted by the Shipping Box economy table.
+    if (!sellable.length) {
+      const empty = document.createElement('div'); // Used as clear feedback when the player has no store-sellable pack items.
+      empty.className = 'gs-sell-empty';
+      empty.textContent = 'No sellable items in your pack.';
+      list.appendChild(empty);
+      return;
+    }
+    sellable.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'shop-row';
+      row.innerHTML = `
+        <div class="sh-icon">${item.icon}</div>
+        <div class="sh-info">
+          <div class="sh-name">${deps.esc(item.label)}</div>
+          <div class="sh-desc">${deps.esc(item.desc || 'Sell directly to Funji & Son.')}</div>
+          <div class="sh-price">${item.count} in pack · ${item.price}g each · ${item.count * item.price}g stack</div>
+        </div>
+        <div class="gs-sell-actions">
+          <button class="shop-buy-btn gs-sell-one" type="button">Sell 1</button>
+          <button class="shop-buy-btn gs-sell-stack" type="button">Sell Stack</button>
+        </div>
+      `;
+      row.querySelector('.gs-sell-one')?.addEventListener('click', () => sellGeneralStoreItem(item, 1));
+      row.querySelector('.gs-sell-stack')?.addEventListener('click', () => sellGeneralStoreItem(item, 'stack'));
+      list.appendChild(row);
+    });
+  }
+
   // Rerolled fresh every calendar day from a seeded RNG (deterministic per
   // day, so opening the store twice the same day always shows the same
   // rack) — one entry per GENERAL_STORE_CLOTHING_SLOTS slot.
@@ -73,7 +130,7 @@
     // out entirely, so a misconfigured pool never bricks the shop.
     const world = deps.lootShopWorldState();
     const allPieces = deps.getStoreClothingPieces();
-    const eligible = allPieces.filter(p => window.ConditionRegistry.entryEligible(p, world));
+    const eligible = allPieces.filter(piece => window.ConditionRegistry.entryEligible(piece, world));
     const pieces = eligible.length ? eligible : allPieces;
     const slots = deps.getGeneralStoreClothingSlots();
     for (let i = 0; i < slots; i++) {
@@ -138,6 +195,7 @@
     list.innerHTML = '';
     if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
     if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
+    if (generalStoreActiveCategory === 'sell') renderGeneralStoreSell(list);
   }
 
   window.GeneralStore = {
