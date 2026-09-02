@@ -29254,7 +29254,7 @@
       });
 
       window.FarmAnimals?.init({
-      openLivestockDialogue,
+        openLivestockDialogue,
         COLS,
         ROWS,
         TILE,
