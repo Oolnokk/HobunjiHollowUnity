@@ -75,7 +75,7 @@
       },
       {
         id: 'dzibim_warcleaver',
-        npcId: 'dzibim',
+        npcId: 'dzibim_khibu',
         shapeKey: 'warCleaver',
         giftMetalKey: 'nativeCopper',
         dialogueTreeId: 'weapon_trust_gift_warcleaver',
@@ -138,8 +138,9 @@
     },
 
     onboarding: {
-      // Only new profiles are changed; existing saves that already own the
-      // old starter Fishing Mace are not retroactively stripped of it.
+      // Only newly-created characters lose the old starter Fishing Mace.
+      // Existing characters keep whatever they already own, including when
+      // they start/join another world.
       removeStarterItemKeys: ['fishingmace_nativeCopper'],
     },
   };
