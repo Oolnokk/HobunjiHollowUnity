@@ -9099,6 +9099,9 @@
       // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
       // individually removable while structural ROCK terrain remains merged.
       const _zoneMineableRockMeshes = new Map();
+      // Mine floor -> hidden descent-tile marker. The marker is built with
+      // the floor but remains invisible until its covering rock is mined.
+      const _mineDescentHoleMeshes = new Map();
       let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
       const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
@@ -12396,20 +12399,45 @@
           if (mapData.wallStyle === 'mine') {
             const oreRockMeshes = new Map(); // Used for O(1) removal when a mine-floor rock is broken.
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            const descentHoleMeshes = new Map();
+            _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
+            const previouslyMined = new Set((_zoneMinedRockPersist.get(mapId) || []).map(entry => `${entry.col},${entry.row}`));
             const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
             carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
             carvedTexture.repeat.set(0.7, 0.7);
             if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
             for (const rock of (mapData.oreRocks || [])) {
+              const rockKey = `${rock.col},${rock.row}`;
+              const wasMined = previouslyMined.has(rockKey);
               const tile = bGrid[rock.row]?.[rock.col];
               if (tile) {
-                tile.type = TileType.ROCK;
+                tile.type = wasMined ? TileType.GRASS : TileType.ROCK;
                 tile.rockKind = 'diggableRockOre';
                 tile.oreKind = rock.oreKind;
                 tile.metalKey = rock.metalKey || null;
                 tile.hiddenMineDescent = !!rock.hiddenDescent;
                 tile.mineFloor = mapData.mineFloor;
               }
+              if (rock.hiddenDescent) {
+                const hole = new THREE.Group();
+                const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
+                voidDisk.rotation.x = -Math.PI / 2;
+                voidDisk.position.y = 0.135;
+                hole.add(voidDisk);
+                const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
+                rim.rotation.x = Math.PI / 2;
+                rim.position.y = 0.15;
+                hole.add(rim);
+                const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
+                innerRim.rotation.x = Math.PI / 2;
+                innerRim.position.y = 0.145;
+                hole.add(innerRim);
+                hole.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+                hole.visible = wasMined;
+                bScene.add(hole);
+                descentHoleMeshes.set(rockKey, hole);
+              }
+              if (wasMined) continue;
               const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
@@ -13048,6 +13076,13 @@
         const floorMeshes = _zoneFloorMeshGroups.get(mapId);
         const floorIndex = floorMeshes?.indexOf(rockGroup) ?? -1;
         if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
+        return true;
+      }
+
+      function revealMineDescentVisual(mapId, col, row) {
+        const hole = _mineDescentHoleMeshes.get(mapId)?.get(`${col},${row}`);
+        if (!hole) return false;
+        hole.visible = true;
         return true;
       }
 
@@ -16953,6 +16988,7 @@
           const zoneVisualsUpdated = currentArea === 'farm'
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
+          if (revealedMineDescent) revealMineDescentVisual(currentArea, col, row);
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
           const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';
