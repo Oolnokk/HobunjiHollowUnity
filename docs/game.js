@@ -25294,6 +25294,14 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Procedural mine floors are building interiors, so they return from
+          // this branch before the general wilderness/town action block below.
+          // Surface campfires are handled there; mine campfires must expose the
+          // same nearby Save/Cook/Brew actions here instead.
+          const mineCampfireActions = window.TownMine?.floorFromMapId?.(currentArea)
+            ? window.WildernessCampfire?.getNearbyActions?.()
+            : null;
+          if (mineCampfireActions?.length) return mineCampfireActions;
           // Building interiors return early above and never reach the
           // farm/zone/town item-context block further down (it also relies
           // on a reticle/tile pair this branch never computes) — without
@@ -25304,6 +25312,13 @@
           // indoors so isn't duplicated here.
           if (heldMode === 'item') {
             const heldItem = getActiveInventoryItem();
+            // Mine floors are building interiors, so the general held-item
+            // campfire-kit branch below is unreachable here. Mirror it in this
+            // early-return branch so Action 1 can actually set up a campfire
+            // underground instead of silently omitting the button.
+            if (heldItem && heldItem.key === 'campfireKitFurniture' && window.WildernessCampfire?.supportsArea?.(currentArea)) {
+              return [{ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            }
             const flaskActions = window.AlchemyFlasks?.heldActions?.() || [];
             if (flaskActions.length) return flaskActions;
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
