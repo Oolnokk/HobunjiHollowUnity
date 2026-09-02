@@ -39,28 +39,32 @@
       "label": "Dzibim Home Stool",
       "system": "Carpenter / Khibu house seating",
       "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
-      "description": "Authored stool at (12,8); game.js auto-registers sit furniture as deterministic NPC stations."
+      "description": "Authored stool at (12,8); game.js auto-registers sit furniture as deterministic NPC stations. Map-authored roles:[\"khibu-living-room\"] (docs/config/maps/map_i_carpenters.json) makes it one of four interchangeable seats in the Khibu living room, chosen by occupancy-aware role selection rather than a fixed id.",
+      "roles": ["khibu-living-room"]
     },
     {
       "idPattern": "furniture_chair_map_i_carpenters_13_8",
       "label": "Dzahiri Home Stool",
       "system": "Carpenter / Khibu house seating",
       "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
-      "description": "Authored stool at (13,8); game.js auto-registers sit furniture as deterministic NPC stations."
+      "description": "Authored stool at (13,8); game.js auto-registers sit furniture as deterministic NPC stations. Map-authored roles:[\"khibu-living-room\"] (docs/config/maps/map_i_carpenters.json) makes it one of four interchangeable seats in the Khibu living room, chosen by occupancy-aware role selection rather than a fixed id.",
+      "roles": ["khibu-living-room"]
     },
     {
       "idPattern": "furniture_chair_map_i_carpenters_12_9",
       "label": "Nashka Home Stool",
       "system": "Carpenter / Khibu house seating",
       "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
-      "description": "Authored stool at (12,9); game.js auto-registers sit furniture as deterministic NPC stations."
+      "description": "Authored stool at (12,9); game.js auto-registers sit furniture as deterministic NPC stations. Map-authored roles:[\"khibu-living-room\"] (docs/config/maps/map_i_carpenters.json) makes it one of four interchangeable seats in the Khibu living room, chosen by occupancy-aware role selection rather than a fixed id.",
+      "roles": ["khibu-living-room"]
     },
     {
       "idPattern": "furniture_chair_map_i_carpenters_13_9",
       "label": "Khibu Family Guest Stool",
       "system": "Carpenter / Khibu house seating",
       "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
-      "description": "Authored guest stool at (13,9), used by Kaboku when Dzahiri or Nashka is home."
+      "description": "Authored guest stool at (13,9). Kaboku's socialize beat now targets destinationRole \"khibu-living-room\" (see hobunji-starter-npc-database.json) instead of this exact id, so he lands on whichever of the four Khibu stools is free rather than always this one.",
+      "roles": ["khibu-living-room"]
     },
     {
       "idPattern": "furniture_chair_map_i_inn_16_9",

@@ -215,7 +215,12 @@
       const pos = walker.root.position;
       const found = ctx.opportunityStimulus ? { stimulus: ctx.opportunityStimulus, proximity: 1 } : window.NpcSocialStimuli?.strongestNear?.(walker.area, pos.x, pos.z);
 
-      const sitStations = deps.findStationsByRole?.('sit', { area: walker.area }) || [];
+      const allSitStations = deps.findStationsByRole?.('sit', { area: walker.area }) || [];
+      // Prefer an empty seat over one someone else is already using, same
+      // bias as goToRole — falls back to the full list if every seat in the
+      // area happens to be taken, so it's still always able to sit somewhere.
+      const untakenSitStations = allSitStations.filter(s => !window.NpcActivities.isStationOccupied(s, ctx));
+      const sitStations = untakenSitStations.length ? untakenSitStations : allSitStations;
       if (sitStations.length) {
         let nearest = null, nearestD = Infinity;
         for (const s of sitStations) {
@@ -387,14 +392,25 @@
     //   - an NPC whose real first destination just hasn't loaded yet must
     //     keep waiting for it, not pop into existence at a generic wander
     //     tile and only *then* start walking to where they actually belong.
-    // So: no free-time synthesis before an NPC has ever had a walker.
+    // So: no free-time synthesis before an NPC has ever had a walker — free
+    // time/wander fundamentally can't produce one anyway (every opportunity
+    // in runFreeTime, wander included, needs a live walker position to
+    // resolve around). That means an agenda whose eligible beat *right at
+    // boot* is a pure free-time beat (activity:'break', or 'idle' with no
+    // destination — see design doc §44's break/gap/leisure beats) would
+    // otherwise defer this NPC forever if the player happens to load during
+    // exactly that window. legacyResolve is the fix: every converted NPC
+    // still carries its original scheduleHooks untouched specifically as
+    // this safety net (its defaultStationId/defaultPosition/legacy path),
+    // so falling back to it here — same as a no-agenda NPC already does —
+    // guarantees a sane bootstrap position without inventing one.
     if (!hasExistingWalker) {
       if (!(Array.isArray(rec?.agenda) && rec.agenda.length)) return legacyResolve ? legacyResolve(rec) : null;
       for (const beat of eligible) {
         const res = window.NpcActivities.resolveDestination(beat, { ...ctx0, legacyResolve });
         if (res.status === window.NpcActivities.STATUS.READY) return res.target;
       }
-      return null;
+      return legacyResolve ? legacyResolve(rec) : null;
     }
 
     // ── Live: this NPC already exists in the world ──────────────────────

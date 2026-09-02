@@ -143,6 +143,25 @@ let mockPlayerPos = { x: 0, z: 0 };
   assert.equal(preSpawnResult, null, 'pre-spawn: still null, letting spawnScheduledNpcs/_retrySpawnDeferredNpcs keep retrying instead of popping in at a wander tile');
 }
 
+// ── F2: an agenda NPC whose only eligible beat at boot is a pure free-time beat still gets a real spawn position (never defers forever) ──
+// Free time/wander fundamentally needs an existing walker to resolve around
+// (nothing to "wander near" without a current position), so it can never by
+// itself produce a pre-spawn result. legacyResolve is the safety net: every
+// converted NPC keeps its original scheduleHooks (defaultStationId etc.)
+// specifically so this can never happen for real.
+{
+  const rec = {
+    id: 'freetime_only_npc',
+    agenda: [{ id: 'unstructured', activity: 'break', obligation: 'leisure', window: ['00:00', '23:59'] }],
+  };
+  const fallbackTarget = { area: 'town', c: 4, r: 4, stationId: 'station_home', activity: 'home' };
+  const noFreeTimeResult = Planner.resolveNpcTarget(rec, { legacyResolve: () => fallbackTarget, hasExistingWalker: false });
+  assert.equal(noFreeTimeResult, fallbackTarget, 'pre-spawn falls back to legacyResolve (the retained scheduleHooks safety net) instead of returning null, since free time alone cannot produce a bootstrap position');
+
+  const noFallbackEither = Planner.resolveNpcTarget(rec, { legacyResolve: () => null, hasExistingWalker: false });
+  assert.equal(noFallbackEither, null, 'and if there truly is no fallback at all, it still correctly stays null rather than inventing one — this is the case an author must give a defaultStationId for');
+}
+
 // ── G: break → free time, always resolves to a recognizable, valid opportunity ──
 {
   stationsById.set('smithy_bench', { id: 'smithy_bench', label: 'Bench', area: 'smithy', c: 9, r: 9, pose: 'sit', roles: ['sit'] });
@@ -180,6 +199,62 @@ let mockPlayerPos = { x: 0, z: 0 };
   const withoutFamily = Planner.resolveNpcTarget(kabokuRec, { legacyResolve: () => null, hasExistingWalker: true });
   assert.equal(withoutFamily.stationId, 'inn_stool', 'family absent → falls back to the inn, exactly like the old presenceChoices hack, but decided live instead of precompiled per-weekday');
   assert.equal(withoutFamily.plannerReason, 'preferred company absent');
+}
+
+// ── H2: untaken-seat bias — several visitors sharing one "living room" destinationRole each land on a different chair ──
+{
+  const livingRoomChairs = ['chair_1', 'chair_2', 'chair_3'].map((id, i) =>
+    ({ id, area: 'living_room', c: i, r: 0, pose: 'sit', roles: ['living-room-seat'] }));
+  livingRoomChairs.forEach(c => stationsById.set(c.id, c));
+  const beat = { id: 'visit', activity: 'goToRole', obligation: 'plan', window: ['00:00', '23:59'], destinationRole: 'living-room-seat', destinationArea: 'living_room' };
+  const visitorA = { id: 'visitor_a', agenda: [beat] };
+  const visitorB = { id: 'visitor_b', agenda: [beat] };
+  const visitorC = { id: 'visitor_c', agenda: [beat] };
+  walkers.push(makeWalker(visitorA, 'living_room', 0, 0));
+
+  const aRes = Planner.resolveNpcTarget(visitorA, { legacyResolve: () => null, hasExistingWalker: true });
+  assert(livingRoomChairs.some(c => c.id === aRes.stationId), 'visitor A takes one of the three chairs');
+
+  walkers.push(makeWalker(visitorB, 'living_room', 0, 0));
+  const bRes = Planner.resolveNpcTarget(visitorB, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.notEqual(bRes.stationId, aRes.stationId, 'visitor B lands on a different, still-empty chair instead of stacking on A\'s');
+
+  walkers.push(makeWalker(visitorC, 'living_room', 0, 0));
+  const cRes = Planner.resolveNpcTarget(visitorC, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.notEqual(cRes.stationId, aRes.stationId);
+  assert.notEqual(cRes.stationId, bRes.stationId, 'visitor C takes the last empty chair — all three now distinct');
+
+  // A fourth visitor, once every chair is taken, still resolves (doubles up) rather than failing outright.
+  const visitorD = { id: 'visitor_d', agenda: [beat] };
+  walkers.push(makeWalker(visitorD, 'living_room', 0, 0));
+  const dRes = Planner.resolveNpcTarget(visitorD, { legacyResolve: () => null, hasExistingWalker: true });
+  assert(livingRoomChairs.some(c => c.id === dRes.stationId), 'once every seat is taken, a new visitor still resolves to *a* chair rather than failing');
+}
+
+// ── H3: socialize + preferRole — the real Kaboku/Khibu wiring: relationship-aware ──
+// preference *and* untaken-seat bias composed together, not just goToRole alone.
+{
+  const khibuChairs = ['khibu_stool_dzibim', 'khibu_stool_dzahiri', 'khibu_stool_nashka', 'khibu_stool_guest'].map((id, i) =>
+    ({ id, area: 'carpenters', c: 12 + (i % 2), r: 8 + Math.floor(i / 2), pose: 'sit', roles: ['khibu-living-room'] }));
+  khibuChairs.forEach(c => stationsById.set(c.id, c));
+  const prefs = { preferNpcIds: ['dzahiri'], preferArea: 'carpenters', preferRole: 'khibu-living-room', avoidNpcIds: ['kinami'], fallbackStationId: 'inn_stool', fallbackArea: 'inn' };
+  const kabokuRec = { id: 'kaboku_role_test', agenda: [{ id: 'social', activity: 'socialize', obligation: 'plan', window: ['00:00', '23:59'], preferences: prefs }] };
+  walkers.push(makeWalker(kabokuRec, 'carpenters', 1, 1));
+  const dzahiriWalker = makeWalker({ id: 'dzahiri' }, 'carpenters', 0, 0);
+  walkers.push(dzahiriWalker);
+  mockCurrentArea = 'carpenters';
+
+  const res = Planner.resolveNpcTarget(kabokuRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert(khibuChairs.some(c => c.id === res.stationId), 'family present + preferRole → lands on one of the four Khibu stools');
+  assert.equal(res.plannerReason, 'preferred company present');
+
+  // Occupy that exact chair with another NPC — Kaboku should land on a *different* untaken stool, not stack.
+  const occupantWalker = makeWalker({ id: 'occupant' }, 'carpenters', khibuChairs[0].c, khibuChairs[0].r,
+    { currentScheduleTarget: { stationId: res.stationId } });
+  walkers.push(occupantWalker);
+  const res2 = Planner.resolveNpcTarget(kabokuRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert(khibuChairs.some(c => c.id === res2.stationId), 'still lands on a Khibu stool');
+  assert.notEqual(res2.stationId, res.stationId, 'the previously-chosen stool is now occupied, so Kaboku picks a different untaken one instead of stacking');
 }
 
 // ── I: deterministic choice among several equally-valid stations (no tick-to-tick flicker) ──

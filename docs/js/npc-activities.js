@@ -75,6 +75,17 @@
     return waitingOrUnavailable(ctx.beat.destinationArea, `station "${stationId}" not found`);
   }
 
+  // Is some *other* NPC already resolved to this exact station? One-tick-
+  // stale-tolerant, same as every other "does this look free" read in this
+  // system (design doc §29's chat-availability check, most notably) — not a
+  // reservation, just a bias toward not visibly stacking two NPCs on one
+  // spot when other equally-valid spots are sitting empty.
+  function isStationOccupied(station, ctx) {
+    const stationId = station.stationId || station.id;
+    const others = deps.listNpcWalkersInArea?.(station.area) || [];
+    return others.some(w => w.rec?.id && w.rec.id !== ctx.npcId && w.currentScheduleTarget?.stationId === stationId);
+  }
+
   function goToRole(ctx, roleOverride) {
     const role = roleOverride || ctx.beat.destinationRole;
     if (!role) return invalidContent('activity requires beat.destinationRole (or destinationStationId)');
@@ -88,6 +99,16 @@
       const local = candidates.filter(c => c.area === ctx.walker.area);
       if (local.length) candidates = local;
     }
+    // Prefer an empty spot over one someone else is already at (design doc
+    // §16 — this is exactly what makes "the Khibu living room" work as one
+    // shared destinationRole for several chairs instead of every visitor
+    // needing their own dedicated station id: whoever resolves this role
+    // second just lands on a different untaken seat). Only actually
+    // narrows anything when a role has more than one candidate and at
+    // least one is free; a single-occupant role like a specific NPC's own
+    // work station is completely unaffected.
+    const untaken = candidates.filter(c => !isStationOccupied(c, ctx));
+    if (untaken.length) candidates = untaken;
     candidates = [...candidates].sort((a, b) => String(a.stationId || a.id).localeCompare(String(b.stationId || b.id)));
     const chosen = pickDeterministic(candidates, ctx.npcId, ctx.now?.day, `${ctx.beat.id}:role`);
     return ready(stationTarget(chosen, ctx));
@@ -317,6 +338,6 @@
     resolveDestination,
     // Exposed for the planner's free-time scorer and for tests.
     ready, noPlan, invalidContent, unavailable, waitingForWorld,
-    pickDeterministic,
+    pickDeterministic, isStationOccupied,
   };
 })();
