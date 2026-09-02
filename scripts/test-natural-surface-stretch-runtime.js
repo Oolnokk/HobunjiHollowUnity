@@ -47,7 +47,7 @@ class FakeImage {
 }
 
 const logs = []; // Used to verify the self-heal reports through the mobile-visible render log.
-const remaps = []; // Used to verify the legacy cliff UV marker is invalidated before the island mapper is re-run.
+const remaps = []; // Used to verify stale terrain UV markers are invalidated before the island mapper is re-run.
 const windowMock = {
   THREE: { Scene, Object3D },
   NaturalSurfaceMaterialConfig: {
@@ -65,6 +65,9 @@ const windowMock = {
   HobunjiSurfaceStretchUV: {
     remapNaturalTerrainMesh(mesh) {
       remaps.push({ signatureBeforeRemap: mesh.geometry.userData.hobunjiSurfaceStretchSignature });
+      const position = mesh.geometry.getAttribute?.('position') || mesh.geometry.attributes?.position; // Used to emulate production recovery of a missing UV buffer.
+      const uv = mesh.geometry.getAttribute?.('uv') || mesh.geometry.attributes?.uv;
+      if (position && !uv) mesh.geometry.attributes.uv = { count: position.count, itemSize: 2 }; // Used by the missing-UV regression to prove the forced remap restores raycast UV support.
       mesh.geometry.userData.hobunjiSurfaceStretchSignature = 'surface-island-v1|runtime-test';
       mesh.geometry.userData.hobunjiSurfaceStretch = { patchCount: 1, fallbackCount: 0 };
       return mesh.geometry.userData.hobunjiSurfaceStretch;
@@ -97,24 +100,44 @@ vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), {
   Error,
 });
 
-function makeReportedMesh(surface = 'cliffs') {
+function makeGeometry({ missingUv = false, mapping = 'cliff-face-stretch' } = {}) {
+  const attributes = {
+    position: { count: 6, itemSize: 3 }, // Used as the authoritative vertex count for UV validity checks.
+  };
+  if (!missingUv) attributes.uv = { count: 6, itemSize: 2 }; // Used by legacy-cliff cases so only the old mapping marker forces a remap.
+  return {
+    attributes,
+    userData: {
+      naturalSurfaceUvMapping: mapping,
+      hobunjiSurfaceStretchSignature: 'surface-island-v1|angle=18|material=*',
+      hobunjiSurfaceStretch: { patchCount: 4, fallbackCount: 0 },
+    },
+    getAttribute(name) { return this.attributes[name]; },
+  };
+}
+
+function makeReportedMesh(surface = 'cliffs', options = {}) {
+  const alreadyRepaired = options.alreadyRepaired === true; // Used to isolate missing-UV recovery from texture repair in the third regression case.
   const texture = {
     name: 'natural_#808080_clamp', // Matches the Pixel Probe texture name from the reported broken rock.
-    image: { width: 4, height: 4 }, // Recreates the exact flat placeholder seen in the report.
-    userData: {}, // Recreates the reported state=- source=- metadata loss.
+    image: alreadyRepaired ? { width: 250, height: 250 } : { width: 4, height: 4 }, // Recreates either the current 250x250 repaired report or the earlier flat placeholder.
+    userData: alreadyRepaired ? {
+      naturalSurfaceBodySpriteTint: true,
+      naturalSurfaceBodySpriteTintTarget: '#808080',
+      hobunjiAuthoredSurfacePath: 'assets/textures/carved_smooth.png',
+      hobunjiAuthoredSurfaceState: 'authored-png-raw-repair',
+      hobunjiAuthoredSurfaceImageSize: '250x250',
+    } : {}, // Recreates the reported metadata state for each stage of the debugging sequence.
     needsUpdate: false,
   };
   const material = {
     map: texture,
     userData: { naturalSurface: surface }, // Used to reconstruct the missing texture metadata from central config.
   };
-  const geometry = {
-    userData: {
-      naturalSurfaceUvMapping: 'cliff-face-stretch', // Recreates the older runtime UV repair that can overwrite the new island unwrap.
-      hobunjiSurfaceStretchSignature: 'surface-island-v1|angle=18|material=*',
-      hobunjiSurfaceStretch: { patchCount: 4, fallbackCount: 0 },
-    },
-  };
+  const geometry = makeGeometry({
+    missingUv: options.missingUv === true,
+    mapping: options.mapping || 'cliff-face-stretch',
+  });
   const mesh = {
     isMesh: true,
     name: `reported-${surface}`,
@@ -168,12 +191,43 @@ async function run() {
     throw new Error(`Nested rock did not reach repaired state: ${nested.texture.userData.hobunjiAuthoredSurfaceState}`);
   }
 
+  // Reproduce the third Pixel Probe exactly: the authored PNG is now repaired,
+  // but the final raycast hit reports no UV while an old island signature still
+  // survives in geometry.userData. The signature must not suppress regeneration.
+  const missingUv = makeReportedMesh('rocks', {
+    alreadyRepaired: true,
+    missingUv: true,
+    mapping: 'surface-island',
+  });
+  group.add(missingUv.mesh);
+  if (!missingUv.geometry.getAttribute('uv')) {
+    throw new Error('Missing-UV rock still has no UV attribute after runtime inspection');
+  }
+  if (missingUv.geometry.getAttribute('uv').count !== missingUv.geometry.getAttribute('position').count) {
+    throw new Error('Recovered UV count does not match position count');
+  }
+  const missingUvRemap = remaps[remaps.length - 1]; // Used to prove the stale signature was cleared before the forced mapper call.
+  if (missingUvRemap.signatureBeforeRemap !== undefined) {
+    throw new Error(`Missing-UV stale signature was trusted instead of invalidated: ${missingUvRemap.signatureBeforeRemap}`);
+  }
+  if (missingUv.texture.userData.hobunjiAuthoredSurfaceState !== 'authored-png-raw-repair') {
+    throw new Error('Already-repaired 250x250 texture should not be reloaded merely because UVs were missing');
+  }
+
   if (!logs.some(entry => entry.category === 'render' && /texture repaired/.test(entry.message))) {
     throw new Error('Expected mobile-visible texture repair diagnostic');
   }
+  if (!logs.some(entry => entry.category === 'render' && /UVs disappeared/.test(entry.message))) {
+    throw new Error('Expected mobile-visible stale-missing-UV diagnostic');
+  }
 
   const snapshot = windowMock.NaturalSurfaceStretchRuntime?.snapshot?.(); // Used to assert the module exposes mobile-friendly counters after repair.
-  if (!snapshot || snapshot.textureRepairsCompleted !== 2 || snapshot.legacyCliffUvOverridesFound < 2 || snapshot.nestedAddsInspected < 1) {
+  if (!snapshot
+      || snapshot.textureRepairsCompleted !== 2
+      || snapshot.legacyCliffUvOverridesFound < 2
+      || snapshot.nestedAddsInspected < 2
+      || snapshot.missingUvSurfaceMarkersFound !== 1
+      || snapshot.missingUvSurfaceRepairs !== 1) {
     throw new Error(`Unexpected runtime repair snapshot: ${JSON.stringify(snapshot)}`);
   }
 
@@ -187,6 +241,11 @@ async function run() {
       source: nested.texture.userData.hobunjiAuthoredSurfacePath,
       state: nested.texture.userData.hobunjiAuthoredSurfaceState,
       imageSize: nested.texture.userData.hobunjiAuthoredSurfaceImageSize,
+    },
+    missingUv: {
+      state: missingUv.texture.userData.hobunjiAuthoredSurfaceState,
+      uvCount: missingUv.geometry.getAttribute('uv').count,
+      positionCount: missingUv.geometry.getAttribute('position').count,
     },
     remaps,
     snapshot,
