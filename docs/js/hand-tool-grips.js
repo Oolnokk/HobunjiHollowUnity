@@ -692,17 +692,29 @@
     syncEditorSpanUi(); patchEditorJsonView(); return true;
   }
 
+  function debugForTool(value) {
+    const toolKey = toolKeyFor(value); // Compact console-free snapshot shared by the editor and live game diagnostics.
+    return {
+      toolKey,
+      toolScale: toolScaleForTool(toolKey),
+      primaryGrip: authoredPrimaryGripForTool(toolKey),
+      secondaryGripSpan: secondaryGripSpanForTool(toolKey),
+      secondaryAnimation: currentSecondaryGripAnimationState(),
+      secondaryTarget: secondaryGripForTool(toolKey),
+    };
+  }
+
   global.HobunjiHandToolGrips = {
     schema: SCHEMA,
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
     toolKeyFor, ensureTool, toolScaleForTool, authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
-    currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals,
+    currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
-      const toolKey = inAttackEditor() ? editorCurrentToolKey() : toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
-      return { toolKey, toolScale: toolScaleForTool(toolKey), primaryGrip: authoredPrimaryGripForTool(toolKey), secondaryGripSpan: secondaryGripSpanForTool(toolKey), secondaryAnimation: currentSecondaryGripAnimationState(), secondaryTarget: secondaryGripForTool(toolKey) };
+      const value = inAttackEditor() ? editorCurrentToolKey() : (snapshot?.itemKey || snapshot?.shape || '');
+      return debugForTool(value);
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
