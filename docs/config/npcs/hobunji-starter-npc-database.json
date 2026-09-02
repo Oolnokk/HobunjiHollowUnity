@@ -4736,6 +4736,44 @@
                         ],
                         "defaultStationId": "station_k7m3q"
                   },
+                  "agenda": [
+                        {
+                              "id": "music-dayoff",
+                              "activity": "performMusic",
+                              "obligation": "plan",
+                              "days": ["Naru"],
+                              "window": ["08:00", "19:00"],
+                              "destinationRole": "music-performance",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "playing music all day, day off"
+                        },
+                        {
+                              "id": "shop-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["08:00", "19:00"],
+                              "destinationStationId": "station_k7m3q",
+                              "activityLabel": "checking shelves"
+                        },
+                        {
+                              "id": "inn-music",
+                              "activity": "performMusic",
+                              "obligation": "plan",
+                              "window": ["19:00", "23:00"],
+                              "destinationRole": "music-performance",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "playing music at the inn"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["23:00", "08:00"],
+                              "destinationStationId": "station_v4n8x",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_foroji_greetings",
@@ -5206,6 +5244,53 @@
                         ],
                         "defaultStationId": "station_smi_forge"
                   },
+                  "agenda": [
+                        {
+                              "id": "work-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["07:00", "12:00"],
+                              "destinationRole": "smith-work",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "smithing"
+                        },
+                        {
+                              "id": "lunch-break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Tothu"],
+                              "window": ["12:00", "13:00"],
+                              "activityLabel": "lunch break"
+                        },
+                        {
+                              "id": "work-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["13:00", "18:00"],
+                              "destinationRole": "smith-work",
+                              "destinationArea": "map_i_smithy",
+                              "activityLabel": "smithing"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "07:00"],
+                              "destinationStationId": "station_smi_evening_kzubug",
+                              "activityLabel": "home"
+                        },
+                        {
+                              "id": "day-off",
+                              "activity": "idle",
+                              "obligation": "plan",
+                              "days": ["Tothu"],
+                              "window": ["07:00", "18:00"],
+                              "destinationStationId": "station_smi_evening_kzubug",
+                              "activityLabel": "resting at home, forge cold"
+                        }
+                  ],
                   "loreBackground": "SPOILER — not for casual player-facing dialogue. Sloomi is the half-sister of Jubmir the trader. Jubmir's father Slorik was a trader who got injured near Hobunji and was taken in by Kzubug's family. Slorik saw how loving Kzubug's household was and wanted that for himself, despite having already been chosen to sire one son (Jubmir) with the Doromabi of his home village. Slorik returned to a guard job near Jubmir in secret, fell in love with Jubmir's Mabinga, Yanmira, and the two eloped into the Slagothi'ey wilderness with Jubmir when Yanmira became pregnant with Sloomi. When the Doromabi found their hideout, Yanmira and Slorik were killed; Jubmir escaped with infant Sloomi on his father's last instructions, found Dugmir (an old trade-route friend of Slorik's), and had Sloomi delivered to Kzubug while Jubmir himself returned to his Doro as the only one who hadn't committed or resulted from a crime. By the time Sloomi arrived, plague had wiped out Kzubug's whole family, so he took her in as divine providence and has been overprotective of her ever since. Jubmir knows the full story; Sloomi does not. It's the biggest reason Jubmir keeps making his barely-profitable trade runs to Hobunji. <suggestion: backstory — the plague's name/cause, the exact timeline (years since), and whether/when Sloomi ever learns the truth>",
                   "phrasePools": [
                         {
@@ -8703,6 +8788,72 @@
                         },
                         "defaultStationId": "station_di22s"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "days": ["Muunu"],
+                              "window": ["06:00", "19:00"],
+                              "destinationStationId": "station_kaboku_dayoff",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "enjoying a rare day off"
+                        },
+                        {
+                              "id": "cook",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Muunu"],
+                              "window": ["06:00", "09:00"],
+                              "destinationStationId": "station_6z6x4",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "cooking potion stock"
+                        },
+                        {
+                              "id": "counter",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Muunu"],
+                              "window": ["09:00", "12:00"],
+                              "destinationStationId": "station_0qpky",
+                              "destinationArea": "map_i_kunjis_potions_F1",
+                              "activityLabel": "morning counter shift"
+                        },
+                        {
+                              "id": "social",
+                              "activity": "socialize",
+                              "obligation": "plan",
+                              "daysExcept": ["Muunu"],
+                              "window": ["12:00", "19:00"],
+                              "preferences": {
+                                    "preferNpcIds": ["dzahiri_khibu", "nashka_khibu"],
+                                    "preferArea": "map_i_carpenters",
+                                    "preferStationId": "furniture_chair_map_i_carpenters_13_9",
+                                    "avoidNpcIds": ["kinami_kunji"],
+                                    "fallbackStationId": "furniture_chair_map_i_inn_16_9",
+                                    "fallbackArea": "map_i_inn"
+                              },
+                              "activityLabel": "visiting family / staying out of Kinami's way"
+                        },
+                        {
+                              "id": "dinner",
+                              "activity": "eat",
+                              "obligation": "plan",
+                              "window": ["19:00", "22:00"],
+                              "destinationStationId": "station_jayis",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "dinner upstairs"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "06:00"],
+                              "destinationStationId": "station_di22s",
+                              "destinationArea": "map_i_kunjis_potions_F2",
+                              "activityLabel": "sleeping upstairs"
+                        }
+                  ],
                   "loreBackground": "<suggestion: backstory — what the falling out was actually about, and whether his passivity is contentment, exhaustion, or something sadder>",
                   "phrasePools": [
                         {
