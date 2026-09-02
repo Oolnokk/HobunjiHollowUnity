@@ -36,6 +36,11 @@
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
   <script src="js/loot-rolling.js?v=20260902mod1"></script>
+  <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
+       extracted out of game.js. Must load before game.js, which calls
+       window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
+       wildlifeDenList listeners) during its own setup. -->
+  <script src="js/den-nest-system.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260826categories1"></script>

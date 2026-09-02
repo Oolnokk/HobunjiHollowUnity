@@ -23473,89 +23473,12 @@
         window.DevSpawner?.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
       });
-      // Cycles through a zone's dens in a shuffled, non-repeating order
-      // (per zone) instead of an independent random pick every press —
-      // with only a handful of dens per zone, plain Math.random() made it
-      // easy to land on the same 1-2 dens over and over by chance.
-      // Reshuffles whenever the den count changes (e.g. after a Tothal
-      // Shift), so a full lap always visits every den on the map exactly
-      // once before any repeat.
-      const _denTeleportCycle = new Map(); // zoneId -> { order: number[], idx: number, length: number }
-      function _pickCycledDen(zoneId, dens) {
-        let state = _denTeleportCycle.get(zoneId);
-        if (!state || state.length !== dens.length) {
-          const order = dens.map((_, i) => i);
-          for (let i = order.length - 1; i > 0; i--) {
-            const j = Math.floor(rnd() * (i + 1));
-            [order[i], order[j]] = [order[j], order[i]];
-          }
-          state = { order, idx: 0, length: dens.length };
-          _denTeleportCycle.set(zoneId, state);
-          window.__farmLog?.(`[wildlife] den teleport cycle rebuilt for ${zoneId}: ${dens.length} dens, order [${order.join(',')}]`, 'wildlife');
-        }
-        const den = dens[state.order[state.idx]];
-        window.__farmLog?.(`[wildlife] den teleport ${zoneId}: picking cycle slot ${state.idx + 1}/${state.order.length} -> den ${den.id}`, 'wildlife');
-        state.idx = (state.idx + 1) % state.order.length;
-        return den;
-      }
-      // Dev Tools: warp to a den's mouth on the CURRENT map only — no
-      // zone-switching, since the request is specifically "does this map
-      // have one" (farm/town/buildings never do; a wilderness zone does once
-      // its Tothal Shift has run — see _zoneLayouts' `dens` field).
-      function teleportToRandomDen() {
-        // Called from inside a den's own cavern (dark, no landmarks, and
-        // "no dens on this map" made no sense there since a cavern's own
-        // _zoneLayouts entry doesn't exist) — resolve the exterior zone
-        // this cavern belongs to (see _denCavernZoneOf) and warp there,
-        // landing at a den mouth like the zone-side path below instead of
-        // requiring a separate exit step first.
-        if (_isCavernBuildingArea(currentArea)) {
-          const zoneId = window.WildlifeSpawn.denCavernZoneOf(currentArea);
-          const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
-          if (!zoneId || !dens || !dens.length) {
-            showToast("No dens found for this burrow's map.", false);
-            return;
-          }
-          const den = _pickCycledDen(zoneId, dens);
-          const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-          startSceneTransition(() => {
-            const fromScene = _buildingScenes.get(currentArea)?.scene || null;
-            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-            _currentBuildingMapId = null;
-            currentArea = zoneId;
-            player.x = (anchor.x + 0.5) * TILE;
-            player.y = (anchor.y + 0.5) * TILE;
-            player.vx = 0; player.vy = 0;
-            _snapCameraTarget();
-            const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
-            if (toScene) {
-              toScene.add(playerMesh); toScene.add(playerGroundShadow);
-              toScene.add(toolHolder); toScene.add(reticleMesh);
-              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-              toScene.add(reticleWavyGroup);
-            }
-            refreshActionBar();
-            showToast(`Teleported to a den (${dens.length} on this map).`, true);
-            closeMenu();
-          });
-          return;
-        }
-        const dens = _zoneLayouts.get(currentArea)?.dens;
-        if (!dens || !dens.length) {
-          showToast('No dens on this map.', false);
-          return;
-        }
-        const den = _pickCycledDen(currentArea, dens);
-        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-        player.x = (anchor.x + 0.5) * TILE;
-        player.y = (anchor.y + 0.5) * TILE;
-        player.vx = 0; player.vy = 0;
-        _snapCameraTarget();
-        window.WildernessChunks?.primeZone(currentArea, anchor.x, anchor.y);
-        showToast(`Teleported to a den (${dens.length} on this map).`, true);
-        closeMenu();
-      }
-      document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+      // Wilderness den teleport (Dev Tools + Wildlife panel per-den button)
+      // now lives in js/den-nest-system.js — call via
+      // window.DenNestSystem.teleportToRandomDen()/.warpToDenAnchor(...).
+      // See its own init(deps) call below for the shared game.js state it's
+      // threaded (playerMesh/toolHolder/reticle* bundle, getCurrentArea/
+      // setCurrentArea + setCurrentBuildingMapId, same as js/dev-spawner.js).
 
       // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
       // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
@@ -23564,58 +23487,6 @@
         await checkTothalShift(true);
         window.WildlifeDebugPanel.render();
       });
-      // Delegated so it keeps working across every re-render of the list
-      // (container.innerHTML replacement would otherwise drop per-button
-      // listeners each time).
-      document.getElementById('wildlifeDenList')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.wildlife-den-teleport-btn');
-        if (!btn) return;
-        const zoneId = btn.dataset.zone, denId = btn.dataset.den;
-        const den = _zoneLayouts.get(zoneId)?.dens?.find(d => d.id === denId);
-        if (!den) { showToast('That den no longer exists on the current map.', false); return; }
-        warpToDenAnchor(zoneId, den);
-      });
-      // Warps the player straight to a specific den's mouth on its own
-      // zone, from anywhere (farm, town, another zone, or inside any
-      // building/cavern) — used by the Wildlife panel's per-den Teleport
-      // button. Unlike teleportToRandomDen (which only ever targets
-      // "whichever map you're currently on"), this always resolves the
-      // exact zone the picked den belongs to and does a full scene swap
-      // if that's not where the player already is.
-      function warpToDenAnchor(zoneId, den) {
-        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
-        const land = () => {
-          player.x = (anchor.x + 0.5) * TILE;
-          player.y = (anchor.y + 0.5) * TILE;
-          player.vx = 0; player.vy = 0;
-          _snapCameraTarget();
-          window.WildernessChunks?.primeZone(zoneId, anchor.x, anchor.y);
-        };
-        if (currentArea === zoneId) {
-          land();
-          showToast(`Teleported to den ${den.id}.`, true);
-          closeMenu();
-          return;
-        }
-        startSceneTransition(() => {
-          const fromScene = getActiveScene();
-          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-          currentArea = zoneId;
-          land();
-          const toScene = buildZoneScene(zoneId, anchor.x, anchor.y)?.scene;
-          if (toScene) {
-            toScene.add(playerMesh); toScene.add(playerGroundShadow);
-            toScene.add(toolHolder); toScene.add(reticleMesh);
-            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-            toScene.add(reticleWavyGroup);
-          }
-          refreshActionBar();
-          showToast(`Teleported to den ${den.id}.`, true);
-          closeMenu();
-        });
-      }
-
       // Dev Tools: Testing Arena teleport + creature/bandit/foliage
       // spawner panel now lives in js/dev-spawner.js (window.DevSpawner)
       // — see its init(deps) call below for the shared game.js state
@@ -23635,73 +23506,16 @@
       // js/dev-spawner.js (window.DevSpawner) — call via
       // window.DevSpawner.toggle()/.refreshEditorButtonVisibility().
 
-      // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
-      // in loadBuildingScene) ──────────────────────────────────────────
-      const NEST_TAKE_HOLD_S = 5;
+      // Den-Mother nest hold-to-take egg/baby interaction now lives in
+      // js/den-nest-system.js — call via window.DenNestSystem.
+      // isPlayerNearDenNest/.aimedCavernNest/.currentAimedNest/
+      // .refreshInteractionFocusDebug/.updateNestInteraction(dt). See its
+      // own init(deps) call below for the shared game.js state it's
+      // threaded (_denNests, player, inventory, etc.). _nestHoldT itself
+      // stays here (not module-private) — it's also reset by branch-fall
+      // damage and player-hit interrupts elsewhere in game.js, and read by
+      // another module's getNestHoldT() getter below.
       let _nestHoldT = 0;
-      const _nestTakeHudEl = document.getElementById('nestTakeHud');
-      const _nestTakeLabelEl = document.getElementById('nestTakeLabel');
-      const _nestTakeFillEl = document.getElementById('nestTakeFill');
-      function isPlayerNearDenNest(nest) {
-        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
-        return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
-      }
-      function aimedCavernNest(nest) {
-        if (!nest || nest.remaining <= 0 || !isPlayerNearDenNest(nest)) return null;
-        const interactionRay = currentPlayerInteractionRay();
-        if (!interactionRay || !window.RangedWeapons?.focusCandidates) return null;
-        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
-        const groundY = activeSurfaceYAtWorld(cx / TILE, cy / TILE);
-        const halfW = Math.max(0.5, nest.w / 2), halfH = Math.max(0.5, nest.h / 2);
-        const box = new THREE.Box3(
-          new THREE.Vector3(cx / TILE - halfW, groundY, cy / TILE - halfH),
-          new THREE.Vector3(cx / TILE + halfW, groundY + 0.75, cy / TILE + halfH),
-        );
-        const focus = window.RangedWeapons.focusCandidates([{ type: 'nest', id: currentArea, data: nest, box }], 24);
-        if (!focus) return null;
-        const hostile = window.RangedWeapons.focusedHostile?.(24);
-        if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
-        window.DebugHitboxes?.noteInteractionFocus?.(focus);
-        return nest;
-      }
-      function currentAimedNest() {
-        const branchNest = window.ClimbSystem?.getAimedNest?.() || null;
-        if (branchNest) return branchNest;
-        return aimedCavernNest(_denNests.get(currentArea));
-      }
-      function refreshInteractionFocusDebug() {
-        if (!s_showInteractionRaycast) return;
-        // Match computeActionButtons priority: a nest owns the shared input
-        // before branch climbing is considered.
-        if (currentAimedNest()) return;
-        if (_isZoneArea(currentArea) && !player.climbing) window.ClimbSystem?.getClimbTarget?.();
-      }
-      function updateNestInteraction(dt) {
-        const nest = currentAimedNest();
-        const taking = nest && activeAction === 'nest_take' && actionHeldDown;
-        player._nestTakeActive = !!taking;
-        if (!taking) {
-          if (_nestHoldT > 0) _nestHoldT = 0;
-          if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
-          return;
-        }
-        _nestHoldT += dt;
-        if (_nestTakeLabelEl) _nestTakeLabelEl.textContent = nest.liveBirth ? 'Taking Baby...' : 'Taking Egg...';
-        if (_nestTakeFillEl) _nestTakeFillEl.style.width = Math.min(100, (_nestHoldT / NEST_TAKE_HOLD_S) * 100) + '%';
-        _nestTakeHudEl?.classList.add('visible');
-        if (_nestHoldT >= NEST_TAKE_HOLD_S) {
-          _nestHoldT = 0;
-          player._nestTakeActive = false;
-          _nestTakeHudEl?.classList.remove('visible');
-          nest.remaining--;
-          inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
-          window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
-          clampInventoryStack(nest.itemKey);
-          buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
-          saveMemberWorldData();
-          showToast(`${itemIconForKey(nest.itemKey)} Took ${ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
-        }
-      }
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
@@ -23863,7 +23677,7 @@
           }
 
           window.ClimbSystem?.updateFallenNests?.(dt);
-          updateNestInteraction(dt);
+          window.DenNestSystem.updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -25206,7 +25020,7 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const nest = currentAimedNest();
+          const nest = window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
@@ -25287,7 +25101,7 @@
 
         // A branch nest claims Action 1 only while its 3D volume is under
         // the centered reticle and its Nestmother is no longer guarding it.
-        const zoneNest = _isZoneArea(currentArea) ? currentAimedNest() : null;
+        const zoneNest = _isZoneArea(currentArea) ? window.DenNestSystem.currentAimedNest() : null;
         if (zoneNest) {
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
@@ -28459,6 +28273,42 @@
         isDevMode: () => s_devMode,
       });
 
+      window.DenNestSystem?.init({
+        getCurrentArea: () => currentArea,
+        setCurrentArea: (v) => { currentArea = v; },
+        setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
+        getActiveScene,
+        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        _isBuildingArea,
+        _isCavernBuildingArea,
+        _isZoneArea,
+        startSceneTransition,
+        player,
+        _snapCameraTarget,
+        refreshActionBar,
+        showToast,
+        closeMenu,
+        buildZoneScene,
+        TILE,
+        _zoneLayouts,
+        _buildingScenes,
+        _denNests,
+        getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getActiveAction: () => activeAction,
+        getActionHeldDown: () => actionHeldDown,
+        getNestHoldT: () => _nestHoldT,
+        setNestHoldT: (v) => { _nestHoldT = v; },
+        currentPlayerInteractionRay,
+        activeSurfaceYAtWorld,
+        inventory,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+        saveMemberWorldData,
+        itemIconForKey,
+        ITEM_DEFS,
+      });
+
       window.FurniturePlacer?.init({
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
@@ -28742,7 +28592,7 @@
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
-        refreshInteractionFocusDebug,
+        refreshInteractionFocusDebug: window.DenNestSystem.refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
       });
 
