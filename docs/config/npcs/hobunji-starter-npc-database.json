@@ -921,6 +921,57 @@
                         ],
                         "defaultStationId": "station_ginju_bed_parents"
                   },
+                  "agenda": [
+                        {
+                              "id": "market",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "days": ["Tothu"],
+                              "window": ["06:00", "19:00"],
+                              "destinationStationId": "station_ginju_market_gorobi",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "selling produce at market"
+                        },
+                        {
+                              "id": "farming-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["06:00", "12:00"],
+                              "destinationStationId": "station_ginju_field_nw",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "rest",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "daysExcept": ["Tothu"],
+                              "window": ["12:00", "14:00"],
+                              "destinationStationId": "furniture_chair_map_i_ginju_farmstead_9_3",
+                              "destinationArea": "map_i_ginju_farmstead",
+                              "activityLabel": "resting"
+                        },
+                        {
+                              "id": "farming-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["14:00", "19:00"],
+                              "destinationStationId": "station_ginju_field_sw",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["19:00", "06:00"],
+                              "destinationStationId": "station_ginju_bed_parents",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R1",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>",
                   "phrasePools": [
                         {
@@ -1419,6 +1470,47 @@
                         ],
                         "defaultStationId": "station_ginju_bed_parents"
                   },
+                  "agenda": [
+                        {
+                              "id": "market",
+                              "activity": "goToStation",
+                              "obligation": "duty",
+                              "days": ["Tothu"],
+                              "window": ["07:00", "18:00"],
+                              "destinationStationId": "station_ginju_market_gikali",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "selling produce at market"
+                        },
+                        {
+                              "id": "cook",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["07:00", "09:00"],
+                              "destinationStationId": "station_ginju_cook",
+                              "destinationArea": "map_i_ginju_farmstead",
+                              "activityLabel": "cooking breakfast"
+                        },
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Tothu"],
+                              "window": ["09:00", "18:00"],
+                              "destinationStationId": "station_ginju_field_ne",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "07:00"],
+                              "destinationStationId": "station_ginju_bed_parents",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R1",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_gikali_greetings",
@@ -10289,6 +10381,57 @@
                         ],
                         "defaultStationId": "station_dzibim_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["07:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry-morning",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_car_counter",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "lunch",
+                              "activity": "eat",
+                              "obligation": "plan",
+                              "daysExcept": ["Uung"],
+                              "window": ["12:00", "13:00"],
+                              "destinationStationId": "station_dzibim_lunch",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "lunch"
+                        },
+                        {
+                              "id": "carpentry-afternoon",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["13:00", "17:00"],
+                              "destinationStationId": "station_car_counter",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "07:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_dzibim_greetings",
@@ -10767,6 +10910,37 @@
                         ],
                         "defaultStationId": "station_dzahiri_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationStationId": "station_car_crates",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "08:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_dzahiri_greetings",
@@ -11241,6 +11415,37 @@
                         ],
                         "defaultStationId": "station_nashka_home"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "goToRole",
+                              "obligation": "leisure",
+                              "days": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "day off, at home"
+                        },
+                        {
+                              "id": "carpentry",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Uung"],
+                              "window": ["08:00", "17:00"],
+                              "destinationStationId": "station_car_inventory",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "carpentry work"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "goToRole",
+                              "obligation": "plan",
+                              "window": ["17:00", "08:00"],
+                              "destinationRole": "khibu-living-room",
+                              "destinationArea": "map_i_carpenters",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_nashka_greetings",
