@@ -343,6 +343,14 @@
     tree.conditions = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [], relationship: { min: null, max: null } };
     tree.excludeConditions = clone(tree.conditions);
     tree.weaponTrustGiftId = gift.id;
+    // Trust-visit dialogue supports a greeting-friendly {{timeOfDay}} token.
+    // It intentionally uses the same dawn/day/dusk/night source as dialogue
+    // conditions, then converts those phases into natural greeting words.
+    const phase = dialogueDeps?.fishingTimeOfDay?.();
+    const timeOfDay = ({ dawn: 'morning', day: 'day', dusk: 'evening', night: 'evening' })[phase] || 'day';
+    for (const node of (tree.nodes || [])) {
+      if (node?.type === 'text') node.text = String(node.text ?? '').replace(/\{\{timeOfDay\}\}/g, timeOfDay);
+    }
     markNaturalTerminalText(tree);
     return tree;
   }
