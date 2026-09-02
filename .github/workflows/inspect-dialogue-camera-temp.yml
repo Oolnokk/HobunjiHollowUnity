@@ -21,6 +21,7 @@ jobs:
         run: python3 .github/scripts/inspect-dialogue-camera-temp.py > .github/dialogue-camera-inspection.txt
       - name: Commit inspection excerpt
         run: |
+          # narrowed camera-path inspection
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/dialogue-camera-inspection.txt
