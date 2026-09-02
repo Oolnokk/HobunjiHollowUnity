@@ -62,8 +62,15 @@ assert(!livestockDialogue.includes('cameraTarget:'), 'livestock must use the ord
 assert(!game.includes('skipSpeakerFacing'), 'animal dialogue must not branch around shared speaker facing');
 assert(!game.includes('skipEyeContact'), 'animal dialogue must not branch around shared eye contact');
 assert(!game.includes('walker._dialogueOptions = options;'), 'shared dialogue face loop must not carry animal-specific option state');
-assert(game.includes('chatheadCreatureKind: kind'), 'portrait must use animal chathead renderer');
-assert(game.includes('creatureGenotype: livestockRec.genotype || animal.genotype || null'), 'portrait must preserve actual livestock genotype');
+assert(!adapter.includes('profile:'), 'triggered livestock dialogue must not expose a portrait profile');
+assert(!adapter.includes('chatheadCreatureKind'), 'triggered livestock dialogue must not render a popup-chathead crop into the full dialogue UI');
+assert(!adapter.includes('creatureGenotype:'), 'triggered livestock dialogue must not repeatedly composite a genotype portrait');
+assert(game.includes("typeof _dialogueWalker.dialogueHeadWorldPosition === 'function'"), 'NPC camera calculation must accept the animal head point');
+assert(game.includes("? _dialogueWalker.dialogueHeadWorldPosition(new THREE.Vector3())"), 'NPC camera calculation must use the adapter head point directly');
+assert(game.includes(": portraitAvatarCenterWorldPosition(_dialogueWalker.root);"), 'ordinary NPCs must keep their existing portrait-center fallback');
+assert(game.includes('frame.x + frame.width * 0.5'), 'triggered dialogue head X must be the exact center pixel of the authored frame');
+assert(game.includes('frame.y + frame.height * 0.5'), 'triggered dialogue head Y must be the exact center pixel of the authored frame');
+assert(game.includes("clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height)"), 'no-profile dialogue must clear any stale NPC portrait without rendering a livestock sprite');
 assert(game.includes('_dialogueWalker._onDialogueClose?.()'), 'dialogue close must clean up livestock freeze/head state');
 assert(game.includes('openLivestockDialogue,'), 'FarmAnimals must receive shared dialogue opener');
 

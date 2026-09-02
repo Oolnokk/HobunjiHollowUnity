@@ -369,6 +369,10 @@
           ctx.fillStyle = '#1b3529';
           ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
           await window.DialogueContent?.renderNpcDialoguePortrait();
+        } else {
+          // Triggered animal dialogue has no portrait profile: keep the ordinary
+          // dialogue shell but never project/recompose the livestock sprite in 2D.
+          _npcPortraitCanvas?.getContext?.('2d')?.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
         }
 
         _npcDialogueEl.classList.add('open');
@@ -534,10 +538,9 @@
             name: livestockRec.name || 'Livestock',
             dialogueLines: Array.isArray(dialogueLines) && dialogueLines.length ? dialogueLines : ['...'],
           },
-          profile: {
-            chatheadCreatureKind: kind,
-            creatureGenotype: livestockRec.genotype || animal.genotype || null,
-          },
+          // Deliberately no `profile`: triggered livestock dialogue stays in 3D.
+          // Authored animal crops are rendered only by popup/ambient chatheads;
+          // full dialogue uses the frame center strictly as head-position metadata.
           root: avatarRef?.group,
           avatarHeight: Number(animal.modelHeight) || 1,
           pause: 0,
@@ -18603,7 +18606,9 @@
         }
         if (!_dialogueWalker?.root) return null;
         const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
-        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
+        const npcCenter = typeof _dialogueWalker.dialogueHeadWorldPosition === 'function'
+          ? _dialogueWalker.dialogueHeadWorldPosition(new THREE.Vector3())
+          : portraitAvatarCenterWorldPosition(_dialogueWalker.root);
         if (!playerCenter || !npcCenter) return null;
         const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
         const portraitDistance = Math.max(
