@@ -355,6 +355,7 @@
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
+        walker._dialogueOptions = options;
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = options.cameraTarget || walker.root;
         if (options.skipStaging !== true) beginNpcDialogueStaging(walker);
@@ -503,34 +504,43 @@
 
       
       function createLivestockDialogueCameraTarget(animal, kind) {
-        const focus = new THREE.Object3D();
-        focus.name = `livestock_dialogue_head_${animal?.id || kind || 'animal'}`;
-        const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
-        const plane = animal?.avatarRef?.frontPlane || null;
-        const modelWidth = Number(animal?.modelWidth);
-        const modelHeight = Number(animal?.modelHeight);
-        if (frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)) {
-          const centerX = frame.x + frame.width * 0.5;
-          const centerY = frame.y + frame.height * 0.5;
-          const localHead = new THREE.Vector3(
-            (centerX - 0.5) * modelWidth,
-            (0.5 - centerY) * modelHeight,
+      const focus = new THREE.Object3D();
+      focus.name = `livestock_dialogue_head_${animal?.id || kind || 'animal'}`;
+      const frame = window.AnimalChatheadFrame?.frameForKind?.(kind);
+      const plane = animal?.avatarRef?.frontPlane || null;
+      const modelWidth = Number(animal?.modelWidth);
+      const modelHeight = Number(animal?.modelHeight);
+      const localHead = frame && plane?.localToWorld && Number.isFinite(modelWidth) && Number.isFinite(modelHeight)
+        ? new THREE.Vector3(
+            (frame.x + frame.width * 0.5 - 0.5) * modelWidth,
+            (0.5 - (frame.y + frame.height * 0.5)) * modelHeight,
             0,
-          );
+          )
+        : null;
+      const worldHead = new THREE.Vector3();
+      const update = () => {
+        if (localHead && plane?.localToWorld) {
           plane.updateWorldMatrix?.(true, false);
-          focus.position.copy(plane.localToWorld(localHead));
-        } else if (animal?.avatarRef?.group?.getWorldPosition) {
+          worldHead.copy(localHead);
+          plane.localToWorld(worldHead);
+          focus.position.copy(worldHead);
+          return;
+        }
+        if (animal?.avatarRef?.group?.getWorldPosition) {
           animal.avatarRef.group.getWorldPosition(focus.position);
           focus.position.y += (Number.isFinite(modelHeight) ? modelHeight : 1) * 0.25;
         }
-        scene.add(focus);
-        return focus;
-      }
+      };
+      update();
+      scene.add(focus);
+      return { focus, update };
+    }
 
       async function openLivestockDialogue(animal, livestockRec, dialogueLines = []) {
         if (!animal || !livestockRec || dialogueOpen) return false;
         const kind = String(livestockRec.kind || animal.animalKey || '').trim().toLowerCase();
-        const focus = createLivestockDialogueCameraTarget(animal, kind);
+        const cameraFocus = createLivestockDialogueCameraTarget(animal, kind);
+        const focus = cameraFocus.focus;
         const walker = {
           rec: {
             id: `livestock:${livestockRec.id}`,
@@ -543,6 +553,7 @@
           },
           root: animal.avatarRef?.group,
           pause: 0,
+          _onDialogueFrame: cameraFocus.update,
         };
         animal._dialogueFrozen = true;
         let cleaned = false;
@@ -555,7 +566,8 @@
         try {
           await openNpcDialogue(walker, {
             cameraTarget: focus,
-            skipStaging: true,
+            skipSpeakerFacing: true,
+          skipEyeContact: true,
             skipNpcMeta: true,
             recordMemory: false,
           });
@@ -10478,6 +10490,9 @@
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
         if (!walker?.root) return;
+        try { walker._onDialogueFrame?.(); }
+        catch (err) { console.warn('[dialogue] frame hook failed', err); }
+        const dialogueOptions = walker._dialogueOptions || {};
         const cfg = npcDialogueStagingConfig();
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
@@ -10486,14 +10501,17 @@
         const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
         facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
         player.angle = facingAngle;
-        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
-        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+        if (dialogueOptions.skipSpeakerFacing !== true && typeof walker.applyFacingDeadzone === 'function') {
+          const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+          const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+          walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+        }
         // Eye contact: aims BOTH the NPC's and the player's own neck bone
         // straight at the other's eyes, held for the whole conversation (see
         // _aimNeckAtEyeContact above) — this owns the player's neck bone
         // exclusively while dialogue is open (updatePlayerHeadAim steps aside
         // for exactly this reason, see its own dialogueOpen guard).
+        if (dialogueOptions.skipEyeContact === true) return;
         walker.root.updateMatrixWorld(true);
         playerMesh.updateMatrixWorld(true);
         const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
