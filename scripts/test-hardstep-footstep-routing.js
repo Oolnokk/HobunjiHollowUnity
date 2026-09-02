@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const audioSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'audio-system.js'), 'utf8');
 const played = []; // Used below to prove PATH/den/mine/building routing selects one of the authored hardstep files.
+const createdAudio = []; // Used below to prove repeated footsteps reuse startup-preloaded voices instead of constructing disposable Audio elements.
 const logs = []; // Used below to prove the mobile-readable surface-change diagnostic is emitted without a browser console.
 
 class FakeAudio {
@@ -20,6 +21,8 @@ class FakeAudio {
     this.ended = false;
     this.volume = 1;
     this.playbackRate = 1;
+    this.currentTime = 0;
+    createdAudio.push(this);
   }
   load() {}
   play() {
@@ -47,6 +50,9 @@ const TileType = Object.freeze({
   SHRUB: 'shrub',
 });
 
+const deterministicMath = Object.create(Math); // Forces repeated road footsteps to choose the same hardstep URL so pool reuse is directly testable.
+deterministicMath.random = () => 0;
+
 const context = {
   Audio: FakeAudio,
   document: { addEventListener() {} },
@@ -54,6 +60,7 @@ const context = {
   setTimeout,
   clearTimeout,
   console,
+  Math: deterministicMath,
   window: {
     SCRATCHBONES_CONFIG: {
       game: {
@@ -105,14 +112,27 @@ assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.GRASS),
 assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.RIVER), 'water', 'water should remain waterstep');
 assert.match(audioSource, /HARD_FOOTSTEP_TARGET_DBFS\s*=\s*-6\b/, 'hardstep source should declare the requested -6 dBFS normalization target');
 assert.match(audioSource, /hardFootstepNormalizationGainByUrl/, 'hardstep source should cache per-file normalization gains');
+assert.match(audioSource, /footstepAudioPools/, 'recorded footsteps should have a reusable media pool');
+assert.match(audioSource, /installFootstepAudioUnlock/, 'recorded footsteps should prime their persistent voices from real user gestures');
+assert.match(audioSource, /playbackFailures/, 'mobile diagnostics should expose native media playback failures instead of swallowing them');
 
+const createdAfterInit = createdAudio.length;
 played.length = 0;
 audio.playFootstepSfx('map_hobunji_town', { type: TileType.PATH, water: 0 });
-assert.strictEqual(played.length, 1, 'a dry road step should play exactly one primary surface clip');
-assert.match(played[0], /^assets\/audio\/sfx\/footsteps\/hardstep_[123]\.mp3$/, 'road step should pick from the authored hardstep pool');
+audio.playFootstepSfx('map_hobunji_town', { type: TileType.PATH, water: 0 });
+assert.strictEqual(played.length, 2, 'two dry road steps should each issue one primary recorded-footstep playback');
+assert.match(played[0], /^assets\/audio\/sfx\/footsteps\/hardstep_1\.mp3$/, 'deterministic road step should use the first authored hardstep');
+assert.strictEqual(played[1], played[0], 'deterministic repeated step should request the same hardstep recording');
+assert.strictEqual(createdAudio.length, createdAfterInit, 'repeated footsteps should reuse the preloaded pool instead of allocating new Audio elements');
 const debug = audio.footstepSfxDebugSnapshot();
 assert.strictEqual(debug.surfaceKey, 'hard', 'debug snapshot should expose the resolved hard surface');
-assert.strictEqual(debug.url, played[0], 'debug snapshot should expose the selected hardstep file');
+assert.strictEqual(debug.url, played[1], 'debug snapshot should expose the selected hardstep file');
+assert.ok(debug.playbackRequests >= 2, 'debug snapshot should count actual media playback requests');
+assert.ok(debug.poolUrlCount >= 4, 'startup should preload hard plus configured grass/gravel/water recording pools');
 assert.ok(logs.some(line => line.includes('surface=hard')), 'surface changes should be visible in the in-game debug log');
 
-console.log('Hardstep footstep routing regression: PASS');
+const strideState = {}; // Used to prove the player cadence accumulator still reaches a footfall after enough actual distance.
+assert.strictEqual(audio.footstepAdvance(strideState, 20, 50), false, 'partial stride should not fire early');
+assert.strictEqual(audio.footstepAdvance(strideState, 31, 50), true, 'crossing the stride distance should fire a footstep');
+
+console.log('Hardstep footstep routing/playback regression: PASS');
