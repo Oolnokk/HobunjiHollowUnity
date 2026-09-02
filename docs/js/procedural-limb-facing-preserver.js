@@ -1,14 +1,20 @@
-// Procedural Animation Editor Ground / Carry bootstrap.
+// Procedural Animation Editor Ground / Carry bootstrap + avatar-preview parity.
 //
-// IMPORTANT: the pre-Ground/Carry animator already owns portrait assembly,
-// front/back culling, camera orientation, and the avatar's baseline transform.
-// This adapter deliberately does NOT touch portrait materials or mesh
-// visibility. Its only responsibilities are:
-//   1. leave the old animator completely untouched until Ground / Carry is
-//      explicitly opened;
-//   2. load the branch-paired fixed two-bone solver the new poses require;
-//   3. preserve the old animator's established pose-root yaw while the new
-//      pose author adds pitch/roll.
+// The Attack Animation Editor is the known-good character preview. It opts
+// into PNGPlaneAvatar's neck-rigged/skinned portrait assembly, while the older
+// Procedural Movement Animator historically omitted that option and therefore
+// stayed on the rigid two-Mesh front/back path. This adapter fixes that at the
+// shared avatar-construction seam without rewriting the 2 MB editor HTML.
+//
+// Responsibilities:
+//   1. make procedural NPC preview builds request the same `neckRig: true`
+//      assembly used by the Attack Animation Editor;
+//   2. rebuild the already-selected startup NPC once through that corrected
+//      construction path so the first visible preview is fixed too;
+//   3. leave creatures and unrelated tools untouched;
+//   4. keep Ground / Carry lazy-loaded and preserve the legacy animator's
+//      established pose-root yaw when the optional pose author is activated;
+//   5. load the branch-paired fixed two-bone solver Ground / Carry requires.
 (() => {
   'use strict';
 
@@ -20,9 +26,11 @@
   const BOOT_BUTTON_ID = 'limbPoseLazyBootstrapBtn'; // Temporary entry button used before the heavy Ground / Carry author is loaded.
   const REAL_BUTTON_ID = 'limbPoseQuickBtn'; // Existing button created by procedural-limb-pose-author.js after explicit activation.
   const AUTHOR_SCRIPT_ID = 'proceduralLimbPoseAuthorExplicitScript'; // Prevents duplicate explicit author loads.
+  const PARITY_FLAG = '__hobunjiProceduralAttackPreviewParity'; // Marks the wrapped shared avatar builder so repeated bootstrap passes never double-wrap it.
   const baselines = new WeakMap(); // Stores the old animator's exact pose-root yaw before Ground / Carry can write to it.
   const wrappedRotations = new WeakMap(); // Stores original Euler.set methods so each pose root is wrapped once.
   let activating = false; // Prevents rapid taps from launching duplicate dependency/author requests.
+  let initialParityRefreshDone = false; // Ensures the selected startup NPC is rebuilt only once after the builder is wrapped.
 
   // A sentinel intentionally makes procedural-impact-tabs.js skip its old
   // eager author load. It is removed only after the user explicitly taps the
@@ -36,13 +44,103 @@
       pill.textContent = message;
       pill.className = good ? 'pill good' : 'pill warn';
     }
-    (good ? console.info : console.warn)(`[Ground / Carry] ${message}`);
+    (good ? console.info : console.warn)(`[Procedural preview] ${message}`);
+  }
+
+  function currentBackdrop() { // Centralizes access to the public preview API used by parity diagnostics and Ground / Carry.
+    return window.HobunjiGameplayBackdrop || null;
+  }
+
+  function currentAvatarModel() { // Returns only character/NPC preview models; creature preview construction is intentionally untouched.
+    const backdrop = currentBackdrop();
+    if (!backdrop || backdrop.getPreviewMode?.() !== 'npc') return null;
+    return backdrop.getAvatarModel?.() || null;
   }
 
   function currentPoseRoot() { // Reads only the public preview API; no giant-editor private state is reached into.
-    const backdrop = window.HobunjiGameplayBackdrop;
-    if (!backdrop || backdrop.getPreviewMode?.() !== 'npc') return null;
-    return backdrop.getAvatarModel?.()?.parent || null;
+    return currentAvatarModel()?.parent || null;
+  }
+
+  function isProceduralNpcBuild(options) { // Matches the editor's repository-NPC build signature without affecting unrelated raw portrait callers.
+    return Boolean(options?.npcRecord || options?.profile || options?.appearance);
+  }
+
+  function installAttackEditorAvatarParity() { // Forces the known-good Attack Editor assembly mode at the shared PNGPlaneAvatar construction seam.
+    const avatarApi = window.PNGPlaneAvatar;
+    const currentBuild = avatarApi?.buildSinglePlaneAvatarModel;
+    if (typeof currentBuild !== 'function') return false;
+    if (currentBuild[PARITY_FLAG]) return true;
+
+    const wrappedBuild = function proceduralAttackPreviewParityBuild(THREE, sourceCanvas, options = {}) {
+      const npcBuild = isProceduralNpcBuild(options); // Creatures use another API; generic raw portrait utilities remain opt-in as before.
+      const buildOptions = npcBuild && options.neckRig !== true
+        ? { ...options, neckRig: true }
+        : options; // Mirrors Attack Animation Editor's explicit `neckRig: true` without disturbing an already-authored true value.
+      const avatarRoot = currentBuild.call(this, THREE, sourceCanvas, buildOptions); // Preserves every wrapper already installed around the shared builder.
+      if (npcBuild && avatarRoot?.userData) {
+        avatarRoot.userData.proceduralPreviewParity = {
+          referenceTool: 'attack-animation-editor',
+          neckRigRequested: true,
+          neckRigAvailable: Boolean(avatarRoot.userData.neckRig?.available),
+        }; // Mobile/debug-readable proof of which construction path was requested and whether head detection succeeded.
+      }
+      return avatarRoot;
+    };
+    wrappedBuild[PARITY_FLAG] = true;
+    wrappedBuild.__hobunjiOriginalBuild = currentBuild; // Keeps the wrapper chain inspectable and reversible during debugging.
+    avatarApi.buildSinglePlaneAvatarModel = wrappedBuild;
+    console.info('[Procedural preview] NPC avatar builder now matches Attack Animation Editor neck-rig mode.');
+    return true;
+  }
+
+  function refreshSelectedNpcThroughParity(attempt = 0) { // Reuses the editor's own selected-card handler so no duplicate avatar/render pipeline is introduced.
+    if (initialParityRefreshDone) return;
+    if (!installAttackEditorAvatarParity()) {
+      if (attempt < 240) requestAnimationFrame(() => refreshSelectedNpcThroughParity(attempt + 1));
+      return;
+    }
+
+    const backdrop = currentBackdrop();
+    const model = currentAvatarModel();
+    if (!backdrop || !model) {
+      if (attempt < 240) requestAnimationFrame(() => refreshSelectedNpcThroughParity(attempt + 1));
+      return;
+    }
+
+    if (model.userData?.neckRig?.available) {
+      initialParityRefreshDone = true;
+      model.userData.proceduralPreviewParity = {
+        ...(model.userData.proceduralPreviewParity || {}),
+        referenceTool: 'attack-animation-editor',
+        neckRigRequested: true,
+        neckRigAvailable: true,
+        startupRebuildNeeded: false,
+      };
+      status('Avatar preview matches Attack Editor · skinned neck rig active');
+      return;
+    }
+
+    const selectedCard = document.querySelector('#npcList .npcCard.selected'); // Uses the already-wired repository NPC selection handler to perform one canonical rebuild.
+    if (!selectedCard) {
+      if (attempt < 240) requestAnimationFrame(() => refreshSelectedNpcThroughParity(attempt + 1));
+      return;
+    }
+
+    initialParityRefreshDone = true; // Set before click so synchronous selection handlers cannot recurse into another startup rebuild.
+    selectedCard.click();
+    status('Rebuilding avatar preview through Attack Editor neck-rig path…');
+  }
+
+  function reportParityForFreshAvatar() { // Gives mobile users a visible diagnostic after each ordinary NPC selection/rebuild.
+    const model = currentAvatarModel();
+    if (!model) return;
+    const parity = model.userData?.proceduralPreviewParity;
+    const neckRigAvailable = Boolean(model.userData?.neckRig?.available);
+    if (parity?.neckRigRequested && neckRigAvailable) {
+      status('Avatar preview matches Attack Editor · skinned neck rig active');
+    } else if (parity?.neckRigRequested) {
+      status('Attack-style neck rig requested, but this portrait could not detect a neck pivot.', false);
+    }
   }
 
   function protectLegacyYaw(poseRoot = currentPoseRoot()) { // Keeps Ground / Carry's zero-yaw writes relative to the animator's already-correct facing.
@@ -88,7 +186,7 @@
     const real = document.getElementById(REAL_BUTTON_ID);
     if (real) {
       real.click();
-      status('Ground / Carry opened · legacy portrait renderer untouched');
+      status('Ground / Carry opened · Attack-style avatar preview retained');
       return;
     }
     if (attempt < 120) requestAnimationFrame(() => waitForRealButton(attempt + 1));
@@ -105,7 +203,7 @@
     }
 
     protectLegacyYaw(); // Capture the old animator's facing before any new pose code exists.
-    status('Loading Ground / Carry on top of the legacy animator…');
+    status('Loading Ground / Carry on top of the Attack-style avatar preview…');
     const solverReady = await ensureBranchFixedLegSolver();
     if (!solverReady) {
       activating = false;
@@ -152,35 +250,53 @@
     button.type = 'button';
     button.className = 'secondary';
     button.textContent = 'Ground / Carry';
-    button.title = 'Load Ground / Carry without changing the legacy animator until explicitly opened';
+    button.title = 'Load Ground / Carry without changing the procedural animator until explicitly opened';
     button.addEventListener('click', activateGroundCarry);
     actionRow.appendChild(button);
     return true;
   }
 
-  function bootstrapFrame() { // Waits for the old animator HUD/avatar and otherwise leaves its render/update loop completely alone.
+  function bootstrapFrame() { // Waits for the old animator HUD/avatar while keeping the parity wrapper installed for every subsequent NPC rebuild.
+    installAttackEditorAvatarParity();
     ensureBootstrapButton();
     requestAnimationFrame(bootstrapFrame);
   }
 
+  window.addEventListener('hobunji-backdrop-api-ready', () => {
+    installAttackEditorAvatarParity();
+    requestAnimationFrame(() => refreshSelectedNpcThroughParity());
+  });
+
   window.addEventListener('hobunji-backdrop-avatar-changed', () => {
-    // Do not alter the fresh avatar. If Ground / Carry has already been
-    // explicitly activated, capture the fresh old-tool yaw before its next
-    // zero-yaw pose write.
+    // Fresh ordinary NPC selections now come through the wrapped constructor.
+    // Ground / Carry, when active, still captures each new pose-root yaw before
+    // its next zero-yaw pose write.
     if (window.HobunjiProceduralLimbPoseAuthor && window.HobunjiProceduralLimbPoseAuthor !== dormantAuthorSentinel) protectLegacyYaw();
+    requestAnimationFrame(reportParityForFreshAvatar);
   });
 
   window.HobunjiProceduralLimbFacingPreserver = {
-    version: 7,
-    mode: 'legacy-renderer-preserving-lazy-bootstrap',
+    version: 8,
+    mode: 'attack-editor-avatar-parity-lazy-ground-carry',
     activateGroundCarry,
     ensureBranchFixedLegSolver,
+    installAttackEditorAvatarParity,
+    refreshSelectedNpcThroughParity,
     protectLegacyYaw,
     getBaselineYaw: () => {
       const root = currentPoseRoot();
       return root ? baselines.get(root) ?? null : null;
     },
+    getPreviewParityDebug: () => {
+      const model = currentAvatarModel();
+      return model ? {
+        neckRigAvailable: Boolean(model.userData?.neckRig?.available),
+        parity: model.userData?.proceduralPreviewParity || null,
+      } : null;
+    },
   };
 
+  installAttackEditorAvatarParity();
+  requestAnimationFrame(() => refreshSelectedNpcThroughParity());
   requestAnimationFrame(bootstrapFrame);
 })();
