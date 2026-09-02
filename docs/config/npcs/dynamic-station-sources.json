@@ -7,28 +7,32 @@
       "label": "Garanki's Desk",
       "system": "Tothal Shift — Researcher's Tent locale",
       "codeRef": "docs/game.js — tent decor station registration (search \"Garanki Gabu's desk + 3 specimen statues\")",
-      "description": "Registered from the researcher's tent locale's decor object position wherever the wilderness Tothal Shift stamps the tent this session. Moves with the tent, so it can't live in a static map file."
+      "description": "Registered from the researcher's tent locale's decor object position wherever the wilderness Tothal Shift stamps the tent this session. Moves with the tent, so it can't live in a static map file.",
+      "roles": ["garanki-research"]
     },
     {
       "idPattern": "station_researchers_tent_statue_1",
       "label": "Specimen Statue 1",
       "system": "Tothal Shift — Researcher's Tent locale",
       "codeRef": "docs/game.js — tent decor station registration",
-      "description": "Same as station_researchers_tent_desk, for the first specimen statue prop."
+      "description": "Same as station_researchers_tent_desk, for the first specimen statue prop.",
+      "roles": ["garanki-research"]
     },
     {
       "idPattern": "station_researchers_tent_statue_2",
       "label": "Specimen Statue 2",
       "system": "Tothal Shift — Researcher's Tent locale",
       "codeRef": "docs/game.js — tent decor station registration",
-      "description": "Same as station_researchers_tent_desk, for the second specimen statue prop."
+      "description": "Same as station_researchers_tent_desk, for the second specimen statue prop.",
+      "roles": ["garanki-research"]
     },
     {
       "idPattern": "station_researchers_tent_statue_3",
       "label": "Specimen Statue 3",
       "system": "Tothal Shift — Researcher's Tent locale",
       "codeRef": "docs/game.js — tent decor station registration",
-      "description": "Same as station_researchers_tent_desk, for the third specimen statue prop."
+      "description": "Same as station_researchers_tent_desk, for the third specimen statue prop.",
+      "roles": ["garanki-research"]
     },
     {
       "idPattern": "furniture_chair_map_i_carpenters_12_8",

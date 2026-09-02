@@ -299,4 +299,29 @@ let mockPlayerPos = { x: 0, z: 0 };
   assert.equal(res2.status, 'INVALID_CONTENT', 'work with neither destinationStationId nor destinationRole is an authoring error, not a silent no-op');
 }
 
+// ── N: NPC-to-NPC invitation — B independently discovers and accepts A's invitation at a shared meeting point (design doc §29/§30) ──
+{
+  const aRec = { id: 'invite_a' };
+  const bRec = { id: 'invite_b' };
+  const aWalker = makeWalker(aRec, 'invite_area', 0, 0);
+  const bWalker = makeWalker(bRec, 'invite_area', 6, 6, { currentScheduleTarget: { obligation: 'plan' } }); // within the 9-tile chat-partner search radius
+  walkers.push(aWalker, bWalker);
+  mockCurrentArea = 'invite_area';
+
+  // A has nothing better to do -> free time -> picks 'chat' with B, which proposes (not unilaterally commits to) a shared meeting point.
+  const aRes = Planner.resolveNpcTarget(aRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(aRes.id, 'chat-with-invite_b');
+
+  // B's own, entirely separate planner tick should now see the incoming invitation and accept it as its own opportunity —
+  // not because A told it to, but because B independently found a live invitation addressed to it.
+  const bRes = Planner.resolveNpcTarget(bRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(bRes.id, 'chat-with-invite_a');
+  assert(/invited/.test(bRes.plannerReason || ''), `B's acceptance should be recorded as responding to an invitation, not an independent guess (reason: "${bRes.plannerReason}")`);
+
+  // Both should converge on the *same* shared point instead of each independently walking toward
+  // the other's original (8+ tile away) position — proving real coordination, not two unilateral guesses.
+  const dist = Math.hypot(aRes.c - bRes.c, aRes.r - bRes.r);
+  assert(dist <= 4, `A and B should land near the same shared meeting point (dist=${dist}), not each other's original ~8.5-tile-apart spots`);
+}
+
 console.log('npc activity planner tests passed');

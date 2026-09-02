@@ -391,6 +391,25 @@
                         ],
                         "defaultStationId": "station_researchers_tent_sleep"
                   },
+                  "agenda": [
+                        {
+                              "id": "research",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["08:00", "20:00"],
+                              "destinationRole": "garanki-research",
+                              "activityLabel": "reviewing notes and examining specimens"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "08:00"],
+                              "destinationStationId": "station_researchers_tent_sleep",
+                              "destinationArea": "map_i_researchers_tent",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
                   "questHooks": [
                         "Accepts donations of Relics, Flora, Fish, and Minerals; each new donation raises the town's [Trade Value] as he mails findings back to the Tower of Learning.",
@@ -1884,6 +1903,35 @@
                         ],
                         "defaultStationId": "station_ginju_bed_aliri"
                   },
+                  "agenda": [
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_ginju_field_se",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "farming"
+                        },
+                        {
+                              "id": "inn",
+                              "activity": "drink",
+                              "obligation": "plan",
+                              "window": ["12:00", "17:00"],
+                              "destinationStationId": "furniture_chair_map_i_inn_14_7",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "having a drink at the inn"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["17:00", "07:00"],
+                              "destinationStationId": "station_ginju_bed_aliri",
+                              "destinationArea": "map_i_ginju_farmstead_F2_R2",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_aliri_greetings",
@@ -7213,6 +7261,73 @@
                         ],
                         "defaultStationId": "station_temple_altar"
                   },
+                  "agenda": [
+                        {
+                              "id": "counsel-pew",
+                              "activity": "watchPerformance",
+                              "obligation": "duty",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "furniture_chair_map_i_temple_12_11",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "watching the Spirit Counsel from a far pew"
+                        },
+                        {
+                              "id": "temple-service",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["09:00", "11:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "leading Temple Service"
+                        },
+                        {
+                              "id": "morning-prayers",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "10:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "morning prayers"
+                        },
+                        {
+                              "id": "in-town",
+                              "activity": "goToStation",
+                              "obligation": "plan",
+                              "window": ["10:00", "14:00"],
+                              "destinationStationId": "station_father_town",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "in town"
+                        },
+                        {
+                              "id": "temple-duties",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["14:00", "19:00"],
+                              "destinationStationId": "station_temple_altar",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "temple duties"
+                        },
+                        {
+                              "id": "evening-prayers",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["19:00", "22:00"],
+                              "destinationStationId": "station_temple_evening",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "evening prayers"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "07:00"],
+                              "destinationStationId": "station_temple_bsmt_hunundi",
+                              "destinationArea": "map_i_temple_basement_hunundi",
+                              "activityLabel": "sleeping"
+                        }
+                  ],
                   "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>",
                   "questHooks": [
                         "<suggestion: quest design — does the player ever learn about the twins' bounty / the Jubmir arrangement through Father Hunundi specifically, or only through the twins themselves?>"
@@ -11381,6 +11496,36 @@
                         ],
                         "defaultStationId": "station_unmh_teacup_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "spirit-counsel-lead",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_teacup",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "leading the Spirit Counsel, eyes lowered"
+                        },
+                        {
+                              "id": "elder-duties",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["09:00", "18:00"],
+                              "destinationStationId": "station_teacup_duties",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "elder duties"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["18:00", "09:00"],
+                              "destinationStationId": "station_unmh_teacup_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant> The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -11875,6 +12020,36 @@
                         ],
                         "defaultStationId": "station_unmh_binding_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_1",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "farming",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "window": ["07:00", "19:00"],
+                              "destinationStationId": "station_ginju_field_c",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "working the farm"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["19:00", "07:00"],
+                              "destinationStationId": "station_unmh_binding_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_binding_greetings",
@@ -12398,6 +12573,57 @@
                         ],
                         "defaultStationId": "station_unmh_spearhead_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "day": "Hronu",
+                              "window": ["07:00", "20:00"],
+                              "destinationStationId": "station_unmh_spearhead_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home, off duty"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_2",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Hronu"],
+                              "window": ["07:00", "12:00"],
+                              "destinationStationId": "station_spearhead_p1",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "morning patrol"
+                        },
+                        {
+                              "id": "afternoon-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Hronu"],
+                              "window": ["12:30", "20:00"],
+                              "destinationStationId": "station_spearhead_p3",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "afternoon patrol"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "07:00"],
+                              "destinationStationId": "station_unmh_spearhead_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -12919,6 +13145,65 @@
                         ],
                         "defaultStationId": "station_unmh_oddclaw_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "day": "Naru",
+                              "window": ["08:00", "20:00"],
+                              "destinationStationId": "station_unmh_oddclaw_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home, off duty"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_3",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["08:00", "12:00"],
+                              "destinationStationId": "station_oddclaw_p1",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "patrol"
+                        },
+                        {
+                              "id": "lunch-break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Naru"],
+                              "window": ["12:00", "14:00"],
+                              "activityLabel": "lunch break at the watchhouse"
+                        },
+                        {
+                              "id": "afternoon-patrol",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Naru"],
+                              "window": ["14:00", "20:00"],
+                              "destinationStationId": "station_oddclaw_p2",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "patrol"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["20:00", "08:00"],
+                              "destinationStationId": "station_unmh_oddclaw_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "home"
+                        }
+                  ],
                   "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
                   "phrasePools": [
                         {
@@ -13434,6 +13719,65 @@
                         ],
                         "defaultStationId": "station_unmh_tooth_bed"
                   },
+                  "agenda": [
+                        {
+                              "id": "dayoff",
+                              "activity": "idle",
+                              "obligation": "leisure",
+                              "day": "Kruru",
+                              "window": ["07:00", "22:00"],
+                              "destinationStationId": "station_tooth_break",
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "day off, relaxing"
+                        },
+                        {
+                              "id": "spirit-counsel",
+                              "activity": "goToStation",
+                              "obligation": "critical",
+                              "day": "Anan",
+                              "window": ["00:00", "03:00"],
+                              "destinationStationId": "station_temple_counsel_ring_4",
+                              "destinationArea": "map_i_temple",
+                              "activityLabel": "attending the Spirit Counsel"
+                        },
+                        {
+                              "id": "morning-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Kruru"],
+                              "window": ["07:00", "15:00"],
+                              "destinationStationId": "station_inn_bar_kegs",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "morning shift at inn"
+                        },
+                        {
+                              "id": "break",
+                              "activity": "break",
+                              "obligation": "leisure",
+                              "daysExcept": ["Kruru"],
+                              "window": ["15:00", "17:00"],
+                              "activityLabel": "break"
+                        },
+                        {
+                              "id": "evening-shift",
+                              "activity": "work",
+                              "obligation": "duty",
+                              "daysExcept": ["Kruru"],
+                              "window": ["17:00", "22:00"],
+                              "destinationStationId": "station_inn_bar_stand",
+                              "destinationArea": "map_i_inn",
+                              "activityLabel": "evening dinner shift"
+                        },
+                        {
+                              "id": "home",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "07:00"],
+                              "destinationStationId": "station_unmh_tooth_bed",
+                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "activityLabel": "resting at home"
+                        }
+                  ],
                   "phrasePools": [
                         {
                               "id": "pool_tooth_greetings",

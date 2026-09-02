@@ -7814,8 +7814,16 @@
               const desk = findObj('obj_desk');
               const statues = ['obj_statue_1', 'obj_statue_2', 'obj_statue_3'].map(findObj);
               const stations = [];
-              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand' });
-              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand' }); });
+              // roles:['garanki-research'] lets his agenda point at "wherever
+              // his research spot currently is" by role instead of one exact
+              // stationId — the actual fix for the fragility this whole
+              // block's comment above describes (a stamped position that
+              // moves with the tent): even if the agenda resolver runs before
+              // this re-registration completes some shift, the Activity
+              // Planner's WAITING_FOR_WORLD/replan handling now covers that
+              // gap gracefully instead of the NPC needing to freeze or defer.
+              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand', roles: ['garanki-research'] });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
               // station_researchers_tent_sleep is NOT registered here — it lives
               // inside config/maps/map_i_researchers_tent.json's own npcStations
               // (auto-registered by loadBuildingScene once that interior loads).

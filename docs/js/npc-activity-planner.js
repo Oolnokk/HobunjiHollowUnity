@@ -167,6 +167,38 @@
     return 0;
   }
 
+  // ── NPC-to-NPC invitations (design doc §29/§30) ─────────────────────
+  // A real, if minimal, invite/accept exchange instead of one NPC just
+  // unilaterally walking at another: whoever's free-time scorer picks
+  // "chat with X" first proposes a single shared meeting point (both ends
+  // resolve toward the *same* fixed spot — see npc-activities.js's chat
+  // activity — rather than each independently chasing wherever the other
+  // currently stands); the invited NPC's own next planner tick sees it
+  // and, only if they're actually free to, can accept it as a high-scoring
+  // opportunity of their own. Neither side blocks or waits on the other —
+  // an unanswered invitation just expires and each side's own free-time
+  // scoring carries on as normal, so there's no deadlock or synchronous
+  // handshake to get stuck on, matching every other "recompute fresh every
+  // tick" decision in this file.
+  const pendingInvitations = new Map(); // toNpcId -> { fromId, x, z, area, createdAtMs }
+  const INVITATION_TTL_MS = 6000; // Comfortably longer than either side's own free-time re-evaluation cadence, so a normal round-trip has time to land.
+  function liveInvitationTo(npcId) {
+    const inv = pendingInvitations.get(npcId);
+    if (!inv || nowMs() - inv.createdAtMs > INVITATION_TTL_MS) return null;
+    return inv;
+  }
+  function proposeInvitationTo(fromId, toWalker, fromPos) {
+    const existing = pendingInvitations.get(toWalker.rec.id);
+    // Reuse the same meeting point on every tick a still-live invitation is
+    // outstanding, rather than recomputing a fresh midpoint each time (which
+    // would make the inviter's own walk target jitter around while waiting).
+    if (existing && existing.fromId === fromId && nowMs() - existing.createdAtMs <= INVITATION_TTL_MS) return existing;
+    const tp = toWalker.root.position;
+    const inv = { fromId, x: (fromPos.x + tp.x) / 2, z: (fromPos.z + tp.z) / 2, area: toWalker.area, createdAtMs: nowMs() };
+    pendingInvitations.set(toWalker.rec.id, inv);
+    return inv;
+  }
+
   function runFreeTime(ctx, opts = {}) {
     const { npcId, walker } = ctx;
     const day = ctx.now?.day;
@@ -210,16 +242,31 @@
         }
       }
 
+      // Someone already invited ME — accepting is a strong, personal signal
+      // that generally beats a spontaneous pick of my own, so it's scored
+      // with a flat bonus on top of the normal chat math rather than
+      // competing on proximity/sociability alone.
+      const incoming = liveInvitationTo(npcId);
+      if (incoming) {
+        const fromWalker = deps.findNpcWalker(incoming.fromId);
+        if (fromWalker) {
+          const rep = memory.lastPartnerId === incoming.fromId ? -8 : 0;
+          candidates.push({
+            key: 'chat', partnerId: incoming.fromId, meetingPoint: incoming,
+            score: FREE_TIME_BASE.chat + 15 + (personality.sociability ?? 0.5) * 6 + relationshipBonus(ctx.rec, incoming.fromId) + rep + seedNoise(npcId, day, 'chat-accept'),
+          });
+        }
+      }
+
       const others = (deps.listNpcWalkersInArea?.(walker.area) || []).filter(w => w.rec?.id && w.rec.id !== npcId);
       let bestPartner = null, bestPartnerD = Infinity;
       for (const w of others) {
         // currentScheduleTarget.obligation is whatever that NPC's own
         // planner tick last settled on — up to one frame stale if this
-        // frame hasn't reached them yet. That's fine for "does this
-        // person look free to chat", which is inherently a loose/organic
-        // read, not a synchronized handshake (design doc §29 describes a
-        // fuller invite/accept protocol for later; this is the honest
-        // single-sided approximation for this phase).
+        // frame hasn't reached them yet. That's fine for "does this person
+        // look free to chat", which is inherently a loose/organic read —
+        // the actual accept/decline happens on their own tick above, via
+        // liveInvitationTo, not by trusting this snapshot as a guarantee.
         const obligation = w.currentScheduleTarget?.obligation;
         const availability = obligation ? 1 - window.NpcAgenda.obligationWeight(obligation) / window.NpcAgenda.obligationWeight('critical') : 0.6;
         if (availability < 0.15) continue;
@@ -228,8 +275,9 @@
       }
       if (bestPartner) {
         const rep = memory.lastPartnerId === bestPartner.rec.id ? -8 : 0;
+        const invitation = proposeInvitationTo(npcId, bestPartner, pos);
         candidates.push({
-          key: 'chat', partnerId: bestPartner.rec.id,
+          key: 'chat', partnerId: bestPartner.rec.id, meetingPoint: invitation,
           score: FREE_TIME_BASE.chat + (personality.sociability ?? 0.5) * 10 + relationshipBonus(ctx.rec, bestPartner.rec.id) - bestPartnerD * 0.5 + rep + seedNoise(npcId, day, 'chat'),
         });
       }
@@ -254,7 +302,7 @@
       const beat = window.NpcAgenda.normalizeAgendaBeat(
         { id: `freetime-${chosen.key}`, activity: chosen.key, obligation: 'leisure', activityLabel: FREE_TIME_LABELS[chosen.key] || chosen.key }, 0);
       const res = window.NpcActivities.resolveDestination(beat, {
-        ...ctx, opportunityStationId: chosen.stationId, opportunityPartnerId: chosen.partnerId, opportunityStimulus: chosen.stimulus,
+        ...ctx, opportunityStationId: chosen.stationId, opportunityPartnerId: chosen.partnerId, opportunityStimulus: chosen.stimulus, opportunityMeetingPoint: chosen.meetingPoint,
       });
       if (res.status === window.NpcActivities.STATUS.READY) {
         memory.lastPartnerId = chosen.partnerId || null;

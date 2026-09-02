@@ -134,6 +134,7 @@
   register('goToRole', { resolveDestination: goToRole });
   register('work', { resolveDestination: ctx => goToStationOrRole(ctx) });
   register('eat', { resolveDestination: ctx => goToStationOrRole(ctx, 'eat') });
+  register('drink', { resolveDestination: ctx => goToStationOrRole(ctx, 'drink') });
   register('sleep', { resolveDestination: ctx => goToStationOrRole(ctx, 'sleep') });
   register('shop', { resolveDestination: ctx => goToStationOrRole(ctx, 'shop') });
   register('performMusic', { resolveDestination: ctx => goToStationOrRole(ctx, 'music-performance') });
@@ -259,14 +260,26 @@
       const partnerId = ctx.opportunityPartnerId;
       const partner = partnerId ? deps.findNpcWalker(partnerId) : null;
       if (!partner) return unavailable('no available chat partner nearby');
-      const pp = partner.root.position;
-      // Stand adjacent rather than on top of them — a fixed small offset is
-      // plenty for "two people talking", and stays deterministic per pair.
-      const offset = pickDeterministic([[0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]], ctx.npcId, ctx.now?.day, `chat:${partnerId}`);
+      // A live invitation (design doc §29) fixes one shared meeting point
+      // both sides resolve toward, instead of each independently walking
+      // toward wherever the other currently happens to be (which could
+      // chase a moving target forever if both are doing that at once).
+      // Falls back to "stand next to wherever they are right now" when
+      // there's no invitation in play — an authored agenda beat can still
+      // point `chat` straight at a specific partner with no negotiation.
+      const meet = ctx.opportunityMeetingPoint;
+      const baseX = meet ? meet.x : partner.root.position.x;
+      const baseZ = meet ? meet.z : partner.root.position.z;
+      const area = meet ? meet.area : partner.area;
+      // Both sides agree on opposite offsets without negotiating which one
+      // to take by comparing ids the same way on both ends — deterministic
+      // and symmetric, so they land facing each other instead of stacking.
+      const side = String(ctx.npcId) < String(partnerId) ? 1 : -1;
+      const offset = pickDeterministic([[side * 0.75, 0.35], [side * 0.75, -0.35]], ctx.npcId, ctx.now?.day, `chat:${partnerId}`);
       return ready({
-        area: partner.area, c: Math.floor(pp.x + offset[0]), r: Math.floor(pp.z + offset[1]),
+        area, c: Math.floor(baseX + offset[0]), r: Math.floor(baseZ + offset[1]),
         pose: 'stand', id: `chat-with-${partnerId}`, activity: ctx.beat.activityLabel || 'chatting',
-      }, `chatting with ${partner.rec?.name || partnerId}`);
+      }, meet ? `chatting with ${partner.rec?.name || partnerId} (invited)` : `chatting with ${partner.rec?.name || partnerId}`);
     },
   });
 

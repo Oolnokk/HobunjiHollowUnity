@@ -195,7 +195,7 @@ async function loadAllStations() {
   }));
   (dynamicSources.sources || []).forEach(s => {
     if (!stationsById.has(s.idPattern)) {
-      stationsById.set(s.idPattern, { id: s.idPattern, label: s.label || s.idPattern, mapId: '(dynamic)', mapName: s.system || 'procedural', dynamic: true, description: s.description, roles: [] });
+      stationsById.set(s.idPattern, { id: s.idPattern, label: s.label || s.idPattern, mapId: '(dynamic)', mapName: s.system || 'procedural', dynamic: true, description: s.description, roles: Array.isArray(s.roles) ? s.roles : [] });
     }
   });
 }
@@ -295,7 +295,7 @@ $('npcSearch').addEventListener('input', renderNpcList);
 // simplified analog of the runtime resolver instead of loading it (this
 // tool is deliberately dependency-free of the game runtime). Keep in sync
 // by hand if either module's registry changes.
-const KNOWN_ACTIVITY_KEYS = new Set(['legacyScheduleActivity', 'goToStation', 'goToRole', 'work', 'eat', 'sleep', 'shop', 'performMusic', 'joinPerformance', 'idle', 'break', 'freeTime', 'socialize', 'visit', 'wander', 'sit', 'chat', 'watchPerformance']);
+const KNOWN_ACTIVITY_KEYS = new Set(['legacyScheduleActivity', 'goToStation', 'goToRole', 'work', 'eat', 'drink', 'sleep', 'shop', 'performMusic', 'joinPerformance', 'idle', 'break', 'freeTime', 'socialize', 'visit', 'wander', 'sit', 'chat', 'watchPerformance']);
 const ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION = new Set(['work', 'goToStation', 'goToRole']); // Every other known activity has a baked-in default role or a documented fallback (free time, "stay put", etc).
 const KNOWN_OBLIGATIONS = new Set(['critical', 'duty', 'plan', 'leisure']);
 const KNOWN_DAYPARTS = new Set(['dawn', 'morning', 'midday', 'afternoon', 'evening', 'night', 'lateNight']);
