@@ -181,8 +181,8 @@
   const self = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = self ? new URL('../', self) : new URL('./', location.href);
   const scripts = [
-    new URL('config/weapon-trust-visits.js?v=20260902d', docsBase).href,
-    new URL('js/weapon-trust-visits.js?v=20260902d', docsBase).href,
+    new URL('config/weapon-trust-visits.js?v=20260902e', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20260902e', docsBase).href,
   ];
   for (const src of scripts) {
     if ([...document.scripts].some(script => script.src === src)) continue;
