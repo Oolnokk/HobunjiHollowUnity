@@ -38,7 +38,7 @@ const CHOICE_ACTION_TYPES=[
   {type:'turnInTask',label:'Turn in task',field:'taskId',fieldLabel:'Task ID'}
 ];
 const BUILT_IN_TOKENS=[
-  ['{{npcName}}','NPC name'],['{{playerName}}','Player name'],['{{playerNickname}}','Player nickname'],['{{playerLocalNickname}}','NPC-specific nickname'],['{{npcSpecies}}','NPC species'],['{{playerSpecies}}','Player species'],['{{role}}','NPC role'],['{{playerPronoun1}}','he/she/they'],['{{playerPronoun2}}','him/her/them'],['{{playerPronoun3}}','his/her/their'],['{{playerPronounSelf}}','reflexive pronoun'],['{{playerFirstL2V1}}','name fragment']
+  ['{{npcName}}','NPC name'],['{{playerName}}','Player name'],['{{playerNickname}}','Player nickname'],['{{playerLocalNickname}}','NPC-specific nickname'],['{{timeOfDay}}','Trust-visit greeting time'],['{{npcSpecies}}','NPC species'],['{{playerSpecies}}','Player species'],['{{role}}','NPC role'],['{{playerPronoun1}}','he/she/they'],['{{playerPronoun2}}','him/her/them'],['{{playerPronoun3}}','his/her/their'],['{{playerPronounSelf}}','reflexive pronoun'],['{{playerFirstL2V1}}','name fragment']
 ];
 function mapLabel(id){return mapRegistry.find(m=>m.id===id)?.name||id}
 function stationsForMap(id){return mapRegistry.find(m=>m.id===id)?.stations||[]}
