@@ -6,7 +6,7 @@
   const SAFE_ROOM_ID = 'map_i_town_mine_safe'; // Used as the permanent hub between town and unlocked tier shortcuts.
   let configPromise = null; // Used to share the single mine-config request among map loading, loot gating, and diagnostics.
   let deps = null; // Used by runtime progression helpers while pure generation remains independently testable.
-  let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0 }; // Used as the world-member mine progression saved alongside inventory and quests.
+  let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0, discoveredOreKeys: [] }; // Used as the world-member mine progression and permanent ore-recipe discovery saved alongside inventory and quests.
   const floorVisitCounts = new Map(); // Used to give every entry a fresh layout/content seed instead of treating a numbered floor as a permanent map.
   const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
   const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
@@ -101,14 +101,11 @@
     const safePlacementFloor = placementSafeTiles(generated.floor); // Used for content only; every generated floor tile remains walkable, but edge-adjacent cells no longer hide rocks inside sculpted geometry.
     const ordinaryRockCount = Math.min(safePlacementFloor.length, Math.max(8, Math.min(24, Math.round(generated.floor.length / 7)))); // Used to make searching for a weak patch a real mining process without sealing the cave.
     const ordinaryTiles = pickSeparatedTiles(rng, safePlacementFloor, excluded, ordinaryRockCount);
-    const tierMetalKey = config.oreTierMetalKeys[tier - 1]; // Used by rewards and verdigris-colored seam rendering for this floor tier.
-    const oreRocks = ordinaryTiles.map(([col, row], index) => ({
-      col,
-      row,
-      oreKind: index % 3 === 0 ? tierMetalKey : 'stone',
-      metalKey: index % 3 === 0 ? tierMetalKey : null,
-      mineFloor: floorNumber,
-    }));
+    const tierOreKeys = config.oreTierOreKeys?.[tier - 1] || ['copper']; // Used to provide elemental ores rather than impossible alloy-bearing rocks.
+    const oreRocks = ordinaryTiles.map(([col, row], index) => {
+      const oreKey = index % 3 === 0 ? tierOreKeys[Math.floor(rng() * tierOreKeys.length)] : null; // Used by drops and the masked rock-texture recolor; null denotes an ordinary Stone node.
+      return { col, row, oreKind: oreKey || 'stone', oreKey, mineFloor: floorNumber };
+    });
     const enemyKinds = enemyPlan(floorNumber, rng); // Used to apply the requested quiet opening followed by increasingly large ghoul groups.
     const enemyExcluded = new Set([...excluded, ...ordinaryTiles.map(([col, row]) => `${col},${row}`)]); // Used to keep a creature from being obscured by a rock even when both choose from the same geometry-safe floor pool.
     const enemyTiles = pickSeparatedTiles(rng, safePlacementFloor, enemyExcluded, enemyKinds.length);
@@ -137,10 +134,11 @@
       wallStyle: 'mine',
       mineFloor: floorNumber,
       mineTier: tier,
-      mineMetalKey: tierMetalKey,
+      mineOreKeys: [...tierOreKeys],
       oreRocks,
       mineEnemySpawns,
       minePlacementSafeTileCount: safePlacementFloor.length,
+      disconnectedFloorTilesRemoved: generated.disconnectedFloorTilesRemoved || 0,
       mineCanDescend: floorNumber < config.floorCount,
       mineReturnLadder: returnLadder ? { col: generated.exitCol, row: generated.exitRow } : null,
     };
@@ -186,7 +184,7 @@
   }
 
   function serialize() {
-    return { deepestFloor: progression.deepestFloor, unlockedShortcutTiers: [...progression.unlockedShortcutTiers], townValue: progression.townValue };
+    return { deepestFloor: progression.deepestFloor, unlockedShortcutTiers: [...progression.unlockedShortcutTiers], townValue: progression.townValue, discoveredOreKeys: [...progression.discoveredOreKeys] };
   }
 
   function restore(saved) {
@@ -195,7 +193,30 @@
       deepestFloor: Math.max(0, Math.min(100, Math.floor(Number(saved?.deepestFloor) || 0))),
       unlockedShortcutTiers: [...new Set(shortcutTiers.map(Number).filter(tier => Number.isInteger(tier) && tier >= 1 && tier <= 9))].sort((a, b) => a - b),
       townValue: Math.max(0, Math.floor(Number(saved?.townValue) || 0)),
+      discoveredOreKeys: [...new Set((Array.isArray(saved?.discoveredOreKeys) ? saved.discoveredOreKeys : []).filter(key => typeof key === 'string'))],
     };
+  }
+
+  function recordHeldOres(oreKeys) {
+    let changed = false; // Used to avoid rewriting the member save whenever the Crafting pane merely rerenders.
+    for (const oreKey of (oreKeys || [])) {
+      if (typeof oreKey !== 'string' || progression.discoveredOreKeys.includes(oreKey)) continue;
+      progression.discoveredOreKeys.push(oreKey);
+      changed = true;
+    }
+    if (changed) {
+      progression.discoveredOreKeys.sort();
+      deps?.save?.();
+    }
+    return changed;
+  }
+
+  function hasDiscoveredOre(oreKey) {
+    return progression.discoveredOreKeys.includes(oreKey);
+  }
+
+  function rollOreYield(rng = Math.random, bonus = 0) {
+    return 1 + (rng() < 0.5 ? 1 : 0) + Math.max(0, Math.floor(Number(bonus) || 0)); // One/two ore at equal odds gives exactly 1.5 base yield before additive Mining bonuses.
   }
 
   function getTownValue() { return progression.townValue; }
@@ -234,7 +255,7 @@
     const config = await loadConfig();
     if (!config) return [];
     return config.ladderUpgrades.map(upgrade => {
-      const metalKey = config.oreTierMetalKeys[upgrade.tier - 1];
+      const metalKey = config.ladderMetalKeys[upgrade.tier - 1];
       const barKey = deps?.metalBarItemKey?.(metalKey) || `bar_${metalKey}`;
       const unlocked = progression.unlockedShortcutTiers.includes(upgrade.tier);
       const reached = completedTier(upgrade.tier);
@@ -345,7 +366,7 @@
     const area = deps?.getCurrentArea?.(); // Used by the mobile-safe diagnostic report to identify the active mine context.
     const floor = floorFromMapId(area);
     const sceneInfo = floor ? deps?.buildingScenes?.get?.(area) : null; // Used to expose placement-clearance counts without requiring desktop developer tools.
-    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy') } };
+    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy') } };
     window.__farmLog?.(`[town-mine] ${JSON.stringify(snapshot)}`, 'info', 'mine');
     return snapshot;
   }
@@ -366,6 +387,9 @@
     getTownValue,
     bgmTracksForArea,
     descentChance,
+    recordHeldOres,
+    hasDiscoveredOre,
+    rollOreYield,
     hasReturnLadder,
     ladderRows,
     buildLadderTier,

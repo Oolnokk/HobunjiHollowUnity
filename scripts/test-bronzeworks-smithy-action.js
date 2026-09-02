@@ -24,7 +24,7 @@ assert.match(game, /const isNavAction = act === npcDialogueAction\(\) \|\| act =
   'a stale tool cooldown cannot swallow a Smithy action-arch press');
 assert.match(index, /config\/scratchbones-config\.js\?v=20260831smithy1/,
   'the Smithy action configuration is cache-busted');
-assert.match(index, /game\.js\?v=20260831smithy1/,
+assert.match(index, /game\.js\?v=20260902ore1/,
   'the Smithy runtime is cache-busted');
 
 console.log('Bronzeworks Smithy action contracts: 9 checks passed');

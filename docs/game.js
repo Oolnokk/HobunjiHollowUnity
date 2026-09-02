@@ -1612,10 +1612,10 @@
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
       };
 
-      // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
+      // ── Metal registry (crafted bars, the verdigris hierarchy) ─────────
       // Clean/polished target hex + verdigris hex ported from the tool-sprite
       // recolorer dev tool's METAL_PRESETS list. `tier` is null for metals
-      // that don't produce a verdigris (dug up and sold, or used only for
+      // that don't produce a verdigris (sold or used only for
       // cosmetic plating) — the seven that do have tier: 1 (weakest, native
       // copper) through 7 (strongest, tumbaga) form the hierarchy Sloomi/
       // Kzubug can craft real tools from and reinforce a tool up through
@@ -1636,12 +1636,37 @@
         electrumSilver:  { label: 'Pale Electrum',     hex: '#CEC88E', verdigrisHex: null, tier: null },
         pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
+      const ORE_DEFS = {
+        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
+        tin:     { label: 'Tin Ore',     hex: '#C8CCD0', verdigrisHex: null, oxidationAmount: 0 },
+        arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
+        lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
+        silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
+        gold:    { label: 'Gold Ore',    hex: '#D4AF37', verdigrisHex: null, oxidationAmount: 0 },
+      }; // Used by mine drops, inventory registration, crafting discovery, and the masked rock-texture recolor.
+      const METAL_BAR_RECIPES = {
+        nativeCopper:    { copper: 5 },
+        lowTinBronze:    { copper: 4, tin: 1 },
+        tinBronze:       { copper: 3, tin: 2 },
+        highTinBronze:   { copper: 2, tin: 3 },
+        arsenicalBronze: { copper: 4, arsenic: 1 },
+        leadedBronze:    { copper: 3, tin: 1, lead: 1 },
+        tumbaga:         { copper: 3, gold: 2 },
+        tin:             { tin: 5 },
+        lead:            { lead: 5 },
+        silver:          { silver: 5 },
+        gold:            { gold: 5 },
+        electrumGold:    { gold: 3, silver: 2 },
+        electrumSilver:  { gold: 2, silver: 3 },
+        pewter:          { tin: 4, lead: 1 },
+      }; // Used by the Crafting pane; every bar consumes exactly five elemental ore and alloys always combine distinct ores.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
         .sort((a, b) => METAL_DEFS[a].tier - METAL_DEFS[b].tier);
 
       function metalBarItemKey(metalKey) { return 'bar_' + metalKey; }
+      function metalOreItemKey(oreKey) { return 'ore_' + oreKey; }
 
       // A tier-linear damage/efficacy scalar — read by both weaponAbility()
       // (combat damage) and, going forward, any other tool-use "efficacy"
@@ -12441,6 +12466,35 @@
             carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
             carvedTexture.repeat.set(0.7, 0.7);
             if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
+            const mineOreTexturePromises = new Map(); // Used to generate each ore's masked PNG texture once per floor rather than once per rock.
+            const mineRockTextureFor = oreKey => {
+              if (!oreKey || !ORE_DEFS[oreKey] || !window.ToolMetalRecolor) return Promise.resolve(carvedTexture);
+              if (mineOreTexturePromises.has(oreKey)) return mineOreTexturePromises.get(oreKey);
+              const ore = ORE_DEFS[oreKey]; // Used to feed the exact clean-metal/verdigris palette into the shared weapon PNG effect.
+              const seed = Array.from(oreKey).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261); // Stable per-ore blotch layout used by ToolMetalRecolor.
+              const request = window.ToolMetalRecolor.getRecoloredCanvas('assets/textures/carved_smooth.png', {
+                sourceHex: '#635544',
+                targetHex: ore.hex,
+                verdigrisHex: ore.verdigrisHex,
+                oxidationAmount: ore.oxidationAmount,
+                hueToleranceDeg: 8,
+                saturationTolerance: 0.12,
+                outlineWidth: 1,
+                seed,
+              }).then(canvas => {
+                const texture = new THREE.CanvasTexture(canvas); // Applies the recolored/oxidized PNG directly to the rock mesh instead of adding colored geometry.
+                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                texture.repeat.set(0.7, 0.7);
+                if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+                texture.needsUpdate = true;
+                return texture;
+              }).catch(error => {
+                window.__farmLog?.(`[town-mine] ${ore.label} texture recolor failed; using carved stone: ${error?.message || error}`, 'warn', 'mine');
+                return carvedTexture;
+              });
+              mineOreTexturePromises.set(oreKey, request);
+              return request;
+            };
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
               const tile = bGrid[rock.row]?.[rock.col];
@@ -12448,27 +12502,16 @@
                 tile.type = TileType.ROCK;
                 tile.rockKind = 'diggableRockOre';
                 tile.oreKind = rock.oreKind;
-                tile.metalKey = rock.metalKey || null;
+                tile.oreKey = rock.oreKey || null;
                 tile.mineFloor = mapData.mineFloor;
               }
               const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
-              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0x898d92, map: carvedTexture, roughness: 0.94 }));
+              const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
+              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, map: rockTexture, roughness: 0.94 }));
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
-              if (rock.metalKey && METAL_DEFS[rock.metalKey]) {
-                const metal = METAL_DEFS[rock.metalKey]; // Used to drive the same clean-metal and verdigris palette already authored for tools.
-                const seamColor = new THREE.Color(metal.verdigrisHex || metal.hex);
-                const seamMaterial = new THREE.MeshStandardMaterial({ color: seamColor, emissive: seamColor, emissiveIntensity: 0.12, roughness: 0.72 });
-                for (let seamIndex = 0; seamIndex < 3; seamIndex++) {
-                  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.72 - seamIndex * 0.12), seamMaterial);
-                  seam.position.set(-0.22 + seamIndex * 0.2, 0.46 + seamIndex * 0.045, 0);
-                  seam.rotation.y = 0.45 + seamIndex * 0.5;
-                  seam.rotation.z = -0.22 + seamIndex * 0.16;
-                  rockGroup.add(seam);
-                }
-              }
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
               bScene.add(rockGroup);
               _markOutline(rockGroup);
@@ -12527,8 +12570,9 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
+          if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
               w.root._pendingBuildingAdd = null;
@@ -12555,8 +12599,14 @@
               const sp = (mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
                 ? { col: mapData.exitCol, row: mapData.exitRow }
                 : buildingSpawnFromExit(info, cols, rows);
-              player.x = (sp.col + 0.5) * TILE;
-              player.y = (sp.row + 0.5) * TILE;
+              const intendedX = (sp.col + 0.5) * TILE;
+              const intendedY = (sp.row + 0.5) * TILE;
+              const safeSpawn = canOccupyAt(intendedX, intendedY, PLAYER_RADIUS * 0.72)
+                ? { x: intendedX, y: intendedY }
+                : findNearestWalkableTileCenter(intendedX, intendedY); // Used to keep asynchronous cavern entry out of a wall sliver if future generation changes invalidate its authored exit tile.
+              player.x = safeSpawn?.x ?? intendedX;
+              player.y = safeSpawn?.y ?? intendedY;
+              if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
               _snapCameraTarget();
             }
           }
@@ -14229,9 +14279,24 @@
         return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
       }
 
-      // ── Metal bars (dug up from wilderness treasure chests — see
-      // ensureZoneTreasure) — one per METAL_DEFS entry, verdigris-capable
-      // or not; non-verdigris bars are only useful for cosmetic plating.
+      // ── Raw metal ores — mine nodes yield these instead of finished bars.
+      // Crafting recipes remain permanently hidden until every ore used by
+      // that recipe has entered this world-member's inventory at least once.
+      Object.entries(ORE_DEFS).forEach(([oreKey, ore]) => {
+        const key = metalOreItemKey(oreKey); // Used as the canonical inventory key shared by mine rewards and Crafting ingredients.
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: '🪨', label: ore.label.toUpperCase(), max: 99 });
+        }
+        ITEM_DEFS[key] = {
+          icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
+          tags: ['Material', 'Ore', oreKey],
+          desc: 'Raw ore from the Town Mine. Five total ore can be worked into one metal bar through Crafting.',
+        };
+      });
+
+      // ── Metal bars (crafted from raw ore or found in treasure) — one per
+      // METAL_DEFS entry. Alloy identities live only here and in recipes;
+      // mine nodes never contain fictional bronze/electrum/pewter ore.
       Object.entries(METAL_DEFS).forEach(([metalKey, metal]) => {
         const key = metalBarItemKey(metalKey);
         if (!inventoryItems.some(item => item.key === key)) {
@@ -14245,8 +14310,8 @@
             sellPrice: 4 + (metal.tier || 1) * 3,
             tags: ['Material', 'Metal Bar', metal.tier != null ? 'Verdigris Metal' : 'Plating Metal'],
             desc: metal.tier != null
-              ? `A bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
-              : `A bar of ${metal.label.toLowerCase()}. Doesn't take a verdigris — Sloomi or Kzubug can still use it for cosmetic plating.`,
+              ? `A crafted bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
+              : `A crafted bar of ${metal.label.toLowerCase()}. It doesn't take a verdigris; Sloomi or Kzubug can still use it for cosmetic plating.`,
           };
         }
       });
@@ -16017,7 +16082,10 @@
         // box collision resumes automatically the instant their real
         // position is valid again, so this never opens a lasting way to
         // squeeze through walls.
-        if (!canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+        // Caverns never use the center-only escape path: it can let an
+        // invalid spawn cross a one-tile wall into the inter-tunnel void.
+        // updateMovement's strict nearest-tile rescue handles that state.
+        if (!_isCavernBuildingArea(currentArea) && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
           return tileSpeedAt(wx, wy) !== null;
         }
         return false;
@@ -17037,7 +17105,7 @@
           // Breaking a rock — reachable via a completed hold (see
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
-          const minedMetalKey = tile.metalKey || null; // Used to preserve a mine seam's metal identity before the tile becomes walkable floor.
+          const minedOreKey = tile.oreKey || null; // Used to preserve a mine node's elemental ore identity before the tile becomes walkable floor.
           const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('mining') || 0) ? 1 : 0; // Used for Mining's extra-stone and future-ore chance.
           const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 stone, plus a possible skill bonus
           tile.type = TileType.GRASS;
@@ -17055,12 +17123,13 @@
             _zoneMinedRockPersist.set(currentArea, _minedEntries);
           }
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
-          let metalMessage = ''; // Used to append the tier metal reward without changing ordinary farm/wilderness rock messaging.
-          if (minedMetalKey && METAL_DEFS[minedMetalKey]) {
-            const metalAmount = 1 + bonus; // Used as the initial raw seam yield until separate smelting inputs are authored.
-            const metalItemKey = metalBarItemKey(minedMetalKey); // Used to feed the existing crafting/ladder metal inventory consistently.
-            inventory[metalItemKey] = Math.min(99, (inventory[metalItemKey] || 0) + metalAmount);
-            metalMessage = ` and ${metalAmount} ${METAL_DEFS[minedMetalKey].label}`;
+          let metalMessage = ''; // Used to append raw ore rewards without changing ordinary farm/wilderness rock messaging.
+          if (minedOreKey && ORE_DEFS[minedOreKey]) {
+            const oreAmount = window.TownMine?.rollOreYield?.(rnd, bonus) ?? (1 + (rnd() < 0.5 ? 1 : 0) + bonus); // One or two ore averages 1.5 before the separate +1 Mining yield perk roll.
+            const oreItemKey = metalOreItemKey(minedOreKey); // Used to feed the Crafting pane without ever minting a bar directly from a rock.
+            inventory[oreItemKey] = Math.min(99, (inventory[oreItemKey] || 0) + oreAmount);
+            window.TownMine?.recordHeldOres?.([minedOreKey]);
+            metalMessage = ` and ${oreAmount} ${ORE_DEFS[minedOreKey].label}`;
           }
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
@@ -28601,6 +28670,13 @@
         inventory,
         clampInventoryStack,
         FURNITURE_BLUEPRINT_CATALOG,
+        ORE_DEFS,
+        METAL_DEFS,
+        METAL_BAR_RECIPES,
+        metalOreItemKey,
+        metalBarItemKey,
+        recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),
+        hasDiscoveredOre: oreKey => window.TownMine?.hasDiscoveredOre?.(oreKey) || false,
         showToast,
         buildInventoryGrid,
         saveMemberWorldData,

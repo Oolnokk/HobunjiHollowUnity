@@ -61,6 +61,24 @@
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
 
+  function entranceConnectedFloor(floor, exitCol, exitRow) {
+    const floorSet = new Set(floor.map(([col, row]) => `${col},${row}`)); // Used to discard any isolated carved pocket that cannot be reached from the cave mouth.
+    const startKey = `${exitCol},${exitRow}`;
+    if (!floorSet.has(startKey)) return { floor: [...floor], removed: 0 };
+    const reached = new Set([startKey]);
+    const queue = [[exitCol, exitRow]];
+    for (let index = 0; index < queue.length; index++) {
+      const [col, row] = queue[index];
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const next = `${col + dc},${row + dr}`;
+        if (!floorSet.has(next) || reached.has(next)) continue;
+        reached.add(next);
+        queue.push([col + dc, row + dr]);
+      }
+    }
+    return { floor: floor.filter(([col, row]) => reached.has(`${col},${row}`)), removed: floor.length - reached.size };
+  }
+
   function generateCavernFloor(seedText, generationOptions = {}) {
     const cacheKey = generationOptions.fast ? `${seedText}:fast` : seedText;
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
@@ -98,8 +116,7 @@
     for (const key of result.claimed) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
     const shiftX = -minX + 1, shiftY = -minY + 1;
 
-    const floor = [...result.claimed].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; });
-    const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
+    const carvedFloor = [...result.claimed].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; });
     const exitTiles = result.entranceTiles.map(([x, y]) => [x + shiftX, y + shiftY]);
     const [nfx, nfy] = result.nestTile;
 
@@ -119,12 +136,26 @@
     // entry is the same guaranteed-walkable tile carveMazeCavern itself
     // already treats as "the" entrance (see its own startKey).
     const [exitCol, exitRow] = exitTiles[Math.floor(exitTiles.length / 2)];
+    const connected = entranceConnectedFloor(carvedFloor, exitCol, exitRow); // Used as the authoritative collision floor so an isolated SDF pocket can never become a spawnable room.
+    const floor = connected.floor;
+    const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
+    const floorKeys = new Set(floor.map(([col, row]) => `${col},${row}`));
+    let nestCol = nfx + shiftX, nestRow = nfy + shiftY;
+    if (!floorKeys.has(`${nestCol},${nestRow}`)) {
+      const nestCandidates = floor.filter(([col, row]) => floorKeys.has(`${col + 1},${row}`) && floorKeys.has(`${col},${row + 1}`) && floorKeys.has(`${col + 1},${row + 1}`)); // Used to preserve the Den-Mother's complete 2x2 objective footprint after pocket removal.
+      [nestCol, nestRow] = (nestCandidates.length ? nestCandidates : floor).reduce((best, tile) => {
+        const bestDistance = Math.abs(best[0] - exitCol) + Math.abs(best[1] - exitRow);
+        const tileDistance = Math.abs(tile[0] - exitCol) + Math.abs(tile[1] - exitRow);
+        return tileDistance > bestDistance ? tile : best;
+      }, (nestCandidates.length ? nestCandidates : floor)[0]); // Used to keep the den objective in the retained entrance component if malformed sculpt output ever isolates its original nest.
+    }
 
     const floorResult = {
       floor, cols, rows,
       exitCol, exitRow,
       exitTiles,
-      nestCol: nfx + shiftX, nestRow: nfy + shiftY,
+      nestCol, nestRow,
+      disconnectedFloorTilesRemoved: connected.removed,
       mesh: { positions, indices: result.mesh.indices },
     };
     if (useCache) _cavernFloorCache.set(cacheKey, floorResult);
@@ -194,7 +225,7 @@
   }
 
   function synthesizeCavernMapData(mapId) {
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, mesh } = generateCavernFloor(mapId);
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId);
 
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
@@ -225,6 +256,7 @@
       // but never made it into this object), so every den silently used
       // that fallback and could spawn the player overlapping solid rock.
       exitCol, exitRow,
+      disconnectedFloorTilesRemoved,
       mesh,
       oreRocks, creatureSpawns,
       // Den-Mother/nest placement — read by loadBuildingScene after the
@@ -236,6 +268,7 @@
   window.CavernGenerator = {
     init,
     generateCavernFloor,
+    entranceConnectedFloor,
     pickDenMotherKind,
     synthesizeCavernMapData,
   };

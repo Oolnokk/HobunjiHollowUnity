@@ -6,6 +6,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const config = JSON.parse(fs.readFileSync('docs/config/town-mine.json', 'utf8'));
+assert.ok(config.oreTierOreKeys.flat().every(key => !/bronze|electrum|pewter/i.test(key)), 'Mine tiers must contain elemental ores, never alloy ores');
 const townMap = JSON.parse(fs.readFileSync('docs/config/maps/hobunji_hollow_town.map.json', 'utf8'));
 const mapIndex = JSON.parse(fs.readFileSync('docs/config/maps/index.json', 'utf8'));
 const safeRoom = JSON.parse(fs.readFileSync('docs/config/maps/map_i_town_mine_safe.json', 'utf8'));
@@ -54,6 +55,9 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.strictEqual(floorTwoA.exits.length, 0, 'Ordinary deeper floors should not have an upward exit');
   assert.strictEqual(floorTwoA.descentRock, undefined, 'No rock should be preselected as the descent');
   assert.ok(floorTwoA.oreRocks.every(rock => !rock.hiddenDescent), 'Rocks should use runtime descent rolls');
+  assert.ok(floorTwoA.oreRocks.every(rock => !rock.metalKey && (!rock.oreKey || config.oreTierOreKeys.flat().includes(rock.oreKey))), 'Mine rocks should carry elemental ore keys and never finished-bar metal keys');
+  assert.strictEqual((mine.rollOreYield(() => 0.49) + mine.rollOreYield(() => 0.5)) / 2, 1.5, 'Base ore yield should average exactly 1.5 across the equal one/two outcomes');
+  assert.strictEqual(mine.rollOreYield(() => 0.5, 1), 2, 'Mining yield bonuses should be additive after the 1.5 base roll');
   const floorSet = new Set(floorTwoA.floor.map(tile => tile.join(','))); // Used to prove spawned rocks keep a full tile of clearance from organic wall geometry.
   assert.ok(floorTwoA.oreRocks.every(rock => {
     for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
@@ -90,6 +94,43 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   perkContext.window.PerkSystem = { rank: () => 0 };
   assert.strictEqual(perkContext.window.SkillSystem.bonusYieldChance('mining'), 0, 'Mining level alone should no longer grant yield');
   assert.strictEqual(perkContext.window.SkillSystem.actionSpeedMultiplier('mining'), 1, 'Mining level alone should no longer grant speed');
+
+  const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+  const oreDefsMatch = gameSource.match(/const ORE_DEFS = (\{[\s\S]*?\n      \}); \/\/ Used by mine drops/);
+  const recipesMatch = gameSource.match(/const METAL_BAR_RECIPES = (\{[\s\S]*?\n      \}); \/\/ Used by the Crafting pane/);
+  assert.ok(oreDefsMatch && recipesMatch, 'Metallurgy definitions should remain test-readable in game.js');
+  const oreDefs = vm.runInNewContext(`(${oreDefsMatch[1]})`);
+  const recipes = vm.runInNewContext(`(${recipesMatch[1]})`);
+  for (const [metalKey, ingredients] of Object.entries(recipes)) {
+    assert.strictEqual(Object.values(ingredients).reduce((sum, amount) => sum + amount, 0), 5, `${metalKey} should consume exactly five ore`);
+    if (/bronze|electrum|tumbaga|pewter/i.test(metalKey)) assert.ok(Object.keys(ingredients).length > 1, `${metalKey} must combine multiple elemental ores`);
+    assert.ok(Object.keys(ingredients).every(key => oreDefs[key]), `${metalKey} should reference only registered elemental ores`);
+  }
+
+  const discovered = new Set(['copper']);
+  const craftingInventory = { ore_copper: 5, ore_tin: 5 };
+  const craftingContext = {
+    window: {},
+    document: { querySelectorAll: () => [], getElementById: () => null },
+  };
+  vm.createContext(craftingContext);
+  vm.runInContext(fs.readFileSync('docs/js/crafting-panel.js', 'utf8'), craftingContext);
+  craftingContext.window.CraftingPanel.init({
+    inventory: craftingInventory,
+    clampInventoryStack: key => { if ((craftingInventory[key] || 0) <= 0) delete craftingInventory[key]; },
+    FURNITURE_BLUEPRINT_CATALOG: [], ORE_DEFS: oreDefs,
+    METAL_DEFS: Object.fromEntries(Object.keys(recipes).map(key => [key, { label: key }])),
+    METAL_BAR_RECIPES: recipes,
+    metalOreItemKey: key => `ore_${key}`, metalBarItemKey: key => `bar_${key}`,
+    recordHeldOres: keys => keys.forEach(key => discovered.add(key)), hasDiscoveredOre: key => discovered.has(key),
+    showToast: () => {}, buildInventoryGrid: () => {}, saveMemberWorldData: () => {}, esc: value => value,
+  });
+  const visibleRecipeKeys = craftingContext.window.CraftingPanel.visibleMetalRecipes().map(([key]) => key);
+  assert.ok(visibleRecipeKeys.includes('nativeCopper') && visibleRecipeKeys.includes('tinBronze'), 'holding copper and tin should reveal their pure/alloy recipes');
+  assert.ok(!visibleRecipeKeys.includes('arsenicalBronze'), 'recipes must stay hidden until every ingredient ore has been held');
+  craftingContext.window.CraftingPanel.craftMetalBar('nativeCopper');
+  assert.strictEqual(craftingInventory.ore_copper || 0, 0, 'crafting one copper bar should consume five copper ore');
+  assert.strictEqual(craftingInventory.bar_nativeCopper, 1, 'crafting five ore should produce one existing metal bar item');
   console.log('Town mine descent/regeneration checks passed.');
 })().catch(error => {
   console.error(error);

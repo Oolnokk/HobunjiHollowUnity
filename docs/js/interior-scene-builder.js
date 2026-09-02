@@ -203,7 +203,10 @@
       texture.repeat.set(options.textureRepeat || 0.35, options.textureRepeat || 0.35);
       if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     }
-    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.DoubleSide };
+    // Dual-contour winding faces the carved air volume, so FrontSide shows
+    // the playable tunnel shell while culling reverse faces seen from solid
+    // inter-tunnel pockets. DoubleSide made those pockets look like rooms.
+    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
     const mat = options.useLambert
       ? new THREE.MeshLambertMaterial({ ...materialOptions, emissive: options.emissive ?? 0x000000 })
       : new THREE.MeshStandardMaterial({ ...materialOptions, roughness: .92, metalness: 0 });

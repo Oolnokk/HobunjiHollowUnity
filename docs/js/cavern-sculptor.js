@@ -1116,15 +1116,15 @@
     // one edge sits visibly inside a claimed tile above the floor. Filling
     // the complete loop with one welded fan produces a continuous rock patch
     // instead of trying to hide its individual open edges with overlapping
-    // fragments. The cavern material is intentionally DoubleSide, so loop
-    // winding does not affect visibility.
+    // fragments. The renderer now culls reverse faces, so orient the fan
+    // opposite its surviving boundary triangle instead of relying on DoubleSide.
     const edgeUse = new Map(); // Counts final triangle uses per welded edge to locate actual open wall loops.
     for (let q = 0; q < outIndices.length; q += 3) {
       const tri = [outIndices[q], outIndices[q + 1], outIndices[q + 2]];
       for (const [a, b] of [[tri[0], tri[1]], [tri[1], tri[2]], [tri[2], tri[0]]]) {
         const key = a < b ? `${a},${b}` : `${b},${a}`;
         let edge = edgeUse.get(key);
-        if (!edge) { edge = { a: Math.min(a, b), b: Math.max(a, b), count: 0 }; edgeUse.set(key, edge); }
+        if (!edge) { edge = { a: Math.min(a, b), b: Math.max(a, b), directedA: a, directedB: b, count: 0 }; edgeUse.set(key, edge); }
         edge.count++;
       }
     }
@@ -1174,6 +1174,9 @@
         ordered.push(next); previous = current; current = next;
       }
       if (ordered.length !== component.length || !(openAdj.get(current) || []).includes(ordered[0])) continue;
+      const firstEdgeKey = ordered[0] < ordered[1] ? `${ordered[0]},${ordered[1]}` : `${ordered[1]},${ordered[0]}`;
+      const firstBoundaryEdge = edgeUse.get(firstEdgeKey); // Used to orient the new fan opposite the surviving triangle's boundary edge for FrontSide rendering.
+      if (firstBoundaryEdge?.directedA === ordered[0] && firstBoundaryEdge?.directedB === ordered[1]) ordered.reverse();
       const center = { x: 0, y: 0, z: 0 };
       for (const id of ordered) {
         center.x += outPositions[id * 3]; center.y += outPositions[id * 3 + 1]; center.z += outPositions[id * 3 + 2];
