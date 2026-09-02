@@ -16,26 +16,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: codex/animal-chathead-framing
-      - name: Print dialogue staging and compass context
+      - name: Print focused dialogue transition context
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          s = Path('docs/game.js').read_text()
-          needles = [
-            'function beginNpcDialogueStaging',
-            'beginNpcDialogueStaging =',
-            'function npcDialogueCameraMode',
-            'function closeNpcDialogue',
-            'activeCameraMode',
-            'compass',
-          ]
-          lines = s.splitlines()
-          for needle in needles:
-            print('\n===== NEEDLE:', needle, '=====')
-            hits = [i for i,l in enumerate(lines) if needle.lower() in l.lower()]
-            print('hits', [i+1 for i in hits[:20]])
-            for i in hits[:8]:
-              lo=max(0,i-45); hi=min(len(lines),i+90)
+          lines = Path('docs/game.js').read_text().splitlines()
+          for lo, hi, title in [
+            (10416, 10680, 'dialogue staging'),
+          ]:
+            print(f'===== {title} {lo}:{hi} =====')
+            print('\n'.join(f'{i+1}: {lines[i]}' for i in range(lo-1, min(hi, len(lines)))))
+          for needle in ['dialogueZoomFactor()', 'activeCameraTarget', 'cameraAzimuthOffsetDeg', 'faceNpcDialogueParticipants()', 'updateNpcDialogueStaging(dt)']:
+            print(f'\n===== {needle} =====')
+            hits = [i for i,l in enumerate(lines) if needle in l]
+            print('hits', [i+1 for i in hits])
+            for i in hits[:12]:
+              lo=max(0,i-20); hi=min(len(lines),i+45)
               print(f'--- {lo+1}:{hi} ---')
               print('\n'.join(f'{j+1}: {lines[j]}' for j in range(lo,hi)))
           PY
