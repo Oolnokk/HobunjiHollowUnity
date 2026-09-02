@@ -6,6 +6,10 @@ const fs = require('fs');
 const vm = require('vm');
 
 const config = JSON.parse(fs.readFileSync('docs/config/town-mine.json', 'utf8'));
+const townMap = JSON.parse(fs.readFileSync('docs/config/maps/hobunji_hollow_town.map.json', 'utf8'));
+const mapIndex = JSON.parse(fs.readFileSync('docs/config/maps/index.json', 'utf8'));
+const safeRoom = JSON.parse(fs.readFileSync('docs/config/maps/map_i_town_mine_safe.json', 'utf8'));
+const mineLadder = JSON.parse(fs.readFileSync('docs/config/furniture-authored/mineLadder.json', 'utf8'));
 const generatedSeeds = [];
 const floor = [];
 for (let row = 1; row <= 9; row++) for (let col = 1; col <= 9; col++) floor.push([col, row]);
@@ -30,6 +34,18 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
 
 (async () => {
   const mine = context.window.TownMine;
+  const entrance = townMap.buildings.find(building => building.id === 'bldg_town_mine_entry');
+  assert.strictEqual(entrance?.pieceFile, 'config/pieces/mine_entrance.json', 'Town should persist the supplied movable mine entrance building');
+  assert.ok(townMap.transitions.some(transition => transition.buildingId === entrance.id && transition.targetMapId === safeRoom.id), 'The movable entrance should own the safe-room transition');
+  assert.ok(mapIndex.maps.some(map => map.id === safeRoom.id && map.category === 'building_interior'), 'The safe room should be indexed for Map Editor interior sync');
+  assert.ok(safeRoom.furniture.some(furniture => furniture.itemKey === 'mineLadderFurniture'), 'The safe-room ladder should be an editable interior fixture');
+  assert.strictEqual(mineLadder.key, 'mineLadder', 'The supplied ladder should be available through authored furniture loading');
+  assert.strictEqual(mineLadder.parts.length, 6, 'The authored ladder should retain every supplied part');
+  assert.strictEqual(mine.descentChance('rock'), 0.08, 'Rock discovery should have the doubled 8% base chance');
+  assert.strictEqual(mine.descentChance('enemy'), 0.16, 'Enemy discovery should have the doubled 16% base chance');
+  context.window.PerkSystem = { rank: (_skill, perkId) => perkId === 'weakRockSense' || perkId === 'collapsingBlows' ? 5 : 0 };
+  assert.strictEqual(mine.descentChance('rock'), 0.155, 'Weak Rock Sense should remain a separate additive bonus');
+  assert.strictEqual(mine.descentChance('enemy'), 0.31, 'Collapsing Blows should remain a separate additive bonus');
   const first = await mine.synthesizeFloorMapData(mine.mapIdForFloor(1));
   const floorTwoA = await mine.synthesizeFloorMapData(mine.mapIdForFloor(2));
   const floorTwoB = await mine.synthesizeFloorMapData(mine.mapIdForFloor(2));
@@ -38,6 +54,15 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.strictEqual(floorTwoA.exits.length, 0, 'Ordinary deeper floors should not have an upward exit');
   assert.strictEqual(floorTwoA.descentRock, undefined, 'No rock should be preselected as the descent');
   assert.ok(floorTwoA.oreRocks.every(rock => !rock.hiddenDescent), 'Rocks should use runtime descent rolls');
+  const floorSet = new Set(floorTwoA.floor.map(tile => tile.join(','))); // Used to prove spawned rocks keep a full tile of clearance from organic wall geometry.
+  assert.ok(floorTwoA.oreRocks.every(rock => {
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+      for (let colOffset = -1; colOffset <= 1; colOffset++) {
+        if (!floorSet.has(`${rock.col + colOffset},${rock.row + rowOffset}`)) return false;
+      }
+    }
+    return true;
+  }), 'Every mine rock should spawn on an interior floor tile with full surrounding clearance');
   assert.notStrictEqual(generatedSeeds[1], generatedSeeds[2], 'Each visit should use a fresh generation seed');
   assert.ok(floorTwoB, 'A repeat visit should synthesize a complete replacement floor');
 
@@ -45,6 +70,8 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const shortcutFloor = await mine.synthesizeFloorMapData(mine.mapIdForFloor(11));
   assert.strictEqual(shortcutFloor.exits.length, 0, 'A shortcut destination should not provide a return exit');
   assert.strictEqual(shortcutFloor.mineReturnLadder, null, 'Shortcut destinations should rely on the utility-menu escape');
+  const shortcutRockTiles = new Set(shortcutFloor.oreRocks.map(rock => `${rock.col},${rock.row}`)); // Used to guard the shared geometry-safe placement pool against rock/enemy overlap.
+  assert.ok(shortcutFloor.mineEnemySpawns.every(enemy => !shortcutRockTiles.has(`${enemy.col},${enemy.row}`)), 'Enemies should never spawn hidden inside mine rocks');
   const finalFloor = await mine.synthesizeFloorMapData(mine.mapIdForFloor(100));
   assert.strictEqual(finalFloor.mineCanDescend, false, 'Floor 100 should not roll another descent');
 
@@ -52,8 +79,17 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   vm.createContext(perkContext);
   vm.runInContext(fs.readFileSync('docs/js/perk-system.js', 'utf8'), perkContext);
   const miningPerks = perkContext.window.PerkSystem.TREES.mining;
+  assert.ok(miningPerks.some(perk => perk.id === 'increaseMiningYield'));
+  assert.ok(miningPerks.some(perk => perk.id === 'increaseMiningSpeed'));
   assert.ok(miningPerks.some(perk => perk.id === 'weakRockSense'));
   assert.ok(miningPerks.some(perk => perk.id === 'collapsingBlows'));
+  vm.runInContext(fs.readFileSync('docs/js/skill-system.js', 'utf8'), perkContext);
+  perkContext.window.PerkSystem = { rank: (_skill, perkId) => perkId === 'increaseMiningYield' || perkId === 'increaseMiningSpeed' ? 5 : 0 };
+  assert.strictEqual(perkContext.window.SkillSystem.bonusYieldChance('mining'), 0.35, 'Five yield ranks should preserve the former maximum bonus');
+  assert.strictEqual(perkContext.window.SkillSystem.actionSpeedMultiplier('mining'), 1.5, 'Five speed ranks should preserve the former maximum bonus');
+  perkContext.window.PerkSystem = { rank: () => 0 };
+  assert.strictEqual(perkContext.window.SkillSystem.bonusYieldChance('mining'), 0, 'Mining level alone should no longer grant yield');
+  assert.strictEqual(perkContext.window.SkillSystem.actionSpeedMultiplier('mining'), 1, 'Mining level alone should no longer grant speed');
   console.log('Town mine descent/regeneration checks passed.');
 })().catch(error => {
   console.error(error);

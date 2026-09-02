@@ -8,7 +8,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260815a"></script>
+  <script src="js/interior-scene-builder.js?v=20260902mineroom1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -76,7 +76,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260830campfire1"></script>
+  <script src="js/procedural-furniture.js?v=20260902mineladder1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260802a"></script>
@@ -166,8 +166,8 @@
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
-  <script src="js/skill-system.js?v=20260821alchemy1"></script>
-  <script src="js/perk-system.js?v=20260902mine1"></script>
+  <script src="js/skill-system.js?v=20260902mineperks1"></script>
+  <script src="js/perk-system.js?v=20260902mineperks1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -464,7 +464,7 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260901a"></script>
   <script src="js/cavern-generator.js?v=20260902mine1"></script>
-  <script src="js/town-mine.js?v=20260902descent1"></script>
+  <script src="js/town-mine.js?v=20260902placement1"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2175,7 +2175,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260902mine1"></script>
+  <script src="game.js?v=20260902mine3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

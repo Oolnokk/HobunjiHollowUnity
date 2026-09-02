@@ -100,6 +100,8 @@
       { id: 'amphibiousFish', name: 'Amphibious Fish', tier: 3, maxRank: 4, desc: r => `Reeling in a catch only costs ${[80, 60, 40, 20][Math.min(3, r - 1)]}% as much Footing.` },
     ],
     mining: [
+      { id: 'increaseMiningYield', name: 'Increase Mining Yield', tier: 1, maxRank: 5, desc: r => `Chance of an extra Stone or ore per mined rock is increased ${r * 7}%.` },
+      { id: 'increaseMiningSpeed', name: 'Increase Mining Speed', tier: 1, maxRank: 5, desc: r => `Pick mining speed is increased ${r * 10}%.` },
       { id: 'weakRockSense', name: 'Weak Rock Sense', tier: 1, maxRank: 5, desc: r => `Breaking a mine rock has an additional ${r * 1.5}% chance to reveal the way down.` },
       { id: 'collapsingBlows', name: 'Collapsing Blows', tier: 1, maxRank: 5, desc: r => `Killing a mine enemy has an additional ${r * 3}% chance to expose weak rock beneath it.` },
     ],

@@ -62,6 +62,18 @@
     return picks;
   }
 
+  function placementSafeTiles(floorTiles) {
+    const floorSet = new Set(floorTiles.map(([col, row]) => `${col},${row}`)); // Used to reject wall-edge tiles where organic cavern triangles can visually overlap a spawned rock.
+    return floorTiles.filter(([col, row]) => {
+      for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+        for (let colOffset = -1; colOffset <= 1; colOffset++) {
+          if (!floorSet.has(`${col + colOffset},${row + rowOffset}`)) return false;
+        }
+      }
+      return true;
+    });
+  }
+
   function enemyPlan(floor, rng) {
     if (floor <= 3) return rng() < 0.2 ? ['grehlr'] : [];
     if (floor <= 10) return [];
@@ -86,8 +98,9 @@
     const rng = seededRng(`${visitSeed}_content`);
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
     const excluded = new Set(generated.exitTiles.map(([col, row]) => `${col},${row}`)); // Used to keep the entrance clear of rocks and enemies.
-    const ordinaryRockCount = Math.max(8, Math.min(24, Math.round(generated.floor.length / 7))); // Used to make searching for a weak patch a real mining process without sealing the cave.
-    const ordinaryTiles = pickSeparatedTiles(rng, generated.floor, excluded, ordinaryRockCount);
+    const safePlacementFloor = placementSafeTiles(generated.floor); // Used for content only; every generated floor tile remains walkable, but edge-adjacent cells no longer hide rocks inside sculpted geometry.
+    const ordinaryRockCount = Math.min(safePlacementFloor.length, Math.max(8, Math.min(24, Math.round(generated.floor.length / 7)))); // Used to make searching for a weak patch a real mining process without sealing the cave.
+    const ordinaryTiles = pickSeparatedTiles(rng, safePlacementFloor, excluded, ordinaryRockCount);
     const tierMetalKey = config.oreTierMetalKeys[tier - 1]; // Used by rewards and verdigris-colored seam rendering for this floor tier.
     const oreRocks = ordinaryTiles.map(([col, row], index) => ({
       col,
@@ -97,7 +110,8 @@
       mineFloor: floorNumber,
     }));
     const enemyKinds = enemyPlan(floorNumber, rng); // Used to apply the requested quiet opening followed by increasingly large ghoul groups.
-    const enemyTiles = pickSeparatedTiles(rng, generated.floor, excluded, enemyKinds.length);
+    const enemyExcluded = new Set([...excluded, ...ordinaryTiles.map(([col, row]) => `${col},${row}`)]); // Used to keep a creature from being obscured by a rock even when both choose from the same geometry-safe floor pool.
+    const enemyTiles = pickSeparatedTiles(rng, safePlacementFloor, enemyExcluded, enemyKinds.length);
     const mineEnemySpawns = enemyTiles.map(([col, row], index) => ({ col, row, kind: enemyKinds[index] }));
     if (mineEnemySpawns.some(spawn => spawn.kind === 'ghoul')) ghoulBgmFloorIds.add(mapId);
     else ghoulBgmFloorIds.delete(mapId);
@@ -126,6 +140,7 @@
       mineMetalKey: tierMetalKey,
       oreRocks,
       mineEnemySpawns,
+      minePlacementSafeTileCount: safePlacementFloor.length,
       mineCanDescend: floorNumber < config.floorCount,
       mineReturnLadder: returnLadder ? { col: generated.exitCol, row: generated.exitRow } : null,
     };
@@ -138,20 +153,24 @@
     const entrance = config.townEntrance; // Used to place both the visual house-system entryway and its matching transition from one record.
     mapData.buildings ||= [];
     mapData.transitions ||= [];
-    if (!mapData.buildings.some(building => building.id === entrance.buildingId)) {
-      mapData.buildings.push({
+    let entranceBuilding = mapData.buildings.find(building => building.id === entrance.buildingId); // Used to upgrade pre-existing saves/workspaces from the temporary entrance piece to the supplied authored one.
+    if (!entranceBuilding) {
+      entranceBuilding = {
         id: entrance.buildingId,
         label: 'Town Mine',
-        pieceFile: 'config/pieces/town-mine-entry.json',
+        pieceFile: 'config/pieces/mine_entrance.json',
         gridX: entrance.gridX,
         gridZ: entrance.gridZ,
         footprintW: entrance.footprintW,
         footprintD: entrance.footprintD,
         rotationDeg: entrance.rotationDeg,
         rotation: entrance.rotationDeg,
-        doorEntrance: { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }], psCells: [{ x: 1, y: 1 }] },
-      });
+        doorEntrance: { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] },
+      };
+      mapData.buildings.push(entranceBuilding);
     }
+    entranceBuilding.pieceFile = 'config/pieces/mine_entrance.json';
+    entranceBuilding.doorEntrance = { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] };
     if (!mapData.transitions.some(transition => transition.id === 'spot_town_mine')) {
       mapData.transitions.push({ id: 'spot_town_mine', label: 'Enter Town Mine', col: entrance.doorCol, row: entrance.doorRow, targetMapId: SAFE_ROOM_ID, targetSpotId: '', buildingId: entrance.buildingId });
     }
@@ -184,6 +203,13 @@
   function bgmTracksForArea(mapId) {
     if (!floorFromMapId(mapId)) return null;
     return ghoulBgmFloorIds.has(mapId) ? [GHOUL_BGM_TRACK] : [];
+  }
+
+  function descentChance(source) {
+    const enemySource = source === 'enemy'; // Used to select the separately balanced kill roll and its matching Mining perk.
+    const perkId = enemySource ? 'collapsingBlows' : 'weakRockSense'; // Used to keep the two discovery upgrades independent.
+    const perkRank = window.PerkSystem?.rank?.('mining', perkId) || 0; // Used by mine-floor runtime rolls and mobile-readable diagnostics.
+    return enemySource ? 0.16 + perkRank * 0.03 : 0.08 + perkRank * 0.015;
   }
 
   function completedTier(tier) {
@@ -318,7 +344,8 @@
   function debugSnapshot() {
     const area = deps?.getCurrentArea?.(); // Used by the mobile-safe diagnostic report to identify the active mine context.
     const floor = floorFromMapId(area);
-    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID };
+    const sceneInfo = floor ? deps?.buildingScenes?.get?.(area) : null; // Used to expose placement-clearance counts without requiring desktop developer tools.
+    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy') } };
     window.__farmLog?.(`[town-mine] ${JSON.stringify(snapshot)}`, 'info', 'mine');
     return snapshot;
   }
@@ -338,6 +365,7 @@
     restore,
     getTownValue,
     bgmTracksForArea,
+    descentChance,
     hasReturnLadder,
     ladderRows,
     buildLadderTier,

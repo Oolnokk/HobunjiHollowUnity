@@ -114,7 +114,7 @@
   // boundary panel — same buildRockMoundBumpField technique TerrainPreview
   // uses for rock formations/animal dens, so a den's cavern walls read as the
   // same rock as its mouth outside. Exact port of game.js's buildCavernWalls.
-  function buildCavernWalls(THREE, wallPanels) {
+  function buildCavernWalls(THREE, wallPanels, options = {}) {
     const TP = root.TerrainPreview;
     if (!TP || !TP.buildRockMoundBumpField || !TP.sampleRockMoundBump) {
       console.warn('InteriorSceneBuilder.buildCavernWalls: TerrainPreview (with buildRockMoundBumpField) not loaded — falling back to flat rock panels.');
@@ -145,9 +145,20 @@
     }
     const group = new THREE.Group();
     if (!idx.length) return group;
-    const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used by the authored mine safe room to match the carved_smooth procedural floors.
+    if (texture) {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(options.textureRepeat || .42, options.textureRepeat || .42);
+      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const mat = new THREE.MeshLambertMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (texture) {
+      const uv = new Float32Array(pos.length / 3 * 2); // Used to project the stone texture consistently across every vertical mine wall orientation.
+      for (let p = 0, u = 0; p < pos.length; p += 3, u += 2) { uv[u] = pos[p] + pos[p + 2]; uv[u + 1] = pos[p + 1]; }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
     geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);
@@ -259,6 +270,7 @@
   function buildWallGroup(THREE, wallBuilder, wallPanels, wallStyle, wbOpts) {
     if (!wallPanels || !wallPanels.length) return new THREE.Group();
     if (wallStyle === 'cavern') return buildCavernWalls(THREE, wallPanels);
+    if (wallStyle === 'mine') return buildCavernWalls(THREE, wallPanels, { textureUrl: wbOpts?.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 });
     if (wallStyle === 'canvas') return buildCanvasWalls(THREE, wallPanels);
     if (wallBuilder) {
       try { return wallBuilder.build(wallPanels, Object.assign({}, DEFAULT_WB_OPTS, wbOpts)); }
@@ -275,10 +287,20 @@
   function buildFloorMaterial(THREE, wallStyle, texturesBasePath) {
     const mat = wallStyle === 'cavern'
       ? new THREE.MeshLambertMaterial({ color: 0x4a463f })
+      : wallStyle === 'mine'
+      ? new THREE.MeshLambertMaterial({ color: 0x8a8d91 })
       : wallStyle === 'canvas'
       ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c })
       : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-    if (wallStyle !== 'cavern' && wallStyle !== 'canvas') {
+    if (wallStyle === 'mine') {
+      const base = texturesBasePath || 'assets/'; // Used to resolve the same stone texture from both the game and editor tool paths.
+      new THREE.TextureLoader().load(base + 'textures/carved_smooth.png', (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(.42, .42);
+        if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+        mat.map = tex; mat.needsUpdate = true;
+      }, undefined, () => {});
+    } else if (wallStyle !== 'cavern' && wallStyle !== 'canvas') {
       const base = texturesBasePath || 'assets/';
       new THREE.TextureLoader().load(base + 'textures/boards.png', (tex) => {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
