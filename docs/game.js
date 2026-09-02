@@ -4552,6 +4552,7 @@
 
       function respawnPlayer() {
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
+          window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
           const root = window.TownMine.farmRootTotem?.(COLS, ROWS) || { spawnX: Math.floor(COLS * 0.5), spawnY: Math.floor(ROWS * 0.72) };
           player.x = (root.spawnX + 0.5) * TILE;
@@ -24706,7 +24707,12 @@
                   // entry col/row (same fire-and-forget async-inside-
                   // startSceneTransition pattern performTravel's own 'zone'
                   // case uses for an ordinary authored zone transition).
-                  startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
+                    window.WildernessCampfire?.requestReturnToCampfire?.();
+                    startSceneTransition(() => enterBuilding(campfire.mapId));
+                  } else {
+                    startSceneTransition(() => enterZone(campfire.mapId, Math.floor(campfire.x), Math.floor(campfire.z)));
+                  }
                 }
               },
             },
@@ -25342,7 +25348,7 @@
         // tents above — walking up to it puts Save/Cook/Brew each on their
         // own action-bar slot (Return to Camp lives on the utilities wheel
         // instead — see the 'c' hold-key handling further down).
-        const campfireActions = _isZoneArea(currentArea)
+        const campfireActions = window.WildernessCampfire?.supportsArea?.(currentArea)
           ? window.WildernessCampfire?.getNearbyActions?.()
           : null;
         if (campfireActions?.length) return campfireActions;
@@ -25428,7 +25434,7 @@
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: _isZoneArea(currentArea) && (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -28746,6 +28752,8 @@
       window.WildernessCampfire?.init({
         getCurrentArea: () => currentArea,
         isZoneArea: _isZoneArea,
+        isMineArea: area => !!window.TownMine?.floorFromMapId?.(area),
+        isAreaSceneReady: area => !_isBuildingArea(area) || !!_buildingScenes.get(area)?.scene,
         getActiveScene,
         getPlayer: () => player,
         getFacingAngle: () => facingAngle,

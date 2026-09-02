@@ -363,9 +363,10 @@
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
   <script src="js/furniture-placer.js?v=20260809c"></script>
-  <!-- Player-craftable wilderness campfire (window.WildernessCampfire) —
-       only one at a time, cleared on any map change. Self-contained aside
-       from deps injected via init(); must load before game.js, which calls
+  <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
+       only one at a time; survives map changes/saves and also works on Town
+       Mine floors, where player death destroys an underground camp.
+       Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
   <script src="js/wilderness-campfire.js?v=20260828a"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and

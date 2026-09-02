@@ -99,6 +99,9 @@
     const tier = tierForFloor(floorNumber); // Used to select ore identity and enemy progression in ten-floor bands.
     const excluded = new Set(generated.exitTiles.map(([col, row]) => `${col},${row}`)); // Used to keep the entrance clear of rocks and enemies.
     const safePlacementFloor = placementSafeTiles(generated.floor); // Used for content only; every generated floor tile remains walkable, but edge-adjacent cells no longer hide rocks inside sculpted geometry.
+    window.WildernessCampfire?.relocateForGeneratedMineFloor?.(mapId, safePlacementFloor); // Keeps a persistent underground camp on this regenerated floor, snapping only when its old tile no longer exists.
+    const persistedCampfire = window.WildernessCampfire?.serialize?.(); // Used to reserve the restored camp tile from this visit's rocks and enemies.
+    if (persistedCampfire?.mapId === mapId) excluded.add(`${Math.floor(persistedCampfire.x)},${Math.floor(persistedCampfire.z)}`);
     const ordinaryRockCount = Math.min(safePlacementFloor.length, Math.max(8, Math.min(24, Math.round(generated.floor.length / 7)))); // Used to make searching for a weak patch a real mining process without sealing the cave.
     const ordinaryTiles = pickSeparatedTiles(rng, safePlacementFloor, excluded, ordinaryRockCount);
     const tierOreKeys = config.oreTierOreKeys?.[tier - 1] || ['copper']; // Used to provide elemental ores rather than impossible alloy-bearing rocks.
