@@ -1,0 +1,17 @@
+name: Inspect dialogue camera path
+
+on:
+  push:
+    branches: [codex/animal-chathead-framing]
+    paths:
+      - .github/workflows/inspect-dialogue-camera-temp.yml
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/animal-chathead-framing
+      - name: Inspect dialogue camera path
+        run: python3 .github/scripts/inspect-dialogue-camera-temp.py
