@@ -1,4 +1,4 @@
-name: Sync animal chathead branch with main
+name: Inspect livestock dialogue integration points
 
 on:
   push:
@@ -6,27 +6,20 @@ on:
     paths:
       - .github/workflows/sync-animal-chathead-main.yml
 
-permissions:
-  contents: write
-
 jobs:
-  sync:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           ref: codex/animal-chathead-framing
-      - name: Merge current main
+      - name: Inspect dialogue and farm-animal hooks
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git merge origin/main --no-edit
-      - name: Run animal chathead regressions
-        run: |
-          node scripts/test-animal-chathead-framing.js
-          node scripts/test-animal-chathead-ambient.js
-          node scripts/test-animal-head-rig-runtime.js
-      - name: Push merge
-        run: git push origin HEAD:codex/animal-chathead-framing
+          echo '=== openNpcDialogue ==='
+          grep -n -A120 -B20 'function openNpcDialogue' docs/game.js || true
+          echo '=== FarmAnimals init ==='
+          grep -n -A150 -B20 'FarmAnimals.*init\|window.FarmAnimals.init' docs/game.js || true
+          echo '=== dialogue camera modes ==='
+          grep -n -A80 -B20 "npcDialogue\|dialogue.*camera\|cameraMode.*dialog" docs/game.js | head -n 500 || true
+          echo '=== interaction button routing ==='
+          grep -n -A100 -B20 'getButtons' docs/game.js | head -n 400 || true
