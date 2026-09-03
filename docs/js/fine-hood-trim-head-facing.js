@@ -74,7 +74,14 @@
     installBuildCorrection();
     return result;
   };
+  function applyToCurrentBackdrop() {
+    const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.();
+    if (model) disableFacingGate(model);
+  }
   installBuildCorrection();
+  applyToCurrentBackdrop();
+  global.addEventListener?.('hobunji-backdrop-api-ready', applyToCurrentBackdrop);
+  global.addEventListener?.('hobunji-backdrop-avatar-changed', () => setTimeout(applyToCurrentBackdrop, 0));
 
   global.HobunjiFineHoodTrimHeadFacing = Object.freeze({
     getDebug() {
