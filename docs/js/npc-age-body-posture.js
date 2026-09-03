@@ -1,10 +1,13 @@
 // Event-driven NPC age posture integration.
 //
-// Age posture is resolved once when an avatar/body assembly is created. It does
-// not wrap ProceduralLegAnimation.update(), request animation frames, or create
-// timers. Persistent body transforms are a static NpcCharacterState composer
-// channel; the opposite neck pitch is a static parent bone under the existing
-// neck rig, so ordinary dialogue can keep animating the child neck joint.
+// The canonical PNGPlaneAvatar renderer remains the owner of portrait geometry,
+// skinning, attachment coordinates, and the neck rig. Age adds only two static
+// transforms at avatar assembly time: a body/hand visual parent beneath the
+// existing alcohol-pose group, plus an equal-and-opposite parent bone above the
+// existing neck joint. Procedural feet remain on the walker floor root.
+//
+// There is deliberately no NPC transform composer, ProceduralLegAnimation
+// update wrapper, requestAnimationFrame loop, or timer in this module.
 (() => {
   'use strict';
 
@@ -46,8 +49,8 @@
     return profile;
   }
 
-  // This runs only when a portrait profile is constructed. It is part of the
-  // tint/profile composition path, not an animation update path.
+  // Runs only when a portrait profile is constructed. This keeps the exact-color
+  // exception on the same shared profile/tint path used by gameplay and the tool.
   function installTintCompositionGuard() {
     const preview = window.NpcAvatarPreview;
     if (preview?.buildProfileFromNpcExport && !preview.__ageExactColorGuardInstalled) {
@@ -80,6 +83,9 @@
     }
   }
 
+  // The child neck joint remains the normal runtime control surface for dialogue,
+  // aim, hats, etc. The new parent contributes only the static age counter-pitch,
+  // so later writes to neckJoint do not erase the age baseline.
   function installStaticNeckCounter(avatarRoot, effect) {
     const rig = avatarRoot?.userData?.neckRig;
     const neckJoint = rig?.neckJoint;
@@ -100,8 +106,12 @@
     originalParent.add(counterBone);
     counterBone.add(neckJoint);
 
-    const pitchRad = finite(effect?.torsoPitchDeg) * DEG * finite(composition.neckCounterPitchMultiplier, -1);
-    counterBone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(pitchRad, 0, 0, 'YXZ'))).normalize();
+    const pitchRad = config.clampControl('torsoPitchDeg', effect?.torsoPitchDeg, 0)
+      * DEG
+      * finite(composition.neckCounterPitchMultiplier, -1);
+    counterBone.quaternion
+      .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(pitchRad, 0, 0, 'YXZ')))
+      .normalize();
     counterBone.updateMatrixWorld(true);
     rig.ageCounterBone = counterBone;
     rig.ageCounterPitchRad = pitchRad;
@@ -111,23 +121,38 @@
   function avatarIdentity(options = {}, avatarRoot = null) {
     const source = options?.profile?.fighter || options?.profile?.appearance || options?.npcRecord?.appearance || {};
     return {
-      speciesId: String(options.speciesId || source.speciesId || source.species || avatarRoot?.userData?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'),
-      gender: String(options.gender || source.gender || avatarRoot?.userData?.gender || 'male').trim().toLowerCase() === 'female' ? 'female' : 'male',
+      speciesId: String(options.speciesId || source.speciesId || source.species || avatarRoot?.userData?.speciesId || '')
+        .trim().toLowerCase().replace(/_/g, '-'),
+      gender: String(options.gender || source.gender || avatarRoot?.userData?.gender || 'male')
+        .trim().toLowerCase() === 'female' ? 'female' : 'male',
     };
   }
 
+  // Attachment-rig coordinates are authored in the same floor-relative parent
+  // space used by live hands/feet. Keeping the age body root's local coordinate
+  // system in that space lets automatic hands inherit the body posture without
+  // translating any authored shoulder/posterior values.
   function posteriorYForAvatar(avatarRoot) {
     const meta = avatarRoot?.userData?.hobunjiAgeAvatarMeta || {};
     const identity = meta.identity || {};
     const modelHeight = finite(avatarRoot?.userData?.portraitModelHeight);
-    const handAttachY = finite(avatarRoot?.userData?.handAttachY, modelHeight * finite(composition.standingLiftFraction, 0.5));
+    const handAttachY = finite(
+      avatarRoot?.userData?.handAttachY,
+      modelHeight * finite(composition.standingLiftFraction, 0.5),
+    );
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     const record = characters[`${identity.speciesId}::${identity.gender}`] || null;
     const resolved = Number(record?.resolvedPosteriorPosition?.y);
     if (Number.isFinite(resolved)) return resolved;
-    const shared = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(record?.posteriorRule, modelHeight, handAttachY);
+    const shared = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      record?.posteriorRule,
+      modelHeight,
+      handAttachY,
+    );
     if (Number.isFinite(shared)) return shared;
-    return handAttachY + modelHeight * finite(composition.posteriorFallbackHeightPercent) / finite(composition.percentScale, 100);
+    return handAttachY
+      + modelHeight * finite(composition.posteriorFallbackHeightPercent)
+        / finite(composition.percentScale, 100);
   }
 
   function verticalLowerY(effect, avatarRoot) {
@@ -137,32 +162,42 @@
     return -(modelHeight * finite(composition.standingLiftFraction, 0.5)) * reduction;
   }
 
-  function applyStaticBodyPosture(avatarRoot, effect) {
-    if (!avatarRoot?.isObject3D || !effect) return null;
-    const stateApi = window.NpcCharacterState;
-    const bodyRoot = stateApi?.bodyTransformRootFor?.(avatarRoot);
-    if (!bodyRoot) return null;
+  function bodyRootFor(avatarRoot) {
+    return avatarRoot?.userData?.hobunjiAgeBodyRoot
+      || avatarRoot?.userData?.bodyTransformRoot
+      || null;
+  }
+
+  function applyStaticBodyPosture(avatarRoot, effect, bodyRoot = bodyRootFor(avatarRoot)) {
+    if (!avatarRoot?.isObject3D || !bodyRoot?.isObject3D || !effect) return null;
     const posteriorY = posteriorYForAvatar(avatarRoot);
     const pitchRad = config.clampControl('torsoPitchDeg', effect.torsoPitchDeg, 0) * DEG;
     const lowerY = verticalLowerY(effect, avatarRoot);
-    stateApi.setBodyTransformChannel?.(bodyRoot, composition.bodyChannel, {
-      priority: composition.bodyPriority,
-      rotation: { pitch: pitchRad },
-      pivot: { x: 0, y: posteriorY, z: 0 },
-      translation: { x: 0, y: lowerY, z: 0 },
-    });
+    const pivot = new THREE.Vector3(0, posteriorY, 0);
+    const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitchRad, 0, 0, 'YXZ'));
+
+    // q * point + (pivot - q * pivot) rotates children around the authored
+    // posterior while preserving their floor-relative local coordinates. The Y
+    // translation then applies the small authored standing-height reduction.
+    bodyRoot.position.copy(pivot).sub(pivot.clone().applyQuaternion(rotation));
+    bodyRoot.position.y += lowerY;
+    bodyRoot.quaternion.copy(rotation).normalize();
+    bodyRoot.updateMatrix?.();
+    bodyRoot.updateMatrixWorld?.(true);
+
     const debug = Object.freeze({
-      mode: 'static-composer-channel',
-      channel: composition.bodyChannel,
-      priority: composition.bodyPriority,
+      mode: 'static-age-body-root',
+      semanticChannel: composition.bodyChannel || 'age-posture',
       torsoPitchDeg: effect.torsoPitchDeg,
       torsoPitchRad: pitchRad,
+      neckCounterPitchRad: avatarRoot?.userData?.neckRig?.ageCounterPitchRad ?? null,
       verticalOffsetReductionPct: effect.verticalOffsetReductionPct,
       verticalLowerY: lowerY,
       posteriorY,
       bodyRootName: bodyRoot.name || null,
       perFrameAgeWork: false,
     });
+    bodyRoot.userData = bodyRoot.userData || {};
     bodyRoot.userData.hobunjiAgePostureDebug = debug;
     avatarRoot.userData.hobunjiAgePostureDebug = debug;
     return debug;
@@ -186,7 +221,12 @@
     avatarApi.buildSinglePlaneAvatarModel = wrappedBuild;
   }
 
-  function installNpcBodyComposerBridge() {
+  // Reuse the stock NPC assembly seam instead of turning NpcCharacterState into
+  // another transform system. The outer alcohol pose continues to own blackout;
+  // this inner static root owns only age body posture. Because it is installed
+  // synchronously before ProceduralHandFrameDriver settles its pending avatar,
+  // the automatic hand rig naturally chooses this same root as avatarRoot.parent.
+  function installNpcBodyHierarchyBridge() {
     const stateApi = window.NpcCharacterState;
     if (!stateApi?.attachAlcoholPose || stateApi.__staticAgePostureBridgeInstalled) return;
     const previousAttach = stateApi.attachAlcoholPose.bind(stateApi);
@@ -195,8 +235,21 @@
       attachAlcoholPose(THREEArg, root, avatarGroup, npcId) {
         const poseGroup = previousAttach(THREEArg, root, avatarGroup, npcId);
         const effect = avatarGroup?.userData?.hobunjiAgeEffect || null;
-        if (poseGroup && effect) applyStaticBodyPosture(avatarGroup, effect);
+        if (!poseGroup || !effect) return poseGroup;
+
+        const bodyRoot = new THREEArg.Group();
+        bodyRoot.name = `${npcId || avatarGroup.name || 'npc'}_age_posture`;
+        bodyRoot.userData = bodyRoot.userData || {};
+        bodyRoot.userData.hobunjiAgeBodyRoot = true;
+        poseGroup.add(bodyRoot);
+        bodyRoot.add(avatarGroup);
+        avatarGroup.userData.hobunjiAgeBodyRoot = bodyRoot;
+        avatarGroup.userData.bodyTransformRoot = bodyRoot; // Generic visual-root metadata for existing debug/tool consumers.
+        applyStaticBodyPosture(avatarGroup, effect, bodyRoot);
         return poseGroup;
+      },
+      bodyTransformRootFor(subject) {
+        return bodyRootFor(subject);
       },
       __staticAgePostureBridgeInstalled: true,
     });
@@ -205,18 +258,18 @@
 
   installTintCompositionGuard();
   installAgedAvatarBuilder();
-  installNpcBodyComposerBridge();
+  installNpcBodyHierarchyBridge();
 
   window.HobunjiNpcAgeBodyPosture = Object.freeze({
-    channel: composition.bodyChannel,
-    priority: composition.bodyPriority,
+    channel: composition.bodyChannel || 'age-posture',
     verticalLowerY,
     posteriorYForAvatar,
+    bodyRootFor,
     applyStaticBodyPosture,
     preserveConfiguredExactColors,
     getDebug(avatarRoot) {
       return avatarRoot?.userData?.hobunjiAgePostureDebug
-        || window.NpcCharacterState?.bodyTransformRootFor?.(avatarRoot)?.userData?.hobunjiAgePostureDebug
+        || bodyRootFor(avatarRoot)?.userData?.hobunjiAgePostureDebug
         || null;
     },
     performanceModel: Object.freeze({
@@ -224,7 +277,8 @@
       legUpdateWrapped: false,
       requestAnimationFrame: false,
       timers: false,
-      application: 'avatar-build + static-body-channel',
+      npcTransformComposer: false,
+      application: 'shared-avatar-build + static-body-hierarchy',
     }),
   });
 })();
