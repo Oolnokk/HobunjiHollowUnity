@@ -20,14 +20,14 @@
       id: 'old',
       label: 'Old',
       color: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
-      headDropPx: 4,
+      headDropPx: 10, // Rounded whole-pixel equivalent of the same relative increase that takes Very Old from 9 px to 22 px.
       torsoPitchDeg: 4, // Added by the animation composer/posture bridge as a persistent forward torso rotation offset.
     }),
     veryOld: Object.freeze({
       id: 'veryOld',
       label: 'Very Old',
       color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
-      headDropPx: 9,
+      headDropPx: 22,
       torsoPitchDeg: 9, // Stronger default hunch; intentionally independent from the portrait head-drop slider in the authoring tool.
     }),
   });
