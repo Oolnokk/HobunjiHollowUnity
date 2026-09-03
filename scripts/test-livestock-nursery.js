@@ -3,8 +3,8 @@ const fs = require('fs');
 const vm = require('vm');
 
 const nurserySource = fs.readFileSync('docs/js/livestock-nursery.js', 'utf8');
-assert(nurserySource.includes("const BABY_SCALE = 0.25;"), 'baby scale remains 25% of adult scale');
-assert(nurserySource.includes("const BABY_SPEED_MULTIPLIER = 1.5;"), 'Nursery movement keeps the requested 1.5x multiplier');
+assert(nurserySource.includes("const BABY_SCALE = 0.3125;"), 'baby scale is 31.25% of adult scale after the 25% size increase');
+assert(nurserySource.includes("const BABY_SPEED_MULTIPLIER = 1.125;"), 'Nursery movement is 25% slower than the previous 1.5x multiplier');
 assert(nurserySource.includes('GridTileAccessors?.getActiveScene?.()'), 'Nursery rendering uses the shared active-scene accessor');
 assert(!nurserySource.includes('Combat.deps'), 'Nursery no longer reaches through Combat internals for its scene');
 assert(nurserySource.includes('updateHeadRotation(pitchDeg, dt)'), 'baby heads track player elevation through the shared pitch seam');
@@ -211,8 +211,8 @@ assert.equal(livestock.find(entry => entry.id === 'born').lifeStage, 'baby', 'ne
 
 snapshot = context.window.LivestockNursery.debugSnapshot();
 assert.equal(snapshot.visibleLimit, 12, 'Nursery interior has a bounded visible swarm while storage stays unbounded');
-assert.equal(snapshot.babyScale, 0.25, 'debug snapshot reports 25% baby scale');
-assert.equal(snapshot.speedMultiplier, 1.5, 'debug snapshot reports 1.5x Nursery movement multiplier');
+assert.equal(snapshot.babyScale, 0.3125, 'debug snapshot reports the increased 31.25% baby scale');
+assert.equal(snapshot.speedMultiplier, 1.125, 'debug snapshot reports the reduced 1.125x Nursery movement multiplier');
 assert.equal(context.window.LivestockNursery.constants.NURSERY_VISIBLE_LIMIT, 12, 'public constants retain the 12-baby visual cap');
 assert(saveCount > 0, 'Nursery transitions persist through the existing livestock save seam');
 
