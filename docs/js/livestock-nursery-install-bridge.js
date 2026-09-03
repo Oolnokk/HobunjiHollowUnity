@@ -1,12 +1,31 @@
 (() => {
   'use strict';
 
+  // Parser-time feature bootstrap: this bridge is already synchronously loaded
+  // before FarmPanel/game.js, so piggybacking here keeps animal-growth modular
+  // without adding another hard-coded feature dependency to game.js.
+  const animalGrowthSrc = 'js/animal-growth.js?v=20260903growth1'; // Used to load the shared Growth Tonic + Stable age module before game init.
+  function ensureAnimalGrowthLoaded() {
+    if (window.AnimalGrowth) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${animalGrowthSrc}"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = animalGrowthSrc;
+    script.onload = () => window.AnimalGrowth?.install?.();
+    script.onerror = () => console.warn('[AnimalGrowth] failed to load feature module.');
+    document.head.appendChild(script);
+  }
+  ensureAnimalGrowthLoaded();
+
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
   // FarmPanel, while LivestockNursery needs both public APIs before game.js calls
   // their init() functions. Capture FarmPanel's one global assignment and install
   // Nursery synchronously at that exact point; afterward FarmPanel is a normal
   // writable global again, so there is no permanent proxy/setter in the runtime.
   const installNursery = () => window.LivestockNursery?.install?.();
+  const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
 
   // The vegetation extraction currently has one ROCK fallback that can publish a
   // plain {_windAmp: 0} sentinel into vegFoliageMeshes when no mound geometry was
@@ -49,6 +68,7 @@
   const installBridges = () => {
     installVegetationFoliageContractGuard();
     installNursery();
+    installAnimalGrowth();
   };
 
   if (window.FarmPanel) {
