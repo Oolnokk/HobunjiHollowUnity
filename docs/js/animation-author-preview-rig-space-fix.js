@@ -6,13 +6,14 @@
 // allowed to receive body-scale and presentation corrections. Creature
 // saddle/grip anchors intentionally keep their creature size-scale ancestry.
 //
-// This file is loaded only by Animation Author through hand-shoulder-points.js.
+// This file is injected by the rig-space test wrapper while the fix is being
+// visually verified. Once proven it can become ordinary Animation Author boot.
 (() => {
   'use strict';
 
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname || '')) return;
 
-  const PATCH_ID = 'animation-author-character-rig-floor-space-v1';
+  const PATCH_ID = 'animation-author-character-rig-floor-space-v2';
   const CHARACTER_ANCHORS = Object.freeze([
     'posterior', 'shoulderPerch', 'leftHandShoulder', 'rightHandShoulder',
   ]);
@@ -39,6 +40,9 @@
     object.updateMatrixWorld?.(true);
   }
 
+  // Deliberately preserve LOCAL coordinates, not world coordinates. These local
+  // values are the authored body-space data. THREE.Object3D.attach() would do
+  // the opposite and bake the bad preview parent transform into them.
   function reparentPreservingLocal(object, parent) {
     if (!object || !parent || object.parent === parent) return false;
     const local = copyLocalTransform(object);
@@ -52,7 +56,6 @@
     if (!isNpcActor(actor) || !actor.attachmentAlignment) return null;
     let root = actor.characterRigFloorRoot;
     if (!root) {
-      const THREE = window.THREE || globalThis.THREE || actor.root?.position?.constructor?.prototype?.isVector3 && null;
       const GroupCtor = actor.root?.constructor;
       if (!GroupCtor) return null;
       root = new GroupCtor();
@@ -63,8 +66,9 @@
       reparentPreservingLocal(root, actor.attachmentAlignment);
     }
 
-    // This root is the player's canonical floor/body frame, not a presentation
-    // correction. Keeping it identity is the entire coordinate-space contract.
+    // This root mirrors playerMesh's attachment-coordinate frame. It must stay
+    // identity; portrait lift, billboard/deadzone corrections, and editor-only
+    // live scale all belong below visualOffset instead.
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
     root.scale.set(1, 1, 1);
@@ -74,10 +78,15 @@
       if (anchor) reparentPreservingLocal(anchor, root);
     }
 
-    // Direct hands/feet are also floor-relative consumers. Their geometry is
-    // already species/gender scaled by their own runtimes; inheriting an extra
-    // preview carrier scale makes their shoulder/ground relationship drift.
-    if (actor.model?.userData) actor.model.userData.proceduralHandParent = root;
+    // Direct hands and procedural feet also consume floor-relative body
+    // coordinates. Their own runtimes already size geometry from the actor's
+    // species/gender dimensions, so another inherited visualOffset scale is a
+    // duplicate transform.
+    if (actor.model?.userData) {
+      actor.model.userData.proceduralHandParent = root;
+      const handRigGroup = actor.model.userData.proceduralHandRig?.group;
+      if (handRigGroup) reparentPreservingLocal(handRigGroup, root);
+    }
     if (actor.rigFeetPreview?.group) reparentPreservingLocal(actor.rigFeetPreview.group, root);
 
     root.updateMatrixWorld?.(true);
@@ -85,9 +94,8 @@
   }
 
   function install() {
-    // These identifiers are global lexical/function bindings declared by the
-    // classic Animation Author script. Poll until the final wrapper chain has
-    // installed so this patch remains the outermost coordinate-space guard.
+    // These are classic-script global bindings from Animation Author. Poll until
+    // its final wrapper chain has installed so this stays the outermost guard.
     if (typeof createAnimationActorShell !== 'function'
       || typeof applyAttachmentRigProfileToActor !== 'function'
       || typeof actorRigAnchorLocalMatrix !== 'function') return false;
@@ -115,8 +123,7 @@
         const anchor = actor?.rigAnchors?.[anchorName];
         if (anchor && typeof transformMatrixFromSnapshot === 'function' && typeof transformSnapshot === 'function') {
           // Gameplay composes the character anchor directly through playerMesh.
-          // attachmentAlignment is already the actor/body root here, so no
-          // visualOffset scale/translation/rotation belongs in this matrix.
+          // No visualOffset scale/translation/rotation belongs in this matrix.
           return transformMatrixFromSnapshot(transformSnapshot(anchor));
         }
       }
@@ -132,9 +139,8 @@
       };
     }
 
-    // V15.35 deliberately scales visualOffset for live body-scale preview.
-    // Anchors no longer live below it, so preserve that visual behavior while
-    // guaranteeing the canonical rig floor root remains identity afterwards.
+    // V15.35 scales visualOffset during live Body Scale editing. That can remain
+    // a presentation effect; the canonical character rig root must not inherit it.
     if (typeof previewRigActorBodyScaleV1531 === 'function') {
       const previousPreviewScale = previewRigActorBodyScaleV1531;
       previewRigActorBodyScaleV1531 = function previewRigSpaceBodyScale(actor) {
@@ -144,7 +150,7 @@
       };
     }
 
-    // Repair actors that were restored/created before this late-loaded guard.
+    // Repair anything restored before this late-loaded test guard.
     try {
       for (const actor of animationAuthor?.actors || []) {
         ensureCharacterRigFloorRoot(actor);
@@ -157,9 +163,9 @@
     }
 
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
-    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.previewCoordinateSpace = 'character-anchors-on-floor-root; visualOffset-presentation-only';
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.previewCoordinateSpace = 'character floor/body root; visualOffset presentation-only';
     window.__hobunjiAnimationAuthorCharacterRigFloorSpace = PATCH_ID;
-    console.info('[animation-author-preview-rig-space] character anchors detached from visualOffset preview corrections');
+    console.info('[animation-author-preview-rig-space] character anchors/hands/feet detached from visualOffset preview corrections');
     return true;
   }
 
@@ -171,9 +177,6 @@
     }, 50);
   }
 
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', installWhenReady, { once: true });
-  } else {
-    installWhenReady();
-  }
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', installWhenReady, { once: true });
+  else installWhenReady();
 })();
