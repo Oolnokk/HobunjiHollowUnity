@@ -8649,9 +8649,21 @@
       const LOOSE_PROP_AIR_DRAG = 0.6;
       const LOOSE_PROP_GROUND_FRICTION = 5;
       const LOOSE_PROP_CARRY_DISTANCE_PX = 26;
-      const LOOSE_PROP_THROW_SPEED_PX = 260;
-      const LOOSE_PROP_THROW_UP_SPEED = 3.4;
+      const LOOSE_PROP_THROW_SPEED_WORLD = 4.8; // world-units/s, split across the full 3D aim direction — see throwCarriedProp.
       const LOOSE_PROP_VOID_Y = -3; // Below even the pit chamber's sublevel (-2) — see updateLooseProps' "fallen into space" respawn.
+      const LOOSE_PROP_REST_EPS = 0.05; // Below this speed on every axis (and grounded), a prop is considered settled — see updateLooseProps.
+      // Simulation is skipped outright for any prop this far (in tiles,
+      // Chebyshev distance — cheap and good enough given the dungeon's
+      // grid/room+corridor structure, no real line-of-sight raycast needed)
+      // from the player — see updateLooseProps/looseIsNearPlayer.
+      const LOOSE_PROP_SIM_RANGE_TILES = 16;
+      // How far the "Show Interactable Names" debug label will still look
+      // for a loose prop to identify — deliberately wider than
+      // LOOSE_PROP_SIM_RANGE_TILES so a prop sitting dormant (out of sim
+      // range, no physics running) can still be pointed at and labeled
+      // "(dormant — too far to affect)" rather than never being found at
+      // all. See findVisibleLooseProp.
+      const LOOSE_PROP_LABEL_RANGE_TILES = LOOSE_PROP_SIM_RANGE_TILES + 8;
       // mapId -> [{ kind: 'key'|'plate', gateTiles, slabMeshes, apertureId?
       // (key), unlocked? (key), plateCol/plateRow+pressed? (plate) }] — one
       // entry per locked gate this floor (see dungeon-test.js's keyGate/
@@ -11980,6 +11992,13 @@
             x, y, z: 0, vx: 0, vy: 0, vz: 0,
             bounciness: p.kind === 'jar' ? 0.42 : p.kind === 'key' ? 0.3 : p.kind === 'statue' ? 0.04 : 0.18,
             originX: x, originY: y, originZ: 0,
+            // Starts settled (its own spawn IS its default resting state) —
+            // updateLooseProps skips simulating it entirely until it's
+            // picked up/thrown/placed unsettles it again. See
+            // LOOSE_PROP_REST_EPS/looseIsOnAnimatedFloor for how it can
+            // still legitimately fall out from under itself later (a pit
+            // chamber pillar retracting).
+            settled: true,
           });
         }
         _dungeonLooseProps.set(mapId, props);
@@ -12007,6 +12026,7 @@
       function respawnLooseProp(prop) {
         prop.x = prop.originX; prop.y = prop.originY; prop.z = prop.originZ;
         prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.settled = true;
         showToast(`${looseCapitalized(prop)} clatters back into place.`, false);
       }
 
@@ -12015,12 +12035,45 @@
         return label.charAt(0).toUpperCase() + label.slice(1);
       }
 
+      // True while [col,row] is one of the pit chamber's own pillar tiles —
+      // its floor height there isn't static (see updateDungeonFalling), so
+      // a prop resting there can never fully go idle the way one resting
+      // on ordinary floor can; it has to keep re-checking every frame in
+      // case the pillar under it retracts.
+      function looseIsOnAnimatedFloor(mapId, col, row) {
+        const chamber = _dungeonPitChambers.get(mapId);
+        return !!chamber?.pillars.some(p => p.col === col && p.row === row);
+      }
+
+      // Chebyshev tile distance from the player — cheap, and a good enough
+      // proxy for "can the player currently see or reach this" given the
+      // dungeon's own grid-based room+corridor structure (walls already do
+      // most of the work a real line-of-sight check would), per the user's
+      // own reasoning for this optimization.
+      function looseIsNearPlayer(prop) {
+        const dCol = Math.abs(Math.floor(prop.x / TILE) - Math.floor(player.x / TILE));
+        const dRow = Math.abs(Math.floor(prop.y / TILE) - Math.floor(player.y / TILE));
+        return Math.max(dCol, dRow) <= LOOSE_PROP_SIM_RANGE_TILES;
+      }
+
       // Per-frame Dungeon Test loose-prop physics: gravity, wall-sliding
       // horizontal movement, ground bounce/friction (per-kind bounciness —
       // a jar bounces noticeably more than a heavy crate), and a chasm-gap
       // fall respawning the prop back where it was originally placed. The
       // currently carried prop (if any) skips all of this and just follows
       // the player instead.
+      //
+      // Performance: a prop that's settled (at rest, matching its own
+      // default/resting state — see LOOSE_PROP_REST_EPS) skips the entire
+      // block below outright, and skips even the position/rotation mesh
+      // sync since neither changed. The one exception is a prop resting on
+      // an animated pit-chamber pillar tile, which still needs a cheap
+      // floor-height recheck every frame (see looseIsOnAnimatedFloor) to
+      // notice the pillar retracting out from under it. A prop that's NOT
+      // settled (actively thrown/falling) but far outside
+      // LOOSE_PROP_SIM_RANGE_TILES of the player is frozen in place instead
+      // of fully simulated — nothing the player could currently see or
+      // affect needs to keep animating every frame.
       function updateLooseProps(dt) {
         if (!window.DungeonTest?.floorFromMapId?.(currentArea)) {
           if (player.carriedProp) player.carriedProp = null; // Left the dungeon still carrying something — it can't come along.
@@ -12037,6 +12090,15 @@
             prop.mesh.rotation.y = -player.angle;
             continue;
           }
+          const col = Math.floor(prop.x / TILE), row = Math.floor(prop.y / TILE);
+          if (prop.settled) {
+            if (!looseIsOnAnimatedFloor(currentArea, col, row)) continue; // Fully idle — nothing to recompute.
+            const floorInfo = looseFloorInfoAt(currentArea, col, row);
+            if (floorInfo && Math.abs(prop.z - floorInfo.y) < LOOSE_PROP_REST_EPS) continue; // Pillar's still where it left it.
+            prop.settled = false; // The floor moved out from under it — let gravity take back over below.
+          }
+          if (!looseIsNearPlayer(prop)) continue; // Out of range — frozen until the player's back in range.
+
           prop.vz -= LOOSE_PROP_GRAVITY * dt;
           prop.z += prop.vz * dt;
           const desiredX = prop.x + prop.vx * dt, desiredY = prop.y + prop.vy * dt;
@@ -12054,8 +12116,9 @@
           // for anything else that could otherwise leave a prop stuck below
           // the map with no way back for the player to retrieve it.
           if (prop.z < LOOSE_PROP_VOID_Y) { respawnLooseProp(prop); continue; }
-          const col = Math.floor(prop.x / TILE), row = Math.floor(prop.y / TILE);
-          const floorInfo = looseFloorInfoAt(currentArea, col, row);
+          const newCol = Math.floor(prop.x / TILE), newRow = Math.floor(prop.y / TILE);
+          const floorInfo = looseFloorInfoAt(currentArea, newCol, newRow);
+          let grounded = false;
           if (floorInfo && prop.z <= floorInfo.y) {
             prop.z = floorInfo.y;
             if (Math.abs(prop.vz) > 0.4) {
@@ -12065,9 +12128,14 @@
               prop.vz = 0;
               const friction = Math.max(0, 1 - LOOSE_PROP_GROUND_FRICTION * dt);
               prop.vx *= friction; prop.vy *= friction;
+              grounded = true;
             }
           }
           prop.mesh.position.set(prop.x / TILE, prop.z, prop.y / TILE);
+          if (grounded && Math.abs(prop.vx) < LOOSE_PROP_REST_EPS * TILE && Math.abs(prop.vy) < LOOSE_PROP_REST_EPS * TILE && Math.abs(prop.vz) < LOOSE_PROP_REST_EPS) {
+            prop.vx = 0; prop.vy = 0; prop.vz = 0;
+            prop.settled = true;
+          }
         }
       }
 
@@ -12094,6 +12162,34 @@
         return best;
       }
 
+      // Same shape as findNearbyLooseProp, but a much longer facing+
+      // distance search (capped at LOOSE_PROP_LABEL_RANGE_TILES, deliberately
+      // wider than the LOOSE_PROP_SIM_RANGE_TILES updateLooseProps actually
+      // simulates within — see that constant) rather than pickup range —
+      // used only by the "Show Interactable Names" debug label (see
+      // refreshActionBar) to identify a contraption the player can see
+      // whether or not they can currently reach or affect it, not to drive
+      // any real interaction.
+      function findVisibleLooseProp() {
+        const props = _dungeonLooseProps.get(currentArea);
+        if (!props) return null;
+        const rangePx = TILE * LOOSE_PROP_LABEL_RANGE_TILES;
+        const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
+        let best = null, bestDist = Infinity;
+        for (const prop of props) {
+          if (prop === player.carriedProp) continue;
+          const dx = prop.x - player.x, dy = prop.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > rangePx || dist >= bestDist) continue;
+          if (dist > 6) {
+            const facingDot = (dx * facingX + dy * facingY) / dist;
+            if (facingDot < 0.55) continue;
+          }
+          bestDist = dist; best = prop;
+        }
+        return best;
+      }
+
       function pickUpNearbyLooseProp() {
         if (player.carriedProp) return { ok: false, message: 'Your hands are already full.' };
         // Re-checked here, not just at the action-bar button's visibility —
@@ -12104,17 +12200,89 @@
         if (!prop) return { ok: false, message: 'Nothing nearby to pick up.' };
         player.carriedProp = prop;
         prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.settled = false; // Carrying always counts as "not at rest" — see updateLooseProps' idle skip.
         return { ok: true, message: `Picked up the ${looseCapitalized(prop)}.` };
+      }
+
+      // The camera's own aim direction (a normalized THREE.Vector3, x/z
+      // horizontal + y vertical) — the same ray ranged weapons read via
+      // window.RangedWeapons.playerAimSolution, but computed directly
+      // rather than through that function so a throw works regardless of
+      // whether the player actually owns/has equipped a ranged weapon.
+      // Prefers the true camera ray (only available in shoulder-cam mode,
+      // or while actively wielding a ranged weapon — see
+      // currentPlayerAimRay), then the broader-availability interaction ray
+      // (works in any camera mode except with a menu open), then finally
+      // falls back to the flat facingAngle/pitch pair exactly like
+      // playerAimSolution's own last resort.
+      function computeThrowDirection() {
+        const rawRay = currentPlayerAimRay() || currentPlayerInteractionRay();
+        if (rawRay) {
+          const dir = new THREE.Vector3(rawRay.direction.x, rawRay.direction.y, rawRay.direction.z);
+          if (dir.lengthSq() > 0.0001) return dir.normalize();
+        }
+        const angle = currentPlayerAimAngle();
+        const pitch = currentPlayerAimPitch();
+        const horiz = Math.cos(pitch);
+        return new THREE.Vector3(Math.cos(angle) * horiz, Math.sin(pitch), Math.sin(angle) * horiz).normalize();
+      }
+
+      // Where the interaction raycast (the same ray "Show Interaction
+      // Raycast" visualizes) currently meets the floor, if that point is on
+      // the player's own tile or directly adjacent to it — reused both to
+      // offer gentle Set Down instead of Throw, and by placeCarriedProp to
+      // actually place it there. Reuses the existing shoulder-surf reticle
+      // raycaster/plane/vector rather than allocating new THREE objects
+      // every frame this is checked.
+      function getAdjacentPlaceTarget() {
+        const ray = currentPlayerInteractionRay();
+        if (!ray) return null;
+        const dir = new THREE.Vector3(ray.direction.x, ray.direction.y, ray.direction.z);
+        if (dir.lengthSq() < 0.0001) return null;
+        dir.normalize();
+        _shoulderSurfReticleRaycaster.set(new THREE.Vector3(ray.origin.x, ray.origin.y, ray.origin.z), dir);
+        const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE);
+        const floorHere = looseFloorInfoAt(currentArea, playerCol, playerRow);
+        _shoulderSurfReticleGroundPlane.constant = -(floorHere ? floorHere.y : 0);
+        if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return null;
+        const col = Math.floor(_shoulderSurfReticleWorld.x), row = Math.floor(_shoulderSurfReticleWorld.z);
+        if (Math.max(Math.abs(col - playerCol), Math.abs(row - playerRow)) > 1) return null;
+        if (!canOccupyAt((col + 0.5) * TILE, (row + 0.5) * TILE, LOOSE_PROP_RADIUS_PX)) return null;
+        const floorInfo = looseFloorInfoAt(currentArea, col, row);
+        return { col, row, y: floorInfo ? floorInfo.y : 0 };
       }
 
       function throwCarriedProp() {
         const prop = player.carriedProp;
         if (!prop) return { ok: false, message: 'Not carrying anything.' };
         player.carriedProp = null;
-        prop.vx = Math.cos(player.angle) * LOOSE_PROP_THROW_SPEED_PX;
-        prop.vy = Math.sin(player.angle) * LOOSE_PROP_THROW_SPEED_PX;
-        prop.vz = LOOSE_PROP_THROW_UP_SPEED;
+        const dir = computeThrowDirection();
+        prop.vx = dir.x * LOOSE_PROP_THROW_SPEED_WORLD * TILE;
+        prop.vy = dir.z * LOOSE_PROP_THROW_SPEED_WORLD * TILE;
+        prop.vz = dir.y * LOOSE_PROP_THROW_SPEED_WORLD;
+        prop.settled = false;
         return { ok: true, message: `Threw the ${looseCapitalized(prop)}.` };
+      }
+
+      // The contextual alternative to throwCarriedProp when the player is
+      // aiming at their own tile or one directly next to it (see
+      // getAdjacentPlaceTarget/computeActionButtons) — sets it straight
+      // down at rest rather than launching it, for the fiddly "exactly on
+      // this pressure plate" placements a full throw isn't precise enough
+      // for.
+      function placeCarriedProp() {
+        const prop = player.carriedProp;
+        if (!prop) return { ok: false, message: 'Not carrying anything.' };
+        const target = getAdjacentPlaceTarget();
+        if (!target) return { ok: false, message: 'Nowhere to set it down there.' };
+        player.carriedProp = null;
+        prop.x = (target.col + 0.5) * TILE;
+        prop.y = (target.row + 0.5) * TILE;
+        prop.z = target.y;
+        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.settled = true;
+        prop.mesh.position.set(target.col + 0.5, target.y, target.row + 0.5);
+        return { ok: true, message: `Set down the ${looseCapitalized(prop)}.` };
       }
 
       function disposeDungeonLooseProps(mapId) {
@@ -17335,6 +17503,13 @@
         }
         if (activeAction === 'obj_throw_prop') {
           const result = throwCarriedProp();
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar();
+          return;
+        }
+        if (activeAction === 'obj_place_prop') {
+          const result = placeCarriedProp();
           lastActionMessage = result.message;
           showToast(result.message, result.ok !== false);
           if (result.ok !== false) refreshActionBar();
@@ -22829,12 +23004,19 @@
           // Dungeon Test loose props (crates/jars, see updateLooseProps) —
           // a moving free-floating pickup, not a tile-anchored interactable,
           // so it's checked here rather than through _buildingInteractables.
-          // Carrying one always offers Throw regardless of what's aimed at;
-          // otherwise Pick Up only shows with both hands genuinely free
-          // (heldMode 'item' still counts as "hands full" here on purpose —
-          // carrying a prop one-handed alongside a held item reads oddly).
+          // Carrying one offers Throw normally, but Set Down instead the
+          // instant the interaction raycast is aimed at the player's own
+          // tile or one directly next to it (see getAdjacentPlaceTarget) —
+          // fiddly placements like "exactly on this pressure plate" need
+          // gentle, precise placement, not a full camera-driven throw.
+          // Pick Up only shows with both hands genuinely free (heldMode
+          // 'item' still counts as "hands full" here on purpose — carrying
+          // a prop one-handed alongside a held item reads oddly).
           if (window.DungeonTest?.floorFromMapId?.(currentArea)) {
             if (player.carriedProp) {
+              if (getAdjacentPlaceTarget()) {
+                return [{ icon: '✋', label: `Set Down ${looseCapitalized(player.carriedProp)}`, action: 'obj_place_prop', style: 'primary', allowed: true, worldInteraction: true }];
+              }
               return [{ icon: '🤾', label: `Throw ${looseCapitalized(player.carriedProp)}`, action: 'obj_throw_prop', style: 'primary', allowed: true, worldInteraction: true }];
             }
             if (heldMode === 'none') {
@@ -23130,12 +23312,30 @@
         // never fight over it.
         if (s_showInteractableNames) {
           const weaponAiming = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
-          const name = !weaponAiming && interactionButton && interactionRoot
-            ? (nearbyNpcWalker?.rec?.name
+          let labelRoot = null, labelText = null;
+          if (!weaponAiming && interactionButton && interactionRoot) {
+            labelRoot = interactionRoot;
+            labelText = nearbyNpcWalker?.rec?.name
               || obj?.name
-              || (_isBuildingArea(currentArea) ? _buildingFurnitureNames.get(currentArea + ',' + reticle.col + ',' + reticle.row) : null))
-            : null;
-          if (name) window.WorldPopupText?.setAimLabel?.(interactionRoot, name);
+              || (_isBuildingArea(currentArea) ? _buildingFurnitureNames.get(currentArea + ',' + reticle.col + ',' + reticle.row) : null);
+          }
+          // Falls back to any Dungeon Test loose prop/contraption the
+          // player can see but isn't necessarily close enough to affect —
+          // reuses the exact same in-range test updateLooseProps' own
+          // performance gating runs on (see looseIsNearPlayer/
+          // LOOSE_PROP_SIM_RANGE_TILES) to tell "(out of reach)" apart from
+          // "(dormant — too far to affect)", so the label always agrees
+          // with whether the thing is actually being simulated right now.
+          if (!labelText && !weaponAiming && window.DungeonTest?.floorFromMapId?.(currentArea)) {
+            const visibleProp = findVisibleLooseProp();
+            if (visibleProp) {
+              const dist = Math.hypot(visibleProp.x - player.x, visibleProp.y - player.y);
+              const affectable = heldMode === 'none' && !player.carriedProp && dist <= TILE * 1.15;
+              labelRoot = visibleProp.mesh;
+              labelText = looseCapitalized(visibleProp) + (affectable ? '' : looseIsNearPlayer(visibleProp) ? ' (out of reach)' : ' (dormant — too far to affect)');
+            }
+          }
+          if (labelText) window.WorldPopupText?.setAimLabel?.(labelRoot, labelText);
           else if (!weaponAiming) window.WorldPopupText?.clearAimLabel?.();
         }
         // Dynamic providers (including the asynchronously loaded consumable
