@@ -252,7 +252,7 @@
   'use strict';
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(global.location?.pathname || '')) return;
 
-  const PATCH_ID = 'animation-author-canonical-shoulder-repair-v1';
+  const PATCH_ID = 'animation-author-canonical-shoulder-repair-v2';
   const SCHEMA = 'hobunji.attachment-rig-profiles.v10';
   const LEGACY_V1523_PERCHES = Object.freeze({
     'engh-sho::male': [-0.2823783104116402, 0.5175336815283819, 0],
@@ -269,21 +269,35 @@
   const sameNumber = (a, b, epsilon = 1e-9) => Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Math.abs(Number(a) - Number(b)) <= epsilon;
   const samePosition = (position, tuple) => !!position && tuple.every((value, index) => sameNumber(position[['x','y','z'][index]], value));
   const scaledTuple = (tuple, scale) => tuple.map(value => value * scale);
+  const canonicalKey = key => key.startsWith('rakakoan::') ? key.replace('rakakoan::', 'kenkari::') : key;
+
+  function shoulderFingerprints(legacyPerch) {
+    const lateral = Math.abs(legacyPerch[0]);
+    const fullLeft = [lateral, legacyPerch[1], 0];
+    const fullRight = [-lateral, legacyPerch[1], 0];
+    return {
+      left: [fullLeft, scaledTuple(fullLeft, 0.9)],
+      right: [fullRight, scaledTuple(fullRight, 0.9)],
+      perch: [legacyPerch, scaledTuple(legacyPerch, 0.9)],
+    };
+  }
+
+  function matchesAny(position, candidates) {
+    return candidates.some(candidate => samePosition(position, candidate));
+  }
 
   function staleCharacterFields(live) {
     const stale = [];
     for (const [key, legacyPerch] of Object.entries(LEGACY_V1523_PERCHES)) {
       const profile = live?.characters?.[key];
       if (!profile) continue;
-      const lateral = Math.abs(legacyPerch[0]);
-      const legacyLeft = [lateral, legacyPerch[1], 0];
-      const legacyRight = [-lateral, legacyPerch[1], 0];
+      const fingerprints = shoulderFingerprints(legacyPerch);
       const left = profile.anchors?.leftHandShoulder?.position;
       const right = profile.anchors?.rightHandShoulder?.position;
       const perch = profile.anchors?.shoulderPerch?.position;
-      if (samePosition(left, legacyLeft)) stale.push(`${key}.leftHandShoulder`);
-      if (samePosition(right, legacyRight)) stale.push(`${key}.rightHandShoulder`);
-      if (samePosition(perch, legacyPerch) || samePosition(perch, scaledTuple(legacyPerch, 0.9))) stale.push(`${key}.shoulderPerch`);
+      if (matchesAny(left, fingerprints.left)) stale.push(`${key}.leftHandShoulder`);
+      if (matchesAny(right, fingerprints.right)) stale.push(`${key}.rightHandShoulder`);
+      if (matchesAny(perch, fingerprints.perch)) stale.push(`${key}.shoulderPerch`);
     }
     return stale;
   }
@@ -294,16 +308,13 @@
     const masterCharacters = global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.characters || {};
     for (const [key, legacyPerch] of Object.entries(LEGACY_V1523_PERCHES)) {
       const profile = output.characters[key];
-      const canonical = masterCharacters[key];
+      const canonical = masterCharacters[canonicalKey(key)];
       if (!profile || !canonical) continue;
       profile.anchors ||= {};
-      const lateral = Math.abs(legacyPerch[0]);
-      const legacyLeft = [lateral, legacyPerch[1], 0];
-      const legacyRight = [-lateral, legacyPerch[1], 0];
-      const leftStale = samePosition(profile.anchors.leftHandShoulder?.position, legacyLeft);
-      const rightStale = samePosition(profile.anchors.rightHandShoulder?.position, legacyRight);
-      const perchStale = samePosition(profile.anchors.shoulderPerch?.position, legacyPerch)
-        || samePosition(profile.anchors.shoulderPerch?.position, scaledTuple(legacyPerch, 0.9));
+      const fingerprints = shoulderFingerprints(legacyPerch);
+      const leftStale = matchesAny(profile.anchors.leftHandShoulder?.position, fingerprints.left);
+      const rightStale = matchesAny(profile.anchors.rightHandShoulder?.position, fingerprints.right);
+      const perchStale = matchesAny(profile.anchors.shoulderPerch?.position, fingerprints.perch);
       if (leftStale && canonical.anchors?.leftHandShoulder) profile.anchors.leftHandShoulder = clone(canonical.anchors.leftHandShoulder);
       if (rightStale && canonical.anchors?.rightHandShoulder) profile.anchors.rightHandShoulder = clone(canonical.anchors.rightHandShoulder);
       if (perchStale && canonical.anchors?.shoulderPerch) profile.anchors.shoulderPerch = clone(canonical.anchors.shoulderPerch);
@@ -329,11 +340,11 @@
   }
 
   const status = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
-  status.animationAuthorCanonicalShoulderSync ||= { state: 'waiting', repairs: 0, lastReason: null, stale: [] };
-  let queued = false;
+  status.animationAuthorCanonicalShoulderSync ||= { state: 'waiting-for-rig', repairs: 0, lastReason: null, stale: [] };
+  let queuedTimer = null;
 
   function repairNow(reason = 'manual') {
-    queued = false;
+    queuedTimer = null;
     const api = global.MultiAvatarAnimationAuthor;
     const input = global.document?.getElementById('maaImportInput');
     const master = global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles;
@@ -364,25 +375,19 @@
     return true;
   }
 
-  function queueRepair(reason) {
-    if (queued) return;
-    queued = true;
-    global.setTimeout(() => repairNow(reason), 0);
-  }
-
-  function installWhenReady() {
-    if (global.MultiAvatarAnimationAuthor?.getAttachmentRigProfiles && global.document?.getElementById('maaImportInput')) {
-      queueRepair('bootstrap');
-      return true;
-    }
-    return false;
+  function queueRepair(reason, delayMs = 500) {
+    if (queuedTimer != null) global.clearTimeout(queuedTimer);
+    queuedTimer = global.setTimeout(() => repairNow(reason), delayMs);
   }
 
   global.document?.addEventListener('click', event => {
     const target = event.target?.closest?.('#maaRigTab, #maaNewBtn');
     if (!target) return;
     if (target.id === 'maaRigTab' || (target.id === 'maaNewBtn' && global.document.body?.dataset?.animationAuthorMode === 'rig')) {
-      queueRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset');
+      // The older creature-master bridge is registered first and may also use
+      // the same Import input. Let that profile-only import finish before this
+      // character repair dispatches, avoiding two simultaneous async imports.
+      queueRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset', 500);
     }
   }, true);
 
@@ -392,11 +397,5 @@
     getStatus: () => ({ ...status.animationAuthorCanonicalShoulderSync, stale: [...(status.animationAuthorCanonicalShoulderSync.stale || [])] }),
   });
 
-  if (!installWhenReady()) {
-    let attempts = 0;
-    const timer = global.setInterval(() => {
-      if (installWhenReady() || ++attempts >= 600) global.clearInterval(timer);
-    }, 50);
-  }
   global.__hobunjiAnimationAuthorCanonicalShoulderRepair = PATCH_ID;
 })(window);
