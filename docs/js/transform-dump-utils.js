@@ -169,21 +169,3 @@
     formatNamedTransformReport,
   });
 })(window);
-
-// Animation Author already loads this shared parity utility before its large
-// inline application. Boot the two isolated preview-parity guards here so the
-// real editor—not only their standalone test wrappers—actually executes them.
-(function bootAnimationAuthorPreviewParityFixes() {
-  'use strict';
-  if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname || '')) return;
-  const parityScripts = [
-    '../../js/animation-author-preview-grounding-fix.js?v=20260903a',
-    '../../js/animation-author-preview-rig-space-fix.js?v=20260903a',
-  ]; // Used only to install the already-isolated grounding and rig-space guards in the production Animation Author.
-  for (const src of parityScripts) {
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = false;
-    document.head.appendChild(script);
-  }
-})();
