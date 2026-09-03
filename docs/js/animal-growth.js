@@ -3,29 +3,11 @@
   if (window.AnimalGrowth) return;
 
   // Shared animal-age gate for both farm Nursery babies and personal Stable babies.
-  // All tunables live here; shops own prices in shop-stock.json.
-  const CONFIG = Object.freeze({
-    item: Object.freeze({
-      key: 'growthTonic',
-      label: 'Growth Tonic',
-      icon: '🌱',
-      category: 'processed',
-      sellPrice: 0,
-      tags: Object.freeze(['Livestock', 'Animal Care']),
-      description: 'Matures one baby animal into an adult. Stable babies can be grown directly when equipping them.',
-      spriteIcon: 'bottle_potion.png',
-      spriteColor: 0x78b85a,
-    }),
-    stages: Object.freeze({
-      baby: 'baby',
-      adult: 'adult',
-      legacyStableDefault: 'adult',
-      newStableDefault: 'baby',
-    }),
-    stable: Object.freeze({
-      growAndEquipOnRoleClick: true,
-    }),
-  });
+  // All tuning lives in config/animal-growth-config.js; shop prices stay in shop-stock.json.
+  const CONFIG = window.ANIMAL_GROWTH_CONFIG;
+  if (!CONFIG?.item?.key || !CONFIG?.stages?.baby || !CONFIG?.stages?.adult) {
+    throw new Error('ANIMAL_GROWTH_CONFIG must load before animal-growth.js');
+  }
 
   let animalDeps = null; // Used for inventory, Stable persistence, and inventory UI refreshes.
   let panelDeps = null; // Used for Stable role setters and Stable panel rendering.
