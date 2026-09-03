@@ -835,11 +835,11 @@
 
   <!-- Menu Panel: grid x:3 y:2 w:27 h:14 (32×18)
        Inventory sub-grid: 54 cols × 28 rows               -->
-  <div id="menuPanel" role="dialog" aria-label="Game menu">
+  <div id="menuPanel" role="dialog" aria-label="Game menu" data-ctrl-panel>
 
     <!-- Header: tab bar + control buttons -->
     <div class="mp-header">
-      <div class="mp-tabs" role="tablist">
+      <div class="mp-tabs" role="tablist" data-ctrl-tabs>
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
         <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
@@ -861,8 +861,8 @@
       </div>
       <div class="mp-ctrls">
         <button class="mp-ctrl-btn"        id="menuPauseBtn" title="Pause/Resume">⏸</button>
-        <button class="mp-ctrl-btn danger" id="menuResetBtn" title="Reset farm">↩</button>
-        <button class="mp-ctrl-btn"        id="mpClose"      title="Close menu">✕</button>
+        <button class="mp-ctrl-btn danger" id="menuResetBtn" title="Reset farm" data-ctrl-skip>↩</button>
+        <button class="mp-ctrl-btn"        id="mpClose"      title="Close menu" data-ctrl-cancel>✕</button>
       </div>
     </div>
 
@@ -878,13 +878,13 @@
         <div class="inv-wallet"><span class="inv-wallet-icon">💰</span> <span class="inv-wallet-amount" id="invWalletAmount">0</span><span class="inv-wallet-suffix">g</span></div>
 
         <!-- Gear / Pack sub-tab toggle: x:15/54 y:1/28 w:20 h:2 -->
-        <div class="inv-sub-tabs">
+        <div class="inv-sub-tabs" data-ctrl-tabs>
           <button class="inv-sub-tab active" id="invTabPack">🎒 Pack</button>
           <button class="inv-sub-tab" id="invTabGear">⚙️ Gear</button>
         </div>
 
         <!-- Category tab bar (Pack only): x:1/54 y:3/28 w:35 h:3 -->
-        <div class="inv-cats">
+        <div class="inv-cats" data-ctrl-tabs>
           <button class="inv-cat active" data-cat="all">All</button>
           <button class="inv-cat" data-cat="seed">Seeds</button>
           <button class="inv-cat" data-cat="crop">Crops</button>
@@ -1177,7 +1177,7 @@
       <div class="mp-pane" id="mpSupplies">
         <div class="supply-top-row">
           <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="supplyGoldDisplay">0<span class="wallet-unit">g</span></div></div>
-          <div class="supply-tabs" role="tablist" aria-label="Supply shop category filters">
+          <div class="supply-tabs" role="tablist" aria-label="Supply shop category filters" data-ctrl-tabs>
             <button class="supply-tab active" data-supply-cat="seeds" type="button">Seeds</button>
             <button class="supply-tab" data-supply-cat="furniture" type="button">Furniture</button>
             <button class="supply-tab" data-supply-cat="livestock" type="button">Livestock</button>
@@ -1914,7 +1914,7 @@
   <div id="gameTextBox" role="status" aria-live="polite"></div>
 
   <!-- NPC Dialogue Window: grid x:0 y:10 w:32 h:8 (32×18) -->
-  <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true">
+  <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true" data-ctrl-panel>
     <!-- Portrait: peeks above dialogue panel from bottom-left -->
     <div id="npcPortraitWrap">
       <canvas id="npcPortraitCanvas" width="256" height="256"></canvas>
@@ -1942,7 +1942,7 @@
         </div>
         <!-- Action row: Leave (x:0 w:3) | Continue (x:3 w:5) -->
         <div id="npcDialogueActions">
-          <button id="npcDialogueLeave">Leave</button>
+          <button id="npcDialogueLeave" data-ctrl-cancel>Leave</button>
           <button id="npcDialogueContinue">&#x25BC; <kbd>E</kbd></button>
         </div>
       </div>
@@ -1950,11 +1950,11 @@
   </div>
 
   <!-- Redye panel: opened from a clothing item's info panel (see selectGearClothing / openRedyePanel in game.js) -->
-  <div id="dyePanel" class="dye-panel" role="dialog" aria-modal="true" aria-label="Redye Clothing" aria-hidden="true">
+  <div id="dyePanel" class="dye-panel" role="dialog" aria-modal="true" aria-label="Redye Clothing" aria-hidden="true" data-ctrl-panel>
     <div class="dye-panel-inner">
       <div class="dye-panel-header">
         <div class="dye-panel-title" id="dyePanelTitle">Redye</div>
-        <button class="dye-panel-close" id="dyePanelClose" aria-label="Close">✕</button>
+        <button class="dye-panel-close" id="dyePanelClose" aria-label="Close" data-ctrl-cancel>✕</button>
       </div>
       <div class="dye-panel-subslots" id="dyePanelSubslots"></div>
       <div class="dye-panel-preview" id="dyePanelPreview"></div>
@@ -1973,10 +1973,10 @@
        you drag pieces around in directly, plus a side panel for the
        controls that don't have a natural drag gesture: select/build/
        demolish/rotate a piece, or place a new owned house deed. -->
-  <div id="houseLayoutModal" class="house-layout-modal" role="dialog" aria-modal="true" aria-label="House Layout" aria-hidden="true">
+  <div id="houseLayoutModal" class="house-layout-modal" role="dialog" aria-modal="true" aria-label="House Layout" aria-hidden="true" data-ctrl-panel>
     <div class="house-layout-header">
       <div class="house-layout-title">House Layout</div>
-      <button class="house-layout-close" id="houseLayoutClose" aria-label="Close">✕</button>
+      <button class="house-layout-close" id="houseLayoutClose" aria-label="Close" data-ctrl-cancel>✕</button>
     </div>
     <div class="house-layout-body">
       <div class="house-layout-viewport">
@@ -2276,6 +2276,7 @@
   </script>
   <script src="game.js?v=20260902agenda3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
+  <script src="js/controller-ui-nav.js?v=20260903a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

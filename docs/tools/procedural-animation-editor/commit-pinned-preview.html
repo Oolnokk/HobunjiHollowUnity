@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Procedural Animator · Commit-Pinned Preview</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#editorFrame{display:block;width:100%;height:100%;border:0;background:#07101a}
+#pinStatus{position:fixed;z-index:2147483647;top:max(6px,env(safe-area-inset-top));left:max(6px,env(safe-area-inset-left));max-width:calc(100vw - 12px);padding:5px 8px;border:1px solid rgba(107,169,255,.48);border-radius:999px;background:rgba(7,16,26,.88);box-shadow:0 4px 18px rgba(0,0,0,.32);font-size:11px;line-height:1.2;color:#c9dcff;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pinStatus.bad{border-color:rgba(255,124,144,.55);color:#ff9aac}
+</style>
+</head>
+<body>
+<iframe id="editorFrame" title="Commit-pinned procedural animation editor"></iframe>
+<div id="pinStatus">Preparing commit-pinned editor…</div>
+<script>
+(() => {
+  'use strict';
+
+  const SOURCE_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1'; // Used by the procedural editor's repository-backed portrait/runtime loader.
+  const pathParts = location.pathname.split('/').filter(Boolean); // Used to recover owner/repository/revision from raw.githack's /owner/repo/ref/docs/... URL.
+  const docsIndex = pathParts.indexOf('docs'); // Used to locate the three raw.githack repository path segments immediately before docs/.
+  const owner = docsIndex >= 3 ? pathParts[docsIndex - 3] : ''; // Used to keep the embedded editor pointed at the same repository as this wrapper.
+  const repo = docsIndex >= 2 ? pathParts[docsIndex - 2] : ''; // Used to keep the embedded editor pointed at the same repository as this wrapper.
+  const revision = docsIndex >= 1 ? pathParts[docsIndex - 1] : ''; // Used as the exact internally-fetched repository revision when it is a commit SHA.
+  const pinnedSha = /^[0-9a-f]{40}$/i.test(revision) ? revision : ''; // Used to reject branch/main URLs so this harness never pretends an unpinned preview is immutable.
+  const frame = document.getElementById('editorFrame'); // Used to delay loading index.html until repository settings have been pinned.
+  const status = document.getElementById('pinStatus'); // Used as a mobile-visible proof of which revision the wrapper applied.
+  const previousSourceSettings = localStorage.getItem(SOURCE_STORAGE_KEY); // Used to restore the user's normal repository-source preference after leaving this temporary harness.
+  let sourceWasChanged = false; // Used by pagehide to avoid overwriting storage when this page never successfully pinned it.
+  let verificationReloadUsed = false; // Allows one corrective iframe reload if browser storage partitioning ignored the parent-page write.
+
+  function pinnedSettingsFrom(storage) {
+    let sourceSettings = {};
+    try { sourceSettings = JSON.parse(storage.getItem(SOURCE_STORAGE_KEY) || previousSourceSettings || '{}') || {}; } catch (_) {}
+    sourceSettings.owner = owner;
+    sourceSettings.repo = repo;
+    sourceSettings.ref = pinnedSha;
+    sourceSettings.docsRoot = sourceSettings.docsRoot || 'docs/';
+    sourceSettings.dbPath = sourceSettings.dbPath || 'docs/config/npcs/hobunji-starter-npc-database.json';
+    return sourceSettings;
+  }
+
+  function writePinnedSettings(storage) {
+    const sourceSettings = pinnedSettingsFrom(storage); // Reuses the same immutable settings object in the parent and iframe storage contexts.
+    storage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(sourceSettings));
+    return sourceSettings;
+  }
+
+  function restorePreviousSourceSettings() {
+    if (!sourceWasChanged) return;
+    try {
+      if (previousSourceSettings == null) localStorage.removeItem(SOURCE_STORAGE_KEY);
+      else localStorage.setItem(SOURCE_STORAGE_KEY, previousSourceSettings);
+    } catch (_) {}
+  }
+
+  if (!pinnedSha || !owner || !repo) {
+    status.textContent = 'Unpinned URL: open this harness through a 40-character commit GitHack link.';
+    status.classList.add('bad');
+    frame.src = 'index.html';
+    return;
+  }
+
+  try {
+    writePinnedSettings(localStorage);
+    // about:blank inherits this page's origin. Writing through the iframe's own
+    // Window before navigation makes the handoff explicit on browsers/webviews
+    // that partition storage more aggressively than ordinary same-origin tabs.
+    if (frame.contentWindow?.localStorage) writePinnedSettings(frame.contentWindow.localStorage);
+    sourceWasChanged = true;
+    status.textContent = `Pinned editor + fetched runtime: ${pinnedSha.slice(0, 12)}`;
+    console.info(`[Commit-pinned preview] Repository source pinned to ${owner}/${repo}@${pinnedSha} before editor navigation.`);
+  } catch (error) {
+    status.textContent = `Could not pin repository source: ${error?.message || error}`;
+    status.classList.add('bad');
+  }
+
+  frame.addEventListener('load', () => {
+    if (!sourceWasChanged) return;
+    try {
+      const childStorage = frame.contentWindow?.localStorage;
+      const childSettings = JSON.parse(childStorage?.getItem(SOURCE_STORAGE_KEY) || '{}') || {};
+      if (childSettings.ref !== pinnedSha && !verificationReloadUsed) {
+        verificationReloadUsed = true;
+        writePinnedSettings(childStorage);
+        status.textContent = `Correcting editor source to ${pinnedSha.slice(0, 12)}…`;
+        console.warn(`[Commit-pinned preview] Embedded editor storage reported ${childSettings.ref || 'no ref'}; reloading once with ${pinnedSha}.`);
+        frame.contentWindow.location.replace('index.html');
+        return;
+      }
+      const verified = childSettings.ref === pinnedSha;
+      status.textContent = verified
+        ? `Verified editor runtime: ${pinnedSha.slice(0, 12)}`
+        : `Pin verification failed: editor reports ${childSettings.ref || 'no ref'}`;
+      status.classList.toggle('bad', !verified);
+      console.info(`[Commit-pinned preview] Embedded editor source ref: ${childSettings.ref || 'none'}.`);
+    } catch (error) {
+      status.textContent = `Could not verify embedded editor pin: ${error?.message || error}`;
+      status.classList.add('bad');
+    }
+  });
+
+  window.addEventListener('pagehide', restorePreviousSourceSettings, { once: true });
+  frame.src = 'index.html';
+})();
+</script>
+</body>
+</html>

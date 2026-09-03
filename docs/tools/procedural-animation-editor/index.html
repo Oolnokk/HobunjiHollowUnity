@@ -54974,6 +54974,7 @@ const KURRAYA_ASSETS = {
 const REQUIRED_SCRIPTS = [
   'config/scratchbones-config.js',
   'config/attachment-rig-profiles.js',
+  'config/hand-model-profiles.js',
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
@@ -55043,6 +55044,8 @@ const state = {
   // Kurraya authoring state is reused when switching NPCs and rebuilding the avatar scene.
   footGlb: {
     assignments: new Map(), // Stores session-only { left, right } parsed GLB assets by normalized species id.
+    authoredAssets: new Map(), // Caches each species' repo-committed default foot GLB (proceduralFeet.species[...].glb), or null once resolved to "no authored GLB for this species" so it isn't refetched every avatar build.
+    authoredLoadPromises: new Map(), // Prevents duplicate concurrent fetches of the same species' authored GLB.
     GLTFLoader: null, // Loaded lazily from the same Three.js version as the preview.
     skeletonClone: null, // Uses SkeletonUtils.clone when a custom foot contains a skinned hierarchy.
     modulePromise: null,
@@ -55159,6 +55162,9 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     liftHeight: 0, // Reports the current peak swing-foot lift above the ground-flush idle center.
     leftPhase: 'idle', // Exposes whether the left foot is planted, swinging, or settling.
     rightPhase: 'idle', // Exposes whether the right foot is planted, swinging, or settling.
+  },
+  hands: {
+    root: null, // Parents both generated hand GLBs directly under the avatar model (same frame as handAttachX/Y), for Dance's generated arm bones to find and drive by name.
   },
   legBones: { // Invisible hip->thigh->calf debug visualization + authored-bend gizmo (see docs/js/leg-bones.js).
     enabled: true, // "Show leg bones" toggle.
@@ -55290,6 +55296,22 @@ async function fetchRepoText(path) {
     try {
       log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
       return await (await fetchWithTimeout(url)).text();
+    } catch (error) {
+      lastError = error;
+      log(`Fetch failed for ${url}: ${error.message}`, 'warn');
+    }
+  }
+  throw new Error(`Could not fetch ${normalized}: ${lastError?.message || 'unknown error'}`);
+}
+
+async function fetchRepoArrayBuffer(path) { // Binary counterpart to fetchRepoText, used for repo-committed GLB assets.
+  const normalized = normalizePath(path);
+  const candidates = [rawUrl(normalized), cdnUrl(normalized)];
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
+      return await (await fetchWithTimeout(url)).arrayBuffer();
     } catch (error) {
       lastError = error;
       log(`Fetch failed for ${url}: ${error.message}`, 'warn');
@@ -55467,6 +55489,18 @@ function posteriorYForAnalysis(analysis) {
   if (!analysis) return 0;
   const modelHeight = Number(analysis.gameModelHeight) || 0.9;
   const baseY = Number.isFinite(analysis.handAttachY) ? analysis.handAttachY : modelHeight / 2;
+  // window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY is the one posterior
+  // formula shared by gameplay, procedural limbs, and Animation Author (see its
+  // own comment in attachment-rig-profiles.js) and prefers each species'
+  // calibrated floor-relative heightPercentFromFloor over the pre-v9 legacy
+  // heightPercentOffset. Every authored species now has a calibrated floor
+  // percent, so calling heightPercentOffsetForSpecies() directly here (as this
+  // used to) silently fell back to the stale legacy formula for all of them,
+  // placing this hip pivot right at ground level instead of actual hip height.
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const posteriorRule = lib[`${analysis.speciesId}::${analysis.gender}`]?.posteriorRule;
+  const math = window.HOBUNJI_ATTACHMENT_RIG_MATH;
+  if (math?.characterPosteriorY && posteriorRule) return math.characterPosteriorY(posteriorRule, modelHeight, baseY);
   return baseY + modelHeight * heightPercentOffsetForSpecies(analysis.speciesId, analysis.gender) / 100;
 }
 
@@ -56553,9 +56587,63 @@ function footGlbAssignmentsForSpecies(speciesId, create = false) { // Returns on
   return assignments;
 }
 
-function importedFootGlbFor(speciesId, side) { // Resolves a custom model for one side without changing procedural fallbacks.
+function footConfigForSpecies(speciesId) { // Mirrors docs/js/procedural-leg-animation.js's own footConfigForSpecies species->parentSpecies chain walk (e.g. rakakoan inherits kenkari's, ghoul inherits mao-ao's authored GLB), so the editor resolves the exact same config the real game does.
+  const feet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.species || {};
+  const speciesConfig = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+  const seen = new Set();
+  let current = normalizeSpeciesKeyForFeet(speciesId);
+  while (current && !seen.has(current)) {
+    if (feet[current]) return feet[current];
+    seen.add(current);
+    current = normalizeSpeciesKeyForFeet(speciesConfig[current]?.parentSpecies);
+  }
+  return null;
+}
+
+async function loadAuthoredFootGlbAsset(speciesId) { // Auto-loads each species' repo-committed default foot GLB (proceduralFeet.species[...].glb in scratchbones-config.js), the same asset docs/js/procedural-leg-animation.js loads automatically in the real game, so the editor preview isn't limited to session-uploaded feet.
+  const key = normalizeSpeciesKeyForFeet(speciesId);
+  if (state.footGlb.authoredAssets.has(key)) return state.footGlb.authoredAssets.get(key);
+  if (state.footGlb.authoredLoadPromises.has(key)) return state.footGlb.authoredLoadPromises.get(key);
+  const promise = (async () => {
+    const footConfig = footConfigForSpecies(key);
+    if (!footConfig?.glb) { state.footGlb.authoredAssets.set(key, null); return null; }
+    try {
+      const modules = await loadFootGlbModules();
+      const loader = new modules.GLTFLoader();
+      const path = ensureSlash(state.settings?.docsRoot || 'docs/') + normalizePath(footConfig.glb);
+      const arrayBuffer = await fetchRepoArrayBuffer(path);
+      const gltf = await parseFootGlbBuffer(loader, arrayBuffer);
+      const asset = {
+        id: `authored-${key}`,
+        name: normalizePath(footConfig.glb).split('/').pop(),
+        byteLength: arrayBuffer.byteLength,
+        scene: gltf.scene,
+        animations: gltf.animations || [],
+        importedAt: new Date().toISOString(),
+        materials: inventoryFootGlbMaterials(gltf.scene),
+        materialOverrides: new Map(),
+        authored: true, // Marks this as the repo default rather than a session upload, so the upload/clear UI never treats it as a replaceable session asset.
+        authoredMaterialRoles: footConfig.materialRoles || null,
+      };
+      state.footGlb.authoredAssets.set(key, asset);
+      log(`Loaded authored foot GLB ${footConfig.glb} for ${key}.`);
+      return asset;
+    } catch (error) {
+      log(`Authored foot GLB failed to load for ${key} (${footConfig.glb}): ${error.message}`, 'warn');
+      state.footGlb.authoredAssets.set(key, null);
+      return null;
+    } finally {
+      state.footGlb.authoredLoadPromises.delete(key);
+    }
+  })();
+  state.footGlb.authoredLoadPromises.set(key, promise);
+  return promise;
+}
+
+async function importedFootGlbFor(speciesId, side) { // Resolves a session-uploaded override for one side first, then the species' authored repo default, without changing the procedural fallback.
   const assignments = footGlbAssignmentsForSpecies(speciesId, false);
-  return assignments?.[side] || null;
+  if (assignments?.[side]) return assignments[side];
+  return loadAuthoredFootGlbAsset(speciesId);
 }
 
 function footGlbAssetStillAssigned(asset) { // Prevents disposing a shared “both feet” source while either side still references it.
@@ -57879,8 +57967,9 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   const sphereCenterLocalY = groundLocalPoint.y + contactRadiusY; // Seats the shaped sphere directly on the floor rather than leaving flattened pads floating.
   const sphereIdleZ = colliderRootLocal.z; // Uses the game collider/root Z rather than rendered portrait depth.
 
-  const importedLeftAsset = importedFootGlbFor(speciesId, 'left'); // Replaces only the assigned side and leaves the other on its procedural fallback.
-  const importedRightAsset = importedFootGlbFor(speciesId, 'right');
+  const importedLeftAsset = await importedFootGlbFor(speciesId, 'left'); // Session upload first, else the species' authored repo default; leaves the other side on its procedural fallback if neither is available.
+  const importedRightAsset = await importedFootGlbFor(speciesId, 'right');
+  if (model !== state.three.model || !procedural.locomotionRoot) return; // The authored-GLB fetch above can outlast an avatar switch/rebuild.
   const needsProceduralLeft = !importedLeftAsset;
   const needsProceduralRight = !importedRightAsset;
   const needsAnyProceduralFoot = needsProceduralLeft || needsProceduralRight;
@@ -57990,9 +58079,84 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   log(`Experimental ${speciesId} feet built from widest torso row ${scan.widestRangePx.width}px: X ${leftFoot.position.x.toFixed(3)}/${rightFoot.position.x.toFixed(3)}, Mao'ao width ratio ${rawTorsoWidthRatio.toFixed(3)}, procedural envelope X/Z ${sphereScaleXZ.toFixed(3)}, Y ${sphereScaleY.toFixed(3)}, custom GLB L/R ${importedLeftAsset?.name || 'none'}/${importedRightAsset?.name || 'none'}.`, 'info', procedural.feet.analysis);
 }
 
+function disposeExperimentalHands() { // Removes the generated hand GLBs before an avatar or preview mode is replaced.
+  const handsRoot = procedural.hands.root;
+  if (handsRoot) {
+    handsRoot.parent?.remove(handsRoot);
+    disposeObjectResources(handsRoot);
+  }
+  procedural.hands.root = null;
+}
+
+// Builds simple GLB hand markers — one per side, named `${model.name}_LeftHand`/
+// `_RightHand` and parented directly to the model (the same local space
+// handAttachX/handAttachY already live in) — for Dance's generated arm bones
+// (docs/js/procedural-dance-mode-core.js) to find by name and drive every
+// frame. Unlike the feet, nothing in this editor's own native gait moves
+// these; they simply sit at the idle hand-attach point until Dance (or
+// nothing) repositions them, mirroring how the real game's own hand system
+// is a single flat socket with no owned animation of its own either.
+async function buildExperimentalHandsForAvatar(model, avatar) {
+  disposeExperimentalHands();
+  if (!model || state.previewMode !== 'npc' || !window.HobunjiHandModelProfiles) return;
+  const THREE = state.three.THREE;
+  if (!THREE) return;
+  const speciesId = feetSpeciesIdForAvatar(avatar);
+  const gender = feetGenderForAvatar(avatar);
+  const handProfile = window.HobunjiHandModelProfiles.modelForSpecies(speciesId);
+  if (!handProfile?.glb) return; // No authored hand model for this species family; leave the arm bones without a hand mesh.
+  const modules = await loadFootGlbModules(); // Generic GLTFLoader/SkeletonUtils loader despite the name; already used for foot GLBs.
+  const loader = new modules.GLTFLoader();
+  const path = ensureSlash(state.settings?.docsRoot || 'docs/') + normalizePath(handProfile.glb);
+  const arrayBuffer = await fetchRepoArrayBuffer(path);
+  const gltf = await parseFootGlbBuffer(loader, arrayBuffer);
+  if (model !== state.three.model) { disposeObjectResources(gltf.scene); return; } // Avoids attaching a late result to an avatar replaced during this fetch.
+
+  const modelHeight = Number(model.userData?.portraitModelHeight) || 0.9;
+  const handHeightFraction = Number(window.HobunjiHandModelProfiles.data?.handHeightFraction) || 0.12;
+  const targetHeight = modelHeight * handHeightFraction;
+  const effectiveScale = Number(window.HobunjiHandModelProfiles.effectiveScaleFor?.(speciesId, gender)) || 1; // model.scale (per-GLB import correction) * species/gender scale — the exact factor docs/js/procedural-hand-attachments.js's own buildGlbHand() multiplies on top of its own canonicalFit.
+  const sourceIsLeft = handProfile.mirrorX !== false; // Matches docs/js/procedural-hand-attachments.js's own sourceIsLeft convention (authored GLBs default to a left-hand basis).
+  const handAttachX = Number(model.userData?.handAttachX);
+  const handAttachY = Number(model.userData?.handAttachY);
+  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
+  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+
+  const handsRoot = new THREE.Group();
+  handsRoot.name = `${model.name || 'Avatar'}_procedural_hands`;
+  model.add(handsRoot);
+  procedural.hands.root = handsRoot;
+
+  for (const side of ['left', 'right']) {
+    const mesh = state.footGlb.skeletonClone ? state.footGlb.skeletonClone(gltf.scene) : gltf.scene.clone(true);
+    mesh.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(mesh);
+    const rawHeight = Math.max(0.000001, bounds.getSize(new THREE.Vector3()).y);
+    // Exactly mirrors docs/js/procedural-hand-attachments.js's own buildGlbHand():
+    // canonicalFit normalizes the raw import to the configured hand-height
+    // fraction, then modelScale/speciesScale (here: effectiveScale) is
+    // layered on top — omitting that second factor is what under/over-sized
+    // hands relative to what the real game actually renders.
+    const canonicalFit = targetHeight / rawHeight;
+    const finalScale = canonicalFit * effectiveScale;
+    const mirrorSign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1); // Matches docs/js/procedural-hand-attachments.js's own left/right sign table.
+    mesh.scale.set(finalScale * mirrorSign, finalScale, finalScale);
+    // Deliberately NOT recentering on the mesh's own bounds: per
+    // procedural-hand-attachments.js's own comment, the GLB's authored 0,0,0
+    // is the grip/wrist origin and must stay the pivot Dance positions.
+    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored rest orientation and pivot inside it.
+    wrapper.name = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
+    wrapper.add(mesh);
+    wrapper.position.set(side === 'left' ? -Math.abs(safeHandAttachX) : Math.abs(safeHandAttachX), safeHandAttachY, 0);
+    handsRoot.add(wrapper);
+  }
+  log(`Generated ${speciesId} hand markers from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}.`);
+}
+
 function disposeCurrentThreeModel() {
   const t = state.three;
   disposeExperimentalFeet();
+  disposeExperimentalHands();
   state.kurraya.transformControls?.detach();
   procedural.pose.transformControls?.detach();
   disposeKurrayaReferences(false);
@@ -60151,6 +60315,12 @@ async function placeThreeModel(npc, avatar) {
     t.model.userData.experimentalFeet = { available: false, error: error.message };
     log(`Experimental feet could not be built for ${npc.name || npc.id}: ${error.message}`, 'warn');
   }
+  try {
+    await buildExperimentalHandsForAvatar(t.model, avatar);
+  } catch (error) {
+    disposeExperimentalHands();
+    log(`Generated hand markers could not be built for ${npc.name || npc.id}: ${error.message}`, 'warn');
+  }
   updateVerticalPlacementUi();
   updatePlaneMetadata();
   try {
@@ -60544,6 +60714,7 @@ function prepareGameplayBackdropHost() {
     getSelectedNpc() { return state.previewMode === 'npc' && state.selectedNpc ? structuredCloneSafe(state.selectedNpc) : null; },
     getSelectedCreature() { return state.previewMode === 'creature' ? structuredCloneSafe(currentCreatureExport()) : null; },
     getPreviewMode() { return state.previewMode; },
+    log(message, level = 'info', extra = null) { log(message, level, extra); }, // Lets separately-loaded adapters (Dance, Impact tabs) write into this page's own Diagnostics panel instead of only the browser console.
     getScene() { return state.three.scene; },
     getCamera() { return state.three.camera; },
     getRenderer() { return state.three.renderer; },
