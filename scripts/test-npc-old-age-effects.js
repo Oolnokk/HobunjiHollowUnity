@@ -2,15 +2,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const repoRoot = path.resolve(__dirname, '..'); // Resolves shared config/runtime/tool files from the repository root below.
-const configPath = path.join(repoRoot, 'docs', 'config', 'npc-age-effects.js'); // Shared source of runtime and visual-tool age values.
-const runtimePath = path.join(repoRoot, 'docs', 'js', 'npc-age-effects-runtime.js'); // Config-driven portrait aging wrapper tested in the Node shim.
-const posturePath = path.join(repoRoot, 'docs', 'js', 'npc-age-body-posture.js'); // Animation-composer age torso/neck/height layer + final age profile guards.
-const toolPath = path.join(repoRoot, 'docs', 'tools', 'age-effect', 'index.html'); // Combined visual tool source-checked for gameplay hands/feet parity.
-const loaderPath = path.join(repoRoot, 'docs', 'js', 'combat', 'combat-config-loader.js'); // Parser-blocking gameplay wiring checked below.
-const postureSource = fs.readFileSync(posturePath, 'utf8'); // Used for composer/NPC non-accumulation integration assertions.
-const toolSource = fs.readFileSync(toolPath, 'utf8'); // Used for exact runtime preview dependency assertions.
-const loaderSource = fs.readFileSync(loaderPath, 'utf8'); // Used for module load-order assertions.
+const repoRoot = path.resolve(__dirname, '..');
+const configPath = path.join(repoRoot, 'docs', 'config', 'npc-age-effects.js');
+const runtimePath = path.join(repoRoot, 'docs', 'js', 'npc-age-effects-runtime.js');
+const posturePath = path.join(repoRoot, 'docs', 'js', 'npc-age-body-posture.js');
+const toolPath = path.join(repoRoot, 'docs', 'tools', 'age-effect', 'index.html');
+const loaderPath = path.join(repoRoot, 'docs', 'js', 'combat', 'combat-config-loader.js');
+const gamePath = path.join(repoRoot, 'docs', 'game.js'); // Live makeNpcWalker is the source of truth for 3D preview assembly.
+const postureSource = fs.readFileSync(posturePath, 'utf8');
+const toolSource = fs.readFileSync(toolPath, 'utf8');
+const loaderSource = fs.readFileSync(loaderPath, 'utf8');
+const gameSource = fs.readFileSync(gamePath, 'utf8');
 
 global.window = global;
 global.SCRATCHBONES_CONFIG = {
@@ -24,7 +26,7 @@ global.NpcAvatarPreview = {
     return {
       fighter: { speciesId: 'mao-ao', gender: 'male' },
       bodyColors: {
-        A: { hex: '#000000' }, // Exact black body/line slot must never be brightened or desaturated by age.
+        A: { hex: '#000000' },
         B: { hex: '#4488cc' },
         C: { hex: '#88cc44' },
         CLOTH: { hex: '#123456' },
@@ -36,17 +38,17 @@ global.NpcAvatarPreview = {
 
 require(configPath);
 require(runtimePath);
-require(posturePath); // With no THREE/leg runtime in this Node shim, this installs the color/profile guard then exits before 3D composition setup.
+require(posturePath); // No THREE/leg runtime in this shim: color/profile guard installs, then 3D setup exits.
 
 const config = global.HobunjiNpcAgeEffectConfig;
-const oldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'teacup_unumanuk', name: 'Eldress Teacup' }); // Verifies exact Old assignment from the shared config.
-const veryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'kaboku_kunji', name: 'Kaboku Kunji' }); // Verifies exact Very Old assignment and stronger posture.
-const leafVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'leaf', name: 'Leaf' }); // Leaf shares the authored Very Old treatment.
-const pahuVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'pahu', name: 'Pahu' }); // Pahu shares the authored Very Old treatment.
-const unaffectedEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'gorobi_ginju', name: 'Gorobi Ginju' }); // Guards against accidentally aging the normal NPC roster.
-const bogusPlaceholderEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'vul_sigrid', name: 'Vul Sigrid' }); // Prevents the discarded generic-fantasy placeholder from returning.
-const agedProfile = NpcAvatarPreview.buildProfileFromNpcExport({ id: 'father_hunundi_hodu', name: 'Father Hunundi' }); // Verifies shared gameplay profile construction ages body colors selectively.
-const tuned = config.effectFromPreset('old', { torsoPitchDeg: 12.5, headDropPx: 7, amount: 55, verticalOffsetReductionPct: 13 }); // Verifies the visual tool can make non-mutating tuned preset copies.
+const oldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'teacup_unumanuk', name: 'Eldress Teacup' });
+const veryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'kaboku_kunji', name: 'Kaboku Kunji' });
+const leafVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'leaf', name: 'Leaf' });
+const pahuVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'pahu', name: 'Pahu' });
+const unaffectedEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'gorobi_ginju', name: 'Gorobi Ginju' });
+const bogusPlaceholderEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'vul_sigrid', name: 'Vul Sigrid' });
+const agedProfile = NpcAvatarPreview.buildProfileFromNpcExport({ id: 'father_hunundi_hodu', name: 'Father Hunundi' });
+const tuned = config.effectFromPreset('old', { torsoPitchDeg: 12.5, headDropPx: 7, amount: 55, verticalOffsetReductionPct: 13 });
 
 assert.equal(oldEffect?.headDropPx, 10, 'Old uses the authored 10 px head drop');
 assert.equal(oldEffect?.amount, 70, 'Old uses the reference Old color amount');
@@ -77,11 +79,11 @@ assert.equal(agedProfile.__hobunjiNpcAgeEffect?.presetLabel, 'Old', 'profile exp
 
 assert.match(postureSource, /BODY_CHANNEL = 'age-posture'/, 'age torso pitch owns a named animation-composer channel');
 assert.match(postureSource, /PlayerBodyTransformComposer\?\.setChannel\(BODY_CHANNEL/, 'player-compatible age posture composes through PlayerBodyTransformComposer');
-assert.match(postureSource, /translation: \{ x: 0, y: lowerY, z: 0 \}/, 'player-compatible age posture publishes the standing-height reduction through the same composer channel');
+assert.match(postureSource, /translation: \{ x: 0, y: lowerY, z: 0 \}/, 'player-compatible age posture publishes standing-height reduction through the same composer channel');
 assert.match(postureSource, /options\?\.ageBodyRoot \|\| options\?\.drunkBodyRoot \|\| options\?\.avatarRoot/, 'NPC age posture reuses the isolated body root before falling back to the avatar root');
 assert.match(postureSource, /return -\(modelHeight \* 0\.5\) \* reduction/, 'age standing-height reduction is proportional to the normal modelHeight/2 standing lift');
 assert.match(postureSource, /bodyRoot\.position\.y -= state\.bodyLowerY/, 'NPC age lowering removes only its previous-frame Y delta before recomposition');
-assert.match(postureSource, /bodyRoot\.position\.y \+= state\.bodyLowerY/, 'NPC age lowering is applied only to the isolated body root so procedural feet stay planted');
+assert.match(postureSource, /bodyRoot\.position\.y \+= state\.bodyLowerY/, 'NPC age lowering is applied only to the body root so procedural feet stay planted');
 assert.match(postureSource, /bodyRoot\.quaternion\.multiply\(state\.bodyTilt\.clone\(\)\.invert\(\)\)/, 'NPC age rotation removes only its previous-frame quaternion before recomposition');
 assert.match(postureSource, /state\.neckCounter\.setFromEuler\(new THREE\.Euler\(-pitchRad, 0, 0, 'YXZ'\)\)/, 'age neck counter is the exact opposite of torso pitch');
 assert.match(postureSource, /neck\.quaternion\.multiply\(state\.neckCounter\)/, 'age neck counter composes additively onto existing neck motion');
@@ -91,29 +93,42 @@ assert.match(postureSource, /function preservePureBlackAgeSlots\(profile\)/, 'ag
 assert.match(postureSource, /record\.agedHex = '#000000'/, 'black preservation keeps visual-tool/debug swatches aligned with the render target');
 assert.match(postureSource, /previousAttach = legApi\.attach\.bind\(legApi\)/, 'age posture decorates the existing procedural animation stack instead of replacing it');
 
+// Capture the live makeNpcWalker assembly contract before asserting the tool mirrors it.
+assert.match(gameSource, /previewPortraitCanvasSize \?\? 200/, 'live NPCs use the configured portrait backing size with 200px fallback');
+assert.match(gameSource, /avatarGroup\.position\.set\(0, avatarHeight \/ 2, 0\)/, 'live NPC avatar starts at its resolved half-height standing lift');
+assert.match(gameSource, /NpcCharacterState\?\.attachAlcoholPose\?\.\(THREE, root, avatarGroup, rec\?\.id\)/, 'live NPC avatar is parented through the standard alcohol-pose group');
+assert.match(gameSource, /ProceduralLegAnimation\?\.attach\(THREE, root, \{[\s\S]*?drunkBodyRoot: avatarGroup/, 'live NPC feet attach to the floor root while body posture targets avatarGroup');
+
 assert.match(toolSource, /Hobunji Age Effect Tool/, 'combined age tool has its own first-class tools page');
+assert.match(toolSource, /config\/attachment-rig-profiles\.js/, 'Age Tool loads the same authored species/gender attachment coordinates used by live hands and feet');
 assert.match(toolSource, /png-plane-avatar\.js/, '3D preview uses the same PNG-plane avatar runtime as gameplay');
 assert.match(toolSource, /procedural-leg-animation\.js/, '3D preview uses gameplay procedural feet');
 assert.match(toolSource, /held-action-animations\.js/, '3D preview boots the gameplay automatic hand runtime');
-assert.match(toolSource, /const PORTRAIT_SIZE = 256/, 'Age Effect Tool uses the same square portrait backing size as Attack Animation Editor');
-assert.match(toolSource, /worldModelWidth \?\? 0\.9/, 'Age Effect Tool uses the same in-game world model base as Attack Animation Editor');
-assert.match(toolSource, /modelWidth: MODEL_W,[\s\S]*modelHeight: MODEL_W/, 'PNG portrait build uses the Attack Animation Editor square model sizing contract before species scaling');
-assert.match(toolSource, /currentAvatar\.position\.y = modelHeight \/ 2/, 'Age Effect Tool starts from the same normal standing lift as Attack Animation Editor before applying age reduction');
+assert.match(toolSource, /npc-character-state\.js/, 'Age Tool loads the same NPC alcohol-pose hierarchy helper as makeNpcWalker');
+assert.match(toolSource, /drunk-locomotion\.js[\s\S]*npc-age-body-posture\.js/, 'Age Tool wraps procedural legs in the same drunk-then-age order as gameplay');
+assert.match(toolSource, /const PORTRAIT_SIZE = AVATAR_CFG\.previewPortraitCanvasSize \?\? 200/, 'Age Tool uses the exact live configured portrait backing size instead of editor-only 256px');
+assert.match(toolSource, /worldModelWidth \?\? 0\.9/, 'Age Tool uses the live in-game world model base');
+assert.match(toolSource, /modelWidth: MODEL_W,[\s\S]*modelHeight: MODEL_W,[\s\S]*anchorZ: 0,[\s\S]*alphaTest: AVATAR_CFG\.worldAlphaTest \?\? 0\.01/, 'PNG avatar build mirrors makeNpcWalker world sizing/anchor/alpha options');
+assert.match(toolSource, /currentAvatar\.position\.set\(0, normalPortraitLiftY, 0\)/, 'Age Tool starts from the same resolved half-height standing lift as live NPCs');
+assert.match(toolSource, /NpcCharacterState\?\.attachAlcoholPose\?\.\(THREE, currentRoot, currentAvatar, currentNpc\.id\)/, 'Age Tool uses the same root -> alcohol pose -> avatar hierarchy as live NPCs');
+assert.match(toolSource, /ProceduralLegAnimation\?\.attach\(THREE, currentRoot, \{[\s\S]*?portraitSize: PORTRAIT_SIZE,[\s\S]*?drunkLossProvider: \(\) => 0,[\s\S]*?drunkBodyRoot: currentAvatar/, 'Age Tool feet use the live floor-root attach contract and body-root option');
+assert.doesNotMatch(toolSource, /avatarRoot: currentAvatar/, 'Age Tool does not invent a non-game avatarRoot leg option');
+assert.doesNotMatch(toolSource, /suppressAgeBodyPosture: true/, 'Age Tool runs the actual age leg decorator instead of suppressing it and recreating posture manually');
+assert.doesNotMatch(toolSource, /proceduralHandParent\s*=/, 'Age Tool does not reparent automatic hands into an editor-only transform layer');
+assert.doesNotMatch(toolSource, /HobunjiNpcAgeBodyPosture\?\.applyPreview/, 'Age Tool does not apply an editor-only duplicate age posture transform');
+assert.doesNotMatch(toolSource, /ProceduralHandAttachments\.attach\(/, 'Age Tool never manually attaches a duplicate hand rig');
+assert.match(toolSource, /avatar\?\.userData\?\.proceduralHandRig/, 'Age Tool reads the single hand rig owned by ProceduralHandFrameDriver');
+assert.match(toolSource, /ProceduralHandFrameDriver\?\.syncNow\?\.\(\)/, 'Age Tool synchronizes the shared automatic hand driver after live-style parenting');
+assert.match(toolSource, /currentFeet\?\.getStandingPoseDebug\?\.\(\)/, 'Age Tool exposes the runtime feet solver rendered-bottom diagnostics');
+assert.match(toolSource, /handParent: currentHands\?\.parent\?\.name/, 'Age Tool reports actual hand-parent hierarchy for visual parity debugging');
+assert.match(toolSource, /feetParent: currentFeet\?\.group\?\.parent\?\.name/, 'Age Tool reports actual foot-parent hierarchy for visual parity debugging');
+assert.match(toolSource, /HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS/, 'Age Tool debug reports whether the authored attachment profile actually loaded');
 assert.match(toolSource, /Standing vertical offset reduction \(%\)/, 'visual tool exposes the age standing-height reduction percentage');
-assert.match(toolSource, /verticalOffsetReductionPct/, 'visual tool passes the standing-height reduction through shared preset/runtime data');
-assert.match(toolSource, /ageLowerY = bodyPivot\.position\.y - pivotY/, 'visual tool reports the actual world-space age lowering applied to its body pivot');
-assert.match(toolSource, /currentAvatar\.userData\.proceduralHandParent = bodyContent/, 'the single automatic hand rig is parented to the torso content so it follows age pitch and lowering');
-assert.match(toolSource, /avatar\?\.userData\?\.proceduralHandRig/, 'Age Effect Tool reads the hand rig created by ProceduralHandFrameDriver rather than creating another pair');
-assert.match(toolSource, /ProceduralHandFrameDriver\?\.syncNow\?\.\(\)/, 'Age Effect Tool synchronizes the shared automatic hand driver after parenting the portrait');
-assert.doesNotMatch(toolSource, /ProceduralHandAttachments\.attach\(/, 'Age Effect Tool never manually attaches a second duplicate hand rig');
-assert.match(toolSource, /ProceduralLegAnimation\.attach/, '3D preview actually attaches gameplay feet');
-assert.match(toolSource, /standingPosteriorY/, 'torso preview pivots around the gameplay floor-relative posterior');
-assert.match(toolSource, /torsoPitchDeg/, 'visual tool exposes the animation-composer torso control');
-assert.match(toolSource, /ensurePortraitCosmetics\?\.\(\{ assetBase: '\.\.\/\.\.\/assets\/', configBase: '\.\.\/\.\.\/config\/' \}\)/, 'Age Effect Tool initializes the shared portrait cosmetics cache before building NPC profiles');
-assert.match(toolSource, /if \(!profile\) throw new Error\(`Could not build portrait profile/, 'Age Effect Tool reports profile boot/data failures before reading bodyColors');
+assert.match(toolSource, /verticalOffsetReductionRange[^>]*step="0\.5"/, 'height-reduction slider can represent the authored 1.5 percent Old preset exactly');
+assert.match(toolSource, /ensurePortraitCosmetics\?\.\(\{ assetBase: '\.\.\/\.\.\/assets\/', configBase: '\.\.\/\.\.\/config\/' \}\)/, 'Age Tool initializes the shared portrait cosmetics cache before building NPC profiles');
 
 assert.match(loaderSource, /config\/npc-age-effects\.js\?v=20260903/, 'gameplay loads the shared age config');
-assert.match(loaderSource, /drunk-locomotion\.js\?v=20260812a[\s\S]*npc-age-body-posture\.js\?v=20260903/, 'age torso/neck/height layer decorates the animation stack after drunk locomotion');
+assert.match(loaderSource, /drunk-locomotion\.js\?v=20260812a[\s\S]*npc-age-body-posture\.js\?v=20260903/, 'age torso/neck/height layer decorates the gameplay animation stack after drunk locomotion');
 assert.doesNotMatch(loaderSource, /npc-old-age-effects\.js/, 'superseded one-off old-age module is no longer loaded');
 
 console.log('Combined NPC age effect tests passed');
