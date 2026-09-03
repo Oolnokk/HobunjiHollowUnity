@@ -20,7 +20,7 @@
       id: 'old',
       label: 'Old',
       color: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
-      headDropPx: 10, // 4/9 of the new 22 px Very Old drop is 9.78 px; the whole-pixel authoring control rounds that to 10.
+      headDropPx: 10, // Preserve the old 4:9 Old→Very Old proportion against the new 22 px Very Old value: 22×4/9=9.78, rounded to the tool's whole-pixel step.
       torsoPitchDeg: 4, // Added by the animation composer/posture bridge as a persistent forward torso rotation offset.
     }),
     veryOld: Object.freeze({
