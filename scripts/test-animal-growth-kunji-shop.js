@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
+const growthConfigSource = fs.readFileSync('docs/config/animal-growth-config.js', 'utf8');
 const growthSource = fs.readFileSync('docs/js/animal-growth.js', 'utf8');
 const shopConfig = JSON.parse(fs.readFileSync('docs/config/shops/shop-stock.json', 'utf8'));
 const generalStoreSource = fs.readFileSync('docs/js/general-store.js', 'utf8');
@@ -68,6 +69,7 @@ const context = {
   },
 };
 context.window.window = context.window;
+vm.runInNewContext(growthConfigSource, context, { filename: 'animal-growth-config.js' });
 vm.runInNewContext(growthSource, context, { filename: 'animal-growth.js' });
 
 context.window.FarmAnimals.init(deps);
