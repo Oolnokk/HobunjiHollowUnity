@@ -41,7 +41,7 @@
       id: 'veryOld',
       label: 'Very Old',
       color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
-      headDropPx: 22,
+      headDropPx: 19,
       torsoPitchDeg: 9,
       verticalOffsetReductionPct: 3,
     }),
