@@ -38,7 +38,11 @@ assert(dance.includes('root.worldToLocal(targetWorld.clone())'), 'Dance IK does 
 assert(dance.includes('leg.anchorWorld.clone()'), 'Dance IK does not keep a stable planted world-space foot anchor');
 assert(dance.includes('renderer.render = function proceduralDanceRender'), 'Dance pose is not applied at the render boundary after normal editor animation writers');
 assert(dance.includes('getDebug()'), 'Dance mode is missing its mobile-friendly diagnostic API');
-assert(danceLoader.includes('Latest change: Dance now drives the editor generated fallback feet'), 'Dance panel latest-change summary does not mention the editor fallback-foot integration');
+assert(dance.includes('HIP_ROLL_MAX_DEG'), 'Dance leg IK does not implement the pelvis-roll weight-shift lift');
+assert(dance.includes('function solveArm'), 'Dance mode does not implement the generated shoulder->elbow->hand arm solve');
+assert(dance.includes("setArmStyle(value) { if (ARM_STYLE_LABEL[value] != null)"), 'Dance mode does not expose a public setArmStyle API');
+assert(dance.includes("'raise-reach'") && dance.includes("'tpose-jiggle'") && dance.includes("'overhead-punch'"), 'Dance mode is missing one of the three authored arm movement styles');
+assert(danceLoader.includes('Latest change: added generated arm bones'), 'Dance panel latest-change summary does not mention the generated arm bones');
 
 assert(pinnedPreview.includes("hobunjiNpcPlaneAvatarRepoViewer.source.v1"), 'Commit-pinned preview does not target the repository source setting used by the editor');
 assert(pinnedPreview.includes('/^[0-9a-f]{40}$/i'), 'Commit-pinned preview does not require an immutable 40-character commit SHA');

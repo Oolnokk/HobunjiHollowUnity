@@ -325,7 +325,7 @@
 
   function refreshLatestChange() {
     const latest = document.querySelector('#proceduralDancePanel .danceLatest');
-    if (latest) latest.textContent = 'Latest change: Dance now drives the editor generated fallback feet and native LegBonesDebug solve directly.';
+    if (latest) latest.textContent = 'Latest change: added generated arm bones (Raise + reach / T-pose jiggle / Overhead punch) and a hip-roll weight shift, plus authored foot GLB auto-loading.';
   }
 
   function loadDanceCore() {

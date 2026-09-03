@@ -28,6 +28,29 @@
   const HIP_ROLL_MAX_DEG = 14; // Used as the full-intensity pelvis tilt that lifts one hip's foot off the ground during a weight shift.
   const HIP_HALF_WIDTH_FRACTION = 0.16; // Used to estimate half the stance width from avatar plane width when converting hip roll into a foot-lift height.
 
+  // ── Generated arm bones ─────────────────────────────────────────────────
+  // Neither the editor nor the real game rigs an elbow anywhere (hands are a
+  // single flat socket at model.userData.handAttachX/handAttachY — see
+  // docs/js/procedural-hand-attachments.js's own "there is deliberately NO
+  // arm skeleton" comment), so this builds a fully virtual shoulder->elbow
+  // ->hand chain purely for the dance preview, parented directly to the
+  // avatar model the same way the generated-feet bridge parents its shim
+  // (so it automatically follows the model's own dance sway/bounce/twirl
+  // for free). It reuses window.LegBones.solveTwoBoneLeg — that solver is
+  // generic 2-bone IK (hip/foot in, knee+two segment quaternions out) and
+  // knows nothing about legs specifically, so it works unmodified for a
+  // shoulder/hand pair too.
+  const ARM_ROOT_SUFFIX = '_procedural_arms';
+  const ARM_BEND_DEG_X = 14; // Default authored elbow bend so a resting arm doesn't render as a poker-straight double line.
+  const SHOULDER_X_FRACTION = 0.62; // Used to bring the shoulder inward from the idle hand-hang X toward the body midline.
+  const SHOULDER_Y_OFFSET_FRACTION = 0.10; // Used to place the shoulder somewhat above the idle hand-hang height, roughly chest/shoulder level.
+  const ARM_STYLE_LABEL = Object.freeze({
+    'none': 'Relaxed (idle)',
+    'raise-reach': 'Raise + reach',
+    'tpose-jiggle': 'T-pose jiggle',
+    'overhead-punch': 'Overhead punch',
+  });
+
   const STYLE_INTENSITY = Object.freeze({ // Used to preserve the reference preview's authored maximum intensity per dance style.
     'side-step': 1.00,
     'bouncy': 1.08,
@@ -52,6 +75,7 @@
   const state = { // Holds the live editor-only dance session so all transforms can be restored without accumulation.
     enabled: false,
     style: 'side-step',
+    armStyle: 'none',
     groove: 60,
     drunkenness: 0,
     bpm: DEFAULT_BPM,
@@ -60,6 +84,8 @@
     model: null,
     bodyBase: null,
     rig: null,
+    armRig: null,
+    armJiggle: { left: 0, right: 0, leftVel: 0, rightVel: 0 }, // Spring state for the T-pose jiggle style; persists across frames like pitch/roll so it damps smoothly instead of snapping.
     previousBeatIndex: null,
     previousSwingSide: null,
     lastLandingWorld: { left: null, right: null },
@@ -178,17 +204,22 @@
 
   function releaseModel() {
     restoreBodyBase();
+    state.armRig?.root?.removeFromParent?.();
     state.model = null;
     state.bodyBase = null;
     state.rig = null;
+    state.armRig = null;
     state.previousBeatIndex = null;
     state.previousSwingSide = null;
     state.lastLandingWorld.left = null;
     state.lastLandingWorld.right = null;
   }
 
-  function bindModel(THREE, model) {
-    if (state.model === model && state.bodyBase) return;
+  function bindModel(THREE, model, scene) {
+    if (state.model === model && state.bodyBase) {
+      if (!state.armRig) state.armRig = buildArmRig(THREE, currentRenderingThree(scene), model); // Retries every frame until LegBonesDebug exists, since it's the only source of Line/BufferGeometry/LineBasicMaterial constructors this editor exposes.
+      return;
+    }
     releaseModel();
     if (!model) return;
     state.model = model;
@@ -198,6 +229,7 @@
       scale: model.scale.clone(),
     };
     state.rig = captureRig(THREE, model);
+    state.armRig = buildArmRig(THREE, currentRenderingThree(scene), model);
     state.startedAt = performance.now();
     state.previousBeatIndex = null;
     state.previousSwingSide = null;
@@ -416,6 +448,135 @@
     state.debug.swingProgress = swingProgress;
   }
 
+  function currentRenderingThree(scene) {
+    // window.THREE is never mirrored in this editor (docs/js/procedural-impact-tabs.js
+    // hit the same dead end for its own now-superseded bone-guide bridge), and unlike
+    // Vector3/Quaternion/Euler there is no Mesh/Geometry/Material class reachable from
+    // the avatar model itself. The one reliable source is the editor's own native
+    // LegBonesDebug lines, which already exist as real THREE.Line/BufferGeometry/
+    // LineBasicMaterial instances once the leg debug visual has been built.
+    if (window.THREE?.Line && window.THREE?.BufferGeometry && window.THREE?.LineBasicMaterial) return window.THREE;
+    const legBonesDebug = scene?.getObjectByName?.('LegBonesDebug');
+    const sampleLine = legBonesDebug?.children?.find?.(node => node?.isLine);
+    if (!sampleLine?.geometry || !sampleLine?.material) return null;
+    return {
+      Line: sampleLine.constructor,
+      BufferGeometry: sampleLine.geometry.constructor,
+      LineBasicMaterial: sampleLine.material.constructor,
+    };
+  }
+
+  function buildArmRig(THREE, renderingTHREE, model) {
+    if (!renderingTHREE) return null;
+    const dims = previewDimensions(model);
+    const handAttachX = Number(model.userData?.handAttachX); // Same raw per-avatar constant docs/js/procedural-hand-attachments.js reads for its own (elbow-less) idle hand sockets.
+    const handAttachY = Number(model.userData?.handAttachY);
+    const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -dims.width * 0.28;
+    const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : dims.height * 0.45;
+    const root = new THREE.Group();
+    root.name = `${model.name || 'Avatar'}${ARM_ROOT_SUFFIX}`;
+    model.add(root);
+
+    function buildSide(side) {
+      // Mirrors procedural-hand-attachments.js's own idlePositions formula
+      // (left = -handAttachX, right = +handAttachX) so the relaxed pose lines
+      // up with where the real game's hand actually sits.
+      const idleHand = new THREE.Vector3(side === 'left' ? -safeHandAttachX : safeHandAttachX, safeHandAttachY, 0);
+      // No authored shoulder anchor exists that this editor can safely scale
+      // (attachment-rig-profiles.js's leftHandShoulder/rightHandShoulder are
+      // only ever used for hand-orientation aim, never position, and carry
+      // calibration assumptions this tool doesn't reproduce) — approximated
+      // instead from the same two verified numbers as idleHand: pulled in
+      // toward the midline and lifted slightly above idle-hand height.
+      const shoulderLocal = new THREE.Vector3(idleHand.x * SHOULDER_X_FRACTION, safeHandAttachY + dims.height * SHOULDER_Y_OFFSET_FRACTION, 0);
+      const line = new renderingTHREE.Line(
+        new renderingTHREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]),
+        new renderingTHREE.LineBasicMaterial({ color: side === 'left' ? 0xffb36b : 0xff6ba8, transparent: true, opacity: 0.92, depthTest: false }),
+      );
+      line.name = `${side}ArmDebugLine`;
+      line.renderOrder = 998;
+      root.add(line);
+      return { side, idleHand, shoulderLocal, line, bendDegX: ARM_BEND_DEG_X };
+    }
+
+    const rig = { root, dims, left: buildSide('left'), right: buildSide('right') };
+    editorLog('[Dance arms] Generated virtual shoulder->elbow->hand chain built.', 'info', {
+      handAttachSource: Number.isFinite(handAttachX) && Number.isFinite(handAttachY) ? 'model.userData' : 'fallback estimate',
+      left: { shoulderLocal: rig.left.shoulderLocal, idleHand: rig.left.idleHand },
+      right: { shoulderLocal: rig.right.shoulderLocal, idleHand: rig.right.idleHand },
+    });
+    return rig;
+  }
+
+  function solveArm(THREE, armSide, handTargetLocal) {
+    if (!window.LegBones?.solveTwoBoneLeg) return;
+    // window.LegBones.solveTwoBoneLeg is a generic 2-bone solver (fixed hip,
+    // live foot target, optional authored bend in -> knee + two segment
+    // quaternions + lengths out); it has no leg-specific assumptions, so it
+    // works unmodified for a shoulder/elbow/hand chain too.
+    const solved = window.LegBones.solveTwoBoneLeg(THREE, {
+      hip: armSide.shoulderLocal, foot: handTargetLocal, bendDegX: armSide.bendDegX, bendDegZ: 0,
+    });
+    const positions = armSide.line.geometry.attributes.position;
+    positions.setXYZ(0, armSide.shoulderLocal.x, armSide.shoulderLocal.y, armSide.shoulderLocal.z);
+    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z);
+    positions.setXYZ(2, handTargetLocal.x, handTargetLocal.y, handTargetLocal.z);
+    positions.needsUpdate = true;
+    armSide.line.geometry.computeBoundingSphere?.();
+  }
+
+  function springStep(pos, vel, target, stiffness, dampingLambda, dt) {
+    const accel = (target - pos) * stiffness - vel * dampingLambda; // Standard damped harmonic oscillator (F = -k·x - c·v); underdamped on purpose so a jiggle actually overshoots and settles instead of just easing in.
+    const newVel = vel + accel * dt;
+    return { pos: pos + newVel * dt, vel: newVel };
+  }
+
+  function armTargetsForStyle(THREE, dims, arms, style, localBeat, motion, drunk, dt) {
+    const reach = dims.height * 0.62; // Used as the fully-extended arm length for raised/reaching/punching poses.
+    if (style === 'raise-reach') {
+      return {
+        right: new THREE.Vector3(arms.right.shoulderLocal.x * 0.4, arms.right.shoulderLocal.y + reach, arms.right.shoulderLocal.z), // Raised straight overhead.
+        left: new THREE.Vector3(arms.left.shoulderLocal.x, arms.left.shoulderLocal.y + reach * 0.12, arms.left.shoulderLocal.z - reach * 0.85), // Stretched forward at roughly shoulder height.
+      };
+    }
+    if (style === 'tpose-jiggle') {
+      const spread = dims.width * 0.62;
+      const out = {};
+      for (const side of ['left', 'right']) {
+        const sign = Math.sign(arms[side].shoulderLocal.x) || (side === 'left' ? 1 : -1); // Extends the hand further out on whichever side the shoulder's own X already sits, regardless of which absolute-X convention this avatar's rig uses.
+        const jiggleTarget = (motion.bodySway + drunk.roll) * dims.width * 0.9; // Uses the body's own current roll as the spring's chase target, so the jiggle is driven directly by weight shifts.
+        const step = springStep(state.armJiggle[side], state.armJiggle[`${side}Vel`], jiggleTarget, 90, 9, dt);
+        state.armJiggle[side] = step.pos;
+        state.armJiggle[`${side}Vel`] = step.vel;
+        out[side] = new THREE.Vector3(arms[side].shoulderLocal.x + sign * spread + state.armJiggle[side], arms[side].shoulderLocal.y, arms[side].shoulderLocal.z);
+      }
+      return out;
+    }
+    if (style === 'overhead-punch') {
+      const punchPhase = ((localBeat % 1) + 1) % 1; // One full punch per beat.
+      const extend = Math.pow(Math.max(0, Math.sin(Math.PI * punchPhase)), 0.4); // Snappier than a plain sine: reaches near-full extension quickly, eases back down.
+      const out = {};
+      for (const side of ['left', 'right']) {
+        const shoulder = arms[side].shoulderLocal;
+        const cocked = new THREE.Vector3(shoulder.x, shoulder.y + reach * 0.12, shoulder.z + dims.height * 0.08); // Fists near the chest between punches.
+        const extended = new THREE.Vector3(shoulder.x * 0.5, shoulder.y + reach, shoulder.z); // Straight up overhead at full punch.
+        out[side] = cocked.lerp(extended, extend);
+      }
+      return out;
+    }
+    return { // 'none': relaxed idle pose, matching the real game's own default hand-attach position.
+      left: arms.left.idleHand.clone(),
+      right: arms.right.idleHand.clone(),
+    };
+  }
+
+  function applyDanceArms(THREE, localBeat, motion, drunk, dt, dims) {
+    if (!state.armRig) return;
+    const targets = armTargetsForStyle(THREE, dims, state.armRig, state.armStyle, localBeat, motion, drunk, dt);
+    solveArm(THREE, state.armRig.left, targets.left);
+    solveArm(THREE, state.armRig.right, targets.right);
+  }
+
   function currentThree(model) {
     if (window.THREE?.Vector3 && window.THREE?.Quaternion && window.THREE?.Euler) return window.THREE;
     if (!model?.position?.constructor || !model?.quaternion?.constructor || !model?.rotation?.constructor) return null;
@@ -430,13 +591,14 @@
   function renderDanceFrame(now) {
     const backdrop = window.HobunjiGameplayBackdrop; // Used to reach the editor's currently previewed avatar without coupling to editor-private variables.
     const model = backdrop?.getAvatarModel?.() || null; // Used as the exact PNG-plane avatar root currently visible in the editor.
+    const scene = backdrop?.getScene?.() || null; // Used only to source the arm rig's Line/BufferGeometry/LineBasicMaterial constructors from LegBonesDebug.
     const THREE = currentThree(model); // Used by the shared leg solver and additive transform math.
     if (!state.enabled || !model || !THREE) {
       if (!state.enabled && state.model) releaseModel();
       updateStatus(now, model ? 'Dance preview off.' : 'Waiting for preview avatar.');
       return;
     }
-    bindModel(THREE, model);
+    bindModel(THREE, model, scene);
     restoreBodyBase();
 
     const dt = Math.max(0, Math.min(0.05, (now - state.lastNow) / 1000)); // Used to prevent a tab-resume hitch from producing a huge drunken damping step.
@@ -457,12 +619,15 @@
 
     applyBodyMotion(THREE, motion, drunk, sizeScale);
     applyDanceLegs(THREE, localBeat, mappedIntensity, motion, drunk);
+    applyDanceArms(THREE, localBeat, motion, drunk, dt, dimensions);
     model.updateMatrixWorld(true);
 
     state.debug = {
       ...state.debug,
       enabled: true,
       style: state.style,
+      armStyle: state.armStyle,
+      armRigReady: !!state.armRig,
       groove: state.groove,
       grooveScale,
       mappedIntensity,
@@ -586,6 +751,25 @@
     const spacer = document.createElement('span'); // Used only to keep the selector aligned with the numeric slider rows.
     styleRow.append(styleLabel, styleSelect, spacer);
     panel.appendChild(styleRow);
+
+    const armRow = document.createElement('label'); // Used to select which generated-arm pose drives the virtual shoulder->elbow->hand chain.
+    armRow.className = 'danceRow';
+    const armLabel = document.createElement('span');
+    armLabel.textContent = 'Arms';
+    const armSelect = document.createElement('select'); // Used to choose the arm movement type; independent of the body/leg Style above.
+    armSelect.id = 'proceduralDanceArmStyle';
+    for (const [key, label] of Object.entries(ARM_STYLE_LABEL)) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = label;
+      armSelect.appendChild(option);
+    }
+    armSelect.value = state.armStyle;
+    armSelect.addEventListener('change', () => { state.armStyle = armSelect.value; });
+    const armSpacer = document.createElement('span');
+    armRow.append(armLabel, armSelect, armSpacer);
+    panel.appendChild(armRow);
+
     panel.appendChild(makeRangeRow('Groove', 'proceduralDanceGroove', state.groove, 0, 100, (value) => { state.groove = value; }));
     panel.appendChild(makeRangeRow('Drunkenness', 'proceduralDanceDrunk', state.drunkenness, 0, 100, (value) => { state.drunkenness = value; }));
 
@@ -668,7 +852,8 @@
     setGroove(value) { state.groove = Math.max(0, Math.min(100, Number(value) || 0)); },
     setDrunkenness(value) { state.drunkenness = Math.max(0, Math.min(100, Number(value) || 0)); },
     setStyle(value) { if (STYLE_INTENSITY[value] != null) { state.style = value; state.startedAt = performance.now(); state.previousBeatIndex = null; } },
-    getDebug() { return { ...state.debug, enabled: state.enabled, style: state.style, groove: state.groove, drunkenness: state.drunkenness }; },
+    setArmStyle(value) { if (ARM_STYLE_LABEL[value] != null) state.armStyle = value; },
+    getDebug() { return { ...state.debug, enabled: state.enabled, style: state.style, armStyle: state.armStyle, groove: state.groove, drunkenness: state.drunkenness }; },
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
