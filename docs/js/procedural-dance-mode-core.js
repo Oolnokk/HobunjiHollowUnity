@@ -621,11 +621,19 @@
   function boot() {
     buildUi();
     if (!installRendererHook()) {
-      const retry = window.setInterval(() => { // Used only until the asynchronously-created editor renderer becomes available.
+      // The repository-backed editor runtime (portrait/creature scripts, then the
+      // NPC database) is fetched from GitHub before the Three.js renderer exists,
+      // and that fetch alone regularly runs well past ten seconds, so this must
+      // keep retrying far longer than a single such fetch could plausibly take —
+      // otherwise Dance silently never attaches and the toggle button does nothing.
+      const retry = window.setInterval(() => {
         buildUi();
         if (installRendererHook()) window.clearInterval(retry);
       }, 250);
-      window.setTimeout(() => window.clearInterval(retry), 15000);
+      window.setTimeout(() => {
+        window.clearInterval(retry);
+        if (!state.renderHookInstalled) updateStatus(performance.now(), 'Dance could not find the editor renderer; reload the editor to retry.');
+      }, 120000);
     }
   }
 
