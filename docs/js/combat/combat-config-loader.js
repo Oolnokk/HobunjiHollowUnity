@@ -86,7 +86,7 @@
     ['js/npc-age-effects-runtime.js?v=20260903a', () => !!window.HobunjiNpcAgeEffects],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
-    ['js/npc-age-body-posture.js?v=20260903b', () => !!window.HobunjiNpcAgeBodyPosture],
+    ['js/npc-age-body-posture.js?v=20260903c', () => !!window.HobunjiNpcAgeBodyPosture],
     ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
     ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20260814a', () => !!window.HobunjiCropBillboardPresentation],
