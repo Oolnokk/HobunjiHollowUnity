@@ -10,6 +10,7 @@ const author = read('docs/tools/animation-author/index.html');
 const patch = read('docs/js/animation-author-preview-rig-space-fix.js');
 const wrapper = read('docs/tools/animation-author-rig-space-test/index.html');
 const transformDumpBootstrap = read('docs/js/transform-dump-utils.js');
+const attachmentRigMaster = read('docs/config/attachment-rig-profiles.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 
 // Keep the alternative coordinate-space implementation available for isolated
@@ -55,4 +56,23 @@ assert.match(transformDumpBootstrap, /hobunjiNpcPlaneAvatarRepoViewer\.source\.v
 assert.match(transformDumpBootstrap, /ref: sha/,
   'commit-page pinning must make the current page SHA the requested repository ref');
 
-console.log('Animation Author preview isolation, legacy Object3D cleanup, and pinned-ref guards passed');
+// V15.25 can synthesize hand shoulders from stale V15.23 perches and publish
+// them into the mutable runtime mirror before a later layer tries to use that
+// mirror as canonical input. The immutable master must remain a separate source
+// of truth, and production should repair only exact historical fingerprints.
+assert.match(attachmentRigMaster, /HOBUNJI_ATTACHMENT_RIG_MASTER\s*=\s*deepFreeze\(master\)/,
+  'attachment rig config must expose an immutable canonical master independent of its editable runtime mirror');
+assert.match(transformDumpBootstrap, /HOBUNJI_ATTACHMENT_RIG_MASTER\?\.profiles\?\.characters/,
+  'stale shoulder repair must source replacements from the immutable master, not HOBUNJI_ATTACHMENT_RIG_PROFILES');
+assert.match(transformDumpBootstrap, /'mao-ao::male': \[-0\.29650716367602115, 0\.6947557240731601, 0\]/,
+  'regression guard must recognize the exact V15.23 Mao-ao male shoulder-perch fingerprint');
+assert.match(transformDumpBootstrap, /scaledTuple\(legacyPerch, 0\.9\)/,
+  'stale detector must recognize the 0.9-scaled V15.23 perch seen in the live rigger dump');
+assert.match(transformDumpBootstrap, /legacyLeft[\s\S]*legacyRight/,
+  'stale detector must recognize the symmetric shoulders synthesized from that old perch');
+assert.match(transformDumpBootstrap, /hobunji_attachment_rig_character_master_sync\.json/,
+  'repaired profiles must go back through the existing Animation Author import surface');
+assert.match(transformDumpBootstrap, /animationAuthorCanonicalShoulderSync/,
+  'mobile diagnostics must expose the canonical-shoulder repair state');
+
+console.log('Animation Author preview isolation, cleanup, pinned-ref, and immutable-master shoulder guards passed');
