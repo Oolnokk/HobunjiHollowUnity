@@ -4,7 +4,145 @@
 (function () {
   'use strict';
 
+  const SELF_SCRIPT_SRC = document.currentScript?.src || ''; // Used to load sibling editor adapters from the same branch/commit as this script, including commit-pinned GitHack previews.
+  const DANCE_SCRIPT_ID = 'proceduralDanceModeScript'; // Prevents the procedural dance workspace from being loaded twice.
   const STYLE_ID = 'proceduralImpactTabsStyles'; // Prevents duplicate workspace CSS if the adapter is evaluated twice.
+
+  // The procedural animation editor owns its own embedded leg rig and does not
+  // load docs/js/procedural-leg-animation.js, so Dance cannot rely on that
+  // runtime's global setShowBones() implementation. This bridge preserves the
+  // same public toggle API while drawing the same capsule/joint guides from the
+  // editor's already-existing hip -> calf -> foot transforms. No second leg rig
+  // or IK solver is created.
+  function installEditorLegBoneGuideBridge() {
+    if (window.ProceduralLegAnimation?.setShowBones) return;
+
+    let showBones = false; // Tracks the Dance panel's shared leg-bone visibility toggle.
+    let guideGroup = null; // Holds world-space guide meshes for both existing editor leg chains.
+    let guideScene = null; // Detects scene replacement so guides are rebuilt under the live preview scene.
+    let lastAvailability = null; // Prevents the mobile-visible status from being rewritten every animation frame.
+    const guides = {}; // Stores the four guide meshes used for each side.
+
+    function makeBoneGuide(THREE, color) {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.62, depthTest: false, depthWrite: false }); // Matches the runtime procedural-leg guide material.
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.015, 1, 8), material); // Matches the runtime guide capsule dimensions.
+      mesh.renderOrder = 42;
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+
+    function makeJointGuide(THREE, color, radius) {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false }); // Keeps joint markers visible through the PNG plane.
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 8), material); // Matches the runtime procedural-leg joint marker.
+      mesh.renderOrder = 43;
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+
+    function buildGuides(THREE, scene) {
+      guideGroup?.removeFromParent?.();
+      guideGroup = new THREE.Group(); // Keeps all editor-only bone diagnostics removable as one object.
+      guideGroup.name = 'EditorProceduralLegBoneGuides';
+      guideGroup.userData.hobunjiEditorLegBoneGuides = true;
+      for (const side of ['left', 'right']) {
+        const hip = makeJointGuide(THREE, 0xffd98f, 0.021); // Mirrors the runtime hip-guide color and size.
+        const thigh = makeBoneGuide(THREE, 0xffb267); // Mirrors the runtime thigh guide.
+        const knee = makeJointGuide(THREE, 0xffd39a, 0.022); // Mirrors the runtime knee guide.
+        const calf = makeBoneGuide(THREE, 0xff7f50); // Mirrors the runtime calf guide.
+        guides[side] = { hip, thigh, knee, calf };
+        guideGroup.add(hip, thigh, knee, calf);
+      }
+      guideGroup.visible = showBones;
+      scene.add(guideGroup);
+      guideScene = scene;
+    }
+
+    function legNodes(model, side) {
+      const hip = model?.getObjectByName?.(`${side}_hip`) || null; // Reuses the editor's actual IK hip pivot.
+      const calf = model?.getObjectByName?.(`${side}_calf`) || null; // Its world position is the live knee after the thigh solve.
+      const foot = model?.getObjectByName?.(`${side}_foot`) || null; // Its world position is the live IK foot endpoint.
+      return hip && calf && foot ? { hip, calf, foot } : null;
+    }
+
+    function orientBone(THREE, mesh, start, end) {
+      const direction = end.clone().sub(start); // Defines this diagnostic capsule from the live solved endpoints.
+      const length = direction.length();
+      if (!(length > 0.000001)) {
+        mesh.visible = false;
+        return;
+      }
+      mesh.visible = true;
+      mesh.position.copy(start).add(end).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.multiplyScalar(1 / length));
+      mesh.scale.set(1, length, 1);
+    }
+
+    function updateSide(THREE, model, side) {
+      const nodes = legNodes(model, side); // Reads the same solved transforms Dance and the editor are already moving.
+      if (!nodes) return false;
+      const hipWorld = nodes.hip.getWorldPosition(new THREE.Vector3());
+      const kneeWorld = nodes.calf.getWorldPosition(new THREE.Vector3());
+      const footWorld = nodes.foot.getWorldPosition(new THREE.Vector3());
+      const guide = guides[side];
+      guide.hip.visible = true;
+      guide.hip.position.copy(hipWorld);
+      guide.knee.visible = true;
+      guide.knee.position.copy(kneeWorld);
+      orientBone(THREE, guide.thigh, hipWorld, kneeWorld);
+      orientBone(THREE, guide.calf, kneeWorld, footWorld);
+      return true;
+    }
+
+    function updateGuides() {
+      const backdrop = window.HobunjiGameplayBackdrop; // Supplies the exact model and scene currently owned by the procedural editor.
+      const scene = backdrop?.getScene?.();
+      const model = backdrop?.getAvatarModel?.();
+      const THREE = window.THREE;
+      if (scene && THREE && guideScene !== scene) buildGuides(THREE, scene);
+      const available = Boolean(scene && model && THREE && legNodes(model, 'left') && legNodes(model, 'right'));
+      if (guideGroup) guideGroup.visible = showBones && available;
+      if (showBones && available) {
+        model.updateMatrixWorld?.(true);
+        updateSide(THREE, model, 'left');
+        updateSide(THREE, model, 'right');
+      }
+      if (showBones && available !== lastAvailability) {
+        updateVisibleStatus(available ? 'Leg bones shown: editor IK chain.' : 'Leg bones unavailable: editor IK chain not found.');
+      }
+      lastAvailability = available;
+      requestAnimationFrame(updateGuides);
+    }
+
+    window.ProceduralLegAnimation = {
+      __editorBoneGuideBridge: true,
+      setShowBones(show) {
+        showBones = !!show;
+        if (guideGroup) guideGroup.visible = showBones && lastAvailability !== false;
+        lastAvailability = null; // Forces the next frame to report whether a real chain was found instead of claiming success blindly.
+      },
+      get showBones() {
+        return showBones;
+      },
+    };
+    window.HobunjiEditorLegBoneGuides = {
+      get visible() { return showBones; },
+      get available() { return lastAvailability === true; },
+    }; // Gives mobile diagnostics a tiny inspectable state without exposing editor-private transforms.
+    requestAnimationFrame(updateGuides);
+    console.info('[Impact tabs] Editor leg-bone guide bridge installed for the procedural animator\'s embedded IK chains.');
+  }
+
+  function loadProceduralDanceMode() {
+    if (window.ProceduralDanceMode?.installed || document.getElementById(DANCE_SCRIPT_ID)) return;
+    const script = document.createElement('script'); // Loads the modular dance authoring adapter without adding more code to the giant editor HTML.
+    script.id = DANCE_SCRIPT_ID;
+    script.async = false;
+    script.src = SELF_SCRIPT_SRC
+      ? new URL('procedural-dance-mode.js', SELF_SCRIPT_SRC).href
+      : new URL('../../js/procedural-dance-mode.js', window.location.href).href; // Keeps direct editor loads working even if currentScript is unavailable.
+    script.addEventListener('error', () => console.error(`[Dance mode] Failed to load ${script.src}`));
+    document.head.appendChild(script);
+  }
 
   function injectImpactWorkspaceStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -206,6 +344,8 @@
     console.info('[Impact tabs] Tabbed authoring workspace ready; existing control nodes and handlers preserved.');
   }
 
+  installEditorLegBoneGuideBridge();
+  loadProceduralDanceMode();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildImpactWorkspace, { once: true });
   else buildImpactWorkspace();
 })();
