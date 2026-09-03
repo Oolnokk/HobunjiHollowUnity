@@ -106,6 +106,7 @@ assert.match(gameSource, /NpcCharacterState\?\.attachAlcoholPose\?\.\(THREE, roo
 assert.match(gameSource, /ProceduralLegAnimation\?\.attach\(THREE, root, \{[\s\S]*?drunkBodyRoot: avatarGroup/, 'live procedural feet remain attached to the floor root');
 
 assert.match(toolSource, /Hobunji Age Effect Tool/, 'combined age tool has its own first-class tools page');
+assert.match(toolSource, /static body hierarchy/, 'Age Tool labels the actual static hierarchy architecture instead of the removed NPC composer');
 assert.match(toolSource, /config\/attachment-rig-profiles\.js/, 'Age Tool loads authored species/gender attachment coordinates');
 assert.match(toolSource, /png-plane-avatar\.js/, '3D preview uses the canonical PNG-plane avatar runtime');
 assert.match(toolSource, /procedural-leg-animation\.js/, '3D preview uses gameplay procedural feet');
@@ -120,6 +121,9 @@ assert.doesNotMatch(toolSource, /ProceduralHandAttachments\.attach\(/, 'Age Tool
 assert.match(toolSource, /avatar\?\.userData\?\.proceduralHandRig/, 'Age Tool reads the single hand rig owned by ProceduralHandFrameDriver');
 assert.match(toolSource, /currentFeet\?\.getStandingPoseDebug\?\.\(\)/, 'Age Tool exposes runtime feet diagnostics');
 assert.match(toolSource, /verticalOffsetReductionRange[^>]*type="range"/, 'standing height remains authorable through the config-driven control');
+assert.match(toolSource, /function renderThree\(\) \{\s*renderer\?\.render\?\.\(scene, camera\);\s*\}/, 'Age Tool change handler renders without recursively updating OrbitControls');
+assert.doesNotMatch(toolSource, /function renderThree\(\) \{[\s\S]{0,120}orbit\?\.update/, 'Age Tool render callback cannot recurse through OrbitControls change events');
+assert.match(toolSource, /orbit\.update\(\);\s*orbit\.addEventListener\('change', renderThree\)/, 'OrbitControls is initialized once before its render-only change listener is attached');
 
 assert.match(loaderSource, /config\/npc-age-effects\.js\?v=20260903/, 'gameplay loads the shared age config');
 assert.match(loaderSource, /npc-age-body-posture\.js\?v=20260903/, 'gameplay loads the event-driven age posture integration');
