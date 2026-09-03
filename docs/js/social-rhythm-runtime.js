@@ -488,11 +488,11 @@
   }
 
   function patchFrameAudio(frame) {
-    if (!frame || state.framePatches.has(frame)) return;
-    let win = null;
-    try { win = frame.contentWindow; } catch (_) { return; }
-    if (!win) return;
-    state.framePatches.add(frame);
+    if (!frame) return;
+    let win = null, doc = null;
+    try { win = frame.contentWindow; doc = frame.contentDocument; } catch (_) { return; }
+    if (!win || !doc || state.framePatches.has(doc)) return;
+    state.framePatches.add(doc); // The player reuses one iframe element but navigates it to a fresh document every session.
 
     const Context = win.AudioContext || win.webkitAudioContext;
     const contextProto = Context?.prototype;
