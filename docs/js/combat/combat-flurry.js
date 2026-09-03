@@ -110,7 +110,14 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, afflictionBonuses: effects.afflictions });
+            // heavy: true — Flurry counts as a heavy attack like Charged
+            // Breaker (see combat-death-mark.js): each strike over its held
+            // duration can consume a Death Mark for a burst multiplier, or
+            // keep riding an already-open empower window, the same as any
+            // other heavy hit. That duration is exactly what lets a single
+            // flurry cash in a mark and then keep benefiting from its 7s
+            // window across several of its own later strikes.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: true, afflictionBonuses: effects.afflictions });
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
             hits++;
             lastName = c.def.label;
