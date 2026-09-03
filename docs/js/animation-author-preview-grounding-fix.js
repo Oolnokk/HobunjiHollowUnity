@@ -10,7 +10,20 @@
   'use strict';
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname || '')) return;
 
-  const PATCH_ID = 'animation-author-gameplay-grounding-v1';
+  const PATCH_ID = 'animation-author-gameplay-grounding-v2-visible-diagnostic';
+
+  function announce(text, level = 'info') {
+    try {
+      if (typeof log === 'function') log(text, level);
+      else console[level === 'warn' ? 'warn' : 'info'](`[animation-author-grounding] ${text}`);
+    } catch (_) {
+      console.info(`[animation-author-grounding] ${text}`);
+    }
+    try {
+      const badge = window.parent !== window ? window.parent.document.getElementById('badge') : null;
+      if (badge) badge.textContent = text;
+    } catch (_) {}
+  }
 
   function install() {
     if (typeof portraitModelMetrics !== 'function'
@@ -65,7 +78,7 @@
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.previewGrounding = 'PNGPlaneAvatar floor-root parity; stale +modelHeight/2 removed';
     window.__hobunjiAnimationAuthorGameplayGrounding = PATCH_ID;
-    console.info('[animation-author-grounding] removed obsolete preview +modelHeight/2 offset');
+    announce('GROUNDING TEST ACTIVE · removed obsolete preview +modelHeight/2 offset');
     return true;
   }
 
@@ -73,7 +86,11 @@
     if (install()) return;
     let attempts = 0;
     const timer = setInterval(() => {
-      if (install() || ++attempts >= 240) clearInterval(timer);
+      if (install()) clearInterval(timer);
+      else if (++attempts >= 240) {
+        clearInterval(timer);
+        announce('GROUNDING TEST FAILED TO INSTALL', 'warn');
+      }
     }, 50);
   }
 
