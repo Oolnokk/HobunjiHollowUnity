@@ -71,13 +71,20 @@ assert.match(postureSource, /previousAttach = legApi\.attach\.bind\(legApi\)/, '
 assert.match(toolSource, /Hobunji Age Effect Tool/, 'combined age tool has its own first-class tools page');
 assert.match(toolSource, /png-plane-avatar\.js/, '3D preview uses the same PNG-plane avatar runtime as gameplay');
 assert.match(toolSource, /procedural-leg-animation\.js/, '3D preview uses gameplay procedural feet');
-assert.match(toolSource, /held-action-animations\.js/, '3D preview boots the gameplay hand runtime');
-assert.match(toolSource, /ProceduralHandAttachments\.attach/, '3D preview actually attaches modeled gameplay hands');
+assert.match(toolSource, /held-action-animations\.js/, '3D preview boots the gameplay automatic hand runtime');
+assert.match(toolSource, /const PORTRAIT_SIZE = 256/, 'Age Effect Tool uses the same square portrait backing size as Attack Animation Editor');
+assert.match(toolSource, /worldModelWidth \?\? 0\.9/, 'Age Effect Tool uses the same in-game world model base as Attack Animation Editor');
+assert.match(toolSource, /modelWidth: MODEL_W,[\s\S]*modelHeight: MODEL_W/, 'PNG portrait build uses the Attack Animation Editor square model sizing contract before species scaling');
+assert.match(toolSource, /currentAvatar\.position\.y = modelHeight \/ 2/, 'Age Effect Tool lifts the portrait root by half its resolved runtime height exactly like Attack Animation Editor');
+assert.match(toolSource, /currentAvatar\.userData\.proceduralHandParent = bodyContent/, 'the single automatic hand rig is parented to the torso content so it follows age pitch');
+assert.match(toolSource, /avatar\?\.userData\?\.proceduralHandRig/, 'Age Effect Tool reads the hand rig created by ProceduralHandFrameDriver rather than creating another pair');
+assert.match(toolSource, /ProceduralHandFrameDriver\?\.syncNow\?\.\(\)/, 'Age Effect Tool synchronizes the shared automatic hand driver after parenting the portrait');
+assert.doesNotMatch(toolSource, /ProceduralHandAttachments\.attach\(/, 'Age Effect Tool never manually attaches a second duplicate hand rig');
 assert.match(toolSource, /ProceduralLegAnimation\.attach/, '3D preview actually attaches gameplay feet');
 assert.match(toolSource, /standingPosteriorY/, 'torso preview pivots around the gameplay floor-relative posterior');
 assert.match(toolSource, /torsoPitchDeg/, 'visual tool exposes the new animation-composer torso control');
-assert.match(toolSource, /ensurePortraitCosmetics\?\.\(\{assetBase:'\.\.\/\.\.\/assets\/',configBase:'\.\.\/\.\.\/config\/'\}\)/, 'Age Effect Tool initializes the shared portrait cosmetics cache before building NPC profiles');
-assert.match(toolSource, /if\(!profile\)throw new Error\(`Could not build portrait profile/, 'Age Effect Tool reports profile boot/data failures before reading bodyColors');
+assert.match(toolSource, /ensurePortraitCosmetics\?\.\(\{ assetBase: '\.\.\/\.\.\/assets\/', configBase: '\.\.\/\.\.\/config\/' \}\)/, 'Age Effect Tool initializes the shared portrait cosmetics cache before building NPC profiles');
+assert.match(toolSource, /if \(!profile\) throw new Error\(`Could not build portrait profile/, 'Age Effect Tool reports profile boot/data failures before reading bodyColors');
 
 assert.match(loaderSource, /config\/npc-age-effects\.js\?v=20260903a[\s\S]*npc-age-effects-runtime\.js\?v=20260903a/, 'gameplay loads shared age config before portrait runtime');
 assert.match(loaderSource, /drunk-locomotion\.js\?v=20260812a[\s\S]*npc-age-body-posture\.js\?v=20260903a/, 'age torso layer decorates the animation stack after drunk locomotion');
