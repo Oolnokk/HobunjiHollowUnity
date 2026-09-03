@@ -115,6 +115,12 @@
       lastDiagnosedRoot = canonicalRoot;
       if (!canonicalRoot) { editorLog('[Dance bones] LegBonesDebug not found in the scene yet.', 'warn'); return; }
       const Vector3 = canonicalRoot.position?.constructor;
+      // A fixed absolute epsilon missed a real bug here: a ~2.6cm hip-to-foot
+      // span passed a 1e-4 check yet was visually invisible on a ~45cm-tall
+      // avatar. Judge "too small to see" relative to the avatar's own height
+      // instead of an arbitrary constant.
+      const modelHeight = Number(window.HobunjiGameplayBackdrop?.getAvatarModel?.()?.userData?.portraitModelHeight) || null;
+      const degenerateThreshold = modelHeight ? modelHeight * 0.08 : 1e-4;
       const summarize = (side) => {
         const line = lineForSide(canonicalRoot, side);
         if (!line || !Vector3) return { side, present: false };
@@ -122,11 +128,11 @@
         const hasHip = readLinePoint(line, 0, hip);
         const hasKnee = readLinePoint(line, 1, knee);
         const hasFoot = readLinePoint(line, 2, foot);
-        const hipToFootDistance = hasHip && hasFoot ? hip.distanceTo(foot) : null; // A near-zero span means the line has no real leg shape to draw, even if visible.
+        const hipToFootDistance = hasHip && hasFoot ? hip.distanceTo(foot) : null; // A span that's tiny relative to avatar height means the line has no real leg shape to draw, even if visible.
         return {
           side, present: true, hasHip, hasKnee, hasFoot,
           hipToFootDistance,
-          degenerate: hipToFootDistance != null && hipToFootDistance < 1e-4,
+          degenerate: hipToFootDistance != null && hipToFootDistance < degenerateThreshold,
         };
       };
       editorLog('[Dance bones] LegBonesDebug diagnostic', 'info', {
@@ -134,6 +140,8 @@
         visible: canonicalRoot.visible,
         parentVisible: canonicalRoot.parent ? canonicalRoot.parent.visible : null,
         childCount: canonicalRoot.children?.length ?? 0,
+        modelHeight,
+        degenerateThreshold,
         left: summarize('left'),
         right: summarize('right'),
       });

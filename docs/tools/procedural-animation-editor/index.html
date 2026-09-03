@@ -55467,6 +55467,18 @@ function posteriorYForAnalysis(analysis) {
   if (!analysis) return 0;
   const modelHeight = Number(analysis.gameModelHeight) || 0.9;
   const baseY = Number.isFinite(analysis.handAttachY) ? analysis.handAttachY : modelHeight / 2;
+  // window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY is the one posterior
+  // formula shared by gameplay, procedural limbs, and Animation Author (see its
+  // own comment in attachment-rig-profiles.js) and prefers each species'
+  // calibrated floor-relative heightPercentFromFloor over the pre-v9 legacy
+  // heightPercentOffset. Every authored species now has a calibrated floor
+  // percent, so calling heightPercentOffsetForSpecies() directly here (as this
+  // used to) silently fell back to the stale legacy formula for all of them,
+  // placing this hip pivot right at ground level instead of actual hip height.
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const posteriorRule = lib[`${analysis.speciesId}::${analysis.gender}`]?.posteriorRule;
+  const math = window.HOBUNJI_ATTACHMENT_RIG_MATH;
+  if (math?.characterPosteriorY && posteriorRule) return math.characterPosteriorY(posteriorRule, modelHeight, baseY);
   return baseY + modelHeight * heightPercentOffsetForSpecies(analysis.speciesId, analysis.gender) / 100;
 }
 
