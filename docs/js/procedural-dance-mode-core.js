@@ -498,7 +498,13 @@
       line.name = `${side}ArmDebugLine`;
       line.renderOrder = 998;
       root.add(line);
-      return { side, idleHand, shoulderLocal, line, bendDegX: ARM_BEND_DEG_X };
+      // docs/tools/procedural-animation-editor/index.html's buildExperimentalHandsForAvatar()
+      // names its generated hand mesh wrapper this exact way and parents it
+      // directly to the model too, so solveArm() can find and drive it by
+      // name once it exists (it loads asynchronously, so it may not be built
+      // yet on this same frame — solveArm() retries the lookup lazily).
+      const handMeshName = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
+      return { side, idleHand, shoulderLocal, line, bendDegX: ARM_BEND_DEG_X, handMeshName, handMesh: null };
     }
 
     const rig = { root, dims, left: buildSide('left'), right: buildSide('right') };
@@ -510,7 +516,9 @@
     return rig;
   }
 
-  function solveArm(THREE, armSide, handTargetLocal) {
+  const DOWN = Object.freeze({ x: 0, y: -1, z: 0 }); // Matches docs/js/leg-bones.js's own "down" convention and the hand GLB's authored "fingers point down" rest orientation.
+
+  function solveArm(THREE, model, armSide, handTargetLocal) {
     if (!window.LegBones?.solveTwoBoneLeg) return;
     // window.LegBones.solveTwoBoneLeg is a generic 2-bone solver (fixed hip,
     // live foot target, optional authored bend in -> knee + two segment
@@ -525,6 +533,14 @@
     positions.setXYZ(2, handTargetLocal.x, handTargetLocal.y, handTargetLocal.z);
     positions.needsUpdate = true;
     armSide.line.geometry.computeBoundingSphere?.();
+
+    if (!armSide.handMesh) armSide.handMesh = model?.getObjectByName?.(armSide.handMeshName) || null; // Loads asynchronously in index.html, so keep retrying the lookup until it appears.
+    if (!armSide.handMesh) return;
+    armSide.handMesh.position.copy(handTargetLocal);
+    const forearmDir = handTargetLocal.clone().sub(solved.knee); // Orients the hand so its authored "fingers point down" rest direction instead continues straight out past the wrist, along the forearm.
+    if (forearmDir.lengthSq() > 1e-10) {
+      armSide.handMesh.quaternion.setFromUnitVectors(new THREE.Vector3(DOWN.x, DOWN.y, DOWN.z), forearmDir.normalize());
+    }
   }
 
   function springStep(pos, vel, target, stiffness, dampingLambda, dt) {
@@ -572,11 +588,11 @@
     };
   }
 
-  function applyDanceArms(THREE, localBeat, motion, drunk, dt, dims) {
+  function applyDanceArms(THREE, model, localBeat, motion, drunk, dt, dims) {
     if (!state.armRig) return;
     const targets = armTargetsForStyle(THREE, dims, state.armRig, state.armStyle, localBeat, motion, drunk, dt);
-    solveArm(THREE, state.armRig.left, targets.left);
-    solveArm(THREE, state.armRig.right, targets.right);
+    solveArm(THREE, model, state.armRig.left, targets.left);
+    solveArm(THREE, model, state.armRig.right, targets.right);
   }
 
   function currentThree(model) {
@@ -621,7 +637,7 @@
 
     applyBodyMotion(THREE, motion, drunk, sizeScale);
     applyDanceLegs(THREE, localBeat, mappedIntensity, motion, drunk);
-    applyDanceArms(THREE, localBeat, motion, drunk, dt, dimensions);
+    applyDanceArms(THREE, model, localBeat, motion, drunk, dt, dimensions);
     model.updateMatrixWorld(true);
 
     state.debug = {

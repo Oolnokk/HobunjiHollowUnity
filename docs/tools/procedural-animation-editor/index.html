@@ -54974,6 +54974,7 @@ const KURRAYA_ASSETS = {
 const REQUIRED_SCRIPTS = [
   'config/scratchbones-config.js',
   'config/attachment-rig-profiles.js',
+  'config/hand-model-profiles.js',
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
@@ -55161,6 +55162,9 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     liftHeight: 0, // Reports the current peak swing-foot lift above the ground-flush idle center.
     leftPhase: 'idle', // Exposes whether the left foot is planted, swinging, or settling.
     rightPhase: 'idle', // Exposes whether the right foot is planted, swinging, or settling.
+  },
+  hands: {
+    root: null, // Parents both generated hand GLBs directly under the avatar model (same frame as handAttachX/Y), for Dance's generated arm bones to find and drive by name.
   },
   legBones: { // Invisible hip->thigh->calf debug visualization + authored-bend gizmo (see docs/js/leg-bones.js).
     enabled: true, // "Show leg bones" toggle.
@@ -58075,9 +58079,79 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   log(`Experimental ${speciesId} feet built from widest torso row ${scan.widestRangePx.width}px: X ${leftFoot.position.x.toFixed(3)}/${rightFoot.position.x.toFixed(3)}, Mao'ao width ratio ${rawTorsoWidthRatio.toFixed(3)}, procedural envelope X/Z ${sphereScaleXZ.toFixed(3)}, Y ${sphereScaleY.toFixed(3)}, custom GLB L/R ${importedLeftAsset?.name || 'none'}/${importedRightAsset?.name || 'none'}.`, 'info', procedural.feet.analysis);
 }
 
+function disposeExperimentalHands() { // Removes the generated hand GLBs before an avatar or preview mode is replaced.
+  const handsRoot = procedural.hands.root;
+  if (handsRoot) {
+    handsRoot.parent?.remove(handsRoot);
+    disposeObjectResources(handsRoot);
+  }
+  procedural.hands.root = null;
+}
+
+// Builds simple GLB hand markers — one per side, named `${model.name}_LeftHand`/
+// `_RightHand` and parented directly to the model (the same local space
+// handAttachX/handAttachY already live in) — for Dance's generated arm bones
+// (docs/js/procedural-dance-mode-core.js) to find by name and drive every
+// frame. Unlike the feet, nothing in this editor's own native gait moves
+// these; they simply sit at the idle hand-attach point until Dance (or
+// nothing) repositions them, mirroring how the real game's own hand system
+// is a single flat socket with no owned animation of its own either.
+async function buildExperimentalHandsForAvatar(model, avatar) {
+  disposeExperimentalHands();
+  if (!model || state.previewMode !== 'npc' || !window.HobunjiHandModelProfiles) return;
+  const THREE = state.three.THREE;
+  if (!THREE) return;
+  const speciesId = feetSpeciesIdForAvatar(avatar);
+  const handProfile = window.HobunjiHandModelProfiles.modelForSpecies(speciesId);
+  if (!handProfile?.glb) return; // No authored hand model for this species family; leave the arm bones without a hand mesh.
+  const modules = await loadFootGlbModules(); // Generic GLTFLoader/SkeletonUtils loader despite the name; already used for foot GLBs.
+  const loader = new modules.GLTFLoader();
+  const path = ensureSlash(state.settings?.docsRoot || 'docs/') + normalizePath(handProfile.glb);
+  const arrayBuffer = await fetchRepoArrayBuffer(path);
+  const gltf = await parseFootGlbBuffer(loader, arrayBuffer);
+  if (model !== state.three.model) { disposeObjectResources(gltf.scene); return; } // Avoids attaching a late result to an avatar replaced during this fetch.
+
+  const modelHeight = Number(model.userData?.portraitModelHeight) || 0.9;
+  const handHeightFraction = Number(window.HobunjiHandModelProfiles.data?.handHeightFraction) || 0.12;
+  const targetHeight = Math.max(0.001, modelHeight * handHeightFraction);
+  const sourceIsLeft = handProfile.mirrorX !== false; // Matches docs/js/procedural-hand-attachments.js's own sourceIsLeft convention (authored GLBs default to a left-hand basis).
+  const handAttachX = Number(model.userData?.handAttachX);
+  const handAttachY = Number(model.userData?.handAttachY);
+  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
+  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+
+  const handsRoot = new THREE.Group();
+  handsRoot.name = `${model.name || 'Avatar'}_procedural_hands`;
+  model.add(handsRoot);
+  procedural.hands.root = handsRoot;
+
+  for (const side of ['left', 'right']) {
+    const mesh = state.footGlb.skeletonClone ? state.footGlb.skeletonClone(gltf.scene) : gltf.scene.clone(true);
+    const mirrorSign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1); // Mirrors docs/js/procedural-hand-attachments.js's own left/right sign table.
+    mesh.scale.x = mirrorSign;
+    mesh.updateMatrixWorld(true);
+    let bounds = new THREE.Box3().setFromObject(mesh);
+    const size = bounds.getSize(new THREE.Vector3());
+    if (size.y > 0.000001) {
+      mesh.scale.multiplyScalar(targetHeight / size.y); // Preserves the mirror sign on X while uniformly resizing to the configured hand-height fraction.
+      mesh.updateMatrixWorld(true);
+      bounds = new THREE.Box3().setFromObject(mesh);
+    }
+    const center = bounds.getCenter(new THREE.Vector3());
+    mesh.position.sub(center); // Centers the mesh on its own local origin so Dance can drive one clean pivot.
+    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored "fingers point down" rest orientation inside it.
+    wrapper.name = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
+    wrapper.add(mesh);
+    wrapper.position.set(side === 'left' ? -Math.abs(safeHandAttachX) : Math.abs(safeHandAttachX), safeHandAttachY, 0);
+    handsRoot.add(wrapper);
+  }
+  log(`Generated ${speciesId} hand markers from ${handProfile.glb}.`);
+}
+
 function disposeCurrentThreeModel() {
   const t = state.three;
   disposeExperimentalFeet();
+  disposeExperimentalHands();
   state.kurraya.transformControls?.detach();
   procedural.pose.transformControls?.detach();
   disposeKurrayaReferences(false);
@@ -60235,6 +60309,12 @@ async function placeThreeModel(npc, avatar) {
     disposeExperimentalFeet();
     t.model.userData.experimentalFeet = { available: false, error: error.message };
     log(`Experimental feet could not be built for ${npc.name || npc.id}: ${error.message}`, 'warn');
+  }
+  try {
+    await buildExperimentalHandsForAvatar(t.model, avatar);
+  } catch (error) {
+    disposeExperimentalHands();
+    log(`Generated hand markers could not be built for ${npc.name || npc.id}: ${error.message}`, 'warn');
   }
   updateVerticalPlacementUi();
   updatePlaneMetadata();
