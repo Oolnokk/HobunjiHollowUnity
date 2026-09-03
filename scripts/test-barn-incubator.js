@@ -213,7 +213,7 @@ assert(map.furniture.some(entry => entry.itemKey === 'incubatorFurniture' && ent
 
 const stock = shopStock.shops.carpenterBarnPlans.additions.incubator;
 assert.equal(stock.planItem, 'barnIncubatorPlan', 'carpenter stock owns the incubator plan item ID');
-assert.equal(stock.price, 1000, 'incubator default price is editable in shop-stock.json');
+assert.equal(stock.price, 5000, 'incubator week-scale price is editable in shop-stock.json');
 assert.equal(window.BARN_INCUBATOR_CONFIG.gameplay.slots, 3, 'slot count is config-driven');
 assert.equal(window.BARN_INCUBATOR_CONFIG.gameplay.maturationDays, 2, 'maturation duration is config-driven');
 assert.equal(window.BARN_INCUBATOR_CONFIG.addition.roofSpineHeightMultiplier, 0.75, 'roof spine multiplier is config-driven');
