@@ -89,7 +89,7 @@ for (const watchedId of ['dzahiri_khibu', 'nashka_khibu']) {
 }
 const absentKaboku = apply(absentDb, overrides).npcs.find(npc => npc.id === 'kaboku_kunji');
 assert(absentKaboku.scheduleHooks.rules.some(rule => rule.generatedScheduleOverride === 'kaboku_afternoon_family_or_inn'
-  && rule.stationId === 'furniture_chair_map_i_inn_16_9' && rule.activity === 'avoiding Kinami'),
+  && rule.stationId === 'furniture_chair_map_i_inn_16_8' && rule.activity === 'avoiding Kinami'),
   'Kaboku falls back to an inn stool when neither family member is at the Khibu house');
 
 const twice = apply(composed, overrides);
@@ -103,8 +103,8 @@ for (const id of [
   'furniture_chair_map_i_carpenters_13_8',
   'furniture_chair_map_i_carpenters_12_9',
   'furniture_chair_map_i_carpenters_13_9',
-  'furniture_chair_map_i_inn_16_9',
+  'furniture_chair_map_i_inn_16_8',
 ]) assert(dynamicIds.has(id), `${id} is documented for schedule tooling`);
-if (inn) assert(inn.furniture.some(item => item.itemKey === 'stoolFurniture' && item.col === 16 && item.row === 9), 'Kaboku inn fallback stool exists');
+if (inn) assert(inn.furniture.some(item => item.itemKey === 'stoolFurniture' && item.col === 16 && item.row === 8), 'Kaboku inn fallback stool exists');
 
 console.log('npc schedule override tests passed');

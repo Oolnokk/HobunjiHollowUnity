@@ -10,6 +10,7 @@
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/avatar-preview-scene.js"></script>
 <script src="../../js/world-popup-text.js"></script>
 <style>
 @font-face{font-family:'KhymeryyanRomanLetters+Numbers';src:url('../../assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');font-weight:normal;font-style:normal;font-display:swap;size-adjust:115%}
@@ -66,24 +67,22 @@ let npcs=[]; // Repository or user-imported NPC records available to the avatar 
 let avatarModel=null; // Current PNG-plane model used by popup anchoring and visual preview.
 let renderGeneration=0; // Prevents a slower earlier avatar render replacing a later selection.
 let editingMode='floatPlus'; // Selects the one slider panel and popup mode currently previewed.
-let THREE=null,renderer=null,scene=null,camera=null,controls=null; // Exact repository Three.js preview runtime, loaded by PNGPlaneAvatar.
-let avatarHolder=null,centroidMarker=null,popupRuntime=null; // Scene objects created once by initThreePreview().
+let THREE=null,renderer=null,scene=null,camera=null,controls=null,avatarHolder=null; // Populated by AvatarPreviewScene.create() below, which pins the same Three.js build the Attack Animation Editor and the live game use.
+let previewScene=null,centroidMarker=null,popupRuntime=null; // Scene objects created once by initThreePreview().
 const $=id=>document.getElementById(id);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const status=(message,tone='good')=>{$('status').textContent=message;$('status').className='status '+tone};
 
 async function initThreePreview(){
-  const modules=await window.PNGPlaneAvatar.loadThreeModules();THREE=modules.THREE;
-  const canvas=$('view3d');renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
-  scene=new THREE.Scene();scene.background=new THREE.Color(0x060c14);
-  const cfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};camera=new THREE.PerspectiveCamera(cfg.previewCameraFovDeg||45,1,.01,100);
-  scene.add(new THREE.HemisphereLight(0xffffff,0x182435,1.8));const keyLight=new THREE.DirectionalLight(0xffffff,1.2);keyLight.position.set(2.5,3.5,4);scene.add(keyLight);
-  const grid=new THREE.GridHelper(cfg.previewGridSize||5,cfg.previewGridDivisions||10,0x33538a,0x1a2638);grid.position.y=-.55;scene.add(grid);
-  if(modules.OrbitControls){controls=new modules.OrbitControls(camera,canvas);controls.enableDamping=true;controls.dampingFactor=.08;controls.target.set(0,0,0)}
-  avatarHolder=new THREE.Group();avatarHolder.name='popup_editor_avatar_holder';scene.add(avatarHolder);
+  previewScene=await window.AvatarPreviewScene.create({
+    canvas:$('view3d'), backgroundColor:0x060c14, gridY:-.55, holderName:'popup_editor_avatar_holder', initialView:'angle',
+    onFrame:now=>{popupRuntime.update(now);const centroid=avatarModel?popupRuntime.avatarCentroidWorld(avatarHolder):null;centroidMarker.visible=!!centroid;if(centroid){centroidMarker.position.copy(centroid);centroidMarker.quaternion.copy(camera.quaternion)}},
+  });
+  ({THREE,renderer,scene,camera,controls,avatarHolder}=previewScene);
   centroidMarker=new THREE.Mesh(new THREE.RingGeometry(.035,.052,32),new THREE.MeshBasicMaterial({color:0x6aa7ff,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));centroidMarker.renderOrder=1300;scene.add(centroidMarker);
-  popupRuntime=window.WorldPopupText.init({THREE,camera,playerRoot:avatarHolder,getActiveScene:()=>scene});setCamera('angle');resizeThree();
-  new ResizeObserver(resizeThree).observe($('preview'));window.addEventListener('resize',resizeThree);
+  popupRuntime=window.WorldPopupText.init({THREE,camera,playerRoot:avatarHolder,getActiveScene:()=>scene});
+  new ResizeObserver(()=>previewScene.resize()).observe($('preview'));window.addEventListener('resize',()=>previewScene.resize());
+  previewScene.start();
 }
 
 function mergeSettings(base,extra){
@@ -103,9 +102,6 @@ function portraitExportFor(npc){
   appearance.bodyColors={...(source.bodyColors||{}),...(profile.appearance?.bodyColors||{}),...(profile.visuals?.appearance?.bodyColors||{}),...(npc.appearance?.bodyColors||{})};
   return{name:npc.name||npc.id||'NPC',appearance,equippedCosmetics:asEquipArray(raw.equippedCosmetics||profile.equippedCosmetics||profile.equipment||npc.equippedCosmetics),appliedDyes:raw.appliedDyes||profile.appliedDyes||npc.appliedDyes||{},portrait:npc.portrait||{},rawExport:raw};
 }
-function disposeAvatar(){
-  if(!avatarModel)return;avatarHolder.remove(avatarModel);avatarModel.traverse(child=>{child.geometry?.dispose?.();if(child.material){const materials=Array.isArray(child.material)?child.material:[child.material];materials.forEach(material=>{material.map?.dispose?.();material.dispose?.()})}});avatarModel=null;popupRuntime.clear();
-}
 async function renderAvatar(npc){
   const generation=++renderGeneration;status(`Rendering ${npc.name||npc.id}…`,'');
   const exported=portraitExportFor(npc);let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(exported);
@@ -116,7 +112,7 @@ async function renderAvatar(npc){
   await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,{seatId:npc.id||npc.name||'npc',forceEyesOpen:true});
   await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{seatId:npc.id||npc.name||'npc',portraitView:'behind',forceEyesOpen:true});
   if(generation!==renderGeneration)return;
-  disposeAvatar();avatarModel=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{backCanvas:back,profile,appearance:exported.appearance,npcRecord:npc,name:`NPC_${npc.id||npc.name||'preview'}`});avatarHolder.add(avatarModel);
+  avatarModel=previewScene.setAvatar(front,{backCanvas:back,profile,appearance:exported.appearance,npcRecord:npc,name:`NPC_${npc.id||npc.name||'preview'}`});popupRuntime.clear();
   replayBurst();status(`Showing ${npc.name||npc.id}. Real portrait metadata is driving the centroid and offsets.`);
 }
 function fillNpcSelect(){
@@ -151,22 +147,19 @@ function replayBurst(){
   if(editingMode==='floatPlus'){popupRuntime.showChange('damage',-18,{root:avatarHolder,mode:'floatPlus'});return}
   popupRuntime.queueReward('loot','+2 Pine Log',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('currency','+24g',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('favor','+8 Favor',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('masteryXp','+1 Hatchet Mastery',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('skillXp','+5 Farming XP',{root:avatarHolder,mode:'centeredFiveRow'});
 }
-function setCamera(view){const distance=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance)||3.2;const position=view==='front'?[0,distance*.12,distance]:[distance*.55,distance*.28,distance*.88];camera.position.set(...position);camera.lookAt(0,0,0);controls?.target.set(0,0,0);controls?.update()}
-function resizeThree(){if(!renderer||!camera)return;const rect=$('view3d').getBoundingClientRect(),width=Math.max(1,Math.floor(rect.width)),height=Math.max(1,Math.floor(rect.height));renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix()}
-function animate(now){controls?.update();popupRuntime.update(now);const centroid=avatarModel?popupRuntime.avatarCentroidWorld(avatarHolder):null;centroidMarker.visible=!!centroid;if(centroid){centroidMarker.position.copy(centroid);centroidMarker.quaternion.copy(camera.quaternion)}renderer.render(scene,camera);requestAnimationFrame(animate)}
 async function boot(){
   assignmentRows();
   if(document.fonts?.load)await document.fonts.load("900 72px 'KhymeryyanRomanLetters+Numbers'").catch(()=>[]);
   await initThreePreview();
   const [settingsResponse,npcResponse]=await Promise.all([fetch('../../config/ui/world-popup-settings.json'),fetch(NPC_DB_URL)]);if(!settingsResponse.ok||!npcResponse.ok)throw new Error(`Repository load failed (${settingsResponse.status}/${npcResponse.status}).`);
   repoSettings=await settingsResponse.json();const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');settings=popupRuntime.applySettings(mergeSettings(repoSettings,saved));renderControls();
-  await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});npcs=normalizeDatabase(await npcResponse.json()).filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0]);requestAnimationFrame(animate);
+  await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});npcs=normalizeDatabase(await npcResponse.json()).filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0]);
 }
 document.addEventListener('input',event=>{if(event.target.matches('[data-assignment],#floatWorldHeight,#floatXOffset,#floatYOffset,#listWorldHeight,#listXOffset,#listYOffset'))previewSettings()});
 $('npcSelect').onchange=()=>renderAvatar(npcs[Number($('npcSelect').value)]).catch(error=>status(error.message,'bad'));
 $('npcFile').onchange=async event=>{try{const imported=normalizeDatabase(JSON.parse(await event.target.files[0].text()));npcs=imported.filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0])}catch(error){status(`NPC import failed: ${error.message}`,'bad')}finally{event.target.value=''}};
 $('editFloatMode').onclick=()=>setEditingMode('floatPlus');$('editListMode').onclick=()=>setEditingMode('centeredFiveRow');
-$('burst').onclick=replayBurst;$('front').onclick=()=>setCamera('front');$('angle').onclick=()=>setCamera('angle');
+$('burst').onclick=replayBurst;$('front').onclick=()=>previewScene.setCameraView('front');$('angle').onclick=()=>previewScene.setCameraView('angle');
 $('apply').onclick=()=>{collect();settings=popupRuntime.applySettings(settings);localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));replayBurst();status('Applied locally. Reload an already-open game tab to refresh it.')};
 $('download').onclick=()=>{collect();const blob=new Blob([JSON.stringify(settings,null,2)+'\n'],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='world-popup-settings.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000)};
 $('reset').onclick=()=>{settings=popupRuntime.applySettings(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();replayBurst();status('Restored repository settings.')};

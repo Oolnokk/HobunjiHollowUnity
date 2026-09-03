@@ -2192,7 +2192,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260831questcache1"></script>
+  <script src="js/pixel-probe.js?v=20260902agenda1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2220,10 +2220,24 @@
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
   <script src="js/music-minigame.js?v=20260815b"></script>
+  <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
+       NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
+       beats + a free-time/fallback planner that replaces "freeze if an
+       authored station is missing" with graceful replanning. Load order
+       among these four doesn't matter (they only reference each other at
+       call time, not parse time) but all four must load before
+       npc-scheduling.js's resolveNpcScheduleTarget bridge and before
+       game.js, which calls each one's init(...) during its own setup. -->
+  <script src="js/npc-agenda.js?v=20260902a"></script>
+  <script src="js/npc-activities.js?v=20260902d"></script>
+  <script src="js/npc-social-stimuli.js?v=20260902a"></script>
+  <script src="js/npc-activity-planner.js?v=20260902d"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
        checks — window.NpcScheduling) — must load before game.js, which
-       calls window.NpcScheduling.init(...) during its own setup. -->
-  <script src="js/npc-scheduling.js?v=20260815a"></script>
+       calls window.NpcScheduling.init(...) during its own setup.
+       resolveNpcScheduleTarget itself now bridges into
+       window.NpcActivityPlanner (loaded just above) when present. -->
+  <script src="js/npc-scheduling.js?v=20260902a"></script>
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
@@ -2265,7 +2279,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260902ore1"></script>
+  <script src="game.js?v=20260902agenda3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

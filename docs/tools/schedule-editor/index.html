@@ -100,6 +100,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.1);margin:10px 0}
       <div id="viewTabs">
         <button class="sec act" data-view="npcs">NPCs</button>
         <button class="sec" data-view="shared">Shared Events</button>
+        <button class="sec" data-view="roles">Roles</button>
         <button class="sec" data-view="issues">Issues</button>
       </div>
       <div id="sidebar-scroll">
@@ -134,6 +135,21 @@ let activeView = 'npcs';
 const $ = id => document.getElementById(id);
 
 function resolveStation(id) { return id ? stationsById.get(id) || null : null; }
+// Semantic destination roles (design doc §13/§14/§48 — "show which stations
+// currently satisfy each role"). Chair furniture auto-registers role:'sit'
+// at runtime per-placement (see game.js's registerChairNpcStation) rather
+// than being authored in any map file, so it can't be enumerated here —
+// noted explicitly in the Roles view rather than silently under-reporting.
+function stationsByRole() {
+  const byRole = new Map();
+  for (const st of stationsById.values()) {
+    for (const role of st.roles || []) {
+      if (!byRole.has(role)) byRole.set(role, []);
+      byRole.get(role).push(st);
+    }
+  }
+  return byRole;
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────
 async function boot(forceRepo) {
@@ -173,13 +189,13 @@ async function loadAllStations() {
       const data = await r.json();
       (data.npcStations || []).forEach(st => {
         if (!st?.id) return;
-        stationsById.set(st.id, { id: st.id, label: st.label || st.id, mapId: m.id, mapName: m.name || m.id, col: st.col, row: st.row, pose: st.pose || 'stand', dynamic: false });
+        stationsById.set(st.id, { id: st.id, label: st.label || st.id, mapId: m.id, mapName: m.name || m.id, col: st.col, row: st.row, pose: st.pose || 'stand', dynamic: false, roles: Array.isArray(st.roles) ? st.roles : [] });
       });
     } catch (e) { /* map failed to load — its stations just won't resolve in the picker */ }
   }));
   (dynamicSources.sources || []).forEach(s => {
     if (!stationsById.has(s.idPattern)) {
-      stationsById.set(s.idPattern, { id: s.idPattern, label: s.label || s.idPattern, mapId: '(dynamic)', mapName: s.system || 'procedural', dynamic: true, description: s.description });
+      stationsById.set(s.idPattern, { id: s.idPattern, label: s.label || s.idPattern, mapId: '(dynamic)', mapName: s.system || 'procedural', dynamic: true, description: s.description, roles: Array.isArray(s.roles) ? s.roles : [] });
     }
   });
 }
@@ -273,10 +289,55 @@ $('npcSearch').addEventListener('input', renderNpcList);
 // to read docs/game.js's resolver — mirrors resolveNpcScheduleTarget's
 // exact fallback order in docs/game.js so "would this NPC actually show up
 // somewhere sensible right now" matches what the live game will do.
+// Mirrors js/npc-activities.js's registry keys and js/npc-agenda.js's
+// vocabulary — duplicated here rather than imported, same as this whole
+// file's existing parseTimeMin/rangesOverlap already re-implement a
+// simplified analog of the runtime resolver instead of loading it (this
+// tool is deliberately dependency-free of the game runtime). Keep in sync
+// by hand if either module's registry changes.
+const KNOWN_ACTIVITY_KEYS = new Set(['legacyScheduleActivity', 'goToStation', 'goToRole', 'work', 'eat', 'drink', 'sleep', 'shop', 'performMusic', 'joinPerformance', 'idle', 'break', 'freeTime', 'socialize', 'visit', 'wander', 'sit', 'chat', 'watchPerformance']);
+const ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION = new Set(['work', 'goToStation', 'goToRole']); // Every other known activity has a baked-in default role or a documented fallback (free time, "stay put", etc).
+const KNOWN_OBLIGATIONS = new Set(['critical', 'duty', 'plan', 'leisure']);
+const KNOWN_DAYPARTS = new Set(['dawn', 'morning', 'midday', 'afternoon', 'evening', 'night', 'lateNight']);
+function agendaIssuesFor(npc, mapIds) {
+  const issues = [];
+  const roleIndex = stationsByRole();
+  (npc.agenda || []).forEach((beat, i) => {
+    const label = `${npc.name || npc.id}, agenda beat ${i + 1}${beat.id ? ` ("${beat.id}")` : ''}`;
+    if (!beat.activity) issues.push({ npcId: npc.id, severity: 'error', message: `${label}: no activity set.` });
+    else if (!KNOWN_ACTIVITY_KEYS.has(beat.activity)) issues.push({ npcId: npc.id, severity: 'error', message: `${label}: activity "${beat.activity}" isn't a registered activity — check for a typo (see js/npc-activities.js's registry).` });
+    if (beat.obligation && !KNOWN_OBLIGATIONS.has(beat.obligation)) issues.push({ npcId: npc.id, severity: 'error', message: `${label}: obligation "${beat.obligation}" isn't one of critical/duty/plan/leisure.` });
+    if (ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION.has(beat.activity) && !beat.destinationStationId && !beat.destinationRole) {
+      issues.push({ npcId: npc.id, severity: 'error', message: `${label}: activity "${beat.activity}" needs destinationStationId or destinationRole — neither is set, so this beat can never resolve.` });
+    }
+    if (beat.destinationStationId && !resolveStation(beat.destinationStationId)) {
+      issues.push({ npcId: npc.id, severity: 'error', message: `${label}: destinationStationId "${beat.destinationStationId}" doesn't match any known station.` });
+    }
+    if (beat.destinationRole) {
+      const candidates = roleIndex.get(beat.destinationRole) || [];
+      const inArea = beat.destinationArea ? candidates.filter(s => s.mapId === beat.destinationArea) : candidates;
+      if (!candidates.length) issues.push({ npcId: npc.id, severity: 'warning', message: `${label}: no known station anywhere advertises role "${beat.destinationRole}" (still resolvable at runtime if it's granted dynamically, e.g. role 'sit' on placed furniture — see the Roles tab).` });
+      else if (beat.destinationArea && !inArea.length) issues.push({ npcId: npc.id, severity: 'warning', message: `${label}: role "${beat.destinationRole}" exists elsewhere but no station in destinationArea "${beat.destinationArea}" advertises it.` });
+    }
+    if (beat.destinationArea && !mapIds.has(beat.destinationArea)) issues.push({ npcId: npc.id, severity: 'warning', message: `${label}: destinationArea "${beat.destinationArea}" isn't in the map index — check for a typo.` });
+    if (Array.isArray(beat.window)) {
+      const badWindow = beat.window.length !== 2 || parseTimeMin(beat.window[0]) === null || parseTimeMin(beat.window[1]) === null;
+      if (badWindow) issues.push({ npcId: npc.id, severity: 'error', message: `${label}: window should be exactly two "HH:MM" strings.` });
+    } else if (beat.daypart) {
+      const parts = Array.isArray(beat.daypart) ? beat.daypart : [beat.daypart];
+      for (const d of parts) if (!KNOWN_DAYPARTS.has(d)) issues.push({ npcId: npc.id, severity: 'error', message: `${label}: daypart "${d}" isn't recognized (dawn/morning/midday/afternoon/evening/night/lateNight).` });
+    } else if (!beat.alwaysEligible) {
+      issues.push({ npcId: npc.id, severity: 'info', message: `${label}: no window or daypart set — this beat is eligible all day, every day it's not excluded by day/days/daysExcept. Intentional (e.g. a catch-all) or missing a time restriction?` });
+    }
+  });
+  return issues;
+}
+
 function computeIssues() {
   const issues = [];
   const mapIds = new Set(mapsIndex.map(m => m.id));
   for (const npc of db.npcs || []) {
+    issues.push(...agendaIssuesFor(npc, mapIds));
     const hooks = npc.scheduleHooks || {};
     if (hooks.contentIncomplete) {
       issues.push({ npcId: npc.id, severity: 'warning', message: `${npc.name || npc.id}: flagged content-incomplete — ${hooks.contentIncompleteReason || 'no reason given'}` });
@@ -341,6 +402,7 @@ function rangesOverlap(s1, e1, s2, e2) {
 function render() {
   renderNpcList();
   if (activeView === 'shared') renderSharedEventsView();
+  else if (activeView === 'roles') renderRolesView();
   else if (activeView === 'issues') renderIssuesView();
   else renderNpcView();
   const issues = computeIssues();
@@ -360,9 +422,13 @@ function renderNpcList() {
   list.innerHTML = npcs.map(n => {
     const hooks = n.scheduleHooks || {};
     const ruleCount = (hooks.rules || []).length;
+    const agendaCount = Array.isArray(n.agenda) ? n.agenda.length : null;
     const flags = [];
     if (hooks.contentIncomplete) flags.push('<span class="pill warn" style="padding:1px 6px">incomplete</span>');
-    if (!ruleCount && !hooks.defaultStationId) flags.push('<span class="pill bad" style="padding:1px 6px">no schedule</span>');
+    // agenda[] (even an empty one an author is mid-authoring) is its own
+    // valid path to "has a schedule" — only flag genuinely nothing at all.
+    if (!ruleCount && !hooks.defaultStationId && agendaCount == null) flags.push('<span class="pill bad" style="padding:1px 6px">no schedule</span>');
+    if (agendaCount != null) flags.push(`<span class="pill ok" style="padding:1px 6px">agenda ×${agendaCount}</span>`);
     return `<div class="item ${n.id===selectedNpcId && activeView==='npcs' ? 'sel' : ''}" data-npc="${n.id}">
       <div class="item-name">${n.name || n.id}</div>
       <div class="item-meta">${ruleCount} rule${ruleCount===1?'':'s'} · ${n.role || n.species || ''}</div>
@@ -385,6 +451,47 @@ function stationDatalistHtml() {
   return rows.map(s => `<option value="${s.id}">${s.label} — ${s.mapName}${s.dynamic?' (procedural)':''}</option>`).join('');
 }
 
+// Agenda beats (design doc §6/§47) — the shape varies enough beat to beat
+// (socialize's nested preferences vs. work's destinationRole vs. break's
+// bare obligation) that generating a bespoke input widget per field isn't
+// worth it for a dev tool; a formatted read-only summary plus one raw-JSON
+// textarea for the whole array gives full editability without that cost.
+// scheduleHooks above keeps its own dedicated rule-card UI since that
+// shape is uniform and predates this.
+function agendaBeatSummaryHtml(beat) {
+  const when = Array.isArray(beat.window) ? `${beat.window[0]}–${beat.window[1]}`
+    : beat.daypart ? (Array.isArray(beat.daypart) ? beat.daypart.join('→') : beat.daypart)
+    : beat.alwaysEligible ? 'always' : '(no window/daypart — always eligible)';
+  const days = beat.day ? beat.day : Array.isArray(beat.days) ? beat.days.join(',') : Array.isArray(beat.daysExcept) ? `every day except ${beat.daysExcept.join(',')}` : 'every day';
+  const dest = beat.destinationStationId ? `station "${beat.destinationStationId}"` : beat.destinationRole ? `role "${beat.destinationRole}"${beat.destinationArea ? ` in ${beat.destinationArea}` : ''}` : '(none)';
+  const obligationClass = beat.obligation === 'critical' ? 'bad' : beat.obligation === 'duty' ? 'warn' : '';
+  return `<div class="item" style="cursor:default">
+    <div class="item-name">${beat.activityLabel || beat.activity || '(no activity)'} <span class="pill ${obligationClass}" style="margin-left:4px">${beat.obligation || 'plan'}</span></div>
+    <div class="item-meta">${when} · ${days} · destination: ${dest}</div>
+  </div>`;
+}
+function agendaCardHtml(npc) {
+  if (!Array.isArray(npc.agenda)) {
+    return `<div class="card">
+      <h3>Agenda (new system) <span class="qhelp" data-help="agenda-overview">?</span></h3>
+      <p class="muted">This NPC has no authored <code>agenda[]</code> yet — it runs entirely on the Schedule rules below via the Agenda/Activity Planner's compatibility bridge (see npc-scheduling.js). That's a perfectly safe place to stay.</p>
+      <button class="sec tiny" id="addAgendaBtn" style="margin-top:8px">+ Start an agenda[] for this NPC</button>
+    </div>`;
+  }
+  return `<div class="card">
+    <h3>Agenda (new system) <span class="qhelp" data-help="agenda-overview">?</span></h3>
+    <div id="agendaBeatList">${npc.agenda.map(agendaBeatSummaryHtml).join('') || '<p class="muted">Empty — this NPC has an agenda[] but no beats in it, so every resolution falls through to free time.</p>'}</div>
+    <hr class="sep">
+    <label>Raw JSON (the array only) <span class="qhelp" data-help="agenda-json">?</span></label>
+    <textarea id="f_agendaJson" style="min-height:140px;font-family:ui-monospace,monospace;font-size:11px">${JSON.stringify(npc.agenda, null, 2).replace(/</g, '&lt;')}</textarea>
+    <div class="row" style="margin-top:6px">
+      <button class="ok tiny" id="applyAgendaBtn">Apply JSON</button>
+      <button class="bad tiny" id="removeAgendaBtn">Remove agenda[] (revert to Schedule rules only)</button>
+      <span class="muted" id="agendaJsonError" style="color:var(--bad)"></span>
+    </div>
+  </div>`;
+}
+
 function renderNpcView() {
   const view = $('view');
   const npc = (db.npcs || []).find(n => n.id === selectedNpcId);
@@ -399,6 +506,8 @@ function renderNpcView() {
     <p class="muted" style="margin-bottom:12px">${npc.role || ''}${npc.role && npc.species ? ' · ' : ''}${npc.species || ''}</p>
 
     ${issues.length ? `<div class="card"><h3>⚠ Issues for this NPC</h3>${issues.map(i => `<div class="vIssue ${i.severity==='error'?'error':i.severity==='warning'?'warning':'info'}">${i.message}</div>`).join('')}</div>` : ''}
+
+    ${agendaCardHtml(npc)}
 
     <div class="card">
       <h3>Defaults <span class="qhelp" data-help="npc-defaults">?</span></h3>
@@ -434,6 +543,26 @@ function renderNpcView() {
   if (reasonEl) reasonEl.addEventListener('change', e => { hooks.contentIncompleteReason = e.target.value; saveDraft(); });
   $('addRuleBtn').addEventListener('click', () => {
     hooks.rules.push({ from: '08:00', to: '18:00', mapId: hooks.defaultMapId || '', stationId: '', activity: '' });
+    saveDraft(); render();
+  });
+
+  const addAgendaBtn = $('addAgendaBtn');
+  if (addAgendaBtn) addAgendaBtn.addEventListener('click', () => { npc.agenda = []; saveDraft(); render(); });
+  const applyAgendaBtn = $('applyAgendaBtn');
+  if (applyAgendaBtn) applyAgendaBtn.addEventListener('click', () => {
+    const errEl = $('agendaJsonError');
+    try {
+      const parsed = JSON.parse($('f_agendaJson').value);
+      if (!Array.isArray(parsed)) throw new Error('must be a JSON array of beat objects');
+      npc.agenda = parsed;
+      errEl.textContent = '';
+      saveDraft(); render();
+    } catch (e) { errEl.textContent = 'Invalid JSON: ' + e.message; }
+  });
+  const removeAgendaBtn = $('removeAgendaBtn');
+  if (removeAgendaBtn) removeAgendaBtn.addEventListener('click', () => {
+    if (!confirm('Remove agenda[] from this NPC? They\'ll fall back to Schedule rules only (safe — this is exactly how every NPC without an agenda already behaves).')) return;
+    delete npc.agenda;
     saveDraft(); render();
   });
 
@@ -562,6 +691,27 @@ function sharedCardHtml(s, i) {
   </div>`;
 }
 
+// ── Roles view (design doc §48 — "show which stations currently satisfy
+// each role") ────────────────────────────────────────────────────────────
+function renderRolesView() {
+  const view = $('view');
+  const byRole = stationsByRole();
+  const roles = [...byRole.keys()].sort();
+  view.innerHTML = `
+    <h2 style="font-size:16px;margin-bottom:4px">Semantic Destination Roles <span class="qhelp" data-help="roles-overview">?</span></h2>
+    <p class="muted" style="margin-bottom:12px">An agenda beat's <code>destinationRole</code> (instead of a literal <code>destinationStationId</code>) resolves to any station below advertising that role — the planner picks one deterministically at runtime. Only roles authored on a map's <code>npcStations[]</code> entries show up here.</p>
+    <div class="card">
+      <p class="muted"><b>Not shown:</b> role <code>'sit'</code> is also auto-granted to every sittable piece of placed furniture at runtime (game.js's registerChairNpcStation) — that coverage is per-placement and can't be enumerated statically here, so treat <code>'sit'</code> as always more available in-game than this list alone suggests.</p>
+    </div>
+    ${roles.length ? roles.map(role => `
+      <div class="card">
+        <h3>${role} <span class="pill">${byRole.get(role).length} station${byRole.get(role).length===1?'':'s'}</span></h3>
+        ${byRole.get(role).map(st => `<div class="item" style="cursor:default"><div class="item-name">${st.label}</div><div class="item-meta">${st.mapName}${st.dynamic ? ' (procedural)' : ` · (${st.col}, ${st.row})`} · <code>${st.id}</code></div></div>`).join('')}
+      </div>
+    `).join('') : '<p class="muted">No station on any map currently advertises a role. Add a <code>"roles": ["some-role"]</code> array to an npcStations entry to get started.</p>'}
+  `;
+}
+
 // ── Issues view ───────────────────────────────────────────────────────────
 function renderIssuesView() {
   const issues = computeIssues();
@@ -603,7 +753,10 @@ const QHELP = {
   'shared-day': { title: 'Day / time window', body: 'The event is only active on this single day, within this time window (24h, can wrap past midnight).' },
   'shared-stationIds': { title: 'Station pool', body: 'Comma-separated station ids. Each eligible NPC is assigned one deterministically (hashed from their id), so the same NPC always gets the same seat and the group spreads evenly across the pool.' },
   'shared-excludeNpcIds': { title: 'Excluded NPC ids', body: 'Comma-separated NPC ids who should never join this event even though they match the tag (e.g. NPCs who are deceased, banished, or already accounted for elsewhere).' },
-  'issues-overview': { title: 'Issues', body: 'Automatically scanned problems: unresolved station references, unknown map ids, rules that can never resolve to anywhere, overlapping time windows, and anything explicitly flagged content-incomplete. Click an issue to jump to that NPC.' },
+  'issues-overview': { title: 'Issues', body: 'Automatically scanned problems: unresolved station references, unknown map ids, rules that can never resolve to anywhere, overlapping time windows, anything explicitly flagged content-incomplete, and the same class of checks for agenda[] beats (unknown activity, missing destination, unresolved role). Click an issue to jump to that NPC.' },
+  'roles-overview': { title: 'Semantic destination roles', body: 'A station can advertise one or more roles (e.g. \'music-performance\', \'sit\') via a "roles" array on its npcStations entry — authored directly in the map file for now (edit the map JSON, or ask the Map Editor\'s Station tool to grow a roles field). An agenda beat\'s destinationRole then resolves to any matching station instead of one hardcoded id, so renaming/adding stations doesn\'t break the beat.' },
+  'agenda-overview': { title: 'Agenda (new system)', body: 'The Agenda + Activity Planner redesign: broad intentions (window/daypart + obligation + destinationRole/destinationStationId) instead of exact schedule rules, with a free-time/fallback planner that keeps this NPC doing *something* sensible even if a destination is missing. Optional per NPC — one with no agenda[] just keeps using Schedule rules below via the compatibility bridge, which is completely safe to leave as-is. See js/npc-agenda.js and js/npc-activities.js for the full field reference.' },
+  'agenda-json': { title: 'Agenda JSON', body: 'Each beat: {id, activity, obligation, window:["HH:MM","HH:MM"] or daypart, destinationStationId or destinationRole (+ optional destinationArea), activityLabel, days/day/daysExcept, preferences (for socialize)}. Edit the array here and click Apply — invalid JSON is rejected with an error and nothing is changed.' },
 };
 let _qhelpBtn = null;
 function showHelp(btn) {

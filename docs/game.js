@@ -7814,8 +7814,16 @@
               const desk = findObj('obj_desk');
               const statues = ['obj_statue_1', 'obj_statue_2', 'obj_statue_3'].map(findObj);
               const stations = [];
-              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand' });
-              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand' }); });
+              // roles:['garanki-research'] lets his agenda point at "wherever
+              // his research spot currently is" by role instead of one exact
+              // stationId — the actual fix for the fragility this whole
+              // block's comment above describes (a stamped position that
+              // moves with the tent): even if the agenda resolver runs before
+              // this re-registration completes some shift, the Activity
+              // Planner's WAITING_FOR_WORLD/replan handling now covers that
+              // gap gracefully instead of the NPC needing to freeze or defer.
+              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand', roles: ['garanki-research'] });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
               // station_researchers_tent_sleep is NOT registered here — it lives
               // inside config/maps/map_i_researchers_tent.json's own npcStations
               // (auto-registered by loadBuildingScene once that interior loads).
@@ -10097,12 +10105,21 @@
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return;
         registerNpcStations([{
           id: furnitureNpcStationId(area, col, row), label: def.name,
           area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
+          // Every sittable piece of furniture is automatically a 'sit'
+          // free-time opportunity (design doc §14/§16) — no per-chair
+          // authoring needed for the Activity Planner's free-time/break
+          // behavior to find somewhere to sit in whichever area it's in.
+          // Map-authored furniture can layer on additional roles (e.g. a
+          // handful of stools that together form "the Khibu living room")
+          // so several distinct seats can be addressed as one shared
+          // destinationRole with occupancy bias, same idea as `sit` itself.
+          roles: Array.isArray(extraRoles) && extraRoles.length ? ['sit', ...extraRoles] : ['sit'],
         }], area);
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
@@ -10256,8 +10273,48 @@
         isNpcOnDutyAtStation,
         listInstrumentPerformers,
         normalizeStationLabel,
+        findStationsByRole,
       } = window.NpcScheduling;
       const npcStationsById = window.NpcScheduling.stationsById;
+
+      // Shared by every NPC Agenda/Activity Planner module below — kept as
+      // one definition here (rather than duplicated per-module) since they
+      // all just need to look things up in the same npcWalkers array
+      // NpcScheduling itself already holds a reference to.
+      function findNpcWalker(npcId) { return npcWalkers.find(w => w.rec?.id === npcId) || null; }
+      function listNpcWalkersInArea(area) { return npcWalkers.filter(w => w.area === area); }
+
+      // NPC Agenda + Activity Planner redesign: replaces "exact schedule
+      // rule → exact station → freeze if missing" with flexible agenda
+      // beats, semantic destination roles, and a free-time/fallback planner
+      // that always finds *something* for an already-living NPC to do (see
+      // js/npc-agenda.js, npc-activities.js, npc-activity-planner.js,
+      // npc-social-stimuli.js for the design rationale). resolveNpcScheduleTarget
+      // above already routes through window.NpcActivityPlanner when it's
+      // present — this just supplies the world/station knowledge those
+      // modules need, reusing the exact same accessors NpcScheduling/
+      // NpcPathfinding were already given.
+      window.NpcActivities.init({
+        resolveNpcStationTarget,
+        findStationsByRole,
+        isBuildingArea: _isBuildingArea,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        normalizeNpcArea,
+        findNpcWalker,
+        listNpcWalkersInArea,
+      });
+      window.NpcActivityPlanner.init({
+        calendar,
+        getCurrentArea: () => currentArea,
+        findNpcWalker,
+        listNpcWalkersInArea,
+        findStationsByRole,
+      });
+      window.NpcSocialStimuli.init({
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        getCurrentArea: () => currentArea,
+      });
 
       // NPC walkability/beeline checks and area-graph search (isNpcTileWalkable,
       // canNpcBeeline, areaLinksFrom, findNpcAreaLink) live in
@@ -11770,7 +11827,7 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);

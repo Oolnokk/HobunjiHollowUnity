@@ -2368,9 +2368,9 @@ function resetKurrayaProfile() {
 
 async function loadTransformControls() {
   if (state.kurraya.transformControls || !state.three.ready) return;
-  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
   const versionMatch = configuredThreeUrl.match(/three@([0-9.]+)/);
-  const version = versionMatch?.[1] || '0.165.0';
+  const version = versionMatch?.[1] || '0.128.0';
   const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
   try {
     const module = await import(url);
@@ -4337,8 +4337,8 @@ async function initAnimationWorkspaceScene() {
 
 async function loadAnimationTransformControls() {
   if (animationAuthor.transformControls || !state.three.ready) return;
-  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
-  const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
+  const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.128.0';
   const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
   try {
     const module = await import(url);

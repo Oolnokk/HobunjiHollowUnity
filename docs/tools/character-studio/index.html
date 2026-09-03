@@ -381,6 +381,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/avatar-preview-scene.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1030,101 +1031,57 @@ function previewLoop() {
 }
 
 // ── 3D PNG-plane preview (from npc-avatar-preview) ───────────────────────────
-const threeD = { enabled: false, loading: false, THREE: null, renderer: null, scene: null, camera: null, controls: null, model: null };
-const cfg3d = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+// The renderer/scene/camera/lighting setup lives in AvatarPreviewScene
+// (docs/js/avatar-preview-scene.js), which pins the same Three.js build the
+// Attack Animation Editor and the live game use instead of this tool
+// guessing its own.
+const threeD = { enabled: false, loading: false, previewScene: null, model: null };
 
 function resize3d() {
-  if (!threeD.renderer || !threeD.camera) return;
-  const canvas3d = $('view3d');
-  const rect = canvas3d.getBoundingClientRect();
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
-  threeD.renderer.setSize(w, h, false);
-  threeD.camera.aspect = w / h;
-  threeD.camera.updateProjectionMatrix();
-}
-function frameCamera3d() {
-  if (!threeD.camera) return;
-  const d = cfg3d.previewCameraDistance || 3.2;
-  threeD.camera.position.set(d * 0.55, d * 0.28, d * 0.88);
-  threeD.camera.lookAt(0, 0, 0);
-  threeD.controls?.target.set(0, 0, 0);
-  threeD.controls?.update();
-}
-function tick3d() {
-  if (!threeD.enabled) return;
-  threeD.renderer?.render(threeD.scene, threeD.camera);
-  threeD.controls?.update();
-  requestAnimationFrame(tick3d);
-}
-async function init3dScene() {
-  const THREE = threeD.THREE;
-  const canvas3d = $('view3d');
-  threeD.renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true, preserveDrawingBuffer: true });
-  threeD.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  threeD.renderer.outputColorSpace = THREE.SRGBColorSpace;
-  threeD.scene = new THREE.Scene();
-  threeD.scene.background = new THREE.Color(0x060c14);
-  threeD.camera = new THREE.PerspectiveCamera(cfg3d.previewCameraFovDeg || 45, 1, 0.01, 100);
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x182435, 1.8);
-  threeD.scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-  dir.position.set(2.5, 3.5, 4);
-  threeD.scene.add(dir);
-  const grid = new THREE.GridHelper(cfg3d.previewGridSize || 5, cfg3d.previewGridDivisions || 10, 0x33538a, 0x1a2638);
-  grid.position.y = -0.55;
-  threeD.scene.add(grid);
-  resize3d();
-  frameCamera3d();
-  requestAnimationFrame(tick3d);
+  threeD.previewScene?.resize();
 }
 async function update3DModel() {
-  if (!threeD.enabled || !threeD.THREE || !_cosmetics) return;
+  if (!threeD.enabled || !threeD.previewScene || !_cosmetics) return;
   const profile = _previewProfile || buildPreviewProfile(workRenderAppearance());
   if (!profile) return;
-  const size = cfg3d.previewPortraitCanvasSize || 200;
+  const size = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize || 200;
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
-  if (threeD.model) {
-    threeD.scene.remove(threeD.model);
-    window.PNGPlaneAvatar.disposeAvatarModel(threeD.model);
-  }
-  threeD.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(threeD.THREE, frontCanvas, {
+  threeD.model = threeD.previewScene.setAvatar(frontCanvas, {
     backCanvas,
     profile,
     name: 'Studio_Preview_Avatar',
     userData: { source: 'character-studio' },
   });
-  threeD.scene.add(threeD.model);
 }
 async function toggle3d() {
   if (threeD.enabled) {
     threeD.enabled = false;
+    threeD.previewScene?.stop();
     $('view3dWrap').classList.remove('visible3d');
     $('toggle3dBtn').textContent = 'Enable 3D plane preview';
     return;
   }
   if (threeD.loading) return;
-  if (!threeD.THREE) {
+  if (!threeD.previewScene) {
     threeD.loading = true;
     $('toggle3dBtn').textContent = 'Loading Three.js…';
     try {
-      const mods = await window.PNGPlaneAvatar.loadThreeModules();
-      threeD.THREE = mods.THREE;
-      threeD.enabled = true;
       $('view3dWrap').classList.add('visible3d');
-      await init3dScene();
-      if (mods.OrbitControls) {
-        threeD.controls = new mods.OrbitControls(threeD.camera, $('view3d'));
-        threeD.controls.enableDamping = true;
-        threeD.controls.dampingFactor = 0.08;
-      }
+      threeD.previewScene = await window.AvatarPreviewScene.create({
+        canvas: $('view3d'),
+        backgroundColor: 0x060c14,
+        holderName: 'character_studio_preview_holder',
+        initialView: 'angle',
+      });
+      threeD.enabled = true;
     } catch (e) {
       log('Three.js load failed: ' + e.message, 'error');
+      $('view3dWrap').classList.remove('visible3d');
       $('toggle3dBtn').textContent = 'Enable 3D plane preview';
       threeD.loading = false;
       return;
@@ -1133,9 +1090,9 @@ async function toggle3d() {
   } else {
     threeD.enabled = true;
     $('view3dWrap').classList.add('visible3d');
-    resize3d();
-    requestAnimationFrame(tick3d);
+    threeD.previewScene.resize();
   }
+  threeD.previewScene.start();
   $('toggle3dBtn').textContent = 'Hide 3D plane preview';
   await ensureCosmetics();
   await update3DModel();
@@ -2110,7 +2067,7 @@ $('setPlayerBtn').onclick = setAsPlayer;
 $('loadPlayerBtn').onclick = loadPlayerIntoEditor;
 $('applyNpcBtn').onclick = applyWorkToNpc;
 $('toggle3dBtn').onclick = () => { toggle3d().catch(e => log('3D toggle failed: ' + e.message, 'error')); };
-$('resetCamBtn').onclick = frameCamera3d;
+$('resetCamBtn').onclick = () => threeD.previewScene?.setCameraView('angle');
 $('exportApBtn').onclick = exportAppearance;
 $('importApBtn').onclick = () => $('importApFile').click();
 $('importApFile').onchange = async e => {
