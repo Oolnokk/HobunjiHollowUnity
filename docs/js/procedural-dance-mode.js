@@ -129,9 +129,15 @@
         const hasKnee = readLinePoint(line, 1, knee);
         const hasFoot = readLinePoint(line, 2, foot);
         const hipToFootDistance = hasHip && hasFoot ? hip.distanceTo(foot) : null; // A span that's tiny relative to avatar height means the line has no real leg shape to draw, even if visible.
+        // World-space hip Y too (not just the locomotionRoot-local span above),
+        // in the same frame as Dance's own captured-hip diagnostic, so the two
+        // can be compared directly instead of needing to know locomotionRoot's
+        // own current world offset.
+        line.updateMatrixWorld?.(true);
+        const hipWorldY = hasHip ? line.localToWorld(hip.clone()).y : null;
         return {
           side, present: true, hasHip, hasKnee, hasFoot,
-          hipToFootDistance,
+          hipToFootDistance, hipWorldY,
           degenerate: hipToFootDistance != null && hipToFootDistance < degenerateThreshold,
         };
       };
@@ -164,7 +170,7 @@
       return left && right ? { left, right } : null;
     }
 
-    function makeSideProxy(THREE, realFoot, line) {
+    function makeSideProxy(THREE, side, realFoot, line) {
       const data = {
         realFoot,
         line,
@@ -262,6 +268,24 @@
         getWorldPosition(out) { return data.realFoot.getWorldPosition(out); },
       };
       refreshHipAndThigh();
+      // One-shot diagnostic: compares the native LegBonesDebug line's current
+      // world hip point (re-read fresh here, independent of data.hipPosition)
+      // against what getWorldPosition() resolves data.hipPosition back to.
+      // These should match at capture time; if a later report shows Dance's
+      // hip drifting away from the native line's own (possibly since-updated)
+      // hip Y, that points at a real remaining bug rather than this capture
+      // step itself.
+      const nativeHipWorldNow = new THREE.Vector3();
+      if (readLinePoint(line, 0, nativeHipWorldNow)) {
+        line.updateMatrixWorld?.(true);
+        line.localToWorld(nativeHipWorldNow);
+      }
+      const resolvedHipWorld = data.hip.getWorldPosition(new THREE.Vector3());
+      editorLog(`[Dance bones] ${side} hip captured`, 'info', {
+        nativeLineHipWorldY: nativeHipWorldNow.y,
+        resolvedHipWorldY: resolvedHipWorld.y,
+        deltaY: resolvedHipWorld.y - nativeHipWorldNow.y,
+      });
       return data;
     }
 
@@ -287,8 +311,8 @@
         clearShim();
         return false;
       }
-      const left = makeSideProxy(THREE, realFeet.left, leftLine);
-      const right = makeSideProxy(THREE, realFeet.right, rightLine);
+      const left = makeSideProxy(THREE, 'left', realFeet.left, leftLine);
+      const right = makeSideProxy(THREE, 'right', realFeet.right, rightLine);
       const proxies = {
         left_hip: left.hip, left_thigh: left.thigh, left_calf: left.calf, left_foot: left.foot,
         right_hip: right.hip, right_thigh: right.thigh, right_calf: right.calf, right_foot: right.foot,
