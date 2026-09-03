@@ -40,7 +40,6 @@
   const danceInfo = () => global.SocialActionWheel?.getDebug?.()?.dancing || null;
   const dancing = () => !!danceInfo();
   const clamp01 = v => Math.max(0, Math.min(1, Number(v) || 0));
-  const smooth = v => { const t = clamp01(v); return t * t * t * (t * (t * 6 - 15) + 10); };
 
   function dep(name) {
     for (const bag of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
