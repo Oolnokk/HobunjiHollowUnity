@@ -7,8 +7,52 @@
   // Nursery synchronously at that exact point; afterward FarmPanel is a normal
   // writable global again, so there is no permanent proxy/setter in the runtime.
   const installNursery = () => window.LivestockNursery?.install?.();
-  if (window.FarmPanel) {
+
+  // The vegetation extraction currently has one ROCK fallback that can publish a
+  // plain {_windAmp: 0} sentinel into vegFoliageMeshes when no mound geometry was
+  // generated. The render loop's public contract is stricter: every active entry
+  // is a THREE.Object3D and therefore supports traverse(). Until that producer is
+  // folded back into main, keep this branch safe by pruning invalid active slots
+  // immediately after every public path that can rebuild farm vegetation.
+  const installVegetationFoliageContractGuard = () => {
+    const vegetation = window.VegetationCropRendering;
+    if (!vegetation || vegetation.__foliageContractGuardInstalled) return false;
+    vegetation.__foliageContractGuardInstalled = true;
+
+    const pruneInvalidFoliage = () => {
+      const meshes = vegetation.vegFoliageMeshes;
+      const active = vegetation.vegFoliageActive;
+      if (!Array.isArray(meshes) || !active?.delete) return;
+      for (const index of [...active]) {
+        const mesh = meshes[index];
+        if (mesh && typeof mesh.traverse === 'function') continue;
+        meshes[index] = null;
+        active.delete(index);
+      }
+    };
+
+    for (const methodName of ['buildTileMeshes', 'refreshTileMesh', 'rebuildWeedTiles']) {
+      const original = vegetation[methodName];
+      if (typeof original !== 'function') continue;
+      const wrapped = function foliageContractGuardedRebuild(...args) {
+        const result = original.apply(this, args);
+        pruneInvalidFoliage();
+        return result;
+      };
+      wrapped.__foliageContractGuard = true;
+      vegetation[methodName] = wrapped;
+    }
+    pruneInvalidFoliage();
+    return true;
+  };
+
+  const installBridges = () => {
+    installVegetationFoliageContractGuard();
     installNursery();
+  };
+
+  if (window.FarmPanel) {
+    installBridges();
     return;
   }
 
@@ -26,7 +70,7 @@
           writable: true,
           value,
         });
-        installNursery();
+        installBridges();
       },
     });
   } catch (_) {
@@ -36,7 +80,7 @@
     const timer = setInterval(() => {
       if (!window.FarmPanel) return;
       clearInterval(timer);
-      installNursery();
+      installBridges();
     }, 0);
   }
 })();
