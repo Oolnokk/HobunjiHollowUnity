@@ -3,11 +3,12 @@
 
   // Finite wilderness-zone streaming. The Tothal generator remains the
   // deterministic owner of each complete 200x200 tile blueprint; this module
-  // makes 16x16 tile chunks the owner of expensive runtime scene objects.
+  // lets each zone's configured tile chunks own its expensive runtime scene objects.
   // A chunk can therefore be rebuilt from the live grid after a tile edit and
   // discarded when it is outside the player's unload radius without changing
   // maps, landmarks, fog-of-war, routes, or save data.
-  const CHUNK_TILES = 16; // Used to convert tile coordinates into stable chunk keys and bounds.
+  const DEFAULT_CHUNK_TILES = 16; // Used whenever a zone does not author its own chunk dimension.
+  const CHUNK_TILES = DEFAULT_CHUNK_TILES; // Kept as the backwards-compatible exported default for older diagnostics/callers.
   const IMMEDIATE_RADIUS = 1; // Used to synchronously prime a safe 3x3 arrival neighborhood behind a black transition.
   const LOAD_RADIUS = 2; // Used to stream a 5x5 neighborhood around the player's current chunk.
   const UNLOAD_RADIUS = 3; // Used as hysteresis so crossing a chunk edge does not immediately destroy the previous ring.
@@ -30,12 +31,17 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  function normalizeChunkTiles(value) {
+    const parsedChunkTiles = Math.floor(Number(value)); // Used to validate one zone's authored chunk dimension before any coordinate math uses it.
+    return Number.isFinite(parsedChunkTiles) && parsedChunkTiles > 0 ? parsedChunkTiles : DEFAULT_CHUNK_TILES;
+  }
+
   function chunkKey(cx, cz) {
     return cx + ',' + cz;
   }
 
-  function tileToChunk(tile) {
-    return Math.floor(Number(tile) / CHUNK_TILES);
+  function tileToChunk(tile, chunkTiles = DEFAULT_CHUNK_TILES) {
+    return Math.floor(Number(tile) / chunkTiles);
   }
 
   function parseChunkKey(key) {
@@ -120,6 +126,8 @@
       this.scene = config.scene;
       this.cols = config.cols;
       this.rows = config.rows;
+      const requestedChunkTiles = config.chunkTiles ?? config.chunkSize; // Used to accept either explicit per-zone config name while callers migrate.
+      this.chunkTiles = normalizeChunkTiles(requestedChunkTiles); // Used by every tile/chunk conversion and bounds calculation for this zone.
       this.buildChunk = config.buildChunk;
       this.disposeChunk = config.disposeChunk || (record => disposeTaggedChunkObjects(record.group));
       this.onChunkLoaded = config.onChunkLoaded || null;
@@ -134,8 +142,8 @@
       this.rebuilds = 0;
       this.totalBuildMs = 0;
       this.lastBuildMs = 0;
-      this.maxCx = Math.max(0, Math.ceil(this.cols / CHUNK_TILES) - 1);
-      this.maxCz = Math.max(0, Math.ceil(this.rows / CHUNK_TILES) - 1);
+      this.maxCx = Math.max(0, Math.ceil(this.cols / this.chunkTiles) - 1);
+      this.maxCz = Math.max(0, Math.ceil(this.rows / this.chunkTiles) - 1);
     }
 
     validChunk(cx, cz) {
@@ -144,10 +152,10 @@
 
     boundsFor(cx, cz) {
       return {
-        colStart: cx * CHUNK_TILES,
-        rowStart: cz * CHUNK_TILES,
-        colEnd: Math.min(this.cols, (cx + 1) * CHUNK_TILES),
-        rowEnd: Math.min(this.rows, (cz + 1) * CHUNK_TILES),
+        colStart: cx * this.chunkTiles,
+        rowStart: cz * this.chunkTiles,
+        colEnd: Math.min(this.cols, (cx + 1) * this.chunkTiles),
+        rowEnd: Math.min(this.rows, (cz + 1) * this.chunkTiles),
       };
     }
 
@@ -180,11 +188,12 @@
       group.userData.wildernessChunkMapId = this.mapId;
       group.userData.wildernessChunkX = cx;
       group.userData.wildernessChunkZ = cz;
+      group.userData.wildernessChunkTiles = this.chunkTiles;
       group.userData.wildernessChunkBounds = bounds;
       this.scene.add(group);
       const startedAt = performance.now();
       try {
-        const payload = this.buildChunk({ mapId: this.mapId, key, cx, cz, bounds, group }) || {};
+        const payload = this.buildChunk({ mapId: this.mapId, key, cx, cz, chunkTiles: this.chunkTiles, bounds, group }) || {};
         const buildMs = performance.now() - startedAt;
         const record = { key, cx, cz, bounds, group, payload, buildMs, loadedAt: performance.now(), debugCage: null };
         this.loaded.set(key, record);
@@ -232,8 +241,8 @@
     }
 
     setCenter(col, row) {
-      const centerCx = clamp(tileToChunk(col), 0, this.maxCx);
-      const centerCz = clamp(tileToChunk(row), 0, this.maxCz);
+      const centerCx = clamp(tileToChunk(col, this.chunkTiles), 0, this.maxCx);
+      const centerCz = clamp(tileToChunk(row, this.chunkTiles), 0, this.maxCz);
       const changed = centerCx !== this.centerCx || centerCz !== this.centerCz;
       this.centerCx = centerCx;
       this.centerCz = centerCz;
@@ -283,8 +292,8 @@
     rebuild(col = null, row = null) {
       let keys;
       if (Number.isFinite(col) && Number.isFinite(row)) {
-        const targetCx = tileToChunk(col);
-        const targetCz = tileToChunk(row);
+        const targetCx = tileToChunk(col, this.chunkTiles);
+        const targetCz = tileToChunk(row, this.chunkTiles);
         keys = [...this.loaded.values()]
           .filter(record => chebyshev(record.cx, record.cz, targetCx, targetCz) <= 1)
           .map(record => record.key);
@@ -304,7 +313,7 @@
     }
 
     attachObject(col, row, object) {
-      const record = this.loaded.get(chunkKey(tileToChunk(col), tileToChunk(row)));
+      const record = this.loaded.get(chunkKey(tileToChunk(col, this.chunkTiles), tileToChunk(row, this.chunkTiles)));
       if (!record || !object) return false;
       record.group.add(object);
       return true;
@@ -313,7 +322,7 @@
     snapshot() {
       return {
         mapId: this.mapId,
-        chunkTiles: CHUNK_TILES,
+        chunkTiles: this.chunkTiles,
         center: this.centerCx == null ? null : { x: this.centerCx, z: this.centerCz },
         loaded: this.loaded.size,
         queued: this.queue.size,
@@ -378,7 +387,8 @@
 
   function snapshot() {
     return {
-      chunkTiles: CHUNK_TILES,
+      chunkTiles: DEFAULT_CHUNK_TILES,
+      defaultChunkTiles: DEFAULT_CHUNK_TILES,
       loadRadius: LOAD_RADIUS,
       unloadRadius: UNLOAD_RADIUS,
       debugVisible,
@@ -495,7 +505,7 @@
   function debugLines() {
     const data = snapshot();
     const lines = [
-      'Wilderness chunks: ' + CHUNK_TILES + 'x' + CHUNK_TILES + ' tiles',
+      'Wilderness chunk default: ' + DEFAULT_CHUNK_TILES + 'x' + DEFAULT_CHUNK_TILES + ' tiles',
       'active=' + (data.activeArea || '(none)') + ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS,
     ];
     const persisted = window.__wildernessChunkPersistenceDebug?.(); // Adds save-state coverage to the mobile status panel.
@@ -505,7 +515,7 @@
     for (const zone of data.zones) {
       const center = zone.center ? zone.center.x + ',' + zone.center.z : '-';
       lines.push(
-        zone.mapId + ': center=' + center +
+        zone.mapId + ': size=' + zone.chunkTiles + 'x' + zone.chunkTiles + ' center=' + center +
         ' loaded=' + zone.loaded + ' queued=' + zone.queued +
         ' last=' + zone.lastBuildMs + 'ms avg=' + zone.averageBuildMs + 'ms'
       );
@@ -570,6 +580,7 @@
     formatResidencyAudit,
     constants: Object.freeze({
       CHUNK_TILES,
+      DEFAULT_CHUNK_TILES,
       IMMEDIATE_RADIUS,
       LOAD_RADIUS,
       UNLOAD_RADIUS,
