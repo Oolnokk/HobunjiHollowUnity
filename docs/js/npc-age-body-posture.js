@@ -5,7 +5,7 @@
   'use strict';
 
   const legApi = window.ProceduralLegAnimation; // Wrapped below because every humanoid PNG character already creates its procedural leg/body runtime through this API.
-  const ageConfig = window.HobunjiNpcAgeEffectConfig; // Resolves exact NPC assignments and the tool-authored torsoPitchDeg value.
+  const ageConfig = window.HobunjiNpcAgeEffectConfig; // Resolves exact NPC assignments and the tool-authored posture values.
   const THREE = window.THREE;
   if (!ageConfig) return;
 
@@ -92,6 +92,10 @@
     return Number.isFinite(number) ? number : fallback;
   }
 
+  function clampPercent(value) {
+    return Math.max(0, Math.min(100, finite(value))); // Shared clamp for the authored standing-height reduction percentage.
+  }
+
   function resolveEffect(options) {
     if (options?.suppressAgeBodyPosture === true) return null; // Authoring previews can build real gameplay feet first, then apply one explicit posterior-pivot age transform without double-composition.
     const profileEffect = options?.profile?.__hobunjiNpcAgeEffect || null; // Preferred source so portrait aging and torso posture always share the exact same already-resolved preset/tuning.
@@ -111,6 +115,37 @@
 
   function bodyRootFor(options) {
     return options?.ageBodyRoot || options?.drunkBodyRoot || options?.avatarRoot || null; // Reuses the isolated NPC sway/visual root when available so feet remain floor-planted.
+  }
+
+  function modelHeightFromRoot(root) {
+    let modelHeight = Number(root?.userData?.portraitModelHeight);
+    if (Number.isFinite(modelHeight) && modelHeight > 0) return modelHeight;
+    root?.traverse?.(node => {
+      if (Number.isFinite(modelHeight) && modelHeight > 0) return;
+      const candidate = Number(node?.userData?.portraitModelHeight);
+      if (Number.isFinite(candidate) && candidate > 0) modelHeight = candidate;
+    });
+    return Number.isFinite(modelHeight) && modelHeight > 0 ? modelHeight : 0;
+  }
+
+  function modelHeightFor(options, root = bodyRootFor(options)) {
+    for (const candidate of [
+      options?.modelHeight,
+      root?.userData?.portraitModelHeight,
+      options?.avatarRoot?.userData?.portraitModelHeight,
+    ]) {
+      const number = Number(candidate);
+      if (Number.isFinite(number) && number > 0) return number;
+    }
+    return modelHeightFromRoot(root);
+  }
+
+  // The game's normal standing PNG root is lifted by modelHeight / 2. Age reduces THAT standing lift,
+  // not portraitVerticalPlacement, so species/gender padding and anatomical art alignment remain intact.
+  function verticalLowerY(effect, options = null, root = null) {
+    const reduction = clampPercent(effect?.verticalOffsetReductionPct) / 100;
+    const modelHeight = options ? modelHeightFor(options, root || bodyRootFor(options)) : modelHeightFromRoot(root);
+    return -(modelHeight * 0.5) * reduction;
   }
 
   function neckJointFromRoot(root) {
@@ -142,6 +177,8 @@
     const state = {
       pitchDeg: finite(effect.torsoPitchDeg),
       pitchRad: finite(effect.torsoPitchDeg) * DEG,
+      verticalOffsetReductionPct: clampPercent(effect.verticalOffsetReductionPct),
+      bodyLowerY: 0, // Tracks only the age Y delta so clearing it never disturbs authored placement, terrain elevation, or other transforms.
       bodyTilt: new THREE.Quaternion(), // Tracks only the NPC age quaternion so removing it never disturbs other animation layers.
       neckCounter: new THREE.Quaternion(), // Equal-and-opposite local neck pitch; tracked separately so dialogue/look-at neck motion remains additive.
       disposed: false,
@@ -150,9 +187,14 @@
     function clearNpcDelta() {
       if (isPlayer) return;
       const bodyRoot = bodyRootFor(options); // Isolated torso/visual root shared with drunk locomotion when the walker provides one.
-      if (!bodyRoot?.quaternion || !hasQuaternionDelta(state.bodyTilt)) return;
-      bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
-      state.bodyTilt.identity();
+      if (bodyRoot?.position && Math.abs(state.bodyLowerY) > 1e-10) {
+        bodyRoot.position.y -= state.bodyLowerY; // Removes exactly the prior age lowering before other systems update the root.
+        state.bodyLowerY = 0;
+      }
+      if (bodyRoot?.quaternion && hasQuaternionDelta(state.bodyTilt)) {
+        bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
+        state.bodyTilt.identity();
+      }
     }
 
     function clearNeckDelta() {
@@ -171,17 +213,24 @@
 
     function applyDelta() {
       const pitchRad = finite(state.pitchDeg) * DEG; // Re-read author/debug mutations so a tool/runtime inspector can tune a live handle without rebuilding it.
+      const reductionEffect = { verticalOffsetReductionPct: state.verticalOffsetReductionPct };
+      const lowerY = verticalLowerY(reductionEffect, options);
       state.pitchRad = pitchRad;
       if (isPlayer) {
         window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
           priority: BODY_PRIORITY,
           mode: 'additive',
           rotation: { pitch: pitchRad },
+          translation: { x: 0, y: lowerY, z: 0 },
         }); // Player-facing composition remains render-only and never overwrites movement/facing state.
         applyNeckCounter(pitchRad);
         return;
       }
-      const bodyRoot = bodyRootFor(options); // NPCs have no general body composer, so mirror drunk-locomotion's tracked non-accumulating root quaternion.
+      const bodyRoot = bodyRootFor(options); // NPCs have no general body composer, so mirror drunk-locomotion's tracked non-accumulating root transform.
+      if (bodyRoot?.position) {
+        state.bodyLowerY = lowerY;
+        bodyRoot.position.y += state.bodyLowerY; // Body/hands lower while procedural feet stay on their outer floor root.
+      }
       if (bodyRoot?.quaternion) {
         state.bodyTilt.setFromEuler(new THREE.Euler(pitchRad, 0, 0, 'YXZ'));
         bodyRoot.quaternion.multiply(state.bodyTilt);
@@ -190,10 +239,10 @@
     }
 
     handle.update = function agePostureUpdate(...args) {
-      clearNpcDelta(); // Removes exactly last frame's age torso offset while preserving whatever other animation state currently exists.
+      clearNpcDelta(); // Removes exactly last frame's age body Y/torso offsets while preserving whatever other animation state currently exists.
       clearNeckDelta(); // Removes only the previous age counter before dialogue/look-at systems establish this frame's clean neck base.
       const result = originalUpdate?.(...args); // Lets the normal gait and outer/inner animation decorators resolve a clean current-frame base.
-      applyDelta(); // Reapplies age torso + opposite neck counter as the persistent baseline after transient pose writers have finished.
+      applyDelta(); // Reapplies age lowering + torso + opposite neck counter as the persistent baseline after transient pose writers have finished.
       return result;
     };
 
@@ -211,6 +260,9 @@
       effect,
       get torsoPitchDeg() { return state.pitchDeg; },
       set torsoPitchDeg(value) { state.pitchDeg = Math.max(-45, Math.min(45, finite(value))); },
+      get verticalOffsetReductionPct() { return state.verticalOffsetReductionPct; },
+      set verticalOffsetReductionPct(value) { state.verticalOffsetReductionPct = clampPercent(value); },
+      get verticalLowerY() { return state.bodyLowerY; },
       get neckCounterPitchDeg() { return -state.pitchDeg; },
       get bodyRoot() { return bodyRootFor(options); },
       get neckJoint() { return neckJointFor(options); },
@@ -224,7 +276,7 @@
   const previousAttach = legApi.attach.bind(legApi); // Includes earlier gait/drunk decorators because this module is loaded after drunk-locomotion.
   legApi.attach = function ageAwareLegAttach(THREEArg, parent, options = {}) {
     const handle = previousAttach(THREEArg, parent, options);
-    const effect = resolveEffect(options); // Exact age assignment or an explicit future provider determines whether this character gets a torso offset.
+    const effect = resolveEffect(options); // Exact age assignment or an explicit future provider determines whether this character gets a torso/height offset.
     const isPlayer = String(options?.name || '').trim().toLowerCase() === 'player';
     return effect ? decorateHandle(options, handle, effect, isPlayer) : handle;
   };
@@ -234,14 +286,21 @@
     channel: BODY_CHANNEL,
     priority: BODY_PRIORITY,
     resolveEffect,
+    verticalLowerY,
     preservePureBlackAgeSlots,
     applyPreview(root, effect) {
       if (!root?.rotation) return false;
       const pitchRad = finite(effect?.torsoPitchDeg) * DEG;
+      const previewState = root.userData.__hobunjiAgePreviewPosture || (root.userData.__hobunjiAgePreviewPosture = {
+        neckCounter: new THREE.Quaternion(),
+        verticalLowerY: 0,
+      });
+      if (root.position && Math.abs(previewState.verticalLowerY) > 1e-10) root.position.y -= previewState.verticalLowerY;
+      previewState.verticalLowerY = verticalLowerY(effect, null, root);
+      if (root.position) root.position.y += previewState.verticalLowerY; // Same modelHeight/2 percentage reduction as live runtime; preview feet remain outside this pivot.
       root.rotation.x = pitchRad; // Dedicated tool torso pivot carries the body/hands while procedural feet remain outside it.
       const neck = neckJointFromRoot(root);
       if (neck?.quaternion) {
-        const previewState = root.userData.__hobunjiAgePreviewPosture || (root.userData.__hobunjiAgePreviewPosture = { neckCounter: new THREE.Quaternion() });
         if (hasQuaternionDelta(previewState.neckCounter)) neck.quaternion.multiply(previewState.neckCounter.clone().invert());
         previewState.neckCounter.setFromEuler(new THREE.Euler(-pitchRad, 0, 0, 'YXZ'));
         neck.quaternion.multiply(previewState.neckCounter); // Exact opposite pitch makes the visual authoring preview match the runtime age composition.
@@ -254,6 +313,8 @@
         handles: Array.from(activeHandles).map(handle => ({
           name: handle?.group?.name || null,
           torsoPitchDeg: handle?.agePosture?.torsoPitchDeg ?? null,
+          verticalOffsetReductionPct: handle?.agePosture?.verticalOffsetReductionPct ?? null,
+          verticalLowerY: handle?.agePosture?.verticalLowerY ?? null,
           neckCounterPitchDeg: handle?.agePosture?.neckCounterPitchDeg ?? null,
           isPlayer: handle?.agePosture?.isPlayer ?? false,
           hasBodyRoot: !!handle?.agePosture?.bodyRoot,
