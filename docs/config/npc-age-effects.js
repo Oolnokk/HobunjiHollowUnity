@@ -37,6 +37,8 @@
     Object.freeze({ ids: Object.freeze(['father_hunundi_hodu']), names: Object.freeze(['Father Hunundi', 'Father Hunundi Hodu']), preset: 'old' }),
     Object.freeze({ ids: Object.freeze(['kinami_kunji']), names: Object.freeze(['Kinami Kunji']), preset: 'veryOld' }),
     Object.freeze({ ids: Object.freeze(['kaboku_kunji']), names: Object.freeze(['Kaboku Kunji']), preset: 'veryOld' }),
+    Object.freeze({ ids: Object.freeze(['leaf']), names: Object.freeze(['Leaf']), preset: 'veryOld' }),
+    Object.freeze({ ids: Object.freeze(['pahu']), names: Object.freeze(['Pahu']), preset: 'veryOld' }),
   ]);
 
   function finite(value, fallback) {
