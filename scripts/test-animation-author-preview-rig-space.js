@@ -9,6 +9,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const author = read('docs/tools/animation-author/index.html');
 const patch = read('docs/js/animation-author-preview-rig-space-fix.js');
 const wrapper = read('docs/tools/animation-author-rig-space-test/index.html');
+const transformDumpBootstrap = read('docs/js/transform-dump-utils.js'); // Verifies the production Animation Author actually loads the isolated parity repair.
 const pixelProbe = read('docs/js/pixel-probe.js');
 
 // Reproduce the precise mismatch this patch guards: the old editor builds
@@ -39,5 +40,7 @@ assert.match(patch, /isNpcActor\(actor\)/,
   'repair must remain character-only so creature saddle/grip size-scale ancestry is untouched');
 assert.match(wrapper, /animation-author-preview-rig-space-fix\.js/,
   'isolated visual A\/B wrapper must inject the preview-space repair');
+assert.match(transformDumpBootstrap, /animation-author-preview-rig-space-fix\.js/,
+  'production Animation Author boot must load the rig-space repair, not only its standalone test wrapper');
 
 console.log('Animation Author preview rig-space regression guards passed');
