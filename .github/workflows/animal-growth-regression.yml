@@ -5,33 +5,41 @@ on:
     paths:
       - 'docs/config/animal-growth-config.js'
       - 'docs/config/barn-incubator-config.js'
+      - 'docs/config/economy-progression.js'
       - 'docs/config/furniture-authored/incubator.json'
       - 'docs/config/pieces/barn-incubator.json'
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
+      - 'docs/js/fish-catalog.js'
+      - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-barn-incubator.js'
       - 'scripts/test-carpenter-barn-additions.js'
+      - 'scripts/test-economy-progression.js'
       - '.github/workflows/animal-growth-regression.yml'
   pull_request:
     paths:
       - 'docs/config/animal-growth-config.js'
       - 'docs/config/barn-incubator-config.js'
+      - 'docs/config/economy-progression.js'
       - 'docs/config/furniture-authored/incubator.json'
       - 'docs/config/pieces/barn-incubator.json'
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
+      - 'docs/js/fish-catalog.js'
+      - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-barn-incubator.js'
       - 'scripts/test-carpenter-barn-additions.js'
+      - 'scripts/test-economy-progression.js'
       - '.github/workflows/animal-growth-regression.yml'
 
 permissions:
@@ -51,6 +59,7 @@ jobs:
         run: |
           node --check docs/config/animal-growth-config.js
           node --check docs/config/barn-incubator-config.js
+          node --check docs/config/economy-progression.js
           node --check docs/js/animal-growth.js
           node --check docs/js/barn-incubator.js
           node --check docs/js/carpenter-shop.js
@@ -62,3 +71,5 @@ jobs:
         run: node scripts/test-barn-incubator.js
       - name: Test carpenter barn additions
         run: node scripts/test-carpenter-barn-additions.js
+      - name: Test fishing economy progression
+        run: node scripts/test-economy-progression.js
