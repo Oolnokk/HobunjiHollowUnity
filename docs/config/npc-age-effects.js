@@ -28,7 +28,7 @@
       id: 'veryOld',
       label: 'Very Old',
       color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
-      headDropPx: 19,
+      headDropPx: 22,
       torsoPitchDeg: 9, // Stronger default hunch; intentionally independent from the portrait head-drop slider in the authoring tool.
       verticalOffsetReductionPct: 3, // Stronger but still subtle height loss without altering portraitVerticalPlacement or species scale.
     }),
