@@ -56596,8 +56596,8 @@ async function loadFootGlbModules() { // Loads GLTFLoader/SkeletonUtils against 
   if (state.footGlb.modulePromise) return state.footGlb.modulePromise;
   state.footGlb.modulePromise = (async () => {
     await initThree();
-    const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
-    const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
+    const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
+    const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.128.0';
     const [loaderModule, skeletonModule] = await Promise.all([
       import(`https://esm.sh/three@${version}/examples/jsm/loaders/GLTFLoader.js?deps=three@${version}`),
       import(`https://esm.sh/three@${version}/examples/jsm/utils/SkeletonUtils.js?deps=three@${version}`),
@@ -58567,9 +58567,9 @@ function initializeLegBendControls(TransformControls) { // Creates a third gizmo
 
 async function loadTransformControls() {
   if ((state.kurraya.transformControls && procedural.pose.transformControls) || !state.three.ready) return;
-  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
   const versionMatch = configuredThreeUrl.match(/three@([0-9.]+)/);
-  const version = versionMatch?.[1] || '0.165.0';
+  const version = versionMatch?.[1] || '0.128.0';
   const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
   try {
     const module = await import(url);

@@ -255,8 +255,8 @@
   function loaderForThree(THREE) {
     if (typeof THREE?.GLTFLoader === 'function') return Promise.resolve(new THREE.GLTFLoader());
     if (/\/tools\/animation-author\//.test(location.pathname)) {
-      const configuredThreeUrl = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0'; // Keeps the author's GLTF loader on the exact Three.js module version used by its preview scene.
-      const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
+      const configuredThreeUrl = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0'; // Keeps the author's GLTF loader on the exact Three.js module version used by its preview scene.
+      const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.128.0';
       return import(`https://esm.sh/three@${version}/examples/jsm/loaders/GLTFLoader.js?deps=three@${version}`)
         .then(module => new module.GLTFLoader());
     }

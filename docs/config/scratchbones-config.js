@@ -3881,9 +3881,9 @@ window.SCRATCHBONES_CONFIG = {
         "configBase": "./docs/config/"
       },
       "pngPlaneAvatar": {
-        "threeModuleUrl": "https://esm.sh/three@0.165.0",
-        "orbitControlsModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0",
-        "gltfExporterModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0",
+        "threeModuleUrl": "https://esm.sh/three@0.128.0",
+        "orbitControlsModuleUrl": "https://esm.sh/three@0.128.0/examples/jsm/controls/OrbitControls.js?deps=three@0.128.0",
+        "gltfExporterModuleUrl": "https://esm.sh/three@0.128.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.128.0",
         "modelWidth": 1,
         "worldModelWidth": 0.9,
         "worldAlphaTest": 0.01,
