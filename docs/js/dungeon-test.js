@@ -6,13 +6,26 @@
   // real furniture (docs/config/furniture-authored/*.json, same pipeline
   // every house uses), real brick/stone walls (InteriorSceneBuilder's
   // default WallBuilder path — see wallStyle 'dungeon' in
-  // interior-scene-builder.js), real bandit enemies (window.BanditCombat,
-  // the same system wilderness camps use), and the game's already-global
-  // ranged/melee combat (unlocked for this map via game.js's
-  // _isCavernBuildingArea). Follows the same window.<Namespace> +
-  // init(deps)-free pure-data pattern as town-mine.js, minus that module's
-  // persistent floor/ladder progression — this is a single test floor,
-  // freshly regenerated every visit, with no save state of its own.
+  // interior-scene-builder.js), and the game's already-global ranged/melee
+  // combat (unlocked for this map via game.js's _isCavernBuildingArea).
+  // Follows the same window.<Namespace> + init(deps)-free pure-data pattern
+  // as town-mine.js, minus that module's persistent floor/ladder
+  // progression — this is a single test floor, freshly regenerated every
+  // visit, with no save state of its own.
+  //
+  // The puzzle structure: a critical path from the entrance room to the
+  // treasure room is computed over dungeon-generator.js's room graph, a
+  // short chasm is carved into one of that path's corridor legs (the
+  // "disruption"), and the "solution" is a wall rune that must be shot with
+  // a ranged weapon (not walked up to and pressed — see game.js's
+  // dungeonRuneFurniture wiring into window.RangedWeapons.registerWorldTarget)
+  // from the near side, which then drops a real climbable rope (see the
+  // Dungeon Test's use of window.ClimbSystem's new rope target type) across
+  // the gap. A second, visually identical decoy rune sits elsewhere off the
+  // path — shooting it instead summons a couple of ghostly, semi-transparent
+  // Ghouls next to the player rather than solving anything, so the
+  // supernatural threat here is never pre-placed, only ever triggered by the
+  // player's own wrong guess.
   //
   // No set in-world location yet — eventually this will be found out in the
   // wilderness or roll in as a mine-floor replacement, but that placement
@@ -64,6 +77,93 @@
     return picks;
   }
 
+  // BFS over dungeon-generator.js's room adjacency graph (a spanning tree —
+  // there is exactly one simple path between any two rooms) to find the
+  // critical path from the entrance to the treasure room, as both the
+  // ordered room sequence and the ordered edges connecting them.
+  function findCriticalPath(generated) {
+    const { entranceRoom, treasureRoom, rooms, edges } = generated;
+    const adjacency = new Map(rooms.map(room => [room, []]));
+    for (const edge of edges) {
+      adjacency.get(edge.roomA)?.push({ to: edge.roomB, edge });
+      adjacency.get(edge.roomB)?.push({ to: edge.roomA, edge });
+    }
+    const cameFrom = new Map([[entranceRoom, null]]);
+    const queue = [entranceRoom];
+    for (let index = 0; index < queue.length; index++) {
+      const room = queue[index];
+      if (room === treasureRoom) break;
+      for (const { to, edge } of adjacency.get(room) || []) {
+        if (cameFrom.has(to)) continue;
+        cameFrom.set(to, { from: room, edge });
+        queue.push(to);
+      }
+    }
+    const pathRooms = [];
+    const pathEdges = [];
+    let current = treasureRoom;
+    while (current) {
+      pathRooms.push(current);
+      const step = cameFrom.get(current);
+      if (!step) break;
+      pathEdges.push(step.edge);
+      current = step.from;
+    }
+    pathRooms.reverse();
+    pathEdges.reverse();
+    return { pathRooms, pathEdges };
+  }
+
+  // A leg runs from one room's center to another's, so its own two ends
+  // (index 0 and index length-1) always sit inside a room — leg[0] in
+  // whichever room "point" the corridor started from, leg[length-1] in the
+  // other. The chasm goes in whatever pure-corridor (non-room) island sits
+  // between those two room interiors: 2 gap tiles when the island is long
+  // enough, fewer (down to a single tile) when it's short, or no chasm at
+  // all when two rooms turn out to sit directly against each other with no
+  // real corridor between them (island length 0). The tiles flanking the
+  // gap (ropeBase/ropeTip) are just whatever comes right before/after it on
+  // the leg — ordinary floor, room-interior or corridor either way.
+  function findChasmOnLeg(leg, roomTileSet) {
+    let islandStart = -1, islandEnd = -1;
+    for (let i = 0; i < leg.length; i++) {
+      if (roomTileSet.has(`${leg[i][0]},${leg[i][1]}`)) continue;
+      if (islandStart === -1) islandStart = i;
+      islandEnd = i;
+    }
+    if (islandStart === -1) return null;
+    const islandLen = islandEnd - islandStart + 1;
+    const gapLen = Math.min(2, islandLen);
+    const gapStart = islandStart + Math.floor((islandLen - gapLen) / 2);
+    const ropeBaseIndex = gapStart - 1;
+    const ropeTipIndex = gapStart + gapLen;
+    if (ropeBaseIndex < 0 || ropeTipIndex >= leg.length) return null;
+    return {
+      gapTiles: leg.slice(gapStart, gapStart + gapLen),
+      ropeBase: leg[ropeBaseIndex],
+      ropeTip: leg[ropeTipIndex],
+    };
+  }
+
+  // Tries an edge's two corridor legs (whichever is long enough first),
+  // then the whole path's edges middle-out — a disruption roughly halfway
+  // along the crawl reads better than one immediately at the entrance or
+  // immediately before the treasure room, but any valid edge is fine.
+  function pickChasm(pathEdges, roomTileSet) {
+    const mid = (pathEdges.length - 1) / 2;
+    const ordered = pathEdges
+      .map((edge, index) => ({ edge, distanceFromMid: Math.abs(index - mid) }))
+      .sort((a, b) => a.distanceFromMid - b.distanceFromMid)
+      .map(entry => entry.edge);
+    for (const edge of ordered) {
+      for (const leg of edge.legs) {
+        const found = findChasmOnLeg(leg, roomTileSet);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
   async function synthesizeFloorMapData(mapId) {
     if (!floorFromMapId(mapId)) return null;
     visitCount += 1;
@@ -74,10 +174,66 @@
 
     const furniture = [];
     let furnId = 0;
-    const addFurniture = (itemKey, col, row, rotY) => furniture.push({ id: `f_dtest_${furnId++}`, itemKey, col, row, rotY: rotY || 0 });
+    const addFurniture = (itemKey, col, row, rotY, extra) => {
+      const record = { id: `f_dtest_${furnId++}`, itemKey, col, row, rotY: rotY || 0 };
+      if (extra) Object.assign(record, extra);
+      furniture.push(record);
+      return record;
+    };
 
-    const enemySpawns = [];
     const usedTiles = new Set(generated.exitTiles.map(([c, r]) => `${c},${r}`));
+    let colliders = [];
+
+    // ── The chasm/rune/rope puzzle (disruption -> solution) ──────────────
+    const { pathRooms, pathEdges } = findCriticalPath(generated);
+    const chasm = pathEdges.length ? pickChasm(pathEdges, generated.roomTileSet) : null;
+    if (chasm) {
+      // Gap tiles stay real floor (mapData.floor) on purpose — removing
+      // them would make the wall-panel builder treat the gap's edges as
+      // exterior boundaries and seal it behind brick walls, which would
+      // block both sightline and shots across it. Impassable-but-visible
+      // is done the same way an authored map blocks a tile without a wall:
+      // mapData.colliders (see game.js's collider pass right after the
+      // floor fill) — game.js also drops a dark pit overlay mesh on each
+      // one when it places the real rune, and removes both the collider
+      // and the overlay once that rune is shot.
+      colliders = chasm.gapTiles.map(([c, r]) => [c, r]);
+      for (const [c, r] of chasm.gapTiles) usedTiles.add(`${c},${r}`);
+      usedTiles.add(`${chasm.ropeBase[0]},${chasm.ropeBase[1]}`);
+      usedTiles.add(`${chasm.ropeTip[0]},${chasm.ropeTip[1]}`);
+
+      // The real rune sits a couple of tiles past the rope's far anchor,
+      // still colinear with the corridor's own axis, so a shot fired
+      // straight down the hallway from the near side clears the gap and
+      // lands on it — see game.js's dungeonRuneFurniture wiring.
+      const axisX = Math.sign(chasm.ropeTip[0] - chasm.ropeBase[0]);
+      const axisY = Math.sign(chasm.ropeTip[1] - chasm.ropeBase[1]);
+      let realRuneTile = [chasm.ropeTip[0] + axisX * 2, chasm.ropeTip[1] + axisY * 2];
+      if (!floorSet.has(`${realRuneTile[0]},${realRuneTile[1]}`)) realRuneTile = [chasm.ropeTip[0] + axisX, chasm.ropeTip[1] + axisY];
+      if (!floorSet.has(`${realRuneTile[0]},${realRuneTile[1]}`)) realRuneTile = chasm.ropeTip;
+      usedTiles.add(`${realRuneTile[0]},${realRuneTile[1]}`);
+      addFurniture('dungeonRuneFurniture', realRuneTile[0], realRuneTile[1], Math.atan2(-axisY, -axisX) * 180 / Math.PI, {
+        isDecoy: false,
+        gateTiles: chasm.gapTiles,
+        ropeBase: chasm.ropeBase,
+        ropeTip: chasm.ropeTip,
+      });
+
+      // The decoy lives off the critical path entirely when a real branch
+      // room exists (the "wrong side room" a curious player wanders into),
+      // falling back to the entrance room — still visible early, still a
+      // real wrong guess — when the layout has no branch at all.
+      const offPathRooms = generated.rooms.filter(room => !pathRooms.includes(room) && room !== generated.entranceRoom);
+      const decoyRoom = offPathRooms.length ? offPathRooms[Math.floor(rng() * offPathRooms.length)] : generated.entranceRoom;
+      const decoySafe = placementSafeTiles(floorSet, roomTileList(decoyRoom)).filter(([c, r]) => !usedTiles.has(`${c},${r}`));
+      const decoyPool = decoySafe.length ? decoySafe : roomTileList(decoyRoom).filter(([c, r]) => floorSet.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`));
+      const [decoyTile] = pickSeparatedTiles(rng, decoyPool, new Set(), 1);
+      if (decoyTile) {
+        usedTiles.add(`${decoyTile[0]},${decoyTile[1]}`);
+        addFurniture('dungeonRuneFurniture', decoyTile[0], decoyTile[1], Math.floor(rng() * 4) * 90, { isDecoy: true });
+      }
+    }
+
     // itemKey values here must match DECORATIVE_FURNITURE_DEFS[key].itemKey
     // in game.js exactly (the furniture placement/interactable-lookup keys
     // off f.itemKey, not the recipe/def object key).
@@ -108,46 +264,20 @@
           addFurniture('dungeonChestFurniture', c, r, Math.floor(rng() * 4) * 90);
           usedTiles.add(`${c},${r}`);
         }
-        safe = safe.filter(([c, r]) => !usedTiles.has(`${c},${r}`));
-        const [guardSpot] = pickSeparatedTiles(rng, safe, new Set(), 1);
-        if (guardSpot) {
-          enemySpawns.push({ col: guardSpot[0], row: guardSpot[1], rank: 'lieutenant' });
-          usedTiles.add(`${guardSpot[0]},${guardSpot[1]}`);
-        }
-      } else if (!isEntrance) {
-        if (rng() < 0.6) {
-          const [dressSpot] = pickSeparatedTiles(rng, safe, new Set(), 1);
-          if (dressSpot) {
-            addFurniture(DRESS_ITEM_KEYS[Math.floor(rng() * DRESS_ITEM_KEYS.length)], dressSpot[0], dressSpot[1], Math.floor(rng() * 4) * 90);
-            usedTiles.add(`${dressSpot[0]},${dressSpot[1]}`);
-            safe = safe.filter(([c, r]) => !(c === dressSpot[0] && r === dressSpot[1]));
-          }
-        }
-        const enemyCount = 1 + (rng() < 0.35 ? 1 : 0);
-        const enemySpots = pickSeparatedTiles(rng, safe, new Set(), enemyCount, 2);
-        for (const [c, r] of enemySpots) {
-          enemySpawns.push({ col: c, row: r, rank: 'grunt' });
-          usedTiles.add(`${c},${r}`);
+      } else if (!isEntrance && rng() < 0.6) {
+        const [dressSpot] = pickSeparatedTiles(rng, safe, new Set(), 1);
+        if (dressSpot) {
+          addFurniture(DRESS_ITEM_KEYS[Math.floor(rng() * DRESS_ITEM_KEYS.length)], dressSpot[0], dressSpot[1], Math.floor(rng() * 4) * 90);
+          usedTiles.add(`${dressSpot[0]},${dressSpot[1]}`);
         }
       }
     }
 
-    // A very small dungeon (few rooms, or a cramped treasure room whose
-    // lamp/chest tiles ate its only safe spots) can otherwise roll zero
-    // enemies — guarantee at least one grunt somewhere non-entrance so
-    // there's always real combat to test ranged/melee weapons against.
-    if (!enemySpawns.length) {
-      const fallbackRoom = generated.rooms.find(room => room !== generated.entranceRoom) || generated.entranceRoom;
-      const fallbackTiles = roomTileList(fallbackRoom).filter(([c, r]) => floorSet.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`));
-      const [spot] = pickSeparatedTiles(rng, fallbackTiles, new Set(), 1);
-      if (spot) enemySpawns.push({ col: spot[0], row: spot[1], rank: 'grunt' });
-    }
-
-    // Same reasoning for the treasure chest — a cramped treasure room can
-    // burn its only safe tile on the torch and leave none for the chest
-    // itself. The whole point of this map is a chest to open, so fall back
-    // to any unused floor tile in the treasure room (loosening the strict
-    // "safe" neighbor check) before giving up.
+    // Same reasoning as the puzzle placements above — a cramped treasure
+    // room can burn its only safe tile on the torch and leave none for the
+    // chest itself. The whole point of this map is a chest to open, so
+    // fall back to any unused floor tile in the treasure room (loosening
+    // the strict "safe" neighbor check) before giving up.
     if (!furniture.some(f => f.itemKey === 'dungeonChestFurniture')) {
       const fallbackTiles = roomTileList(generated.treasureRoom).filter(([c, r]) => floorSet.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`));
       const [spot] = pickSeparatedTiles(rng, fallbackTiles, new Set(), 1);
@@ -163,11 +293,10 @@
       name: 'Dungeon Test',
       cols: generated.cols, rows: generated.rows,
       floor: generated.floor,
-      colliders: [],
+      colliders,
       furniture,
       exits: [{ id: 'dungeon_test_exit', label: 'Back to Town', tiles: generated.exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
       wallStyle: 'dungeon',
-      dungeonEnemySpawns: enemySpawns,
     };
   }
 

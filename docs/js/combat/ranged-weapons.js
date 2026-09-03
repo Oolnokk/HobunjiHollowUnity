@@ -885,6 +885,37 @@
     return nearest;
   }
 
+  // World-geometry shoot targets (e.g. the Dungeon Test's wall runes — see
+  // game.js's dungeonRuneFurniture wiring) — a lightweight parallel registry
+  // to hostileObjects, checked only for the player's own shots (nothing in
+  // the world should ever be "hit" by an enemy's stray bolt). Keyed by
+  // areaId so a target registered for one map is never reachable from
+  // another, then by an arbitrary caller-chosen key so a single target can
+  // be re-registered (new box/onHit) or removed without disturbing others.
+  const worldTargets = new Map(); // areaId -> Map(key -> { box: THREE.Box3, onHit(p) })
+  function registerWorldTarget(areaId, key, box, onHit) {
+    if (!areaId || !key || !box) return;
+    if (!worldTargets.has(areaId)) worldTargets.set(areaId, new Map());
+    worldTargets.get(areaId).set(key, { box, onHit });
+  }
+  function unregisterWorldTarget(areaId, key) {
+    worldTargets.get(areaId)?.delete(key);
+  }
+  function clearAreaWorldTargets(areaId) {
+    worldTargets.delete(areaId);
+  }
+  function nearestWorldTargetHit(start, end, projectileRadius, areaId) {
+    const targets = worldTargets.get(areaId);
+    if (!targets || !targets.size) return null;
+    let nearest = null;
+    for (const [key, target] of targets) {
+      const interval = segmentHitboxInterval(start, end, { box: target.box }, projectileRadius);
+      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
+      nearest = { key, target, interval };
+    }
+    return nearest;
+  }
+
   // 1 out to effectiveRangePx (the weapon's tuned range), then a linear
   // taper down to RANGE_FALLOFF_MIN_FRACTION at maxDistancePx (where the
   // projectile actually despawns — see updateProjectiles). A shot that
@@ -914,11 +945,25 @@
     const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
-      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+      const targetHit = nearestWorldTargetHit(start, end, projectileRadius, p.areaId);
+      // Nearest-wins across all three candidate kinds (cover, a hostile,
+      // a world target) by entry t along the shot's own segment — same
+      // "first thing actually in the way" comparison the cover/hostile
+      // pair already did, just extended to a third candidate.
+      let winner = null;
+      if (coverHit) winner = { kind: 'cover', t: coverHit.t };
+      if (nearest && (!winner || nearest.interval.enter < winner.t)) winner = { kind: 'hostile', t: nearest.interval.enter };
+      if (targetHit && (!winner || targetHit.interval.enter < winner.t)) winner = { kind: 'target', t: targetHit.interval.enter };
+      if (!winner) return false;
+      if (winner.kind === 'cover') {
         playProjectileImpactSfx(p, coverHit.t);
         return true;
       }
-      if (!nearest) return false;
+      if (winner.kind === 'target') {
+        playProjectileImpactSfx(p, targetHit.interval.enter);
+        targetHit.target.onHit?.(p);
+        return true;
+      }
       const c = nearest.creature;
       playProjectileImpactSfx(p, nearest.interval.enter);
       deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
@@ -1279,6 +1324,7 @@
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
+    registerWorldTarget, unregisterWorldTarget, clearAreaWorldTargets,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
     devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),
     getLoadoutView: itemKey => ({ itemKey, mastery: rangedMastery(itemKey), loadout: JSON.parse(JSON.stringify(ammoLoadout(itemKey))), unlockedSpecialAmmo: [...(ensureAmmoState()?.unlockedSpecialAmmo || [])], specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX }),

@@ -57,6 +57,52 @@
     return removed;
   }
 
+  // Climbable ropes — a horizontal gap crossing (e.g. the Dungeon Test's
+  // chasm, see game.js's dungeonRuneFurniture wiring), reusing the exact
+  // same scripted hop-lerp crossing a wall climb already does (see
+  // startRopeClimb/updateClimb) rather than a bespoke animation. Unlike a
+  // wall (grid-neighbor-derived) or a branch (tree-relative), a rope's two
+  // endpoints are just whatever world points the caller registers — some
+  // ropes exist from the start of a scene, others (like the Dungeon Test's)
+  // register inactive and only start responding to getRopeClimbTarget once
+  // a puzzle marks them `active`.
+  const ropesByArea = new Map();
+  function resetAreaRopes(mapId) { ropesByArea.set(mapId, []); }
+  function registerRope(mapId, rope) {
+    if (!ropesByArea.has(mapId)) ropesByArea.set(mapId, []);
+    ropesByArea.get(mapId).push(rope);
+  }
+  function setRopeActive(mapId, ropeId, active) {
+    const rope = (ropesByArea.get(mapId) || []).find(r => r.id === ropeId);
+    if (rope) rope.active = active;
+    return rope || null;
+  }
+
+  const ROPE_CLIMB_PROXIMITY_TILES = 1.15;
+  const ROPE_CLIMB_FACING_COS = 0.6; // ~53 degrees either side of dead-on toward the far anchor.
+  function getRopeClimbTarget() {
+    const ropes = ropesByArea.get(deps.getCurrentArea());
+    if (!ropes || !ropes.length) return null;
+    const player = deps.player;
+    const proximityPx = deps.TILE * ROPE_CLIMB_PROXIMITY_TILES;
+    const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
+    let best = null, bestDist = Infinity;
+    for (const rope of ropes) {
+      if (!rope.active) continue;
+      const dx = rope.baseX - player.x, dy = rope.baseY - player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > proximityPx || dist < 1 || dist >= bestDist) continue;
+      const towardTipX = rope.tipX - rope.baseX, towardTipY = rope.tipY - rope.baseY;
+      const towardLen = Math.hypot(towardTipX, towardTipY) || 1;
+      // Facing roughly along the rope's own base->tip axis (not just toward
+      // the near anchor point) — otherwise standing beside the rope and
+      // looking down its length off to one side would still trigger it.
+      if ((towardTipX * facingX + towardTipY * facingY) / towardLen < ROPE_CLIMB_FACING_COS) continue;
+      bestDist = dist; best = rope;
+    }
+    return best ? { type: 'rope', rope: best } : null;
+  }
+
   const CLIMB_MAX_WALL_TILES = 4;
   function getWallClimbTarget() {
     const player = deps.player;
@@ -200,7 +246,12 @@
   const BRANCH_JUMP_FACING_COS = 0.7; // ~45 degrees either side of dead-on outward.
   const BRANCH_JUMP_PERP_DOT_MAX = 0.42;
   function getClimbTarget() {
-    if (!deps._isZoneArea(deps.getCurrentArea())) return null;
+    // Cliff walls and tree branches are exterior-zone concepts (see
+    // getWallClimbTarget's incline-tile requirement and the branch
+    // registry), but ropes are area-agnostic — a building interior (e.g.
+    // the Dungeon Test) can register its own, so that check is skipped
+    // below rather than gating this whole function.
+    if (!deps._isZoneArea(deps.getCurrentArea())) return getRopeClimbTarget();
     const player = deps.player;
     if (player.onBranch) {
       const branch = player.onBranch;
@@ -229,7 +280,7 @@
       }
       return null;
     }
-    return getWallClimbTarget() || getBranchClimbTarget();
+    return getWallClimbTarget() || getBranchClimbTarget() || getRopeClimbTarget();
   }
 
   const CLIMB_HOP_ACTIVE_S = 0.32;
@@ -247,6 +298,7 @@
     }
     if (climb.type === 'branch') return startBranchClimb(climb.branch);
     if (climb.type === 'branchJumpDown') return startBranchJumpDown(climb);
+    if (climb.type === 'rope') return startRopeClimb(climb.rope);
 
     const player = deps.player;
     const currentArea = deps.getCurrentArea();
@@ -309,6 +361,39 @@
     deps.setTargetAimAngle(player.angle);
     deps.setLastMoveAngle(player.angle);
     player._climbTargetBranch = branch;
+    player._climbLastHopIndex = -1;
+    climbSafetyDebug.lastBlockReason = null;
+    climbSafetyDebug.lastBlockRideState = 'none';
+    return true;
+  }
+
+  // A rope crossing lands the player standing normally at the far anchor —
+  // no onBranch-style handoff, so this reuses the exact same generic
+  // completion path a wall climb already falls through to (see
+  // updateClimb: both player._climbTargetBranch and
+  // player._climbJumpDownAxis stay null/unset here). surfaceY defaults to
+  // 0 (ordinary flat interior floor, see game.js furniture placement's own
+  // by=f.postY||0 ground convention) since a rope is a horizontal gap
+  // crossing, not a change in floor level — callers can still set both
+  // rope.baseWorldY/tipWorldY explicitly for a sloped or elevated crossing.
+  function startRopeClimb(rope) {
+    const player = deps.player;
+    player.climbing = true;
+    player.climbElapsed = 0;
+    player.climbHopCount = 3;
+    player.climbStartX = player.x;
+    player.climbStartY = player.y;
+    player.climbEndX = rope.tipX;
+    player.climbEndY = rope.tipY;
+    player.climbSurfaceStartY = Number.isFinite(rope.baseWorldY) ? rope.baseWorldY : 0;
+    player.climbSurfaceEndY = Number.isFinite(rope.tipWorldY) ? rope.tipWorldY : 0;
+    player.climbSurfaceY = player.climbSurfaceStartY;
+    player.climbHopBounce = 0;
+    player.vx = 0; player.vy = 0;
+    player.angle = Math.atan2(rope.tipY - player.y, rope.tipX - player.x);
+    deps.setFacingAngle(player.angle);
+    deps.setTargetAimAngle(player.angle);
+    deps.setLastMoveAngle(player.angle);
     player._climbLastHopIndex = -1;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
@@ -518,6 +603,9 @@
     registerBranch,
     removeBranchesInBounds,
     debugBranchesFor: (mapId) => (branchesByArea.get(mapId) || []).slice(),
+    resetAreaRopes,
+    registerRope,
+    setRopeActive,
     // Ground height at a world point, in the same THREE-unit convention as
     // branch.baseWorldY/tipWorldY — used by wildlife-cloud-forest-
     // behavior.js to tell how far a given branch actually sits above its

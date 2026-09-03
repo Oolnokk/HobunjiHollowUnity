@@ -63,23 +63,46 @@
 
   function centerOf(room) { return [room.x + (room.w >> 1), room.y + (room.h >> 1)]; }
 
-  function carveH(x0, x1, y, tiles) { for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) tiles.add(`${x},${y}`); }
-  function carveV(y0, y1, x, tiles) { for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) tiles.add(`${x},${y}`); }
-
-  function carveCorridor([ax, ay], [bx, by], rng, tiles) {
-    if (rng() < 0.5) { carveH(ax, bx, ay, tiles); carveV(ay, by, bx, tiles); }
-    else { carveV(ay, by, ax, tiles); carveH(ax, bx, by, tiles); }
+  // Ordered tile runs (not just an unordered Set) — callers that need a
+  // straight, contiguous stretch of corridor to work with (e.g.
+  // dungeon-test.js picking where to carve a chasm) can walk a leg in
+  // sequence instead of re-deriving adjacency from a flat tile bag.
+  function lineH(x0, x1, y) {
+    const out = []; const step = x1 >= x0 ? 1 : -1;
+    for (let x = x0; x !== x1 + step; x += step) out.push([x, y]);
+    return out;
+  }
+  function lineV(y0, y1, x) {
+    const out = []; const step = y1 >= y0 ? 1 : -1;
+    for (let y = y0; y !== y1 + step; y += step) out.push([x, y]);
+    return out;
+  }
+  // Returns the two ordered legs (each an [[c,r],...] run) of an L-shaped
+  // corridor between two points — same random H-then-V / V-then-H choice
+  // the old flat-Set version made, just returning legs instead of writing
+  // straight into a shared tile Set.
+  function carveCorridor([ax, ay], [bx, by], rng) {
+    if (rng() < 0.5) return [lineH(ax, bx, ay), lineV(ay, by, bx)];
+    return [lineV(ay, by, ax), lineH(ax, bx, by)];
   }
 
   // Connects siblings while walking back up the BSP tree, guaranteeing the
   // whole floorplan is one connected component (a spanning tree over the
   // rooms) — unlike an organic cavern carve, there is no "isolated pocket"
-  // case to detect/strip afterward.
-  function connect(node, rng, corridorTiles) {
-    if (!node.left && !node.right) return node.room ? centerOf(node.room) : null;
-    const a = node.left ? connect(node.left, rng, corridorTiles) : null;
-    const b = node.right ? connect(node.right, rng, corridorTiles) : null;
-    if (a && b) carveCorridor(a, b, rng, corridorTiles);
+  // case to detect/strip afterward. Each node carries {point, room} rather
+  // than a bare point so every corridor segment can be recorded as a real
+  // room-to-room graph edge (edges), not just tiles — dungeon-test.js uses
+  // that graph to find the critical path from the entrance to the treasure
+  // room and pick where a puzzle disruption goes.
+  function connect(node, rng, corridorTiles, edges) {
+    if (!node.left && !node.right) return node.room ? { point: centerOf(node.room), room: node.room } : null;
+    const a = node.left ? connect(node.left, rng, corridorTiles, edges) : null;
+    const b = node.right ? connect(node.right, rng, corridorTiles, edges) : null;
+    if (a && b) {
+      const legs = carveCorridor(a.point, b.point, rng);
+      for (const leg of legs) for (const [c, r] of leg) corridorTiles.add(`${c},${r}`);
+      edges.push({ roomA: a.room, roomB: b.room, legs });
+    }
     return a || b;
   }
 
@@ -90,7 +113,8 @@
     const rooms = [];
     carveRooms(root, rng, rooms);
     const corridorTiles = new Set();
-    connect(root, rng, corridorTiles);
+    const edges = [];
+    connect(root, rng, corridorTiles, edges);
 
     const roomTileSet = new Set();
     for (const room of rooms) {
@@ -144,13 +168,25 @@
       .filter(([c, r]) => floorSet.has(`${c},${r}`));
     if (!exitTiles.length) exitTiles.push([midX, exitRow]);
 
+    // Mutated in place (not a mapped copy) — callers compare rooms by
+    // reference (dungeon-test.js's isEntrance/isTreasure checks, its
+    // critical-path graph search over edges' roomA/roomB, offPathRooms'
+    // Array.includes), so entranceRoom/treasureRoom/edges[].roomA/roomB and
+    // this rooms array all have to keep pointing at the exact same objects.
+    for (const room of rooms) { room.cx = room.x + (room.w >> 1); room.cy = room.y + (room.h >> 1); }
+
     return {
       cols: AREA_W, rows: AREA_H,
       floor: [...floorSet].map(key => key.split(',').map(Number)),
       roomTileSet, corridorTiles,
-      rooms: rooms.map(room => ({ ...room, cx: room.x + (room.w >> 1), cy: room.y + (room.h >> 1) })),
+      rooms,
       entranceRoom, treasureRoom,
       exitTiles,
+      // Room adjacency graph (a spanning tree — exactly rooms.length - 1
+      // edges). Each edge's `legs` are the two ordered corridor tile runs
+      // (H-then-V or V-then-H) that connect edge.roomA to edge.roomB — see
+      // dungeon-test.js's critical-path/chasm placement.
+      edges,
     };
   }
 

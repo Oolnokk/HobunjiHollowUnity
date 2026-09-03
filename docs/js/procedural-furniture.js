@@ -568,6 +568,13 @@ function campfireRecipe() {
     box(0, .42, 0, .82, .08, .52, .85, { color: 0x5c4830 }),
   ];
 
+  // Same reasoning as dungeonChest above — a small stand-in until
+  // dungeonRune.json is ready.
+  CATALOG.dungeonRune = [
+    box(0, .12, 0, .5, .24, .5, .8, { color: 0x6f7566 }),
+    disc(0, .66, 0, .4, .05, .4, 1, { color: 0x8a5cff, segments: 16 }),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

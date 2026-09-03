@@ -2310,6 +2310,14 @@
         // opening one for its one-time loot never touches a player's own
         // placed storage chests.
         dungeonChest:  { itemKey: 'dungeonChestFurniture',  icon: '📦', name: 'Ancient Chest',        price: 0,  fw: 1, fd: 1, color: 0x4a3a26, area: 'interior', desc: 'A dust-caked chest, bound in iron.', fixture: true },
+        // Dungeon Test-only wall rune (see synthesizeFloorMapData in
+        // dungeon-test.js) — a shoot-to-trigger puzzle target wired up in
+        // the furniture placement loop below via
+        // window.RangedWeapons.registerWorldTarget, not the ordinary
+        // BUILDING_FIXTURE_INTERACTABLES walk-up-and-press pattern. The
+        // real and decoy runes share this exact same look on purpose —
+        // nothing sets them apart until you shoot one.
+        dungeonRune:   { itemKey: 'dungeonRuneFurniture',   icon: '🔮', name: 'Carved Rune',          price: 0,  fw: 1, fd: 1, color: 0x6f7566, area: 'interior', desc: 'A softly glowing rune, carved into a stone pedestal.', fixture: true, light: { color: 0x8a5cff, intensity: 0.8, distance: 4, height: 0.7 } },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -2339,7 +2347,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'dungeonChest',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'dungeonChest', 'dungeonRune',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -11612,6 +11620,138 @@
         return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
       }
 
+      // A climbable rope spanning a Dungeon Test chasm — real segmented
+      // cylinder geometry with a slight catenary sag, not a placeholder
+      // box. x1/z1/x2/z2 are tile-unit scene coordinates (matching every
+      // other building-interior mesh position, e.g. the furniture loop's
+      // own bx/bz), unlike window.ClimbSystem.registerRope's baseX/Y/
+      // tipX/Y which are raw pixels (the player.x/y convention every
+      // creature/collision system uses — see wireDungeonRune below).
+      function buildRopeMesh(x1, z1, x2, z2) {
+        const group = new THREE.Group();
+        const ropeMat = new THREE.MeshLambertMaterial({ color: 0x8a6a45 });
+        const ropeY = 0.95, sagY = 0.72;
+        const midX = (x1 + x2) / 2, midZ = (z1 + z2) / 2;
+        const points = [
+          new THREE.Vector3(x1, ropeY, z1),
+          new THREE.Vector3(midX, sagY, midZ),
+          new THREE.Vector3(x2, ropeY, z2),
+        ];
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i], b = points[i + 1];
+          const dir = new THREE.Vector3().subVectors(b, a);
+          const length = dir.length();
+          if (length < 0.001) continue;
+          const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, length, 8), ropeMat);
+          mesh.position.copy(a).addScaledVector(dir, 0.5);
+          mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+          mesh.castShadow = true;
+          group.add(mesh);
+        }
+        return group;
+      }
+
+      // Ghostly, semi-transparent placeholder guardians — reuses the exact
+      // same Ghoul look/spawn path the Town Mine's floors already rely on
+      // (window.BanditCombat.makeEntity with a 'ghoul' appearance
+      // override), just tinted translucent, so a wrong shot at a Dungeon
+      // Test decoy rune (see wireDungeonRune below) has a real, reactive
+      // consequence instead of an ordinary pre-placed encounter.
+      function makeGhostlyTranslucent(entity) {
+        entity?.avatarRef?.group?.traverse(node => {
+          if (!node.isMesh || !node.material) return;
+          for (const mat of (Array.isArray(node.material) ? node.material : [node.material])) {
+            mat.transparent = true;
+            mat.opacity = 0.55;
+            mat.depthWrite = false;
+          }
+        });
+      }
+      async function summonGhostlyGuardians(mapId, bScene, bGrid, cols, rows, atWorldX, atWorldZ, count) {
+        const gangConfig = await window.BanditCombat?.loadGangConfig?.();
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spawnX = atWorldX + Math.cos(angle) * TILE * 1.4;
+          const spawnY = atWorldZ + Math.sin(angle) * TILE * 1.4;
+          const gender = Math.random() < 0.5 ? 'female' : 'male';
+          const rosterOverride = {
+            name: 'Restless Spirit',
+            appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `dtest-ghost:${mapId}:${Date.now()}:${i}` },
+            equippedCosmetics: [], appliedDyes: {},
+          };
+          const ghost = await window.BanditCombat?.makeEntity?.(gangConfig || {}, 'grunt', 2, spawnX, spawnY, {
+            zoneId: mapId, scene: bScene, grid: bGrid, cols, rows,
+            rosterOverride,
+            defOverride: { label: 'Restless Spirit', maxHealth: 26 },
+          });
+          if (ghost) { hostileObjects.add(ghost); makeGhostlyTranslucent(ghost); }
+        }
+      }
+
+      // Wires one placed dungeonRuneFurniture instance into
+      // window.RangedWeapons' world-target registry (see ranged-weapons.js)
+      // instead of the ordinary BUILDING_FIXTURE_INTERACTABLES walk-up
+      // pattern — a rune only ever responds to being shot. f carries the
+      // real/decoy metadata dungeon-test.js baked onto the furniture
+      // record: f.isDecoy, and for the real rune f.gateTiles/ropeBase/
+      // ropeTip (all [col,row] pairs in the generated floor's own grid).
+      function wireDungeonRune(mapId, f, bx, by, bz, bScene, bGrid, cols, rows) {
+        const key = `${mapId},${f.col},${f.row}`;
+        const box = new THREE.Box3(
+          new THREE.Vector3(bx - 0.3, by + 0.3, bz - 0.3),
+          new THREE.Vector3(bx + 0.3, by + 0.9, bz + 0.3),
+        );
+        // The real rune's chasm tiles are ordinary mapData.floor (see
+        // dungeon-test.js — removing them from the floor set entirely would
+        // make the wall-panel builder treat the gap as an exterior boundary
+        // and wall it shut, blocking the very shot this puzzle needs).
+        // mapData.colliders already made them impassable at scene-build
+        // time; this just marks them visually as a dangerous gap until the
+        // rune is shot, at which point both the collider and this overlay
+        // come off, revealing the ordinary floor tile that was there the
+        // whole time underneath.
+        const pitOverlays = [];
+        if (!f.isDecoy) {
+          for (const [gc, gr] of (f.gateTiles || [])) {
+            const pit = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), new THREE.MeshBasicMaterial({ color: 0x0a0a0c }));
+            pit.position.set(gc + 0.5, 0.01, gr + 0.5);
+            bScene.add(pit);
+            pitOverlays.push(pit);
+          }
+        }
+        let spent = false;
+        window.RangedWeapons?.registerWorldTarget(mapId, key, box, () => {
+          if (spent) return;
+          spent = true;
+          window.RangedWeapons?.unregisterWorldTarget(mapId, key);
+          if (f.isDecoy) {
+            showToast('The rune flares an unnatural violet — something stirs in the dark!', false);
+            summonGhostlyGuardians(mapId, bScene, bGrid, cols, rows, bx * TILE, bz * TILE, 1 + Math.floor(Math.random() * 2));
+            return;
+          }
+          showToast('The rune blazes gold — a rope creaks and drops across the chasm!', true);
+          for (const [gc, gr] of (f.gateTiles || [])) {
+            if (bGrid[gr]?.[gc]) bGrid[gr][gc].type = TileType.GRASS;
+          }
+          for (const pit of pitOverlays) {
+            bScene.remove(pit);
+            pit.geometry?.dispose?.();
+            pit.material?.dispose?.();
+          }
+          if (f.ropeBase && f.ropeTip) {
+            const rope = buildRopeMesh(f.ropeBase[0] + 0.5, f.ropeBase[1] + 0.5, f.ropeTip[0] + 0.5, f.ropeTip[1] + 0.5);
+            _markOutline(rope);
+            bScene.add(rope);
+            window.ClimbSystem?.registerRope(mapId, {
+              id: key,
+              baseX: (f.ropeBase[0] + 0.5) * TILE, baseY: (f.ropeBase[1] + 0.5) * TILE,
+              tipX: (f.ropeTip[0] + 0.5) * TILE, tipY: (f.ropeTip[1] + 0.5) * TILE,
+              active: true,
+            });
+          }
+        });
+      }
+
       async function buildMineLadderMesh() {
         const authored = await window.AuthoredFurniture?.load?.('mineLadder'); // Used by procedural Floor 1, while the safe-room copy is ordinary editor furniture.
         const ladder = authored
@@ -11666,6 +11806,8 @@
           info.scene.clear();
         }
         _buildingScenes.delete(mapId);
+        window.ClimbSystem?.resetAreaRopes(mapId);
+        window.RangedWeapons?.clearAreaWorldTargets(mapId);
       }
 
       async function loadBuildingScene(mapId) {
@@ -11688,6 +11830,12 @@
           mapData = await window.DungeonTest.synthesizeFloorMapData(mapId);
           loadSource = 'dungeon-test';
           if (dungeonLoadingLabel) dungeonLoadingLabel.style.display = 'none';
+          // Ropes and shoot-target registrations are per-visit (a fresh
+          // floor every time) — clear whatever the previous visit left
+          // registered under this exact mapId before the furniture loop
+          // below re-registers this visit's real/decoy runes.
+          window.ClimbSystem?.resetAreaRopes(mapId);
+          window.RangedWeapons?.clearAreaWorldTargets(mapId);
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
@@ -11874,6 +12022,7 @@
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
             if (furnitureKey === 'dungeonChest') await window.AuthoredFurniture?.load?.('dungeonChest'); // Same reasoning: the Dungeon Test regenerates a fresh scene on every visit, so this can't rely on a later cached load.
+            if (furnitureKey === 'dungeonRune') await window.AuthoredFurniture?.load?.('dungeonRune'); // Same reasoning as dungeonChest above.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -11896,6 +12045,7 @@
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
               }
+              if (furnitureKey === 'dungeonRune') wireDungeonRune(mapId, f, bx, by, bz, bScene, bGrid, cols, rows);
             } else {
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
@@ -11932,20 +12082,6 @@
               // Highland House interior instead goes through
               // getInteriorInteractableAt, so this only matters here.
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
-            }
-          }
-          // Dungeon Test enemies — ordinary bandits (window.BanditCombat,
-          // the same system wilderness camps use) scattered through the
-          // generated rooms by dungeon-test.js's synthesizeFloorMapData, so
-          // this experimental map has real combat (melee and ranged alike)
-          // to test against rather than an empty crawl.
-          if (mapData.wallStyle === 'dungeon' && mapData.dungeonEnemySpawns?.length) {
-            const dungeonGangConfig = await window.BanditCombat?.loadGangConfig?.();
-            for (const spawn of mapData.dungeonEnemySpawns) {
-              const bandit = await window.BanditCombat?.makeEntity?.(dungeonGangConfig || {}, spawn.rank, 2, (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
-                zoneId: mapId, scene: bScene, grid: bGrid, cols, rows,
-              });
-              if (bandit) hostileObjects.add(bandit);
             }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
