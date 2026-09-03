@@ -6,66 +6,231 @@
       "label": "Funji & Son's General Store",
       "menuId": "generalStore",
       "dialogueAccess": {
-        "sellerIds": ["furunji_funji", "foroji_funji"],
-        "businessMaps": ["map_i_general_store"]
+        "sellerIds": [
+          "furunji_funji",
+          "foroji_funji"
+        ],
+        "businessMaps": [
+          "map_i_general_store"
+        ]
       },
       "goods": [
-        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} },
-        { "key": "kurraya",      "icon": "🎵", "name": "Kurraya",        "desc": "A simple lyre. Foroji's own is never far from his hands. Play it solo, or fall in behind whoever's already playing nearby.", "price": 500, "gives": { "kurraya": 1 }, "conditions": {} }
+        {
+          "key": "mulchBag",
+          "icon": "🍂",
+          "name": "Mulch Bag",
+          "desc": "Boosts soil recovery and clears weeds.",
+          "price": 3,
+          "gives": {
+            "mulch": 5
+          },
+          "conditions": {}
+        },
+        {
+          "key": "kurraya",
+          "icon": "🎵",
+          "name": "Kurraya",
+          "desc": "A simple lyre. Foroji's own is never far from his hands. Play it solo, or fall in behind whoever's already playing nearby.",
+          "price": 500,
+          "gives": {
+            "kurraya": 1
+          },
+          "conditions": {}
+        }
       ],
       "clothingRotation": {
         "slots": 4,
         "pieces": [
-          { "id": "rugged_poncho", "label": "Rugged Poncho",        "category": "overwear", "usesB": true,  "price": 70, "conditions": {} },
-          { "id": "fine_poncho",   "label": "Fine Poncho",          "category": "overwear", "usesB": true,  "price": 80, "conditions": {} },
-          { "id": "fine_hood",     "label": "Fine Hood",            "category": "hood",     "usesB": true,  "price": 60, "conditions": {} },
-          { "id": "tankan_tunic",  "label": "Tankan Tunic",         "category": "torso",    "usesB": false, "price": 50, "conditions": {} },
-          { "id": "bandolier1",    "label": "Bandolier",            "category": "torso",    "usesB": false, "price": 40, "conditions": {} },
-          { "id": "appearance::hat::basic_headband",      "label": "Basic Headband",        "category": "hat", "usesB": false, "price": 35, "conditions": {} },
-          { "id": "appearance::hat::leather_headband",    "label": "Leather Headband",      "category": "hat", "usesB": false, "price": 40, "conditions": {} },
-          { "id": "appearance::hat::riverlandskasa_wide", "label": "Riverland Kasa (Wide)", "category": "hat", "usesB": false, "price": 45, "conditions": {} }
+          {
+            "id": "rugged_poncho",
+            "label": "Rugged Poncho",
+            "category": "overwear",
+            "usesB": true,
+            "price": 70,
+            "conditions": {}
+          },
+          {
+            "id": "fine_poncho",
+            "label": "Fine Poncho",
+            "category": "overwear",
+            "usesB": true,
+            "price": 80,
+            "conditions": {}
+          },
+          {
+            "id": "fine_hood",
+            "label": "Fine Hood",
+            "category": "hood",
+            "usesB": true,
+            "price": 60,
+            "conditions": {}
+          },
+          {
+            "id": "tankan_tunic",
+            "label": "Tankan Tunic",
+            "category": "torso",
+            "usesB": false,
+            "price": 50,
+            "conditions": {}
+          },
+          {
+            "id": "bandolier1",
+            "label": "Bandolier",
+            "category": "torso",
+            "usesB": false,
+            "price": 40,
+            "conditions": {}
+          },
+          {
+            "id": "appearance::hat::basic_headband",
+            "label": "Basic Headband",
+            "category": "hat",
+            "usesB": false,
+            "price": 35,
+            "conditions": {}
+          },
+          {
+            "id": "appearance::hat::leather_headband",
+            "label": "Leather Headband",
+            "category": "hat",
+            "usesB": false,
+            "price": 40,
+            "conditions": {}
+          },
+          {
+            "id": "appearance::hat::riverlandskasa_wide",
+            "label": "Riverland Kasa (Wide)",
+            "category": "hat",
+            "usesB": false,
+            "price": 45,
+            "conditions": {}
+          }
         ]
       }
+    },
+    "kunjiPotionWares": {
+      "label": "Kunji's Potion Shop",
+      "menuId": "generalStore",
+      "dialogueAccess": {
+        "sellerIds": [
+          "kinami_kunji",
+          "kaboku_kunji"
+        ],
+        "businessMaps": [
+          "map_i_kunjis_potions_F1"
+        ]
+      },
+      "goods": [
+        {
+          "key": "basicHealingPotion",
+          "icon": "🧪",
+          "name": "Healing Potion",
+          "desc": "A basic restorative potion prepared for everyday injuries.",
+          "price": 100,
+          "alchemyRecipeId": "healingPotion",
+          "alchemyPotencyTier": 0,
+          "quantity": 1,
+          "conditions": {}
+        },
+        {
+          "key": "growthTonic",
+          "icon": "🌱",
+          "name": "Growth Tonic",
+          "desc": "Matures one baby farm or Stable animal into an adult.",
+          "price": 500,
+          "gives": {
+            "growthTonic": 1
+          },
+          "conditions": {}
+        }
+      ]
     },
     "carpenterBarnPlans": {
       "label": "Dzibim Khibu's Carpentry",
       "menuId": "carpenterShop",
       "dialogueAccess": {
-        "sellerIds": ["dzibim_khibu"],
-        "businessMaps": ["map_i_carpenters"]
+        "sellerIds": [
+          "dzibim_khibu"
+        ],
+        "businessMaps": [
+          "map_i_carpenters"
+        ]
       },
       "tiers": {
-        "small":  { "label": "Little Barn", "slots": 4,  "price": 500,  "planItem": "barnPlanSmall",  "conditions": {} },
-        "medium": { "label": "Medium Barn",  "slots": 8,  "price": 1000, "planItem": "barnPlanMedium", "conditions": {} },
-        "large":  { "label": "Large Barn",   "slots": 12, "price": 1500, "planItem": "barnPlanLarge",  "conditions": {} }
+        "small": {
+          "label": "Little Barn",
+          "slots": 4,
+          "price": 500,
+          "planItem": "barnPlanSmall",
+          "conditions": {}
+        },
+        "medium": {
+          "label": "Medium Barn",
+          "slots": 8,
+          "price": 1000,
+          "planItem": "barnPlanMedium",
+          "conditions": {}
+        },
+        "large": {
+          "label": "Large Barn",
+          "slots": 12,
+          "price": 1500,
+          "planItem": "barnPlanLarge",
+          "conditions": {}
+        }
       }
     },
     "carpenterHouseDeeds": {
       "label": "Dzibim Khibu's Carpentry",
       "menuId": "carpenterShop",
       "dialogueAccess": {
-        "sellerIds": ["dzibim_khibu"],
-        "businessMaps": ["map_i_carpenters"]
+        "sellerIds": [
+          "dzibim_khibu"
+        ],
+        "businessMaps": [
+          "map_i_carpenters"
+        ]
       },
       "pieces": {
-        "largeWing": { "label": "Large Wing Deed", "w": 5, "h": 7, "price": 1300, "deedItem": "houseDeedLargeWing", "conditions": {} },
-        "smallRoom": { "label": "Small Room Deed", "w": 3, "h": 3, "price": 400,  "deedItem": "houseDeedSmallRoom",  "conditions": {} }
+        "largeWing": {
+          "label": "Large Wing Deed",
+          "w": 5,
+          "h": 7,
+          "price": 1300,
+          "deedItem": "houseDeedLargeWing",
+          "conditions": {}
+        },
+        "smallRoom": {
+          "label": "Small Room Deed",
+          "w": 3,
+          "h": 3,
+          "price": 400,
+          "deedItem": "houseDeedSmallRoom",
+          "conditions": {}
+        }
       }
     },
     "jubmirWares": {
       "label": "Jubmir's Wares",
       "menuId": "jubmirShop",
       "dialogueAccess": {
-        "sellerIds": ["jubmir"],
+        "sellerIds": [
+          "jubmir"
+        ],
         "businessMaps": [],
         "roaming": true
       },
       "goods": [
         {
-          "key": "dabinggiHoundEgg", "icon": "🥚", "name": "Dabinggi-hound Egg",
+          "key": "dabinggiHoundEgg",
+          "icon": "🥚",
+          "name": "Dabinggi-hound Egg",
           "desc": "A rare, non-native find. One only, restocked daily.",
-          "price": 200, "givesGenotype": "dabinggi-hound",
-          "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+          "price": 200,
+          "givesGenotype": "dabinggi-hound",
+          "restockDays": 1,
+          "maxPerRestock": 1,
+          "conditions": {}
         }
       ]
     }
