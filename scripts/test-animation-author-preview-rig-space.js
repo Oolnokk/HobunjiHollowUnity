@@ -68,11 +68,13 @@ assert.match(transformDumpBootstrap, /'mao-ao::male': \[-0\.29650716367602115, 0
   'regression guard must recognize the exact V15.23 Mao-ao male shoulder-perch fingerprint');
 assert.match(transformDumpBootstrap, /scaledTuple\(legacyPerch, 0\.9\)/,
   'stale detector must recognize the 0.9-scaled V15.23 perch seen in the live rigger dump');
-assert.match(transformDumpBootstrap, /legacyLeft[\s\S]*legacyRight/,
-  'stale detector must recognize the symmetric shoulders synthesized from that old perch');
+assert.match(transformDumpBootstrap, /fullLeft[\s\S]*fullRight[\s\S]*scaledTuple\(fullLeft, 0\.9\)[\s\S]*scaledTuple\(fullRight, 0\.9\)/,
+  'stale detector must recognize both full-width and 0.9-scaled symmetric shoulders synthesized from the old perch');
 assert.match(transformDumpBootstrap, /hobunji_attachment_rig_character_master_sync\.json/,
   'repaired profiles must go back through the existing Animation Author import surface');
 assert.match(transformDumpBootstrap, /animationAuthorCanonicalShoulderSync/,
   'mobile diagnostics must expose the canonical-shoulder repair state');
+assert.match(transformDumpBootstrap, /queueRepair\([^)]*500\)/,
+  'character repair must defer behind the older creature import bridge instead of racing it on the same rig-tab click');
 
 console.log('Animation Author preview isolation, cleanup, pinned-ref, and immutable-master shoulder guards passed');
