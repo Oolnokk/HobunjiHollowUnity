@@ -2,17 +2,40 @@
   'use strict';
 
   // Barn trough system: barn-interior map synthesis, the live fill-level
-  // mesh registry, and the "open trough" bag/slot panel. Split out of
-  // game.js (which used to own all three inline) so this feature follows
-  // the same self-contained module shape as FarmAnimals/FarmBuildings/
-  // FarmPanel — game.js just wires deps and delegates.
+  // mesh registry, sleeping-livestock visuals, and the "open trough"
+  // bag/slot panel. Split out of game.js (which used to own all three
+  // inline) so this feature follows the same self-contained module shape
+  // as FarmAnimals/FarmBuildings/FarmPanel — game.js just wires deps and
+  // delegates.
 
   let deps = null;
+  let _sleepSyncTimer = null; // Used to keep already-loaded barn interiors in sync when day/night changes in place.
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  const LIVESTOCK_SLEEP_SCALE_Y = 0.5; // Used by barn sleepers; matches wild Drenkirra's existing simplistic sleep pose exactly.
+  const LIVESTOCK_SLEEP_SYNC_MS = 750; // Used by the low-cost barn-interior sleeper refresh timer.
+  const _meshRegistry = new Map(); // Used to find the live trough group/scene for each barnId,troughIndex.
+  const _sleepingLivestock = new Map(); // Used to own/dispose the temporary sleeping avatar for each livestock record.
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    if (_sleepSyncTimer == null && typeof window.setInterval === 'function') {
+      _sleepSyncTimer = window.setInterval(syncSleepingLivestock, LIVESTOCK_SLEEP_SYNC_MS);
+    }
+  }
 
   function troughSlotCount(trough) {
     return Array.isArray(trough?.slots) ? trough.slots.filter(Boolean).length : 0;
+  }
+
+  function _barnInteriorLayout(barn) {
+    const BARN_TIERS = deps.getBarnTiers();
+    const cols = Math.max(4, barn.w * 2);
+    const rows = Math.max(4, barn.h * 2);
+    const slots = BARN_TIERS[barn.tier]?.slots || 0;
+    const troughPositions = [];
+    for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: 1, row: r, wall: 'west' });
+    for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: cols - 2, row: r, wall: 'east' });
+    return { BARN_TIERS, cols, rows, troughPositions };
   }
 
   // Barn interiors: 2 interior cells per exterior tile (matching the
@@ -28,18 +51,13 @@
     const farmBuildings = deps.getFarmBuildings();
     const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
     if (!barn) return null;
-    const BARN_TIERS = deps.getBarnTiers();
-    const cols = Math.max(4, barn.w * 2), rows = Math.max(4, barn.h * 2);
+    const { BARN_TIERS, cols, rows, troughPositions } = _barnInteriorLayout(barn);
     const floor = [];
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) floor.push([c, r]);
     const doorCenter = Math.floor(cols / 2);
     const doorCols = [doorCenter - 1, doorCenter, doorCenter + 1].filter(c => c > 0 && c < cols - 1);
     const exits = [{ id: 'exit_barn_front', label: 'Barn Door', tiles: doorCols.map(c => [c, rows - 1]), targetMap: '', spawnCol: 0, spawnRow: 0 }];
     const furniture = [{ id: 'f_barn_grinder', itemKey: 'feedGrinderFurniture', col: cols - 2, row: 0, rotY: 0, barnId, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 }];
-    const slots = BARN_TIERS[barn.tier]?.slots || 0;
-    const troughPositions = [];
-    for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: 1, row: r });
-    for (let r = 1; r <= rows - 2 && troughPositions.length < slots; r++) troughPositions.push({ col: cols - 2, row: r });
     troughPositions.forEach((pos, i) => {
       // Rotated 90° from the trough's authored orientation (trough.json's
       // basin runs long along local X) so it sits flush along the wall it's
@@ -48,14 +66,6 @@
     });
     return { schema: 'hobunji_building_interior.v1', id: mapId, name: (BARN_TIERS[barn.tier]?.label || 'Barn') + ' Interior', cols, rows, exits, colliders: [], vendorZones: [], floor, furniture, npcStations: [] };
   }
-
-  // "barnId,troughIndex" -> { group, authoredData } for every trough mesh
-  // currently built into a loaded barn interior scene — lets
-  // depositFeedToTrough/withdrawFeedFromTrough/tickHearts (farm-animals.js,
-  // via deps.refreshTroughVisual) update a trough's fill-level liquid
-  // surface live, without needing to rebuild (or even be standing in) that
-  // barn's interior.
-  const _meshRegistry = new Map();
 
   // Recomputes and applies a trough's "Fodder Fill Level" liquidSurface
   // part (see trough.json) from its live contents — level = filled slots /
@@ -81,6 +91,130 @@
     window.AuthoredFurniture.applyProcessTimeline(group, authoredData, virtualTimeline, 0);
   }
 
+  function _sleepModelMetrics(kind, genotype) {
+    const widthByKind = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
+    const modelWidth = kind === 'uumkaoii' ? 1.275 : (Number(widthByKind[kind]) || 1.7);
+    const modelHeight = kind === 'uumkaoii' ? modelWidth * (451 / 641) : modelWidth * (600 / 1375);
+    const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, genotype) || { x: 1, y: 1 };
+    const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(kind, genotype);
+    const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : modelHeight * (Number(sizeScale.y) || 1) / 2;
+    return { modelWidth, modelHeight, sizeScale, groundLift };
+  }
+
+  function _sleepBaseUrl(kind) {
+    if (kind === 'uumkaoii') return "assets/creaturesprites/uumkao'ii.png";
+    return window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
+  }
+
+  function _applySleepingComposite(avatarRef, rec) {
+    if (!avatarRef || !rec?.genotype || !window.CreatureGeneticsRender?.composeFrame || typeof THREE === 'undefined') return;
+    window.CreatureGeneticsRender.composeFrame(rec.kind, 'idle', rec.genotype, false).then(canvas => {
+      if (!canvas || !avatarRef.group?.parent) return;
+      const frontTex = new THREE.CanvasTexture(canvas);
+      frontTex.colorSpace = THREE.SRGBColorSpace;
+      const backTex = new THREE.CanvasTexture(canvas);
+      backTex.colorSpace = THREE.SRGBColorSpace;
+      backTex.wrapS = THREE.RepeatWrapping;
+      backTex.repeat.set(-1, 1);
+      backTex.offset.set(1, 0);
+      for (const child of avatarRef.group.children) {
+        if (!child.material) continue;
+        if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+      }
+    }).catch(() => {});
+  }
+
+  function _sleepSpotFor(barn, troughIndex) {
+    const { cols, troughPositions } = _barnInteriorLayout(barn);
+    const troughPos = troughPositions[troughIndex];
+    if (!troughPos) return null;
+    const inward = troughPos.wall === 'west' ? 1 : -1;
+    const x = troughPos.col + 0.5 + inward * 1.05;
+    const z = troughPos.row + 0.5;
+    const rotationY = troughPos.wall === 'west' ? Math.PI / 2 : -Math.PI / 2;
+    return { x: Math.max(0.75, Math.min(cols - 0.75, x)), z, rotationY };
+  }
+
+  function _disposeSleepingLivestock(livestockId, reason = 'removed') {
+    const sleeper = _sleepingLivestock.get(livestockId);
+    if (!sleeper) return;
+    sleeper.avatarRef?.group?.parent?.remove(sleeper.avatarRef.group);
+    sleeper.avatarRef?.dispose?.();
+    _sleepingLivestock.delete(livestockId);
+    window.__farmLog?.(`[barn-sleep] ${sleeper.name || livestockId}: ${reason}`, 'livestock');
+  }
+
+  function _createSleepingLivestock(rec, barn, troughIndex, troughEntry) {
+    if (!rec || !barn || !troughEntry?.group?.parent || !window.PNGPlaneAvatar?.buildAnimalPlaneAvatarModel || typeof THREE === 'undefined') return null;
+    const spot = _sleepSpotFor(barn, troughIndex);
+    if (!spot) return null;
+    const { modelWidth, modelHeight, sizeScale, groundLift } = _sleepModelMetrics(rec.kind, rec.genotype);
+    const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, _sleepBaseUrl(rec.kind), {
+      modelWidth,
+      modelHeight,
+      name: `barn_sleep_${rec.kind}_${rec.id}`,
+      creatureId: rec.kind,
+      headRig: window.CreatureGeneticsRender?.headRigForKind?.(rec.kind) || undefined,
+    });
+    const group = avatarRef.group;
+    group.position.set(spot.x, (Number(troughEntry.group.position.y) || 0) + groundLift, spot.z);
+    group.rotation.y = spot.rotationY;
+    group.userData.barnSleepingLivestockId = rec.id;
+    group.userData.barnSleepingLivestockName = rec.name || rec.kind;
+    if (window.CreatureGenetics?.applyCreatureBillboardScale) {
+      window.CreatureGenetics.applyCreatureBillboardScale(group, sizeScale, LIVESTOCK_SLEEP_SCALE_Y);
+    } else {
+      group.scale.set(Number(sizeScale.x) || 1, (Number(sizeScale.y) || 1) * LIVESTOCK_SLEEP_SCALE_Y, 1);
+    }
+    troughEntry.group.parent.add(group);
+    _applySleepingComposite(avatarRef, rec);
+    const sleeper = { livestockId: rec.id, name: rec.name, barnId: barn.id, troughIndex, sceneParent: troughEntry.group.parent, avatarRef };
+    _sleepingLivestock.set(rec.id, sleeper);
+    window.__farmLog?.(`[barn-sleep] ${rec.name || rec.id}: sleeping beside trough ${troughIndex + 1} in ${barn.id}`, 'livestock');
+    return sleeper;
+  }
+
+  // Mirrors the wild Drenkirra night pose instead of introducing a second
+  // livestock animation system: while a barn interior is actually loaded,
+  // each housed animal with an assigned, real trough gets a temporary idle
+  // avatar beside that trough with the same 50%-Y sleep flattening. The
+  // exterior animal remains owned by FarmAnimals; this is only the interior
+  // representation, so location/save/AI state cannot diverge.
+  function syncSleepingLivestock() {
+    if (!deps || !window.FarmAnimals) return;
+    const night = !!window.Music?.isNightTime?.();
+    if (!night) {
+      for (const livestockId of [..._sleepingLivestock.keys()]) _disposeSleepingLivestock(livestockId, 'woke for daytime');
+      return;
+    }
+
+    const farmBuildings = deps.getFarmBuildings();
+    const barnsById = new Map(farmBuildings.filter(b => b.kind === 'barn').map(b => [b.id, b]));
+    const livestock = deps.loadWorldLivestock();
+    const desired = new Set();
+
+    for (const rec of livestock) {
+      if (!rec?.barnId || rec.troughIndex == null) continue;
+      const barn = barnsById.get(rec.barnId);
+      if (!barn) continue;
+      const troughs = window.FarmAnimals.ensureBarnTroughs?.(barn);
+      if (!troughs?.[rec.troughIndex]) continue;
+      const troughEntry = _meshRegistry.get(`${rec.barnId},${rec.troughIndex}`);
+      if (!troughEntry?.group?.parent) continue;
+      desired.add(rec.id);
+      const existing = _sleepingLivestock.get(rec.id);
+      if (!existing || existing.sceneParent !== troughEntry.group.parent || existing.troughIndex !== rec.troughIndex) {
+        if (existing) _disposeSleepingLivestock(rec.id, 'moved to another trough/scene');
+        _createSleepingLivestock(rec, barn, rec.troughIndex, troughEntry);
+      }
+    }
+
+    for (const livestockId of [..._sleepingLivestock.keys()]) {
+      if (!desired.has(livestockId)) _disposeSleepingLivestock(livestockId, 'no loaded assigned trough');
+    }
+  }
+
   // Called once, when a trough's furniture mesh is first built into a
   // loaded barn interior scene.
   function registerMesh(barnId, troughIndex, group, authoredData) {
@@ -89,6 +223,7 @@
     const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn');
     const trough = barn && window.FarmAnimals.ensureBarnTroughs(barn)[troughIndex];
     if (trough) _applyTroughLiquidVisual(group, authoredData, trough);
+    syncSleepingLivestock();
   }
 
   // Safe to call from anywhere (farm-animals.js's deposit/withdraw/
@@ -102,6 +237,21 @@
     const trough = barn && window.FarmAnimals.ensureBarnTroughs(barn)[troughIndex];
     if (!trough) return;
     _applyTroughLiquidVisual(entry.group, entry.authoredData, trough);
+    syncSleepingLivestock();
+  }
+
+  // Mobile-friendly diagnostic data for the existing in-game debug/log
+  // tooling: callers can inspect exactly which livestock sleeper is bound
+  // to which barn/trough without needing DevTools or console access.
+  function debugSleepingLivestock() {
+    return [..._sleepingLivestock.values()].map(sleeper => ({
+      livestockId: sleeper.livestockId,
+      name: sleeper.name,
+      barnId: sleeper.barnId,
+      troughIndex: sleeper.troughIndex,
+      visible: sleeper.avatarRef?.group?.visible !== false,
+      sceneAttached: !!sleeper.avatarRef?.group?.parent,
+    }));
   }
 
   // ── Trough panel — "akin to farm storage" (see renderFarmStoragePane in
@@ -200,7 +350,18 @@
     });
   }
 
-  window.FarmTroughs = { init, synthesizeBarnInteriorMapData, registerMesh, refreshVisual, troughSlotCount, open, close };
+  window.FarmTroughs = {
+    init,
+    synthesizeBarnInteriorMapData,
+    registerMesh,
+    refreshVisual,
+    troughSlotCount,
+    syncSleepingLivestock,
+    debugSleepingLivestock,
+    open,
+    close,
+    LIVESTOCK_SLEEP_SCALE_Y,
+  };
 })();
 
 // Parser-time bootstrap for the standalone Nursery integration. This is the
