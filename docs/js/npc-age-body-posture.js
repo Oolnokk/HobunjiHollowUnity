@@ -20,6 +20,7 @@
   }
 
   function resolveEffect(options) {
+    if (options?.suppressAgeBodyPosture === true) return null; // Authoring previews can build real gameplay feet first, then apply one explicit posterior-pivot age transform without double-composition.
     const profileEffect = options?.profile?.__hobunjiNpcAgeEffect || null; // Preferred source so portrait aging and torso posture always share the exact same already-resolved preset/tuning.
     if (profileEffect) return profileEffect;
     if (typeof options?.ageEffectProvider === 'function') {
