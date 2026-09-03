@@ -97,9 +97,9 @@
 })();
 
 // The main page already loads this interaction primitive before FarmAnimals,
-// DialogueContent, and game.js. Use that stable parser position to load the
-// livestock dialogue feature without adding more monolithic index.html wiring.
-// Tool pages are excluded; Animation Author loads animal-chathead-frame itself.
+// DialogueContent, and game.js. Use that stable parser position to load small,
+// modular gameplay interaction features without adding more monolithic
+// index.html wiring. Tool pages are excluded.
 (() => {
   if (typeof document === 'undefined' || document.readyState !== 'loading' || typeof document.write !== 'function') return;
   if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname || '')) return;
@@ -107,5 +107,6 @@
   const base = src ? new URL('.', src).href : 'js/';
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
-  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script>`);
+  const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
+  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script>`);
 })();
