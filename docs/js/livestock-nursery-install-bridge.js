@@ -4,18 +4,28 @@
   // Parser-time feature bootstrap: this bridge is already synchronously loaded
   // before FarmPanel/game.js, so piggybacking here keeps animal-growth modular
   // without adding another hard-coded feature dependency to game.js.
-  const animalGrowthSrc = 'js/animal-growth.js?v=20260903growth1'; // Used to load the shared Growth Tonic + Stable age module before game init.
+  const animalGrowthScripts = [ // Used to load config first, then the shared Growth Tonic + Stable age module before game init.
+    { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
+    { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
+  ];
   function ensureAnimalGrowthLoaded() {
-    if (window.AnimalGrowth) return;
     if (document.readyState === 'loading') {
-      document.write(`<script src="${animalGrowthSrc}"><\/script>`);
+      for (const entry of animalGrowthScripts) {
+        if (!window[entry.globalKey]) document.write(`<script src="${entry.src}"><\/script>`);
+      }
       return;
     }
-    const script = document.createElement('script');
-    script.src = animalGrowthSrc;
-    script.onload = () => window.AnimalGrowth?.install?.();
-    script.onerror = () => console.warn('[AnimalGrowth] failed to load feature module.');
-    document.head.appendChild(script);
+    const loadAt = index => {
+      if (index >= animalGrowthScripts.length) { window.AnimalGrowth?.install?.(); return; }
+      const entry = animalGrowthScripts[index];
+      if (window[entry.globalKey]) { loadAt(index + 1); return; }
+      const script = document.createElement('script');
+      script.src = entry.src;
+      script.onload = () => loadAt(index + 1);
+      script.onerror = () => console.warn(`[AnimalGrowth] failed to load ${entry.src}.`);
+      document.head.appendChild(script);
+    };
+    loadAt(0);
   }
   ensureAnimalGrowthLoaded();
 
