@@ -5,20 +5,21 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Hobunji Age Effect Tool</title>
 <style>
-:root{color-scheme:dark;--bg:#07101a;--panel:#101b28;--panel2:#0b141f;--line:#2a3d56;--text:#edf5ff;--muted:#9eb2cb;--accent:#6ba9ff;--good:#45d6a0;--warn:#ffc857}
+:root{color-scheme:dark;--bg:#07101a;--panel:#101b28;--panel2:#0b141f;--line:#2a3d56;--text:#edf5ff;--muted:#9eb2cb;--accent:#6ba9ff;--good:#45d6a0}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{min-height:100dvh}
 button,input,select{font:inherit}button{border:1px solid rgba(107,169,255,.42);border-radius:10px;background:rgba(107,169,255,.15);color:var(--text);padding:9px 11px;font-weight:750;cursor:pointer}button.secondary{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.055)}
 select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,255,255,.15);border-radius:9px;background:rgba(255,255,255,.055);color:var(--text);padding:7px 9px}input[type=range]{width:100%;accent-color:var(--accent)}label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 .app{min-height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr)}header{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2))}header h1{font-size:16px;color:var(--accent);margin:0}.badge{font-size:11px;color:var(--muted);padding:5px 8px;border:1px solid rgba(255,255,255,.12);border-radius:999px}
 .layout{min-height:0;display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr)}aside{overflow:auto;background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line);padding:10px}.card{border:1px solid rgba(255,255,255,.11);border-radius:13px;background:rgba(255,255,255,.035);padding:10px;margin-bottom:10px}.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 9px}.field{margin-bottom:10px}.rangeRow{display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:8px;align-items:center}.help{font-size:11px;color:var(--muted);line-height:1.42}.swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.swatch{height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.14);display:flex;align-items:end;padding:4px;font-size:10px;text-shadow:0 1px 2px #000}.buttons{display:flex;gap:7px;flex-wrap:wrap}.buttons button{flex:1 1 120px}
-.stage{min-width:0;display:grid;grid-template-rows:minmax(360px,1fr) auto;background:#060c14}.threeWrap{position:relative;min-height:0}#view3d{width:100%;height:100%;display:block;touch-action:none}.stageStatus{position:absolute;left:10px;top:10px;max-width:min(560px,calc(100% - 20px));padding:7px 9px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(7,16,26,.84);font-size:11px;color:var(--muted);pointer-events:none}
-.portraits{display:grid;grid-template-columns:1fr 1fr minmax(240px,1.25fr);gap:9px;padding:10px;border-top:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2))}.portraitBox,.debugBox{border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(255,255,255,.035);padding:8px;min-width:0}.portraitBox b,.debugBox b{display:block;font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}.portraitBox canvas{width:100%;max-height:190px;aspect-ratio:1;object-fit:contain;image-rendering:pixelated;background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.12),rgba(255,255,255,.02));border-radius:8px}.debugBox pre{margin:0;max-height:180px;overflow:auto;white-space:pre-wrap;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.error{color:#ff8da0}.good{color:var(--good)}
+.stage{min-width:0;display:grid;grid-template-rows:minmax(360px,1fr) auto;background:#060c14}.threeWrap{position:relative;min-height:0}#view3d{width:100%;height:100%;display:block;touch-action:none}.stageStatus{position:absolute;left:10px;top:10px;max-width:min(640px,calc(100% - 20px));padding:7px 9px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(7,16,26,.84);font-size:11px;color:var(--muted);pointer-events:none}
+.portraits{display:grid;grid-template-columns:1fr 1fr minmax(260px,1.35fr);gap:9px;padding:10px;border-top:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2))}.portraitBox,.debugBox{border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(255,255,255,.035);padding:8px;min-width:0}.portraitBox b,.debugBox b{display:block;font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}.portraitBox canvas{width:100%;max-height:190px;aspect-ratio:1;object-fit:contain;image-rendering:pixelated;background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.12),rgba(255,255,255,.02));border-radius:8px}.debugBox pre{margin:0;max-height:205px;overflow:auto;white-space:pre-wrap;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.error{color:#ff8da0}.good{color:var(--good)}
 @media(max-width:820px){.layout{grid-template-columns:1fr;grid-template-rows:auto minmax(580px,1fr)}aside{border-right:0;border-bottom:1px solid var(--line);max-height:54vh}.portraits{grid-template-columns:1fr 1fr}.debugBox{grid-column:1/-1}.stage{min-height:70vh}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/attachment-rig-profiles.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
@@ -26,16 +27,18 @@ select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,2
 <script src="../../js/leg-bones.js"></script>
 <script src="../../js/procedural-leg-animation.js"></script>
 <script src="../../js/held-action-animations.js"></script>
+<script src="../../js/npc-character-state.js"></script>
 <script src="../../config/npc-age-effects.js"></script>
 <script src="../../js/npc-age-effects-runtime.js"></script>
+<script src="../../js/drunk-locomotion.js"></script>
 <script src="../../js/npc-age-body-posture.js"></script>
 </head>
 <body>
 <div class="app">
-<header><h1>Hobunji Age Effect Tool</h1><span class="badge">shared runtime presets</span><span class="badge">attack-editor/game avatar parity</span><span id="loadBadge" class="badge">loading…</span></header>
+<header><h1>Hobunji Age Effect Tool</h1><span class="badge">shared runtime presets</span><span class="badge">makeNpcWalker hierarchy</span><span id="loadBadge" class="badge">loading…</span></header>
 <div class="layout">
 <aside>
-  <div class="card"><h2>Preview character</h2><div class="field"><label>NPC</label><select id="npcSelect"></select></div><div class="field"><label>Preset</label><select id="presetSelect"><option value="old">Old</option><option value="veryOld">Very Old</option></select></div><div class="help">Runtime-assigned NPCs are loaded from the real starter NPC database. Switching preset here is preview-only until you copy the values back to the shared config.</div></div>
+  <div class="card"><h2>Preview character</h2><div class="field"><label>NPC</label><select id="npcSelect"></select></div><div class="field"><label>Preset</label><select id="presetSelect"><option value="old">Old</option><option value="veryOld">Very Old</option></select></div><div class="help">Runtime-assigned NPCs are loaded from the real starter NPC database. The 3D preview intentionally uses the same root, alcohol-pose, avatar, hand and foot hierarchy as the live NPC walker.</div></div>
   <div class="card"><h2>Color aging</h2>
     <div class="field"><label>Age effect amount (%)</label><div class="rangeRow"><input id="amountRange" type="range" min="0" max="100" step="1"><input id="amountNumber" type="number" min="0" max="100" step="1"></div></div>
     <div class="field"><label>Desaturation rate (%)</label><div class="rangeRow"><input id="desaturationRange" type="range" min="0" max="100" step="1"><input id="desaturationNumber" type="number" min="0" max="100" step="1"></div></div>
@@ -45,14 +48,14 @@ select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,2
   <div class="card"><h2>Posture</h2>
     <div class="field"><label>Portrait head drop (px)</label><div class="rangeRow"><input id="headDropRange" type="range" min="0" max="24" step="1"><input id="headDropNumber" type="number" min="0" max="40" step="1"></div></div>
     <div class="field"><label>Torso pitch offset (degrees)</label><div class="rangeRow"><input id="torsoPitchRange" type="range" min="-30" max="30" step="0.5"><input id="torsoPitchNumber" type="number" min="-45" max="45" step="0.5"></div></div>
-    <div class="field"><label>Standing vertical offset reduction (%)</label><div class="rangeRow"><input id="verticalOffsetReductionRange" type="range" min="0" max="50" step="1"><input id="verticalOffsetReductionNumber" type="number" min="0" max="100" step="1"></div></div>
-    <div class="help">Torso pitch rotates the body/hands around the gameplay posterior. Standing offset reduction lowers the normal modelHeight/2 body lift by this percentage. Species/gender portrait placement stays intact and procedural feet remain planted.</div>
+    <div class="field"><label>Standing vertical offset reduction (%)</label><div class="rangeRow"><input id="verticalOffsetReductionRange" type="range" min="0" max="50" step="0.5"><input id="verticalOffsetReductionNumber" type="number" min="0" max="100" step="0.5"></div></div>
+    <div class="help">These values are fed through the same age decorator that wraps live NPC procedural legs. No editor-only torso or limb transform is added.</div>
   </div>
   <div class="card"><h2>Actions</h2><div class="buttons"><button id="resetBtn">Reset preset</button><button id="copyBtn" class="secondary">Copy preset JSON</button></div><div id="copyStatus" class="help"></div></div>
 </aside>
 <main class="stage">
-  <div class="threeWrap"><canvas id="view3d"></canvas><div id="stageStatus" class="stageStatus">Building attack-editor-parity avatar assembly…</div></div>
-  <div class="portraits"><div class="portraitBox"><b>Front portrait</b><canvas id="frontCanvas" width="256" height="256"></canvas></div><div class="portraitBox"><b>Rear portrait</b><canvas id="backCanvas" width="256" height="256"></canvas></div><div class="debugBox"><b>Parity / debug</b><pre id="debugText"></pre></div></div>
+  <div class="threeWrap"><canvas id="view3d"></canvas><div id="stageStatus" class="stageStatus">Building live NPC-walker-equivalent avatar…</div></div>
+  <div class="portraits"><div class="portraitBox"><b>Front portrait</b><canvas id="frontCanvas"></canvas></div><div class="portraitBox"><b>Rear portrait</b><canvas id="backCanvas"></canvas></div><div class="debugBox"><b>Runtime parity / transforms</b><pre id="debugText"></pre></div></div>
 </main>
 </div></div>
 <script>
@@ -63,8 +66,9 @@ const ageConfig = window.HobunjiNpcAgeEffectConfig;
 const ageRuntime = window.HobunjiNpcAgeEffects;
 const frontCanvas = $('frontCanvas');
 const backCanvas = $('backCanvas');
-const PORTRAIT_SIZE = 256; // Matches the Attack Animation Editor's portrait backing size.
-const MODEL_W = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9; // Same square world model base used by Attack Animation Editor and live player avatar.
+const AVATAR_CFG = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+const MODEL_W = AVATAR_CFG.worldModelWidth ?? 0.9;
+const PORTRAIT_SIZE = AVATAR_CFG.previewPortraitCanvasSize ?? 200; // Exact makeNpcWalker backing size, not an editor-only 256px assumption.
 const controls = {
   amount: ['amountRange', 'amountNumber'],
   desaturation: ['desaturationRange', 'desaturationNumber'],
@@ -77,8 +81,12 @@ let npcs = [];
 let currentNpc = null;
 let currentProfile = null;
 let rebuildToken = 0;
-let scene, camera, renderer, orbit, stageRoot, currentAvatar, currentFeet, currentHands, bodyPivot, bodyContent;
-let lastEffect = null;
+let scene, camera, renderer, orbit, stageRoot;
+let currentRoot = null;
+let currentAlcoholPoseGroup = null;
+let currentAvatar = null;
+let currentFeet = null;
+let currentHands = null;
 
 function effectState() {
   return ageConfig.effectFromPreset($('presetSelect').value, {
@@ -90,13 +98,11 @@ function effectState() {
     verticalOffsetReductionPct: +$('verticalOffsetReductionNumber').value,
   });
 }
-
 function setPair(key, value) {
-  const ids = controls[key];
-  $(ids[0]).value = value;
-  $(ids[1]).value = value;
+  const [rangeId, numberId] = controls[key];
+  $(rangeId).value = value;
+  $(numberId).value = value;
 }
-
 function resetPreset() {
   const preset = ageConfig.presets[$('presetSelect').value];
   setPair('amount', preset.color.amount);
@@ -107,13 +113,9 @@ function resetPreset() {
   setPair('verticalOffsetReductionPct', preset.verticalOffsetReductionPct);
   scheduleRebuild();
 }
-
 function wirePair(key) {
   const [rangeId, numberId] = controls[key];
-  const sync = (from, to) => {
-    $(to).value = $(from).value;
-    scheduleRebuild();
-  };
+  const sync = (from, to) => { $(to).value = $(from).value; scheduleRebuild(); };
   $(rangeId).addEventListener('input', () => sync(rangeId, numberId));
   $(numberId).addEventListener('input', () => sync(numberId, rangeId));
 }
@@ -127,19 +129,17 @@ function npcSpeciesGender(npc, profile) {
 }
 
 function dispose3d() {
-  currentHands = null; // PNGPlaneAvatar.disposeAvatarModel owns the one automatic ProceduralHandFrameDriver rig.
+  currentHands = null; // PNGPlaneAvatar.disposeAvatarModel owns the automatically-created hand rig.
   currentFeet?.dispose?.();
   currentFeet = null;
   if (currentAvatar) {
     window.PNGPlaneAvatar?.disposeAvatarModel?.(currentAvatar);
-    currentAvatar.parent?.remove(currentAvatar);
+    currentAvatar.parent?.remove?.(currentAvatar);
     currentAvatar = null;
   }
-  if (bodyPivot) {
-    stageRoot?.remove(bodyPivot);
-    bodyPivot = null;
-    bodyContent = null;
-  }
+  if (currentRoot) currentRoot.parent?.remove?.(currentRoot);
+  currentRoot = null;
+  currentAlcoholPoseGroup = null;
 }
 
 function initThree() {
@@ -154,6 +154,7 @@ function initThree() {
   orbit.enableDamping = true;
   orbit.dampingFactor = .08;
   stageRoot = new THREE.Group();
+  stageRoot.name = 'age_effect_stage';
   scene.add(stageRoot);
   const grid = new THREE.GridHelper(4, 20, 0x35516f, 0x1d3045);
   grid.position.y = -.002;
@@ -197,16 +198,21 @@ async function ensurePreviewPortraitRuntime() {
   if (!cosmetics) throw new Error('Portrait cosmetics failed to initialize for the Age Effect Tool.');
   return cosmetics;
 }
-
-function nextFrame() {
-  return new Promise(resolve => requestAnimationFrame(resolve));
-}
-
+function nextFrame() { return new Promise(resolve => requestAnimationFrame(resolve)); }
 async function settleAutomaticHands(avatar) {
-  // held-action-animations.js loads ProceduralHandFrameDriver, which wraps PNGPlaneAvatar and owns exactly one hand rig.
-  for (let i = 0; i < 3 && !avatar?.userData?.proceduralHandRig; i++) await nextFrame();
+  for (let i = 0; i < 4 && !avatar?.userData?.proceduralHandRig; i++) await nextFrame();
   window.ProceduralHandFrameDriver?.syncNow?.();
   return avatar?.userData?.proceduralHandRig || null;
+}
+function vectorDebug(vector) {
+  return vector ? { x: Number(vector.x.toFixed(4)), y: Number(vector.y.toFixed(4)), z: Number(vector.z.toFixed(4)) } : null;
+}
+function worldPosition(object) {
+  if (!object?.getWorldPosition) return null;
+  return object.getWorldPosition(new THREE.Vector3());
+}
+function handSocketWorld(side) {
+  return worldPosition(currentHands?.group?.getObjectByName?.(`${side}_hand_socket`));
 }
 
 async function rebuild() {
@@ -214,12 +220,11 @@ async function rebuild() {
   currentNpc = npcs.find(n => n.id === $('npcSelect').value) || npcs[0];
   if (!currentNpc) return;
   const effect = effectState();
-  lastEffect = effect;
-  $('stageStatus').textContent = 'Rendering portraits and rebuilding gameplay avatar…';
+  $('stageStatus').textContent = 'Rendering portraits and rebuilding live NPC hierarchy…';
   try {
     const explicitEffect = { ...effect, npcId: currentNpc.id, npcName: currentNpc.name };
     const profile = ageRuntime.buildAgePreviewProfile(currentNpc, explicitEffect);
-    if (!profile) throw new Error(`Could not build portrait profile for ${currentNpc.name || currentNpc.id}. Portrait cosmetics are not ready or this NPC has invalid appearance data.`);
+    if (!profile) throw new Error(`Could not build portrait profile for ${currentNpc.name || currentNpc.id}.`);
     currentProfile = profile;
 
     frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
@@ -235,15 +240,14 @@ async function rebuild() {
     const ids = npcSpeciesGender(currentNpc, profile);
     currentAvatar = PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
       backCanvas,
+      headCanvas,
       profile,
       npcRecord: currentNpc,
-      speciesId: ids.speciesId,
-      gender: ids.gender,
-      name: 'age_effect_preview_avatar',
       modelWidth: MODEL_W,
       modelHeight: MODEL_W,
+      anchorZ: 0,
+      alphaTest: AVATAR_CFG.worldAlphaTest ?? 0.01,
       neckRig: true,
-      headCanvas,
     });
     if (!currentAvatar) throw new Error(`PNG-plane avatar runtime could not build ${currentNpc.name || currentNpc.id}.`);
 
@@ -251,72 +255,81 @@ async function rebuild() {
     const modelHeight = Number(currentAvatar.userData.portraitModelHeight) || MODEL_W;
     const handAttachX = Number(currentAvatar.userData.handAttachX);
     const handAttachY = Number(currentAvatar.userData.handAttachY);
+    const normalPortraitLiftY = modelHeight / 2;
+    currentAvatar.position.set(0, normalPortraitLiftY, 0); // Exact makeNpcWalker lift.
 
-    // Exact Attack Animation Editor/live-game grounding contract: the portrait root is centered at half its resolved runtime height.
-    currentAvatar.position.y = modelHeight / 2;
+    currentRoot = new THREE.Group();
+    currentRoot.name = `npc_walker_${currentNpc.id || currentNpc.name || 'age_preview'}`;
+    stageRoot.add(currentRoot);
 
-    // Feet live on the floor root, outside the torso pivot, matching makeNpcWalker/player preview structure.
-    currentFeet = ProceduralLegAnimation.attach(THREE, stageRoot, {
-      name: 'age_tool_preview',
+    // Match makeNpcWalker exactly: avatar lives under the ordinary NPC alcohol-pose layer when that runtime exists.
+    currentAlcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, currentRoot, currentAvatar, currentNpc.id) || null;
+    if (!currentAlcoholPoseGroup) currentRoot.add(currentAvatar);
+
+    // Match makeNpcWalker options: feet live directly under floor root; age/drunk posture acts on avatarGroup through drunkBodyRoot.
+    currentFeet = window.ProceduralLegAnimation?.attach(THREE, currentRoot, {
       speciesId: ids.speciesId,
       gender: ids.gender,
-      bodyColors: profile.bodyColors,
+      bodyColors: profile?.bodyColors || currentNpc?.appearance?.bodyColors,
       modelWidth,
       modelHeight,
       handAttachY,
-      avatarRoot: currentAvatar,
+      name: currentNpc.id || currentNpc.name || 'npc',
       profile,
-      suppressAgeBodyPosture: true,
-    });
-    currentFeet?.update?.(0, 0, true, false);
-    const posteriorY = Number(currentFeet?.standingPosteriorY);
-    const pivotY = Number.isFinite(posteriorY) ? posteriorY : modelHeight * .32;
+      portraitSize: PORTRAIT_SIZE,
+      drunkLossProvider: () => 0,
+      drunkBodyRoot: currentAvatar,
+    }) || null;
+    currentFeet?.update?.(0, 0, false, false);
 
-    bodyPivot = new THREE.Group();
-    bodyPivot.name = 'age_effect_torso_pivot';
-    bodyPivot.position.y = pivotY;
-    bodyContent = new THREE.Group();
-    bodyContent.name = 'age_effect_body_content';
-    bodyContent.position.y = -pivotY;
-    bodyPivot.add(bodyContent);
-    stageRoot.add(bodyPivot);
-
-    // ProceduralHandFrameDriver reads this before auto-attaching the one hand rig. Keeping the parent floor-relative matches Attack Editor/game hand coordinates while still making the hands children of the age torso pivot.
-    currentAvatar.userData.proceduralHandParent = bodyContent;
-    bodyContent.add(currentAvatar);
+    currentRoot.updateMatrixWorld(true);
     currentHands = await settleAutomaticHands(currentAvatar);
     if (token !== rebuildToken) return;
-
-    window.HobunjiNpcAgeBodyPosture?.applyPreview?.(bodyPivot, effect);
+    currentRoot.updateMatrixWorld(true);
     swatchesFromProfile(profile);
 
-    const portraitLiftY = currentAvatar.position.y;
-    const ageLowerY = bodyPivot.position.y - pivotY;
-    const effectivePortraitLiftY = portraitLiftY + ageLowerY;
+    const posteriorY = Number(currentFeet?.standingPosteriorY);
+    const ageLowerY = Number(currentFeet?.agePosture?.verticalLowerY) || (currentAvatar.position.y - normalPortraitLiftY);
+    const feetDebug = currentFeet?.getStandingPoseDebug?.() || null;
+    const handDebug = currentHands?.getDebug?.() || null;
     const verticalPlacementRatio = Number(currentAvatar.userData.portraitVerticalPlacementRatio);
     const scaleMultiplier = Number(currentAvatar.userData.portraitScaleMultiplier);
-    $('stageStatus').innerHTML = `<span class="good">Live:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · model ${modelWidth.toFixed(3)}×${modelHeight.toFixed(3)} · standing reduction ${effect.verticalOffsetReductionPct.toFixed(0)}% (${ageLowerY.toFixed(3)}) · effective lift ${effectivePortraitLiftY.toFixed(3)} · posterior ${pivotY.toFixed(3)} · torso ${effect.torsoPitchDeg.toFixed(1)}°`;
+    const attachmentProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ids.speciesId}::${ids.gender}`] || null;
+
+    $('stageStatus').innerHTML = `<span class="good">Live hierarchy:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · ${PORTRAIT_SIZE}px backing · model ${modelWidth.toFixed(3)}×${modelHeight.toFixed(3)} · age Y ${ageLowerY.toFixed(3)} · posterior ${Number.isFinite(posteriorY) ? posteriorY.toFixed(3) : 'n/a'} · torso ${effect.torsoPitchDeg.toFixed(1)}°`;
     $('debugText').textContent = JSON.stringify({
       npc: { id: currentNpc.id, name: currentNpc.name },
       effect,
       portraitDebug: ageRuntime.getCanvasDebug(frontCanvas),
-      three: {
-        attackEditorWorldModelBase: MODEL_W,
+      runtimeParity: {
+        assembly: 'makeNpcWalker',
+        configuredPortraitSize: PORTRAIT_SIZE,
+        attachmentRigProfileLoaded: !!attachmentProfile,
+        attachmentRigProfileStatus: window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS || null,
+        root: currentRoot?.name || null,
+        alcoholPoseParent: currentAlcoholPoseGroup?.name || null,
+        avatarParent: currentAvatar?.parent?.name || null,
+        handParent: currentHands?.parent?.name || null,
+        feetParent: currentFeet?.group?.parent?.name || null,
+      },
+      transforms: {
         modelWidth,
         modelHeight,
-        portraitLiftY,
+        normalPortraitLiftY,
+        avatarLocalPosition: vectorDebug(currentAvatar?.position),
+        avatarWorldPosition: vectorDebug(worldPosition(currentAvatar)),
         ageLowerY,
-        effectivePortraitLiftY,
         verticalPlacementRatio: Number.isFinite(verticalPlacementRatio) ? verticalPlacementRatio : null,
         scaleMultiplier: Number.isFinite(scaleMultiplier) ? scaleMultiplier : null,
         handAttachX,
         handAttachY,
-        posteriorY: pivotY,
-        hands: !!currentHands,
-        handOwnership: currentHands ? 'ProceduralHandFrameDriver (single automatic rig)' : 'automatic rig pending/unavailable',
-        feet: !!currentFeet,
-        avatarPipeline: currentAvatar.userData.pngPipelineMode || currentAvatar.name,
+        posteriorY: Number.isFinite(posteriorY) ? posteriorY : null,
+        leftHandSocketWorld: vectorDebug(handSocketWorld('left')),
+        rightHandSocketWorld: vectorDebug(handSocketWorld('right')),
       },
+      hands: { ready: !!currentHands, debug: handDebug },
+      feet: { ready: !!currentFeet, debug: feetDebug },
+      avatarPipeline: currentAvatar.userData.pngPipelineMode || currentAvatar.name,
     }, null, 2);
   } catch (error) {
     console.error(error);
@@ -328,10 +341,7 @@ async function rebuild() {
 let rebuildRaf = 0;
 function scheduleRebuild() {
   cancelAnimationFrame(rebuildRaf);
-  rebuildRaf = requestAnimationFrame(() => {
-    rebuildRaf = 0;
-    rebuild();
-  });
+  rebuildRaf = requestAnimationFrame(() => { rebuildRaf = 0; rebuild(); });
 }
 
 async function loadNpcs() {
@@ -374,12 +384,8 @@ $('copyBtn').addEventListener('click', async () => {
     torsoPitchDeg: +$('torsoPitchNumber').value,
     verticalOffsetReductionPct: +$('verticalOffsetReductionNumber').value,
   }), null, 2);
-  try {
-    await navigator.clipboard.writeText(json);
-    $('copyStatus').textContent = 'Copied preset JSON.';
-  } catch {
-    $('copyStatus').textContent = json;
-  }
+  try { await navigator.clipboard.writeText(json); $('copyStatus').textContent = 'Copied preset JSON.'; }
+  catch { $('copyStatus').textContent = json; }
 });
 
 (async () => {
@@ -387,8 +393,9 @@ $('copyBtn').addEventListener('click', async () => {
     initThree();
     await ensurePreviewPortraitRuntime();
     if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
+    window.applyHobunjiAttachmentRigProfileCorrections?.();
     await loadNpcs();
-    $('loadBadge').textContent = 'ready';
+    $('loadBadge').textContent = 'runtime parity ready';
     $('loadBadge').classList.add('good');
   } catch (error) {
     console.error(error);
