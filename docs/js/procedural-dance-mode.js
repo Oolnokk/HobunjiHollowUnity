@@ -236,7 +236,17 @@
       data.hip = {
         position: data.hipPosition,
         getWorldPosition(out) {
-          refreshHipAndThigh();
+          // Deliberately NOT calling refreshHipAndThigh() here (only at build
+          // time, below). Re-deriving it every frame from the native line's
+          // CURRENT world position, then immediately converting through
+          // shimRoot's CURRENT matrixWorld, is an exact round-trip inverse
+          // within the same call — it always returns the native line's raw
+          // world point regardless of shimRoot's own transform, which pins
+          // the hip to the character's idle stance and silently cancels
+          // Dance's own whole-body sway on the model. Capturing hipPosition
+          // once in shimRoot-local space instead lets it track shimRoot's
+          // (and therefore the swaying model's) transform normally, like
+          // every other child of this shim already does "for free".
           shimRoot.updateMatrixWorld?.(true);
           return out.copy(data.hipPosition).applyMatrix4(shimRoot.matrixWorld);
         },
