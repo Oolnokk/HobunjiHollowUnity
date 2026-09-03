@@ -13,6 +13,16 @@
     status.className = good ? 'pill good' : 'pill warn';
   }
 
+  function editorLog(message, level = 'info', extra = null) {
+    // Writes into the editor's own Diagnostics panel (visible on mobile, and
+    // exactly what gets pasted back for debugging) instead of only the
+    // browser devtools console, which this adapter used to rely on alone.
+    const backdropLog = window.HobunjiGameplayBackdrop?.log;
+    if (backdropLog) { backdropLog(message, level, extra); return; }
+    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+    fn(message, extra ?? '');
+  }
+
   function installCanonicalEditorLegBoneToggle() {
     const previousApi = window.ProceduralLegAnimation;
     if (previousApi?.setShowBones && !previousApi.__editorBoneGuideBridge && !previousApi.__editorCanonicalBoneToggle) return;
@@ -68,7 +78,7 @@
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCanonicalCheckbox, { once: true });
     else bindCanonicalCheckbox();
-    console.info('[Dance bones] Dance delegates visibility to the editor canonical LegBonesDebug visualizer.');
+    editorLog('[Dance bones] Dance delegates visibility to the editor canonical LegBonesDebug visualizer.');
   }
 
   function installEditorGeneratedFeetDanceBridge() {
@@ -98,6 +108,51 @@
       return true;
     }
 
+    let lastDiagnosedRoot; // Undefined until the first refreshBridge() tick; logs once per LegBonesDebug identity change instead of every frame.
+
+    function logLegBonesDiagnostic(canonicalRoot) {
+      if (lastDiagnosedRoot === canonicalRoot) return;
+      lastDiagnosedRoot = canonicalRoot;
+      if (!canonicalRoot) { editorLog('[Dance bones] LegBonesDebug not found in the scene yet.', 'warn'); return; }
+      const Vector3 = canonicalRoot.position?.constructor;
+      // A fixed absolute epsilon missed a real bug here: a ~2.6cm hip-to-foot
+      // span passed a 1e-4 check yet was visually invisible on a ~45cm-tall
+      // avatar. Judge "too small to see" relative to the avatar's own height
+      // instead of an arbitrary constant.
+      const modelHeight = Number(window.HobunjiGameplayBackdrop?.getAvatarModel?.()?.userData?.portraitModelHeight) || null;
+      const degenerateThreshold = modelHeight ? modelHeight * 0.08 : 1e-4;
+      const summarize = (side) => {
+        const line = lineForSide(canonicalRoot, side);
+        if (!line || !Vector3) return { side, present: false };
+        const hip = new Vector3(); const knee = new Vector3(); const foot = new Vector3();
+        const hasHip = readLinePoint(line, 0, hip);
+        const hasKnee = readLinePoint(line, 1, knee);
+        const hasFoot = readLinePoint(line, 2, foot);
+        const hipToFootDistance = hasHip && hasFoot ? hip.distanceTo(foot) : null; // A span that's tiny relative to avatar height means the line has no real leg shape to draw, even if visible.
+        // World-space hip Y too (not just the locomotionRoot-local span above),
+        // in the same frame as Dance's own captured-hip diagnostic, so the two
+        // can be compared directly instead of needing to know locomotionRoot's
+        // own current world offset.
+        line.updateMatrixWorld?.(true);
+        const hipWorldY = hasHip ? line.localToWorld(hip.clone()).y : null;
+        return {
+          side, present: true, hasHip, hasKnee, hasFoot,
+          hipToFootDistance, hipWorldY,
+          degenerate: hipToFootDistance != null && hipToFootDistance < degenerateThreshold,
+        };
+      };
+      editorLog('[Dance bones] LegBonesDebug diagnostic', 'info', {
+        exists: true,
+        visible: canonicalRoot.visible,
+        parentVisible: canonicalRoot.parent ? canonicalRoot.parent.visible : null,
+        childCount: canonicalRoot.children?.length ?? 0,
+        modelHeight,
+        degenerateThreshold,
+        left: summarize('left'),
+        right: summarize('right'),
+      });
+    }
+
     function findExperimentalFeetRoot(canonicalRoot) {
       const locomotionRoot = canonicalRoot?.parent;
       return locomotionRoot?.children?.find?.(node => /_ExperimentalFeet$/i.test(String(node?.name || '')) || node?.userData?.experimentalFeet) || null;
@@ -115,7 +170,7 @@
       return left && right ? { left, right } : null;
     }
 
-    function makeSideProxy(THREE, realFoot, line) {
+    function makeSideProxy(THREE, side, realFoot, line) {
       const data = {
         realFoot,
         line,
@@ -181,12 +236,23 @@
       const footQuaternionProxy = {
         clone: () => data.realFoot.quaternion.clone(),
         copy(value) { data.realFoot.quaternion.copy(value); return footQuaternionProxy; },
+        multiply(value) { data.realFoot.quaternion.multiply(value); return footQuaternionProxy; },
       };
 
       data.hip = {
         position: data.hipPosition,
         getWorldPosition(out) {
-          refreshHipAndThigh();
+          // Deliberately NOT calling refreshHipAndThigh() here (only at build
+          // time, below). Re-deriving it every frame from the native line's
+          // CURRENT world position, then immediately converting through
+          // shimRoot's CURRENT matrixWorld, is an exact round-trip inverse
+          // within the same call — it always returns the native line's raw
+          // world point regardless of shimRoot's own transform, which pins
+          // the hip to the character's idle stance and silently cancels
+          // Dance's own whole-body sway on the model. Capturing hipPosition
+          // once in shimRoot-local space instead lets it track shimRoot's
+          // (and therefore the swaying model's) transform normally, like
+          // every other child of this shim already does "for free".
           shimRoot.updateMatrixWorld?.(true);
           return out.copy(data.hipPosition).applyMatrix4(shimRoot.matrixWorld);
         },
@@ -202,6 +268,24 @@
         getWorldPosition(out) { return data.realFoot.getWorldPosition(out); },
       };
       refreshHipAndThigh();
+      // One-shot diagnostic: compares the native LegBonesDebug line's current
+      // world hip point (re-read fresh here, independent of data.hipPosition)
+      // against what getWorldPosition() resolves data.hipPosition back to.
+      // These should match at capture time; if a later report shows Dance's
+      // hip drifting away from the native line's own (possibly since-updated)
+      // hip Y, that points at a real remaining bug rather than this capture
+      // step itself.
+      const nativeHipWorldNow = new THREE.Vector3();
+      if (readLinePoint(line, 0, nativeHipWorldNow)) {
+        line.updateMatrixWorld?.(true);
+        line.localToWorld(nativeHipWorldNow);
+      }
+      const resolvedHipWorld = data.hip.getWorldPosition(new THREE.Vector3());
+      editorLog(`[Dance bones] ${side} hip captured`, 'info', {
+        nativeLineHipWorldY: nativeHipWorldNow.y,
+        resolvedHipWorldY: resolvedHipWorld.y,
+        deltaY: resolvedHipWorld.y - nativeHipWorldNow.y,
+      });
       return data;
     }
 
@@ -227,8 +311,8 @@
         clearShim();
         return false;
       }
-      const left = makeSideProxy(THREE, realFeet.left, leftLine);
-      const right = makeSideProxy(THREE, realFeet.right, rightLine);
+      const left = makeSideProxy(THREE, 'left', realFeet.left, leftLine);
+      const right = makeSideProxy(THREE, 'right', realFeet.right, rightLine);
       const proxies = {
         left_hip: left.hip, left_thigh: left.thigh, left_calf: left.calf, left_foot: left.foot,
         right_hip: right.hip, right_thigh: right.thigh, right_calf: right.calf, right_foot: right.foot,
@@ -241,7 +325,7 @@
         leftFoot: realFeet.left.name || 'left generated foot',
         rightFoot: realFeet.right.name || 'right generated foot',
       };
-      console.info(`[Dance feet] Reusing editor generated fallback feet: ${realFeet.left.name || 'left'} / ${realFeet.right.name || 'right'}.`);
+      editorLog(`[Dance feet] Reusing editor generated fallback feet: ${realFeet.left.name || 'left'} / ${realFeet.right.name || 'right'}.`);
       return true;
     }
 
@@ -250,6 +334,7 @@
       const scene = backdrop?.getScene?.() || null;
       const model = backdrop?.getAvatarModel?.() || null;
       const canonicalRoot = scene?.getObjectByName?.('LegBonesDebug') || null;
+      logLegBonesDiagnostic(canonicalRoot);
       const experimentalRoot = findExperimentalFeetRoot(canonicalRoot);
       const realFeet = findRealFeet(experimentalRoot);
       const stale = activeModel !== model || !shimRoot?.parent || realFeetRoot !== experimentalRoot || legDebugRoot !== canonicalRoot;
@@ -274,7 +359,7 @@
 
   function refreshLatestChange() {
     const latest = document.querySelector('#proceduralDancePanel .danceLatest');
-    if (latest) latest.textContent = 'Latest change: Dance now drives the editor generated fallback feet and native LegBonesDebug solve directly.';
+    if (latest) latest.textContent = 'Latest change: added generated arm bones (Raise + reach / T-pose jiggle / Overhead punch) and a hip-roll weight shift, plus authored foot GLB auto-loading.';
   }
 
   function loadDanceCore() {
@@ -289,7 +374,7 @@
     });
     script.addEventListener('error', () => {
       updateVisibleStatus(`Dance core failed to load: ${script.src}`, false);
-      console.error(`[Dance mode] Failed to load ${script.src}`);
+      editorLog(`[Dance mode] Failed to load ${script.src}`, 'error');
     });
     document.head.appendChild(script);
   }
